@@ -46,11 +46,10 @@ class PieChartBasic extends Component {
       let weight: Float = realm.objects('Pickup').filtered(`crop = "${item.id}"`).sum("weight");
       let pickups = realm.objects('Pickup');
       data.push({
-        "name": item.name,
+        "name": `${item.name} (${weight} KGS)`,
         "weight": weight
       });
     });
-    console.log(data);
     let options = {
 
       width: 250,
@@ -94,7 +93,7 @@ class PieChartBasic extends Component {
           legendPosition="topLeft"
           label={{
             fontFamily: 'Arial',
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: true,
             color: '#ECF0F1'
           }}

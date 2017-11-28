@@ -6,6 +6,8 @@ import { HeaderApp, FooterMenu } from './common';
 import { Actions } from 'react-native-router-flux';
 import { SwipeListView } from 'react-native-swipe-list-view';
 import PieChartBasic from './PieChart'
+import BarChart from './BarChart'
+
 import realm from '../Models';
 const ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
 
@@ -69,6 +71,9 @@ class Home extends Component {
 
           <Text style={title}>Rendimento por Lote</Text>
           <PieChartBasic />
+          <Text style={title}>Rendimento por Empleado</Text>
+          <BarChart />
+
           <Text style={title}>Últimas recolecciones</Text>          
           <List>
             <SwipeListView
