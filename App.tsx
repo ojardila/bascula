@@ -3,7 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { PaperProvider, MD3LightTheme } from "react-native-paper";
+import { PaperProvider, MD3LightTheme, IconButton } from "react-native-paper";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -55,10 +55,21 @@ function MainTabs() {
   const { t } = useT();
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      backBehavior="history"
+      screenOptions={({ route, navigation }) => ({
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: "#fff",
         headerTitleAlign: "center",
+        headerLeft: () =>
+          navigation.canGoBack() ? (
+            <IconButton
+              icon="arrow-left"
+              iconColor="#fff"
+              size={24}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel={t("nav.back")}
+            />
+          ) : undefined,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "#9aa39a",
         tabBarStyle: {
