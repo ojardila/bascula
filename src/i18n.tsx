@@ -133,6 +133,63 @@ const es: Dict = {
   "confirm.cancel": "Cancelar",
   "confirm.delete": "Eliminar",
 
+
+  // Weeks and payments
+  "week.current": "Esta semana",
+  "week.previous": "Semana pasada",
+  "week.short": "Sem {n}",
+  "week.plots": "Lotes",
+  "week.more": "+{n} más",
+  "pay.tab": "Pagos",
+  "pay.title": "Pagos",
+  "pay.toPay": "Por pagar",
+  "pay.payAll": "Pagar a todos",
+  "pay.pay": "Pagar",
+  "pay.payFull": "Pagar todo",
+  "pay.payPart": "Pagar una parte",
+  "pay.confirm": "Confirmar pago",
+  "pay.weOwe": "Le debemos",
+  "pay.paid": "Ya pagado",
+  "pay.partial": "Abono parcial",
+  "pay.credit": "Saldo a favor",
+  "pay.remaining": "Falta por pagar",
+  "pay.account": "Estado de cuenta",
+  "pay.movements": "Movimientos",
+  "pay.settle": "Liquidar",
+  "pay.settlement": "Liquidación",
+  "pay.advance": "Avance",
+  "pay.discounts": "Descuentos",
+  "pay.amount": "Monto",
+  "pay.method": "Forma de pago",
+  "pay.cash": "Efectivo",
+  "pay.transfer": "Transferencia",
+  "pay.note": "Nota (opcional)",
+  "pay.half": "Mitad",
+  "pay.all": "Todo",
+  "pay.leaveCredit": "Deja el resto como saldo a favor",
+  "pay.deliverCredit": "Entregar saldo",
+  "pay.undo": "Deshacer",
+  "pay.empty": "Esta semana no hay nada por pagar.",
+  "pay.emptyHistory": "Todavía no le has pagado a nadie. Cuando liquides una semana aparece aquí.",
+  "pay.noCredit": "No tiene saldo a favor.",
+  "pay.people": "{n} recolectores",
+  "pay.success": "Listo. Le pagaste {amount} a {name}.",
+  "pay.error": "No se pudo guardar el pago. Vuelve a intentar.",
+  "pay.askOne": "¿Pagar {amount} a {name}?",
+  "pay.askMany": "¿Pagar {amount} a {n} recolectores?",
+  "pay.yes": "Sí, pagar",
+  "pay.notNow": "Ahora no",
+  "pay.willOwe": "Queda debiendo: {amount}",
+  "pay.gross": "Recolección",
+  "pay.totalWeek": "Total semana",
+  "pay.payToday": "A pagar hoy",
+  "pay.share": "Compartir comprobante",
+  "pay.receipt": "Comprobante de pago",
+  "disc.food": "Lata / alimentación",
+  "disc.lodging": "Dormida",
+  "disc.tools": "Herramienta",
+  "disc.store": "Tienda",
+  "disc.other": "Otros",
   "unit.default": "unidad",
 };
 
@@ -251,6 +308,63 @@ const en: Dict = {
   "confirm.cancel": "Cancel",
   "confirm.delete": "Delete",
 
+
+  // Weeks and payments
+  "week.current": "This week",
+  "week.previous": "Last week",
+  "week.short": "Wk {n}",
+  "week.plots": "Plots",
+  "week.more": "+{n} more",
+  "pay.tab": "Payments",
+  "pay.title": "Payments",
+  "pay.toPay": "To pay",
+  "pay.payAll": "Pay everyone",
+  "pay.pay": "Pay",
+  "pay.payFull": "Pay in full",
+  "pay.payPart": "Pay part",
+  "pay.confirm": "Confirm payment",
+  "pay.weOwe": "We owe",
+  "pay.paid": "Paid",
+  "pay.partial": "Partial payment",
+  "pay.credit": "Credit balance",
+  "pay.remaining": "Still owed",
+  "pay.account": "Account statement",
+  "pay.movements": "Movements",
+  "pay.settle": "Settle",
+  "pay.settlement": "Settlement",
+  "pay.advance": "Advance",
+  "pay.discounts": "Deductions",
+  "pay.amount": "Amount",
+  "pay.method": "Payment method",
+  "pay.cash": "Cash",
+  "pay.transfer": "Transfer",
+  "pay.note": "Note (optional)",
+  "pay.half": "Half",
+  "pay.all": "All",
+  "pay.leaveCredit": "Leave the rest as credit",
+  "pay.deliverCredit": "Pay out credit",
+  "pay.undo": "Undo",
+  "pay.empty": "Nothing to pay this week.",
+  "pay.emptyHistory": "No payments yet. Settle a week and it shows up here.",
+  "pay.noCredit": "No credit balance.",
+  "pay.people": "{n} workers",
+  "pay.success": "Done. You paid {amount} to {name}.",
+  "pay.error": "Could not save the payment. Try again.",
+  "pay.askOne": "Pay {amount} to {name}?",
+  "pay.askMany": "Pay {amount} to {n} workers?",
+  "pay.yes": "Yes, pay",
+  "pay.notNow": "Not now",
+  "pay.willOwe": "Still owed: {amount}",
+  "pay.gross": "Harvest",
+  "pay.totalWeek": "Week total",
+  "pay.payToday": "To pay today",
+  "pay.share": "Share receipt",
+  "pay.receipt": "Payment receipt",
+  "disc.food": "Meals",
+  "disc.lodging": "Lodging",
+  "disc.tools": "Tools",
+  "disc.store": "Store",
+  "disc.other": "Other",
   "unit.default": "unit",
 };
 
@@ -369,6 +483,63 @@ const pt: Dict = {
   "confirm.cancel": "Cancelar",
   "confirm.delete": "Excluir",
 
+
+  // Weeks and payments
+  "week.current": "Esta semana",
+  "week.previous": "Semana passada",
+  "week.short": "Sem. {n}",
+  "week.plots": "Lotes",
+  "week.more": "+{n} mais",
+  "pay.tab": "Pagamentos",
+  "pay.title": "Pagamentos",
+  "pay.toPay": "A pagar",
+  "pay.payAll": "Pagar a todos",
+  "pay.pay": "Pagar",
+  "pay.payFull": "Pagar tudo",
+  "pay.payPart": "Pagar uma parte",
+  "pay.confirm": "Confirmar pagamento",
+  "pay.weOwe": "Devemos",
+  "pay.paid": "Já pago",
+  "pay.partial": "Pagamento parcial",
+  "pay.credit": "Saldo a favor",
+  "pay.remaining": "Falta pagar",
+  "pay.account": "Extrato da conta",
+  "pay.movements": "Movimentos",
+  "pay.settle": "Liquidar",
+  "pay.settlement": "Liquidação",
+  "pay.advance": "Adiantamento",
+  "pay.discounts": "Descontos",
+  "pay.amount": "Valor",
+  "pay.method": "Forma de pagamento",
+  "pay.cash": "Dinheiro",
+  "pay.transfer": "Transferência",
+  "pay.note": "Nota (opcional)",
+  "pay.half": "Metade",
+  "pay.all": "Tudo",
+  "pay.leaveCredit": "Deixar o resto como saldo a favor",
+  "pay.deliverCredit": "Entregar saldo",
+  "pay.undo": "Desfazer",
+  "pay.empty": "Nada a pagar nesta semana.",
+  "pay.emptyHistory": "Ainda não pagou ninguém. Ao liquidar uma semana aparece aqui.",
+  "pay.noCredit": "Não tem saldo a favor.",
+  "pay.people": "{n} colhedores",
+  "pay.success": "Pronto. Você pagou {amount} a {name}.",
+  "pay.error": "Não foi possível salvar o pagamento. Tente de novo.",
+  "pay.askOne": "Pagar {amount} a {name}?",
+  "pay.askMany": "Pagar {amount} a {n} colhedores?",
+  "pay.yes": "Sim, pagar",
+  "pay.notNow": "Agora não",
+  "pay.willOwe": "Fica devendo: {amount}",
+  "pay.gross": "Colheita",
+  "pay.totalWeek": "Total da semana",
+  "pay.payToday": "A pagar hoje",
+  "pay.share": "Compartilhar comprovante",
+  "pay.receipt": "Comprovante de pagamento",
+  "disc.food": "Alimentação",
+  "disc.lodging": "Dormida",
+  "disc.tools": "Ferramenta",
+  "disc.store": "Loja",
+  "disc.other": "Outros",
   "unit.default": "unidade",
 };
 
@@ -380,6 +551,113 @@ export function translate(lang: Lang, key: string, vars?: Record<string, string 
     for (const k of Object.keys(vars)) s = s.replace(new RegExp(`\\{${k}\\}`, "g"), String(vars[k]));
   }
   return s;
+}
+
+// ---- Formatting --------------------------------------------------------
+//
+// Formatted by hand rather than with toLocaleString/Intl: Hermes resolves the
+// default locale to en-US, so money came out as "$1,471,070" and dates as
+// "8/27/2026" even with the app in Spanish. Month names also differ between
+// Android and iOS ICU builds, which would make the same week read differently
+// on two phones.
+
+const MONTHS_SHORT: Record<Lang, string[]> = {
+  es: ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"],
+  en: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  pt: ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"],
+};
+
+/** Money with dot thousands and no decimals: 1471070 -> "$1.471.070". */
+export function formatMoney(amount: number): string {
+  const n = Math.round(Math.abs(amount));
+  const digits = String(n);
+  let out = "";
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
+    out += digits[i];
+  }
+  return `${amount < 0 ? "-" : ""}$${out}`;
+}
+
+/** Weights and counts: 1742.5 -> "1.742,5". */
+export function formatNumber(value: number): string {
+  const neg = value < 0;
+  const abs = Math.abs(value);
+  const whole = Math.floor(abs);
+  const frac = Math.round((abs - whole) * 10);
+  let out = "";
+  const digits = String(whole);
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
+    out += digits[i];
+  }
+  return `${neg ? "-" : ""}${out}${frac ? "," + frac : ""}`;
+}
+
+// Parse a YYYY-MM-DD key without going through the local timezone, which would
+// shift the day backwards for anyone west of UTC.
+function parseDay(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
+}
+
+const addDays = (d: Date, n: number) => {
+  const r = new Date(d);
+  r.setUTCDate(d.getUTCDate() + n);
+  return r;
+};
+
+/** Monday of the week a date falls in, as YYYY-MM-DD. Mirrors the SQL key. */
+export function mondayOf(date: Date | string): string {
+  const d = typeof date === "string" ? parseDay(date) : new Date(Date.UTC(
+    date.getFullYear(), date.getMonth(), date.getDate(),
+  ));
+  const dow = d.getUTCDay(); // 0 = Sunday
+  return addDays(d, dow === 0 ? -6 : 1 - dow).toISOString().slice(0, 10);
+}
+
+/** ISO week number, shown as a secondary hint only. */
+export function weekNumber(mondayISO: string): number {
+  const d = parseDay(mondayISO);
+  const thursday = addDays(d, 3); // ISO weeks are named after their Thursday
+  const jan1 = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  return Math.floor((thursday.getTime() - jan1.getTime()) / 86400000 / 7) + 1;
+}
+
+/**
+ * "24–30 ago", "31 ago – 6 sep", "29 dic – 4 ene 2026", or "Esta semana".
+ * The year is appended only when the week starts in a different year.
+ */
+export function formatWeekRange(mondayISO: string, lang: Lang, now = new Date()): string {
+  const start = parseDay(mondayISO);
+  const end = addDays(start, 6);
+  const thisMonday = mondayOf(now);
+  if (mondayISO === thisMonday) return translate(lang, "week.current");
+  if (mondayISO === addDays(parseDay(thisMonday), -7).toISOString().slice(0, 10))
+    return translate(lang, "week.previous");
+
+  const M = MONTHS_SHORT[lang];
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
+  const year = end.getUTCFullYear() !== now.getFullYear() ? ` ${end.getUTCFullYear()}` : "";
+  const sd = start.getUTCDate();
+  const ed = end.getUTCDate();
+  if (lang === "en") {
+    return sameMonth
+      ? `${M[start.getUTCMonth()]} ${sd}–${ed}${year}`
+      : `${M[start.getUTCMonth()]} ${sd} – ${M[end.getUTCMonth()]} ${ed}${year}`;
+  }
+  return sameMonth
+    ? `${sd}–${ed} ${M[end.getUTCMonth()]}${year}`
+    : `${sd} ${M[start.getUTCMonth()]} – ${ed} ${M[end.getUTCMonth()]}${year}`;
+}
+
+/** Short day for lists and receipts: "27 ago". */
+export function formatDay(iso: string, lang: Lang): string {
+  const d = parseDay(iso);
+  const M = MONTHS_SHORT[lang];
+  return lang === "en"
+    ? `${M[d.getUTCMonth()]} ${d.getUTCDate()}`
+    : `${d.getUTCDate()} ${M[d.getUTCMonth()]}`;
 }
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;

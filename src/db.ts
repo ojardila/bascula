@@ -33,6 +33,7 @@ const db = SQLite.openDatabaseSync("bascula.db");
 export function initDb() {
   db.execSync(`
     PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS people (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL, lastName TEXT, documentType TEXT, docId TEXT, tag TEXT,
@@ -75,6 +76,8 @@ export function initDb() {
   } catch {
     /* column already exists */
   }
+  migrate();
+
   // Seed a sensible default crop config (Café) on first run.
   db.runSync(
     `INSERT OR IGNORE INTO config (id, cropType, label, unit, yieldUnit, costPerUnit, language)
@@ -82,7 +85,100 @@ export function initDb() {
   );
 }
 
+// ---- Schema migrations -------------------------------------------------
+//
+// The week key used to be a strftime week-of-year label ("2026-W34"), which
+// splits a week straddling new year into two labels and can't be rendered as a
+// date range. It is now the Monday of the week, as YYYY-MM-DD.
+
+const SCHEMA_VERSION = 2;
+
+const PAYMENTS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS settlements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    personId    INTEGER NOT NULL REFERENCES people(id),
+    periodStart TEXT NOT NULL,
+    periodEnd   TEXT NOT NULL,
+    grossCents  INTEGER NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','void')),
+    note        TEXT,
+    createdAt   TEXT NOT NULL,
+    voidedAt    TEXT
+  );
+  CREATE INDEX IF NOT EXISTS ix_settlements_person
+    ON settlements(personId, createdAt DESC);
+
+  CREATE TABLE IF NOT EXISTS settlement_items (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    settlementId     INTEGER NOT NULL REFERENCES settlements(id),
+    pickupId         INTEGER NOT NULL,
+    week             TEXT NOT NULL,
+    weight           REAL NOT NULL,
+    costPerUnitCents INTEGER NOT NULL,
+    amountCents      INTEGER NOT NULL
+  );
+  -- The anti double-count lock: a pickup can belong to one settlement, ever.
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_items_pickup ON settlement_items(pickupId);
+  CREATE INDEX IF NOT EXISTS ix_items_settlement ON settlement_items(settlementId);
+
+  CREATE TABLE IF NOT EXISTS ledger (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    personId     INTEGER NOT NULL REFERENCES people(id),
+    kind         TEXT NOT NULL CHECK (kind IN
+                   ('devengo','pago','anticipo','deduccion','ajuste','reverso')),
+    amountCents  INTEGER NOT NULL CHECK (amountCents <> 0),
+    date         TEXT NOT NULL,
+    settlementId INTEGER REFERENCES settlements(id),
+    method       TEXT,
+    note         TEXT,
+    reversesId   INTEGER REFERENCES ledger(id),
+    createdAt    TEXT NOT NULL,
+    CHECK ( (kind = 'devengo' AND amountCents > 0)
+         OR (kind IN ('pago','anticipo','deduccion') AND amountCents < 0)
+         OR (kind IN ('ajuste','reverso')) )
+  );
+  CREATE INDEX IF NOT EXISTS ix_ledger_person ON ledger(personId, date DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS ix_ledger_sett ON ledger(settlementId);
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_ledger_reverses
+    ON ledger(reversesId) WHERE reversesId IS NOT NULL;
+`;
+
+// Monday of the "%Y-Www" week that strftime('%W') would have produced:
+// week 01 starts on the year's first Monday, and earlier days fall in week 00.
+function mondayOfLegacyWeek(label: string): string | null {
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(label);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  const jan1 = new Date(Date.UTC(year, 0, 1));
+  const firstMonday = new Date(jan1);
+  firstMonday.setUTCDate(jan1.getUTCDate() + ((8 - jan1.getUTCDay()) % 7));
+  const monday = new Date(firstMonday);
+  monday.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7);
+  return monday.toISOString().slice(0, 10);
+}
+
+function migrate() {
+  const v =
+    db.getFirstSync<{ user_version: number }>("PRAGMA user_version")?.user_version ?? 0;
+
+  if (v < 2) {
+    db.execSync(PAYMENTS_SCHEMA);
+    // Re-key existing weekly cost overrides onto the Monday-based key.
+    const legacy = db.getAllSync<{ id: number; week: string }>(
+      "SELECT id, week FROM cost_overrides WHERE week LIKE '%-W%'",
+    );
+    for (const o of legacy) {
+      const monday = mondayOfLegacyWeek(o.week);
+      if (monday) db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [monday, o.id]);
+    }
+    db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  }
+}
+
 const now = () => new Date().toISOString();
+const today = () => new Date().toISOString().slice(0, 10);
+
 
 export const People = {
   // Active workers only (soft-deleted ones stay in the table for history).
@@ -154,11 +250,11 @@ export const Reports = {
   thisWeek: () =>
     db.getFirstSync<{ kg: number; count: number }>(
       `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS count
-       FROM pickups WHERE strftime('%Y-W%W', date) = strftime('%Y-W%W','now','localtime')`,
+       FROM pickups WHERE date(date,'-6 days','weekday 1') = date('now','localtime','-6 days','weekday 1')`,
     ),
   byWeek: () =>
     db.getAllSync<{ label: string; kg: number }>(
-      `SELECT strftime('%Y-W%W', date) AS label, SUM(weight) AS kg
+      `SELECT date(date,'-6 days','weekday 1') AS label, SUM(weight) AS kg
        FROM pickups GROUP BY label ORDER BY label DESC LIMIT 12`,
     ),
   byWorker: () =>
@@ -179,7 +275,7 @@ export const Reports = {
 // Which crops (lotes) were harvested each week — powers the weekly breakdown.
 export const weekCrops = () =>
   db.getAllSync<{ week: string; crop: string; kg: number }>(
-    `SELECT strftime('%Y-W%W', pk.date) AS week,
+    `SELECT date(pk.date,'-6 days','weekday 1') AS week,
             COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg
      FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
      GROUP BY week, pk.cropId ORDER BY week DESC, kg DESC`,
@@ -197,7 +293,7 @@ export const WorkerReports = {
     ),
   byWeek: (personId: number) =>
     db.getAllSync<{ label: string; kg: number }>(
-      `SELECT strftime('%Y-W%W', date) AS label, SUM(weight) AS kg
+      `SELECT date(date,'-6 days','weekday 1') AS label, SUM(weight) AS kg
        FROM pickups WHERE personId = ? GROUP BY label ORDER BY label DESC LIMIT 12`,
       [personId],
     ),
@@ -218,7 +314,7 @@ export const WorkerReports = {
   // Payout for this worker applying weekly cost overrides.
   payout: (personId: number, general: number) => {
     const rows = db.getAllSync<{ week: string; kg: number }>(
-      `SELECT strftime('%Y-W%W', date) AS week, SUM(weight) AS kg
+      `SELECT date(date,'-6 days','weekday 1') AS week, SUM(weight) AS kg
        FROM pickups WHERE personId = ? GROUP BY week`,
       [personId],
     );
@@ -368,7 +464,7 @@ export const Demo = {
 
     // A couple of weekly cost overrides to showcase the feature.
     const weeks = db.getAllSync<{ week: string }>(
-      "SELECT DISTINCT strftime('%Y-W%W', date) AS week FROM pickups ORDER BY week DESC LIMIT 2",
+      "SELECT DISTINCT date(date,'-6 days','weekday 1') AS week FROM pickups ORDER BY week DESC LIMIT 2",
     );
     if (weeks[0]) Overrides.set(weeks[0].week, 950);
     if (weeks[1]) Overrides.set(weeks[1].week, 880);
@@ -378,8 +474,383 @@ export const Demo = {
 // Total payout across all pickups, applying weekly overrides where present.
 export function totalPayout(general: number): number {
   const rows = db.getAllSync<{ week: string; kg: number }>(
-    `SELECT strftime('%Y-W%W', date) AS week, SUM(weight) AS kg
+    `SELECT date(date,'-6 days','weekday 1') AS week, SUM(weight) AS kg
      FROM pickups GROUP BY week`,
   );
   return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
 }
+
+// ---- Payments: settlements, ledger and balances -------------------------
+//
+// Money is stored as INTEGER cents; REAL would drift on balances that carry
+// over for months. Sign convention on the ledger: a positive amount means the
+// farm owes the worker, so a positive balance is the worker's savings.
+
+export type LedgerKind = "devengo" | "pago" | "anticipo" | "deduccion" | "ajuste" | "reverso";
+export type PayMethod = "efectivo" | "transferencia" | "otro";
+
+export interface LedgerEntry {
+  id: number;
+  personId: number;
+  kind: LedgerKind;
+  amountCents: number;
+  date: string;
+  settlementId: number | null;
+  method: PayMethod | null;
+  note: string | null;
+  reversesId: number | null;
+  createdAt: string;
+}
+
+export interface Settlement {
+  id: number;
+  personId: number;
+  periodStart: string;
+  periodEnd: string;
+  grossCents: number;
+  status: "open" | "void";
+  note: string | null;
+  createdAt: string;
+  voidedAt: string | null;
+}
+
+export interface SettlementItem {
+  id: number;
+  settlementId: number;
+  pickupId: number;
+  week: string;
+  weight: number;
+  costPerUnitCents: number;
+  amountCents: number;
+}
+
+export interface Balance {
+  personId: number;
+  earnedCents: number;
+  paidCents: number;
+  deductedCents: number;
+  balanceCents: number;
+  lastMovementAt: string | null;
+}
+
+export type PendingItem = Omit<SettlementItem, "id" | "settlementId">;
+
+export interface SettlementPreview {
+  personId: number;
+  periodStart: string;
+  periodEnd: string;
+  items: PendingItem[];
+  grossCents: number;
+  pickupCount: number;
+  kg: number;
+}
+
+export const toCents = (amount: number) => Math.round(amount * 100);
+export const fromCents = (cents: number) => cents / 100;
+
+// Pickups in range that no settlement has claimed yet. Selecting by pickupId
+// (not by date) is what makes a late pickup on an already-settled week roll
+// into the next settlement instead of being counted twice or lost.
+function pendingItems(
+  personId: number,
+  from: string,
+  to: string,
+  general: number,
+): PendingItem[] {
+  const rows = db.getAllSync<{ id: number; weight: number; week: string }>(
+    `SELECT pk.id, pk.weight, date(pk.date,'-6 days','weekday 1') AS week
+       FROM pickups pk
+      WHERE pk.personId = ?
+        AND date(pk.date) BETWEEN date(?) AND date(?)
+        AND pk.id NOT IN (SELECT pickupId FROM settlement_items)
+      ORDER BY pk.date`,
+    [personId, from, to],
+  );
+  const priceOf = new Map<string, number>();
+  return rows.map((r) => {
+    if (!priceOf.has(r.week)) priceOf.set(r.week, toCents(costForWeek(r.week, general)));
+    const costPerUnitCents = priceOf.get(r.week)!;
+    return {
+      pickupId: r.id,
+      week: r.week,
+      weight: r.weight,
+      costPerUnitCents,
+      // Round per line so the printed receipt adds up exactly.
+      amountCents: Math.round(r.weight * costPerUnitCents),
+    };
+  });
+}
+
+function requirePositive(cents: number) {
+  if (!Number.isFinite(cents) || cents <= 0) throw new Error("El monto debe ser mayor que cero");
+}
+
+function addEntry(e: Omit<LedgerEntry, "id" | "createdAt">): number {
+  const r = db.runSync(
+    `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [e.personId, e.kind, e.amountCents, e.date, e.settlementId, e.method, e.note, e.reversesId, now()],
+  );
+  return r.lastInsertRowId as number;
+}
+
+export const Payments = {
+  // What would be settled, without writing anything.
+  preview: (personId: number, from: string, to: string, general: number): SettlementPreview => {
+    const items = pendingItems(personId, from, to, general);
+    return {
+      personId,
+      periodStart: from,
+      periodEnd: to,
+      items,
+      grossCents: items.reduce((s, i) => s + i.amountCents, 0),
+      pickupCount: items.length,
+      kg: items.reduce((s, i) => s + i.weight, 0),
+    };
+  },
+
+  // Freeze the pending pickups into a settlement document and post the earning.
+  // Returns null when there is nothing pending, so we never create a $0 document.
+  settle: (
+    personId: number,
+    from: string,
+    to: string,
+    general: number,
+    note?: string,
+  ): { settlementId: number; ledgerId: number; grossCents: number } | null => {
+    const items = pendingItems(personId, from, to, general);
+    if (!items.length) return null;
+    const grossCents = items.reduce((s, i) => s + i.amountCents, 0);
+    let settlementId = 0;
+    let ledgerId = 0;
+    db.withTransactionSync(() => {
+      const s = db.runSync(
+        `INSERT INTO settlements (personId,periodStart,periodEnd,grossCents,status,note,createdAt)
+         VALUES (?,?,?,?, 'open', ?, ?)`,
+        [personId, from, to, grossCents, note ?? null, now()],
+      );
+      settlementId = s.lastInsertRowId as number;
+      for (const i of items) {
+        db.runSync(
+          `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)
+           VALUES (?,?,?,?,?,?)`,
+          [settlementId, i.pickupId, i.week, i.weight, i.costPerUnitCents, i.amountCents],
+        );
+      }
+      ledgerId = addEntry({
+        personId,
+        kind: "devengo",
+        amountCents: grossCents,
+        date: to,
+        settlementId,
+        method: null,
+        note: note ?? null,
+        reversesId: null,
+      });
+    });
+    return { settlementId, ledgerId, grossCents };
+  },
+
+  // Undo a settlement: release its pickups and reverse the earning.
+  voidSettlement: (settlementId: number, note?: string): void => {
+    const s = db.getFirstSync<Settlement>("SELECT * FROM settlements WHERE id = ?", [settlementId]);
+    if (!s || s.status === "void") return;
+    db.withTransactionSync(() => {
+      db.runSync("DELETE FROM settlement_items WHERE settlementId = ?", [settlementId]);
+      db.runSync("UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?", [
+        now(),
+        settlementId,
+      ]);
+      const devengo = db.getFirstSync<{ id: number; amountCents: number }>(
+        "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
+        [settlementId],
+      );
+      if (devengo) {
+        addEntry({
+          personId: s.personId,
+          kind: "reverso",
+          amountCents: -devengo.amountCents,
+          date: today(),
+          settlementId,
+          method: null,
+          note: note ?? null,
+          reversesId: devengo.id,
+        });
+      }
+    });
+  },
+
+  // Cash going out to the worker. Amounts come in positive; the sign is ours.
+  pay: (
+    personId: number,
+    amountCents: number,
+    opts: { method?: PayMethod; date?: string; note?: string } = {},
+  ): number => {
+    requirePositive(amountCents);
+    return addEntry({
+      personId,
+      kind: "pago",
+      amountCents: -amountCents,
+      date: opts.date ?? today(),
+      settlementId: null,
+      method: opts.method ?? "efectivo",
+      note: opts.note ?? null,
+      reversesId: null,
+    });
+  },
+
+  advance: (personId: number, amountCents: number, note?: string): number => {
+    requirePositive(amountCents);
+    return addEntry({
+      personId,
+      kind: "anticipo",
+      amountCents: -amountCents,
+      date: today(),
+      settlementId: null,
+      method: "efectivo",
+      note: note ?? null,
+      reversesId: null,
+    });
+  },
+
+  deduct: (personId: number, amountCents: number, note: string): number => {
+    requirePositive(amountCents);
+    return addEntry({
+      personId,
+      kind: "deduccion",
+      amountCents: -amountCents,
+      date: today(),
+      settlementId: null,
+      method: null,
+      note,
+      reversesId: null,
+    });
+  },
+
+  // Signed on purpose: an adjustment can go either way.
+  adjust: (personId: number, signedCents: number, note: string): number => {
+    if (!Number.isFinite(signedCents) || signedCents === 0)
+      throw new Error("El ajuste no puede ser cero");
+    return addEntry({
+      personId,
+      kind: "ajuste",
+      amountCents: Math.round(signedCents),
+      date: today(),
+      settlementId: null,
+      method: null,
+      note,
+      reversesId: null,
+    });
+  },
+
+  // Ledger rows are never edited or deleted; a mistake is cancelled by its opposite.
+  reverse: (ledgerId: number, note: string): number => {
+    const e = db.getFirstSync<LedgerEntry>("SELECT * FROM ledger WHERE id = ?", [ledgerId]);
+    if (!e) throw new Error("El movimiento no existe");
+    const already = db.getFirstSync<{ id: number }>(
+      "SELECT id FROM ledger WHERE reversesId = ?",
+      [ledgerId],
+    );
+    if (already) throw new Error("Ese movimiento ya fue reversado");
+    return addEntry({
+      personId: e.personId,
+      kind: "reverso",
+      amountCents: -e.amountCents,
+      date: today(),
+      settlementId: e.settlementId,
+      method: null,
+      note,
+      reversesId: ledgerId,
+    });
+  },
+
+  balance: (personId: number): Balance => {
+    const r = db.getFirstSync<Balance>(
+      `SELECT ? AS personId,
+              COALESCE(SUM(CASE WHEN kind = 'devengo' THEN amountCents END),0) AS earnedCents,
+              COALESCE(-SUM(CASE WHEN kind IN ('pago','anticipo') THEN amountCents END),0) AS paidCents,
+              COALESCE(-SUM(CASE WHEN kind = 'deduccion' THEN amountCents END),0) AS deductedCents,
+              COALESCE(SUM(amountCents),0) AS balanceCents,
+              MAX(date) AS lastMovementAt
+         FROM ledger WHERE personId = ?`,
+      [personId, personId],
+    );
+    return (
+      r ?? {
+        personId,
+        earnedCents: 0,
+        paidCents: 0,
+        deductedCents: 0,
+        balanceCents: 0,
+        lastMovementAt: null,
+      }
+    );
+  },
+
+  // Every worker who has money moving, including soft-deleted ones: money is
+  // never hidden just because somebody was removed from the active list.
+  balances: () =>
+    db.getAllSync<Balance & { name: string; inactive: number }>(
+      `SELECT pe.id AS personId,
+              COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
+              CASE WHEN pe.deletedAt IS NULL THEN 0 ELSE 1 END AS inactive,
+              COALESCE(SUM(CASE WHEN l.kind = 'devengo' THEN l.amountCents END),0) AS earnedCents,
+              COALESCE(-SUM(CASE WHEN l.kind IN ('pago','anticipo') THEN l.amountCents END),0) AS paidCents,
+              COALESCE(-SUM(CASE WHEN l.kind = 'deduccion' THEN l.amountCents END),0) AS deductedCents,
+              COALESCE(SUM(l.amountCents),0) AS balanceCents,
+              MAX(l.date) AS lastMovementAt
+         FROM people pe LEFT JOIN ledger l ON l.personId = pe.id
+        GROUP BY pe.id
+        HAVING balanceCents <> 0 OR earnedCents <> 0
+        ORDER BY balanceCents DESC`,
+    ),
+
+  history: (personId: number, limit = 200): LedgerEntry[] =>
+    db.getAllSync<LedgerEntry>(
+      `SELECT * FROM ledger WHERE personId = ? ORDER BY date DESC, id DESC LIMIT ?`,
+      [personId, limit],
+    ),
+
+  settlements: (personId: number): Settlement[] =>
+    db.getAllSync<Settlement>(
+      "SELECT * FROM settlements WHERE personId = ? ORDER BY createdAt DESC",
+      [personId],
+    ),
+
+  itemsOf: (settlementId: number): SettlementItem[] =>
+    db.getAllSync<SettlementItem>(
+      "SELECT * FROM settlement_items WHERE settlementId = ? ORDER BY week DESC, id",
+      [settlementId],
+    ),
+
+  // Not yet settled, for the whole farm — this is what drives "pay everyone".
+  pendingAll: (general: number) => {
+    const rows = db.getAllSync<{ personId: number; name: string; week: string; weight: number }>(
+      `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
+              date(pk.date,'-6 days','weekday 1') AS week, SUM(pk.weight) AS weight
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items)
+        GROUP BY pk.personId, week`,
+    );
+    const acc = new Map<number, { personId: number; name: string; kg: number; amountCents: number }>();
+    for (const r of rows) {
+      const cents = Math.round(r.weight * toCents(costForWeek(r.week, general)));
+      const cur = acc.get(r.personId) ?? { personId: r.personId, name: r.name, kg: 0, amountCents: 0 };
+      cur.kg += r.weight;
+      cur.amountCents += cents;
+      acc.set(r.personId, cur);
+    }
+    return [...acc.values()].sort((a, b) => b.amountCents - a.amountCents);
+  },
+
+  farmTotals: () =>
+    db.getFirstSync<{ owedCents: number; overpaidCents: number; savedCount: number }>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN b > 0 THEN b END),0) AS owedCents,
+         COALESCE(-SUM(CASE WHEN b < 0 THEN b END),0) AS overpaidCents,
+         COUNT(CASE WHEN b > 0 THEN 1 END) AS savedCount
+       FROM (SELECT SUM(amountCents) AS b FROM ledger GROUP BY personId)`,
+    ),
+};
