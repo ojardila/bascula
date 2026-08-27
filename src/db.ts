@@ -485,12 +485,18 @@ export const Demo = {
         t.setHours(h, m, 0, 0);
         return t.toISOString();
       };
-      // The crew splits across two plots on any given day.
+      // The crew splits across two plots, rotating who goes where. Without the
+      // day in the index, odd and even pickers never share a plot and the two
+      // halves end up with separate baselines that cannot be compared.
       const plots = [cids[d % cids.length], cids[(d + 1) % cids.length]];
       pids.forEach((pid, idx) => {
         if ((d + idx) % 9 === 0) return; // somebody misses a day now and then
-        const cid = plots[idx % plots.length];
-        const base = 26 + ((d * 3 + idx * 5) % 9); // the plot's day, shared by all
+        // Every third day the whole crew works one plot together; otherwise it
+        // splits in rotating blocks. Assigning by the parity of the index left
+        // two halves that never shared a plot, so they never got a common
+        // baseline and the index could not rank them against each other.
+        const cid = d % 3 === 0 ? plots[0] : plots[Math.floor((idx + d) / 2) % plots.length];
+        const base = 90 + ((d * 3 + idx * 5) % 40); // the plot's day, shared by all
         const loads = 2 + (idx % 2); // two or three weighings each
         for (let k = 0; k < loads; k++) {
           const weight = Math.max(
@@ -953,7 +959,14 @@ export const Performance = {
       [`-${sinceDays} days`],
     );
 
-    // Each person's daily total on a plot, against that plot-day's average.
+    // Each person's daily total on a plot, against what their MATES did that
+    // same day. Three things matter here and all three were wrong at first:
+    //   - the same window as kg/day, or the list shows a lifetime index next
+    //     to a 28-day rate and nobody can reconcile them;
+    //   - the person is excluded from their own benchmark, otherwise everyone
+    //     is dragged toward 1.0 and the pull depends on how big the crew was;
+    //   - an average of daily ratios, not a ratio of sums, so a day on a heavy
+    //     plot does not outweigh nine days on a light one.
     const irlRows = db.getAllSync<{
       personId: number;
       irl: number;
@@ -961,46 +974,63 @@ export const Performance = {
     }>(
       `WITH dw AS (
          SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-           FROM pickups pk GROUP BY pk.personId, pk.cropId, d
+           FROM pickups pk
+          WHERE ${DAY_KEY} >= date('now','localtime',?)
+          GROUP BY pk.personId, pk.cropId, d
        ),
        base AS (
-         SELECT cropId, d, AVG(kg) AS prom, COUNT(*) AS n FROM dw GROUP BY cropId, d
+         SELECT cropId, d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY cropId, d
        )
        SELECT dw.personId,
-              SUM(dw.kg) / SUM(base.prom) AS irl,
-              COUNT(*) AS comparableDays
+              AVG(dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0)) AS irl,
+              COUNT(DISTINCT dw.d) AS comparableDays
          FROM dw JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
         WHERE base.n >= 3          -- fewer than three mates is not a comparison
         GROUP BY dw.personId`,
+      [`-${sinceDays} days`],
     );
     const irlOf = new Map(irlRows.map((r) => [r.personId, r]));
 
-    // Same index split in two halves, to see who is slipping. Raw kg would
-    // show everyone dropping at the end of the harvest; the index would not.
-    const trendRows = db.getAllSync<{ personId: number; recent: number; earlier: number }>(
+    // Same index split into two windows of equal length, to see who is
+    // slipping. Raw kg would show everyone dropping at the end of the harvest;
+    // the index would not. Both halves need enough days or the arrow would be
+    // decided against a single outlying day.
+    const half = Math.round(sinceDays / 2);
+    const trendRows = db.getAllSync<{
+      personId: number;
+      recent: number | null;
+      earlier: number | null;
+      recentDays: number;
+      earlierDays: number;
+    }>(
       `WITH dw AS (
-         SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d,
-                ${WEEK_KEY} AS wk, SUM(pk.weight) AS kg
-           FROM pickups pk GROUP BY pk.personId, pk.cropId, d
+         SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
+           FROM pickups pk
+          WHERE ${DAY_KEY} >= date('now','localtime',?)
+          GROUP BY pk.personId, pk.cropId, d
        ),
        base AS (
-         SELECT cropId, d, AVG(kg) AS prom, COUNT(*) AS n FROM dw GROUP BY cropId, d
+         SELECT cropId, d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY cropId, d
        ),
        j AS (
-         SELECT dw.personId, dw.wk, dw.kg, base.prom FROM dw
-           JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
+         SELECT dw.personId, dw.d,
+                dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0) AS ratio
+           FROM dw JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
           WHERE base.n >= 3
        )
        SELECT personId,
-              SUM(CASE WHEN wk >= date('now','localtime','-21 days','-6 days','weekday 1')
-                       THEN kg END)
-              / NULLIF(SUM(CASE WHEN wk >= date('now','localtime','-21 days','-6 days','weekday 1')
-                                THEN prom END),0) AS recent,
-              SUM(CASE WHEN wk <  date('now','localtime','-21 days','-6 days','weekday 1')
-                       THEN kg END)
-              / NULLIF(SUM(CASE WHEN wk <  date('now','localtime','-21 days','-6 days','weekday 1')
-                                THEN prom END),0) AS earlier
+              AVG(CASE WHEN d >= date('now','localtime',?) THEN ratio END) AS recent,
+              AVG(CASE WHEN d <  date('now','localtime',?) THEN ratio END) AS earlier,
+              COUNT(CASE WHEN d >= date('now','localtime',?) THEN 1 END) AS recentDays,
+              COUNT(CASE WHEN d <  date('now','localtime',?) THEN 1 END) AS earlierDays
          FROM j GROUP BY personId`,
+      [
+        `-${sinceDays} days`,
+        `-${half} days`,
+        `-${half} days`,
+        `-${half} days`,
+        `-${half} days`,
+      ],
     );
     const trendOf = new Map(trendRows.map((r) => [r.personId, r]));
 
@@ -1013,7 +1043,10 @@ export const Performance = {
           kgPerDay: r.days ? r.kg / r.days : 0,
           irl: i && i.comparableDays >= 3 ? i.irl : null,
           comparableDays: i?.comparableDays ?? 0,
-          trend: t && t.recent != null && t.earlier ? t.recent / t.earlier : null,
+          trend:
+            t && t.recent != null && t.earlier && t.recentDays >= 4 && t.earlierDays >= 4
+              ? t.recent / t.earlier
+              : null,
         };
       })
       .sort((a, b) => (b.irl ?? -1) - (a.irl ?? -1));
@@ -1047,8 +1080,10 @@ export const Performance = {
          JOIN settlements s ON s.id = si.settlementId AND s.status = 'open'`,
     );
     const adj = db.getFirstSync<{ c: number }>(
-      `SELECT COALESCE(SUM(amountCents),0) AS c FROM ledger
-        WHERE kind IN ('ajuste','reverso','deduccion')`,
+      `SELECT COALESCE(SUM(l.amountCents),0) AS c
+         FROM ledger l LEFT JOIN settlements s ON s.id = l.settlementId
+        WHERE l.kind IN ('ajuste','deduccion')
+          AND (l.settlementId IS NULL OR s.status = 'open')`,
     );
     const kg = r?.kg ?? 0;
     if (!kg) return { kg: 0, listed: general, real: general, budget: general };
@@ -1102,25 +1137,60 @@ export const Anomalies = {
          FROM pickups a
          JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
                        AND b.weight = a.weight AND b.id < a.id
-                       AND (julianday(a.createdAt) - julianday(b.createdAt)) * 1440 <= 3
+                       AND (julianday(a.createdAt) - julianday(b.createdAt))
+                             BETWEEN 0 AND 3.0 / 1440
          LEFT JOIN people pe ON pe.id = a.personId
          LEFT JOIN crops cr ON cr.id = a.cropId`,
     ))
       push(r, "duplicate", r.weight);
 
-    // Ten times their own usual load, and a tenth of it looks normal: that is
-    // a typed extra zero, not a heroic day.
+    // Far above what this person usually carries. The reference excludes the
+    // suspect pickup itself: including it made the rule algebraically unable
+    // to fire, because the outlier inflated the very average it was compared
+    // against (w >= 10*avg reduces to n+1 >= n+10, false for every n).
     for (const r of db.getAllSync<any>(
-      `WITH avgp AS (SELECT personId, AVG(weight) AS w FROM pickups GROUP BY personId)
-       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, avgp.w AS reference,
+      `WITH stats AS (
+         SELECT id, personId, weight,
+                (SUM(weight) OVER (PARTITION BY personId) - weight)
+                  / NULLIF(COUNT(*) OVER (PARTITION BY personId) - 1, 0) AS others
+           FROM pickups
+       )
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, st.others AS reference,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk JOIN avgp ON avgp.personId = pk.personId
+         FROM pickups pk JOIN stats st ON st.id = pk.id
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE avgp.w > 0 AND pk.weight >= 10 * avgp.w`,
+        WHERE st.others > 0 AND pk.weight >= 4 * st.others`,
     ))
       push(r, "digit", Math.round(r.reference));
+
+    // Far above what the rest of the crew did on that plot that day. This is
+    // the one that catches a bad weighing on somebody whose own history is
+    // short, where the personal reference above has nothing to work with.
+    for (const r of db.getAllSync<any>(
+      `WITH dayplot AS (
+         SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
+                date(pk.date,'localtime') AS d
+           FROM pickups pk
+       ),
+       others AS (
+         SELECT a.id,
+                AVG(b.weight) AS ref,
+                COUNT(b.id) AS n
+           FROM dayplot a JOIN dayplot b
+             ON b.cropId = a.cropId AND b.d = a.d AND b.id <> a.id
+          GROUP BY a.id
+       )
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, o.ref AS reference,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk JOIN others o ON o.id = pk.id
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE o.n >= 4 AND o.ref > 0 AND pk.weight >= 4 * o.ref`,
+    ))
+      push(r, "outlier", Math.round(r.reference));
 
     // Dated after today: a wrong clock or a typo.
     for (const r of db.getAllSync<any>(
