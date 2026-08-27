@@ -100,16 +100,24 @@ export default function PaymentsPanel() {
   );
   const selectedTotal = selected.reduce((s, r) => s + r.amountCents, 0);
 
-  // Settle then pay in full, for everyone ticked. Each worker is independent:
-  // one failure must not take the rest of the payroll down with it.
+  // Settle then pay, for everyone ticked. Each worker is independent: one
+  // failure must not take the rest of the payroll down with it.
   function runBulk() {
     if (!config) return;
     let done = 0;
     for (const r of selected) {
-      const res = Payments.settle(r.personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
-      if (res) {
-        Payments.pay(r.personId, res.grossCents, { method: "efectivo" });
+      try {
+        const res = Payments.settle(r.personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
+        if (!res) continue;
+        // Pay the balance, not the gross: the balance already nets out any
+        // advance handed over during the week. Paying the gross would hand the
+        // advance over a second time, for the whole payroll at once.
+        const owed = Payments.balance(r.personId).balanceCents;
+        if (owed <= 0) continue;
+        Payments.pay(r.personId, owed, { method: "efectivo" });
         done++;
+      } catch {
+        /* skip this worker, keep the rest of the payroll going */
       }
     }
     setBulk(null);

@@ -206,6 +206,9 @@ const es: Dict = {
   "pay.saved": "Guardado.",
   "pay.afterwards": "Queda",
   "pay.newMovement": "Registrar movimiento",
+  "pay.owesUs": "Avance pendiente",
+  "pay.owesUsBody": "Se descuenta de su próxima liquidación.",
+  "pay.saveMovement": "Guardar movimiento",
   "unit.default": "unidad",
 };
 
@@ -397,6 +400,9 @@ const en: Dict = {
   "pay.saved": "Saved.",
   "pay.afterwards": "Left",
   "pay.newMovement": "Add movement",
+  "pay.owesUs": "Outstanding advance",
+  "pay.owesUsBody": "It comes off their next settlement.",
+  "pay.saveMovement": "Save movement",
   "unit.default": "unit",
 };
 
@@ -588,6 +594,9 @@ const pt: Dict = {
   "pay.saved": "Salvo.",
   "pay.afterwards": "Fica",
   "pay.newMovement": "Registrar movimento",
+  "pay.owesUs": "Adiantamento pendente",
+  "pay.owesUsBody": "Será descontado na próxima liquidação.",
+  "pay.saveMovement": "Salvar movimento",
   "unit.default": "unidade",
 };
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
 import {
   Text,
@@ -44,7 +44,6 @@ export default function PayWorker() {
   const [creditCents, setCreditCents] = useState(0);
   const [mode, setMode] = useState<"full" | "part">("full");
   const [amount, setAmount] = useState("");
-  const [keepRest, setKeepRest] = useState(true);
   const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
@@ -57,9 +56,11 @@ export default function PayWorker() {
   useFocusEffect(load);
 
   const unit = config?.unit ?? "";
-  // What the worker can take home: this period's harvest plus whatever they
-  // already had saved with the farm.
-  const dueCents = (preview?.grossCents ?? 0) + Math.max(creditCents, 0);
+  // What the worker takes home: this period's harvest plus their balance —
+  // signed. A negative balance is an advance already handed over, so it must
+  // reduce the payout; clamping it to zero would gift the advance away every
+  // single week, and the debt would never be consumed.
+  const dueCents = Math.max((preview?.grossCents ?? 0) + creditCents, 0);
   const typedCents = toCents(Number(onlyDigits(amount) || 0));
   const payCents = mode === "full" ? dueCents : Math.min(typedCents, dueCents);
   const restCents = dueCents - payCents;
@@ -76,18 +77,36 @@ export default function PayWorker() {
     return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
   }, [preview]);
 
+  // Guards the double tap that is normal in the field, with gloves on: without
+  // it the second tap finds nothing left to settle but pays a second time.
+  const busy = useRef(false);
+
   function confirm() {
-    if (!config || !preview || payCents <= 0) return;
-    // Settle first so the earning is on the books, then pay against the balance.
-    Payments.settle(personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
-    Payments.pay(personId, payCents, { method: "efectivo" });
-    setSnack(
-      t("pay.success", {
-        amount: formatMoney(fromCents(payCents)),
-        name: person?.name ?? "",
-      }),
-    );
-    setTimeout(() => navigation.goBack(), 900);
+    if (busy.current || !config || !preview || payCents <= 0) return;
+    busy.current = true;
+    try {
+      // Settle first so the earning is on the books, then pay what the ledger
+      // actually says is owed — never the amount the screen was showing.
+      Payments.settle(personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
+      const owed = Payments.balance(personId).balanceCents;
+      const toPay = mode === "full" ? owed : Math.min(typedCents, owed);
+      if (toPay <= 0) {
+        busy.current = false;
+        setSnack(t("pay.nothingPending"));
+        return;
+      }
+      Payments.pay(personId, toPay, { method: "efectivo" });
+      setSnack(
+        t("pay.success", {
+          amount: formatMoney(fromCents(toPay)),
+          name: person?.name ?? "",
+        }),
+      );
+      setTimeout(() => navigation.goBack(), 900);
+    } catch (e) {
+      busy.current = false;
+      setSnack(t("pay.error"));
+    }
   }
 
   const quick = [
@@ -123,15 +142,22 @@ export default function PayWorker() {
                 </View>
               ))
             )}
-            {creditCents > 0 && (
+            {creditCents !== 0 && (
               <>
                 <Divider style={styles.div} />
                 <View style={styles.row}>
-                  <Text variant="bodyMedium" style={styles.credit}>
-                    {t("pay.credit")}
+                  <Text
+                    variant="bodyMedium"
+                    style={creditCents > 0 ? styles.credit : styles.owes}
+                  >
+                    {creditCents > 0 ? t("pay.credit") : t("pay.advance")}
                   </Text>
-                  <Text variant="titleSmall" style={styles.credit}>
-                    {formatMoney(fromCents(creditCents))}
+                  <Text
+                    variant="titleSmall"
+                    style={creditCents > 0 ? styles.credit : styles.owes}
+                  >
+                    {creditCents > 0 ? "" : "−"}
+                    {formatMoney(fromCents(Math.abs(creditCents)))}
                   </Text>
                 </View>
               </>
@@ -179,9 +205,7 @@ export default function PayWorker() {
                     ))}
                   </View>
                   <Text variant="bodyMedium" style={restCents > 0 ? styles.credit : styles.dim}>
-                    {keepRest
-                      ? `${t("pay.leaveCredit")}: ${formatMoney(fromCents(restCents))}`
-                      : t("pay.willOwe", { amount: formatMoney(fromCents(restCents)) })}
+                    {`${t("pay.leaveCredit")}: ${formatMoney(fromCents(restCents))}`}
                   </Text>
                 </>
               )}
@@ -224,6 +248,7 @@ const styles = StyleSheet.create({
   div: { marginVertical: 8 },
   due: { fontWeight: "800", color: "#1b5e20" },
   credit: { color: "#3949ab", fontWeight: "600" },
+  owes: { color: "#8a5a00", fontWeight: "600" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { marginRight: 4 },
   confirm: { borderRadius: 12 },

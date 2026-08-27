@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+import { View, Text, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -147,9 +148,33 @@ function AppInner() {
   );
 }
 
+function DbError({ message }: { message: string }) {
+  return (
+    <View style={errorStyles.wrap}>
+      <MaterialCommunityIcons name="database-alert" size={48} color="#b3261e" />
+      <Text style={errorStyles.title}>No se pudo abrir la base de datos</Text>
+      <Text style={errorStyles.body}>{message}</Text>
+    </View>
+  );
+}
+
+const errorStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 },
+  title: { fontSize: 18, fontWeight: "700", textAlign: "center" },
+  body: { opacity: 0.7, textAlign: "center" },
+});
+
 export default function App() {
+  const [dbError, setDbError] = useState<string | null>(null);
+
   useEffect(() => {
-    initDb();
+    // A failed migration must never leave the app unable to start with the
+    // money database inside it.
+    try {
+      initDb();
+    } catch (e) {
+      setDbError(String(e));
+    }
   }, []);
 
   return (
@@ -162,7 +187,7 @@ export default function App() {
           }}
         >
           <StatusBar style="light" />
-          <AppInner />
+          {dbError ? <DbError message={dbError} /> : <AppInner />}
         </PaperProvider>
       </LangProvider>
     </SafeAreaProvider>

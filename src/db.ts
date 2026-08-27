@@ -164,15 +164,29 @@ function migrate() {
 
   if (v < 2) {
     db.execSync(PAYMENTS_SCHEMA);
-    // Re-key existing weekly cost overrides onto the Monday-based key.
-    const legacy = db.getAllSync<{ id: number; week: string }>(
-      "SELECT id, week FROM cost_overrides WHERE week LIKE '%-W%'",
-    );
-    for (const o of legacy) {
-      const monday = mondayOfLegacyWeek(o.week);
-      if (monday) db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [monday, o.id]);
-    }
-    db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.withTransactionSync(() => {
+      // Re-key existing weekly cost overrides onto the Monday-based key.
+      // Two legacy labels can map to the same Monday — a week straddling new
+      // year was stored as both "2025-W52" and "2026-W00" — and `week` is
+      // UNIQUE, so a blind UPDATE throws, the version never advances, and the
+      // app fails to start on every launch from then on.
+      const legacy = db.getAllSync<{ id: number; week: string }>(
+        "SELECT id, week FROM cost_overrides WHERE week LIKE '%-W%'",
+      );
+      for (const o of legacy) {
+        const monday = mondayOfLegacyWeek(o.week);
+        if (!monday) continue;
+        const clash = db.getFirstSync<{ id: number }>(
+          "SELECT id FROM cost_overrides WHERE week = ? AND id <> ?",
+          [monday, o.id],
+        );
+        // Both halves described the same week; keeping either price is
+        // defensible, so keep the one already re-keyed and drop the duplicate.
+        if (clash) db.runSync("DELETE FROM cost_overrides WHERE id = ?", [o.id]);
+        else db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [monday, o.id]);
+      }
+      db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    });
   }
 }
 
@@ -245,16 +259,16 @@ export const Reports = {
   today: () =>
     db.getFirstSync<{ kg: number; count: number }>(
       `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS count
-       FROM pickups WHERE date(date) = date('now','localtime')`,
+       FROM pickups WHERE date(date,'localtime') = date('now','localtime')`,
     ),
   thisWeek: () =>
     db.getFirstSync<{ kg: number; count: number }>(
       `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS count
-       FROM pickups WHERE date(date,'-6 days','weekday 1') = date('now','localtime','-6 days','weekday 1')`,
+       FROM pickups WHERE date(date,'localtime','-6 days','weekday 1') = date('now','localtime','-6 days','weekday 1')`,
     ),
   byWeek: () =>
     db.getAllSync<{ label: string; kg: number }>(
-      `SELECT date(date,'-6 days','weekday 1') AS label, SUM(weight) AS kg
+      `SELECT date(date,'localtime','-6 days','weekday 1') AS label, SUM(weight) AS kg
        FROM pickups GROUP BY label ORDER BY label DESC LIMIT 12`,
     ),
   byWorker: () =>
@@ -275,7 +289,7 @@ export const Reports = {
 // Which crops (lotes) were harvested each week — powers the weekly breakdown.
 export const weekCrops = () =>
   db.getAllSync<{ week: string; crop: string; kg: number }>(
-    `SELECT date(pk.date,'-6 days','weekday 1') AS week,
+    `SELECT date(pk.date,'localtime','-6 days','weekday 1') AS week,
             COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg
      FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
      GROUP BY week, pk.cropId ORDER BY week DESC, kg DESC`,
@@ -293,7 +307,7 @@ export const WorkerReports = {
     ),
   byWeek: (personId: number) =>
     db.getAllSync<{ label: string; kg: number }>(
-      `SELECT date(date,'-6 days','weekday 1') AS label, SUM(weight) AS kg
+      `SELECT date(date,'localtime','-6 days','weekday 1') AS label, SUM(weight) AS kg
        FROM pickups WHERE personId = ? GROUP BY label ORDER BY label DESC LIMIT 12`,
       [personId],
     ),
@@ -314,7 +328,7 @@ export const WorkerReports = {
   // Payout for this worker applying weekly cost overrides.
   payout: (personId: number, general: number) => {
     const rows = db.getAllSync<{ week: string; kg: number }>(
-      `SELECT date(date,'-6 days','weekday 1') AS week, SUM(weight) AS kg
+      `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
        FROM pickups WHERE personId = ? GROUP BY week`,
       [personId],
     );
@@ -405,9 +419,15 @@ export function costForWeek(week: string, general: number): number {
 
 export const Demo = {
   clear: () => {
-    db.execSync(
-      "DELETE FROM pickups; DELETE FROM crops; DELETE FROM people; DELETE FROM cost_overrides;",
-    );
+    // Children first: foreign_keys is ON, so deleting people while the ledger
+    // still references them fails and takes the screen down with it.
+    db.withTransactionSync(() => {
+      db.execSync(
+        `DELETE FROM ledger; DELETE FROM settlement_items; DELETE FROM settlements;
+         DELETE FROM pickups; DELETE FROM crops; DELETE FROM people;
+         DELETE FROM cost_overrides;`,
+      );
+    });
   },
   seed: () => {
     Demo.clear();
@@ -464,7 +484,7 @@ export const Demo = {
 
     // A couple of weekly cost overrides to showcase the feature.
     const weeks = db.getAllSync<{ week: string }>(
-      "SELECT DISTINCT date(date,'-6 days','weekday 1') AS week FROM pickups ORDER BY week DESC LIMIT 2",
+      "SELECT DISTINCT date(date,'localtime','-6 days','weekday 1') AS week FROM pickups ORDER BY week DESC LIMIT 2",
     );
     if (weeks[0]) Overrides.set(weeks[0].week, 950);
     if (weeks[1]) Overrides.set(weeks[1].week, 880);
@@ -474,7 +494,7 @@ export const Demo = {
 // Total payout across all pickups, applying weekly overrides where present.
 export function totalPayout(general: number): number {
   const rows = db.getAllSync<{ week: string; kg: number }>(
-    `SELECT date(date,'-6 days','weekday 1') AS week, SUM(weight) AS kg
+    `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
      FROM pickups GROUP BY week`,
   );
   return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
@@ -558,7 +578,7 @@ function pendingItems(
   general: number,
 ): PendingItem[] {
   const rows = db.getAllSync<{ id: number; weight: number; week: string }>(
-    `SELECT pk.id, pk.weight, date(pk.date,'-6 days','weekday 1') AS week
+    `SELECT pk.id, pk.weight, date(pk.date,'localtime','-6 days','weekday 1') AS week
        FROM pickups pk
       WHERE pk.personId = ?
         AND date(pk.date) BETWEEN date(?) AND date(?)
@@ -619,15 +639,23 @@ export const Payments = {
     note?: string,
   ): { settlementId: number; ledgerId: number; grossCents: number } | null => {
     const items = pendingItems(personId, from, to, general);
-    if (!items.length) return null;
     const grossCents = items.reduce((s, i) => s + i.amountCents, 0);
+    // A zero gross would violate the ledger's CHECK and crash the payroll for
+    // the whole farm; it happens as soon as someone saves a cost of 0.
+    if (!items.length || grossCents <= 0) return null;
     let settlementId = 0;
     let ledgerId = 0;
+    // The real period is what the items cover, not the open-ended search range,
+    // and the earning must not be dated in the future when paying mid-week.
+    const weeks = items.map((i) => i.week).sort();
+    const periodStart = weeks[0] ?? from;
+    const today0 = today();
+    const postedAt = to > today0 ? today0 : to;
     db.withTransactionSync(() => {
       const s = db.runSync(
         `INSERT INTO settlements (personId,periodStart,periodEnd,grossCents,status,note,createdAt)
          VALUES (?,?,?,?, 'open', ?, ?)`,
-        [personId, from, to, grossCents, note ?? null, now()],
+        [personId, periodStart, to, grossCents, note ?? null, now()],
       );
       settlementId = s.lastInsertRowId as number;
       for (const i of items) {
@@ -641,7 +669,7 @@ export const Payments = {
         personId,
         kind: "devengo",
         amountCents: grossCents,
-        date: to,
+        date: postedAt,
         settlementId,
         method: null,
         note: note ?? null,
@@ -831,11 +859,11 @@ export const Payments = {
     const rows = db.getAllSync<{ personId: number; name: string; week: string; weight: number }>(
       `SELECT pk.personId,
               COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
-              date(pk.date,'-6 days','weekday 1') AS week, SUM(pk.weight) AS weight
+              date(pk.date,'localtime','-6 days','weekday 1') AS week, SUM(pk.weight) AS weight
          FROM pickups pk
          LEFT JOIN people pe ON pe.id = pk.personId
         WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items)
-          AND (? IS NULL OR date(pk.date) <= date(?))
+          AND (? IS NULL OR date(pk.date,'localtime') <= date(?))
         GROUP BY pk.personId, week`,
       [upTo ?? null, upTo ?? null],
     );

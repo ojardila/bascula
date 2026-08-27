@@ -114,7 +114,7 @@ export default function Adjust() {
               style={styles.save}
               onPress={save}
             >
-              {t("pay.confirm")}
+              {t("pay.saveMovement")}
             </Button>
           </Card.Content>
         </Card>
