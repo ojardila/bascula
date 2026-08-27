@@ -142,3 +142,70 @@ export const INDEX_SQL = `
    WHERE base.n >= 3
    GROUP BY dw.personId
 `;
+
+// The review rules. Deliberately simple and explainable: accusing a worker
+// with a number nobody can justify out loud destroys the trust the app runs
+// on. They are here so tests can prove each one actually fires — the
+// extra-zero rule spent several versions algebraically unable to.
+
+export const RULE_IMPOSSIBLE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE pk.weight <= 0 OR pk.weight > ?`;
+
+export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups a
+         JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
+                       AND b.weight = a.weight AND b.id < a.id
+                       AND (julianday(a.createdAt) - julianday(b.createdAt))
+                             BETWEEN 0 AND 3.0 / 1440
+         LEFT JOIN people pe ON pe.id = a.personId
+         LEFT JOIN crops cr ON cr.id = a.cropId`;
+
+export const RULE_DIGIT_SQL = `WITH stats AS (
+         SELECT id, personId, weight,
+                (SUM(weight) OVER (PARTITION BY personId) - weight)
+                  / NULLIF(COUNT(*) OVER (PARTITION BY personId) - 1, 0) AS others
+           FROM pickups
+       )
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, st.others AS reference,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk JOIN stats st ON st.id = pk.id
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE st.others > 0 AND pk.weight >= 4 * st.others`;
+
+export const RULE_OUTLIER_SQL = `WITH dayplot AS (
+         SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
+                date(pk.date,'localtime') AS d
+           FROM pickups pk
+       ),
+       agg AS (
+         SELECT cropId, d, SUM(weight) AS tot, COUNT(*) AS n
+           FROM dayplot GROUP BY cropId, d
+       )
+       SELECT dp.id AS pickupId, dp.personId, dp.weight, dp.date,
+              (agg.tot - dp.weight) / (agg.n - 1) AS reference,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM dayplot dp
+         JOIN agg ON agg.cropId = dp.cropId AND agg.d = dp.d
+         LEFT JOIN people pe ON pe.id = dp.personId
+         LEFT JOIN crops cr ON cr.id = dp.cropId
+        WHERE agg.n >= 5
+          AND (agg.tot - dp.weight) / (agg.n - 1) > 0
+          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))`;
+
+export const RULE_FUTURE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime') > date('now','localtime')`;

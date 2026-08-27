@@ -5,6 +5,11 @@ import {
   BALANCE_SQL,
   PENDING_SQL,
   INDEX_SQL,
+  RULE_IMPOSSIBLE_SQL,
+  RULE_DUPLICATE_SQL,
+  RULE_DIGIT_SQL,
+  RULE_OUTLIER_SQL,
+  RULE_FUTURE_SQL,
 } from "./schema";
 
 export interface Person {
@@ -75,7 +80,6 @@ export function initDb() {
 
 const SCHEMA_VERSION = 4;
 
-
 // Monday of the "%Y-Www" week that strftime('%W') would have produced:
 // week 01 starts on the year's first Monday, and earlier days fall in week 00.
 function mondayOfLegacyWeek(label: string): string | null {
@@ -93,7 +97,8 @@ function mondayOfLegacyWeek(label: string): string | null {
 
 function migrate() {
   const v =
-    db.getFirstSync<{ user_version: number }>("PRAGMA user_version")?.user_version ?? 0;
+    db.getFirstSync<{ user_version: number }>("PRAGMA user_version")
+      ?.user_version ?? 0;
 
   if (v < 2) {
     db.execSync(PAYMENTS_SCHEMA);
@@ -115,8 +120,13 @@ function migrate() {
         );
         // Both halves described the same week; keeping either price is
         // defensible, so keep the one already re-keyed and drop the duplicate.
-        if (clash) db.runSync("DELETE FROM cost_overrides WHERE id = ?", [o.id]);
-        else db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [monday, o.id]);
+        if (clash)
+          db.runSync("DELETE FROM cost_overrides WHERE id = ?", [o.id]);
+        else
+          db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [
+            monday,
+            o.id,
+          ]);
       }
       db.execSync("PRAGMA user_version = 2");
     });
@@ -161,16 +171,19 @@ export const today = () => {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 };
 
-
 export const People = {
   // Active workers only (soft-deleted ones stay in the table for history).
   all: () =>
     db.getAllSync<Person>(
       "SELECT * FROM people WHERE deletedAt IS NULL ORDER BY name, lastName",
     ),
-  byId: (id: number) => db.getFirstSync<Person>("SELECT * FROM people WHERE id = ?", [id]),
+  byId: (id: number) =>
+    db.getFirstSync<Person>("SELECT * FROM people WHERE id = ?", [id]),
   byTag: (tag: string) =>
-    db.getFirstSync<Person>("SELECT * FROM people WHERE tag = ? AND deletedAt IS NULL", [tag]),
+    db.getFirstSync<Person>(
+      "SELECT * FROM people WHERE tag = ? AND deletedAt IS NULL",
+      [tag],
+    ),
   add: (p: Omit<Person, "id" | "createdAt">) =>
     db.runSync(
       "INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt) VALUES (?,?,?,?,?,?,?)",
@@ -183,15 +196,19 @@ export const People = {
 
 export const Crops = {
   all: () =>
-    db.getAllSync<Crop>("SELECT * FROM crops WHERE deletedAt IS NULL ORDER BY name"),
-  byId: (id: number) => db.getFirstSync<Crop>("SELECT * FROM crops WHERE id = ?", [id]),
+    db.getAllSync<Crop>(
+      "SELECT * FROM crops WHERE deletedAt IS NULL ORDER BY name",
+    ),
+  byId: (id: number) =>
+    db.getFirstSync<Crop>("SELECT * FROM crops WHERE id = ?", [id]),
   add: (c: Omit<Crop, "id" | "createdAt">) =>
     db.runSync(
       "INSERT INTO crops (name,type,variety,dimension,createdAt) VALUES (?,?,?,?,?)",
       [c.name, c.type, c.variety, c.dimension, now()],
     ),
   // Soft delete: hide the plot but keep every pickup that references it.
-  remove: (id: number) => db.runSync("UPDATE crops SET deletedAt = ? WHERE id = ?", [now(), id]),
+  remove: (id: number) =>
+    db.runSync("UPDATE crops SET deletedAt = ? WHERE id = ?", [now(), id]),
 };
 
 export const Pickups = {
@@ -208,7 +225,10 @@ export const Pickups = {
   setWeight: (id: number, weight: number) => {
     if (Pickups.isSettled(id)) throw new Error("SETTLED");
     if (!Number.isFinite(weight) || weight <= 0) throw new Error("BADWEIGHT");
-    const r = db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [weight, id]);
+    const r = db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [
+      weight,
+      id,
+    ]);
     // Without this an update that matched nothing reported success.
     if (r.changes === 0) throw new Error("NOTFOUND");
   },
@@ -243,7 +263,12 @@ export const Pickups = {
 
 export const Reports = {
   totals: () =>
-    db.getFirstSync<{ pickups: number; kg: number; people: number; crops: number }>(
+    db.getFirstSync<{
+      pickups: number;
+      kg: number;
+      people: number;
+      crops: number;
+    }>(
       `SELECT
          (SELECT COUNT(*) FROM pickups) AS pickups,
          (SELECT COALESCE(SUM(weight),0) FROM pickups) AS kg,
@@ -426,7 +451,8 @@ export const Overrides = {
        ON CONFLICT(week) DO UPDATE SET costPerUnit = excluded.costPerUnit`,
       [week, costPerUnit],
     ),
-  remove: (id: number) => db.runSync("DELETE FROM cost_overrides WHERE id = ?", [id]),
+  remove: (id: number) =>
+    db.runSync("DELETE FROM cost_overrides WHERE id = ?", [id]),
 };
 
 // Effective cost per unit for a given week label: the weekly override if one
@@ -468,7 +494,15 @@ export const Demo = {
     people.forEach(([name, lastName], i) => {
       const r = db.runSync(
         "INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt) VALUES (?,?,?,?,?,?,?)",
-        [name, lastName, "CC", String(1000000000 + i * 137), "T" + (i + 1), "", now()],
+        [
+          name,
+          lastName,
+          "CC",
+          String(1000000000 + i * 137),
+          "T" + (i + 1),
+          "",
+          now(),
+        ],
       );
       pids.push(r.lastInsertRowId as number);
     });
@@ -512,7 +546,10 @@ export const Demo = {
         // splits in rotating blocks. Assigning by the parity of the index left
         // two halves that never shared a plot, so they never got a common
         // baseline and the index could not rank them against each other.
-        const cid = d % 3 === 0 ? plots[0] : plots[Math.floor((idx + d) / 2) % plots.length];
+        const cid =
+          d % 3 === 0
+            ? plots[0]
+            : plots[Math.floor((idx + d) / 2) % plots.length];
         const base = 90 + ((d * 3 + idx * 5) % 40); // the plot's day, shared by all
         const loads = 2 + (idx % 2); // two or three weighings each
         for (let k = 0; k < loads; k++) {
@@ -522,7 +559,13 @@ export const Demo = {
           );
           db.runSync(
             "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-            [pid, cid, weight, iso(8 + k * 3, (idx * 7) % 60), iso(8 + k * 3, (idx * 7) % 60)],
+            [
+              pid,
+              cid,
+              weight,
+              iso(8 + k * 3, (idx * 7) % 60),
+              iso(8 + k * 3, (idx * 7) % 60),
+            ],
           );
         }
       });
@@ -576,7 +619,8 @@ export function totalPayout(general: number): number {
 // over for months. Sign convention on the ledger: a positive amount means the
 // farm owes the worker, so a positive balance is the worker's savings.
 
-export type LedgerKind = "devengo" | "pago" | "anticipo" | "deduccion" | "ajuste" | "reverso";
+export type LedgerKind =
+  "devengo" | "pago" | "anticipo" | "deduccion" | "ajuste" | "reverso";
 export type PayMethod = "efectivo" | "transferencia" | "otro";
 
 export interface LedgerEntry {
@@ -648,14 +692,14 @@ function pendingItems(
   to: string,
   general: number,
 ): PendingItem[] {
-  const rows = db.getAllSync<{ id: number; weight: number; week: string }>(PENDING_SQL, [
-    personId,
-    from,
-    to,
-  ]);
+  const rows = db.getAllSync<{ id: number; weight: number; week: string }>(
+    PENDING_SQL,
+    [personId, from, to],
+  );
   const priceOf = new Map<string, number>();
   return rows.map((r) => {
-    if (!priceOf.has(r.week)) priceOf.set(r.week, toCents(costForWeek(r.week, general)));
+    if (!priceOf.has(r.week))
+      priceOf.set(r.week, toCents(costForWeek(r.week, general)));
     const costPerUnitCents = priceOf.get(r.week)!;
     return {
       pickupId: r.id,
@@ -669,21 +713,37 @@ function pendingItems(
 }
 
 function requirePositive(cents: number) {
-  if (!Number.isFinite(cents) || cents <= 0) throw new Error("El monto debe ser mayor que cero");
+  if (!Number.isFinite(cents) || cents <= 0)
+    throw new Error("El monto debe ser mayor que cero");
 }
 
 function addEntry(e: Omit<LedgerEntry, "id" | "createdAt">): number {
   const r = db.runSync(
     `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    [e.personId, e.kind, e.amountCents, e.date, e.settlementId, e.method, e.note, e.reversesId, now()],
+    [
+      e.personId,
+      e.kind,
+      e.amountCents,
+      e.date,
+      e.settlementId,
+      e.method,
+      e.note,
+      e.reversesId,
+      now(),
+    ],
   );
   return r.lastInsertRowId as number;
 }
 
 export const Payments = {
   // What would be settled, without writing anything.
-  preview: (personId: number, from: string, to: string, general: number): SettlementPreview => {
+  preview: (
+    personId: number,
+    from: string,
+    to: string,
+    general: number,
+  ): SettlementPreview => {
     const items = pendingItems(personId, from, to, general);
     return {
       personId,
@@ -729,7 +789,14 @@ export const Payments = {
         db.runSync(
           `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)
            VALUES (?,?,?,?,?,?)`,
-          [settlementId, i.pickupId, i.week, i.weight, i.costPerUnitCents, i.amountCents],
+          [
+            settlementId,
+            i.pickupId,
+            i.week,
+            i.weight,
+            i.costPerUnitCents,
+            i.amountCents,
+          ],
         );
       }
       ledgerId = addEntry({
@@ -748,17 +815,20 @@ export const Payments = {
 
   // Undo a settlement: release its pickups and reverse the earning.
   voidSettlement: (settlementId: number, note?: string): void => {
-    const s = db.getFirstSync<Settlement>("SELECT * FROM settlements WHERE id = ?", [settlementId]);
+    const s = db.getFirstSync<Settlement>(
+      "SELECT * FROM settlements WHERE id = ?",
+      [settlementId],
+    );
     if (!s || s.status === "void") return;
     db.withTransactionSync(() => {
-      db.runSync("UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?", [
-        now(),
-        settlementId,
-      ]);
-      db.runSync("UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?", [
-        now(),
-        settlementId,
-      ]);
+      db.runSync(
+        "UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?",
+        [now(), settlementId],
+      );
+      db.runSync(
+        "UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?",
+        [now(), settlementId],
+      );
       const devengo = db.getFirstSync<{ id: number; amountCents: number }>(
         "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
         [settlementId],
@@ -843,7 +913,10 @@ export const Payments = {
 
   // Ledger rows are never edited or deleted; a mistake is cancelled by its opposite.
   reverse: (ledgerId: number, note: string): number => {
-    const e = db.getFirstSync<LedgerEntry>("SELECT * FROM ledger WHERE id = ?", [ledgerId]);
+    const e = db.getFirstSync<LedgerEntry>(
+      "SELECT * FROM ledger WHERE id = ?",
+      [ledgerId],
+    );
     if (!e) throw new Error("El movimiento no existe");
     const already = db.getFirstSync<{ id: number }>(
       "SELECT id FROM ledger WHERE reversesId = ?",
@@ -947,7 +1020,12 @@ export const Payments = {
   // from earlier weeks is included on purpose, because the worker is still owed
   // it and a settlement covers everything outstanding up to that date.
   pendingAll: (general: number, upTo?: string) => {
-    const rows = db.getAllSync<{ personId: number; name: string; week: string; weight: number }>(
+    const rows = db.getAllSync<{
+      personId: number;
+      name: string;
+      week: string;
+      weight: number;
+    }>(
       `SELECT pk.personId,
               COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
               date(pk.date,'localtime','-6 days','weekday 1') AS week, SUM(pk.weight) AS weight
@@ -958,10 +1036,20 @@ export const Payments = {
         GROUP BY pk.personId, week`,
       [upTo ?? null, upTo ?? null],
     );
-    const acc = new Map<number, { personId: number; name: string; kg: number; amountCents: number }>();
+    const acc = new Map<
+      number,
+      { personId: number; name: string; kg: number; amountCents: number }
+    >();
     for (const r of rows) {
-      const cents = Math.round(r.weight * toCents(costForWeek(r.week, general)));
-      const cur = acc.get(r.personId) ?? { personId: r.personId, name: r.name, kg: 0, amountCents: 0 };
+      const cents = Math.round(
+        r.weight * toCents(costForWeek(r.week, general)),
+      );
+      const cur = acc.get(r.personId) ?? {
+        personId: r.personId,
+        name: r.name,
+        kg: 0,
+        amountCents: 0,
+      };
       cur.kg += r.weight;
       cur.amountCents += cents;
       acc.set(r.personId, cur);
@@ -970,7 +1058,11 @@ export const Payments = {
   },
 
   farmTotals: () =>
-    db.getFirstSync<{ owedCents: number; overpaidCents: number; savedCount: number }>(
+    db.getFirstSync<{
+      owedCents: number;
+      overpaidCents: number;
+      savedCount: number;
+    }>(
       `SELECT
          COALESCE(SUM(CASE WHEN b > 0 THEN b END),0) AS owedCents,
          COALESCE(-SUM(CASE WHEN b < 0 THEN b END),0) AS overpaidCents,
@@ -1090,7 +1182,11 @@ export const Performance = {
           irl: i && i.comparableDays >= 3 ? i.irl : null,
           comparableDays: i?.comparableDays ?? 0,
           trend:
-            t && t.recent != null && t.earlier && t.recentDays >= 4 && t.earlierDays >= 4
+            t &&
+            t.recent != null &&
+            t.earlier &&
+            t.recentDays >= 4 &&
+            t.earlierDays >= 4
               ? t.recent / t.earlier
               : null,
         };
@@ -1195,52 +1291,18 @@ export const Anomalies = {
       out.push({ ...r, rule, reference });
 
     // Physically impossible for one person to carry.
-    for (const r of db.getAllSync<any>(
-      `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
-              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
-              COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
-         LEFT JOIN people pe ON pe.id = pk.personId
-         LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.weight <= 0 OR pk.weight > ?`,
-      [maxWeight],
-    ))
+    for (const r of db.getAllSync<any>(RULE_IMPOSSIBLE_SQL, [maxWeight]))
       push(r, "impossible", maxWeight);
 
     // Same person, plot and weight within three minutes: a double tap.
-    for (const r of db.getAllSync<any>(
-      `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
-              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
-              COALESCE(cr.name,'?') AS crop
-         FROM pickups a
-         JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
-                       AND b.weight = a.weight AND b.id < a.id
-                       AND (julianday(a.createdAt) - julianday(b.createdAt))
-                             BETWEEN 0 AND 3.0 / 1440
-         LEFT JOIN people pe ON pe.id = a.personId
-         LEFT JOIN crops cr ON cr.id = a.cropId`,
-    ))
+    for (const r of db.getAllSync<any>(RULE_DUPLICATE_SQL))
       push(r, "duplicate", r.weight);
 
     // Far above what this person usually carries. The reference excludes the
     // suspect pickup itself: including it made the rule algebraically unable
     // to fire, because the outlier inflated the very average it was compared
     // against (w >= 10*avg reduces to n+1 >= n+10, false for every n).
-    for (const r of db.getAllSync<any>(
-      `WITH stats AS (
-         SELECT id, personId, weight,
-                (SUM(weight) OVER (PARTITION BY personId) - weight)
-                  / NULLIF(COUNT(*) OVER (PARTITION BY personId) - 1, 0) AS others
-           FROM pickups
-       )
-       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, st.others AS reference,
-              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
-              COALESCE(cr.name,'?') AS crop
-         FROM pickups pk JOIN stats st ON st.id = pk.id
-         LEFT JOIN people pe ON pe.id = pk.personId
-         LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE st.others > 0 AND pk.weight >= 4 * st.others`,
-    ))
+    for (const r of db.getAllSync<any>(RULE_DIGIT_SQL))
       push(r, "digit", Math.round(r.reference));
 
     // Far above what the rest of the crew did on that plot that day. This is
@@ -1252,45 +1314,17 @@ export const Anomalies = {
     // plot-day. That join is quadratic inside each group: with one season of
     // data it took eleven seconds, on the JS thread, every time this screen
     // opened. Same results, ~400x faster.
-    for (const r of db.getAllSync<any>(
-      `WITH dayplot AS (
-         SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
-                date(pk.date,'localtime') AS d
-           FROM pickups pk
-       ),
-       agg AS (
-         SELECT cropId, d, SUM(weight) AS tot, COUNT(*) AS n
-           FROM dayplot GROUP BY cropId, d
-       )
-       SELECT dp.id AS pickupId, dp.personId, dp.weight, dp.date,
-              (agg.tot - dp.weight) / (agg.n - 1) AS reference,
-              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
-              COALESCE(cr.name,'?') AS crop
-         FROM dayplot dp
-         JOIN agg ON agg.cropId = dp.cropId AND agg.d = dp.d
-         LEFT JOIN people pe ON pe.id = dp.personId
-         LEFT JOIN crops cr ON cr.id = dp.cropId
-        WHERE agg.n >= 5
-          AND (agg.tot - dp.weight) / (agg.n - 1) > 0
-          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))`,
-    ))
+    for (const r of db.getAllSync<any>(RULE_OUTLIER_SQL))
       push(r, "outlier", Math.round(r.reference));
 
     // Dated after today: a wrong clock or a typo.
-    for (const r of db.getAllSync<any>(
-      `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
-              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
-              COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
-         LEFT JOIN people pe ON pe.id = pk.personId
-         LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime') > date('now','localtime')`,
-    ))
-      push(r, "future", 0);
+    for (const r of db.getAllSync<any>(RULE_FUTURE_SQL)) push(r, "future", 0);
 
     // One pickup can break more than one rule; report it once, worst first.
     const seen = new Set<number>();
-    return out.filter((a) => (seen.has(a.pickupId) ? false : seen.add(a.pickupId)));
+    return out.filter((a) =>
+      seen.has(a.pickupId) ? false : seen.add(a.pickupId),
+    );
   },
 };
 
