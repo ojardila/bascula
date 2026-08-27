@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
 import { Text, TextInput, Button, Chip, HelperText, Snackbar } from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
@@ -25,8 +25,13 @@ export default function RegisterPickup() {
 
   const valid = personId != null && cropId != null && parseFloat(weight) > 0;
 
+  // The app has a rule that flags two identical pickups within three minutes.
+  // Better not to create them in the first place.
+  const busy = useRef(false);
+
   function save() {
-    if (!valid) return;
+    if (busy.current || !valid) return;
+    busy.current = true;
     Pickups.add({
       personId: personId!,
       cropId: cropId!,
@@ -37,6 +42,9 @@ export default function RegisterPickup() {
     setPersonId(null);
     setCropId(null);
     setSaved(true);
+    setTimeout(() => {
+      busy.current = false;
+    }, 400);
   }
 
   return (
@@ -53,7 +61,8 @@ export default function RegisterPickup() {
               <Chip
                 key={p.id}
                 selected={personId === p.id}
-                showSelectedCheck
+                showSelectedCheck={false}
+                icon={personId === p.id ? "check" : "account-outline"}
                 onPress={() => setPersonId(p.id)}
               >
                 {`${p.name} ${p.lastName}`.trim()}
@@ -75,7 +84,8 @@ export default function RegisterPickup() {
               <Chip
                 key={c.id}
                 selected={cropId === c.id}
-                showSelectedCheck
+                showSelectedCheck={false}
+                icon={cropId === c.id ? "check" : "sprout-outline"}
                 onPress={() => setCropId(c.id)}
               >
                 {c.name}
