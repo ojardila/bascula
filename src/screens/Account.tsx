@@ -23,7 +23,7 @@ import {
   type LedgerEntry,
   type Person,
 } from "../db";
-import { useT, formatMoney, formatDay } from "../i18n";
+import { useT, formatDay } from "../i18n";
 import { buildReceipt } from "../receipt";
 
 const ICON: Record<string, string> = {
@@ -36,7 +36,7 @@ const ICON: Record<string, string> = {
 };
 
 export default function Account() {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId } = useRoute<RouteProp<RootStackParamList, "Account">>().params;
   const [person, setPerson] = useState<Person | null>(null);
@@ -67,7 +67,7 @@ export default function Account() {
       Payments.pay(personId, credit, { method: "efectivo", note: t("pay.deliverCredit") });
       load();
       setSnack(
-        t("pay.success", { amount: formatMoney(fromCents(credit)), name: person?.name ?? "" }),
+        t("pay.success", { amount: money(fromCents(credit)), name: person?.name ?? "" }),
       );
       // Released after the render that clears the balance, not in this same
       // synchronous tick — resetting immediately would mean the guard could
@@ -144,7 +144,7 @@ export default function Account() {
               variant="displaySmall"
               style={credit > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
             >
-              {formatMoney(fromCents(Math.abs(credit)))}
+              {money(fromCents(Math.abs(credit)))}
             </Text>
             {credit > 0 ? (
               <Button
@@ -210,7 +210,7 @@ export default function Account() {
                         style={e.amountCents > 0 ? styles.plus : styles.minus}
                       >
                         {e.amountCents > 0 ? "+" : "−"}
-                        {formatMoney(fromCents(Math.abs(e.amountCents)))}
+                        {money(fromCents(Math.abs(e.amountCents)))}
                       </Text>
                     )}
                   />
@@ -227,7 +227,7 @@ export default function Account() {
           <Dialog.Title style={styles.dialogTitle}>{t("pay.voidTitle")}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium" style={{ textAlign: "center" }}>
-              {voiding ? formatMoney(fromCents(voiding.amountCents)) : ""}
+              {voiding ? money(fromCents(voiding.amountCents)) : ""}
             </Text>
             <Text variant="bodySmall" style={styles.dialogBody}>
               {t("pay.voidBody")}

@@ -21,8 +21,6 @@ import PerformancePanel from "./PerformancePanel";
 import type { Lang } from "../i18n";
 import {
   useT,
-  formatMoney,
-  formatNumber,
   formatWeekRange,
   weekTag,
   formatDay,
@@ -48,7 +46,7 @@ function shortLabel(g: Grouping, label: string, lang: Lang) {
 }
 
 export default function Reports() {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   // Same pattern as Payments inside Workers: a seventh tab would drop every
   // tab under the 48dp touch target. Reports answers "how much was picked";
   // Performance answers "how well, and at what cost".
@@ -135,9 +133,9 @@ export default function Reports() {
         ]}
       />
       <View style={styles.stats}>
-        <Stat label={t("reports.total", { unit })} value={formatNumber(totals.kg)} />
+        <Stat label={t("reports.total", { unit })} value={num(totals.kg)} />
         <Stat label={t("reports.pickups")} value={String(totals.pickups)} />
-        <Stat label={t("reports.toPay")} value={formatMoney(payout)} highlight />
+        <Stat label={t("reports.toPay")} value={money(payout)} highlight />
         <Stat label={t("reports.pickers")} value={String(totals.people)} />
       </View>
 
@@ -216,9 +214,9 @@ export default function Reports() {
                       <View style={[styles.barFill, { width: `${(b.kg / max) * 100}%` }]} />
                     </View>
                     <View style={styles.barValues}>
-                      <Text variant="labelMedium">{formatNumber(b.kg)} {unit}</Text>
+                      <Text variant="labelMedium">{num(b.kg)} {unit}</Text>
                       <Text variant="labelSmall" style={styles.cost}>
-                        {formatMoney(cost)}
+                        {money(cost)}
                       </Text>
                     </View>
                     {tappable && (
@@ -249,7 +247,7 @@ export default function Reports() {
                         </Text>
                         {lots.map((l) => (
                           <Text key={l.crop} variant="labelSmall" style={styles.lot}>
-                            {l.crop} · {formatNumber(l.kg)} {unit}
+                            {l.crop} · {num(l.kg)} {unit}
                           </Text>
                         ))}
                       </View>
@@ -272,7 +270,7 @@ export default function Reports() {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${formatNumber(r.weight)} ${unit} · ${r.crop}`}
+                  title={`${num(r.weight)} ${unit} · ${r.crop}`}
                   description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />

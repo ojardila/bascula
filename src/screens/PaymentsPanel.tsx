@@ -20,8 +20,6 @@ import type { RootStackParamList } from "../types";
 import { Config, Payments, weekCrops, fromCents, type CropConfig } from "../db";
 import {
   useT,
-  formatMoney,
-  formatNumber,
   formatWeekRange,
   weekTag,
   weekNumber,
@@ -40,7 +38,7 @@ const endOfWeek = (monday: string) =>
 type Row = { personId: number; name: string; kg: number; amountCents: number };
 
 export default function PaymentsPanel() {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [config, setConfig] = useState<CropConfig | null>(null);
   const [monday, setMonday] = useState(() => mondayOf(new Date()));
@@ -208,10 +206,10 @@ export default function PaymentsPanel() {
               {t("pay.toPay")}
             </Text>
             <Text variant="displaySmall" style={styles.total}>
-              {formatMoney(fromCents(total))}
+              {money(fromCents(total))}
             </Text>
             <Text variant="bodyMedium" style={styles.dim}>
-              {formatNumber(totalKg)} {unit} · {t("pay.people", { n: rows.length })}
+              {num(totalKg)} {unit} · {t("pay.people", { n: rows.length })}
             </Text>
             <Button
               mode="contained"
@@ -248,7 +246,7 @@ export default function PaymentsPanel() {
                     )}
                     right={() => (
                       <Text variant="titleSmall" style={styles.creditAmount}>
-                        {formatMoney(fromCents(c.cents))}
+                        {money(fromCents(c.cents))}
                       </Text>
                     )}
                   />
@@ -271,15 +269,15 @@ export default function PaymentsPanel() {
                       navigation.navigate("PayWorker", { personId: r.personId, monday })
                     }
                     title={r.name}
-                    description={`${formatNumber(r.kg)} ${unit}${
+                    description={`${num(r.kg)} ${unit}${
                       balances[r.personId] > 0
-                        ? ` · ${t("pay.credit")} ${formatMoney(fromCents(balances[r.personId]))}`
+                        ? ` · ${t("pay.credit")} ${money(fromCents(balances[r.personId]))}`
                         : ""
                     }`}
                     left={() => <Avatar.Icon size={40} icon="account" style={styles.avatar} />}
                     right={() => (
                       <View style={styles.amountCell}>
-                        <Text variant="titleSmall">{formatMoney(fromCents(netOf(r)))}</Text>
+                        <Text variant="titleSmall">{money(fromCents(netOf(r)))}</Text>
                         <MaterialCommunityIcons name="chevron-right" size={18} color="#9aa39a" />
                       </View>
                     )}
@@ -310,7 +308,7 @@ export default function PaymentsPanel() {
           <Dialog.Content>
             <Text variant="bodyMedium">
               {t("pay.askMany", {
-                amount: formatMoney(fromCents(selectedTotal)),
+                amount: money(fromCents(selectedTotal)),
                 n: selected.length,
               })}
             </Text>

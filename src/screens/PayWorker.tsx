@@ -24,7 +24,7 @@ import {
   type Person,
   type SettlementPreview,
 } from "../db";
-import { useT, formatMoney, formatNumber, formatWeekRange } from "../i18n";
+import { useT, formatWeekRange } from "../i18n";
 
 const DAY = 86400000;
 const endOfWeek = (monday: string) =>
@@ -46,7 +46,7 @@ const groupThousands = (digits: string) => {
 };
 
 export default function PayWorker() {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId, monday } = useRoute<RouteProp<RootStackParamList, "PayWorker">>().params;
 
@@ -117,7 +117,7 @@ export default function PayWorker() {
       Payments.pay(personId, toPay, { method: "efectivo" });
       setSnack(
         t("pay.success", {
-          amount: formatMoney(fromCents(toPay)),
+          amount: money(fromCents(toPay)),
           name: person?.name ?? "",
         }),
       );
@@ -129,8 +129,8 @@ export default function PayWorker() {
   }
 
   const quick = [
-    { label: formatMoney(50000), cents: 5000000 },
-    { label: formatMoney(100000), cents: 10000000 },
+    { label: money(50000), cents: 5000000 },
+    { label: money(100000), cents: 10000000 },
     { label: t("pay.half"), cents: Math.round(dueCents / 2) },
     { label: t("pay.all"), cents: dueCents },
   ];
@@ -155,9 +155,9 @@ export default function PayWorker() {
                 <View key={week} style={styles.row}>
                   <Text variant="bodyMedium">{formatWeekRange(week, lang)}</Text>
                   <Text variant="bodyMedium" style={styles.dim}>
-                    {formatNumber(v.kg)} {unit}
+                    {num(v.kg)} {unit}
                   </Text>
-                  <Text variant="titleSmall">{formatMoney(fromCents(v.cents))}</Text>
+                  <Text variant="titleSmall">{money(fromCents(v.cents))}</Text>
                 </View>
               ))
             )}
@@ -176,7 +176,7 @@ export default function PayWorker() {
                     style={creditCents > 0 ? styles.credit : styles.owes}
                   >
                     {creditCents > 0 ? "" : "−"}
-                    {formatMoney(fromCents(Math.abs(creditCents)))}
+                    {money(fromCents(Math.abs(creditCents)))}
                   </Text>
                 </View>
               </>
@@ -185,7 +185,7 @@ export default function PayWorker() {
             <View style={styles.row}>
               <Text variant="titleMedium">{t("pay.payToday")}</Text>
               <Text variant="headlineSmall" style={styles.due}>
-                {formatMoney(fromCents(dueCents))}
+                {money(fromCents(dueCents))}
               </Text>
             </View>
           </Card.Content>
@@ -224,7 +224,7 @@ export default function PayWorker() {
                     ))}
                   </View>
                   <Text variant="bodyMedium" style={restCents > 0 ? styles.credit : styles.dim}>
-                    {`${t("pay.leaveCredit")}: ${formatMoney(fromCents(restCents))}`}
+                    {`${t("pay.leaveCredit")}: ${money(fromCents(restCents))}`}
                   </Text>
                 </>
               )}

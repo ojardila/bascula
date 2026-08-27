@@ -7,12 +7,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { TabParamList } from "../types";
 import { Reports, Pickups, Config, Payments, fromCents } from "../db";
-import { useT, formatNumber, formatDay, formatMoney } from "../i18n";
+import { useT, formatDay, formatMoney } from "../i18n";
 
 type Props = BottomTabScreenProps<TabParamList, "Home">;
 
 export default function Home({ navigation }: Props) {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [today, setToday] = useState({ kg: 0, count: 0 });
   const [week, setWeek] = useState({ kg: 0, count: 0 });
@@ -62,17 +62,17 @@ export default function Home({ navigation }: Props) {
           )}
         </View>
         <Text style={styles.heroValue}>
-          {formatNumber(totals.kg)}
+          {num(totals.kg)}
           <Text style={styles.heroUnit}> {unit}</Text>
         </Text>
         <View style={styles.heroChips}>
           <HeroChip
             icon="calendar-week"
-            text={`${t("home.thisWeek")} · ${formatNumber(week.kg)} ${unit}`}
+            text={`${t("home.thisWeek")} · ${num(week.kg)} ${unit}`}
           />
           <HeroChip
             icon="white-balance-sunny"
-            text={`${t("home.today")} · ${formatNumber(today.kg)} ${unit}`}
+            text={`${t("home.today")} · ${num(today.kg)} ${unit}`}
           />
           <HeroChip icon="scale" text={t("home.pickupsCount", { n: totals.pickups })} />
         </View>
@@ -108,7 +108,7 @@ export default function Home({ navigation }: Props) {
                 {t("pay.toPay")}
               </Text>
               <Text variant="titleLarge" style={styles.payAmount}>
-                {formatMoney(fromCents(pending.cents))}
+                {money(fromCents(pending.cents))}
               </Text>
               <Text variant="bodySmall" style={{ opacity: 0.7 }}>
                 {t("pay.people", { n: pending.people })}
@@ -143,7 +143,7 @@ export default function Home({ navigation }: Props) {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${formatNumber(r.weight)} ${unit} · ${r.crop}`}
+                  title={`${num(r.weight)} ${unit} · ${r.crop}`}
                   description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />

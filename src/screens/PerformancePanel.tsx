@@ -28,8 +28,6 @@ import {
 } from "../db";
 import {
   useT,
-  formatMoney,
-  formatNumber,
   formatDay,
   formatWeekRange,
   mondayOf,
@@ -44,7 +42,7 @@ function irlColor(irl: number | null) {
 }
 
 export default function PerformancePanel() {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [config, setConfig] = useState<CropConfig | null>(null);
   const [crew, setCrew] = useState<WorkerPerf[]>([]);
@@ -94,7 +92,7 @@ export default function PerformancePanel() {
               {t("perf.crewKgDay", { unit })}
             </Text>
             <Text variant="titleLarge" style={styles.kpiValue}>
-              {formatNumber(Math.round(crewKgDay * 10) / 10)}
+              {num(Math.round(crewKgDay * 10) / 10)}
             </Text>
           </Card.Content>
         </Card>
@@ -104,11 +102,11 @@ export default function PerformancePanel() {
               {t("perf.realCost", { unit })}
             </Text>
             <Text variant="titleLarge" style={styles.kpiValue}>
-              {formatMoney(cost?.real ?? 0)}
+              {money(cost?.real ?? 0)}
             </Text>
             {!!cost && cost.budget > 0 && (
               <Text variant="labelSmall" style={styles.dim}>
-                {t("perf.budget")} {formatMoney(cost.budget)}
+                {t("perf.budget")} {money(cost.budget)}
               </Text>
             )}
           </Card.Content>
@@ -126,9 +124,9 @@ export default function PerformancePanel() {
                 {i > 0 && <Divider />}
                 <List.Item
                   title={r.name}
-                  description={`${formatNumber(Math.round(r.kgPerDay * 10) / 10)} ${unit}/${t(
+                  description={`${num(Math.round(r.kgPerDay * 10) / 10)} ${unit}/${t(
                     "perf.day",
-                  )} · ${formatNumber(r.kg)} ${unit}`}
+                  )} · ${num(r.kg)} ${unit}`}
                   right={() => (
                     <View style={styles.irlCell}>
                       <Text
@@ -167,14 +165,14 @@ export default function PerformancePanel() {
               <List.Item
                 onPress={() => navigation.navigate("CropDetail", { cropId: p.cropId })}
                 title={p.name}
-                description={`${formatNumber(p.kg)} ${unit} · ${t("perf.pickers", {
+                description={`${num(p.kg)} ${unit} · ${t("perf.pickers", {
                   n: p.pickers,
                 })}`}
                 right={() => (
                   <Text variant="titleSmall" style={styles.perHa}>
                     {p.kgPerHa == null
                       ? t("perf.noArea")
-                      : `${formatNumber(Math.round(p.kgPerHa))} ${unit}/ha`}
+                      : `${num(Math.round(p.kgPerHa))} ${unit}/ha`}
                   </Text>
                 )}
               />
@@ -196,13 +194,13 @@ export default function PerformancePanel() {
                   {i > 0 && <Divider />}
                   <List.Item
                     title={formatWeekRange(r.week, lang)}
-                    description={`${formatMoney(r.price)}/${unit} · ${t("perf.pickers", {
+                    description={`${money(r.price)}/${unit} · ${t("perf.pickers", {
                       n: r.pickers,
                     })}`}
                     right={() => (
                       <View style={styles.priceCell}>
                         <Text variant="titleSmall">
-                          {formatNumber(Math.round(r.kgPerDay * 10) / 10)} {unit}
+                          {num(Math.round(r.kgPerDay * 10) / 10)} {unit}
                         </Text>
                         {!!prev && dPrice !== 0 && (
                           <Text
@@ -210,8 +208,8 @@ export default function PerformancePanel() {
                             style={{ color: dKg > 0 ? "#1b5e20" : "#8a5a00" }}
                           >
                             {dPrice > 0 ? "↑" : "↓"}
-                            {formatMoney(Math.abs(dPrice))} · {dKg > 0 ? "+" : ""}
-                            {formatNumber(Math.round(dKg * 10) / 10)}
+                            {money(Math.abs(dPrice))} · {dKg > 0 ? "+" : ""}
+                            {num(Math.round(dKg * 10) / 10)}
                           </Text>
                         )}
                       </View>
@@ -271,7 +269,7 @@ export default function PerformancePanel() {
                     setReview(a);
                     setNewWeight(String(a.weight));
                   }}
-                  title={`${formatNumber(a.weight)} ${unit} · ${a.person}`}
+                  title={`${num(a.weight)} ${unit} · ${a.person}`}
                   description={`${formatDay(a.date, lang)} · ${a.crop}`}
                   left={(p) => <List.Icon {...p} icon="alert-outline" color="#8a5a00" />}
                   right={() => (
@@ -292,7 +290,7 @@ export default function PerformancePanel() {
             <Text variant="bodyMedium">
               {review
                 ? t("perf.reviewBody", {
-                    weight: `${formatNumber(review.weight)} ${unit}`,
+                    weight: `${num(review.weight)} ${unit}`,
                     person: review.person,
                     reason: t(`perf.rule.${review.rule}`, { n: review.reference }),
                   })

@@ -39,26 +39,24 @@ export function buildReceipt(r: ReceiptInput, lang: Lang): string {
   }
   for (const [week, v] of grouped) {
     L.push(
-      `${formatWeekRange(week, lang)}  ${formatNumber(v.kg)} ${r.unit}  ${formatMoney(
-        fromCents(v.cents),
-      )}`,
+      `${formatWeekRange(week, lang)}  ${formatNumber(v.kg, lang)} ${r.unit}  ${formatMoney(fromCents(v.cents), lang)}`,
     );
   }
 
   const grossCents = r.items.reduce((s, i) => s + i.amountCents, 0);
   if (grouped.size > 1) {
     L.push("");
-    L.push(`${t("pay.totalWeek")}: ${formatMoney(fromCents(grossCents))}`);
+    L.push(`${t("pay.totalWeek")}: ${formatMoney(fromCents(grossCents), lang)}`);
   }
 
   L.push("");
-  L.push(`*${t("pay.pay")}: ${formatMoney(fromCents(r.paidCents))}*`);
+  L.push(`*${t("pay.pay")}: ${formatMoney(fromCents(r.paidCents), lang)}*`);
 
   if (r.balance.balanceCents > 0) {
-    L.push(`${t("pay.credit")}: ${formatMoney(fromCents(r.balance.balanceCents))}`);
+    L.push(`${t("pay.credit")}: ${formatMoney(fromCents(r.balance.balanceCents), lang)}`);
   } else if (r.balance.balanceCents < 0) {
     // An outstanding advance is the line the worker most needs documented.
-    L.push(`${t("pay.owesUs")}: ${formatMoney(fromCents(-r.balance.balanceCents))}`);
+    L.push(`${t("pay.owesUs")}: ${formatMoney(fromCents(-r.balance.balanceCents), lang)}`);
   }
 
   L.push("");

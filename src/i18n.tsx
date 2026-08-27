@@ -801,31 +801,38 @@ const MONTHS_SHORT: Record<Lang, string[]> = {
   pt: ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"],
 };
 
-/** Money with dot thousands and no decimals: 1471070 -> "$1.471.070". */
-export function formatMoney(amount: number): string {
-  const n = Math.round(Math.abs(amount));
-  const digits = String(n);
+// English groups thousands with a comma and marks decimals with a dot; Spanish
+// and Portuguese do the opposite. Getting this wrong is not cosmetic: "1,500"
+// is a thousand and a half in one convention and one and a half in the other.
+const SEPARATORS: Record<Lang, { group: string; decimal: string }> = {
+  es: { group: ".", decimal: "," },
+  en: { group: ",", decimal: "." },
+  pt: { group: ".", decimal: "," },
+};
+
+function group(digits: string, sep: string): string {
   let out = "";
   for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
+    if (i > 0 && (digits.length - i) % 3 === 0) out += sep;
     out += digits[i];
   }
-  return `${amount < 0 ? "-" : ""}$${out}`;
+  return out;
 }
 
-/** Weights and counts: 1742.5 -> "1.742,5". */
-export function formatNumber(value: number): string {
+/** Money without decimals: 1471070 -> "$1.471.070" (es) / "$1,471,070" (en). */
+export function formatMoney(amount: number, lang: Lang = "es"): string {
+  const n = Math.round(Math.abs(amount));
+  return `${amount < 0 ? "-" : ""}$${group(String(n), SEPARATORS[lang].group)}`;
+}
+
+/** Weights and counts: 1742.5 -> "1.742,5" (es) / "1,742.5" (en). */
+export function formatNumber(value: number, lang: Lang = "es"): string {
   const neg = value < 0;
   const abs = Math.abs(value);
   const whole = Math.floor(abs);
   const frac = Math.round((abs - whole) * 10);
-  let out = "";
-  const digits = String(whole);
-  for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
-    out += digits[i];
-  }
-  return `${neg ? "-" : ""}${out}${frac ? "," + frac : ""}`;
+  const { group: g, decimal } = SEPARATORS[lang];
+  return `${neg ? "-" : ""}${group(String(whole), g)}${frac ? decimal + frac : ""}`;
 }
 
 // Parse a YYYY-MM-DD key without going through the local timezone, which would
@@ -917,10 +924,18 @@ export function formatDay(value: string, lang: Lang): string {
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
-const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: TFn }>({
+const LangContext = createContext<{
+  lang: Lang;
+  setLang: (l: Lang) => void;
+  t: TFn;
+  money: (n: number) => string;
+  num: (n: number) => string;
+}>({
   lang: "es",
   setLang: () => {},
   t: (k) => k,
+  money: (n) => formatMoney(n, "es"),
+  num: (n) => formatNumber(n, "es"),
 });
 
 export function LangProvider({ children }: { children: ReactNode }) {
@@ -946,6 +961,8 @@ export function LangProvider({ children }: { children: ReactNode }) {
         setLangState(l);
       },
       t: (key: string, vars?: Record<string, string | number>) => translate(lang, key, vars),
+      money: (n: number) => formatMoney(n, lang),
+      num: (n: number) => formatNumber(n, lang),
     }),
     [lang],
   );

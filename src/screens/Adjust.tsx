@@ -22,7 +22,7 @@ const DISCOUNTS = [
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
 export default function Adjust() {
-  const { t } = useT();
+  const { t, money, num } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId, kind } = useRoute<RouteProp<RootStackParamList, "Adjust">>().params;
 
@@ -128,10 +128,10 @@ export default function Adjust() {
 
             <View style={styles.summary}>
               <Text variant="bodyMedium" style={styles.dim}>
-                {t("pay.credit")}: {formatMoney(fromCents(balanceCents))}
+                {t("pay.credit")}: {money(fromCents(balanceCents))}
               </Text>
               <Text variant="bodyMedium" style={after < 0 ? styles.negative : styles.credit}>
-                {t("pay.afterwards")}: {formatMoney(fromCents(after))}
+                {t("pay.afterwards")}: {money(fromCents(after))}
               </Text>
             </View>
 

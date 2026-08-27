@@ -23,10 +23,10 @@ import {
   Reports as ReportsDb,
   type CostOverride,
 } from "../db";
-import { useT, formatMoney, formatWeekRange, type Lang } from "../i18n";
+import { useT, formatWeekRange, type Lang } from "../i18n";
 
 export default function Settings() {
-  const { t, lang, setLang } = useT();
+  const { t, lang, setLang, money } = useT();
   // Active crop config
   const [cropType, setCropType] = useState("cafe");
   const [label, setLabel] = useState("Café");
@@ -242,7 +242,7 @@ export default function Settings() {
                     {i > 0 && <Divider />}
                     <List.Item
                       title={formatWeekRange(o.week, lang)}
-                      description={`${formatMoney(o.costPerUnit)} · ${unit || t("unit.default")}`}
+                      description={`${money(o.costPerUnit)} · ${unit || t("unit.default")}`}
                       left={(p) => <List.Icon {...p} icon="calendar-week" />}
                       right={(p) => (
                         <IconButton

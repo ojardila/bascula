@@ -14,8 +14,6 @@ import {
 } from "../db";
 import {
   useT,
-  formatMoney,
-  formatNumber,
   formatDay,
   formatWeekRange,
   weekTag,
@@ -48,7 +46,7 @@ export default function CropDetail({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "CropDetail">) {
-  const { t, lang } = useT();
+  const { t, lang, money, num } = useT();
   const { cropId } = route.params;
   const [crop, setCrop] = useState<Crop | null>(null);
   const [config, setConfig] = useState<CropConfig | null>(null);
@@ -108,15 +106,15 @@ export default function CropDetail({
           <View style={styles.chips}>
             {!!crop?.type && <Chip compact icon="sprout">{crop.type}</Chip>}
             {!!crop?.variety && <Chip compact>{crop.variety}</Chip>}
-            {ha > 0 && <Chip compact icon="texture-box">{formatNumber(ha)} ha</Chip>}
+            {ha > 0 && <Chip compact icon="texture-box">{num(ha)} ha</Chip>}
           </View>
         </Card.Content>
       </Card>
 
       <View style={styles.stats}>
-        <Stat value={formatNumber(stats.kg)} label={t("reports.total", { unit })} />
+        <Stat value={num(stats.kg)} label={t("reports.total", { unit })} />
         <Stat
-          value={ha > 0 ? `${formatNumber(Math.round(stats.kg / ha))}` : "—"}
+          value={ha > 0 ? `${num(Math.round(stats.kg / ha))}` : "—"}
           label={`${unit}/ha`}
         />
         <Stat value={String(stats.pickers)} label={t("label.workers")} />
@@ -124,7 +122,7 @@ export default function CropDetail({
       <View style={styles.stats}>
         <Stat value={String(stats.days)} label={t("crop.days")} />
         <Stat value={String(stats.pickups)} label={t("reports.pickups")} />
-        <Stat value={formatMoney(value)} label={t("crop.value")} />
+        <Stat value={money(value)} label={t("crop.value")} />
       </View>
 
       {hasChart && (
@@ -183,7 +181,7 @@ export default function CropDetail({
                   </View>
                   <View style={styles.workerValues}>
                     <Text variant="labelMedium">
-                      {formatNumber(w.kg)} {unit}
+                      {num(w.kg)} {unit}
                     </Text>
                     <Text
                       variant="labelSmall"
@@ -224,7 +222,7 @@ export default function CropDetail({
                 }
                 right={() => (
                   <Text variant="titleSmall" style={styles.weekKg}>
-                    {formatNumber(r.kg)} {unit}
+                    {num(r.kg)} {unit}
                   </Text>
                 )}
               />
@@ -240,7 +238,7 @@ export default function CropDetail({
             <View key={r.id}>
               {i > 0 && <Divider />}
               <List.Item
-                title={`${formatNumber(r.weight)} ${unit}`}
+                title={`${num(r.weight)} ${unit}`}
                 description={`${r.person} · ${formatDay(r.date, lang)}`}
                 left={(p) => <List.Icon {...p} icon="scale" />}
               />
