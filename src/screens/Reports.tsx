@@ -56,7 +56,7 @@ export default function Reports() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [grouping, setGrouping] = useState<Grouping>("week");
-  const [rows, setRows] = useState<{ label: string; kg: number; id?: number }[]>([]);
+  const [rows, setRows] = useState<{ label: string; kg: number; id?: number; value?: number }[]>([]);
   const [lotsByWeek, setLotsByWeek] = useState<Record<string, { crop: string; kg: number }[]>>({});
   const [config, setConfig] = useState<CropConfig>({
     cropType: "cafe",
@@ -77,7 +77,7 @@ export default function Reports() {
       const c = Config.get();
       if (c) setConfig(c);
       setPayout(totalPayout(c ? c.costPerUnit : 0));
-      setRows(reportBy(grouping));
+      setRows(reportBy(grouping, c?.costPerUnit ?? 0));
       if (grouping === "week") {
         const map: Record<string, { crop: string; kg: number }[]> = {};
         for (const wc of weekCrops()) {
@@ -187,11 +187,14 @@ export default function Reports() {
                   />
                 ))}
 
-              {rows.map((b) => {
+              {rows.map((b, idx) => {
+                // Weekly rows price their own week; the others carry the value
+                // already computed with each week's price, so the same plot no
+                // longer shows one number here and another on its detail.
                 const cost =
                   grouping === "week"
                     ? b.kg * costForWeek(b.label, config.costPerUnit)
-                    : b.kg * config.costPerUnit;
+                    : (b.value ?? b.kg * config.costPerUnit);
                 const tappable = grouping !== "week" && b.id != null;
                 const lots = grouping === "week" ? lotsByWeek[b.label] ?? [] : [];
                 const row = (
@@ -224,7 +227,7 @@ export default function Reports() {
                   </View>
                 );
                 return (
-                  <View key={b.label}>
+                  <View key={grouping === "week" ? b.label : `${grouping}-${b.id ?? "x"}-${idx}`}>
                     {tappable ? (
                       <TouchableRipple
                         borderless

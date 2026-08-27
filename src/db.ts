@@ -18,6 +18,7 @@ export interface Crop {
   variety: string;
   dimension: number;
   createdAt: string;
+  deletedAt?: string | null;
 }
 export interface Pickup {
   id: number;
@@ -91,7 +92,7 @@ export function initDb() {
 // splits a week straddling new year into two labels and can't be rendered as a
 // date range. It is now the Monday of the week, as YYYY-MM-DD.
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const PAYMENTS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS settlements (
@@ -185,8 +186,18 @@ function migrate() {
         if (clash) db.runSync("DELETE FROM cost_overrides WHERE id = ?", [o.id]);
         else db.runSync("UPDATE cost_overrides SET week = ? WHERE id = ?", [monday, o.id]);
       }
-      db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      db.execSync("PRAGMA user_version = 2");
     });
+  }
+
+  if (v < 3) {
+    // Soft-delete marker for plots, so deleting one cannot orphan its pickups.
+    try {
+      db.execSync("ALTER TABLE crops ADD COLUMN deletedAt TEXT");
+    } catch {
+      /* column already exists */
+    }
+    db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 }
 
@@ -221,13 +232,18 @@ export const People = {
 };
 
 export const Crops = {
-  all: () => db.getAllSync<Crop>("SELECT * FROM crops ORDER BY name"),
+  all: () =>
+    db.getAllSync<Crop>("SELECT * FROM crops WHERE deletedAt IS NULL ORDER BY name"),
+  // Including deleted ones, so a plot's history still resolves to its name.
+  allWithDeleted: () => db.getAllSync<Crop>("SELECT * FROM crops ORDER BY name"),
+  byId: (id: number) => db.getFirstSync<Crop>("SELECT * FROM crops WHERE id = ?", [id]),
   add: (c: Omit<Crop, "id" | "createdAt">) =>
     db.runSync(
       "INSERT INTO crops (name,type,variety,dimension,createdAt) VALUES (?,?,?,?,?)",
       [c.name, c.type, c.variety, c.dimension, now()],
     ),
-  remove: (id: number) => db.runSync("DELETE FROM crops WHERE id = ?", [id]),
+  // Soft delete: hide the plot but keep every pickup that references it.
+  remove: (id: number) => db.runSync("UPDATE crops SET deletedAt = ? WHERE id = ?", [now(), id]),
 };
 
 export const Pickups = {
@@ -278,19 +294,32 @@ export const Reports = {
       `SELECT date(date,'localtime','-6 days','weekday 1') AS label, SUM(weight) AS kg
        FROM pickups GROUP BY label ORDER BY label DESC LIMIT 12`,
     ),
-  byWorker: () =>
-    db.getAllSync<{ label: string; kg: number; id: number }>(
+  byWorker: (general: number) =>
+    db.getAllSync<{ label: string; kg: number; id: number; value: number }>(
       `SELECT COALESCE(pe.name || ' ' || pe.lastName, 'Unknown') AS label,
-              SUM(pk.weight) AS kg, pk.personId AS id
-       FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+              SUM(pk.weight) AS kg, pk.personId AS id,
+              SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
+       FROM pickups pk
+       LEFT JOIN people pe ON pe.id = pk.personId
+       LEFT JOIN cost_overrides o
+         ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
        GROUP BY pk.personId ORDER BY kg DESC`,
+      [general],
     ),
-  byCrop: () =>
-    db.getAllSync<{ label: string; kg: number; id: number }>(
+  // The value comes out of SQL with each week's price applied. Multiplying the
+  // total by the general cost in one screen and by the weekly overrides in
+  // another made the same plot worth two different amounts.
+  byCrop: (general: number) =>
+    db.getAllSync<{ label: string; kg: number; id: number; value: number }>(
       `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg,
-              pk.cropId AS id
-       FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+              pk.cropId AS id,
+              SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
+       FROM pickups pk
+       LEFT JOIN crops cr ON cr.id = pk.cropId
+       LEFT JOIN cost_overrides o
+         ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
        GROUP BY pk.cropId ORDER BY kg DESC`,
+      [general],
     ),
 };
 
@@ -307,8 +336,18 @@ export const weekCrops = () =>
 
 export const WorkerReports = {
   stats: (personId: number) =>
-    db.getFirstSync<{ kg: number; pickups: number; firstDate: string; lastDate: string }>(
+    db.getFirstSync<{
+      kg: number;
+      pickups: number;
+      days: number;
+      firstDate: string;
+      lastDate: string;
+    }>(
+      // Days actually worked, not the span between the first and last pickup:
+      // the span counts Sundays and whole idle weeks, and the crop screen used
+      // the other definition under the very same label.
       `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS pickups,
+              COUNT(DISTINCT date(date,'localtime')) AS days,
               MIN(date) AS firstDate, MAX(date) AS lastDate
        FROM pickups WHERE personId = ?`,
       [personId],
@@ -345,8 +384,12 @@ export const WorkerReports = {
 };
 
 export type Grouping = "week" | "worker" | "crop";
-export function reportBy(g: Grouping) {
-  return g === "week" ? Reports.byWeek() : g === "worker" ? Reports.byWorker() : Reports.byCrop();
+export function reportBy(g: Grouping, general: number) {
+  return g === "week"
+    ? Reports.byWeek()
+    : g === "worker"
+      ? Reports.byWorker(general)
+      : Reports.byCrop(general);
 }
 
 // ---- Crop configuration (units + costs) --------------------------------
@@ -1115,7 +1158,9 @@ export const Performance = {
     }>(
       `WITH perDay AS (
          SELECT ${WEEK_KEY} AS week, pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-           FROM pickups pk GROUP BY week, pk.personId, d
+           FROM pickups pk
+          WHERE ${DAY_KEY} <= date('now','localtime')
+          GROUP BY week, pk.personId, d
        )
        SELECT week, AVG(kg) AS kgPerDay, COUNT(DISTINCT personId) AS pickers,
               SUM(kg) AS kg
@@ -1288,18 +1333,27 @@ export const CropReports = {
     db.getAllSync<{ week: string; kg: number; pickers: number }>(
       `SELECT date(date,'localtime','-6 days','weekday 1') AS week,
               SUM(weight) AS kg, COUNT(DISTINCT personId) AS pickers
-         FROM pickups WHERE cropId = ?
+         FROM pickups
+        WHERE cropId = ? AND date(date,'localtime') <= date('now','localtime')
         GROUP BY week ORDER BY week DESC LIMIT 12`,
       [cropId],
     ),
 
   // Who worked this plot, and how they compared against the others who were
   // on it the same days — the only fair way to rank inside a plot.
-  byWorker: (cropId: number) =>
-    db.getAllSync<{ personId: number; name: string; kg: number; days: number; irl: number | null }>(
+  byWorker: (cropId: number, sinceDays = 28) =>
+    db.getAllSync<{
+      personId: number;
+      name: string;
+      kg: number;
+      days: number;
+      irl: number | null;
+      comparableDays: number;
+    }>(
       `WITH dw AS (
          SELECT pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-           FROM pickups pk WHERE pk.cropId = ?
+           FROM pickups pk
+          WHERE pk.cropId = ? AND ${DAY_KEY} >= date('now','localtime',?)
           GROUP BY pk.personId, d
        ),
        base AS (SELECT d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY d)
@@ -1308,12 +1362,13 @@ export const CropReports = {
               SUM(dw.kg) AS kg,
               COUNT(DISTINCT dw.d) AS days,
               AVG(CASE WHEN base.n >= 3
-                       THEN dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0) END) AS irl
+                       THEN dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0) END) AS irl,
+              COUNT(CASE WHEN base.n >= 3 THEN 1 END) AS comparableDays
          FROM dw
          JOIN base ON base.d = dw.d
          LEFT JOIN people pe ON pe.id = dw.personId
         GROUP BY dw.personId ORDER BY kg DESC`,
-      [cropId],
+      [cropId, `-${sinceDays} days`],
     ),
 
   recent: (cropId: number) =>
@@ -1325,13 +1380,15 @@ export const CropReports = {
       [cropId],
     ),
 
-  // Value produced by this plot, using the price in force each week.
-  value: (cropId: number, general: number) => {
-    const rows = db.getAllSync<{ week: string; kg: number }>(
-      `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
-         FROM pickups WHERE cropId = ? GROUP BY week`,
-      [cropId],
-    );
-    return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
-  },
+  // Value produced by this plot, with the price in force each week, resolved
+  // in one query instead of one lookup per week from JS.
+  value: (cropId: number, general: number) =>
+    db.getFirstSync<{ value: number }>(
+      `SELECT COALESCE(SUM(pk.weight * COALESCE(o.costPerUnit, ?)), 0) AS value
+         FROM pickups pk
+         LEFT JOIN cost_overrides o
+           ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
+        WHERE pk.cropId = ?`,
+      [general, cropId],
+    )?.value ?? 0,
 };

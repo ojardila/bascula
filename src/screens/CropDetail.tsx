@@ -60,9 +60,11 @@ export default function CropDetail({
 
   useFocusEffect(
     useCallback(() => {
-      const found = CropsDb.all().find((c) => c.id === cropId) ?? null;
+      const found = CropsDb.byId(cropId) ?? null;
       setCrop(found);
-      if (found) navigation.setOptions({ title: found.name });
+      // The plot may have been deleted while its pickups remain; say so instead
+      // of showing a nameless screen full of numbers.
+      navigation.setOptions({ title: found ? found.name : t("crop.deleted") });
       const c = Config.get();
       setConfig(c ?? null);
       const s = CropReports.stats(cropId);
@@ -89,7 +91,7 @@ export default function CropDetail({
       <Card style={styles.card} mode="elevated">
         <Card.Content>
           <Text variant="titleLarge" style={{ fontWeight: "800" }}>
-            {crop?.name ?? ""}
+            {crop?.name ?? t("crop.deleted")}
           </Text>
           <View style={styles.chips}>
             {!!crop?.type && <Chip compact icon="sprout">{crop.type}</Chip>}
@@ -173,14 +175,26 @@ export default function CropDetail({
                     </Text>
                     <Text
                       variant="labelSmall"
-                      style={{ color: w.irl == null ? "#9aa39a" : w.irl >= 1 ? "#1b5e20" : "#8a5a00" }}
+                      style={{
+                        color:
+                          w.irl == null || w.comparableDays < 3
+                            ? "#9aa39a"
+                            : w.irl >= 1
+                              ? "#1b5e20"
+                              : "#8a5a00",
+                      }}
                     >
-                      {w.irl == null ? "—" : w.irl.toFixed(2)}
+                      {w.irl == null || w.comparableDays < 3 ? "—" : w.irl.toFixed(2)}
                     </Text>
                   </View>
                 </View>
               </View>
             ))
+          )}
+          {byWorker.some((w) => w.irl == null || w.comparableDays < 3) && (
+            <Text variant="labelSmall" style={[styles.dim, styles.note]}>
+              {t("perf.noBase")}
+            </Text>
           )}
         </Card.Content>
       </Card>
@@ -240,6 +254,7 @@ const styles = StyleSheet.create({
   },
   statValue: { fontWeight: "800" },
   dim: { opacity: 0.65 },
+  note: { paddingHorizontal: 16, paddingTop: 10 },
   chart: { borderRadius: 12, marginLeft: -8 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },
   workerRow: {

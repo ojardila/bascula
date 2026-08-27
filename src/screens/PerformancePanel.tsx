@@ -158,7 +158,7 @@ export default function PerformancePanel() {
         </Card.Content>
       </Card>
 
-      {priceRows.length >= 2 && (
+      {new Set(priceRows.map((r) => r.price)).size >= 2 && (
         <Card mode="elevated" style={styles.card}>
           <Card.Title title={t("perf.price")} subtitle={t("perf.priceSub")} />
           <Card.Content style={{ paddingHorizontal: 0 }}>
@@ -196,18 +196,30 @@ export default function PerformancePanel() {
               );
             })}
             {(() => {
-              // The reading the owner actually needs, spelled out: a rise that
-              // did not move output is margin given away.
               const rises = priceRows
                 .map((r, i) => (i > 0 ? { r, prev: priceRows[i - 1] } : null))
                 .filter((x): x is NonNullable<typeof x> => !!x && x.r.price > x.prev.price);
               if (!rises.length) return null;
-              const gained = rises.filter((x) => x.r.kgPerDay > x.prev.kgPerDay).length;
+              // Total harvest is the outcome that matters. Judging only by kg
+              // per person would call a rise a failure precisely when it
+              // worked: new pickers join, they produce less at first, the
+              // average per head drops while the crop actually goes up.
+              const moreCrop = rises.filter((x) => x.r.kg > x.prev.kg).length;
+              const morePerHead = rises.filter((x) => x.r.kgPerDay > x.prev.kgPerDay).length;
+              const one = rises.length === 1;
+              const key =
+                moreCrop === 0
+                  ? one
+                    ? "perf.priceNoGain.one"
+                    : "perf.priceNoGain.other"
+                  : moreCrop > morePerHead
+                    ? "perf.priceMoreHands"
+                    : one
+                      ? "perf.priceGain.one"
+                      : "perf.priceGain.other";
               return (
                 <Text variant="labelSmall" style={[styles.dim, styles.note]}>
-                  {gained === 0
-                    ? t("perf.priceNoGain", { n: rises.length })
-                    : t("perf.priceGain", { n: gained, total: rises.length })}
+                  {t(key, { n: moreCrop || rises.length, total: rises.length })}
                 </Text>
               );
             })()}

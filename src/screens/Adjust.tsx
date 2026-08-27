@@ -138,7 +138,7 @@ export default function Adjust() {
             <Button
               mode="contained"
               icon="check"
-              disabled={cents <= 0}
+              disabled={cents <= 0 || (mode === "deduccion" && reason === "other" && !otherLabel.trim())}
               contentStyle={styles.tall}
               style={styles.save}
               onPress={save}
