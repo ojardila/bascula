@@ -17,6 +17,7 @@ import {
   type Grouping,
   type CropConfig,
 } from "../db";
+import PerformancePanel from "./PerformancePanel";
 import type { Lang } from "../i18n";
 import {
   useT,
@@ -48,6 +49,10 @@ function shortLabel(g: Grouping, label: string, lang: Lang) {
 
 export default function Reports() {
   const { t, lang } = useT();
+  // Same pattern as Payments inside Workers: a seventh tab would drop every
+  // tab under the 48dp touch target. Reports answers "how much was picked";
+  // Performance answers "how well, and at what cost".
+  const [view, setView] = useState<"reports" | "perf">("reports");
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [grouping, setGrouping] = useState<Grouping>("week");
@@ -101,8 +106,34 @@ export default function Reports() {
   };
   const hasChart = top.length >= 2;
 
+  if (view === "perf") {
+    return (
+      <View style={styles.flex}>
+        <SegmentedButtons
+          value={view}
+          onValueChange={(v) => setView(v as "reports" | "perf")}
+          style={styles.viewSwitch}
+          buttons={[
+            { value: "reports", label: t("nav.reports"), icon: "chart-bar" },
+            { value: "perf", label: t("perf.tab"), icon: "speedometer" },
+          ]}
+        />
+        <PerformancePanel />
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <SegmentedButtons
+        value={view}
+        onValueChange={(v) => setView(v as "reports" | "perf")}
+        style={styles.viewSwitch}
+        buttons={[
+          { value: "reports", label: t("nav.reports"), icon: "chart-bar" },
+          { value: "perf", label: t("perf.tab"), icon: "speedometer" },
+        ]}
+      />
       <View style={styles.stats}>
         <Stat label={t("reports.total", { unit })} value={formatNumber(totals.kg)} />
         <Stat label={t("reports.pickups")} value={String(totals.pickups)} />
@@ -293,6 +324,8 @@ const styles = StyleSheet.create({
   },
   barFill: { height: 14, borderRadius: 7, backgroundColor: "#2e7d32" },
   barValues: { width: 88, alignItems: "flex-end" },
+  flex: { flex: 1 },
+  viewSwitch: { marginBottom: 12 },
   weekNo: { opacity: 0.55 },
   cost: { opacity: 0.6 },
   lots: {

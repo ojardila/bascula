@@ -470,23 +470,39 @@ export const Demo = {
       cids.push(r.lastInsertRowId as number);
     });
 
-    // Spread pickups over the last 28 days (skipping a weekly rest day).
+    // A crew works one plot together and moves on — pickers are not scattered
+    // one per plot. That is how a farm actually runs, and it is also what makes
+    // same-plot-same-day comparison possible at all.
+    // Each picker carries a steady skill factor so the index has real spread.
+    const skill = [1.25, 1.05, 0.95, 0.7, 1.0, 1.15];
+
     for (let d = 27; d >= 0; d--) {
       if (d % 7 === 6) continue; // rest day
       const date = new Date();
       date.setDate(date.getDate() - d);
-      date.setHours(8 + (d % 6), (d * 7) % 60, 0, 0);
-      const iso = date.toISOString();
-      const count = 3 + (d % 3); // 3–5 pickups/day
-      for (let k = 0; k < count; k++) {
-        const pid = pids[(d + k) % pids.length];
-        const cid = cids[(d + k) % cids.length];
-        const weight = 8 + ((d * 3 + k * 5) % 22); // 8–29 units
-        db.runSync(
-          "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-          [pid, cid, weight, iso, iso],
-        );
-      }
+      const iso = (h: number, m: number) => {
+        const t = new Date(date);
+        t.setHours(h, m, 0, 0);
+        return t.toISOString();
+      };
+      // The crew splits across two plots on any given day.
+      const plots = [cids[d % cids.length], cids[(d + 1) % cids.length]];
+      pids.forEach((pid, idx) => {
+        if ((d + idx) % 9 === 0) return; // somebody misses a day now and then
+        const cid = plots[idx % plots.length];
+        const base = 26 + ((d * 3 + idx * 5) % 9); // the plot's day, shared by all
+        const loads = 2 + (idx % 2); // two or three weighings each
+        for (let k = 0; k < loads; k++) {
+          const weight = Math.max(
+            4,
+            Math.round(((base * skill[idx % skill.length]) / loads) * 10) / 10,
+          );
+          db.runSync(
+            "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
+            [pid, cid, weight, iso(8 + k * 3, (idx * 7) % 60), iso(8 + k * 3, (idx * 7) % 60)],
+          );
+        }
+      });
     }
 
     // A couple of weekly cost overrides to showcase the feature.
@@ -893,4 +909,233 @@ export const Payments = {
          COUNT(CASE WHEN b > 0 THEN 1 END) AS savedCount
        FROM (SELECT SUM(amountCents) AS b FROM ledger GROUP BY personId)`,
     ),
+};
+
+// ---- Performance analysis ----------------------------------------------
+//
+// Ranking pickers by total kg is unfair and actively misleading: whoever
+// worked the ripest plot wins. Every comparison here is against the people
+// who worked the SAME plot on the SAME day, which is the only fair baseline.
+
+export interface WorkerPerf {
+  personId: number;
+  name: string;
+  kg: number;
+  days: number;
+  kgPerDay: number;
+  /** 1.00 = exactly the crew average on the same plot and day. */
+  irl: number | null;
+  comparableDays: number;
+  /** Ratio of recent IRL to earlier IRL; below 0.85 means they are slipping. */
+  trend: number | null;
+}
+
+const DAY_KEY = "date(pk.date,'localtime')";
+const WEEK_KEY = "date(pk.date,'localtime','-6 days','weekday 1')";
+
+export const Performance = {
+  // Effective kg per day worked — not per pickup, which only measures how big
+  // a sack somebody carries, and not total kg, which just rewards attendance.
+  crew: (sinceDays = 28): WorkerPerf[] => {
+    const rows = db.getAllSync<{
+      personId: number;
+      name: string;
+      kg: number;
+      days: number;
+    }>(
+      `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
+              SUM(pk.weight) AS kg,
+              COUNT(DISTINCT ${DAY_KEY}) AS days
+         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE ${DAY_KEY} >= date('now','localtime',?)
+        GROUP BY pk.personId`,
+      [`-${sinceDays} days`],
+    );
+
+    // Each person's daily total on a plot, against that plot-day's average.
+    const irlRows = db.getAllSync<{
+      personId: number;
+      irl: number;
+      comparableDays: number;
+    }>(
+      `WITH dw AS (
+         SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
+           FROM pickups pk GROUP BY pk.personId, pk.cropId, d
+       ),
+       base AS (
+         SELECT cropId, d, AVG(kg) AS prom, COUNT(*) AS n FROM dw GROUP BY cropId, d
+       )
+       SELECT dw.personId,
+              SUM(dw.kg) / SUM(base.prom) AS irl,
+              COUNT(*) AS comparableDays
+         FROM dw JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
+        WHERE base.n >= 3          -- fewer than three mates is not a comparison
+        GROUP BY dw.personId`,
+    );
+    const irlOf = new Map(irlRows.map((r) => [r.personId, r]));
+
+    // Same index split in two halves, to see who is slipping. Raw kg would
+    // show everyone dropping at the end of the harvest; the index would not.
+    const trendRows = db.getAllSync<{ personId: number; recent: number; earlier: number }>(
+      `WITH dw AS (
+         SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d,
+                ${WEEK_KEY} AS wk, SUM(pk.weight) AS kg
+           FROM pickups pk GROUP BY pk.personId, pk.cropId, d
+       ),
+       base AS (
+         SELECT cropId, d, AVG(kg) AS prom, COUNT(*) AS n FROM dw GROUP BY cropId, d
+       ),
+       j AS (
+         SELECT dw.personId, dw.wk, dw.kg, base.prom FROM dw
+           JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
+          WHERE base.n >= 3
+       )
+       SELECT personId,
+              SUM(CASE WHEN wk >= date('now','localtime','-21 days','-6 days','weekday 1')
+                       THEN kg END)
+              / NULLIF(SUM(CASE WHEN wk >= date('now','localtime','-21 days','-6 days','weekday 1')
+                                THEN prom END),0) AS recent,
+              SUM(CASE WHEN wk <  date('now','localtime','-21 days','-6 days','weekday 1')
+                       THEN kg END)
+              / NULLIF(SUM(CASE WHEN wk <  date('now','localtime','-21 days','-6 days','weekday 1')
+                                THEN prom END),0) AS earlier
+         FROM j GROUP BY personId`,
+    );
+    const trendOf = new Map(trendRows.map((r) => [r.personId, r]));
+
+    return rows
+      .map((r) => {
+        const i = irlOf.get(r.personId);
+        const t = trendOf.get(r.personId);
+        return {
+          ...r,
+          kgPerDay: r.days ? r.kg / r.days : 0,
+          irl: i && i.comparableDays >= 3 ? i.irl : null,
+          comparableDays: i?.comparableDays ?? 0,
+          trend: t && t.recent != null && t.earlier ? t.recent / t.earlier : null,
+        };
+      })
+      .sort((a, b) => (b.irl ?? -1) - (a.irl ?? -1));
+  },
+
+  // Yield per hectare is the one agronomic number the schema already holds
+  // and nothing uses: it says whether a plot is giving what it should.
+  plots: () =>
+    db.getAllSync<{
+      cropId: number;
+      name: string;
+      ha: number;
+      kg: number;
+      kgPerHa: number | null;
+      pickers: number;
+    }>(
+      `SELECT cr.id AS cropId, cr.name, cr.dimension AS ha,
+              SUM(pk.weight) AS kg,
+              SUM(pk.weight) / NULLIF(cr.dimension,0) AS kgPerHa,
+              COUNT(DISTINCT pk.personId) AS pickers
+         FROM pickups pk JOIN crops cr ON cr.id = pk.cropId
+        GROUP BY cr.id ORDER BY kgPerHa DESC`,
+    ),
+
+  // Real cost per unit from the ledger, not weight * price: it includes the
+  // price frozen at settlement plus every deduction and adjustment since.
+  realCost: (general: number) => {
+    const r = db.getFirstSync<{ kg: number; devengoCents: number }>(
+      `SELECT COALESCE(SUM(si.weight),0) AS kg, COALESCE(SUM(si.amountCents),0) AS devengoCents
+         FROM settlement_items si
+         JOIN settlements s ON s.id = si.settlementId AND s.status = 'open'`,
+    );
+    const adj = db.getFirstSync<{ c: number }>(
+      `SELECT COALESCE(SUM(amountCents),0) AS c FROM ledger
+        WHERE kind IN ('ajuste','reverso','deduccion')`,
+    );
+    const kg = r?.kg ?? 0;
+    if (!kg) return { kg: 0, listed: general, real: general, budget: general };
+    return {
+      kg,
+      listed: fromCents((r?.devengoCents ?? 0) / kg),
+      real: fromCents(((r?.devengoCents ?? 0) + (adj?.c ?? 0)) / kg),
+      budget: general,
+    };
+  },
+};
+
+export interface Anomaly {
+  pickupId: number;
+  personId: number;
+  person: string;
+  crop: string;
+  date: string;
+  weight: number;
+  rule: "impossible" | "duplicate" | "digit" | "outlier" | "future";
+  reference: number;
+}
+
+// Deliberately simple, explainable rules. Accusing a worker with a number you
+// cannot justify out loud destroys the trust the whole app runs on, so there
+// is no model here — just thresholds anyone can check.
+export const Anomalies = {
+  all: (maxWeight = 120): Anomaly[] => {
+    const out: Anomaly[] = [];
+    const push = (r: any, rule: Anomaly["rule"], reference: number) =>
+      out.push({ ...r, rule, reference });
+
+    // Physically impossible for one person to carry.
+    for (const r of db.getAllSync<any>(
+      `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE pk.weight <= 0 OR pk.weight > ?`,
+      [maxWeight],
+    ))
+      push(r, "impossible", maxWeight);
+
+    // Same person, plot and weight within three minutes: a double tap.
+    for (const r of db.getAllSync<any>(
+      `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups a
+         JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
+                       AND b.weight = a.weight AND b.id < a.id
+                       AND (julianday(a.createdAt) - julianday(b.createdAt)) * 1440 <= 3
+         LEFT JOIN people pe ON pe.id = a.personId
+         LEFT JOIN crops cr ON cr.id = a.cropId`,
+    ))
+      push(r, "duplicate", r.weight);
+
+    // Ten times their own usual load, and a tenth of it looks normal: that is
+    // a typed extra zero, not a heroic day.
+    for (const r of db.getAllSync<any>(
+      `WITH avgp AS (SELECT personId, AVG(weight) AS w FROM pickups GROUP BY personId)
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, avgp.w AS reference,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk JOIN avgp ON avgp.personId = pk.personId
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE avgp.w > 0 AND pk.weight >= 10 * avgp.w`,
+    ))
+      push(r, "digit", Math.round(r.reference));
+
+    // Dated after today: a wrong clock or a typo.
+    for (const r of db.getAllSync<any>(
+      `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
+              COALESCE(cr.name,'?') AS crop
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime') > date('now','localtime')`,
+    ))
+      push(r, "future", 0);
+
+    // One pickup can break more than one rule; report it once, worst first.
+    const seen = new Set<number>();
+    return out.filter((a) => (seen.has(a.pickupId) ? false : seen.add(a.pickupId)));
+  },
 };
