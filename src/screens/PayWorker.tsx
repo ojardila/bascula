@@ -33,6 +33,18 @@ const endOfWeek = (monday: string) =>
 // Digits only, so a stray "." or "," can't turn 50000 into 50.
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
+// Thousands separators as you type: a seven-figure amount with no separators
+// is easy to mistype and hard to check at a glance, which is the whole risk
+// with a number that becomes cash handed over.
+const groupThousands = (digits: string) => {
+  let out = "";
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
+    out += digits[i];
+  }
+  return out;
+};
+
 export default function PayWorker() {
   const { t, lang } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -196,7 +208,7 @@ export default function PayWorker() {
                     mode="outlined"
                     label={t("pay.amount")}
                     keyboardType="number-pad"
-                    value={amount}
+                    value={groupThousands(amount)}
                     onChangeText={(v) => setAmount(onlyDigits(v))}
                     left={<TextInput.Affix text="$" />}
                   />

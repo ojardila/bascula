@@ -247,6 +247,7 @@ const es: Dict = {
   "crop.weeks": "Por semana",
   "disc.otherLabel": "¿De qué es el descuento?",
   "disc.otherHint": "Ej: transporte, guantes, adelanto de mercado",
+  "pay.undone": "Se deshizo el pago.",
   "unit.default": "unidad",
 };
 
@@ -479,6 +480,7 @@ const en: Dict = {
   "crop.weeks": "By week",
   "disc.otherLabel": "What is the deduction for?",
   "disc.otherHint": "e.g. transport, gloves, groceries",
+  "pay.undone": "Payment undone.",
   "unit.default": "unit",
 };
 
@@ -711,6 +713,7 @@ const pt: Dict = {
   "crop.weeks": "Por semana",
   "disc.otherLabel": "Do que é o desconto?",
   "disc.otherHint": "Ex: transporte, luvas, mercado",
+  "pay.undone": "Pagamento desfeito.",
   "unit.default": "unidade",
 };
 

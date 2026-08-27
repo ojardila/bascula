@@ -50,6 +50,12 @@ export default function PaymentsPanel() {
   const [credits, setCredits] = useState<{ personId: number; name: string; cents: number }[]>([]);
   const [bulk, setBulk] = useState<Set<number> | null>(null); // null = sheet closed
   const [snack, setSnack] = useState("");
+  // What the last bulk run created, so it can be taken back. Paying the whole
+  // crew is the one action where a wrong tap costs the most, and undoing it by
+  // hand would mean reversing a payment and voiding a settlement per person.
+  const [lastRun, setLastRun] = useState<{ payments: number[]; settlements: number[] } | null>(
+    null,
+  );
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -118,6 +124,8 @@ export default function PaymentsPanel() {
     let done = 0;
     let noCash = 0;
     let failed = 0;
+    const payments: number[] = [];
+    const settlements: number[] = [];
     for (const r of selected) {
       try {
         const res = Payments.settle(r.personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
@@ -133,13 +141,15 @@ export default function PaymentsPanel() {
           noCash++;
           continue;
         }
-        Payments.pay(r.personId, owed, { method: "efectivo" });
+        payments.push(Payments.pay(r.personId, owed, { method: "efectivo" }));
+        settlements.push(res.settlementId);
         done++;
       } catch {
         failed++; // skip this worker, keep the rest of the payroll going
       }
     }
     setBulk(null);
+    setLastRun(done ? { payments, settlements } : null);
     load();
     const extra = [
       noCash ? t("pay.noCashN", { n: noCash }) : "",
@@ -148,6 +158,24 @@ export default function PaymentsPanel() {
       .filter(Boolean)
       .join(" · ");
     setSnack(`${t("pay.paidTo", { n: done })}${extra ? ` ${extra}` : ""}`);
+  }
+
+  // Reverse the payments first, then void the settlements: voiding posts its
+  // own reversal of the earning, and doing it the other way round would leave
+  // a payment standing against an earning that no longer exists.
+  function undoLastRun() {
+    if (!lastRun) return;
+    try {
+      for (const id of lastRun.payments) Payments.reverse(id, t("pay.undo"));
+      for (const id of lastRun.settlements) Payments.voidSettlement(id, t("pay.undo"));
+      setLastRun(null);
+      load();
+      // Deferred: tapping the action also fires onDismiss, which clears the
+      // snackbar — setting the text now would be wiped in the same tick.
+      setTimeout(() => setSnack(t("pay.undone")), 0);
+    } catch {
+      setTimeout(() => setSnack(t("pay.error")), 0);
+    }
   }
 
   return (
@@ -296,7 +324,15 @@ export default function PaymentsPanel() {
         </Dialog>
       </Portal>
 
-      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={4000}>
+      <Snackbar
+        visible={!!snack}
+        onDismiss={() => {
+          setSnack("");
+          setLastRun(null);
+        }}
+        duration={15000}
+        action={lastRun ? { label: t("pay.undo"), onPress: undoLastRun } : undefined}
+      >
         {snack}
       </Snackbar>
     </View>
