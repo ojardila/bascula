@@ -263,6 +263,11 @@ const es: Dict = {
   "perf.corrected": "Pesada corregida.",
   "perf.discarded": "Pesada descartada.",
   "perf.settled": "No se puede: esta pesada ya está en una liquidación pagada. Anula la liquidación primero.",
+  "pay.voidTitle": "¿Anular esta liquidación?",
+  "pay.voidBody": "Las pesadas vuelven a quedar pendientes y se podrán corregir. Si ya le pagaste, ese pago pasa a contar como avance y se le descuenta de la próxima liquidación.",
+  "pay.void": "Anular",
+  "pay.voided": "Liquidación anulada.",
+  "pay.voidNote": "Liquidación anulada",
   "unit.default": "unidad",
 };
 
@@ -511,6 +516,11 @@ const en: Dict = {
   "perf.corrected": "Pickup corrected.",
   "perf.discarded": "Pickup discarded.",
   "perf.settled": "Not possible: this pickup is already in a paid settlement. Void the settlement first.",
+  "pay.voidTitle": "Void this settlement?",
+  "pay.voidBody": "Its pickups go back to pending and can be corrected. If you already paid, that payment becomes an advance and comes off their next settlement.",
+  "pay.void": "Void",
+  "pay.voided": "Settlement voided.",
+  "pay.voidNote": "Settlement voided",
   "unit.default": "unit",
 };
 
@@ -759,6 +769,11 @@ const pt: Dict = {
   "perf.corrected": "Pesagem corrigida.",
   "perf.discarded": "Pesagem descartada.",
   "perf.settled": "Não é possível: esta pesagem já está numa liquidação paga. Anule a liquidação primeiro.",
+  "pay.voidTitle": "Anular esta liquidação?",
+  "pay.voidBody": "As pesagens voltam a ficar pendentes e poderão ser corrigidas. Se já pagou, esse pagamento passa a contar como adiantamento e será descontado na próxima liquidação.",
+  "pay.void": "Anular",
+  "pay.voided": "Liquidação anulada.",
+  "pay.voidNote": "Liquidação anulada",
   "unit.default": "unidade",
 };
 

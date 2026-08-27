@@ -1,6 +1,15 @@
 import { useCallback, useRef, useState } from "react";
 import { View, ScrollView, StyleSheet, Share } from "react-native";
-import { Text, Card, List, Divider, Button, Snackbar } from "react-native-paper";
+import {
+  Text,
+  Card,
+  List,
+  Divider,
+  Button,
+  Snackbar,
+  Portal,
+  Dialog,
+} from "react-native-paper";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
@@ -34,6 +43,9 @@ export default function Account() {
   const [balance, setBalance] = useState<Balance | null>(null);
   const [rows, setRows] = useState<LedgerEntry[]>([]);
   const [hasSettlement, setHasSettlement] = useState(false);
+  // A settlement the user is considering voiding. The app tells people to void
+  // one before correcting a settled pickup, so there has to be a way to do it.
+  const [voiding, setVoiding] = useState<LedgerEntry | null>(null);
   const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
@@ -184,6 +196,11 @@ export default function Account() {
                 <View key={e.id}>
                   {i > 0 && <Divider />}
                   <List.Item
+                    onPress={
+                      e.kind === "devengo" && e.settlementId
+                        ? () => setVoiding(e)
+                        : undefined
+                    }
                     title={t(`pay.kind.${e.kind}`)}
                     description={`${formatDay(e.date, lang)}${e.note ? ` · ${e.note}` : ""}`}
                     left={(p) => <List.Icon {...p} icon={ICON[e.kind] ?? "circle-small"} />}
@@ -204,7 +221,42 @@ export default function Account() {
         </Card>
       </ScrollView>
 
-      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={3000}>
+      <Portal>
+        <Dialog visible={!!voiding} onDismiss={() => setVoiding(null)}>
+          <Dialog.Icon icon="file-remove-outline" />
+          <Dialog.Title style={styles.dialogTitle}>{t("pay.voidTitle")}</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={{ textAlign: "center" }}>
+              {voiding ? formatMoney(fromCents(voiding.amountCents)) : ""}
+            </Text>
+            <Text variant="bodySmall" style={styles.dialogBody}>
+              {t("pay.voidBody")}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setVoiding(null)}>{t("confirm.cancel")}</Button>
+            <Button
+              textColor="#b3261e"
+              onPress={() => {
+                if (!voiding?.settlementId) return;
+                try {
+                  Payments.voidSettlement(voiding.settlementId, t("pay.voidNote"));
+                  setVoiding(null);
+                  load();
+                  setSnack(t("pay.voided"));
+                } catch {
+                  setVoiding(null);
+                  setSnack(t("pay.error"));
+                }
+              }}
+            >
+              {t("pay.void")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={4000}>
         {snack}
       </Snackbar>
     </View>
@@ -229,6 +281,8 @@ const styles = StyleSheet.create({
   action: { marginTop: 10, borderRadius: 12 },
   tall: { height: 52 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },
+  dialogTitle: { textAlign: "center" },
+  dialogBody: { textAlign: "center", opacity: 0.7, marginTop: 8 },
   plus: { color: "#1b5e20", alignSelf: "center", fontWeight: "700" },
   minus: { opacity: 0.75, alignSelf: "center", fontWeight: "700" },
 });
