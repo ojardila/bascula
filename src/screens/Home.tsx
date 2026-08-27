@@ -6,8 +6,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { TabParamList } from "../types";
-import { Reports, Pickups, Config } from "../db";
-import { useT, formatNumber, formatDay } from "../i18n";
+import { Reports, Pickups, Config, Payments, fromCents } from "../db";
+import { useT, formatNumber, formatDay, formatMoney } from "../i18n";
 
 type Props = BottomTabScreenProps<TabParamList, "Home">;
 
@@ -18,6 +18,7 @@ export default function Home({ navigation }: Props) {
   const [week, setWeek] = useState({ kg: 0, count: 0 });
   const [unit, setUnit] = useState("kg");
   const [cropLabel, setCropLabel] = useState("");
+  const [pending, setPending] = useState({ cents: 0, people: 0 });
   const [recent, setRecent] = useState<
     { id: number; weight: number; date: string; person: string; crop: string }[]
   >([]);
@@ -34,6 +35,12 @@ export default function Home({ navigation }: Props) {
       setUnit(cfg?.unit || "kg");
       setCropLabel(cfg?.label || "");
       setRecent(Pickups.recent().slice(0, 4));
+      // Everything still owed farm-wide, so Saturday's job is one tap away.
+      const owed = Payments.pendingAll(cfg?.costPerUnit ?? 0).filter((r) => r.amountCents > 0);
+      setPending({
+        cents: owed.reduce((sum, r) => sum + r.amountCents, 0),
+        people: owed.length,
+      });
     }, []),
   );
 
@@ -91,6 +98,26 @@ export default function Home({ navigation }: Props) {
           onPress={() => navigation.navigate("Reports")}
         />
       </View>
+
+      {pending.people > 0 && (
+        <Card mode="elevated" style={styles.card} onPress={() => navigation.navigate("People", { view: "pay" })}>
+          <Card.Content style={styles.payRow}>
+            <MaterialCommunityIcons name="cash-multiple" size={28} color="#1b5e20" />
+            <View style={{ flex: 1 }}>
+              <Text variant="labelLarge" style={{ opacity: 0.7 }}>
+                {t("pay.toPay")}
+              </Text>
+              <Text variant="titleLarge" style={styles.payAmount}>
+                {formatMoney(fromCents(pending.cents))}
+              </Text>
+              <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+                {t("pay.people", { n: pending.people })}
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#9aa39a" />
+          </Card.Content>
+        </Card>
+      )}
 
       <Button
         mode="contained"
@@ -222,6 +249,8 @@ const styles = StyleSheet.create({
   },
   statValue: { fontWeight: "800" },
   statLabel: { fontSize: 12, opacity: 0.6 },
+  payRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  payAmount: { fontWeight: "800", color: "#1b5e20" },
   cta: { borderRadius: 16 },
   ctaContent: { paddingVertical: 8 },
   ctaLabel: { fontSize: 16, fontWeight: "700" },

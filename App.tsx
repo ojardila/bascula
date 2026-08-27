@@ -21,6 +21,7 @@ import Settings from "./src/screens/Settings";
 import WorkerDetail from "./src/screens/WorkerDetail";
 import PayWorker from "./src/screens/PayWorker";
 import Account from "./src/screens/Account";
+import Adjust from "./src/screens/Adjust";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -135,6 +136,11 @@ function AppInner() {
           name="Account"
           component={Account}
           options={{ title: t("pay.account"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="Adjust"
+          component={Adjust}
+          options={{ title: t("pay.newMovement"), presentation: "card" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

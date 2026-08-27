@@ -203,6 +203,9 @@ const es: Dict = {
   "pay.kind.deduccion": "Descuento",
   "pay.kind.ajuste": "Ajuste",
   "pay.kind.reverso": "Reverso",
+  "pay.saved": "Guardado.",
+  "pay.afterwards": "Queda",
+  "pay.newMovement": "Registrar movimiento",
   "unit.default": "unidad",
 };
 
@@ -391,6 +394,9 @@ const en: Dict = {
   "pay.kind.deduccion": "Deduction",
   "pay.kind.ajuste": "Adjustment",
   "pay.kind.reverso": "Reversal",
+  "pay.saved": "Saved.",
+  "pay.afterwards": "Left",
+  "pay.newMovement": "Add movement",
   "unit.default": "unit",
 };
 
@@ -579,6 +585,9 @@ const pt: Dict = {
   "pay.kind.deduccion": "Desconto",
   "pay.kind.ajuste": "Ajuste",
   "pay.kind.reverso": "Estorno",
+  "pay.saved": "Salvo.",
+  "pay.afterwards": "Fica",
+  "pay.newMovement": "Registrar movimento",
   "unit.default": "unidade",
 };
 

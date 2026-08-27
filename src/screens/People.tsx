@@ -11,9 +11,10 @@ import {
   Dialog,
   Button,
 } from "react-native-paper";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { RootStackParamList } from "../types";
+import type { RootStackParamList, TabParamList } from "../types";
 import { People as PeopleDb, type Person } from "../db";
 import { useT } from "../i18n";
 import PaymentsPanel from "./PaymentsPanel";
@@ -25,7 +26,8 @@ export default function People() {
   const [pending, setPending] = useState<Person | null>(null); // worker awaiting delete confirm
   // Payments live here rather than in a seventh tab: at 360dp a seventh item
   // drops each tab under the 48dp touch target and truncates every label.
-  const [view, setView] = useState<"people" | "pay">("people");
+  const openAs = useRoute<RouteProp<TabParamList, "People">>().params?.view;
+  const [view, setView] = useState<"people" | "pay">(openAs === "pay" ? "pay" : "people");
   const load = useCallback(() => setItems(PeopleDb.all()), []);
   useFocusEffect(load);
 
