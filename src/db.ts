@@ -824,7 +824,10 @@ export const Payments = {
     ),
 
   // Not yet settled, for the whole farm — this is what drives "pay everyone".
-  pendingAll: (general: number) => {
+  // `upTo` cuts off at the end of the week being paid; anything still unpaid
+  // from earlier weeks is included on purpose, because the worker is still owed
+  // it and a settlement covers everything outstanding up to that date.
+  pendingAll: (general: number, upTo?: string) => {
     const rows = db.getAllSync<{ personId: number; name: string; week: string; weight: number }>(
       `SELECT pk.personId,
               COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
@@ -832,7 +835,9 @@ export const Payments = {
          FROM pickups pk
          LEFT JOIN people pe ON pe.id = pk.personId
         WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items)
+          AND (? IS NULL OR date(pk.date) <= date(?))
         GROUP BY pk.personId, week`,
+      [upTo ?? null, upTo ?? null],
     );
     const acc = new Map<number, { personId: number; name: string; kg: number; amountCents: number }>();
     for (const r of rows) {

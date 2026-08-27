@@ -16,4 +16,6 @@ export type RootStackParamList = {
   PeopleAdd: undefined;
   CropAdd: undefined;
   WorkerDetail: { personId: number };
+  PayWorker: { personId: number; monday: string };
+  Account: { personId: number };
 };

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, Avatar, List, Divider, Chip } from "react-native-paper";
+import { Text, Card, Avatar, List, Divider, Chip, Button } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -20,6 +20,7 @@ const chartConfig = {
 
 export default function WorkerDetail({
   route,
+  navigation,
 }: NativeStackScreenProps<RootStackParamList, "WorkerDetail">) {
   const { t, lang } = useT();
   const { personId } = route.params;
@@ -61,6 +62,16 @@ export default function WorkerDetail({
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <Button
+        mode="contained-tonal"
+        icon="cash-multiple"
+        style={styles.account}
+        contentStyle={styles.tall}
+        onPress={() => navigation.navigate("Account", { personId })}
+      >
+        {t("pay.account")}
+      </Button>
+
       {/* Header */}
       <Card style={styles.card} mode="elevated">
         <Card.Content style={styles.header}>
@@ -199,6 +210,8 @@ function Stat({
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 14 },
+  account: { marginBottom: 12, borderRadius: 12 },
+  tall: { height: 52 },
   card: { borderRadius: 16 },
   header: { flexDirection: "row", alignItems: "center", gap: 14 },
   tag: { alignSelf: "flex-start", marginTop: 6 },

@@ -19,6 +19,8 @@ import RegisterPickup from "./src/screens/RegisterPickup";
 import Reports from "./src/screens/Reports";
 import Settings from "./src/screens/Settings";
 import WorkerDetail from "./src/screens/WorkerDetail";
+import PayWorker from "./src/screens/PayWorker";
+import Account from "./src/screens/Account";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -123,6 +125,16 @@ function AppInner() {
           name="WorkerDetail"
           component={WorkerDetail}
           options={{ title: t("worker.performance"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="PayWorker"
+          component={PayWorker}
+          options={{ title: t("pay.pay"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="Account"
+          component={Account}
+          options={{ title: t("pay.account"), presentation: "card" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

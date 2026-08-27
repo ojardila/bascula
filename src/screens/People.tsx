@@ -3,6 +3,7 @@ import { View, FlatList, StyleSheet } from "react-native";
 import {
   List,
   FAB,
+  SegmentedButtons,
   Text,
   IconButton,
   Avatar,
@@ -15,12 +16,16 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
 import { People as PeopleDb, type Person } from "../db";
 import { useT } from "../i18n";
+import PaymentsPanel from "./PaymentsPanel";
 
 export default function People() {
   const { t } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [items, setItems] = useState<Person[]>([]);
   const [pending, setPending] = useState<Person | null>(null); // worker awaiting delete confirm
+  // Payments live here rather than in a seventh tab: at 360dp a seventh item
+  // drops each tab under the 48dp touch target and truncates every label.
+  const [view, setView] = useState<"people" | "pay">("people");
   const load = useCallback(() => setItems(PeopleDb.all()), []);
   useFocusEffect(load);
 
@@ -34,6 +39,19 @@ export default function People() {
 
   return (
     <View style={styles.container}>
+      <SegmentedButtons
+        value={view}
+        onValueChange={(v) => setView(v as "people" | "pay")}
+        style={styles.switch}
+        buttons={[
+          { value: "people", label: t("nav.workers"), icon: "account-group" },
+          { value: "pay", label: t("pay.tab"), icon: "cash-multiple" },
+        ]}
+      />
+      {view === "pay" ? (
+        <PaymentsPanel />
+      ) : (
+      <>
       <FlatList
         data={items}
         keyExtractor={(i) => String(i.id)}
@@ -58,6 +76,8 @@ export default function People() {
         )}
       />
       <FAB icon="plus" style={styles.fab} onPress={() => navigation.navigate("PeopleAdd")} />
+      </>
+      )}
 
       <Portal>
         <Dialog visible={!!pending} onDismiss={() => setPending(null)}>
@@ -87,6 +107,7 @@ export default function People() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  switch: { margin: 12 },
   fab: { position: "absolute", right: 16, bottom: 16 },
   avatar: { marginLeft: 8, alignSelf: "center" },
   emptyWrap: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
