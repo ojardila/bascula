@@ -18,6 +18,7 @@ import {
   People as PeopleDb,
   Payments,
   Config,
+  today,
   fromCents,
   type Balance,
   type LedgerEntry,
@@ -56,6 +57,12 @@ export default function Account() {
   }, [personId]);
   useFocusEffect(load);
 
+  // A voided settlement keeps its earning in the history next to its reversal,
+  // so without this the same one could be "voided" over and over, each time
+  // reporting success.
+  const voided = new Set(
+    rows.filter((r) => r.reversesId != null).map((r) => r.reversesId as number),
+  );
   const credit = balance?.balanceCents ?? 0;
   const owes = credit < 0; // the worker took an advance that is not worked off yet
   const busy = useRef(false);
@@ -109,7 +116,7 @@ export default function Account() {
           personId, earnedCents: 0, paidCents: 0, deductedCents: 0,
           balanceCents: 0, lastMovementAt: null,
         },
-        date: new Date().toISOString().slice(0, 10),
+        date: today(),
       },
       lang,
     );
@@ -197,10 +204,11 @@ export default function Account() {
                   {i > 0 && <Divider />}
                   <List.Item
                     onPress={
-                      e.kind === "devengo" && e.settlementId
+                      e.kind === "devengo" && e.settlementId && !voided.has(e.id)
                         ? () => setVoiding(e)
                         : undefined
                     }
+                    titleStyle={voided.has(e.id) ? styles.voidedRow : undefined}
                     title={t(`pay.kind.${e.kind}`)}
                     description={`${formatDay(e.date, lang)}${e.note ? ` · ${e.note}` : ""}`}
                     left={(p) => <List.Icon {...p} icon={ICON[e.kind] ?? "circle-small"} />}
@@ -281,6 +289,7 @@ const styles = StyleSheet.create({
   action: { marginTop: 10, borderRadius: 12 },
   tall: { height: 52 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },
+  voidedRow: { textDecorationLine: "line-through", opacity: 0.6 },
   dialogTitle: { textAlign: "center" },
   dialogBody: { textAlign: "center", opacity: 0.7, marginTop: 8 },
   plus: { color: "#1b5e20", alignSelf: "center", fontWeight: "700" },

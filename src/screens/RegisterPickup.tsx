@@ -32,19 +32,24 @@ export default function RegisterPickup() {
   function save() {
     if (busy.current || !valid) return;
     busy.current = true;
-    Pickups.add({
-      personId: personId!,
-      cropId: cropId!,
-      weight: parseFloat(weight),
-      date: new Date().toISOString(),
-    });
-    setWeight("");
-    setPersonId(null);
-    setCropId(null);
-    setSaved(true);
-    setTimeout(() => {
-      busy.current = false;
-    }, 400);
+    try {
+      Pickups.add({
+        personId: personId!,
+        cropId: cropId!,
+        weight: parseFloat(weight),
+        date: new Date().toISOString(),
+      });
+      setWeight("");
+      setPersonId(null);
+      setCropId(null);
+      setSaved(true);
+    } finally {
+      // Released even if the insert threw: this screen is a tab and never
+      // unmounts, so a stuck flag would leave the button dead until restart.
+      setTimeout(() => {
+        busy.current = false;
+      }, 400);
+    }
   }
 
   return (

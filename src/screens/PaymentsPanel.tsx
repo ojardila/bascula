@@ -54,6 +54,9 @@ export default function PaymentsPanel() {
   const [lastRun, setLastRun] = useState<{ payments: number[]; settlements: number[] } | null>(
     null,
   );
+  // Paper fires onDismiss when the action is tapped, which would drop lastRun
+  // and take the retry away exactly when it is needed.
+  const [retry, setRetry] = useState(false);
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -73,9 +76,12 @@ export default function PaymentsPanel() {
     setBalances(b);
     // Workers holding money with the farm. Without this row their savings
     // would vanish from the UI the moment they stop having pending harvest.
+    const pendingIds = new Set(
+      Payments.pendingAll(c.costPerUnit, endOfWeek(monday)).map((r) => r.personId),
+    );
     setCredits(
       all
-        .filter((x) => x.balanceCents > 0)
+        .filter((x) => x.balanceCents > 0 && !pendingIds.has(x.personId))
         .map((x) => ({ personId: x.personId, name: x.name, cents: x.balanceCents })),
     );
   }, [monday]);
@@ -139,8 +145,10 @@ export default function PaymentsPanel() {
           noCash++;
           continue;
         }
-        payments.push(Payments.pay(r.personId, owed, { method: "efectivo" }));
+        // Recorded before attempting the payment: settle() has already
+        // committed, so if pay() throws the settlement must still be undoable.
         settlements.push(res.settlementId);
+        payments.push(Payments.pay(r.personId, owed, { method: "efectivo" }));
         done++;
       } catch {
         failed++; // skip this worker, keep the rest of the payroll going
@@ -164,15 +172,20 @@ export default function PaymentsPanel() {
   function undoLastRun() {
     if (!lastRun) return;
     try {
-      for (const id of lastRun.payments) Payments.reverse(id, t("pay.undo"));
-      for (const id of lastRun.settlements) Payments.voidSettlement(id, t("pay.undo"));
+      Payments.undoRun(lastRun.payments, lastRun.settlements, t("pay.undo"));
       setLastRun(null);
       load();
       // Deferred: tapping the action also fires onDismiss, which clears the
       // snackbar — setting the text now would be wiped in the same tick.
       setTimeout(() => setSnack(t("pay.undone")), 0);
     } catch {
-      setTimeout(() => setSnack(t("pay.error")), 0);
+      // Keep lastRun so the action stays available for a retry: the whole
+      // thing rolled back, so nothing is half undone.
+      load();
+      setTimeout(() => {
+        setSnack(t("pay.error"));
+        setRetry(true);
+      }, 0);
     }
   }
 
@@ -326,7 +339,8 @@ export default function PaymentsPanel() {
         visible={!!snack}
         onDismiss={() => {
           setSnack("");
-          setLastRun(null);
+          if (!retry) setLastRun(null);
+          setRetry(false);
         }}
         duration={15000}
         action={lastRun ? { label: t("pay.undo"), onPress: undoLastRun } : undefined}

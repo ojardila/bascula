@@ -120,7 +120,6 @@ const es: Dict = {
 
   // Worker detail
   "worker.performance": "Rendimiento",
-  "worker.avg": "Prom. {unit}",
   "worker.days": "Días activos",
   "worker.byWeek": "Rendimiento por semana",
   "worker.byCrop": "Por cultivo",
@@ -270,6 +269,7 @@ const es: Dict = {
   "pay.voidNote": "Liquidación anulada",
   "peopleAdd.rfidTaken": "Esa placa ya la tiene otro recolector.",
   "worker.perDay": "{unit}/día",
+  "perf.badWeight": "Escribe un peso mayor que cero.",
   "unit.default": "unidad",
 };
 
@@ -376,7 +376,6 @@ const en: Dict = {
   "reports.lots": "Lots",
 
   "worker.performance": "Performance",
-  "worker.avg": "Avg {unit}",
   "worker.days": "Active days",
   "worker.byWeek": "Performance by week",
   "worker.byCrop": "By crop",
@@ -525,6 +524,7 @@ const en: Dict = {
   "pay.voidNote": "Settlement voided",
   "peopleAdd.rfidTaken": "Another worker already has that tag.",
   "worker.perDay": "{unit}/day",
+  "perf.badWeight": "Enter a weight greater than zero.",
   "unit.default": "unit",
 };
 
@@ -631,7 +631,6 @@ const pt: Dict = {
   "reports.lots": "Lotes",
 
   "worker.performance": "Desempenho",
-  "worker.avg": "Méd. {unit}",
   "worker.days": "Dias ativos",
   "worker.byWeek": "Desempenho por semana",
   "worker.byCrop": "Por cultura",
@@ -780,6 +779,7 @@ const pt: Dict = {
   "pay.voidNote": "Liquidação anulada",
   "peopleAdd.rfidTaken": "Outro colhedor já tem essa placa.",
   "worker.perDay": "{unit}/dia",
+  "perf.badWeight": "Digite um peso maior que zero.",
   "unit.default": "unidade",
 };
 
@@ -828,17 +828,27 @@ function group(digits: string, sep: string): string {
 /** Money without decimals: 1471070 -> "$1.471.070" (es) / "$1,471,070" (en). */
 export function formatMoney(amount: number, lang: Lang = "es"): string {
   const n = Math.round(Math.abs(amount));
-  return `${amount < 0 ? "-" : ""}$${group(String(n), SEPARATORS[lang].group)}`;
+  // Sign only when something survives the rounding, so -0.4 is "$0", not "-$0".
+  const sign = amount < 0 && n > 0 ? "-" : "";
+  return `${sign}$${group(String(n), SEPARATORS[lang].group)}`;
 }
 
-/** Weights and counts: 1742.5 -> "1.742,5" (es) / "1,742.5" (en). */
+/**
+ * Weights and counts: 1742.5 -> "1.742,5" (es) / "1,742.5" (en).
+ *
+ * Rounds once, in tenths. Taking the integer part first and rounding the
+ * remainder separately lets the remainder reach 10, which then prints as a
+ * second digit: a SUM() of 65.3 + 68.1 + 52.6 comes back as 185.99999999999997
+ * and rendered as "185,10" instead of "186". That number ends up on the
+ * receipt the worker checks their weight against.
+ */
 export function formatNumber(value: number, lang: Lang = "es"): string {
-  const neg = value < 0;
-  const abs = Math.abs(value);
-  const whole = Math.floor(abs);
-  const frac = Math.round((abs - whole) * 10);
+  const tenths = Math.round(Math.abs(value) * 10);
+  const whole = Math.floor(tenths / 10);
+  const frac = tenths % 10;
   const { group: g, decimal } = SEPARATORS[lang];
-  return `${neg ? "-" : ""}${group(String(whole), g)}${frac ? decimal + frac : ""}`;
+  const sign = value < 0 && tenths > 0 ? "-" : "";
+  return `${sign}${group(String(whole), g)}${frac ? decimal + frac : ""}`;
 }
 
 // Parse a YYYY-MM-DD key without going through the local timezone, which would

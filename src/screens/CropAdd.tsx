@@ -24,15 +24,19 @@ export default function CropAdd({
   const busy = useRef(false);
 
   function save() {
-    if (busy.current) return;
+    if (busy.current || !valid) return;
     busy.current = true;
-    CropsDb.add({
-      name: name.trim(),
-      type: preset.label, // store the readable crop-type label
-      variety,
-      dimension: parseFloat(dimension) || 0,
-    });
-    navigation.goBack();
+    try {
+      CropsDb.add({
+        name: name.trim(),
+        type: preset.label, // store the readable crop-type label
+        variety,
+        dimension: parseFloat(dimension) || 0,
+      });
+      navigation.goBack();
+    } catch {
+      busy.current = false;
+    }
   }
 
   return (

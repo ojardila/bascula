@@ -333,8 +333,15 @@ export default function PerformancePanel() {
                   load();
                   setSnack(t("perf.corrected"));
                 } catch (e) {
+                  const m = String(e);
                   setReview(null);
-                  setSnack(String(e).includes("SETTLED") ? t("perf.settled") : t("pay.error"));
+                  setSnack(
+                    m.includes("SETTLED")
+                      ? t("perf.settled")
+                      : m.includes("BADWEIGHT")
+                        ? t("perf.badWeight")
+                        : t("pay.error"),
+                  );
                 }
               }}
             >

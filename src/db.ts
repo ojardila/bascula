@@ -205,7 +205,7 @@ const now = () => new Date().toISOString();
 // Local calendar day, not the UTC one: every query now groups by local day,
 // and a payment made on Sunday evening in Bogota would otherwise be stamped
 // with tomorrow's date and shown as a movement dated in the future.
-const today = () => {
+export const today = () => {
   const d = new Date();
   const p2 = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
@@ -234,8 +234,6 @@ export const People = {
 export const Crops = {
   all: () =>
     db.getAllSync<Crop>("SELECT * FROM crops WHERE deletedAt IS NULL ORDER BY name"),
-  // Including deleted ones, so a plot's history still resolves to its name.
-  allWithDeleted: () => db.getAllSync<Crop>("SELECT * FROM crops ORDER BY name"),
   byId: (id: number) => db.getFirstSync<Crop>("SELECT * FROM crops WHERE id = ?", [id]),
   add: (c: Omit<Crop, "id" | "createdAt">) =>
     db.runSync(
@@ -259,8 +257,10 @@ export const Pickups = {
 
   setWeight: (id: number, weight: number) => {
     if (Pickups.isSettled(id)) throw new Error("SETTLED");
-    if (!Number.isFinite(weight) || weight <= 0) throw new Error("El peso debe ser mayor que cero");
-    db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [weight, id]);
+    if (!Number.isFinite(weight) || weight <= 0) throw new Error("BADWEIGHT");
+    const r = db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [weight, id]);
+    // Without this an update that matched nothing reported success.
+    if (r.changes === 0) throw new Error("NOTFOUND");
   },
 
   remove: (id: number) => {
@@ -339,6 +339,7 @@ export const Reports = {
        LEFT JOIN crops cr ON cr.id = pk.cropId
        LEFT JOIN cost_overrides o
          ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
+       WHERE cr.deletedAt IS NULL
        GROUP BY pk.cropId ORDER BY kg DESC`,
       [general],
     ),
@@ -350,6 +351,7 @@ export const weekCrops = () =>
     `SELECT date(pk.date,'localtime','-6 days','weekday 1') AS week,
             COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg
      FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+     WHERE cr.deletedAt IS NULL
      GROUP BY week, pk.cropId ORDER BY week DESC, kg DESC`,
   );
 
@@ -910,6 +912,23 @@ export const Payments = {
     });
   },
 
+  // Undo a whole payroll run in one transaction. Reversing the payments and
+  // voiding the settlements as separate writes meant a failure halfway left
+  // some workers reversed and others not, with no way to finish from the UI.
+  // Tolerant of anything already undone, so retrying is safe.
+  undoRun: (paymentIds: number[], settlementIds: number[], note: string) => {
+    db.withTransactionSync(() => {
+      for (const id of paymentIds) {
+        const already = db.getFirstSync<{ id: number }>(
+          "SELECT id FROM ledger WHERE reversesId = ?",
+          [id],
+        );
+        if (!already) Payments.reverse(id, note);
+      }
+      for (const id of settlementIds) Payments.voidSettlement(id, note);
+    });
+  },
+
   balance: (personId: number): Balance => {
     const r = db.getFirstSync<Balance>(
       `SELECT ? AS personId,
@@ -1159,7 +1178,7 @@ export const Performance = {
               SUM(pk.weight) / NULLIF(cr.dimension,0) AS kgPerHa,
               COUNT(DISTINCT pk.personId) AS pickers
          FROM pickups pk JOIN crops cr ON cr.id = pk.cropId
-        WHERE ${DAY_KEY} >= date('now','localtime',?)
+        WHERE ${DAY_KEY} >= date('now','localtime',?) AND cr.deletedAt IS NULL
         GROUP BY cr.id ORDER BY kgPerHa DESC`,
       [`-${sinceDays} days`],
     ),
