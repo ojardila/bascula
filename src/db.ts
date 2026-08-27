@@ -511,6 +511,30 @@ export const Demo = {
       });
     }
 
+    // Three deliberately bad pickups, so the review rules can actually be seen
+    // and tested. With only clean data that half of the module never shows up,
+    // and a rule nobody ever watches fire is a rule nobody trusts.
+    const bad = new Date();
+    bad.setDate(bad.getDate() - 2);
+    const badIso = (h: number) => {
+      const t = new Date(bad);
+      t.setHours(h, 15, 0, 0);
+      return t.toISOString();
+    };
+    // A typed extra zero: 520 kg where this person carries ~50.
+    db.runSync(
+      "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
+      [pids[2], cids[0], 520, badIso(9), badIso(9)],
+    );
+    // The same weighing saved twice by a double tap.
+    const dup = badIso(11);
+    for (let k = 0; k < 2; k++) {
+      db.runSync(
+        "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
+        [pids[4], cids[1], 47, dup, dup],
+      );
+    }
+
     // A couple of weekly cost overrides to showcase the feature.
     const weeks = db.getAllSync<{ week: string }>(
       "SELECT DISTINCT date(date,'localtime','-6 days','weekday 1') AS week FROM pickups ORDER BY week DESC LIMIT 2",
@@ -1053,8 +1077,10 @@ export const Performance = {
   },
 
   // Yield per hectare is the one agronomic number the schema already holds
-  // and nothing uses: it says whether a plot is giving what it should.
-  plots: () =>
+  // and nothing uses: it says whether a plot is giving what it should. Bounded
+  // to the same window as the rest of the panel — a lifetime total against a
+  // one-season area only ever grows, and means nothing by the third harvest.
+  plots: (sinceDays = 28) =>
     db.getAllSync<{
       cropId: number;
       name: string;
@@ -1068,7 +1094,9 @@ export const Performance = {
               SUM(pk.weight) / NULLIF(cr.dimension,0) AS kgPerHa,
               COUNT(DISTINCT pk.personId) AS pickers
          FROM pickups pk JOIN crops cr ON cr.id = pk.cropId
+        WHERE ${DAY_KEY} >= date('now','localtime',?)
         GROUP BY cr.id ORDER BY kgPerHa DESC`,
+      [`-${sinceDays} days`],
     ),
 
   // Real cost per unit from the ledger, not weight * price: it includes the
