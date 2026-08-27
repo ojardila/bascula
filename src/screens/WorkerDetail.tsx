@@ -33,7 +33,7 @@ export default function WorkerDetail({
   const { t, lang, money, num } = useT();
   const { personId } = route.params;
   const [person, setPerson] = useState<Person | null>(null);
-  const [stats, setStats] = useState({ kg: 0, pickups: 0, firstDate: "", lastDate: "" });
+  const [stats, setStats] = useState({ kg: 0, pickups: 0, days: 0, firstDate: "", lastDate: "" });
   const [byWeek, setByWeek] = useState<{ label: string; kg: number }[]>([]);
   const [byCrop, setByCrop] = useState<{ label: string; kg: number }[]>([]);
   const [recent, setRecent] = useState<
@@ -47,7 +47,11 @@ export default function WorkerDetail({
 
   useFocusEffect(
     useCallback(() => {
-      setPerson(People.byId(personId) ?? null);
+      const found = People.byId(personId) ?? null;
+      setPerson(found);
+      if (found) {
+        navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
+      }
       const s = WorkerReports.stats(personId);
       if (s) setStats(s);
       setByWeek(WorkerReports.byWeek(personId));
@@ -60,8 +64,8 @@ export default function WorkerDetail({
   );
 
   const unit = config?.unit || "kg";
-  const days = countDays(stats.firstDate, stats.lastDate);
-  const avg = stats.pickups ? stats.kg / stats.pickups : 0;
+  const days = stats.days;
+  const perDay = stats.days ? stats.kg / stats.days : 0;
 
   const weekAsc = [...byWeek].reverse();
   const hasChart = weekAsc.length >= 2;
@@ -111,7 +115,7 @@ export default function WorkerDetail({
       <View style={styles.stats}>
         <Stat label={t("reports.total", { unit })} value={num(stats.kg)} />
         <Stat label={t("reports.pickups")} value={String(stats.pickups)} />
-        <Stat label={t("worker.avg", { unit })} value={avg.toFixed(1)} />
+        <Stat label={t("worker.perDay", { unit })} value={num(Math.round(perDay * 10) / 10)} />
         <Stat label={t("worker.days")} value={String(days)} />
         <Stat
           label={balanceCents < 0 ? t("pay.owesUs") : t("pay.weOwe")}
@@ -186,12 +190,6 @@ export default function WorkerDetail({
   );
 }
 
-function countDays(first: string, last: string) {
-  if (!first || !last) return 0;
-  const a = new Date(first).getTime();
-  const b = new Date(last).getTime();
-  return Math.max(1, Math.round((b - a) / 86400000) + 1);
-}
 
 function Stat({
   label,

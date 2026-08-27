@@ -268,6 +268,8 @@ const es: Dict = {
   "pay.void": "Anular",
   "pay.voided": "Liquidación anulada.",
   "pay.voidNote": "Liquidación anulada",
+  "peopleAdd.rfidTaken": "Esa placa ya la tiene otro recolector.",
+  "worker.perDay": "{unit}/día",
   "unit.default": "unidad",
 };
 
@@ -521,6 +523,8 @@ const en: Dict = {
   "pay.void": "Void",
   "pay.voided": "Settlement voided.",
   "pay.voidNote": "Settlement voided",
+  "peopleAdd.rfidTaken": "Another worker already has that tag.",
+  "worker.perDay": "{unit}/day",
   "unit.default": "unit",
 };
 
@@ -774,6 +778,8 @@ const pt: Dict = {
   "pay.void": "Anular",
   "pay.voided": "Liquidação anulada.",
   "pay.voidNote": "Liquidação anulada",
+  "peopleAdd.rfidTaken": "Outro colhedor já tem essa placa.",
+  "worker.perDay": "{unit}/dia",
   "unit.default": "unidade",
 };
 

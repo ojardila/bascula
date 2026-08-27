@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
 import { TextInput, Button, Chip, Text, HelperText } from "react-native-paper";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -21,7 +21,11 @@ export default function CropAdd({
   const preset = presetByKey(type);
   const valid = name.trim().length > 0 && !!type;
 
+  const busy = useRef(false);
+
   function save() {
+    if (busy.current) return;
+    busy.current = true;
     CropsDb.add({
       name: name.trim(),
       type: preset.label, // store the readable crop-type label
