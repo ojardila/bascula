@@ -52,7 +52,14 @@ export default function CropDetail({
   const { cropId } = route.params;
   const [crop, setCrop] = useState<Crop | null>(null);
   const [config, setConfig] = useState<CropConfig | null>(null);
-  const [stats, setStats] = useState({ kg: 0, pickups: 0, pickers: 0, days: 0 });
+  const [stats, setStats] = useState({
+    kg: 0,
+    pickups: 0,
+    pickers: 0,
+    days: 0,
+    firstDate: "",
+    lastDate: "",
+  });
   const [byWeek, setByWeek] = useState<ReturnType<typeof CropReports.byWeek>>([]);
   const [byWorker, setByWorker] = useState<ReturnType<typeof CropReports.byWorker>>([]);
   const [recent, setRecent] = useState<ReturnType<typeof CropReports.recent>>([]);
@@ -93,6 +100,11 @@ export default function CropDetail({
           <Text variant="titleLarge" style={{ fontWeight: "800" }}>
             {crop?.name ?? t("crop.deleted")}
           </Text>
+          {!!stats.firstDate && (
+            <Text variant="labelSmall" style={styles.dim}>
+              {formatDay(stats.firstDate, lang)} – {formatDay(stats.lastDate, lang)}
+            </Text>
+          )}
           <View style={styles.chips}>
             {!!crop?.type && <Chip compact icon="sprout">{crop.type}</Chip>}
             {!!crop?.variety && <Chip compact>{crop.variety}</Chip>}

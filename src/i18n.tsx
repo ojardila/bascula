@@ -252,6 +252,8 @@ const es: Dict = {
   "disc.otherHint": "Ej: transporte, guantes, adelanto de mercado",
   "pay.undone": "Se deshizo el pago.",
   "crop.deleted": "Lote eliminado",
+  "confirm.deleteCropTitle": "¿Eliminar este lote?",
+  "confirm.deleteCropBody": "Se oculta de la lista, pero se conserva el historial de recolección.",
   "unit.default": "unidad",
 };
 
@@ -489,6 +491,8 @@ const en: Dict = {
   "disc.otherHint": "e.g. transport, gloves, groceries",
   "pay.undone": "Payment undone.",
   "crop.deleted": "Deleted plot",
+  "confirm.deleteCropTitle": "Delete this plot?",
+  "confirm.deleteCropBody": "It is hidden from the list, but its harvest history is kept.",
   "unit.default": "unit",
 };
 
@@ -726,6 +730,8 @@ const pt: Dict = {
   "disc.otherHint": "Ex: transporte, luvas, mercado",
   "pay.undone": "Pagamento desfeito.",
   "crop.deleted": "Lote excluído",
+  "confirm.deleteCropTitle": "Excluir este lote?",
+  "confirm.deleteCropBody": "É ocultado da lista, mas o histórico de colheita é mantido.",
   "unit.default": "unidade",
 };
 
@@ -843,10 +849,25 @@ export function weekTag(mondayISO: string, lang: Lang, now = new Date()): string
   return null;
 }
 
-/** Short day for lists and receipts: "27 ago". */
-export function formatDay(iso: string, lang: Lang): string {
-  const d = parseDay(iso);
+/**
+ * Short day for lists and receipts: "27 ago".
+ *
+ * A stored pickup is a UTC instant, so slicing its first ten characters shows
+ * tomorrow for anything logged after 19:00 in Bogota — while every total in
+ * the app groups it by local day. Values that carry a time are converted to
+ * the local day; plain YYYY-MM-DD keys (week mondays, ledger dates) are
+ * already local and must be read as-is.
+ */
+export function formatDay(value: string, lang: Lang): string {
   const M = MONTHS_SHORT[lang];
+  const hasTime = value.length > 10;
+  if (hasTime) {
+    const d = new Date(value);
+    return lang === "en"
+      ? `${M[d.getMonth()]} ${d.getDate()}`
+      : `${d.getDate()} ${M[d.getMonth()]}`;
+  }
+  const d = parseDay(value);
   return lang === "en"
     ? `${M[d.getUTCMonth()]} ${d.getUTCDate()}`
     : `${d.getUTCDate()} ${M[d.getUTCMonth()]}`;
