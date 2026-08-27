@@ -5,7 +5,15 @@ import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
-import { People, WorkerReports, Config, type Person, type CropConfig } from "../db";
+import {
+  People,
+  WorkerReports,
+  Config,
+  Payments,
+  fromCents,
+  type Person,
+  type CropConfig,
+} from "../db";
 import { useT, formatMoney, formatNumber, formatWeekRange, formatDay } from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
@@ -31,7 +39,10 @@ export default function WorkerDetail({
   const [recent, setRecent] = useState<
     { id: number; weight: number; date: string; crop: string }[]
   >([]);
-  const [payout, setPayout] = useState(0);
+  // What is actually owed, from the ledger. The gross value of everything
+  // ever harvested is a different number and must not be labelled "to pay":
+  // it keeps showing a debt for someone who was already paid in full.
+  const [balanceCents, setBalanceCents] = useState(0);
   const [config, setConfig] = useState<CropConfig | null>(null);
 
   useFocusEffect(
@@ -44,7 +55,7 @@ export default function WorkerDetail({
       setRecent(WorkerReports.recent(personId));
       const c = Config.get();
       setConfig(c ?? null);
-      setPayout(WorkerReports.payout(personId, c ? c.costPerUnit : 0));
+      setBalanceCents(Payments.balance(personId).balanceCents);
     }, [personId]),
   );
 
@@ -103,8 +114,8 @@ export default function WorkerDetail({
         <Stat label={t("worker.avg", { unit })} value={avg.toFixed(1)} />
         <Stat label={t("worker.days")} value={String(days)} />
         <Stat
-          label={t("reports.toPay")}
-          value={formatMoney(payout)}
+          label={balanceCents < 0 ? t("pay.owesUs") : t("pay.weOwe")}
+          value={formatMoney(fromCents(Math.abs(balanceCents)))}
           highlight
         />
       </View>
