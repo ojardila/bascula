@@ -23,6 +23,7 @@ import WorkerDetail from "./src/screens/WorkerDetail";
 import PayWorker from "./src/screens/PayWorker";
 import Account from "./src/screens/Account";
 import Adjust from "./src/screens/Adjust";
+import CropDetail from "./src/screens/CropDetail";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -137,6 +138,11 @@ function AppInner() {
           name="Account"
           component={Account}
           options={{ title: t("pay.account"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="CropDetail"
+          component={CropDetail}
+          options={{ title: t("nav.crops"), presentation: "card" }}
         />
         <Stack.Screen
           name="Adjust"

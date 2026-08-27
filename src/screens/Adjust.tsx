@@ -31,6 +31,9 @@ export default function Adjust() {
   const [mode, setMode] = useState<"anticipo" | "deduccion">(kind);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("food");
+  // "Other" is a catch-all, so it needs a name written in or the history reads
+  // as a column of identical "Other" lines nobody can tell apart later.
+  const [otherLabel, setOtherLabel] = useState("");
   const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
@@ -54,7 +57,11 @@ export default function Adjust() {
       if (mode === "anticipo") {
         Payments.advance(personId, cents);
       } else {
-        Payments.deduct(personId, cents, t(`disc.${reason}`));
+        const label =
+          reason === "other" && otherLabel.trim()
+            ? otherLabel.trim()
+            : t(`disc.${reason}`);
+        Payments.deduct(personId, cents, label);
       }
       setSnack(t("pay.saved"));
       setTimeout(() => navigation.goBack(), 700);
@@ -97,6 +104,17 @@ export default function Adjust() {
                   </Chip>
                 ))}
               </View>
+            )}
+
+            {mode === "deduccion" && reason === "other" && (
+              <TextInput
+                mode="outlined"
+                label={t("disc.otherLabel")}
+                placeholder={t("disc.otherHint")}
+                value={otherLabel}
+                onChangeText={setOtherLabel}
+                maxLength={40}
+              />
             )}
 
             <TextInput

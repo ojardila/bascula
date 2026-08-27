@@ -192,7 +192,7 @@ export default function Reports() {
                   grouping === "week"
                     ? b.kg * costForWeek(b.label, config.costPerUnit)
                     : b.kg * config.costPerUnit;
-                const tappable = grouping === "worker" && b.id != null;
+                const tappable = grouping !== "week" && b.id != null;
                 const lots = grouping === "week" ? lotsByWeek[b.label] ?? [] : [];
                 const row = (
                   <View style={styles.barRow}>
@@ -229,7 +229,9 @@ export default function Reports() {
                       <TouchableRipple
                         borderless
                         onPress={() =>
-                          navigation.navigate("WorkerDetail", { personId: b.id! })
+                          grouping === "worker"
+                            ? navigation.navigate("WorkerDetail", { personId: b.id! })
+                            : navigation.navigate("CropDetail", { cropId: b.id! })
                         }
                       >
                         {row}

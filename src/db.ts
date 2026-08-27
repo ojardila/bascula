@@ -286,8 +286,9 @@ export const Reports = {
        GROUP BY pk.personId ORDER BY kg DESC`,
     ),
   byCrop: () =>
-    db.getAllSync<{ label: string; kg: number }>(
-      `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg
+    db.getAllSync<{ label: string; kg: number; id: number }>(
+      `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg,
+              pk.cropId AS id
        FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
        GROUP BY pk.cropId ORDER BY kg DESC`,
     ),
@@ -1260,5 +1261,77 @@ export const Anomalies = {
     // One pickup can break more than one rule; report it once, worst first.
     const seen = new Set<number>();
     return out.filter((a) => (seen.has(a.pickupId) ? false : seen.add(a.pickupId)));
+  },
+};
+
+// ---- Per-crop detail ----------------------------------------------------
+
+export const CropReports = {
+  stats: (cropId: number) =>
+    db.getFirstSync<{
+      kg: number;
+      pickups: number;
+      pickers: number;
+      days: number;
+      firstDate: string;
+      lastDate: string;
+    }>(
+      `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS pickups,
+              COUNT(DISTINCT personId) AS pickers,
+              COUNT(DISTINCT date(date,'localtime')) AS days,
+              MIN(date) AS firstDate, MAX(date) AS lastDate
+         FROM pickups WHERE cropId = ?`,
+      [cropId],
+    ),
+
+  byWeek: (cropId: number) =>
+    db.getAllSync<{ week: string; kg: number; pickers: number }>(
+      `SELECT date(date,'localtime','-6 days','weekday 1') AS week,
+              SUM(weight) AS kg, COUNT(DISTINCT personId) AS pickers
+         FROM pickups WHERE cropId = ?
+        GROUP BY week ORDER BY week DESC LIMIT 12`,
+      [cropId],
+    ),
+
+  // Who worked this plot, and how they compared against the others who were
+  // on it the same days — the only fair way to rank inside a plot.
+  byWorker: (cropId: number) =>
+    db.getAllSync<{ personId: number; name: string; kg: number; days: number; irl: number | null }>(
+      `WITH dw AS (
+         SELECT pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
+           FROM pickups pk WHERE pk.cropId = ?
+          GROUP BY pk.personId, d
+       ),
+       base AS (SELECT d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY d)
+       SELECT dw.personId,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+              SUM(dw.kg) AS kg,
+              COUNT(DISTINCT dw.d) AS days,
+              AVG(CASE WHEN base.n >= 3
+                       THEN dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0) END) AS irl
+         FROM dw
+         JOIN base ON base.d = dw.d
+         LEFT JOIN people pe ON pe.id = dw.personId
+        GROUP BY dw.personId ORDER BY kg DESC`,
+      [cropId],
+    ),
+
+  recent: (cropId: number) =>
+    db.getAllSync<{ id: number; weight: number; date: string; person: string }>(
+      `SELECT pk.id, pk.weight, pk.date,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS person
+         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE pk.cropId = ? ORDER BY pk.date DESC LIMIT 30`,
+      [cropId],
+    ),
+
+  // Value produced by this plot, using the price in force each week.
+  value: (cropId: number, general: number) => {
+    const rows = db.getAllSync<{ week: string; kg: number }>(
+      `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
+         FROM pickups WHERE cropId = ? GROUP BY week`,
+      [cropId],
+    );
+    return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
   },
 };

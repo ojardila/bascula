@@ -2,7 +2,9 @@ import { useCallback, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
 import { Text, Card, List, Divider, Chip, Banner } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../types";
 import {
   Config,
   Performance,
@@ -23,6 +25,7 @@ function irlColor(irl: number | null) {
 
 export default function PerformancePanel() {
   const { t, lang } = useT();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [config, setConfig] = useState<CropConfig | null>(null);
   const [crew, setCrew] = useState<WorkerPerf[]>([]);
   const [plots, setPlots] = useState<ReturnType<typeof Performance.plots>>([]);
@@ -137,6 +140,7 @@ export default function PerformancePanel() {
             <View key={p.cropId}>
               {i > 0 && <Divider />}
               <List.Item
+                onPress={() => navigation.navigate("CropDetail", { cropId: p.cropId })}
                 title={p.name}
                 description={`${formatNumber(p.kg)} ${unit} · ${t("perf.pickers", {
                   n: p.pickers,

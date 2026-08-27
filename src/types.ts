@@ -19,4 +19,5 @@ export type RootStackParamList = {
   PayWorker: { personId: number; monday: string };
   Account: { personId: number };
   Adjust: { personId: number; kind: "anticipo" | "deduccion" };
+  CropDetail: { cropId: number };
 };
