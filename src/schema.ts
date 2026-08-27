@@ -117,3 +117,28 @@ export const PENDING_SQL = `
      AND pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
    ORDER BY pk.date
 `;
+
+/**
+ * The comparative index: each worker against the mates who worked the same
+ * plot the same day. Three things had to be right and none of them were at
+ * first — the window matches the other figures, the person is out of their own
+ * benchmark, and it averages daily ratios instead of dividing sums, so a day
+ * on a heavy plot does not outweigh several on a light one.
+ */
+export const INDEX_SQL = `
+  WITH dw AS (
+    SELECT pk.personId, pk.cropId, ${DAY_OF("pk.date")} AS d, SUM(pk.weight) AS kg
+      FROM pickups pk
+     WHERE ${DAY_OF("pk.date")} >= date('now','localtime',?)
+     GROUP BY pk.personId, pk.cropId, d
+  ),
+  base AS (
+    SELECT cropId, d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY cropId, d
+  )
+  SELECT dw.personId,
+         AVG(dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0)) AS irl,
+         COUNT(DISTINCT dw.d) AS comparableDays
+    FROM dw JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
+   WHERE base.n >= 3
+   GROUP BY dw.personId
+`;

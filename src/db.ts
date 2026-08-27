@@ -4,6 +4,7 @@ import {
   PAYMENTS_SCHEMA,
   BALANCE_SQL,
   PENDING_SQL,
+  INDEX_SQL,
 } from "./schema";
 
 export interface Person {
@@ -1032,24 +1033,8 @@ export const Performance = {
       personId: number;
       irl: number;
       comparableDays: number;
-    }>(
-      `WITH dw AS (
-         SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-           FROM pickups pk
-          WHERE ${DAY_KEY} >= date('now','localtime',?)
-          GROUP BY pk.personId, pk.cropId, d
-       ),
-       base AS (
-         SELECT cropId, d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY cropId, d
-       )
-       SELECT dw.personId,
-              AVG(dw.kg / NULLIF((base.tot - dw.kg) / (base.n - 1), 0)) AS irl,
-              COUNT(DISTINCT dw.d) AS comparableDays
-         FROM dw JOIN base ON base.cropId = dw.cropId AND base.d = dw.d
-        WHERE base.n >= 3          -- fewer than three mates is not a comparison
-        GROUP BY dw.personId`,
-      [`-${sinceDays} days`],
-    );
+    }>(INDEX_SQL, [`-${sinceDays} days`]);
+
     const irlOf = new Map(irlRows.map((r) => [r.personId, r]));
 
     // Same index split into two windows of equal length, to see who is
