@@ -21,6 +21,7 @@
     "react-native-svg": "15.15.4"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },
@@ -28,7 +29,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "node --test src/*.test.ts"
   },
   "private": true
 }
