@@ -17,7 +17,16 @@ import {
   type Grouping,
   type CropConfig,
 } from "../db";
-import { useT } from "../i18n";
+import type { Lang } from "../i18n";
+import {
+  useT,
+  formatMoney,
+  formatNumber,
+  formatWeekRange,
+  weekTag,
+  formatDay,
+  weekNumber,
+} from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -30,14 +39,15 @@ const chartConfig = {
   propsForDots: { r: "4", strokeWidth: "2", stroke: "#1b5e20" },
 };
 
-// Shorten a grouping label for the chart axis.
-function shortLabel(g: Grouping, label: string) {
-  if (g === "week") return label.replace(/^\d{4}-/, ""); // 2026-W33 -> W33
+// Shorten a grouping label for the chart axis, where there is room for very
+// little: week keys become the day and month they start on.
+function shortLabel(g: Grouping, label: string, lang: Lang) {
+  if (g === "week") return formatDay(label, lang);
   return label.split(" ")[0]; // first name / first word
 }
 
 export default function Reports() {
-  const { t } = useT();
+  const { t, lang } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [grouping, setGrouping] = useState<Grouping>("week");
@@ -86,7 +96,7 @@ export default function Reports() {
   // Chart takes the top entries; for weeks we show chronological (oldest→newest).
   const top = grouping === "week" ? [...rows].reverse().slice(-8) : rows.slice(0, 6);
   const chartData = {
-    labels: top.map((r) => shortLabel(grouping, r.label)),
+    labels: top.map((r) => shortLabel(grouping, r.label, lang)),
     datasets: [{ data: top.map((r) => Math.round(r.kg)) }],
   };
   const hasChart = top.length >= 2;
@@ -94,9 +104,9 @@ export default function Reports() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.stats}>
-        <Stat label={t("reports.total", { unit })} value={totals.kg.toLocaleString()} />
+        <Stat label={t("reports.total", { unit })} value={formatNumber(totals.kg)} />
         <Stat label={t("reports.pickups")} value={String(totals.pickups)} />
-        <Stat label={t("reports.toPay")} value={`$${Math.round(payout).toLocaleString()}`} highlight />
+        <Stat label={t("reports.toPay")} value={formatMoney(payout)} highlight />
         <Stat label={t("reports.pickers")} value={String(totals.people)} />
       </View>
 
@@ -155,16 +165,26 @@ export default function Reports() {
                 const lots = grouping === "week" ? lotsByWeek[b.label] ?? [] : [];
                 const row = (
                   <View style={styles.barRow}>
-                    <Text variant="labelLarge" style={styles.barLabel} numberOfLines={1}>
-                      {b.label}
-                    </Text>
+                    <View style={styles.barLabel}>
+                      <Text variant="labelLarge" numberOfLines={1}>
+                        {grouping === "week" ? formatWeekRange(b.label, lang) : b.label}
+                      </Text>
+                      {grouping === "week" && (
+                        <Text variant="labelSmall" style={styles.weekNo} numberOfLines={1}>
+                          {/* The tag already identifies the week; the number
+                              would only be noise next to it. */}
+                          {weekTag(b.label, lang) ??
+                            t("week.short", { n: weekNumber(b.label) })}
+                        </Text>
+                      )}
+                    </View>
                     <View style={styles.barTrack}>
                       <View style={[styles.barFill, { width: `${(b.kg / max) * 100}%` }]} />
                     </View>
                     <View style={styles.barValues}>
-                      <Text variant="labelMedium">{b.kg.toLocaleString()} {unit}</Text>
+                      <Text variant="labelMedium">{formatNumber(b.kg)} {unit}</Text>
                       <Text variant="labelSmall" style={styles.cost}>
-                        ${Math.round(cost).toLocaleString()}
+                        {formatMoney(cost)}
                       </Text>
                     </View>
                     {tappable && (
@@ -193,7 +213,7 @@ export default function Reports() {
                         </Text>
                         {lots.map((l) => (
                           <Text key={l.crop} variant="labelSmall" style={styles.lot}>
-                            {l.crop} · {l.kg.toLocaleString()} {unit}
+                            {l.crop} · {formatNumber(l.kg)} {unit}
                           </Text>
                         ))}
                       </View>
@@ -216,8 +236,8 @@ export default function Reports() {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${r.weight.toLocaleString()} ${unit} · ${r.crop}`}
-                  description={`${r.person} · ${new Date(r.date).toLocaleString()}`}
+                  title={`${formatNumber(r.weight)} ${unit} · ${r.crop}`}
+                  description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />
               </View>
@@ -263,7 +283,7 @@ const styles = StyleSheet.create({
   chart: { borderRadius: 12, marginVertical: 4, marginLeft: -8 },
   empty: { opacity: 0.6, paddingVertical: 8 },
   barRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 5 },
-  barLabel: { width: 92 },
+  barLabel: { width: 116 },
   barTrack: {
     flex: 1,
     height: 14,
@@ -272,7 +292,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   barFill: { height: 14, borderRadius: 7, backgroundColor: "#2e7d32" },
-  barValues: { width: 92, alignItems: "flex-end" },
+  barValues: { width: 88, alignItems: "flex-end" },
+  weekNo: { opacity: 0.55 },
   cost: { opacity: 0.6 },
   lots: {
     flexDirection: "row",

@@ -6,7 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
 import { People, WorkerReports, Config, type Person, type CropConfig } from "../db";
-import { useT } from "../i18n";
+import { useT, formatMoney, formatNumber, formatWeekRange, formatDay } from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -21,7 +21,7 @@ const chartConfig = {
 export default function WorkerDetail({
   route,
 }: NativeStackScreenProps<RootStackParamList, "WorkerDetail">) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const { personId } = route.params;
   const [person, setPerson] = useState<Person | null>(null);
   const [stats, setStats] = useState({ kg: 0, pickups: 0, firstDate: "", lastDate: "" });
@@ -54,7 +54,7 @@ export default function WorkerDetail({
   const weekAsc = [...byWeek].reverse();
   const hasChart = weekAsc.length >= 2;
   const chartData = {
-    labels: weekAsc.map((r) => r.label.replace(/^\d{4}-/, "")),
+    labels: weekAsc.map((r) => formatDay(r.label, lang)),
     datasets: [{ data: weekAsc.map((r) => Math.round(r.kg)) }],
   };
   const cropMax = Math.max(1, ...byCrop.map((c) => c.kg));
@@ -87,13 +87,13 @@ export default function WorkerDetail({
 
       {/* Stats */}
       <View style={styles.stats}>
-        <Stat label={t("reports.total", { unit })} value={stats.kg.toLocaleString()} />
+        <Stat label={t("reports.total", { unit })} value={formatNumber(stats.kg)} />
         <Stat label={t("reports.pickups")} value={String(stats.pickups)} />
         <Stat label={t("worker.avg", { unit })} value={avg.toFixed(1)} />
         <Stat label={t("worker.days")} value={String(days)} />
         <Stat
           label={t("reports.toPay")}
-          value={`$${Math.round(payout).toLocaleString()}`}
+          value={formatMoney(payout)}
           highlight
         />
       </View>
@@ -132,7 +132,7 @@ export default function WorkerDetail({
                   <View style={[styles.barFill, { width: `${(c.kg / cropMax) * 100}%` }]} />
                 </View>
                 <Text variant="labelMedium" style={styles.barValue}>
-                  {c.kg.toLocaleString()} {unit}
+                  {formatNumber(c.kg)} {unit}
                 </Text>
               </View>
             ))}
@@ -151,8 +151,8 @@ export default function WorkerDetail({
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${r.weight.toLocaleString()} ${unit} · ${r.crop}`}
-                  description={new Date(r.date).toLocaleString()}
+                  title={`${formatNumber(r.weight)} ${unit} · ${r.crop}`}
+                  description={formatDay(r.date, lang)}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />
               </View>

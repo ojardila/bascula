@@ -625,17 +625,14 @@ export function weekNumber(mondayISO: string): number {
 }
 
 /**
- * "24–30 ago", "31 ago – 6 sep", "29 dic – 4 ene 2026", or "Esta semana".
- * The year is appended only when the week starts in a different year.
+ * The date range a week covers: "24–30 ago", "31 ago – 6 sep",
+ * "29 dic – 4 ene 2026". The year is appended only when the week ends in a
+ * different year than today. The range is always shown — "this week" is a
+ * separate tag, so the actual dates never get hidden behind it.
  */
 export function formatWeekRange(mondayISO: string, lang: Lang, now = new Date()): string {
   const start = parseDay(mondayISO);
   const end = addDays(start, 6);
-  const thisMonday = mondayOf(now);
-  if (mondayISO === thisMonday) return translate(lang, "week.current");
-  if (mondayISO === addDays(parseDay(thisMonday), -7).toISOString().slice(0, 10))
-    return translate(lang, "week.previous");
-
   const M = MONTHS_SHORT[lang];
   const sameMonth = start.getUTCMonth() === end.getUTCMonth();
   const year = end.getUTCFullYear() !== now.getFullYear() ? ` ${end.getUTCFullYear()}` : "";
@@ -649,6 +646,15 @@ export function formatWeekRange(mondayISO: string, lang: Lang, now = new Date())
   return sameMonth
     ? `${sd}–${ed} ${M[end.getUTCMonth()]}${year}`
     : `${sd} ${M[start.getUTCMonth()]} – ${ed} ${M[end.getUTCMonth()]}${year}`;
+}
+
+/** "Esta semana" / "Semana pasada", or null for any other week. */
+export function weekTag(mondayISO: string, lang: Lang, now = new Date()): string | null {
+  const thisMonday = mondayOf(now);
+  if (mondayISO === thisMonday) return translate(lang, "week.current");
+  const lastMonday = addDays(parseDay(thisMonday), -7).toISOString().slice(0, 10);
+  if (mondayISO === lastMonday) return translate(lang, "week.previous");
+  return null;
 }
 
 /** Short day for lists and receipts: "27 ago". */

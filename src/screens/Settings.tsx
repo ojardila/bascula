@@ -23,7 +23,7 @@ import {
   Reports as ReportsDb,
   type CostOverride,
 } from "../db";
-import { useT, type Lang } from "../i18n";
+import { useT, formatMoney, formatWeekRange, type Lang } from "../i18n";
 
 export default function Settings() {
   const { t, lang, setLang } = useT();
@@ -88,7 +88,7 @@ export default function Settings() {
     Overrides.set(ovWeek, c);
     setOvCost("");
     setOverrides(Overrides.all());
-    setSnack(t("settings.weekUpdated", { week: ovWeek }));
+    setSnack(t("settings.weekUpdated", { week: formatWeekRange(ovWeek, lang) }));
   }
 
   return (
@@ -214,7 +214,7 @@ export default function Settings() {
                       onPress={() => setOvWeek(w)}
                       style={styles.chip}
                     >
-                      {w}
+                      {formatWeekRange(w, lang)}
                     </Chip>
                   ))}
                 </View>
@@ -241,8 +241,8 @@ export default function Settings() {
                   <View key={o.id}>
                     {i > 0 && <Divider />}
                     <List.Item
-                      title={o.week}
-                      description={`$${o.costPerUnit.toLocaleString()} · ${unit || t("unit.default")}`}
+                      title={formatWeekRange(o.week, lang)}
+                      description={`${formatMoney(o.costPerUnit)} · ${unit || t("unit.default")}`}
                       left={(p) => <List.Icon {...p} icon="calendar-week" />}
                       right={(p) => (
                         <IconButton

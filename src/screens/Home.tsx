@@ -7,12 +7,12 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { TabParamList } from "../types";
 import { Reports, Pickups, Config } from "../db";
-import { useT } from "../i18n";
+import { useT, formatNumber, formatDay } from "../i18n";
 
 type Props = BottomTabScreenProps<TabParamList, "Home">;
 
 export default function Home({ navigation }: Props) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [today, setToday] = useState({ kg: 0, count: 0 });
   const [week, setWeek] = useState({ kg: 0, count: 0 });
@@ -55,17 +55,17 @@ export default function Home({ navigation }: Props) {
           )}
         </View>
         <Text style={styles.heroValue}>
-          {totals.kg.toLocaleString()}
+          {formatNumber(totals.kg)}
           <Text style={styles.heroUnit}> {unit}</Text>
         </Text>
         <View style={styles.heroChips}>
           <HeroChip
             icon="calendar-week"
-            text={`${t("home.thisWeek")} · ${week.kg.toLocaleString()} ${unit}`}
+            text={`${t("home.thisWeek")} · ${formatNumber(week.kg)} ${unit}`}
           />
           <HeroChip
             icon="white-balance-sunny"
-            text={`${t("home.today")} · ${today.kg.toLocaleString()} ${unit}`}
+            text={`${t("home.today")} · ${formatNumber(today.kg)} ${unit}`}
           />
           <HeroChip icon="scale" text={t("home.pickupsCount", { n: totals.pickups })} />
         </View>
@@ -116,8 +116,8 @@ export default function Home({ navigation }: Props) {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${r.weight.toLocaleString()} ${unit} · ${r.crop}`}
-                  description={`${r.person} · ${new Date(r.date).toLocaleString()}`}
+                  title={`${formatNumber(r.weight)} ${unit} · ${r.crop}`}
+                  description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />
               </View>
