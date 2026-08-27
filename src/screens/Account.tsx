@@ -93,8 +93,8 @@ export default function Account() {
   // is the point, because the worker cannot verify a weight after the fact.
   async function share() {
     const cfg = Config.get();
-    // The most recent settlement that is still valid — a voided one has no
-    // items left, and would print a payment line with no breakdown under it.
+    // The most recent settlement that is still valid: a receipt must not
+    // document work that was annulled.
     const settlement = Payments.settlements(personId).find((x) => x.status === "open");
     const items = settlement ? Payments.itemsOf(settlement.id) : [];
     // Every payment made for that period, not just the last one: a week paid

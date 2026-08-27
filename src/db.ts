@@ -92,7 +92,7 @@ export function initDb() {
 // splits a week straddling new year into two labels and can't be rendered as a
 // date range. It is now the Monday of the week, as YYYY-MM-DD.
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const PAYMENTS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS settlements (
@@ -116,10 +116,13 @@ const PAYMENTS_SCHEMA = `
     week             TEXT NOT NULL,
     weight           REAL NOT NULL,
     costPerUnitCents INTEGER NOT NULL,
-    amountCents      INTEGER NOT NULL
+    amountCents      INTEGER NOT NULL,
+    voidedAt         TEXT
   );
-  -- The anti double-count lock: a pickup can belong to one settlement, ever.
-  CREATE UNIQUE INDEX IF NOT EXISTS ux_items_pickup ON settlement_items(pickupId);
+  -- The anti double-count lock: a pickup can belong to one live settlement.
+  -- Voided lines stay for the record but release their pickup.
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_items_pickup_live
+    ON settlement_items(pickupId) WHERE voidedAt IS NULL;
   CREATE INDEX IF NOT EXISTS ix_items_settlement ON settlement_items(settlementId);
 
   CREATE TABLE IF NOT EXISTS ledger (
@@ -197,6 +200,24 @@ function migrate() {
     } catch {
       /* column already exists */
     }
+    db.execSync("PRAGMA user_version = 3");
+  }
+
+  if (v < 4) {
+    // Voiding a settlement used to delete its lines, so an annulled document
+    // could never be reprinted or audited: it kept its total with nothing
+    // underneath. Now the lines are marked instead, and the unique lock that
+    // stops a pickup being settled twice only counts the live ones.
+    try {
+      db.execSync("ALTER TABLE settlement_items ADD COLUMN voidedAt TEXT");
+    } catch {
+      /* column already exists */
+    }
+    db.execSync(`
+      DROP INDEX IF EXISTS ux_items_pickup;
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_items_pickup_live
+        ON settlement_items(pickupId) WHERE voidedAt IS NULL;
+    `);
     db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 }
@@ -251,7 +272,7 @@ export const Pickups = {
   // first, which is a decision for the user, not a side effect of an edit.
   isSettled: (id: number) =>
     !!db.getFirstSync<{ id: number }>(
-      "SELECT id FROM settlement_items WHERE pickupId = ?",
+      "SELECT id FROM settlement_items WHERE pickupId = ? AND voidedAt IS NULL",
       [id],
     ),
 
@@ -662,6 +683,7 @@ export interface SettlementItem {
   weight: number;
   costPerUnitCents: number;
   amountCents: number;
+  voidedAt?: string | null;
 }
 
 export interface Balance {
@@ -702,7 +724,7 @@ function pendingItems(
        FROM pickups pk
       WHERE pk.personId = ?
         AND date(pk.date,'localtime') BETWEEN date(?) AND date(?)
-        AND pk.id NOT IN (SELECT pickupId FROM settlement_items)
+        AND pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
       ORDER BY pk.date`,
     [personId, from, to],
   );
@@ -804,7 +826,10 @@ export const Payments = {
     const s = db.getFirstSync<Settlement>("SELECT * FROM settlements WHERE id = ?", [settlementId]);
     if (!s || s.status === "void") return;
     db.withTransactionSync(() => {
-      db.runSync("DELETE FROM settlement_items WHERE settlementId = ?", [settlementId]);
+      db.runSync("UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?", [
+        now(),
+        settlementId,
+      ]);
       db.runSync("UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?", [
         now(),
         settlementId,
@@ -932,8 +957,15 @@ export const Payments = {
   balance: (personId: number): Balance => {
     const r = db.getFirstSync<Balance>(
       `SELECT ? AS personId,
-              COALESCE(SUM(CASE WHEN kind = 'devengo' THEN amountCents END),0) AS earnedCents,
-              COALESCE(-SUM(CASE WHEN kind IN ('pago','anticipo') THEN amountCents END),0) AS paidCents,
+              -- A reversal of an earning is negative and one of a payment is
+              -- positive, so the sign says which side it belongs to. Without
+              -- this, voided money kept counting as earned and as paid.
+              COALESCE(SUM(CASE WHEN kind = 'devengo' THEN amountCents
+                                WHEN kind = 'reverso' AND amountCents < 0 THEN amountCents END),0)
+                AS earnedCents,
+              COALESCE(-SUM(CASE WHEN kind IN ('pago','anticipo') THEN amountCents
+                                 WHEN kind = 'reverso' AND amountCents > 0 THEN amountCents END),0)
+                AS paidCents,
               COALESCE(-SUM(CASE WHEN kind = 'deduccion' THEN amountCents END),0) AS deductedCents,
               COALESCE(SUM(amountCents),0) AS balanceCents,
               MAX(date) AS lastMovementAt
@@ -959,8 +991,12 @@ export const Payments = {
       `SELECT pe.id AS personId,
               COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
               CASE WHEN pe.deletedAt IS NULL THEN 0 ELSE 1 END AS inactive,
-              COALESCE(SUM(CASE WHEN l.kind = 'devengo' THEN l.amountCents END),0) AS earnedCents,
-              COALESCE(-SUM(CASE WHEN l.kind IN ('pago','anticipo') THEN l.amountCents END),0) AS paidCents,
+              COALESCE(SUM(CASE WHEN l.kind = 'devengo' THEN l.amountCents
+                                WHEN l.kind = 'reverso' AND l.amountCents < 0 THEN l.amountCents END),0)
+                AS earnedCents,
+              COALESCE(-SUM(CASE WHEN l.kind IN ('pago','anticipo') THEN l.amountCents
+                                 WHEN l.kind = 'reverso' AND l.amountCents > 0 THEN l.amountCents END),0)
+                AS paidCents,
               COALESCE(-SUM(CASE WHEN l.kind = 'deduccion' THEN l.amountCents END),0) AS deductedCents,
               COALESCE(SUM(l.amountCents),0) AS balanceCents,
               MAX(l.date) AS lastMovementAt
@@ -982,7 +1018,16 @@ export const Payments = {
       [personId],
     ),
 
+  // Live lines only: this feeds the receipt, which must not list work that was
+  // annulled. `itemsOfAll` keeps the annulled ones available for the record.
   itemsOf: (settlementId: number): SettlementItem[] =>
+    db.getAllSync<SettlementItem>(
+      `SELECT * FROM settlement_items
+        WHERE settlementId = ? AND voidedAt IS NULL ORDER BY week DESC, id`,
+      [settlementId],
+    ),
+
+  itemsOfAll: (settlementId: number): SettlementItem[] =>
     db.getAllSync<SettlementItem>(
       "SELECT * FROM settlement_items WHERE settlementId = ? ORDER BY week DESC, id",
       [settlementId],
@@ -999,7 +1044,7 @@ export const Payments = {
               date(pk.date,'localtime','-6 days','weekday 1') AS week, SUM(pk.weight) AS weight
          FROM pickups pk
          LEFT JOIN people pe ON pe.id = pk.personId
-        WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items)
+        WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
           AND (? IS NULL OR date(pk.date,'localtime') <= date(?))
         GROUP BY pk.personId, week`,
       [upTo ?? null, upTo ?? null],
@@ -1216,7 +1261,8 @@ export const Performance = {
     const r = db.getFirstSync<{ kg: number; devengoCents: number }>(
       `SELECT COALESCE(SUM(si.weight),0) AS kg, COALESCE(SUM(si.amountCents),0) AS devengoCents
          FROM settlement_items si
-         JOIN settlements s ON s.id = si.settlementId AND s.status = 'open'`,
+         JOIN settlements s ON s.id = si.settlementId AND s.status = 'open'
+        WHERE si.voidedAt IS NULL`,
     );
     const adj = db.getFirstSync<{ c: number }>(
       `SELECT COALESCE(SUM(l.amountCents),0) AS c
