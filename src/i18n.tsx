@@ -233,6 +233,10 @@ const es: Dict = {
   "perf.rule.outlier": "muy por encima del lote",
   "perf.rule.future": "fecha futura",
   "perf.noBase": "— sin índice: hacen falta al menos 3 recolectores en el mismo lote el mismo día para comparar.",
+  "perf.price": "Precio y rendimiento",
+  "perf.priceSub": "Si subir el precio del kilo trajo más cosecha",
+  "perf.priceNoGain": "Las {n} subidas de precio no movieron el rendimiento por día. Es margen que se está regalando.",
+  "perf.priceGain": "{n} de {total} subidas de precio sí trajeron más rendimiento por día.",
   "unit.default": "unidad",
 };
 
@@ -451,6 +455,10 @@ const en: Dict = {
   "perf.rule.outlier": "far above the plot",
   "perf.rule.future": "future date",
   "perf.noBase": "— no index: at least 3 pickers on the same plot the same day are needed to compare.",
+  "perf.price": "Price and output",
+  "perf.priceSub": "Whether raising the rate bought more harvest",
+  "perf.priceNoGain": "All {n} price rises left output per day unchanged. That is margin given away.",
+  "perf.priceGain": "{n} of {total} price rises did bring more output per day.",
   "unit.default": "unit",
 };
 
@@ -669,6 +677,10 @@ const pt: Dict = {
   "perf.rule.outlier": "muito acima do lote",
   "perf.rule.future": "data futura",
   "perf.noBase": "— sem índice: são necessários ao menos 3 colhedores no mesmo lote no mesmo dia.",
+  "perf.price": "Preço e desempenho",
+  "perf.priceSub": "Se subir o preço do quilo trouxe mais colheita",
+  "perf.priceNoGain": "Os {n} aumentos de preço não moveram o rendimento diário. É margem sendo dada.",
+  "perf.priceGain": "{n} de {total} aumentos de preço trouxeram mais rendimento diário.",
   "unit.default": "unidade",
 };
 

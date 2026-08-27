@@ -1101,6 +1101,31 @@ export const Performance = {
 
   // Real cost per unit from the ledger, not weight * price: it includes the
   // price frozen at settlement plus every deduction and adjustment since.
+  // Weekly price against what the crew actually produced that week. The price
+  // overrides are a log of natural experiments and the pickups are the measured
+  // outcome — having both sides is what makes this answerable at all. It tells
+  // the owner whether raising the rate bought more harvest or just cost more.
+  priceResponse: (general: number, weeks = 10) => {
+    const rows = db.getAllSync<{
+      week: string;
+      kgPerDay: number;
+      pickers: number;
+      kg: number;
+    }>(
+      `WITH perDay AS (
+         SELECT ${WEEK_KEY} AS week, pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
+           FROM pickups pk GROUP BY week, pk.personId, d
+       )
+       SELECT week, AVG(kg) AS kgPerDay, COUNT(DISTINCT personId) AS pickers,
+              SUM(kg) AS kg
+         FROM perDay GROUP BY week ORDER BY week DESC LIMIT ?`,
+      [weeks],
+    );
+    return rows
+      .map((r) => ({ ...r, price: costForWeek(r.week, general) }))
+      .reverse(); // oldest first, so the reader follows the season forward
+  },
+
   realCost: (general: number) => {
     const r = db.getFirstSync<{ kg: number; devengoCents: number }>(
       `SELECT COALESCE(SUM(si.weight),0) AS kg, COALESCE(SUM(si.amountCents),0) AS devengoCents

@@ -11,7 +11,7 @@ import {
   type Anomaly,
   type CropConfig,
 } from "../db";
-import { useT, formatMoney, formatNumber, formatDay } from "../i18n";
+import { useT, formatMoney, formatNumber, formatDay, formatWeekRange } from "../i18n";
 
 // Above 1 they beat the crew on the same plot; below, they trailed it.
 function irlColor(irl: number | null) {
@@ -28,6 +28,7 @@ export default function PerformancePanel() {
   const [plots, setPlots] = useState<ReturnType<typeof Performance.plots>>([]);
   const [cost, setCost] = useState<ReturnType<typeof Performance.realCost> | null>(null);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [priceRows, setPriceRows] = useState<ReturnType<typeof Performance.priceResponse>>([]);
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -36,6 +37,7 @@ export default function PerformancePanel() {
     setPlots(Performance.plots());
     setCost(Performance.realCost(c?.costPerUnit ?? 0));
     setAnomalies(Anomalies.all());
+    setPriceRows(Performance.priceResponse(c?.costPerUnit ?? 0));
   }, []);
   useFocusEffect(load);
 
@@ -152,6 +154,63 @@ export default function PerformancePanel() {
         </Card.Content>
       </Card>
 
+      {priceRows.length >= 2 && (
+        <Card mode="elevated" style={styles.card}>
+          <Card.Title title={t("perf.price")} subtitle={t("perf.priceSub")} />
+          <Card.Content style={{ paddingHorizontal: 0 }}>
+            {priceRows.map((r, i) => {
+              const prev = i > 0 ? priceRows[i - 1] : null;
+              const dPrice = prev ? r.price - prev.price : 0;
+              const dKg = prev ? r.kgPerDay - prev.kgPerDay : 0;
+              return (
+                <View key={r.week}>
+                  {i > 0 && <Divider />}
+                  <List.Item
+                    title={formatWeekRange(r.week, lang)}
+                    description={`${formatMoney(r.price)}/${unit} · ${t("perf.pickers", {
+                      n: r.pickers,
+                    })}`}
+                    right={() => (
+                      <View style={styles.priceCell}>
+                        <Text variant="titleSmall">
+                          {formatNumber(Math.round(r.kgPerDay * 10) / 10)} {unit}
+                        </Text>
+                        {!!prev && dPrice !== 0 && (
+                          <Text
+                            variant="labelSmall"
+                            style={{ color: dKg > 0 ? "#1b5e20" : "#8a5a00" }}
+                          >
+                            {dPrice > 0 ? "↑" : "↓"}
+                            {formatMoney(Math.abs(dPrice))} · {dKg > 0 ? "+" : ""}
+                            {formatNumber(Math.round(dKg * 10) / 10)}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  />
+                </View>
+              );
+            })}
+            {(() => {
+              // The reading the owner actually needs, spelled out: a rise that
+              // did not move output is margin given away.
+              const rises = priceRows
+                .map((r, i) => (i > 0 ? { r, prev: priceRows[i - 1] } : null))
+                .filter((x): x is NonNullable<typeof x> => !!x && x.r.price > x.prev.price);
+              if (!rises.length) return null;
+              const gained = rises.filter((x) => x.r.kgPerDay > x.prev.kgPerDay).length;
+              return (
+                <Text variant="labelSmall" style={[styles.dim, styles.note]}>
+                  {gained === 0
+                    ? t("perf.priceNoGain", { n: rises.length })
+                    : t("perf.priceGain", { n: gained, total: rises.length })}
+                </Text>
+              );
+            })()}
+          </Card.Content>
+        </Card>
+      )}
+
       {anomalies.length > 0 && (
         <Card mode="elevated" style={styles.card}>
           <Card.Title title={t("perf.review")} />
@@ -190,6 +249,7 @@ const styles = StyleSheet.create({
   irlCell: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "center" },
   perHa: { alignSelf: "center", opacity: 0.8 },
   note: { paddingHorizontal: 16, paddingTop: 10 },
+  priceCell: { alignItems: "flex-end", alignSelf: "center" },
   ruleChip: { alignSelf: "center", backgroundColor: "#fdf5e6" },
   ruleText: { fontSize: 11 },
 });
