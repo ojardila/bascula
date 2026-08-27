@@ -247,6 +247,27 @@ export const Crops = {
 };
 
 export const Pickups = {
+  // Whether a pickup can still be touched. Once it is inside a settlement its
+  // price is frozen and it has been paid on, so correcting it would silently
+  // change money that already changed hands: the settlement has to be voided
+  // first, which is a decision for the user, not a side effect of an edit.
+  isSettled: (id: number) =>
+    !!db.getFirstSync<{ id: number }>(
+      "SELECT id FROM settlement_items WHERE pickupId = ?",
+      [id],
+    ),
+
+  setWeight: (id: number, weight: number) => {
+    if (Pickups.isSettled(id)) throw new Error("SETTLED");
+    if (!Number.isFinite(weight) || weight <= 0) throw new Error("El peso debe ser mayor que cero");
+    db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [weight, id]);
+  },
+
+  remove: (id: number) => {
+    if (Pickups.isSettled(id)) throw new Error("SETTLED");
+    db.runSync("DELETE FROM pickups WHERE id = ?", [id]);
+  },
+
   add: (p: Omit<Pickup, "id" | "createdAt">) =>
     db.runSync(
       "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",

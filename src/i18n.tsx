@@ -254,6 +254,15 @@ const es: Dict = {
   "crop.deleted": "Lote eliminado",
   "confirm.deleteCropTitle": "¿Eliminar este lote?",
   "confirm.deleteCropBody": "Se oculta de la lista, pero se conserva el historial de recolección.",
+  "perf.reviewOne": "Revisar pesada",
+  "perf.reviewBody": "{weight} de {person} — {reason}. Corrige el peso o descarta la pesada.",
+  "perf.newWeight": "Peso correcto ({unit})",
+  "perf.correct": "Corregir",
+  "perf.discard": "Descartar",
+  "perf.keep": "Dejar así",
+  "perf.corrected": "Pesada corregida.",
+  "perf.discarded": "Pesada descartada.",
+  "perf.settled": "No se puede: esta pesada ya está en una liquidación pagada. Anula la liquidación primero.",
   "unit.default": "unidad",
 };
 
@@ -493,6 +502,15 @@ const en: Dict = {
   "crop.deleted": "Deleted plot",
   "confirm.deleteCropTitle": "Delete this plot?",
   "confirm.deleteCropBody": "It is hidden from the list, but its harvest history is kept.",
+  "perf.reviewOne": "Review pickup",
+  "perf.reviewBody": "{weight} by {person} — {reason}. Fix the weight or discard the pickup.",
+  "perf.newWeight": "Correct weight ({unit})",
+  "perf.correct": "Fix",
+  "perf.discard": "Discard",
+  "perf.keep": "Leave it",
+  "perf.corrected": "Pickup corrected.",
+  "perf.discarded": "Pickup discarded.",
+  "perf.settled": "Not possible: this pickup is already in a paid settlement. Void the settlement first.",
   "unit.default": "unit",
 };
 
@@ -732,6 +750,15 @@ const pt: Dict = {
   "crop.deleted": "Lote excluído",
   "confirm.deleteCropTitle": "Excluir este lote?",
   "confirm.deleteCropBody": "É ocultado da lista, mas o histórico de colheita é mantido.",
+  "perf.reviewOne": "Revisar pesagem",
+  "perf.reviewBody": "{weight} de {person} — {reason}. Corrija o peso ou descarte a pesagem.",
+  "perf.newWeight": "Peso correto ({unit})",
+  "perf.correct": "Corrigir",
+  "perf.discard": "Descartar",
+  "perf.keep": "Deixar assim",
+  "perf.corrected": "Pesagem corrigida.",
+  "perf.discarded": "Pesagem descartada.",
+  "perf.settled": "Não é possível: esta pesagem já está numa liquidação paga. Anule a liquidação primeiro.",
   "unit.default": "unidade",
 };
 

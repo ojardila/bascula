@@ -1,6 +1,18 @@
 import { useCallback, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
-import { Text, Card, List, Divider, Chip, Banner } from "react-native-paper";
+import {
+  Text,
+  Card,
+  List,
+  Divider,
+  Chip,
+  Banner,
+  Portal,
+  Dialog,
+  Button,
+  TextInput,
+  Snackbar,
+} from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -9,11 +21,19 @@ import {
   Config,
   Performance,
   Anomalies,
+  Pickups,
   type WorkerPerf,
   type Anomaly,
   type CropConfig,
 } from "../db";
-import { useT, formatMoney, formatNumber, formatDay, formatWeekRange } from "../i18n";
+import {
+  useT,
+  formatMoney,
+  formatNumber,
+  formatDay,
+  formatWeekRange,
+  mondayOf,
+} from "../i18n";
 
 // Above 1 they beat the crew on the same plot; below, they trailed it.
 function irlColor(irl: number | null) {
@@ -32,6 +52,11 @@ export default function PerformancePanel() {
   const [cost, setCost] = useState<ReturnType<typeof Performance.realCost> | null>(null);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [priceRows, setPriceRows] = useState<ReturnType<typeof Performance.priceResponse>>([]);
+  // A flagged pickup the user is deciding about. Detection alone is not much
+  // use if the wrong number has to stay in the books.
+  const [review, setReview] = useState<Anomaly | null>(null);
+  const [newWeight, setNewWeight] = useState("");
+  const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -196,9 +221,16 @@ export default function PerformancePanel() {
               );
             })}
             {(() => {
+              // The current week is still running, so its total will always
+              // look smaller than a finished one. A week that has not ended
+              // cannot support a conclusion, so it is shown but not judged.
+              const thisMonday = mondayOf(new Date());
               const rises = priceRows
                 .map((r, i) => (i > 0 ? { r, prev: priceRows[i - 1] } : null))
-                .filter((x): x is NonNullable<typeof x> => !!x && x.r.price > x.prev.price);
+                .filter(
+                  (x): x is NonNullable<typeof x> =>
+                    !!x && x.r.price > x.prev.price && x.r.week < thisMonday,
+                );
               if (!rises.length) return null;
               // Total harvest is the outcome that matters. Judging only by kg
               // per person would call a rise a failure precisely when it
@@ -235,6 +267,10 @@ export default function PerformancePanel() {
               <View key={a.pickupId}>
                 {i > 0 && <Divider />}
                 <List.Item
+                  onPress={() => {
+                    setReview(a);
+                    setNewWeight(String(a.weight));
+                  }}
                   title={`${formatNumber(a.weight)} ${unit} · ${a.person}`}
                   description={`${formatDay(a.date, lang)} · ${a.crop}`}
                   left={(p) => <List.Icon {...p} icon="alert-outline" color="#8a5a00" />}
@@ -249,6 +285,70 @@ export default function PerformancePanel() {
           </Card.Content>
         </Card>
       )}
+      <Portal>
+        <Dialog visible={!!review} onDismiss={() => setReview(null)}>
+          <Dialog.Title>{t("perf.reviewOne")}</Dialog.Title>
+          <Dialog.Content style={{ gap: 12 }}>
+            <Text variant="bodyMedium">
+              {review
+                ? t("perf.reviewBody", {
+                    weight: `${formatNumber(review.weight)} ${unit}`,
+                    person: review.person,
+                    reason: t(`perf.rule.${review.rule}`, { n: review.reference }),
+                  })
+                : ""}
+            </Text>
+            <TextInput
+              mode="outlined"
+              label={t("perf.newWeight", { unit })}
+              keyboardType="decimal-pad"
+              value={newWeight}
+              onChangeText={setNewWeight}
+            />
+          </Dialog.Content>
+          <Dialog.Actions style={styles.reviewActions}>
+            <Button onPress={() => setReview(null)}>{t("perf.keep")}</Button>
+            <Button
+              textColor="#b3261e"
+              onPress={() => {
+                if (!review) return;
+                try {
+                  Pickups.remove(review.pickupId);
+                  setReview(null);
+                  load();
+                  setSnack(t("perf.discarded"));
+                } catch (e) {
+                  setReview(null);
+                  setSnack(String(e).includes("SETTLED") ? t("perf.settled") : t("pay.error"));
+                }
+              }}
+            >
+              {t("perf.discard")}
+            </Button>
+            <Button
+              mode="contained"
+              onPress={() => {
+                if (!review) return;
+                try {
+                  Pickups.setWeight(review.pickupId, Number(newWeight.replace(",", ".")));
+                  setReview(null);
+                  load();
+                  setSnack(t("perf.corrected"));
+                } catch (e) {
+                  setReview(null);
+                  setSnack(String(e).includes("SETTLED") ? t("perf.settled") : t("pay.error"));
+                }
+              }}
+            >
+              {t("perf.correct")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
+        {snack}
+      </Snackbar>
     </ScrollView>
   );
 }
@@ -268,4 +368,5 @@ const styles = StyleSheet.create({
   priceCell: { alignItems: "flex-end", alignSelf: "center" },
   ruleChip: { alignSelf: "center", backgroundColor: "#fdf5e6" },
   ruleText: { fontSize: 11 },
+  reviewActions: { flexWrap: "wrap", gap: 4 },
 });
