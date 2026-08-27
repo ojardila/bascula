@@ -78,7 +78,18 @@ export default function PaymentsPanel() {
   useFocusEffect(load);
 
   const unit = config?.unit ?? "";
-  const total = useMemo(() => rows.reduce((s, r) => s + r.amountCents, 0), [rows]);
+
+  // What the worker actually takes home: the week's harvest netted against
+  // their balance. Showing the gross would promise cash that an advance has
+  // already consumed, and the till would not match the confirmation.
+  const netOf = useCallback(
+    (r: Row) => Math.max(r.amountCents + (balances[r.personId] ?? 0), 0),
+    [balances],
+  );
+  const total = useMemo(
+    () => rows.reduce((s, r) => s + netOf(r), 0),
+    [rows, netOf],
+  );
   const totalKg = useMemo(() => rows.reduce((s, r) => s + r.kg, 0), [rows]);
 
   function openBulk() {
@@ -98,31 +109,45 @@ export default function PaymentsPanel() {
     () => rows.filter((r) => bulk?.has(r.personId)),
     [rows, bulk],
   );
-  const selectedTotal = selected.reduce((s, r) => s + r.amountCents, 0);
+  const selectedTotal = selected.reduce((s, r) => s + netOf(r), 0);
 
   // Settle then pay, for everyone ticked. Each worker is independent: one
   // failure must not take the rest of the payroll down with it.
   function runBulk() {
     if (!config) return;
     let done = 0;
+    let noCash = 0;
+    let failed = 0;
     for (const r of selected) {
       try {
         const res = Payments.settle(r.personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
-        if (!res) continue;
+        if (!res) {
+          noCash++;
+          continue;
+        }
         // Pay the balance, not the gross: the balance already nets out any
         // advance handed over during the week. Paying the gross would hand the
         // advance over a second time, for the whole payroll at once.
         const owed = Payments.balance(r.personId).balanceCents;
-        if (owed <= 0) continue;
+        if (owed <= 0) {
+          noCash++;
+          continue;
+        }
         Payments.pay(r.personId, owed, { method: "efectivo" });
         done++;
       } catch {
-        /* skip this worker, keep the rest of the payroll going */
+        failed++; // skip this worker, keep the rest of the payroll going
       }
     }
     setBulk(null);
     load();
-    setSnack(t("pay.paidTo", { n: done }));
+    const extra = [
+      noCash ? t("pay.noCashN", { n: noCash }) : "",
+      failed ? t("pay.failedN", { n: failed }) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    setSnack(`${t("pay.paidTo", { n: done })}${extra ? ` ${extra}` : ""}`);
   }
 
   return (
@@ -226,7 +251,7 @@ export default function PaymentsPanel() {
                     left={() => <Avatar.Icon size={40} icon="account" style={styles.avatar} />}
                     right={() => (
                       <View style={styles.amountCell}>
-                        <Text variant="titleSmall">{formatMoney(fromCents(r.amountCents))}</Text>
+                        <Text variant="titleSmall">{formatMoney(fromCents(netOf(r)))}</Text>
                         <MaterialCommunityIcons name="chevron-right" size={18} color="#9aa39a" />
                       </View>
                     )}

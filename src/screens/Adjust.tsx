@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
 import { Text, Card, Button, TextInput, SegmentedButtons, Chip, Snackbar } from "react-native-paper";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
@@ -42,15 +42,26 @@ export default function Adjust() {
   const cents = toCents(Number(onlyDigits(amount) || 0));
   const after = balanceCents - cents;
 
+  // Nothing on screen changes after the first tap here — the amount stays put
+  // and the button stays enabled — so this is the easiest of the three buttons
+  // to fire twice and the only one that would create a duplicate advance.
+  const busy = useRef(false);
+
   function save() {
-    if (cents <= 0) return;
-    if (mode === "anticipo") {
-      Payments.advance(personId, cents);
-    } else {
-      Payments.deduct(personId, cents, t(`disc.${reason}`));
+    if (busy.current || cents <= 0) return;
+    busy.current = true;
+    try {
+      if (mode === "anticipo") {
+        Payments.advance(personId, cents);
+      } else {
+        Payments.deduct(personId, cents, t(`disc.${reason}`));
+      }
+      setSnack(t("pay.saved"));
+      setTimeout(() => navigation.goBack(), 700);
+    } catch {
+      busy.current = false;
+      setSnack(t("pay.error"));
     }
-    setSnack(t("pay.saved"));
-    setTimeout(() => navigation.goBack(), 700);
   }
 
   return (

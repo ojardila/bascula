@@ -56,6 +56,9 @@ export function buildReceipt(r: ReceiptInput, lang: Lang): string {
 
   if (r.balance.balanceCents > 0) {
     L.push(`${t("pay.credit")}: ${formatMoney(fromCents(r.balance.balanceCents))}`);
+  } else if (r.balance.balanceCents < 0) {
+    // An outstanding advance is the line the worker most needs documented.
+    L.push(`${t("pay.owesUs")}: ${formatMoney(fromCents(-r.balance.balanceCents))}`);
   }
 
   L.push("");

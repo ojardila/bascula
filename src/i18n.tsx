@@ -209,6 +209,9 @@ const es: Dict = {
   "pay.owesUs": "Avance pendiente",
   "pay.owesUsBody": "Se descuenta de su próxima liquidación.",
   "pay.saveMovement": "Guardar movimiento",
+  "pay.settledNoCash": "Liquidado. El avance cubrió toda la semana, no hay efectivo por entregar.",
+  "pay.noCashN": "{n} sin saldo por entregar",
+  "pay.failedN": "{n} con error",
   "unit.default": "unidad",
 };
 
@@ -403,6 +406,9 @@ const en: Dict = {
   "pay.owesUs": "Outstanding advance",
   "pay.owesUsBody": "It comes off their next settlement.",
   "pay.saveMovement": "Save movement",
+  "pay.settledNoCash": "Settled. The advance covered the whole week, nothing to hand over.",
+  "pay.noCashN": "{n} with nothing to hand over",
+  "pay.failedN": "{n} failed",
   "unit.default": "unit",
 };
 
@@ -597,6 +603,9 @@ const pt: Dict = {
   "pay.owesUs": "Adiantamento pendente",
   "pay.owesUsBody": "Será descontado na próxima liquidação.",
   "pay.saveMovement": "Salvar movimento",
+  "pay.settledNoCash": "Liquidado. O adiantamento cobriu a semana toda, nada a entregar.",
+  "pay.noCashN": "{n} sem saldo a entregar",
+  "pay.failedN": "{n} com erro",
   "unit.default": "unidade",
 };
 
@@ -732,12 +741,25 @@ const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: T
 });
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => Prefs.getLang());
+  // Runs during the first render, before initDb() gets a chance in its effect,
+  // so a broken database would throw here — outside any try/catch — and the
+  // error screen that hangs below this provider would never mount.
+  const [lang, setLangState] = useState<Lang>(() => {
+    try {
+      return Prefs.getLang();
+    } catch {
+      return "es";
+    }
+  });
   const value = useMemo(
     () => ({
       lang,
       setLang: (l: Lang) => {
-        Prefs.setLang(l);
+        try {
+          Prefs.setLang(l);
+        } catch {
+          /* keep the in-memory choice even if it cannot be persisted */
+        }
         setLangState(l);
       },
       t: (key: string, vars?: Record<string, string | number>) => translate(lang, key, vars),

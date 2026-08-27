@@ -64,6 +64,11 @@ export default function PayWorker() {
   const typedCents = toCents(Number(onlyDigits(amount) || 0));
   const payCents = mode === "full" ? dueCents : Math.min(typedCents, dueCents);
   const restCents = dueCents - payCents;
+  const grossCents = preview?.grossCents ?? 0;
+  // There is work to settle even when nothing is handed over: an advance larger
+  // than the week's harvest must still be amortised, or the debt freezes and
+  // the worker shows up as pending forever.
+  const canSettle = grossCents > 0 || dueCents > 0;
 
   const byCrop = useMemo(() => {
     const m = new Map<string, { kg: number; cents: number }>();
@@ -82,7 +87,7 @@ export default function PayWorker() {
   const busy = useRef(false);
 
   function confirm() {
-    if (busy.current || !config || !preview || payCents <= 0) return;
+    if (busy.current || !config || !preview || !canSettle) return;
     busy.current = true;
     try {
       // Settle first so the earning is on the books, then pay what the ledger
@@ -91,8 +96,10 @@ export default function PayWorker() {
       const owed = Payments.balance(personId).balanceCents;
       const toPay = mode === "full" ? owed : Math.min(typedCents, owed);
       if (toPay <= 0) {
+        // Settled, but the advance ate the whole week: nothing to hand over.
         busy.current = false;
-        setSnack(t("pay.nothingPending"));
+        load();
+        setSnack(t("pay.settledNoCash"));
         return;
       }
       Payments.pay(personId, toPay, { method: "efectivo" });
@@ -172,7 +179,7 @@ export default function PayWorker() {
           </Card.Content>
         </Card>
 
-        {dueCents > 0 && (
+        {canSettle && (
           <Card mode="elevated" style={styles.card}>
             <Card.Content style={{ gap: 12 }}>
               <SegmentedButtons
@@ -183,7 +190,7 @@ export default function PayWorker() {
                   { value: "part", label: t("pay.payPart"), icon: "cash-minus" },
                 ]}
               />
-              {mode === "part" && (
+              {mode === "part" && dueCents > 0 && (
                 <>
                   <TextInput
                     mode="outlined"
@@ -212,7 +219,7 @@ export default function PayWorker() {
               <Button
                 mode="contained"
                 icon="check"
-                disabled={payCents <= 0}
+                disabled={!canSettle}
                 contentStyle={styles.tall}
                 style={styles.confirm}
                 onPress={confirm}

@@ -33,12 +33,14 @@ export default function Account() {
   const [person, setPerson] = useState<Person | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
   const [rows, setRows] = useState<LedgerEntry[]>([]);
+  const [hasSettlement, setHasSettlement] = useState(false);
   const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
     setPerson(PeopleDb.byId(personId) ?? null);
     setBalance(Payments.balance(personId));
     setRows(Payments.history(personId));
+    setHasSettlement(Payments.settlements(personId).some((x) => x.status === "open"));
   }, [personId]);
   useFocusEffect(load);
 
@@ -55,27 +57,42 @@ export default function Account() {
       setSnack(
         t("pay.success", { amount: formatMoney(fromCents(credit)), name: person?.name ?? "" }),
       );
+      // Released after the render that clears the balance, not in this same
+      // synchronous tick — resetting immediately would mean the guard could
+      // never be observed as taken. This screen stays mounted after paying,
+      // so it does have to be released eventually.
+      setTimeout(() => {
+        busy.current = false;
+      }, 0);
     } catch {
+      busy.current = false;
       setSnack(t("pay.error"));
     }
-    busy.current = false;
   }
 
   // Plain text so it lands readable in the chat itself; the per-week breakdown
   // is the point, because the worker cannot verify a weight after the fact.
   async function share() {
     const cfg = Config.get();
-    const settlements = Payments.settlements(personId);
-    const items = settlements[0] ? Payments.itemsOf(settlements[0].id) : [];
-    const paid = rows.find((r) => r.kind === "pago");
+    // The most recent settlement that is still valid — a voided one has no
+    // items left, and would print a payment line with no breakdown under it.
+    const settlement = Payments.settlements(personId).find((x) => x.status === "open");
+    const items = settlement ? Payments.itemsOf(settlement.id) : [];
+    // Every payment made for that period, not just the last one: a week paid
+    // in two instalments would otherwise report only the second.
+    const paidCents = settlement
+      ? rows
+          .filter((r) => r.kind === "pago" && r.date >= settlement.periodStart)
+          .reduce((sum, r) => sum + Math.abs(r.amountCents), 0)
+      : 0;
     const text = buildReceipt(
       {
         workerName: person ? `${person.name} ${person.lastName}`.trim() : "",
         farmLabel: cfg?.label ?? "",
         unit: cfg?.unit ?? "",
-        monday: settlements[0]?.periodStart ?? "",
+        monday: settlement?.periodStart ?? "",
         items,
-        paidCents: paid ? Math.abs(paid.amountCents) : 0,
+        paidCents,
         balance: balance ?? {
           personId, earnedCents: 0, paidCents: 0, deductedCents: 0,
           balanceCents: 0, lastMovementAt: null,
@@ -150,7 +167,7 @@ export default function Account() {
             icon="share-variant"
             style={styles.half}
             contentStyle={styles.tall}
-            disabled={rows.length === 0}
+            disabled={!hasSettlement}
             onPress={share}
           >
             {t("pay.share")}

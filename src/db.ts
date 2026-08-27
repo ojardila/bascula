@@ -191,7 +191,14 @@ function migrate() {
 }
 
 const now = () => new Date().toISOString();
-const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar day, not the UTC one: every query now groups by local day,
+// and a payment made on Sunday evening in Bogota would otherwise be stamped
+// with tomorrow's date and shown as a movement dated in the future.
+const today = () => {
+  const d = new Date();
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+};
 
 
 export const People = {
@@ -581,7 +588,7 @@ function pendingItems(
     `SELECT pk.id, pk.weight, date(pk.date,'localtime','-6 days','weekday 1') AS week
        FROM pickups pk
       WHERE pk.personId = ?
-        AND date(pk.date) BETWEEN date(?) AND date(?)
+        AND date(pk.date,'localtime') BETWEEN date(?) AND date(?)
         AND pk.id NOT IN (SELECT pickupId FROM settlement_items)
       ORDER BY pk.date`,
     [personId, from, to],
