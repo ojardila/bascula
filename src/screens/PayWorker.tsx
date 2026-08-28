@@ -33,17 +33,10 @@ const endOfWeek = (monday: string) =>
 // Digits only, so a stray "." or "," can't turn 50000 into 50.
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
-// Thousands separators as you type: a seven-figure amount with no separators
-// is easy to mistype and hard to check at a glance, which is the whole risk
-// with a number that becomes cash handed over.
-const groupThousands = (digits: string) => {
-  let out = "";
-  for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
-    out += digits[i];
-  }
-  return out;
-};
+// The field holds plain digits and the readable amount goes underneath it.
+// Reformatting the text on every keystroke fought the cursor: deleting a
+// thousands separator looked like the key did nothing, because the separator
+// was stripped and put right back.
 
 export default function PayWorker() {
   const { t, lang, money, num } = useT();
@@ -208,10 +201,15 @@ export default function PayWorker() {
                     mode="outlined"
                     label={t("pay.amount")}
                     keyboardType="number-pad"
-                    value={groupThousands(amount)}
+                    value={amount}
                     onChangeText={(v) => setAmount(onlyDigits(v))}
                     left={<TextInput.Affix text="$" />}
                   />
+                  {!!amount && (
+                    <Text variant="titleMedium" style={styles.typed}>
+                      {money(Number(amount))}
+                    </Text>
+                  )}
                   <View style={styles.chips}>
                     {quick.map((q) => (
                       <Chip
@@ -268,6 +266,7 @@ const styles = StyleSheet.create({
   due: { fontWeight: "800", color: "#1b5e20" },
   credit: { color: "#3949ab", fontWeight: "600" },
   owes: { color: "#8a5a00", fontWeight: "600" },
+  typed: { fontWeight: "700", color: "#1b5e20" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { marginRight: 4 },
   confirm: { borderRadius: 12 },
