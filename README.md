@@ -12,6 +12,7 @@ A modern rebuild of the original app (React Native 0.49 / Realm, 2017) on **Expo
 </p>
 <p align="center">
   <img src="docs/screenshots/reports-week.png" width="24%" alt="Reports by week" />
+  <img src="docs/screenshots/week-detail.png"  width="24%" alt="Week detail" />
   <img src="docs/screenshots/crop-detail.png"  width="24%" alt="Plot detail" />
 </p>
 
@@ -23,10 +24,16 @@ A modern rebuild of the original app (React Native 0.49 / Realm, 2017) on **Expo
 - **👥 Workers** with photo (gallery or camera), document and RFID tag/card.
 - **🌱 Crops by type** — Coffee, Cacao, Plantain, Avocado, Orange, Sugarcane… Each type brings its **default units** (unit of measure + yield unit).
 - **⚖️ Fast pickup registration**: pick a worker, a plot and the weight.
-- **📈 Reports with charts** grouped by **week**, **worker** or **crop**:
-  - Week → line chart + **breakdown of which plots were harvested each week**.
+- **📈 Reports with charts** grouped by **week**, **worker** or **crop**. Every row opens its own detail.
+  - Week → line chart + **which plots were harvested each week**.
   - Worker / Crop → bar chart.
-  - Each row shows kg **and its cost**; a **payout** total applying the weekly costs.
+  - Each row shows kg **and its value**, priced with the cost in force each week.
+- **📅 Week detail** (tap a week): day-by-day chart, and a cross table of kilos
+  per picker against either the **days** or the **plots** — who came which days,
+  who worked where, with totals down both axes.
+- **🌱 Plot detail** (tap a crop): yield per hectare, harvest curve and peak
+  week, who worked it, and a warning when the harvest has been falling for two
+  weeks past its peak — the moment moving people elsewhere pays off.
 - **👤 Per-worker detail** (tap a person): total, kg/day, active days, what they are owed, performance by week and by crop, plus history.
 - **💰 Configurable costs**: a general cost per unit + **weekly overrides** that supersede it.
 
@@ -37,7 +44,8 @@ A modern rebuild of the original app (React Native 0.49 / Realm, 2017) on **Expo
 - **Advances** and typed **deductions** (meals, lodging, tools, store, or a concept you name), netted against the next settlement.
 - **Account statement** per worker: credit balance and every movement, from a ledger where nothing is edited or deleted — a mistake is cancelled by its opposite.
 - **Receipt** in plain text to share over WhatsApp, broken down week by week so the worker can check their own weights.
-- Settlements can be **voided**; their lines are kept for the record and their pickups go back to pending.
+- Settlements can be **voided** from the account statement; their lines are kept
+  for the record and their pickups go back to pending, ready to be corrected.
 
 ### 📊 Performance
 
@@ -45,7 +53,20 @@ A modern rebuild of the original app (React Native 0.49 / Realm, 2017) on **Expo
 - **kg/day**, **kg/hectare** per plot, harvest curve and peak week.
 - **Real cost per unit** from the ledger — the price frozen at settlement plus adjustments — not weight × today's price.
 - **Price vs. output**: whether raising the rate actually bought more harvest.
-- **Pickups to review**: impossible weights, double registrations, a typed extra zero, dates in the future. Explainable rules, no model. Each one can be corrected or discarded.
+- **Pickups to review**: impossible weights, double registrations, a typed extra
+  zero, a weight far above the rest of the crew that day, dates in the future.
+  Explainable rules, no model — accusing someone with a number nobody can
+  justify out loud destroys the trust the app runs on. Each one can be corrected
+  or discarded, unless it is already inside a paid settlement.
+### 🗃️ Your data
+
+- **Export to CSV** and share: pickups, money movements and balances, each as
+  its own file. The whole season lives in one phone's SQLite — this is how it
+  gets out before the phone does.
+- Works **fully offline**. Nothing is uploaded anywhere.
+
+### 🧰 Also
+
 - **🌐 Multi-language**: English · Español · Português (switches live from Settings).
 - **🗑️ Safe delete**: workers are removed with **confirmation** and **soft-delete**, keeping their harvest history.
 - **🧪 Demo data**: one button seeds workers, crops and 4 weeks of pickups to try the app.
@@ -68,7 +89,16 @@ Requirements: Node 18+, the **Expo Go** app on a simulator or device.
 ```bash
 npm install
 npx expo start        # then press i (iOS) or a (Android), or scan the QR with Expo Go
+npm test              # 65 tests, no build step and no test dependency
 ```
+
+The suite runs on Node's own test runner, which executes TypeScript directly.
+The money and performance SQL lives in `src/schema.ts` so the tests run **the
+same statements the app runs** — a test that retyped that SQL would prove
+nothing. Every case is a bug that actually shipped: the float sum that printed
+"185,10" instead of "186", the advance that was not deducted, the Sunday-evening
+pickup that fell out of the week being paid, the review rule that was
+algebraically unable to fire.
 
 On first run the local database and a default configuration (Coffee) are created. Go to **Settings → Demo data → Load demo** to fill the app with sample data.
 
@@ -81,6 +111,11 @@ src/
                          balances, reports, performance and review rules
   i18n.tsx               Translations EN / ES / PT, language context, and the
                          money/date formatters
+  schema.ts              Schema and the SQL that decides money, shared with
+                         the tests so they run the very same statements
+  format.ts              Money, dates and week ranges (pure, tested)
+  harvest.ts             Reading the shape of a harvest curve (pure, tested)
+  csv.ts                 CSV building and escaping (pure, tested)
   receipt.ts             Plain-text payment receipt
   cropTypes.ts           Crop-type presets and their units
   types.ts               Navigation route types
@@ -96,10 +131,11 @@ src/
     Crops.tsx            Crops list
     CropAdd.tsx          Add a crop (pick type → default units)
     CropDetail.tsx       Per-plot detail: yield, curve, who worked it
+    WeekDetail.tsx       Per-week detail: by day, and the picker x day/plot grid
     RegisterPickup.tsx   Pickup registration
     Reports.tsx          Reports with charts + Performance switch
     PerformancePanel.tsx Comparative index, plots, real cost, review
-    Settings.tsx         Crop type, units, weekly costs, language, demo
+    Settings.tsx         Crop type, units, weekly costs, language, export, demo
 ```
 
 ## 🧭 Data model
