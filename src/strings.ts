@@ -293,6 +293,7 @@ const es: Dict = {
   "pay.print": "Imprimir o PDF",
   "pay.payroll": "Planilla de pago",
   "pay.printPayroll": "Imprimir planilla",
+  "pay.people.one": "1 recolector",
   "unit.default": "unidad",
 };
 
@@ -570,6 +571,7 @@ const en: Dict = {
   "pay.print": "Print or PDF",
   "pay.payroll": "Payroll sheet",
   "pay.printPayroll": "Print payroll",
+  "pay.people.one": "1 worker",
   "unit.default": "unit",
 };
 
@@ -847,6 +849,7 @@ const pt: Dict = {
   "pay.print": "Imprimir ou PDF",
   "pay.payroll": "Folha de pagamento",
   "pay.printPayroll": "Imprimir folha",
+  "pay.people.one": "1 colhedor",
   "unit.default": "unidade",
 };
 

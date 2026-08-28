@@ -280,7 +280,7 @@ export default function PaymentsPanel() {
               {money(fromCents(total))}
             </Text>
             <Text variant="bodyMedium" style={styles.dim}>
-              {num(totalKg)} {unit} · {t("pay.people", { n: rows.length })}
+              {num(totalKg)} {unit} · {rows.length === 1 ? t("pay.people.one") : t("pay.people", { n: rows.length })}
             </Text>
             <Button
               mode="contained"
