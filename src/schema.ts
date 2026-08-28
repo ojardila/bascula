@@ -241,3 +241,35 @@ export const EXPORT_BALANCES_SQL = `SELECT pe.id,
               COALESCE(SUM(l.amountCents),0) / 100.0 AS saldo
          FROM people pe LEFT JOIN ledger l ON l.personId = pe.id
         GROUP BY pe.id ORDER BY saldo DESC`;
+
+// The week detail: day by day, who worked, and the person-by-plot grid.
+
+export const WEEK_BY_DAY_SQL = `SELECT date(date,'localtime') AS day, SUM(weight) AS kg,
+              COUNT(DISTINCT personId) AS pickers, COUNT(DISTINCT cropId) AS plots
+         FROM pickups
+        WHERE date(date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY day ORDER BY day`;
+
+export const WEEK_BY_WORKER_SQL = `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+              SUM(pk.weight) AS kg,
+              COUNT(DISTINCT date(pk.date,'localtime')) AS days
+         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.personId ORDER BY kg DESC`;
+
+export const WEEK_GRID_SQL = `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+              pk.cropId,
+              COALESCE(cr.name,'?') AS crop,
+              SUM(pk.weight) AS kg
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.personId, pk.cropId`;
+
+export const WEEK_PLOTS_SQL = `SELECT pk.cropId, COALESCE(cr.name,'?') AS crop, SUM(pk.weight) AS kg
+         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.cropId ORDER BY kg DESC`;
