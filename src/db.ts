@@ -10,6 +10,9 @@ import {
   RULE_DIGIT_SQL,
   RULE_OUTLIER_SQL,
   RULE_FUTURE_SQL,
+  EXPORT_PICKUPS_SQL,
+  EXPORT_LEDGER_SQL,
+  EXPORT_BALANCES_SQL,
 } from "./schema";
 
 export interface Person {
@@ -1413,4 +1416,26 @@ export const CropReports = {
         WHERE pk.cropId = ?`,
       [general, cropId],
     )?.value ?? 0,
+};
+
+// ---- Export -------------------------------------------------------------
+//
+// The season lives in one phone. These are the rows that let it be rebuilt
+// somewhere else, or checked in a spreadsheet by whoever asks.
+
+export const Export = {
+  pickups: () =>
+    db.getAllSync<Record<string, unknown>>(
+      EXPORT_PICKUPS_SQL,
+    ),
+
+  ledger: () =>
+    db.getAllSync<Record<string, unknown>>(
+      EXPORT_LEDGER_SQL,
+    ),
+
+  balances: () =>
+    db.getAllSync<Record<string, unknown>>(
+      EXPORT_BALANCES_SQL,
+    ),
 };

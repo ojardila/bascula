@@ -209,3 +209,35 @@ export const RULE_FUTURE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
         WHERE date(pk.date,'localtime') > date('now','localtime')`;
+
+// What leaves the phone when the season is exported.
+
+export const EXPORT_PICKUPS_SQL = `SELECT pk.id,
+              date(pk.date,'localtime') AS dia,
+              date(pk.date,'localtime','-6 days','weekday 1') AS semana,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS recolector,
+              pe.docId AS documento,
+              COALESCE(cr.name,'?') AS lote,
+              pk.weight AS peso
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        ORDER BY pk.date`;
+
+export const EXPORT_LEDGER_SQL = `SELECT l.id, l.date AS fecha,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS recolector,
+              l.kind AS tipo,
+              l.amountCents / 100.0 AS monto,
+              l.method AS forma,
+              l.note AS nota,
+              l.settlementId AS liquidacion
+         FROM ledger l
+         LEFT JOIN people pe ON pe.id = l.personId
+        ORDER BY l.date, l.id`;
+
+export const EXPORT_BALANCES_SQL = `SELECT pe.id,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS recolector,
+              pe.docId AS documento,
+              COALESCE(SUM(l.amountCents),0) / 100.0 AS saldo
+         FROM people pe LEFT JOIN ledger l ON l.personId = pe.id
+        GROUP BY pe.id ORDER BY saldo DESC`;

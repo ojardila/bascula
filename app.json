@@ -29,7 +29,8 @@
           "photosPermission": "Allow Báscula to attach a photo to a worker.",
           "cameraPermission": "Allow Báscula to take a worker's photo."
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

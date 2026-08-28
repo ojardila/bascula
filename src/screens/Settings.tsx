@@ -15,14 +15,18 @@ import {
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { CROP_PRESETS, presetByKey } from "../cropTypes";
 import {
   Config,
   Overrides,
   Demo,
+  Export,
   Reports as ReportsDb,
   type CostOverride,
 } from "../db";
+import { csvDocument } from "../csv";
 import { useT, formatWeekRange, type Lang } from "../i18n";
 
 export default function Settings() {
@@ -89,6 +93,51 @@ export default function Settings() {
     setOvCost("");
     setOverrides(Overrides.all());
     setSnack(t("settings.weekUpdated", { week: formatWeekRange(ovWeek, lang) }));
+  }
+
+  const [exporting, setExporting] = useState(false);
+
+  // Three files rather than one: the weighings, the money movements and the
+  // balances answer different questions, and a single sheet mixing them is
+  // what nobody can read afterwards.
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const sets: [string, Record<string, unknown>[]][] = [
+        ["pesadas", Export.pickups()],
+        ["movimientos", Export.ledger()],
+        ["saldos", Export.balances()],
+      ];
+      const stamp = new Date().toISOString().slice(0, 10);
+      const files: string[] = [];
+      for (const [name, rows] of sets) {
+        if (!rows.length) continue;
+        const header = Object.keys(rows[0]);
+        const csv = csvDocument(
+          header,
+          rows.map((r) => header.map((h) => r[h])),
+        );
+        const file = new File(Paths.cache, `bascula-${name}-${stamp}.csv`);
+        file.create({ overwrite: true });
+        file.write(csv);
+        files.push(file.uri);
+      }
+      if (!files.length) {
+        setSnack(t("settings.exportEmpty"));
+        return;
+      }
+      if (await Sharing.isAvailableAsync()) {
+        // Shared one at a time: the sharing sheet takes a single file.
+        for (const uri of files) {
+          await Sharing.shareAsync(uri, { mimeType: "text/csv" });
+        }
+      }
+      setSnack(t("settings.exported", { n: files.length }));
+    } catch {
+      setSnack(t("settings.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -259,6 +308,28 @@ export default function Settings() {
                 ))}
               </View>
             )}
+          </Card.Content>
+        </Card>
+
+        {/* Export */}
+        <Card style={styles.card} mode="elevated">
+          <Card.Title
+            title={t("settings.exportTitle")}
+            subtitle={t("settings.exportSub")}
+            left={(p) => (
+              <MaterialCommunityIcons {...p} name="tray-arrow-up" size={24} color="#2e7d32" />
+            )}
+          />
+          <Card.Content style={styles.demoRow}>
+            <Button
+              mode="contained"
+              icon="file-delimited"
+              style={{ flex: 1 }}
+              disabled={exporting}
+              onPress={exportCsv}
+            >
+              {t("settings.export")}
+            </Button>
           </Card.Content>
         </Card>
 

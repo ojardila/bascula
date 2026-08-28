@@ -281,6 +281,12 @@ const es: Dict = {
   "worker.perDay": "{unit}/día",
   "perf.badWeight": "Escribe un peso mayor que cero.",
   "crop.windingDown": "La cosecha lleva {n} semanas cayendo fuerte y ya pasó su pico. Considere mover gente a otro lote.",
+  "settings.exportTitle": "Exportar datos",
+  "settings.exportSub": "Sácalos del teléfono como CSV",
+  "settings.export": "Exportar CSV",
+  "settings.exported": "Se exportaron {n} archivos.",
+  "settings.exportEmpty": "Todavía no hay datos que exportar.",
+  "settings.exportFailed": "No se pudo exportar. Vuelve a intentar.",
   "unit.default": "unidad",
 };
 
@@ -537,6 +543,12 @@ const en: Dict = {
   "worker.perDay": "{unit}/day",
   "perf.badWeight": "Enter a weight greater than zero.",
   "crop.windingDown": "The harvest has fallen sharply for {n} weeks and is past its peak. Consider moving people to another plot.",
+  "settings.exportTitle": "Export data",
+  "settings.exportSub": "Get it off the phone as CSV",
+  "settings.export": "Export CSV",
+  "settings.exported": "{n} files exported.",
+  "settings.exportEmpty": "There is no data to export yet.",
+  "settings.exportFailed": "Could not export. Try again.",
   "unit.default": "unit",
 };
 
@@ -793,6 +805,12 @@ const pt: Dict = {
   "worker.perDay": "{unit}/dia",
   "perf.badWeight": "Digite um peso maior que zero.",
   "crop.windingDown": "A colheita caiu forte por {n} semanas e já passou do pico. Considere mover gente para outro lote.",
+  "settings.exportTitle": "Exportar dados",
+  "settings.exportSub": "Tire-os do telefone como CSV",
+  "settings.export": "Exportar CSV",
+  "settings.exported": "{n} arquivos exportados.",
+  "settings.exportEmpty": "Ainda não há dados para exportar.",
+  "settings.exportFailed": "Não foi possível exportar. Tente de novo.",
   "unit.default": "unidade",
 };
 
