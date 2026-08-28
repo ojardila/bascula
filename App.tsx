@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+import { View, Text, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { PaperProvider, MD3LightTheme } from "react-native-paper";
+import { PaperProvider, MD3LightTheme, IconButton } from "react-native-paper";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -19,6 +20,11 @@ import RegisterPickup from "./src/screens/RegisterPickup";
 import Reports from "./src/screens/Reports";
 import Settings from "./src/screens/Settings";
 import WorkerDetail from "./src/screens/WorkerDetail";
+import PayWorker from "./src/screens/PayWorker";
+import Account from "./src/screens/Account";
+import Adjust from "./src/screens/Adjust";
+import CropDetail from "./src/screens/CropDetail";
+import WeekDetail from "./src/screens/WeekDetail";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -55,10 +61,21 @@ function MainTabs() {
   const { t } = useT();
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      backBehavior="history"
+      screenOptions={({ route, navigation }) => ({
         headerStyle: { backgroundColor: theme.colors.primary },
         headerTintColor: "#fff",
         headerTitleAlign: "center",
+        headerLeft: () =>
+          navigation.canGoBack() ? (
+            <IconButton
+              icon="arrow-left"
+              iconColor="#fff"
+              size={24}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel={t("nav.back")}
+            />
+          ) : undefined,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "#9aa39a",
         tabBarStyle: {
@@ -113,14 +130,63 @@ function AppInner() {
           component={WorkerDetail}
           options={{ title: t("worker.performance"), presentation: "card" }}
         />
+        <Stack.Screen
+          name="PayWorker"
+          component={PayWorker}
+          options={{ title: t("pay.pay"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="Account"
+          component={Account}
+          options={{ title: t("pay.account"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="CropDetail"
+          component={CropDetail}
+          options={{ title: t("nav.crops"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="WeekDetail"
+          component={WeekDetail}
+          options={{ title: t("reports.week"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="Adjust"
+          component={Adjust}
+          options={{ title: t("pay.newMovement"), presentation: "card" }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
+function DbError({ message }: { message: string }) {
+  return (
+    <View style={errorStyles.wrap}>
+      <MaterialCommunityIcons name="database-alert" size={48} color="#b3261e" />
+      <Text style={errorStyles.title}>No se pudo abrir la base de datos</Text>
+      <Text style={errorStyles.body}>{message}</Text>
+    </View>
+  );
+}
+
+const errorStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 },
+  title: { fontSize: 18, fontWeight: "700", textAlign: "center" },
+  body: { opacity: 0.7, textAlign: "center" },
+});
+
 export default function App() {
+  const [dbError, setDbError] = useState<string | null>(null);
+
   useEffect(() => {
-    initDb();
+    // A failed migration must never leave the app unable to start with the
+    // money database inside it.
+    try {
+      initDb();
+    } catch (e) {
+      setDbError(String(e));
+    }
   }, []);
 
   return (
@@ -133,7 +199,7 @@ export default function App() {
           }}
         >
           <StatusBar style="light" />
-          <AppInner />
+          {dbError ? <DbError message={dbError} /> : <AppInner />}
         </PaperProvider>
       </LangProvider>
     </SafeAreaProvider>

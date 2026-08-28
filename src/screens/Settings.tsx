@@ -15,18 +15,22 @@ import {
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { CROP_PRESETS, presetByKey } from "../cropTypes";
 import {
   Config,
   Overrides,
   Demo,
+  Export,
   Reports as ReportsDb,
   type CostOverride,
 } from "../db";
-import { useT, type Lang } from "../i18n";
+import { csvDocument } from "../csv";
+import { useT, formatWeekRange, type Lang } from "../i18n";
 
 export default function Settings() {
-  const { t, lang, setLang } = useT();
+  const { t, lang, setLang, money } = useT();
   // Active crop config
   const [cropType, setCropType] = useState("cafe");
   const [label, setLabel] = useState("Café");
@@ -88,7 +92,46 @@ export default function Settings() {
     Overrides.set(ovWeek, c);
     setOvCost("");
     setOverrides(Overrides.all());
-    setSnack(t("settings.weekUpdated", { week: ovWeek }));
+    setSnack(t("settings.weekUpdated", { week: formatWeekRange(ovWeek, lang) }));
+  }
+
+  const [exporting, setExporting] = useState(false);
+
+  // One button per set rather than one that exports everything: chaining
+  // three sharing sheets forced the user through two they had not asked for,
+  // with no way out but closing them all. The three answer different
+  // questions anyway, so pick the one you need.
+  const EXPORTS = [
+    { key: "pesadas", label: "settings.exportPickups", rows: () => Export.pickups() },
+    { key: "movimientos", label: "settings.exportLedger", rows: () => Export.ledger() },
+    { key: "saldos", label: "settings.exportBalances", rows: () => Export.balances() },
+  ] as const;
+
+  async function exportCsv(name: string, rows: Record<string, unknown>[]) {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      if (!rows.length) {
+        setSnack(t("settings.exportEmpty"));
+        return;
+      }
+      const header = Object.keys(rows[0]);
+      const csv = csvDocument(
+        header,
+        rows.map((r) => header.map((h) => r[h])),
+      );
+      const stamp = new Date().toISOString().slice(0, 10);
+      const file = new File(Paths.cache, `bascula-${name}-${stamp}.csv`);
+      file.create({ overwrite: true });
+      file.write(csv);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, { mimeType: "text/csv" });
+      }
+    } catch {
+      setSnack(t("settings.exportFailed"));
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -214,7 +257,7 @@ export default function Settings() {
                       onPress={() => setOvWeek(w)}
                       style={styles.chip}
                     >
-                      {w}
+                      {formatWeekRange(w, lang)}
                     </Chip>
                   ))}
                 </View>
@@ -241,8 +284,8 @@ export default function Settings() {
                   <View key={o.id}>
                     {i > 0 && <Divider />}
                     <List.Item
-                      title={o.week}
-                      description={`$${o.costPerUnit.toLocaleString()} · ${unit || t("unit.default")}`}
+                      title={formatWeekRange(o.week, lang)}
+                      description={`${money(o.costPerUnit)} · ${unit || t("unit.default")}`}
                       left={(p) => <List.Icon {...p} icon="calendar-week" />}
                       right={(p) => (
                         <IconButton
@@ -259,6 +302,30 @@ export default function Settings() {
                 ))}
               </View>
             )}
+          </Card.Content>
+        </Card>
+
+        {/* Export */}
+        <Card style={styles.card} mode="elevated">
+          <Card.Title
+            title={t("settings.exportTitle")}
+            subtitle={t("settings.exportSub")}
+            left={(p) => (
+              <MaterialCommunityIcons {...p} name="tray-arrow-up" size={24} color="#2e7d32" />
+            )}
+          />
+          <Card.Content style={styles.exportRow}>
+            {EXPORTS.map((e) => (
+              <Button
+                key={e.key}
+                mode="outlined"
+                icon="file-delimited"
+                disabled={exporting}
+                onPress={() => exportCsv(e.key, e.rows() as Record<string, unknown>[])}
+              >
+                {t(e.label)}
+              </Button>
+            ))}
           </Card.Content>
         </Card>
 
@@ -314,5 +381,6 @@ const styles = StyleSheet.create({
   chip: {},
   empty: { opacity: 0.6, paddingVertical: 8 },
   ovRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  exportRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   demoRow: { flexDirection: "row", gap: 8, alignItems: "center" },
 });

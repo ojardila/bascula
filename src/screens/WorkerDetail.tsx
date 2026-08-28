@@ -1,12 +1,20 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, Avatar, List, Divider, Chip } from "react-native-paper";
+import { Text, Card, Avatar, List, Divider, Chip, Button } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
-import { People, WorkerReports, Config, type Person, type CropConfig } from "../db";
-import { useT } from "../i18n";
+import {
+  People,
+  WorkerReports,
+  Config,
+  Payments,
+  fromCents,
+  type Person,
+  type CropConfig,
+} from "../db";
+import { useT, formatDay } from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -20,22 +28,30 @@ const chartConfig = {
 
 export default function WorkerDetail({
   route,
+  navigation,
 }: NativeStackScreenProps<RootStackParamList, "WorkerDetail">) {
-  const { t } = useT();
+  const { t, lang, money, num } = useT();
   const { personId } = route.params;
   const [person, setPerson] = useState<Person | null>(null);
-  const [stats, setStats] = useState({ kg: 0, pickups: 0, firstDate: "", lastDate: "" });
+  const [stats, setStats] = useState({ kg: 0, pickups: 0, days: 0, firstDate: "", lastDate: "" });
   const [byWeek, setByWeek] = useState<{ label: string; kg: number }[]>([]);
   const [byCrop, setByCrop] = useState<{ label: string; kg: number }[]>([]);
   const [recent, setRecent] = useState<
     { id: number; weight: number; date: string; crop: string }[]
   >([]);
-  const [payout, setPayout] = useState(0);
+  // What is actually owed, from the ledger. The gross value of everything
+  // ever harvested is a different number and must not be labelled "to pay":
+  // it keeps showing a debt for someone who was already paid in full.
+  const [balanceCents, setBalanceCents] = useState(0);
   const [config, setConfig] = useState<CropConfig | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      setPerson(People.byId(personId) ?? null);
+      const found = People.byId(personId) ?? null;
+      setPerson(found);
+      if (found) {
+        navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
+      }
       const s = WorkerReports.stats(personId);
       if (s) setStats(s);
       setByWeek(WorkerReports.byWeek(personId));
@@ -43,24 +59,34 @@ export default function WorkerDetail({
       setRecent(WorkerReports.recent(personId));
       const c = Config.get();
       setConfig(c ?? null);
-      setPayout(WorkerReports.payout(personId, c ? c.costPerUnit : 0));
+      setBalanceCents(Payments.balance(personId).balanceCents);
     }, [personId]),
   );
 
   const unit = config?.unit || "kg";
-  const days = countDays(stats.firstDate, stats.lastDate);
-  const avg = stats.pickups ? stats.kg / stats.pickups : 0;
+  const days = stats.days;
+  const perDay = stats.days ? stats.kg / stats.days : 0;
 
   const weekAsc = [...byWeek].reverse();
   const hasChart = weekAsc.length >= 2;
   const chartData = {
-    labels: weekAsc.map((r) => r.label.replace(/^\d{4}-/, "")),
+    labels: weekAsc.map((r) => formatDay(r.label, lang)),
     datasets: [{ data: weekAsc.map((r) => Math.round(r.kg)) }],
   };
   const cropMax = Math.max(1, ...byCrop.map((c) => c.kg));
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <Button
+        mode="contained-tonal"
+        icon="cash-multiple"
+        style={styles.account}
+        contentStyle={styles.tall}
+        onPress={() => navigation.navigate("Account", { personId })}
+      >
+        {t("pay.account")}
+      </Button>
+
       {/* Header */}
       <Card style={styles.card} mode="elevated">
         <Card.Content style={styles.header}>
@@ -87,13 +113,13 @@ export default function WorkerDetail({
 
       {/* Stats */}
       <View style={styles.stats}>
-        <Stat label={t("reports.total", { unit })} value={stats.kg.toLocaleString()} />
+        <Stat label={t("reports.total", { unit })} value={num(stats.kg)} />
         <Stat label={t("reports.pickups")} value={String(stats.pickups)} />
-        <Stat label={t("worker.avg", { unit })} value={avg.toFixed(1)} />
+        <Stat label={t("worker.perDay", { unit })} value={num(Math.round(perDay * 10) / 10)} />
         <Stat label={t("worker.days")} value={String(days)} />
         <Stat
-          label={t("reports.toPay")}
-          value={`$${Math.round(payout).toLocaleString()}`}
+          label={balanceCents < 0 ? t("pay.owesUs") : t("pay.weOwe")}
+          value={money(fromCents(Math.abs(balanceCents)))}
           highlight
         />
       </View>
@@ -132,7 +158,7 @@ export default function WorkerDetail({
                   <View style={[styles.barFill, { width: `${(c.kg / cropMax) * 100}%` }]} />
                 </View>
                 <Text variant="labelMedium" style={styles.barValue}>
-                  {c.kg.toLocaleString()} {unit}
+                  {num(c.kg)} {unit}
                 </Text>
               </View>
             ))}
@@ -151,8 +177,8 @@ export default function WorkerDetail({
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  title={`${r.weight.toLocaleString()} ${unit} · ${r.crop}`}
-                  description={new Date(r.date).toLocaleString()}
+                  title={`${num(r.weight)} ${unit} · ${r.crop}`}
+                  description={formatDay(r.date, lang)}
                   left={(p) => <List.Icon {...p} icon="scale" />}
                 />
               </View>
@@ -164,12 +190,6 @@ export default function WorkerDetail({
   );
 }
 
-function countDays(first: string, last: string) {
-  if (!first || !last) return 0;
-  const a = new Date(first).getTime();
-  const b = new Date(last).getTime();
-  return Math.max(1, Math.round((b - a) / 86400000) + 1);
-}
 
 function Stat({
   label,
@@ -199,6 +219,8 @@ function Stat({
 
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 14 },
+  account: { marginBottom: 12, borderRadius: 12 },
+  tall: { height: 52 },
   card: { borderRadius: 16 },
   header: { flexDirection: "row", alignItems: "center", gap: 14 },
   tag: { alignSelf: "flex-start", marginTop: 6 },

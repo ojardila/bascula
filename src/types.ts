@@ -3,7 +3,7 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 // Bottom tabs — the main sections.
 export type TabParamList = {
   Home: undefined;
-  People: undefined;
+  People: { view?: "pay" } | undefined;
   Crops: undefined;
   Pickup: undefined;
   Reports: undefined;
@@ -16,4 +16,9 @@ export type RootStackParamList = {
   PeopleAdd: undefined;
   CropAdd: undefined;
   WorkerDetail: { personId: number };
+  PayWorker: { personId: number; monday: string };
+  Account: { personId: number };
+  Adjust: { personId: number; kind: "anticipo" | "deduccion" };
+  CropDetail: { cropId: number };
+  WeekDetail: { monday: string };
 };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
 import { TextInput, Button, HelperText, Avatar, Text } from "react-native-paper";
 import * as ImagePicker from "expo-image-picker";
@@ -18,7 +18,12 @@ export default function PeopleAdd({
   const [tag, setTag] = useState("");
   const [image, setImage] = useState("");
 
+  // The tag is a physical card, so two workers carrying the same one is a data
+  // error waiting to happen. Warn rather than block: the admin may be replacing
+  // a lost card and knows better than the app.
+  const tagTaken = tag.trim().length > 0 && !!PeopleDb.byTag(tag.trim());
   const valid = name.trim().length > 0;
+  const busy = useRef(false);
 
   async function pickFromGallery() {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -42,8 +47,21 @@ export default function PeopleAdd({
   }
 
   function save() {
-    PeopleDb.add({ name: name.trim(), lastName: lastName.trim(), documentType, docId, tag, image });
-    navigation.goBack();
+    if (busy.current || !valid) return;
+    busy.current = true;
+    try {
+      PeopleDb.add({
+        name: name.trim(),
+        lastName: lastName.trim(),
+        documentType,
+        docId,
+        tag: tag.trim(),
+        image,
+      });
+      navigation.goBack();
+    } catch {
+      busy.current = false;
+    }
   }
 
   return (
@@ -85,8 +103,8 @@ export default function PeopleAdd({
         mode="outlined"
         autoCapitalize="characters"
       />
-      <HelperText type="info" visible>
-        {t("peopleAdd.rfidHelp")}
+      <HelperText type={tagTaken ? "error" : "info"} visible>
+        {tagTaken ? t("peopleAdd.rfidTaken") : t("peopleAdd.rfidHelp")}
       </HelperText>
       <Button mode="contained" icon="content-save" disabled={!valid} onPress={save}>
         {t("peopleAdd.save")}

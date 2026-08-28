@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
 import { Text, TextInput, Button, Chip, HelperText, Snackbar } from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
@@ -25,18 +25,31 @@ export default function RegisterPickup() {
 
   const valid = personId != null && cropId != null && parseFloat(weight) > 0;
 
+  // The app has a rule that flags two identical pickups within three minutes.
+  // Better not to create them in the first place.
+  const busy = useRef(false);
+
   function save() {
-    if (!valid) return;
-    Pickups.add({
-      personId: personId!,
-      cropId: cropId!,
-      weight: parseFloat(weight),
-      date: new Date().toISOString(),
-    });
-    setWeight("");
-    setPersonId(null);
-    setCropId(null);
-    setSaved(true);
+    if (busy.current || !valid) return;
+    busy.current = true;
+    try {
+      Pickups.add({
+        personId: personId!,
+        cropId: cropId!,
+        weight: parseFloat(weight),
+        date: new Date().toISOString(),
+      });
+      setWeight("");
+      setPersonId(null);
+      setCropId(null);
+      setSaved(true);
+    } finally {
+      // Released even if the insert threw: this screen is a tab and never
+      // unmounts, so a stuck flag would leave the button dead until restart.
+      setTimeout(() => {
+        busy.current = false;
+      }, 400);
+    }
   }
 
   return (
@@ -53,7 +66,8 @@ export default function RegisterPickup() {
               <Chip
                 key={p.id}
                 selected={personId === p.id}
-                showSelectedCheck
+                showSelectedCheck={false}
+                icon={personId === p.id ? "check" : "account-outline"}
                 onPress={() => setPersonId(p.id)}
               >
                 {`${p.name} ${p.lastName}`.trim()}
@@ -75,7 +89,8 @@ export default function RegisterPickup() {
               <Chip
                 key={c.id}
                 selected={cropId === c.id}
-                showSelectedCheck
+                showSelectedCheck={false}
+                icon={cropId === c.id ? "check" : "sprout-outline"}
                 onPress={() => setCropId(c.id)}
               >
                 {c.name}
