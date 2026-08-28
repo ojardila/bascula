@@ -550,7 +550,10 @@ export const Demo = {
           d % 3 === 0
             ? plots[0]
             : plots[Math.floor((idx + d) / 2) % plots.length];
-        const base = 90 + ((d * 3 + idx * 5) % 40); // the plot's day, shared by all
+        // Yield tapers off toward the end of the season on the first plot, so
+        // the harvest-curve reading has something real to report.
+        const taper = cid === cids[0] ? Math.min(1, 0.35 + d / 20) : 1;
+        const base = Math.round((90 + ((d * 3 + idx * 5) % 40)) * taper);
         const loads = 2 + (idx % 2); // two or three weighings each
         for (let k = 0; k < loads; k++) {
           const weight = Math.max(

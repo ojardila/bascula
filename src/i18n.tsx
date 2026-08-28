@@ -280,6 +280,7 @@ const es: Dict = {
   "peopleAdd.rfidTaken": "Esa placa ya la tiene otro recolector.",
   "worker.perDay": "{unit}/día",
   "perf.badWeight": "Escribe un peso mayor que cero.",
+  "crop.windingDown": "La cosecha lleva {n} semanas cayendo fuerte y ya pasó su pico. Considere mover gente a otro lote.",
   "unit.default": "unidad",
 };
 
@@ -535,6 +536,7 @@ const en: Dict = {
   "peopleAdd.rfidTaken": "Another worker already has that tag.",
   "worker.perDay": "{unit}/day",
   "perf.badWeight": "Enter a weight greater than zero.",
+  "crop.windingDown": "The harvest has fallen sharply for {n} weeks and is past its peak. Consider moving people to another plot.",
   "unit.default": "unit",
 };
 
@@ -790,6 +792,7 @@ const pt: Dict = {
   "peopleAdd.rfidTaken": "Outro colhedor já tem essa placa.",
   "worker.perDay": "{unit}/dia",
   "perf.badWeight": "Digite um peso maior que zero.",
+  "crop.windingDown": "A colheita caiu forte por {n} semanas e já passou do pico. Considere mover gente para outro lote.",
   "unit.default": "unidade",
 };
 

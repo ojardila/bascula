@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, List, Divider, Chip } from "react-native-paper";
+import { Text, Card, List, Divider, Chip, Banner } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -12,11 +12,13 @@ import {
   type Crop,
   type CropConfig,
 } from "../db";
+import { readHarvest } from "../harvest";
 import {
   useT,
   formatDay,
   formatWeekRange,
   weekTag,
+  mondayOf,
 } from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
@@ -85,14 +87,19 @@ export default function CropDetail({
   const ha = crop?.dimension ?? 0;
   const weekAsc = [...byWeek].reverse();
   const hasChart = weekAsc.length >= 2;
-  const peak = byWeek.reduce<{ week: string; kg: number } | null>(
-    (best, r) => (!best || r.kg > best.kg ? r : best),
-    null,
-  );
+  // What the weekly totals are saying, and what to do about it.
+  const shape = readHarvest(byWeek, mondayOf(new Date()));
+  const peak = shape.peak;
   const maxWorkerKg = byWorker.reduce((m, r) => Math.max(m, r.kg), 0);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {shape.windingDown && (
+        <Banner visible icon="trending-down" style={styles.banner}>
+          {t("crop.windingDown", { n: shape.fallingWeeks })}
+        </Banner>
+      )}
+
       <Card style={styles.card} mode="elevated">
         <Card.Content>
           <Text variant="titleLarge" style={{ fontWeight: "800" }}>
@@ -253,6 +260,7 @@ export default function CropDetail({
 const styles = StyleSheet.create({
   container: { padding: 12, paddingBottom: 32 },
   card: { marginBottom: 12 },
+  banner: { marginBottom: 12, backgroundColor: "#fdf5e6" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   stats: { flexDirection: "row", gap: 8, marginBottom: 12 },
   stat: {
