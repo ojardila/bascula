@@ -193,7 +193,8 @@ export default function Reports() {
                   grouping === "week"
                     ? b.kg * costForWeek(b.label, config.costPerUnit)
                     : (b.value ?? b.kg * config.costPerUnit);
-                const tappable = grouping !== "week" && b.id != null;
+                // Weeks open their own detail; the others need an id.
+                const tappable = grouping === "week" || b.id != null;
                 const lots = grouping === "week" ? lotsByWeek[b.label] ?? [] : [];
                 const row = (
                   <View style={styles.barRow}>
@@ -230,9 +231,11 @@ export default function Reports() {
                       <TouchableRipple
                         borderless
                         onPress={() =>
-                          grouping === "worker"
-                            ? navigation.navigate("WorkerDetail", { personId: b.id! })
-                            : navigation.navigate("CropDetail", { cropId: b.id! })
+                          grouping === "week"
+                            ? navigation.navigate("WeekDetail", { monday: b.label })
+                            : grouping === "worker"
+                              ? navigation.navigate("WorkerDetail", { personId: b.id! })
+                              : navigation.navigate("CropDetail", { cropId: b.id! })
                         }
                       >
                         {row}

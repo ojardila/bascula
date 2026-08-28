@@ -1,0 +1,206 @@
+import { useCallback, useMemo, useState } from "react";
+import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
+import { Text, Card, Divider, DataTable } from "react-native-paper";
+import { BarChart } from "react-native-chart-kit";
+import { useFocusEffect } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../types";
+import { WeekReports, Config, type CropConfig } from "../db";
+import { useT, formatWeekRange, formatDay } from "../i18n";
+
+const CHART_W = Dimensions.get("window").width - 64;
+const chartConfig = {
+  backgroundGradientFrom: "#ffffff",
+  backgroundGradientTo: "#ffffff",
+  decimalPlaces: 0,
+  color: (o = 1) => `rgba(46,125,50,${o})`,
+  labelColor: (o = 1) => `rgba(30,40,30,${o})`,
+  barPercentage: 0.6,
+};
+
+const DAY_LETTER = ["D", "L", "M", "X", "J", "V", "S"];
+
+export default function WeekDetail({
+  route,
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, "WeekDetail">) {
+  const { t, lang, num } = useT();
+  const { monday } = route.params;
+  const [config, setConfig] = useState<CropConfig | null>(null);
+  const [byDay, setByDay] = useState<ReturnType<typeof WeekReports.byDay>>([]);
+  const [byWorker, setByWorker] = useState<ReturnType<typeof WeekReports.byWorker>>([]);
+  const [grid, setGrid] = useState<ReturnType<typeof WeekReports.grid>>([]);
+  const [plots, setPlots] = useState<ReturnType<typeof WeekReports.plots>>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setConfig(Config.get() ?? null);
+      setByDay(WeekReports.byDay(monday));
+      setByWorker(WeekReports.byWorker(monday));
+      setGrid(WeekReports.grid(monday));
+      setPlots(WeekReports.plots(monday));
+      navigation.setOptions({ title: formatWeekRange(monday, lang) });
+    }, [monday, lang, navigation]),
+  );
+
+  const unit = config?.unit ?? "kg";
+  const total = byDay.reduce((s, d) => s + d.kg, 0);
+
+  // person -> plot -> kg, so the table can be read across.
+  const cells = useMemo(() => {
+    const m = new Map<number, Map<number, number>>();
+    for (const g of grid) {
+      if (!m.has(g.personId)) m.set(g.personId, new Map());
+      m.get(g.personId)!.set(g.cropId, g.kg);
+    }
+    return m;
+  }, [grid]);
+
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.stats}>
+        <Stat value={num(total)} label={t("reports.total", { unit })} />
+        <Stat value={String(byWorker.length)} label={t("label.workers")} />
+        <Stat value={String(plots.length)} label={t("label.crops")} />
+      </View>
+
+      {byDay.length > 0 && (
+        <Card style={styles.card} mode="elevated">
+          <Card.Title title={t("week.byDay")} />
+          <Card.Content>
+            <BarChart
+              data={{
+                labels: byDay.map((d) => {
+                  const dt = new Date(`${d.day}T12:00:00Z`);
+                  return DAY_LETTER[dt.getUTCDay()];
+                }),
+                datasets: [{ data: byDay.map((d) => Math.round(d.kg)) }],
+              }}
+              width={CHART_W}
+              height={180}
+              chartConfig={chartConfig}
+              fromZero
+              showValuesOnTopOfBars
+              withInnerLines={false}
+              yAxisLabel=""
+              yAxisSuffix=""
+              style={styles.chart}
+            />
+            {byDay.map((d, i) => (
+              <View key={d.day}>
+                {i > 0 && <Divider />}
+                <View style={styles.dayRow}>
+                  <Text variant="bodyMedium" style={styles.dayLabel}>
+                    {formatDay(d.day, lang)}
+                  </Text>
+                  <Text variant="labelSmall" style={styles.dim}>
+                    {t("week.dayMeta", { p: d.pickers, l: d.plots })}
+                  </Text>
+                  <Text variant="titleSmall">
+                    {num(d.kg)} {unit}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </Card.Content>
+        </Card>
+      )}
+
+      {/* The cross table: who worked which plot. Horizontally scrollable so
+          adding plots never squeezes the names into unreadable columns. */}
+      <Card style={styles.card} mode="elevated">
+        <Card.Title title={t("week.grid")} subtitle={t("week.gridSub")} />
+        <Card.Content style={{ paddingHorizontal: 0 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <DataTable>
+              <DataTable.Header>
+                <DataTable.Title style={styles.nameCol}>
+                  {t("label.workers")}
+                </DataTable.Title>
+                {plots.map((p) => (
+                  <DataTable.Title key={p.cropId} numeric style={styles.numCol}>
+                    {p.crop}
+                  </DataTable.Title>
+                ))}
+                <DataTable.Title numeric style={styles.numCol}>
+                  {t("week.total")}
+                </DataTable.Title>
+              </DataTable.Header>
+
+              {byWorker.map((w) => (
+                <DataTable.Row key={w.personId}>
+                  <DataTable.Cell style={styles.nameCol}>{w.name}</DataTable.Cell>
+                  {plots.map((p) => {
+                    const kg = cells.get(w.personId)?.get(p.cropId);
+                    return (
+                      <DataTable.Cell key={p.cropId} numeric style={styles.numCol}>
+                        {kg ? num(kg) : "—"}
+                      </DataTable.Cell>
+                    );
+                  })}
+                  <DataTable.Cell numeric style={styles.numCol}>
+                    <Text style={styles.rowTotal}>{num(w.kg)}</Text>
+                  </DataTable.Cell>
+                </DataTable.Row>
+              ))}
+
+              <DataTable.Row>
+                <DataTable.Cell style={styles.nameCol}>
+                  <Text style={styles.rowTotal}>{t("week.total")}</Text>
+                </DataTable.Cell>
+                {plots.map((p) => (
+                  <DataTable.Cell key={p.cropId} numeric style={styles.numCol}>
+                    <Text style={styles.rowTotal}>{num(p.kg)}</Text>
+                  </DataTable.Cell>
+                ))}
+                <DataTable.Cell numeric style={styles.numCol}>
+                  <Text style={styles.rowTotal}>{num(total)}</Text>
+                </DataTable.Cell>
+              </DataTable.Row>
+            </DataTable>
+          </ScrollView>
+        </Card.Content>
+      </Card>
+    </ScrollView>
+  );
+}
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text variant="titleMedium" style={styles.statValue}>
+        {value}
+      </Text>
+      <Text variant="labelSmall" style={styles.dim}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { padding: 12, paddingBottom: 32 },
+  stats: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  stat: {
+    flex: 1,
+    backgroundColor: "#ede7f6",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  statValue: { fontWeight: "800" },
+  dim: { opacity: 0.65 },
+  card: { marginBottom: 12 },
+  chart: { borderRadius: 12, marginLeft: -16 },
+  dayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    gap: 8,
+  },
+  dayLabel: { width: 72 },
+  nameCol: { width: 140 },
+  numCol: { width: 96 },
+  rowTotal: { fontWeight: "700" },
+});

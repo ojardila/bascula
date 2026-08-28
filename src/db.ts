@@ -1439,3 +1439,60 @@ export const Export = {
       EXPORT_BALANCES_SQL,
     ),
 };
+
+// ---- Per-week detail ----------------------------------------------------
+
+export const WeekReports = {
+  /** Day-by-day totals for the week, with how many people and plots worked. */
+  byDay: (monday: string) =>
+    db.getAllSync<{ day: string; kg: number; pickers: number; plots: number }>(
+      `SELECT date(date,'localtime') AS day, SUM(weight) AS kg,
+              COUNT(DISTINCT personId) AS pickers, COUNT(DISTINCT cropId) AS plots
+         FROM pickups
+        WHERE date(date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY day ORDER BY day`,
+      [monday],
+    ),
+
+  /** Who worked that week, and how much. */
+  byWorker: (monday: string) =>
+    db.getAllSync<{ personId: number; name: string; kg: number; days: number }>(
+      `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+              SUM(pk.weight) AS kg,
+              COUNT(DISTINCT date(pk.date,'localtime')) AS days
+         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.personId ORDER BY kg DESC`,
+      [monday],
+    ),
+
+  /**
+   * The grid: how much each person picked on each plot that week. This is the
+   * question a foreman actually asks — not "how much did the week give" but
+   * "who was where, and did it show".
+   */
+  grid: (monday: string) =>
+    db.getAllSync<{ personId: number; name: string; cropId: number; crop: string; kg: number }>(
+      `SELECT pk.personId,
+              COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+              pk.cropId,
+              COALESCE(cr.name,'?') AS crop,
+              SUM(pk.weight) AS kg
+         FROM pickups pk
+         LEFT JOIN people pe ON pe.id = pk.personId
+         LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.personId, pk.cropId`,
+      [monday],
+    ),
+
+  plots: (monday: string) =>
+    db.getAllSync<{ cropId: number; crop: string; kg: number }>(
+      `SELECT pk.cropId, COALESCE(cr.name,'?') AS crop, SUM(pk.weight) AS kg
+         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        GROUP BY pk.cropId ORDER BY kg DESC`,
+      [monday],
+    ),
+};

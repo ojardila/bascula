@@ -287,6 +287,11 @@ const es: Dict = {
   "settings.exported": "Se exportaron {n} archivos.",
   "settings.exportEmpty": "Todavía no hay datos que exportar.",
   "settings.exportFailed": "No se pudo exportar. Vuelve a intentar.",
+  "week.byDay": "Por día",
+  "week.dayMeta": "{p} personas · {l} lotes",
+  "week.grid": "Quién trabajó dónde",
+  "week.gridSub": "Kilos por recolector y lote",
+  "week.total": "Total",
   "unit.default": "unidad",
 };
 
@@ -549,6 +554,11 @@ const en: Dict = {
   "settings.exported": "{n} files exported.",
   "settings.exportEmpty": "There is no data to export yet.",
   "settings.exportFailed": "Could not export. Try again.",
+  "week.byDay": "By day",
+  "week.dayMeta": "{p} people · {l} plots",
+  "week.grid": "Who worked where",
+  "week.gridSub": "Kilos per picker and plot",
+  "week.total": "Total",
   "unit.default": "unit",
 };
 
@@ -811,6 +821,11 @@ const pt: Dict = {
   "settings.exported": "{n} arquivos exportados.",
   "settings.exportEmpty": "Ainda não há dados para exportar.",
   "settings.exportFailed": "Não foi possível exportar. Tente de novo.",
+  "week.byDay": "Por dia",
+  "week.dayMeta": "{p} pessoas · {l} lotes",
+  "week.grid": "Quem trabalhou onde",
+  "week.gridSub": "Quilos por colhedor e lote",
+  "week.total": "Total",
   "unit.default": "unidade",
 };
 

@@ -24,6 +24,7 @@ import PayWorker from "./src/screens/PayWorker";
 import Account from "./src/screens/Account";
 import Adjust from "./src/screens/Adjust";
 import CropDetail from "./src/screens/CropDetail";
+import WeekDetail from "./src/screens/WeekDetail";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -143,6 +144,11 @@ function AppInner() {
           name="CropDetail"
           component={CropDetail}
           options={{ title: t("nav.crops"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="WeekDetail"
+          component={WeekDetail}
+          options={{ title: t("reports.week"), presentation: "card" }}
         />
         <Stack.Screen
           name="Adjust"
