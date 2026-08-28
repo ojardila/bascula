@@ -14,10 +14,21 @@ import {
   Divider,
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Print from "expo-print";
+import { payrollHtml } from "../receiptHtml";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
-import { Config, Payments, weekCrops, fromCents, type CropConfig } from "../db";
+import {
+  Config,
+  Payments,
+  People as PeopleDb,
+  WeekReports,
+  weekCrops,
+  fromCents,
+  today,
+  type CropConfig,
+} from "../db";
 import {
   useT,
   formatWeekRange,
@@ -189,6 +200,53 @@ export default function PaymentsPanel() {
     }
   }
 
+  /** The sheet the office files: one line and one signature per worker. */
+  async function printPayroll() {
+    if (!config) return;
+    const balances = Payments.balances();
+    const paidThisWeek = new Map<number, number>();
+    for (const b of balances) {
+      const hist = Payments.history(b.personId, 50);
+      const paid = hist
+        .filter((h) => h.kind === "pago" && h.date >= monday)
+        .reduce((s, h) => s + Math.abs(h.amountCents), 0);
+      if (paid > 0) paidThisWeek.set(b.personId, paid);
+    }
+    if (!paidThisWeek.size) {
+      setSnack(t("pay.emptyHistory"));
+      return;
+    }
+    // From the week's actual work, not from what is still pending: whoever was
+    // already paid has no pending row left, and printed as zero kilos.
+    const kgOf = new Map(
+      WeekReports.byWorker(monday).map((w) => [w.personId, w.kg] as const),
+    );
+    try {
+      await Print.printAsync({
+        html: payrollHtml(
+          balances
+            .filter((b) => paidThisWeek.has(b.personId))
+            .map((b) => ({
+              name: b.name,
+              doc: PeopleDb.byId(b.personId)?.docId ?? null,
+              kg: kgOf.get(b.personId) ?? 0,
+              paidCents: paidThisWeek.get(b.personId) ?? 0,
+              balanceCents: b.balanceCents,
+            })),
+          {
+            title: `${t("pay.payroll")} · ${formatWeekRange(monday, lang)}`,
+            farmLabel: config.label,
+            unit: config.unit,
+            date: today(),
+          },
+          lang,
+        ),
+      });
+    } catch {
+      /* dismissed */
+    }
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -233,6 +291,14 @@ export default function PaymentsPanel() {
               contentStyle={styles.tall}
             >
               {t("pay.payAll")}
+            </Button>
+            <Button
+              mode="text"
+              icon="printer"
+              onPress={printPayroll}
+              style={styles.payrollBtn}
+            >
+              {t("pay.printPayroll")}
             </Button>
           </Card.Content>
         </Card>
@@ -361,6 +427,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 12 },
   total: { fontWeight: "800", color: "#1b5e20", marginVertical: 2 },
   payAll: { marginTop: 14, borderRadius: 12 },
+  payrollBtn: { marginTop: 6 },
   tall: { height: 56 },
   avatar: { alignSelf: "center", marginLeft: 8 },
   amountCell: { flexDirection: "row", alignItems: "center", gap: 4 },

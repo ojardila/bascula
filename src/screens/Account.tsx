@@ -25,7 +25,9 @@ import {
   type Person,
 } from "../db";
 import { useT, formatDay } from "../i18n";
+import * as Print from "expo-print";
 import { buildReceipt } from "../receipt";
+import { receiptHtml } from "../receiptHtml";
 
 const ICON: Record<string, string> = {
   devengo: "scale-balance",
@@ -86,6 +88,40 @@ export default function Account() {
     } catch {
       busy.current = false;
       setSnack(t("pay.error"));
+    }
+  }
+
+  /** The same settlement, on paper: printable and with room for a signature. */
+  async function printReceipt() {
+    const cfg = Config.get();
+    const settlement = Payments.settlements(personId).find((x) => x.status === "open");
+    if (!settlement) return;
+    const items = Payments.itemsOf(settlement.id);
+    const paidCents = rows
+      .filter((r) => r.kind === "pago" && r.date >= settlement.periodStart)
+      .reduce((sum, r) => sum + Math.abs(r.amountCents), 0);
+    try {
+      await Print.printAsync({
+        html: receiptHtml(
+          {
+            workerName: person ? `${person.name} ${person.lastName}`.trim() : "",
+            workerDoc: person?.docId,
+            farmLabel: cfg?.label ?? "",
+            unit: cfg?.unit ?? "",
+            lines: items.map((i) => ({
+              week: i.week,
+              weight: i.weight,
+              amountCents: i.amountCents,
+            })),
+            balanceCents: credit,
+            paidCents,
+            date: today(),
+          },
+          lang,
+        ),
+      });
+    } catch {
+      /* the user dismissed the print dialog */
     }
   }
 
@@ -192,6 +228,17 @@ export default function Account() {
             {t("pay.share")}
           </Button>
         </View>
+
+        <Button
+          mode="contained-tonal"
+          icon="printer"
+          style={styles.action}
+          contentStyle={styles.tall}
+          disabled={!hasSettlement}
+          onPress={printReceipt}
+        >
+          {t("pay.print")}
+        </Button>
 
         <Card mode="elevated" style={styles.card}>
           <Card.Title title={t("pay.movements")} />
