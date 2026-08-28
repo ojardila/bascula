@@ -17,6 +17,7 @@ import {
   WEEK_BY_WORKER_SQL,
   WEEK_GRID_SQL,
   WEEK_PLOTS_SQL,
+  WEEK_GRID_DAY_SQL,
 } from "./schema";
 
 export interface Person {
@@ -1469,6 +1470,13 @@ export const WeekReports = {
   grid: (monday: string) =>
     db.getAllSync<{ personId: number; name: string; cropId: number; crop: string; kg: number }>(
       WEEK_GRID_SQL,
+      [monday],
+    ),
+
+  /** The same grid, but against the days of the week instead of the plots. */
+  gridByDay: (monday: string) =>
+    db.getAllSync<{ personId: number; name: string; day: string; kg: number }>(
+      WEEK_GRID_DAY_SQL,
       [monday],
     ),
 

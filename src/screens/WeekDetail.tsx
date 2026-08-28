@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, Divider, DataTable } from "react-native-paper";
+import { Text, Card, Divider, DataTable, SegmentedButtons } from "react-native-paper";
 import { BarChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -31,6 +31,9 @@ export default function WeekDetail({
   const [byWorker, setByWorker] = useState<ReturnType<typeof WeekReports.byWorker>>([]);
   const [grid, setGrid] = useState<ReturnType<typeof WeekReports.grid>>([]);
   const [plots, setPlots] = useState<ReturnType<typeof WeekReports.plots>>([]);
+  const [gridDay, setGridDay] = useState<ReturnType<typeof WeekReports.gridByDay>>([]);
+  // Same people down the side; what runs across the top is the question.
+  const [axis, setAxis] = useState<"day" | "plot">("day");
 
   useFocusEffect(
     useCallback(() => {
@@ -39,6 +42,7 @@ export default function WeekDetail({
       setByWorker(WeekReports.byWorker(monday));
       setGrid(WeekReports.grid(monday));
       setPlots(WeekReports.plots(monday));
+      setGridDay(WeekReports.gridByDay(monday));
       navigation.setOptions({ title: formatWeekRange(monday, lang) });
     }, [monday, lang, navigation]),
   );
@@ -46,15 +50,35 @@ export default function WeekDetail({
   const unit = config?.unit ?? "kg";
   const total = byDay.reduce((s, d) => s + d.kg, 0);
 
-  // person -> plot -> kg, so the table can be read across.
+  // person -> column key -> kg, so the table can be read across. The column
+  // key is a plot id or a day, depending on which axis is showing.
   const cells = useMemo(() => {
-    const m = new Map<number, Map<number, number>>();
-    for (const g of grid) {
-      if (!m.has(g.personId)) m.set(g.personId, new Map());
-      m.get(g.personId)!.set(g.cropId, g.kg);
+    const m = new Map<number, Map<string, number>>();
+    const rows =
+      axis === "plot"
+        ? grid.map((g) => ({ personId: g.personId, key: String(g.cropId), kg: g.kg }))
+        : gridDay.map((g) => ({ personId: g.personId, key: g.day, kg: g.kg }));
+    for (const r of rows) {
+      if (!m.has(r.personId)) m.set(r.personId, new Map());
+      m.get(r.personId)!.set(r.key, r.kg);
     }
     return m;
-  }, [grid]);
+  }, [grid, gridDay, axis]);
+
+  // The columns and their totals, for whichever axis is showing.
+  const columns = useMemo(() => {
+    if (axis === "plot") {
+      return plots.map((p) => ({ key: String(p.cropId), label: p.crop, total: p.kg }));
+    }
+    return byDay.map((d) => {
+      const dt = new Date(`${d.day}T12:00:00Z`);
+      return {
+        key: d.day,
+        label: `${DAY_LETTER[dt.getUTCDay()]} ${dt.getUTCDate()}`,
+        total: d.kg,
+      };
+    });
+  }, [axis, plots, byDay]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -109,17 +133,31 @@ export default function WeekDetail({
       {/* The cross table: who worked which plot. Horizontally scrollable so
           adding plots never squeezes the names into unreadable columns. */}
       <Card style={styles.card} mode="elevated">
-        <Card.Title title={t("week.grid")} subtitle={t("week.gridSub")} />
+        <Card.Title
+          title={t("week.grid")}
+          subtitle={axis === "plot" ? t("week.gridSub") : t("week.gridSubDay")}
+        />
         <Card.Content style={{ paddingHorizontal: 0 }}>
+          <View style={styles.axisSwitch}>
+            <SegmentedButtons
+              value={axis}
+              onValueChange={(v) => setAxis(v as "day" | "plot")}
+              density="small"
+              buttons={[
+                { value: "day", label: t("week.byDayAxis"), icon: "calendar-week" },
+                { value: "plot", label: t("week.byPlotAxis"), icon: "sprout" },
+              ]}
+            />
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator>
             <DataTable>
               <DataTable.Header>
                 <DataTable.Title style={styles.nameCol}>
                   {t("label.workers")}
                 </DataTable.Title>
-                {plots.map((p) => (
-                  <DataTable.Title key={p.cropId} numeric style={styles.numCol}>
-                    {p.crop}
+                {columns.map((c) => (
+                  <DataTable.Title key={c.key} numeric style={styles.numCol}>
+                    {c.label}
                   </DataTable.Title>
                 ))}
                 <DataTable.Title numeric style={styles.numCol}>
@@ -130,10 +168,10 @@ export default function WeekDetail({
               {byWorker.map((w) => (
                 <DataTable.Row key={w.personId}>
                   <DataTable.Cell style={styles.nameCol}>{w.name}</DataTable.Cell>
-                  {plots.map((p) => {
-                    const kg = cells.get(w.personId)?.get(p.cropId);
+                  {columns.map((c) => {
+                    const kg = cells.get(w.personId)?.get(c.key);
                     return (
-                      <DataTable.Cell key={p.cropId} numeric style={styles.numCol}>
+                      <DataTable.Cell key={c.key} numeric style={styles.numCol}>
                         {kg ? num(kg) : "—"}
                       </DataTable.Cell>
                     );
@@ -148,9 +186,9 @@ export default function WeekDetail({
                 <DataTable.Cell style={styles.nameCol}>
                   <Text style={styles.rowTotal}>{t("week.total")}</Text>
                 </DataTable.Cell>
-                {plots.map((p) => (
-                  <DataTable.Cell key={p.cropId} numeric style={styles.numCol}>
-                    <Text style={styles.rowTotal}>{num(p.kg)}</Text>
+                {columns.map((c) => (
+                  <DataTable.Cell key={c.key} numeric style={styles.numCol}>
+                    <Text style={styles.rowTotal}>{num(c.total)}</Text>
                   </DataTable.Cell>
                 ))}
                 <DataTable.Cell numeric style={styles.numCol}>
@@ -200,6 +238,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dayLabel: { width: 72 },
+  axisSwitch: { paddingHorizontal: 16, paddingBottom: 12 },
   nameCol: { width: 140 },
   numCol: { width: 96 },
   rowTotal: { fontWeight: "700" },

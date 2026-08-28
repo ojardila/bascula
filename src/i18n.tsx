@@ -294,6 +294,9 @@ const es: Dict = {
   "settings.exportPickups": "Pesadas",
   "settings.exportLedger": "Movimientos",
   "settings.exportBalances": "Saldos",
+  "week.byDayAxis": "Por día",
+  "week.byPlotAxis": "Por lote",
+  "week.gridSubDay": "Kilos por recolector y día",
   "unit.default": "unidad",
 };
 
@@ -563,6 +566,9 @@ const en: Dict = {
   "settings.exportPickups": "Pickups",
   "settings.exportLedger": "Movements",
   "settings.exportBalances": "Balances",
+  "week.byDayAxis": "By day",
+  "week.byPlotAxis": "By plot",
+  "week.gridSubDay": "Kilos per picker and day",
   "unit.default": "unit",
 };
 
@@ -832,6 +838,9 @@ const pt: Dict = {
   "settings.exportPickups": "Pesagens",
   "settings.exportLedger": "Movimentos",
   "settings.exportBalances": "Saldos",
+  "week.byDayAxis": "Por dia",
+  "week.byPlotAxis": "Por lote",
+  "week.gridSubDay": "Quilos por colhedor e dia",
   "unit.default": "unidade",
 };
 

@@ -8,6 +8,7 @@ import {
   WEEK_BY_WORKER_SQL,
   WEEK_GRID_SQL,
   WEEK_PLOTS_SQL,
+  WEEK_GRID_DAY_SQL,
 } from "./schema.ts";
 
 // The week detail answers "who was where, and did it show". Its numbers have
@@ -92,4 +93,30 @@ test("a person who did not touch a plot has no cell for it", () => {
   const grid = db.prepare(WEEK_GRID_SQL).all(MONDAY) as Record<string, number>[];
   assert.equal(grid.length, 2, "two cells, not four: the empties are absent");
   assert.ok(!grid.some((g) => g.personId === 1 && g.cropId === 2));
+});
+
+test("the day grid adds up to the same total as the plot grid", () => {
+  pickup(1, 1, 50, "2026-08-17");
+  pickup(1, 2, 30, "2026-08-18");
+  pickup(2, 1, 20, "2026-08-17");
+  const byPlot = db.prepare(WEEK_GRID_SQL).all(MONDAY) as Record<string, number>[];
+  const byDay = db.prepare(WEEK_GRID_DAY_SQL).all(MONDAY) as Record<string, number>[];
+  const sum = (rows: Record<string, number>[]) => rows.reduce((s, r) => s + r.kg, 0);
+  // Same work seen from two angles: the totals cannot disagree.
+  assert.equal(sum(byDay), sum(byPlot));
+  assert.equal(sum(byDay), 100);
+});
+
+test("a person's day cell merges their plots that day", () => {
+  pickup(1, 1, 20, "2026-08-17");
+  pickup(1, 2, 25, "2026-08-17"); // two plots, one day
+  const rows = db.prepare(WEEK_GRID_DAY_SQL).all(MONDAY) as Record<string, number>[];
+  assert.equal(rows.length, 1, "one cell for that day");
+  assert.equal(rows[0].kg, 45);
+});
+
+test("a day nobody worked has no cells", () => {
+  pickup(1, 1, 50, "2026-08-17");
+  const rows = db.prepare(WEEK_GRID_DAY_SQL).all(MONDAY) as Record<string, number>[];
+  assert.equal(rows.length, 1);
 });

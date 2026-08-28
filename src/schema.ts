@@ -273,3 +273,15 @@ export const WEEK_PLOTS_SQL = `SELECT pk.cropId, COALESCE(cr.name,'?') AS crop, 
          FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
         WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
         GROUP BY pk.cropId ORDER BY kg DESC`;
+
+/** Kilos per worker and day of the week: who came which days, and how much. */
+export const WEEK_GRID_DAY_SQL = `
+  SELECT pk.personId,
+         COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
+         date(pk.date,'localtime') AS day,
+         SUM(pk.weight) AS kg
+    FROM pickups pk
+    LEFT JOIN people pe ON pe.id = pk.personId
+   WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+   GROUP BY pk.personId, day
+`;
