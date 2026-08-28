@@ -7,7 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { TabParamList } from "../types";
 import { Reports, Pickups, Config, Payments, fromCents } from "../db";
-import { useT, formatDay, formatMoney } from "../i18n";
+import { useT, formatDay } from "../i18n";
 
 type Props = BottomTabScreenProps<TabParamList, "Home">;
 

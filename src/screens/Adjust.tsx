@@ -6,7 +6,7 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
 import { People as PeopleDb, Payments, fromCents, toCents, type Person } from "../db";
-import { useT, formatMoney } from "../i18n";
+import { useT } from "../i18n";
 
 // Typed deductions instead of free text: these five cover what actually comes
 // out of a picker's pay on a farm, and naming them keeps the history readable
@@ -22,7 +22,7 @@ const DISCOUNTS = [
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
 export default function Adjust() {
-  const { t, money, num } = useT();
+  const { t, money } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId, kind } = useRoute<RouteProp<RootStackParamList, "Adjust">>().params;
 

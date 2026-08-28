@@ -37,7 +37,7 @@ const ICON: Record<string, string> = {
 };
 
 export default function Account() {
-  const { t, lang, money, num } = useT();
+  const { t, lang, money } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId } = useRoute<RouteProp<RootStackParamList, "Account">>().params;
   const [person, setPerson] = useState<Person | null>(null);

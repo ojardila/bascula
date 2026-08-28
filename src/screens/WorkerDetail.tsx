@@ -14,7 +14,7 @@ import {
   type Person,
   type CropConfig,
 } from "../db";
-import { useT, formatWeekRange, formatDay } from "../i18n";
+import { useT, formatDay } from "../i18n";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
