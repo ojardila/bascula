@@ -177,6 +177,7 @@ describe("balances", () => {
       deductedCents: 0,
       balanceCents: 2_080_000,
       lastMovementOn: "2026-08-27T00:00:00Z",
+      active: true,
     });
     expect(b.balanceCents).toBe(2_080_000);
     expect(b.lastMovementOn).toBe("2026-08-27");
@@ -463,6 +464,7 @@ describe("payables", () => {
       deductedCents: 0,
       balanceCents: -900_000,
       lastMovementOn: "2026-08-20T00:00:00Z",
+      active: true,
     },
     grossCents: 3_080_000,
     balanceCents: -900_000,

@@ -263,12 +263,19 @@ const namesFor = (ids: string[] | null | undefined, table: Map<string, string>):
  *
  * Three fields of the view model have no server counterpart:
  *
- *   `farm.status`        There is no farm lifecycle on the wire. A farm the
- *                        caller can log into is a farm they may use, so this
- *                        is "active". Suspension is real — the server answers
- *                        403 FARM_SUSPENDED at login and at refresh — but it
- *                        is never a state `/v1/me` reports, because a
- *                        suspended member cannot hold a live token.
+ *   `farm.status`        AN INFERENCE, and it is only allowed to be one
+ *                        because of what it is used for. `/v1/me` reports no
+ *                        farm lifecycle; suspension is real — the server
+ *                        answers 403 FARM_SUSPENDED at login and at refresh —
+ *                        so a caller holding a live token is in a farm that is
+ *                        not suspended, and `principal.farmStatus` needs an
+ *                        answer to decide read-only.
+ *
+ *                        WHAT IT IS NOT is something to display. `/configuracion`
+ *                        printed this as "Estado: active" — the raw English
+ *                        enum, presented as a fact the server had sent. It
+ *                        reads the real `suspendedAt` off `GET /v1/farm` now,
+ *                        which is where the column actually is.
  *   `farm.trialDaysLeft` Invented by the mock. There is no trial in the API.
  *   `memberships`        `/v1/me` describes the CURRENT farm only. The list of
  *                        farms exists exactly once, in the 400 the login
@@ -297,8 +304,13 @@ export function toFarmUser(w: WireFarmUser): FarmUser {
       status === "invited" || status === "active" || status === "revoked"
         ? (status as FarmUserStatus)
         : "unknown",
-    lastLoginAt: w.lastLoginAt ?? null,
+    // `?? null` here is what erased the difference between "never logged in"
+    // and "the server does not send this". Absent stays absent.
+    ...("lastLoginAt" in w ? { lastLoginAt: w.lastLoginAt ?? null } : {}),
     createdAt: w.createdAt ?? null,
+    // Carried through rather than dropped: it is the only copy that will ever
+    // exist, and dropping it left every invited person unable to log in.
+    ...(w.temporaryPassword ? { temporaryPassword: w.temporaryPassword } : {}),
   };
 }
 
@@ -397,6 +409,10 @@ export function toBalance(b: WireBalance): Balance {
     // `lastMovementOn` is a day, not an instant — the view model used to call
     // it `lastMovementAt` and type it as one.
     lastMovementOn: dayOrNull(b.lastMovementOn),
+    // Defaulted to true only for the profile route, whose balance object
+    // predates this field: an employee whose own file you are reading is on
+    // the payroll unless the list says otherwise.
+    active: b.active ?? true,
   };
 }
 
@@ -460,7 +476,9 @@ export function toPlot(p: WirePlot): Plot {
     name: p.name,
     department: p.department ?? "",
     municipality: p.municipality ?? "",
-    areaHa: p.areaHa ?? 0,
+    // Straight through. `?? 0` here is how an undeclared area became
+    // "0,00 ha" and got summed into the farm's total.
+    areaHa: p.areaHa,
     computedAreaHa: p.computedAreaHa,
     // GeoJSON, straight through. Both hectare figures are kept and both are
     // shown: they always disagree slightly, and picking one for the owner is

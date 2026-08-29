@@ -31,7 +31,7 @@ import {
 import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { formatMoney, formatQuantity, parseMoneyInput, parseQuantityInput } from "../../lib/money";
 import { todayInFarm } from "../../lib/dates";
 import { exceedsStock } from "../../lib/stock";
@@ -43,7 +43,20 @@ export interface SaleFormDialogProps {
   products: Product[];
   customers: Customer[];
   warehouses: CatalogItem[];
-  levels: StockLevel[];
+  /**
+   * NULL until `/v1/stock/levels` has answered, and null if it failed.
+   *
+   * It used to be `StockLevel[]` and the caller passed `levels ?? []`, which
+   * made an unanswered request indistinguishable from an empty warehouse. With
+   * that route down, EVERY sale came up "no hay tanto en esa bodega" and the
+   * only way past the form was to tick "registrar de todos modos" — which
+   * sends `allowNegativeStock: true` and switches off the server's own guard.
+   * A failed GET must not talk somebody into disabling a check.
+   *
+   * `InventoryPage.stockOf` already had this right; this dialog was the one
+   * place the null was being flattened.
+   */
+  levels: StockLevel[] | null;
   onClose: () => void;
   onSaved: (s: Sale) => void;
 }
@@ -76,14 +89,17 @@ export function SaleFormDialog({
   const [anyway, setAnyway] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   const product = products.find((p) => p.id === productId) ?? null;
   const quantity = parseQuantityInput(qty);
   const amountCents = parseMoneyInput(amount);
 
   const available = useMemo(() => {
-    if (!productId || !warehouse?.id) return null;
+    // `levels === null` is "we do not know", and it stays unknown. A missing
+    // LINE with the levels loaded is a genuine zero — existencias are derived
+    // from movements, so no movements really is nothing in the shed.
+    if (!levels || !productId || !warehouse?.id) return null;
     const line = levels.find(
       (l) => l.productId === productId && l.warehouseId === warehouse.id,
     );
@@ -116,14 +132,18 @@ export function SaleFormDialog({
 
   async function save() {
     if (!validate() || quantity === null || amountCents === null || !warehouse) return;
-    setBusy(true);
-    setError(null);
-    try {
+    // One sale per filled-in form. A double click used to write two, and the
+    // id being minted inside the call meant the server's idempotency could
+    // never recognise the second one as a retry. See `lib/writeOnce.ts`.
+    const intent = ["venta", productId, warehouse.id ?? warehouse.name, quantity,
+                    amountCents, date, customer?.id ?? customer?.name ?? ""].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
       // Same as the movement dialog: the warehouse id is required on the
       // sale, so a name typed into the picker becomes a row first.
       const warehouseId = warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
-      const sale = await api.createSale({
-        id: uuidv7(),
+      return api.createSale({
+        id: mint(),
         productId,
         customerId: customer?.id ?? null,
         customerName: customer && !customer.id ? customer.name : undefined,
@@ -134,8 +154,7 @@ export function SaleFormDialog({
         date,
         allowNegativeStock: anyway,
       });
-      onSaved(sale);
-    } catch (e) {
+    }).catch((e: unknown) => {
       // The server's own guard, in case the levels this screen loaded are
       // stale — somebody else may have sold the same sacks two minutes ago.
       if (e instanceof ApiError && e.code === "INSUFFICIENT_STOCK") {
@@ -148,9 +167,10 @@ export function SaleFormDialog({
       } else {
         setError(messageFor(e));
       }
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    onSaved(outcome.value);
   }
 
   return (
@@ -237,6 +257,17 @@ export function SaleFormDialog({
                 }
                 label="Regístrela de todos modos: la venta ocurrió y la bodega está desactualizada."
               />
+            </Alert>
+          )}
+
+          {/* The levels never arrived. Say so, once, quietly — and do NOT
+              claim a shortage, which is what an empty array used to produce
+              for every product on the farm. */}
+          {levels === null && productId !== "" && (
+            <Alert severity="info" variant="outlined">
+              No se pudieron consultar las existencias, así que esta pantalla no
+              sabe cuánto hay en bodega. La venta se registra igual y el servidor
+              hace su propia comprobación.
             </Alert>
           )}
 

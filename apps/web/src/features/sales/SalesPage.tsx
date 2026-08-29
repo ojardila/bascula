@@ -21,6 +21,7 @@ import { Money } from "../../components/Money";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { useAuth } from "../../auth/AuthContext";
 import { formatMoney, formatQuantity } from "../../lib/money";
 import { formatDate } from "../../lib/dates";
@@ -33,7 +34,7 @@ export function SalesPage() {
   const [reloadTick, setReloadTick] = useState(0);
   const [creating, setCreating] = useState(false);
   const [voiding, setVoiding] = useState<Sale | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
   const [actionError, setActionError] = useState<string | null>(null);
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
@@ -54,6 +55,23 @@ export function SalesPage() {
   /** The server's own sum over the live sales. Never added up here. */
   const total = sales?.totalCents ?? 0;
   const totalQty = sales?.totalQty ?? 0;
+
+  /**
+   * ── «N UNIDADES» SUMABA COSAS QUE NO SON LA MISMA COSA ────────────────
+   *
+   * `totalQty` is a plain sum of every sale's `quantity`, and a quantity is in
+   * ITS PRODUCT'S storage unit: bultos of parchment, kilos of cherry, cajas of
+   * avocado. Adding them gives a number with no unit and no meaning — 12
+   * bultos plus 400 kilos is not 412 of anything — and the footer presented it
+   * as "412 unidades".
+   *
+   * So it is shown only when every live sale is measured the same way, and
+   * then it is shown WITH that unit. Mixed units get no total, because there
+   * isn't one; the pesos below it are the figure that always adds up.
+   */
+  const liveSales = (sales?.items ?? []).filter((s) => !s.voided);
+  const units = new Set(liveSales.map((s) => s.storageUnit).filter(Boolean));
+  const oneUnit = units.size === 1 ? [...units][0] : null;
 
   const columns: Column<Sale>[] = useMemo(
     () => [
@@ -100,17 +118,21 @@ export function SalesPage() {
 
   async function voidSale() {
     if (!voiding) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      await api.voidSale(voiding.id);
-      setVoiding(null);
-      reload();
-    } catch (e) {
+    // A DELETE on a resource id needs no client-minted id, so the data was
+    // never at risk here. The guard is still worth having: the second click
+    // otherwise earns a 409 ALREADY_VOIDED and an error box, for an action
+    // that in fact succeeded.
+    const id = voiding.id;
+    const outcome = await runOnce(`anular-venta|${id}`, async () => {
+      setActionError(null);
+      return api.voidSale(id);
+    }).catch((e: unknown) => {
       setActionError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    setVoiding(null);
+    reload();
   }
 
   return (
@@ -146,13 +168,25 @@ export function SalesPage() {
         }
         emptyTitle="Todavía no hay ventas"
         emptyBody="Registre la primera. Al hacerlo, el producto sale de la bodega en el mismo movimiento."
+        /**
+         * NOTHING AT ALL UNTIL THE LIST HAS LOADED.
+         *
+         * With the server down this read "0 venta(s) sin anular, por un total
+         * de $0" — directly under the alert saying the server could not be
+         * contacted. Two contradictory statements, one of which is a figure a
+         * farm can genuinely have, in the same card. `rows ?? []` and
+         * `sales?.totalCents ?? 0` are where both zeros came from: they are
+         * fine for arithmetic and fatal for a sentence.
+         */
         footer={
-          <>
-            {(rows ?? []).filter((s) => !s.voided).length} venta(s) sin anular, por un total
-            de <strong>{formatMoney(total)}</strong>
-            {totalQty > 0 && <> ({formatQuantity(totalQty)} unidades)</>}. Cada venta descuenta
-            el producto de su bodega; anularla lo devuelve con un movimiento de reverso.
-          </>
+          sales ? (
+            <>
+              {sales.items.filter((s) => !s.voided).length} venta(s) sin anular, por un total
+              de <strong>{formatMoney(total)}</strong>
+              {totalQty > 0 && oneUnit && <> ({formatQuantity(totalQty)} {oneUnit})</>}. Cada venta descuenta
+              el producto de su bodega; anularla lo devuelve con un movimiento de reverso.
+            </>
+          ) : null
         }
       />
 
@@ -162,7 +196,11 @@ export function SalesPage() {
           products={products ?? []}
           customers={customers ?? []}
           warehouses={warehouses ?? []}
-          levels={levels ?? []}
+          // NOT `levels ?? []`: an empty array says every warehouse is empty,
+          // which turns a failed stock request into a shortage warning on
+          // every sale — and the only way past that warning is the checkbox
+          // that disables the server's own guard.
+          levels={levels}
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);

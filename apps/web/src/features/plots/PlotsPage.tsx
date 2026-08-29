@@ -49,7 +49,7 @@ export function PlotsPage() {
         align: "right",
         render: (p) => (
           <Stack alignItems="flex-end">
-            <span>{formatArea(p.areaHa)} ha</span>
+            <span>{p.areaHa === null ? "—" : `${formatArea(p.areaHa)} ha`}</span>
             {/* Declared and computed always disagree. Showing only one is
                 deciding for the owner which of them lies, so both are here. */}
             {p.computedAreaHa === null ? (
@@ -58,7 +58,7 @@ export function PlotsPage() {
               </Typography>
             ) : (
               <Tooltip
-                title={`Declarada ${formatArea(p.areaHa)} ha · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
+                title={`Declarada ${p.areaHa === null ? "sin declarar" : `${formatArea(p.areaHa)} ha`} · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
               >
                 {/* No warning icon and no amber. The two figures differing is
                     the normal state of the world, not an incident: a deed says
@@ -100,7 +100,15 @@ export function PlotsPage() {
 
   if (denied) return <PermissionDenied moduleName="ver las parcelas" />;
 
-  const totalHa = (data ?? []).reduce((a, p) => a + p.areaHa, 0);
+  /**
+   * A SUM THAT KNOWS WHAT IS MISSING. Lots with no declared area are counted
+   * separately instead of contributing a zero: "18,40 ha declaradas" over a
+   * list where two lots never declared one is a smaller farm than the one that
+   * exists, and nothing on the line said so.
+   */
+  const declared = (data ?? []).filter((p) => p.areaHa !== null);
+  const totalHa = declared.reduce((a, p) => a + (p.areaHa as number), 0);
+  const undeclared = (data ?? []).length - declared.length;
 
   return (
     <Box>
@@ -152,7 +160,11 @@ export function PlotsPage() {
         emptyBody="Una parcela es un lote con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre ella."
         footer={
           data
-            ? `${data.length} ${data.length === 1 ? "parcela" : "parcelas"} · ${formatArea(totalHa)} ha declaradas`
+            ? `${data.length} ${data.length === 1 ? "parcela" : "parcelas"} · ` +
+              `${formatArea(totalHa)} ha declaradas` +
+              (undeclared > 0
+                ? ` · ${undeclared} sin superficie declarada, que no está en ese total`
+                : "")
             : null
         }
       />

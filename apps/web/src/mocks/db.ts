@@ -422,6 +422,10 @@ export function balanceOf(t: Tenant, workerId: string): WireBalance {
     deductedCents: -sum((l) => l.kind === "deduccion"),
     balanceCents: rows.reduce((a, l) => a + l.amountCents, 0),
     lastMovementOn: days.length ? days[days.length - 1] : null,
+    // False for somebody off the payroll. They stay in `/v1/balances` while
+    // they still have movements: a debt that disappears with the employee is
+    // a debt nobody pays.
+    active: !t.workers.find((w) => w.id === workerId)?.deletedAt,
   };
 }
 

@@ -5,7 +5,7 @@ import {
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { Money } from "../../components/Money";
 
 /**
@@ -29,7 +29,7 @@ export function RegisterDebtDialog({
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   const cents = parseMoneyInput(amount);
 
@@ -41,24 +41,27 @@ export function RegisterDebtDialog({
     setFields(e);
     if (Object.keys(e).length) return;
 
-    setBusy(true);
-    setError(null);
-    try {
-      await api.createDeduction({
-        id: uuidv7(),
+    // One deduction per approved figure: the id is minted once and reused by
+    // any retry, and the second click of a double click never reaches the
+    // network. See `lib/writeOnce.ts`.
+    const intent = ["deuda", workerId, cents, concept.trim(), date].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
+      return api.createDeduction({
+        id: mint(),
         workerId,
         amountCents: cents as number,
         concept: concept.trim(),
         date,
       });
-      setConcept("");
-      setAmount("");
-      onSaved();
-    } catch (err) {
+    }).catch((err: unknown) => {
       setError(messageFor(err));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    setConcept("");
+    setAmount("");
+    onSaved();
   }
 
   return (

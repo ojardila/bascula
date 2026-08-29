@@ -17,7 +17,7 @@ import {
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { SEED_ACTIVITY_CATEGORIES } from "../../api/types";
 import type { Activity, ActivityCategory, PayMode, TimeUnit } from "../../api/types";
 
@@ -50,7 +50,7 @@ export function ActivityFormDialog({
   const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10));
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   useEffect(() => {
     if (!open) return;
@@ -95,12 +95,16 @@ export function ActivityFormDialog({
     setFields(e);
     if (Object.keys(e).length) return;
 
-    setBusy(true);
-    setError(null);
-    try {
+    // A new activity used to mint its id inside the call, so a double click
+    // created the same activity twice — and every labor priced afterwards had
+    // two rows to choose from. See `lib/writeOnce.ts`.
+    const intent = ["actividad", activity?.id ?? "nueva", name.trim(), category.trim(),
+                    payMode, rateCents, validFrom].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
       const useWeekly = weekly && canBeWeekly;
       const body = {
-        id: activity?.id ?? uuidv7(),
+        id: activity?.id ?? mint(),
         name: name.trim(),
         category: category.trim(),
         payMode,
@@ -112,12 +116,12 @@ export function ActivityFormDialog({
       };
       if (activity) await api.updateActivity(activity.id, body);
       else await api.createActivity(body);
-      onSaved();
-    } catch (err) {
+    }).catch((err: unknown) => {
       setError(messageFor(err));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    onSaved();
   }
 
   return (

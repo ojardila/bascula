@@ -63,7 +63,19 @@ function Shell() {
             </RequirePermission>
           }
         />
-        <Route path="parcelas/:id" element={<PlotDetailPage />} />
+        {/* The ONLY route in this file that had no guard, and the one that
+            leaked. `/parcelas` and `/parcelas/:id/mapa` are both
+            `plots.read`; the detail was reachable by typing the URL with no
+            check at all. A route without a guard is not a decision anybody
+            made — it is the one that was forgotten. */}
+        <Route
+          path="parcelas/:id"
+          element={
+            <RequirePermission action="plots.read" moduleName="ver esta parcela">
+              <PlotDetailPage />
+            </RequirePermission>
+          }
+        />
         {/* The map is `plots.read`, not `plots.write`: a weigher may look at
             the boundary of the lot he is standing in. The editor itself goes
             read-only without `plots.write`, and the server refuses the PUT

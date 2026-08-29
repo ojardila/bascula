@@ -11,6 +11,13 @@
  * A missing figure renders as an em dash carrying its reason, never as `0` and
  * never as a blank cell. A blank reads as "nothing here"; a dash reads as
  * "something is missing", which is the truth.
+ *
+ * THESE ARE NO LONGER HARVEST-ONLY. The dashboard, `/labores`, an employee's
+ * file and a plot's file render money out of `WorkRecord` lists, and they were
+ * printing bare sums that dropped `amountIsEstimate` on the floor — a farm's
+ * 44 unsettled labores, 100% estimate, shown as a firm "$1.507.920". They fold
+ * their records with `totalsOfRecords` and come through here now, so there is
+ * one answer to "is this figure decided?" in the whole console and not two.
  */
 import type { ReactNode } from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";

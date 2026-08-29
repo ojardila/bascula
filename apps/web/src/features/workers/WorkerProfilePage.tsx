@@ -25,6 +25,8 @@ import PaymentsIcon from "@mui/icons-material/Payments";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
 import { Money } from "../../components/Money";
+import { Value } from "../harvest/Figures";
+import { totalsOfRecords } from "../harvest/totals";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
@@ -145,7 +147,23 @@ export function WorkerProfilePage() {
                 <Typography variant="body2" color="text.secondary">
                   Pendiente de liquidar
                 </Typography>
-                <Money cents={pendingCents} variant="small" />
+                {/* "—", not "$0". The figure comes from a request of its own,
+                    and when it fails a zero says this person is square with
+                    the farm — which is the one thing this line must never say
+                    by accident. */}
+                {pendingCents === null ? (
+                  <Tooltip title="No se pudo consultar lo pendiente de liquidar. No es cero.">
+                    <Typography
+                      variant="body2"
+                      sx={{ color: "text.disabled", fontWeight: 600, cursor: "help" }}
+                      aria-label="No se pudo consultar lo pendiente de liquidar. No es cero."
+                    >
+                      —
+                    </Typography>
+                  </Tooltip>
+                ) : (
+                  <Money cents={pendingCents} variant="small" />
+                )}
               </Stack>
               <Typography variant="caption" color="text.secondary">
                 Trabajo hecho que todavía no es un devengo. Se suma al saldo cuando se
@@ -189,7 +207,12 @@ export function WorkerProfilePage() {
                       : `${formatQuantity(r.quantity)} ${r.unitLabel ?? ""}`}
                   </TableCell>
                   <TableCell align="right">
-                    <Money cents={r.estimatedAmountCents} variant="small" />
+                    {/* `<Value>` rather than a bare `<Money>`: on this farm
+                        every unsettled row is priced by the week, and a figure
+                        that can still move must not look like one that
+                        cannot. `amountIsEstimate` is the server's own flag and
+                        had no reader anywhere in the console. */}
+                    <Value total={totalsOfRecords([r])} variant="small" />
                   </TableCell>
                   <TableCell>
                     {r.settled ? (
@@ -209,12 +232,23 @@ export function WorkerProfilePage() {
               )}
             </TableBody>
           </Table>
-          {pendingCents > 0 && (
+          {/* `pendingCents > 0` also hid this whole block when the request had
+              simply failed, because the fallback was 0. A failure gets its own
+              line now and says so. */}
+          {pendingCents === null ? (
             <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Pendientes de liquidar: <Money cents={pendingCents} variant="small" />
+              <Typography variant="body2" color="warning.dark">
+                No se pudo consultar lo pendiente de liquidar. No es cero.
               </Typography>
             </Stack>
+          ) : (
+            pendingCents > 0 && (
+              <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Pendientes de liquidar: <Money cents={pendingCents} variant="small" />
+                </Typography>
+              </Stack>
+            )
           )}
         </CardContent>
       </Card>

@@ -11,7 +11,7 @@
  * After that, the two rules the domain actually cares about: a void settlement
  * is listed and not hidden, and its lines keep the price they froze.
  */
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, beforeEach, vi } from "vitest";
 import { http, HttpResponse, delay } from "msw";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -58,16 +58,40 @@ beforeEach(() => {
 });
 
 describe("las liquidaciones de la finca", () => {
-  it("las encuentra sin que exista GET /v1/settlements", async () => {
+  it("las encuentra, con el periodo que de verdad cubren", async () => {
     renderAt("/liquidaciones");
     // Seeded: Édinson's, $150.000.
     expect(await screen.findByText("Édinson Marín Ríos")).toBeInTheDocument();
     // Twice on purpose: once as the row's gross, once as the farm's total,
     // because it is the only live settlement.
     expect(screen.getAllByText("$150.000")).toHaveLength(2);
-    // And the period is the one actually covered, not the 1970 the client asks
-    // over when it means "everything outstanding".
-    expect(screen.getByText(/17–23 ago/)).toBeInTheDocument();
+    /**
+     * BOTH ENDS OF THE PERIOD. This settlement covers 17–22 August. The column
+     * used to call `formatWeekRange(periodStart)`, which prints the seven days
+     * after a Monday and therefore said "17–23 ago" — a day the settlement
+     * does not cover. On the running farm the same call labelled settlements
+     * running to August 2027 as "24–30 ago", while the printed sheet had it
+     * right: screen and paper contradicting each other about one document.
+     */
+    expect(screen.getByText("17–22 ago")).toBeInTheDocument();
+    expect(screen.queryByText(/17–23 ago/)).not.toBeInTheDocument();
+  }, 20000);
+
+  /**
+   * "LÍNEAS" COUNTED AN ARRAY THE SERVER SENDS EMPTY ON PURPOSE.
+   *
+   * `GET /v1/settlements` documents it in as many words — "`items` is always
+   * an empty array, fetch /v1/settlements/{id} for the lines" — and sends
+   * `itemCount` instead. The console counted `items.length`, so every
+   * settlement in the farm read LÍNEAS: 0, including ones with five.
+   */
+  it("cuenta las líneas con itemCount, no con un array que llega vacío", async () => {
+    renderAt("/liquidaciones");
+    const row = (await screen.findByText("Édinson Marín Ríos")).closest("tr")!;
+    const cells = within(row).getAllByRole("cell");
+    // Empleado, Periodo, Registrada, Líneas, Bruto, Estado.
+    expect(cells[3]).toHaveTextContent("1");
+    expect(cells[3]).not.toHaveTextContent("0");
   }, 20000);
 
   it("encuentra también una liquidación hecha hace un momento", async () => {
@@ -88,9 +112,9 @@ describe("las liquidaciones de la finca", () => {
     // raced for. On a real farm it is several round trips and this state is
     // what somebody actually looks at for a second.
     server.use(
-      http.get("*/v1/workers/:id/ledger", async () => {
+      http.get("*/v1/settlements", async () => {
         await delay(50);
-        return HttpResponse.json({ items: [] });
+        return HttpResponse.json({ items: [], total: 0 });
       }),
     );
     renderAt("/liquidaciones");
@@ -102,6 +126,77 @@ describe("las liquidaciones de la finca", () => {
     expect(
       screen.getByText("Reuniendo las liquidaciones de cada empleado…"),
     ).toBeInTheDocument();
+  }, 20000);
+});
+
+/**
+ * ── EL FILTRO, EN LA PANTALLA Y EN EL PAPEL ──────────────────────────────
+ *
+ * Everything on this screen is a sum over the filtered rows, under labels that
+ * read as facts about the farm. The document is worse: it comes out with the
+ * farm's name, today's date and a signature column, and no mention that it is
+ * a search result. Both halves are asserted here, because fixing only the
+ * screen would leave the sheet that actually gets signed still lying.
+ */
+describe("cuando hay un filtro puesto", () => {
+  /** Intercepts what `printDocument` was handed, without opening a frame. */
+  function capturePrintedHtml(): { get: () => string } {
+    let html = "";
+    const frames: HTMLIFrameElement[] = [];
+    const create = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+      const el = create(tag);
+      if (tag === "iframe") {
+        frames.push(el as HTMLIFrameElement);
+        Object.defineProperty(el, "srcdoc", {
+          set(v: string) {
+            html = v;
+          },
+          get: () => html,
+          configurable: true,
+        });
+      }
+      return el;
+    }) as typeof document.createElement);
+    return { get: () => html };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("lo dice en pantalla y ofrece quitarlo", async () => {
+    const user = userEvent.setup();
+    renderAt("/liquidaciones");
+    await screen.findByText("Édinson Marín Ríos");
+
+    await user.type(screen.getByLabelText("Buscar por empleado"), "Édinson");
+
+    // The card cannot go on calling itself the farm's figure.
+    expect(await screen.findByText("Bruto liquidado (vigentes, filtrado)")).toBeInTheDocument();
+    expect(screen.getByText(/Está viendo/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quitar el filtro" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Planilla \(parcial\)/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Quitar el filtro" }));
+    expect(await screen.findByText("Bruto liquidado (vigentes)")).toBeInTheDocument();
+    expect(screen.queryByText(/Está viendo/)).not.toBeInTheDocument();
+  }, 20000);
+
+  it("y la planilla impresa lo dice también", async () => {
+    const user = userEvent.setup();
+    renderAt("/liquidaciones");
+    await screen.findByText("Édinson Marín Ríos");
+    await user.type(screen.getByLabelText("Buscar por empleado"), "Édinson");
+
+    const printed = capturePrintedHtml();
+    await user.click(screen.getByRole("button", { name: /Planilla/ }));
+
+    const html = printed.get();
+    expect(html).toContain("PLANILLA PARCIAL");
+    expect(html).toContain("empleado contiene «Édinson»");
+    expect(html).toContain("Bruto liquidado (filtrado)");
+    // Next to the signature, which is the part of the page somebody looks at
+    // while signing it.
+    expect(html).toContain("PARCIAL ·");
   }, 20000);
 });
 

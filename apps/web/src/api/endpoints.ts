@@ -298,12 +298,21 @@ function toSettlementSummary(s: WireSettlement, names: Map<Uuid, string>): Settl
   return {
     id: s.id,
     workerId: s.workerId,
-    workerName: names.get(s.workerId) || "—",
+    // The list route joins the name in; the detail route does not, and then
+    // the map the caller built is what answers.
+    workerName: s.workerName || names.get(s.workerId) || "—",
     periodStart: day(s.periodStart),
     periodEnd: day(s.periodEnd),
     grossCents: s.grossCents,
     status: s.status === "void" ? "void" : "open",
-    lineCount: (s.items ?? []).length,
+    /**
+     * `itemCount`, NOT `items.length`. The list route sends `items: []` on
+     * purpose — the lines live on the detail route — so counting the array
+     * printed "LÍNEAS: 0" against every settlement in the farm, including ones
+     * with five. The fallback covers the detail route, which sends the lines
+     * and no count.
+     */
+    lineCount: s.itemCount ?? (s.items ?? []).length,
     note: s.note,
     createdAt: s.createdAt,
     voidedAt: s.voidedAt,
@@ -472,11 +481,20 @@ export const api = {
    * here, and it is written against the DOCUMENT rather than invented, which
    * is the difference between anticipating a route and making one up.
    *
-   * THE SERVER DOES NOT SERVE IT YET. `routes.go` has no `/v1/users` and the
-   * running build answers 404, which `routeMayBeMissing` turns into the local
-   * NOT_IMPLEMENTED refusal every other early module in this file uses. The
-   * screen shows that refusal by name — it does not show an empty list, which
-   * would read as "this farm has one user" and is a lie about who can log in.
+   * THE SERVER SERVES IT NOW. `routes.go` has `/v1/users` and the running
+   * build answers 200 — verified, not assumed. The sentence that used to
+   * stand here said the opposite and had simply outlived the route landing,
+   * which is how a screen ends up designed around a refusal that no longer
+   * happens. `routeMayBeMissing` stays as a floor for an older server: it
+   * turns a 404 into the local NOT_IMPLEMENTED refusal, and the screen shows
+   * that refusal by name rather than an empty list, which would read as "this
+   * farm has one user" and is a lie about who can log in.
+   *
+   * What the route does NOT send is `lastLoginAt` or `status`: the query
+   * behind it selects id, email, name, role, email_verified_at and created_at
+   * and nothing else. Both absences are carried through as absences — see
+   * `toFarmUser` — because rendering "no lo sé" as "nunca" is what told the
+   * owner he had never logged in.
    *
    * Only the owner. `docs/diagramas/sistema.md` §3.3 puts user management in
    * the owner column and NOT the administrator column, which is stricter than
@@ -494,10 +512,16 @@ export const api = {
   /**
    * Invite somebody, with the role they get.
    *
-   * The server owns the invitation: this app never creates a password and
-   * never sees one. What comes back is the membership in whatever state the
-   * server puts it in — `invited` until they confirm their address, `active`
-   * after — and the screen shows that state rather than assuming success.
+   * THERE IS NO EMAIL. `handleInviteUser` says so at the top: there is no mail
+   * sender in the service, so it mints a password, hashes it, marks the address
+   * verified because an administrator vouched for it, and returns the
+   * plaintext ONCE in this response and nowhere else.
+   *
+   * That single field is the entire invitation. `toFarmUser` used to drop it
+   * while the screen promised "le llega un correo", so every person invited
+   * from this console got an account nobody could ever log into. It is carried
+   * through now and the screen shows it, with the warning that it cannot be
+   * read again.
    */
   inviteFarmUser: async (body: FarmUserInput): Promise<FarmUser> => {
     const created = await routeMayBeMissing(
@@ -723,13 +747,18 @@ export const api = {
     const [profile, refs, payables] = await Promise.all([
       http.get<WireWorkerProfile>(`/v1/workers/${id}/profile`),
       loadRefs(),
+      // Caught, so a payables outage does not blank the whole profile — the
+      // ledger and the notes are still worth showing. What it must NOT do is
+      // turn into a figure: `?? 0` here read "$0 pendiente" for somebody owed
+      // $868.000, and the screen then hid the detail because the total was
+      // zero. The null travels all the way to the render.
       http.get<WirePayables>(`/v1/workers/${id}/payables`).catch(() => null),
     ]);
     return {
       worker: toWorker(profile.worker),
       balance: toBalance(profile.balance),
       workRecords: (profile.tasks ?? []).map((t) => toWorkRecord(t, refs)),
-      pendingCents: payables?.grossCents ?? 0,
+      pendingCents: payables ? payables.grossCents : null,
       ledger: (profile.ledger ?? []).map(toLedgerEntry),
       notes: (profile.notes ?? []).map(toNote),
     };
@@ -995,7 +1024,23 @@ export const api = {
   settle: async (
     workerId: Uuid,
     payableIds: Uuid[],
-    opts: { expectedGrossCents: number; expectedLines?: PayableLine[]; note?: string },
+    opts: {
+      expectedGrossCents: number;
+      expectedLines?: PayableLine[];
+      note?: string;
+      /**
+       * The settlement's id, minted by the caller when the figure was
+       * APPROVED. Passing it is what makes a second attempt a retry rather
+       * than a second settlement: the server is idempotent by (farm_id, id)
+       * and answers 200 with the settlement it already wrote.
+       *
+       * Minting it here instead — which is what this function used to do —
+       * guarantees a fresh id per attempt, so the idempotency the server
+       * built can never fire. The default is kept only for callers that write
+       * once and cannot retry.
+       */
+      id?: Uuid;
+    },
   ): Promise<{ id: Uuid; grossCents: number }> => {
     if (!Number.isInteger(opts.expectedGrossCents)) {
       // A programming error, not a user error, and it is caught here rather
@@ -1028,7 +1073,7 @@ export const api = {
     const range = everRange();
     try {
       const s = await http.post<WireSettlement>("/v1/settlements", {
-        id: uuidv7(),
+        id: opts.id ?? uuidv7(),
         workerId,
         from: range.from,
         to: range.to,
@@ -1050,10 +1095,18 @@ export const api = {
   /**
    * Every settlement the farm has made.
    *
-   * THERE IS NO `GET /v1/settlements`. The route exists for POST only and
-   * answers 405 to a GET, which is checked against the running server rather
-   * than guessed. So this composes the list out of what the API does serve,
-   * and the composition is the honest one rather than the cheap one:
+   * `GET /v1/settlements` EXISTS NOW and answers 200 — verified against the
+   * running server, which returns `{items, total}` with the worker's name
+   * joined in and an `itemCount` per row. The comment that used to stand here
+   * said the route was POST-only and 405 on a GET; that was true when it was
+   * written and stopped being true without anybody deleting the sentence,
+   * which is how a fallback path outlives its reason.
+   *
+   * The fan-out below is therefore DEAD in production and is kept only for a
+   * server old enough to 404/405 the collection. It is one request per worker
+   * plus one per settlement, and it exists in one piece so it can be deleted
+   * in one piece. What it composed, and why that composition was the honest
+   * one rather than the cheap one:
    *
    *   the ledger is the index   every settlement writes exactly one `devengo`
    *                             carrying its `settlementId`, so the union of
@@ -1064,11 +1117,8 @@ export const api = {
    *                             and the period is half of what the screen is
    *                             for ("de qué semana")
    *
-   * It costs one request per worker plus one per settlement, which is why the
-   * two fan-outs are parallel and why this is not called from the dashboard.
-   * When the collection route lands, the first branch below takes over and the
-   * rest of this function becomes dead code to delete — that is deliberate:
-   * the fallback is written so it can be removed in one piece.
+   * Both fan-outs are parallel, which is why this is still not something to
+   * call from the dashboard even on the slow path.
    */
   listSettlements: async (): Promise<SettlementSummary[]> => {
     const workers = await api.listWorkers({ status: "all" });
@@ -1140,8 +1190,13 @@ export const api = {
    * `docs/diagramas/movil.md`: "No hay void -> open. Anular es definitivo."
    * The screen asks before calling this, and says that sentence while asking.
    */
-  voidSettlement: async (id: Uuid): Promise<Settlement> => {
-    const s = await http.post<WireSettlement>(`/v1/settlements/${id}/void`, { id: uuidv7() });
+  voidSettlement: async (id: Uuid, reversalId?: Uuid): Promise<Settlement> => {
+    // The id OF THE REVERSAL, minted by the caller when the person confirmed,
+    // so a resend is a retry the server can recognise rather than a second
+    // attempt to undo — which is a 409 at best. See `lib/writeOnce.ts`.
+    const s = await http.post<WireSettlement>(`/v1/settlements/${id}/void`, {
+      id: reversalId ?? uuidv7(),
+    });
     const [refs, worker] = await Promise.all([
       loadRefs(),
       api.getWorker(s.workerId).catch(() => null),
@@ -1175,6 +1230,10 @@ export const api = {
       await api.settle(body.workerId, body.payableIds, {
         expectedGrossCents: body.expectedGrossCents,
         expectedLines: body.expectedLines,
+        // Same id on every attempt at the same approved figure, so a retry
+        // re-uses the settlement instead of writing a second one. See
+        // `lib/writeOnce.ts` for why the caller mints it and not us.
+        id: body.settlementId,
       });
     }
     const before = await api.workerBalance(body.workerId);

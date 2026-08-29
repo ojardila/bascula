@@ -27,6 +27,17 @@
  * - **Settling is what creates the devengo.** Selecting the pending work
  *   records and paying freezes them into a settlement; the labor was only ever
  *   the fact that work happened.
+ *
+ * - **A double click used to pay twice.** `disabled={busy}` is not a guard:
+ *   both clicks of a real double click land in the same task, before React has
+ *   re-rendered, so both read `busy === false`. And because the payment's id
+ *   was minted inside the call, the second request was a different payment
+ *   rather than a retry, so the server's idempotency never saw it. Payment
+ *   against a settlement was accidentally covered — the settlement lock
+ *   answers the second one 409 — but payment against a pure balance, the
+ *   common case, went through twice. Both halves are fixed by `useWriteOnce`:
+ *   a synchronous ref that stops click two, and an id minted once per approved
+ *   figure. See `lib/writeOnce.ts`.
  */
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -45,7 +56,7 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { useAuth } from "../../auth/AuthContext";
 import { grossChangeOf } from "../../api/endpoints";
 import { sentenceFor, type GrossChange } from "../../api/grossChange";
@@ -73,7 +84,12 @@ export function PayWorkerPage() {
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [method, setMethod] = useState<PayMethod>("efectivo");
   const [partial, setPartial] = useState("");
-  const [busy, setBusy] = useState(false);
+  /**
+   * The one-write-per-approved-figure gate. `busy` is only for the button's
+   * appearance; the guard that actually stops the second click is inside
+   * `run`, and it is synchronous. See `lib/writeOnce.ts`.
+   */
+  const { busy, run: runOnce, retire } = useWriteOnce();
   const [payError, setPayError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ payment: Payment; lines: PayableLine[] } | null>(null);
   const [excess, setExcess] = useState<{ amount: number; balance: number } | null>(null);
@@ -105,15 +121,34 @@ export function PayWorkerPage() {
   }
 
   async function pay(amountCents: number, alsoAdvance = 0) {
-    setBusy(true);
-    setPayError(null);
     // The lines behind the figure, captured at the moment of approval. They go
     // with the request so that a refusal can say WHAT moved and not just that
     // something did.
     const approved = payables.workRecords.filter((w) => checked.has(w.id));
-    try {
+    /**
+     * The fact being written, named by everything it depends on: who, how
+     * much, by which method, out of which labores, plus the excess. Two clicks
+     * on the same button produce the same string and therefore the same ids —
+     * a retry. Change the amount and the string changes, so the correction is
+     * a new payment and cannot be swallowed by the server answering with the
+     * previous one.
+     */
+    const intent = [
+      "pago",
+      id,
+      amountCents,
+      alsoAdvance,
+      method,
+      [...checked].sort().join("+"),
+    ].join("|");
+
+    const outcome = await runOnce(intent, async (mint) => {
+      setPayError(null);
       const result = await api.createPayment({
-        id: uuidv7(),
+        // Minted ONCE for this approved figure and reused by every retry, so
+        // the server's idempotency-by-id is what answers a second attempt.
+        id: mint("payment"),
+        settlementId: mint("settlement"),
         workerId: id,
         amountCents,
         method,
@@ -123,32 +158,44 @@ export function PayWorkerPage() {
       });
       if (alsoAdvance > 0) {
         await api.createAdvance({
-          id: uuidv7(),
+          id: mint("advance"),
           workerId: id,
           amountCents: alsoAdvance,
           method,
           note: "Excedente del pago, registrado como anticipo",
         });
       }
-      setReceipt({ payment: result, lines: approved });
-      setSelected(new Set());
-      setPartial("");
-      reload();
-    } catch (e) {
+      return result;
+    }).catch((e: unknown) => {
       const change = grossChangeOf(e);
       if (change) {
-        // Nothing was written — `api.settle` refuses before posting — so the
-        // screen has only to stop and explain.
+        // Nothing was written — `api.settle` refuses before posting — and the
+        // figure that was approved is now dead, not retryable. Retiring its
+        // ids means the next approval is a new fact end to end.
+        retire(intent);
         setChanged(change);
       } else if (e instanceof ApiError && e.code === "AMOUNT_EXCEEDS_BALANCE") {
+        // Also nothing written, and also a dead figure: the person is about to
+        // approve a different split between pago and anticipo.
+        retire(intent);
         const serverBalance = Number(e.details.balanceCents ?? 0);
         setExcess({ amount: amountCents, balance: serverBalance });
       } else {
+        // Everything else — a timeout above all — KEEPS the ids, because that
+        // is the case where the write may well have landed and the retry has
+        // to be able to find it.
         setPayError(messageFor(e));
       }
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+
+    // `ran: false` is a second click that was swallowed, or a failure already
+    // reported above. Either way there is no new payment to show.
+    if (!outcome.ran) return;
+    setReceipt({ payment: outcome.value, lines: approved });
+    setSelected(new Set());
+    setPartial("");
+    reload();
   }
 
   /**

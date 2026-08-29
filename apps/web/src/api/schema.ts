@@ -247,6 +247,163 @@ export interface paths {
         patch: operations["adminSetFarmStatus"];
         trace?: never;
     };
+    "/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who can log in to this farm
+         * @description The farm's members with the role each holds HERE, most senior first.
+         *     An account that belongs to several farms appears once, with this
+         *     farm's role.
+         */
+        get: operations["listUsers"];
+        put?: never;
+        /**
+         * Add somebody to this farm, with a role
+         * @description ## Why this is not an emailed invitation
+         *
+         *     There is no mail sender in this service. Signup works around that by
+         *     echoing the verification token in development; an "invitation" that
+         *     minted a token nothing could deliver would be a screen that appears to
+         *     work and never does. So the administrator creates the account and hands
+         *     the password over — which is how the farm already works, since the
+         *     person who buys the weighing app is the person setting up the weigher's
+         *     phone, standing next to them.
+         *
+         *     Omit `password` and the server mints one and returns it as
+         *     `temporaryPassword`, ONCE, in this response and nowhere else: the row
+         *     keeps an argon2id hash like every other password and there is no way to
+         *     read it again. Send `password` (10 characters or more) to choose it
+         *     yourself, and nothing is echoed.
+         *
+         *     The address is marked verified, because somebody holding a session on
+         *     this farm vouched for it. That is a different act from the open signup,
+         *     where the token in the mailbox is the only thing stopping a stranger
+         *     from registering farms against an address they do not own.
+         *
+         *     ## An address that already has an account
+         *
+         *     It joins this farm with the role given, and its password is NOT
+         *     touched: an administrator of one farm resetting the password of an
+         *     account belonging to another would be a takeover with an invite button
+         *     on it.
+         *
+         *     ## Idempotency
+         *
+         *     The key is the address, because a user is global and a farm cannot mint
+         *     ids in somebody else's namespace. Inviting an address that is already a
+         *     member answers 200 with the membership it already has and does NOT
+         *     change its role — a repeated invite is a retry, and a retry that
+         *     silently re-roled somebody would be a demotion nobody asked for.
+         *     Changing a role is PATCH, which is a different sentence.
+         */
+        post: operations["inviteUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take an account's access to this farm away
+         * @description Removes the membership and revokes every refresh token that account
+         *     holds on this farm, in one transaction. Without the second half,
+         *     "access removed" and "still logged in for the next sixty days" would be
+         *     true at once — and the person being removed is often exactly the person
+         *     whose handset is the reason for removing them.
+         *
+         *     It is a real DELETE and the only one in this service, which does not
+         *     contradict "eliminar nunca borra": what is removed is a permission, not
+         *     a person. The account, its other farms and everything it ever wrote
+         *     here stay where they were.
+         *
+         *     Removing your OWN access is refused: it logs you out of the farm you
+         *     are administering with no way back in from inside the product, and the
+         *     request can arrive without the dialog that would have warned you.
+         */
+        delete: operations["removeUser"];
+        options?: never;
+        head?: never;
+        /**
+         * Change what somebody may do on this farm
+         * @description The only field is `role`. Setting the role somebody already has is a
+         *     200 and writes nothing.
+         *
+         *     Refused by rule 2 when you would be raising your OWN role, or granting
+         *     one above your own. Refused by rule 1 with 409 LAST_OWNER when the
+         *     change would take the owner role off the last owner: the count is taken
+         *     with the rows locked, inside the same transaction, so two
+         *     administrators demoting the last two owners at the same moment cannot
+         *     both read "there are two" and both succeed.
+         *
+         *     A user of another farm is 404. That is the boundary, not a courtesy:
+         *     `users` has no RLS, and this route reaches the account through the
+         *     membership precisely so that it cannot address one.
+         */
+        patch: operations["setUserRole"];
+        trace?: never;
+    };
+    "/v1/reactivations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every worker the server put back on the payroll by itself
+         * @description Decision 8 of docs/decisiones.md: a worker who was taken off the
+         *     payroll and turns up with NEW work comes back on by himself, because if
+         *     he is working he is still on the farm. The owner took that decision
+         *     against the team's advice and attached one condition to it — that it is
+         *     RECORDED, with the labour that provoked it and the handset it came
+         *     from, so the person who took the decision to deactivate can see that it
+         *     was undone and why. Undoing a human decision in silence is the one
+         *     thing that must not happen here, and this route is that condition.
+         *
+         *     It is a route of its own and not only a field on the worker's profile
+         *     because of who has to read it: the person who deactivated somebody is
+         *     not browsing worker files one by one looking for a change.
+         *
+         *     ## What does NOT reactivate
+         *
+         *     Work that is older than the deactivation. "Gana la baja": a decision a
+         *     person took, after the work happened, is not undone by an automatism.
+         *     The ordinary case is the whole reason the rule exists — a handset
+         *     spends the afternoon without signal, the web deactivates Juan at
+         *     midday, and at six the handset pushes a weighing it took at eight in
+         *     the morning. That weighing enters, Juan stays inactive, and the phone
+         *     shows it as a conflict for somebody to look at.
+         *
+         *     `deviceId` is null when the work came through the web console, and
+         *     `source` is what says so: a null there is never "we do not know", it is
+         *     "there was no device".
+         */
+        get: operations["listReactivations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workers": {
         parameters: {
             query?: never;
@@ -1085,7 +1242,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The farm's settlements, filtered and paged
+         * @description Until this route existed the console composed the list itself, by
+         *     walking every employee's ledger for `devengo` entries carrying a
+         *     `settlementId` and grouping them. That is correct, and it is one
+         *     request per worker for one screen.
+         *
+         *     A row here is a settlement WITHOUT its lines: `items` is always an
+         *     empty array, and `itemCount` is how many LIVE lines it has — a voided
+         *     settlement's lines keep their rows, and counting them would say a
+         *     cancelled document still claims twelve weighings. Fetch
+         *     `/v1/settlements/{id}` for the lines.
+         *
+         *     `from` and `to` bound the PERIOD the settlement covers, by overlap: a
+         *     settlement is in range if any part of its period is. The period and not
+         *     `createdAt`, because "las liquidaciones de la quincena pasada" is about
+         *     the fortnight worked, not the hour the button was pressed — and because
+         *     `createdAt` is a timestamp in a timezone, which a date filter would
+         *     misread at the edges. Send both or neither: half a range is an
+         *     unbounded window somebody thought they had bounded, and it is a 400.
+         *
+         *     `total` is a real COUNT over the filtered set, not the length of the
+         *     page and not an estimate.
+         *
+         *     Filtering by a `workerId` of another farm answers 404, not an empty
+         *     list: "this person has never been settled" is a clean, believable,
+         *     wrong screen.
+         */
+        get: operations["listSettlements"];
         put?: never;
         /**
          * Turn a set of payables into one settlement and one earning
@@ -2208,7 +2393,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -2354,6 +2539,19 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             /**
+             * @description The phase 4 switch of docs/sincronizacion.md §8. While it is on the
+             *     handsets may still record weighings — the cut cannot stop the scale
+             *     — and may not settle, pay or void. It rides down in the handshake's
+             *     `capabilities`.
+             *
+             *     It is NOT a permission and nothing may read it as one. The server
+             *     refuses a weigher's ledger push and a settlement whose gross has
+             *     moved whether this is on or off; what it buys is that nobody is
+             *     looking at a live pay button during the hour the two databases
+             *     disagree.
+             */
+            moneyReadOnly?: boolean;
+            /**
              * Format: int64
              * @description The standing price per unit of collection. Absent — not null — for
              *     the weigher.
@@ -2370,6 +2568,8 @@ export interface components {
             address?: string | null;
             /** Format: double */
             areaHa?: number | null;
+            /** @description The phase 4 switch. Absent leaves it as it was. */
+            moneyReadOnly?: boolean;
             /** Format: int64 */
             priceCents?: number;
         };
@@ -2391,6 +2591,91 @@ export interface components {
             suspendedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        /**
+         * @description One member of this farm. `role` is the role the account holds HERE; the
+         *     same account may hold a different one on another farm.
+         */
+        FarmUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            name: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "weigher";
+            /**
+             * Format: date-time
+             * @description Null means the address has never been proven and the account cannot
+             *     open a session. An account created by an invite is verified on the
+             *     spot, because a member of the farm vouched for it.
+             */
+            emailVerifiedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        UserInvite: {
+            email: string;
+            name?: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "weigher";
+            /**
+             * @description Optional. Omit it and the server mints one and returns it once.
+             *     Ignored entirely when the address already has an account.
+             */
+            password?: string;
+        };
+        InvitedUser: components["schemas"]["FarmUser"] & {
+            /**
+             * @description Present only when the server minted the password. Shown once:
+             *     the row keeps an argon2id hash and there is no way to read it
+             *     again.
+             */
+            temporaryPassword?: string;
+            temporaryPasswordNote?: string;
+        };
+        /**
+         * @description One automatic reactivation (decision 8), with everything needed to
+         *     answer "who undid my decision, and why".
+         */
+        Reactivation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workerId: string;
+            /**
+             * Format: uuid
+             * @description The labour that provoked it. Never null: an automatic reactivation
+             *     with no cause attached is the silent undo this record exists to
+             *     prevent.
+             */
+            workRecordId: string;
+            /**
+             * Format: uuid
+             * @description The handset the work came from. Null means the web console, and
+             *     `source` is what says so — never "unknown".
+             */
+            deviceId?: string | null;
+            /** @enum {string} */
+            source: "sync" | "web";
+            /**
+             * Format: date-time
+             * @description The deactivation that was undone.
+             */
+            deactivatedAt: string;
+            /**
+             * Format: uuid
+             * @description Who took the person off the payroll. Null when the deactivation
+             *     predates this column or came from a path with no session to name.
+             */
+            deactivatedBy?: string | null;
+            /**
+             * Format: uuid
+             * @description The session the work arrived through. NOT "who decided": nobody
+             *     decided, that is the point of the record.
+             */
+            reactivatedBy?: string | null;
+            /** Format: date-time */
+            at: string;
         };
         /**
          * @description Two shapes behind one name. An owner or administrator receives every
@@ -2475,6 +2760,11 @@ export interface components {
             ledger: components["schemas"]["LedgerEntry"][];
             tasks: components["schemas"]["WorkRecord"][];
             notes: components["schemas"]["Note"][];
+            /**
+             * @description Every time this person was put back on the payroll automatically by
+             *     arriving work (decision 8). Empty for almost everybody.
+             */
+            reactivations: components["schemas"]["Reactivation"][];
         };
         Payables: {
             /** Format: uuid */
@@ -2786,6 +3076,20 @@ export interface components {
              *     returned as a string. It is a string because a float64 round trip
              *     is exactly where two languages start disagreeing in the third
              *     decimal and nobody notices until payday.
+             *
+             *     AT MOST THREE PLACES IS ENFORCED, and a fourth is a 400 naming the
+             *     field and the limit. The column is numeric(12, 3) and Postgres
+             *     would ROUND a fourth place rather than refuse it: 1,0005 kg at $75
+             *     is 7504 on the handset and would be stored here as 1,001 and
+             *     charged at 7508, with a 200 and no mention of it anywhere. Round it
+             *     on the client, in front of the person whose kilos they are. At most
+             *     nine digits before the point, for the same reason: a larger number
+             *     is a bad request, not a 500.
+             *
+             *     The same rule holds for every fixed-scale field a client can
+             *     write - `areaHa`, `qty`, `rate.customQty`, `kgFactor` - because a
+             *     rule enforced on one field and not its neighbours is a rule nobody
+             *     can rely on.
              */
             quantity: string;
             /** Format: uuid */
@@ -2836,7 +3140,7 @@ export interface components {
             activityId: string;
             /** Format: uuid */
             workerId: string;
-            /** @description Positive; ignored and set to 1 for a contract. */
+            /** @description Positive, at most three decimal places; a fourth is a 400. Ignored and set to 1 for a contract. */
             quantity: number;
             /**
              * Format: int64
@@ -2862,7 +3166,7 @@ export interface components {
          *     rather than a bare "malformed body": they are deliberate, not typos.
          */
         WorkRecordPatch: {
-            /** @description Positive. The amount is recomputed. */
+            /** @description Positive, at most three decimal places; a fourth is a 400. The amount is recomputed. */
             quantity?: number;
             note?: string | null;
             /** @enum {string} */
@@ -2927,6 +3231,12 @@ export interface components {
         /**
          * @description Derived from the ledger, never stored: a stored total is a total that
          *     one day lies. Positive means the farm owes them.
+         *
+         *     A worker who has been taken off the payroll and is still owed money
+         *     STAYS on `GET /v1/balances`, with `active: false`. Dropping them would
+         *     make the debt vanish from the only screen anybody looks at while the
+         *     money sat untouched in the ledger. The only row that leaves the list is
+         *     somebody deactivated who never moved a peso.
          */
         Balance: {
             /** Format: uuid */
@@ -2941,6 +3251,12 @@ export interface components {
             balanceCents: number;
             /** Format: date-time */
             lastMovementOn?: string | null;
+            /**
+             * @description False for somebody no longer on the payroll. They are listed all
+             *     the same while they have movements; the caller renders the
+             *     difference rather than guessing at an absence.
+             */
+            active: boolean;
         };
         /**
          * @description One movement. Append-only: nothing here is ever edited or deleted, and
@@ -3125,6 +3441,39 @@ export interface components {
             createdAt?: string;
             /** Format: date-time */
             voidedAt?: string | null;
+            items: components["schemas"]["Payable"][];
+        };
+        /**
+         * @description One row of GET /v1/settlements: a settlement without its lines. `items`
+         *     is always an empty array — fetch /v1/settlements/{id} for the lines —
+         *     and the worker's name is joined in so a list of thirty does not become
+         *     thirty more requests.
+         */
+        SettlementSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workerId: string;
+            workerName: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            /** Format: int64 */
+            grossCents: number;
+            /** @enum {string} */
+            status: "open" | "void";
+            note?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            voidedAt?: string | null;
+            /**
+             * @description LIVE lines. A voided settlement keeps its line rows, and counting
+             *     those would say a cancelled document still claims twelve weighings.
+             */
+            itemCount: number;
+            /** @description Always empty here. The lines are on the detail route. */
             items: components["schemas"]["Payable"][];
         };
         WeekPrice: {
@@ -4696,6 +5045,219 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The members of this farm. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FarmUser"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    inviteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserInvite"];
+            };
+        };
+        responses: {
+            /** @description That address is already a member here; nothing changed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FarmUser"];
+                };
+            };
+            /**
+             * @description Added. `temporaryPassword` is present only when the server minted
+             *     one, and only in this response.
+             */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitedUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /**
+             * @description FORBIDDEN — the permission table refused this role, or rule 2 did:
+             *     you cannot grant a role above your own.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description EMAIL_TAKEN — two invites for the same new address raced. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description LAST_OWNER — this farm would be left with no owner. Or CONFLICT —
+             *     you cannot remove your own access.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setUserRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "owner" | "admin" | "weigher";
+                };
+            };
+        };
+        responses: {
+            /** @description The membership as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FarmUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /**
+             * @description FORBIDDEN — the permission table refused this role, or rule 2 did:
+             *     you cannot raise your own role, and you cannot grant one above your
+             *     own.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description LAST_OWNER — this farm would be left with no owner. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listReactivations: {
+        parameters: {
+            query?: {
+                workerId?: components["parameters"]["QueryWorkerID"];
+                /** @description Rows to return. Out-of-range values fall back to the default. */
+                limit?: components["parameters"]["QueryLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reactivations, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Reactivation"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description NOT_FOUND — `workerId` names somebody who is not on this farm.
+             *     Narrowing by a foreign worker must not read as "nothing was
+             *     reactivated for this person".
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listWorkers: {
         parameters: {
             query?: {
@@ -6145,6 +6707,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettlementPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSettlements: {
+        parameters: {
+            query?: {
+                workerId?: components["parameters"]["QueryWorkerID"];
+                /**
+                 * @description `open`, `void`, or `all` (the default). Anything else is a 400
+                 *     rather than an empty list.
+                 */
+                status?: "open" | "void" | "all";
+                from?: components["parameters"]["QueryFrom"];
+                to?: components["parameters"]["QueryTo"];
+                /** @description Rows per page, 50 by default and 200 at most. */
+                limit?: number;
+                /** @description Rows to skip. A negative or unparsable value is 0. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of settlements, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SettlementSummary"][];
+                        /**
+                         * Format: int64
+                         * @description Settlements matching the filter, all pages.
+                         */
+                        total: number;
+                        limit: number;
+                        offset: number;
+                    };
                 };
             };
             400: components["responses"]["BadRequest"];

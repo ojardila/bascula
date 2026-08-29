@@ -13,7 +13,7 @@
  * approval, `api.settle`'s guard, the mock's 409, and the dialog.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
@@ -23,6 +23,8 @@ import { setTokens } from "../../api/client";
 import { invalidateRefs } from "../../api/refs";
 import { theme } from "../../theme";
 import * as db from "../../mocks/db";
+import { server } from "../../mocks/node";
+import { http, HttpResponse } from "msw";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
 /** María: three unsettled payables in the seeded farm. */
@@ -176,5 +178,147 @@ describe("lo estimado no se muestra como definitivo", () => {
     expect(
       screen.getByText(/se pagan al precio de la semana, que se fija al cerrar la semana/),
     ).toBeInTheDocument();
+  }, 20000);
+});
+
+/**
+ * ── EL DOBLE CLIC ────────────────────────────────────────────────────────
+ *
+ * The auditor's finding, staged the way it happened: two clicks, no wait
+ * between them, on a payment against the BALANCE alone. That last part is the
+ * whole shape of the bug. When labores are ticked, the settlement's
+ * anti-double-pay lock catches the second attempt (201 then 409, one payment)
+ * — so every test that existed passed while the common case, paying off a
+ * saldo, went through twice for double the money.
+ *
+ * THE CLICKS ARE DISPATCHED NATIVELY, and that is not fussiness. `userEvent`
+ * awaits between actions and `fireEvent` wraps each call in `act()`; both give
+ * React a re-render between the two clicks, which is exactly the thing a real
+ * double click does not give it. Under either helper this screen looked fine
+ * and `disabled={busy}` looked like a guard. Two `dispatchEvent` calls in one
+ * synchronous block reproduce what the browser actually did — verified: the
+ * handler ran twice with the button still enabled.
+ */
+describe("un doble clic no puede pagar dos veces", () => {
+  /** Untick every pending labor, leaving a payment against the pure balance. */
+  async function payAgainstBalanceOnly(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByText("Labores pendientes de liquidar");
+    const boxes = screen
+      .getAllByRole("checkbox")
+      .filter((b) => (b as HTMLInputElement).checked);
+    for (const box of boxes) await user.click(box);
+    expect(screen.getByText("Labores seleccionadas").parentElement).toHaveTextContent("$0");
+  }
+
+  /** What the farm actually handed over, in cents, out of the ledger. */
+  function paidOut() {
+    return db
+      .tenantOf(db.FARM_ID)!
+      .ledger.filter((e) => e.kind === "pago")
+      .reduce((a, e) => a + Math.abs(e.amountCents), 0);
+  }
+
+  it("registra un solo pago y entrega una sola vez la plata", async () => {
+    const user = userEvent.setup();
+    renderPay();
+    await payAgainstBalanceOnly(user);
+
+    const before = paidOut();
+    const posts: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      if (request.method === "POST" && new URL(request.url).pathname === "/v1/payments") {
+        posts.push(request.url);
+      }
+    });
+
+    /**
+     * A PARTIAL payment, well under the balance, which is Ana Ramírez's case
+     * exactly. Paying the whole balance would let the server's own
+     * AMOUNT_EXCEEDS_BALANCE catch the second request by luck — and that luck
+     * is why this never showed up as lost money in a test. Here both requests
+     * would be perfectly payable, so nothing downstream saves us: the only
+     * thing between $10.000 and $20.000 is the guard on this screen.
+     */
+    await user.type(screen.getByLabelText("Valor"), "10000");
+    const button = screen.getByRole("button", { name: "Pagar" });
+    // Two events, one task. No await, no re-render in between — which is
+    // precisely why `disabled={busy}` never saw the second one.
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await screen.findByText("Pago registrado");
+    // The receipt is the visible half; the ledger is the half that is money.
+    expect(paidOut()).toBe(before + 1_000_000);
+    expect(posts).toHaveLength(1);
+  }, 20000);
+
+  /**
+   * And the other half: when a request DOES leave twice — a timeout the person
+   * retries by hand — it carries the id it carried the first time, so the
+   * server answers with the payment it already wrote. Minting the id inside
+   * the call, which is what this app did, made every retry a new payment and
+   * left the server's idempotency-by-id switched off.
+   */
+  it("el reintento lleva el mismo id, así la idempotencia del servidor sí actúa", async () => {
+    const user = userEvent.setup();
+    const ids: string[] = [];
+    server.use(
+      http.post("*/v1/payments", async ({ request }) => {
+        const body = (await request.json()) as { id: string };
+        ids.push(body.id);
+        return HttpResponse.json(
+          { error: { code: "INTERNAL", message: "boom" } },
+          { status: 503 },
+        );
+      }),
+    );
+
+    renderPay();
+    await payAgainstBalanceOnly(user);
+
+    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await waitFor(() => expect(ids).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await waitFor(() => expect(ids).toHaveLength(2));
+
+    expect(ids[0]).toBe(ids[1]);
+  }, 20000);
+
+  /**
+   * Corrigiendo el importe, en cambio, es OTRO hecho. Reusing the id there
+   * would be the same bug pointing the other way: the server would answer the
+   * $12.000 request with the $10.000 payment it already has, and the screen
+   * would print a receipt for money that was never handed over.
+   */
+  it("cambiar el importe sí es un pago distinto", async () => {
+    const user = userEvent.setup();
+    const ids: string[] = [];
+    server.use(
+      http.post("*/v1/payments", async ({ request }) => {
+        const body = (await request.json()) as { id: string };
+        ids.push(body.id);
+        return HttpResponse.json(
+          { error: { code: "INTERNAL", message: "boom" } },
+          { status: 503 },
+        );
+      }),
+    );
+
+    renderPay();
+    await payAgainstBalanceOnly(user);
+
+    const amount = screen.getByLabelText("Valor");
+    await user.type(amount, "1000");
+    await user.click(screen.getByRole("button", { name: "Pagar" }));
+    await waitFor(() => expect(ids).toHaveLength(1));
+
+    await user.clear(amount);
+    await user.type(amount, "2000");
+    await user.click(screen.getByRole("button", { name: "Pagar" }));
+    await waitFor(() => expect(ids).toHaveLength(2));
+
+    expect(ids[0]).not.toBe(ids[1]);
   }, 20000);
 });

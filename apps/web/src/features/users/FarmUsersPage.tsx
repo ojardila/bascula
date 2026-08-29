@@ -14,11 +14,13 @@
  * administrator. `permissions.ts` has said so since Sprint 1: `config.users`
  * is in OWNER and in neither of the others.
  *
- * ── THE SERVER DOES NOT SERVE THIS YET ──────────────────────────────────
+ * ── THE SERVER SERVES THIS NOW ─────────────────────────────────────────
  *
- * `routes.go` has no `/v1/users`, and the running build answers 404. That is
- * why this screen exists in the state it does, and the shape of the honesty
- * matters more than the shape of the form:
+ * `routes.go` has `/v1/users` and the running build answers 200 — checked,
+ * not assumed. The paragraph that used to stand here said there was no route
+ * and the build answered 404; it was true when written and nobody deleted it
+ * when the route landed. The refusal path below is kept as a floor for an
+ * older server, and the two rules it was built on still hold:
  *
  *   IT NEVER SHOWS AN EMPTY LIST. An empty table under "Usuarios de la finca"
  *   says this farm has nobody in it, which is false of every farm — somebody
@@ -48,7 +50,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import type { FarmUser, FarmUserStatus, Role } from "../../api/types";
 
 /**
@@ -102,7 +104,10 @@ export function FarmUsersPage() {
   const { user, can } = useAuth();
   const [inviting, setInviting] = useState(false);
   const [revoking, setRevoking] = useState<FarmUser | null>(null);
-  const [busy, setBusy] = useState(false);
+  // A PATCH of a role is idempotent by nature, so nothing here could ever
+  // double-write. The guard keeps one answer to "can this button fire twice"
+  // across the whole console rather than two.
+  const { busy, run: runOnce } = useWriteOnce();
   const [actionError, setActionError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -115,31 +120,29 @@ export function FarmUsersPage() {
   const unsupported = error !== null && data === null;
 
   async function changeRole(u: FarmUser, role: Role) {
-    setBusy(true);
-    setActionError(null);
-    try {
-      await api.updateFarmUser(u.id, { role });
-      reload();
-    } catch (e) {
+    const outcome = await runOnce(`rol|${u.id}|${role}`, async () => {
+      setActionError(null);
+      return api.updateFarmUser(u.id, { role });
+    }).catch((e: unknown) => {
       setActionError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (outcome.ran) reload();
   }
 
   async function revoke() {
     if (!revoking) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      await api.updateFarmUser(revoking.id, { status: "revoked" });
-      setRevoking(null);
-      reload();
-    } catch (e) {
+    const who = revoking.id;
+    const outcome = await runOnce(`revocar|${who}`, async () => {
+      setActionError(null);
+      return api.updateFarmUser(who, { status: "revoked" });
+    }).catch((e: unknown) => {
       setActionError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    setRevoking(null);
+    reload();
   }
 
   return (
@@ -274,13 +277,22 @@ export function FarmUsersPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      {/* Never a date for somebody who has never logged in. */}
-                      {u.lastLoginAt ? (
-                        formatDate(u.lastLoginAt.slice(0, 10))
-                      ) : (
+                      {/* THREE CASES, and the third is the one that bit.
+                          `/v1/users` does not send a last login at all, so
+                          `undefined` means "not reported" — and printing that
+                          as "nunca ha entrado" told the owner he had never
+                          logged in while he was reading the screen. A date is
+                          a date, `null` is genuinely never, absent is "—". */}
+                      {u.lastLoginAt === undefined ? (
+                        <Typography variant="body2" color="text.secondary" title="El servidor no informa la última entrada.">
+                          —
+                        </Typography>
+                      ) : u.lastLoginAt === null ? (
                         <Typography variant="body2" color="text.secondary">
                           Nunca ha entrado
                         </Typography>
+                      ) : (
+                        formatDate(u.lastLoginAt.slice(0, 10))
                       )}
                     </TableCell>
                     <TableCell align="right">
@@ -342,10 +354,11 @@ export function FarmUsersPage() {
       <InviteDialog
         open={inviting}
         onClose={() => setInviting(false)}
-        onDone={() => {
-          setInviting(false);
-          reload();
-        }}
+        /* Reloads the list but does NOT close the dialog: the invitation's
+           reply carries the one and only copy of the person's password, and
+           closing over it would destroy it. The dialog closes itself once the
+           credential has been acknowledged. */
+        onDone={reload}
       />
 
       <ConfirmDialog
@@ -374,6 +387,21 @@ export function FarmUsersPage() {
  * The role is chosen with its consequence next to it, not from a bare dropdown
  * of two words. This is the one form in the console where picking the wrong
  * option hands somebody the payroll.
+ *
+ * ── THERE IS NO EMAIL, AND THIS SCREEN USED TO PROMISE ONE ──────────────
+ *
+ * The helper text said "Le llega un correo para poner su contraseña". There is
+ * no mail sender in `services/api` and there never was; `handleInviteUser`
+ * mints a password, hashes it, and returns the plaintext in the invite
+ * response ONCE, with a note saying it cannot be read again. `toFarmUser` then
+ * dropped that field on the floor. Between the two, every person invited from
+ * this console was given an account they could never log into and a promise of
+ * a letter nobody would send.
+ *
+ * So the dialog now has two phases. The form, and then the credential — shown
+ * in full, with the warning that this is the only time it exists, and the
+ * dialog deliberately not closing on its own so it cannot be dismissed before
+ * it has been written down.
  */
 function InviteDialog({
   open,
@@ -387,9 +415,11 @@ function InviteDialog({
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("weigher");
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  /** Phase two: the account exists and this is the only copy of its password. */
+  const [invited, setInvited] = useState<FarmUser | null>(null);
 
   const reset = () => {
     setEmail("");
@@ -397,25 +427,104 @@ function InviteDialog({
     setRole("weigher");
     setError(null);
     setFields({});
+    setInvited(null);
   };
 
   async function submit() {
-    setBusy(true);
-    setError(null);
     setFields({});
-    try {
-      await api.inviteFarmUser({ id: uuidv7(), email, name, role });
-      reset();
-      onDone();
-    } catch (e) {
+    // One membership per filled-in form. The id used to be minted inside the
+    // call, so a double click sent two different ids for the same person.
+    // See `lib/writeOnce.ts`.
+    const intent = ["invitar", email.trim().toLowerCase(), name.trim(), role].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
+      return api.inviteFarmUser({ id: mint(), email, name, role });
+    }).catch((e: unknown) => {
       if (e instanceof ApiError) setFields(e.fieldErrors);
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    // The list behind the dialog refreshes now; the dialog itself stays open
+    // on the credential, because closing it would destroy the password.
+    onDone();
+    setInvited(outcome.value);
+  }
+
+  function finish() {
+    reset();
+    onClose();
   }
 
   const chosen = ROLES.find((r) => r.value === role);
+
+  // ── PHASE TWO: the credential ──────────────────────────────────────
+  if (invited) {
+    return (
+      <Dialog open={open} onClose={finish} maxWidth="sm" fullWidth>
+        <DialogTitle>{invited.name || invited.email} ya tiene acceso</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {invited.temporaryPassword ? (
+              <>
+                <Alert severity="warning">
+                  <AlertTitle>Apunte esta contraseña ahora</AlertTitle>
+                  Es la única vez que se puede ver. El servidor solo guarda una
+                  versión cifrada, así que ni nosotros podemos volver a leerla. Si
+                  se pierde, hay que crear la contraseña de nuevo.
+                </Alert>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Correo
+                  </Typography>
+                  <Typography sx={{ fontFamily: "monospace", fontSize: "1.05rem" }}>
+                    {invited.email}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Contraseña temporal
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontFamily: "monospace",
+                      fontSize: "1.35rem",
+                      userSelect: "all",
+                      p: 1.5,
+                      borderRadius: 1,
+                      bgcolor: "action.hover",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {invited.temporaryPassword}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Entréguesela en persona o por donde usted ya se comunica con
+                  ella. No se envía ningún correo: esta aplicación no manda
+                  correos.
+                </Typography>
+              </>
+            ) : (
+              /* An address that already had an account keeps the password it
+                 already has; the server mints nothing and says nothing, and
+                 inventing reassurance here would be the same lie in a nicer
+                 tone. */
+              <Alert severity="info">
+                Esa persona ya tenía una cuenta, así que entra con la contraseña
+                que ya usaba. No se generó ninguna nueva.
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button variant="contained" onClick={finish}>
+            Ya la apunté
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -438,7 +547,8 @@ function InviteDialog({
             error={!!fields.email}
             helperText={
               fields.email ??
-              "Le llega un correo para poner su contraseña. Nadie más ve esa contraseña."
+              "No se manda ningún correo: al terminar verá aquí una contraseña " +
+                "temporal para entregársela."
             }
           />
           <TextField

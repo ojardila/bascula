@@ -77,11 +77,54 @@ describe("quién puede repartir accesos", () => {
 });
 
 describe("la lista", () => {
-  it("dice quién no ha entrado nunca, en vez de inventarle una fecha", async () => {
+  /**
+   * "NO LO SÉ" NO ES "NUNCA".
+   *
+   * `store.ListFarmUsers` selects id, email, name, role, email_verified_at and
+   * created_at. There is no last login in the query, so the key never arrives.
+   * The screen used to read that absence as null and print "Nunca ha entrado"
+   * — which it showed to the owner while he was logged in reading it. An
+   * unknown fact renders as "—"; "nunca" is a claim, and this app is not in a
+   * position to make it.
+   */
+  it("no inventa una última entrada que el servidor no manda", async () => {
     renderUsers();
-    await screen.findByText("Gloria Betancur");
-    // A 1 January 1970 in this column is a lie about somebody's activity.
-    expect(screen.getAllByText("Nunca ha entrado").length).toBeGreaterThan(0);
+    const row = (await screen.findByText("Oscar Jaramillo")).closest("tr")!;
+    expect(within(row).queryByText("Nunca ha entrado")).not.toBeInTheDocument();
+    expect(within(row).getByText("—")).toBeInTheDocument();
+  }, 20000);
+
+  /** …and when the server DOES report it, both real answers still render. */
+  it("cuando sí lo manda, distingue una fecha de un «nunca»", async () => {
+    server.use(
+      http.get("*/v1/users", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "0192f3a0-0001-7000-8000-0000000000aa",
+              email: "entro@laesperanza.co",
+              name: "Sí Entró",
+              role: "admin",
+              status: "active",
+              lastLoginAt: "2026-08-20T14:00:00Z",
+            },
+            {
+              id: "0192f3a0-0001-7000-8000-0000000000bb",
+              email: "nunca@laesperanza.co",
+              name: "Nunca Entró",
+              role: "weigher",
+              status: "invited",
+              lastLoginAt: null,
+            },
+          ],
+        }),
+      ),
+    );
+    renderUsers();
+    const entro = (await screen.findByText("Sí Entró")).closest("tr")!;
+    expect(within(entro).getByText("20/08/2026")).toBeInTheDocument();
+    const nunca = screen.getByText("Nunca Entró").closest("tr")!;
+    expect(within(nunca).getByText("Nunca ha entrado")).toBeInTheDocument();
   }, 20000);
 
   it("no deja cambiarle el rol al dueño ni a uno mismo", async () => {
@@ -114,12 +157,51 @@ describe("invitar", () => {
     await user.type(within(dialog).getByLabelText("Nombre"), "Elena Zapata");
     await user.click(within(dialog).getByRole("button", { name: /Enviar la invitación/ }));
 
-    expect(await screen.findByText("Elena Zapata")).toBeInTheDocument();
-    const row = screen.getByText("Elena Zapata").closest("tr")!;
-    // `invited`, not `active`: the server owns the invitation and this app
-    // never sees a password. Showing "Activo" would claim they can log in.
-    expect(within(row).getByText("Invitado, sin confirmar")).toBeInTheDocument();
-    expect(within(row).getByText("Nunca ha entrado")).toBeInTheDocument();
+    /**
+     * THE PASSWORD, ON SCREEN, BEFORE ANYTHING CLOSES.
+     *
+     * `POST /v1/users` returns `temporaryPassword` exactly once — there is no
+     * mail sender in the service and the row keeps only an argon2id hash.
+     * `toFarmUser` used to drop the field and the form promised a letter,
+     * which between them meant every person invited from this console had an
+     * account they could never enter. If this assertion ever goes green
+     * without the string being visible, the invitation is decorative again.
+     */
+    const done = await screen.findByRole("dialog");
+    expect(within(done).getByText("Apunte esta contraseña ahora")).toBeInTheDocument();
+    expect(within(done).getByText(/temporal-/)).toBeInTheDocument();
+    // And it says, in as many words, that it will not be readable again.
+    expect(within(done).getByText(/única vez que se puede ver/)).toBeInTheDocument();
+    expect(within(done).getByText(/No se envía ningún correo/)).toBeInTheDocument();
+
+    await user.click(within(done).getByRole("button", { name: "Ya la apunté" }));
+
+    const row = (await screen.findByText("Elena Zapata")).closest("tr")!;
+    // `active`: the administrator vouched for the address, so the server marks
+    // it verified — `store.VerifyUserEmail` — and hands over a password that
+    // works now. "Invitado, sin confirmar" would describe a flow this system
+    // does not have.
+    expect(within(row).getByText("Activo")).toBeInTheDocument();
+  }, 20000);
+
+  /** The dialog must not close over the password on its own. */
+  it("no cierra sola sobre la contraseña", async () => {
+    const user = userEvent.setup();
+    renderUsers();
+    await screen.findByText("Gloria Betancur");
+    await user.click(screen.getByRole("button", { name: /Invitar a alguien/ }));
+    const dialog = await screen.findByRole("dialog");
+    // The form no longer promises an email that nobody sends.
+    expect(within(dialog).queryByText(/Le llega un correo/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/No se manda ningún correo/)).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("Correo"), "otra@laesperanza.co");
+    await user.type(within(dialog).getByLabelText("Nombre"), "Otra Persona");
+    await user.click(within(dialog).getByRole("button", { name: /Enviar la invitación/ }));
+
+    // Still open, still holding the only copy.
+    const done = await screen.findByRole("dialog");
+    expect(within(done).getByText(/temporal-/)).toBeInTheDocument();
   }, 20000);
 
   it("quitar el acceso no borra a nadie, y lo dice", async () => {

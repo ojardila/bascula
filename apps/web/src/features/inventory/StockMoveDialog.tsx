@@ -36,7 +36,7 @@ import {
 import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { formatQuantity, parseQuantityInput } from "../../lib/money";
 import { reasonNeedsDirection, signedQty, stockAfter } from "../../lib/stock";
 import { todayInFarm } from "../../lib/dates";
@@ -103,7 +103,7 @@ export function StockMoveDialog({
   const [anyway, setAnyway] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   const chosen = products.find((p) => p.id === productId) ?? null;
   const chosenPlot = plots.find((p) => p.id === plotId) ?? null;
@@ -144,9 +144,13 @@ export function StockMoveDialog({
 
   async function save() {
     if (!validate() || signed === null || !warehouse) return;
-    setBusy(true);
-    setError(null);
-    try {
+    // One movement per filled-in form: a double click used to move the stock
+    // twice, and with the id minted inside the call the second request was a
+    // new movement rather than a retry. See `lib/writeOnce.ts`.
+    const intent = ["movimiento", productId, warehouse.id ?? warehouse.name, signed,
+                    reason, date, plotId, plotCropId].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
       // The warehouse is created FIRST, as its own call, because
       // `StockMoveInput.warehouseId` is required — there is no "create it on
       // the way past" on this route the way there is for a category. That is
@@ -154,8 +158,8 @@ export function StockMoveDialog({
       // movement, and `POST /v1/warehouses` is idempotent by lower(name) so
       // choosing an existing one by typing its name is safe.
       const warehouseId = warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
-      const { move, labelBatch } = await api.createStockMove({
-        id: uuidv7(),
+      return api.createStockMove({
+        id: mint(),
         productId,
         warehouseId,
         plotId: plotId || null,
@@ -172,12 +176,12 @@ export function StockMoveDialog({
           ? { labels: Math.max(1, Math.min(24, Math.round(signed))) }
           : {}),
       });
-      onSaved(move, labelBatch);
-    } catch (e) {
+    }).catch((e: unknown) => {
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    onSaved(outcome.value.move, outcome.value.labelBatch);
   }
 
   return (

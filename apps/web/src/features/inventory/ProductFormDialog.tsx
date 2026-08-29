@@ -17,7 +17,7 @@ import {
 import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import type { CatalogItem, Product } from "../../api/types";
 
 export interface ProductFormDialogProps {
@@ -43,7 +43,7 @@ export function ProductFormDialog({
   const [note, setNote] = useState(product?.note ?? "");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -55,11 +55,14 @@ export function ProductFormDialog({
 
   async function save() {
     if (!validate() || !unit) return;
-    setBusy(true);
-    setError(null);
-    try {
+    // A new product used to mint its id inside the call, so a double click
+    // created two rows with the same name. See `lib/writeOnce.ts`.
+    const intent = ["producto", product?.id ?? "nuevo", name.trim(),
+                    category?.id ?? category?.name ?? "", unit.id ?? unit.name].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
       const body = {
-        id: product?.id ?? uuidv7(),
+        id: product?.id ?? mint(),
         name: name.trim(),
         // Id when it was picked, name when it was typed. The server's POST is
         // idempotent by lower(name), so "Bulto" typed twice is one row.
@@ -69,15 +72,13 @@ export function ProductFormDialog({
         storageUnit: unit.id ? undefined : unit.name,
         note: note.trim() || null,
       };
-      const saved = product
-        ? await api.updateProduct(product.id, body)
-        : await api.createProduct(body);
-      onSaved(saved);
-    } catch (e) {
+      return product ? api.updateProduct(product.id, body) : api.createProduct(body);
+    }).catch((e: unknown) => {
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    onSaved(outcome.value);
   }
 
   return (

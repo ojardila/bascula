@@ -186,6 +186,63 @@ describe("la planilla", () => {
     expect(html).not.toContain("$150.000");
   });
 
+  /**
+   * ── LA PLANILLA FIRMADA NO PUEDE SER EL RESULTADO DE UNA BÚSQUEDA ──────
+   *
+   * The settlements screen prints the rows its filters left, which is right —
+   * printing one crew's sheet is the point. What was wrong is that the paper
+   * said nothing about it: the farm's name, today's date, a signature column,
+   * and a total. Typing "Rosa" into the search box turned a $2.220.080 payroll
+   * into a $335.280 one and the sheet gave no hint. It is the document that
+   * gets filed and signed.
+   */
+  it("dice en el papel que es parcial, y de qué filtro", () => {
+    const html = payrollHtml({
+      farmName: "La Esperanza",
+      title: "Planilla de liquidaciones (parcial)",
+      date: "2026-08-29",
+      unit: null,
+      rows: [
+        { name: "Rosa Quintero", quantity: null, grossCents: 33_528_000, balanceCents: 0, status: "open" },
+      ],
+      scope: {
+        filters: ["empleado contiene «Rosa»"],
+        totalRows: 6,
+        totalGrossCents: 222_008_000,
+      },
+    });
+    // Said once loudly, in the same block the provisional warning uses, so it
+    // survives a black-and-white printer.
+    expect(html).toContain("PLANILLA PARCIAL");
+    expect(html).toContain("1 de 6 liquidaciones");
+    expect(html).toContain("empleado contiene «Rosa»");
+    // And the figure the sheet is NOT showing, so the reader can tell how much
+    // of the farm is missing rather than having to know.
+    expect(html).toContain("$2.220.080");
+    expect(html).toContain("$335.280");
+    // Repeated next to the signature, which is the half of the page somebody
+    // is actually looking at when they sign it.
+    expect(html).toContain("PARCIAL · empleado contiene «Rosa»");
+    // The total card cannot claim to be the farm's.
+    expect(html).toContain("Bruto liquidado (filtrado)");
+  });
+
+  /** …and an unfiltered sheet carries none of that, because it needs none. */
+  it("no le pone advertencias a la planilla completa", () => {
+    const html = payrollHtml({
+      farmName: "La Esperanza",
+      title: "Planilla de liquidaciones",
+      date: "2026-08-29",
+      unit: null,
+      rows: [
+        { name: "Rosa Quintero", quantity: null, grossCents: 33_528_000, balanceCents: 0, status: "open" },
+      ],
+      scope: { filters: [], totalRows: 1, totalGrossCents: 33_528_000 },
+    });
+    expect(html).not.toContain("PARCIAL");
+    expect(html).toContain("Bruto liquidado");
+  });
+
   it("imprime «—» donde no hay cantidad, nunca un cero", () => {
     const html = payrollHtml({
       farmName: "La Esperanza",

@@ -113,6 +113,48 @@ describe("typing the URL by hand does not get you in", () => {
     });
   });
 
+  /**
+   * ── LA PLATA SE LE ESCAPABA POR UNA SOLA PUERTA ────────────────────────
+   *
+   * `parcelas/:id` was the one route of thirty-five with no `RequirePermission`
+   * around it, and `PlotDetailPage` printed the amount of every labor on the
+   * lot without the `money.read` guard that `WorkRecordsPage` puts on the same
+   * column. So `/labores` showed the weigher no money and `/parcelas/<id>`
+   * showed him "Recoleccion · Ana Ramírez · $32.000".
+   *
+   * That is not one number leaking. The row also carries the kilos, and
+   * $32.000 over 40 kg is $800 a kilo — which is precisely the figure the
+   * server strips out of `/v1/farm` and `/v1/activities` for this role. The
+   * server's projection was right and one division on this side undid it.
+   */
+  it("no le enseña al pesador la plata en el detalle de una parcela", async () => {
+    signInAs("pesador@laesperanza.co");
+    renderApp("/parcelas/0192f3a0-0004-7000-8000-000000000001");
+
+    // He does get in — a weigher may look at the lot he is standing in — and
+    // he does see his own labores, which is the point of the screen for him.
+    await screen.findByRole("heading", { name: "El Alto" });
+    await screen.findByText("Últimas labores");
+    await screen.findAllByText(/Recolección/);
+
+    // What he must not see is a peso. `$` covers every money control on the
+    // screen at once, which is what makes this assertion worth having: a new
+    // figure added to this page later cannot slip past it.
+    const money = screen.queryAllByText(/\$\s?\d/);
+    expect(money.map((n) => n.textContent)).toEqual([]);
+  });
+
+  /** …and the same screen still shows the money to somebody entitled to it,
+   *  so the guard cannot be "passing" by hiding the column from everybody. */
+  it("y al dueño sí, en la misma pantalla", async () => {
+    signInAs("oscar@laesperanza.co");
+    renderApp("/parcelas/0192f3a0-0004-7000-8000-000000000001");
+    await screen.findByText("Últimas labores");
+    await waitFor(() => {
+      expect(screen.queryAllByText(/\$\s?\d/).length).toBeGreaterThan(0);
+    });
+  });
+
   it("lets a weigher into the one screen they are for", async () => {
     signInAs("pesador@laesperanza.co");
     renderApp("/labores");

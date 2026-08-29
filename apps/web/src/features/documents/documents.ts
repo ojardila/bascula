@@ -262,12 +262,41 @@ export interface PayrollRow {
   status: "open" | "void";
 }
 
+/**
+ * WHAT A PARTIAL SHEET HAS TO SAY ABOUT ITSELF.
+ *
+ * The settlements screen prints whatever its filters left on screen. That is
+ * the right behaviour — somebody filtering to one crew and printing their
+ * sheet is the point — but the sheet used to come out headed by the farm's
+ * name, today's date and a signature column, with no mention anywhere that it
+ * was a search result. Typing "Rosa" turned a $2.220.080 payroll into a
+ * $335.280 one and the paper gave no hint. It is the document that gets filed
+ * and signed.
+ *
+ * So a filtered sheet says so, twice: a band under the header and a line in
+ * the footer, next to the signature.
+ */
+export interface PayrollScope {
+  /** One phrase per active filter, already in Spanish. */
+  filters: string[];
+  /** How many rows there were before the filters. */
+  totalRows: number;
+  /** The gross of every LIVE row before the filters. */
+  totalGrossCents: number;
+}
+
 export interface PayrollInput {
   farmName: string;
   title: string;
   date: string;
   unit: string | null;
   rows: PayrollRow[];
+  /**
+   * Omitted when the sheet is the whole list, which is the case that needs no
+   * caveat. Present — with at least one filter — makes the sheet declare
+   * itself partial.
+   */
+  scope?: PayrollScope;
 }
 
 /**
@@ -282,6 +311,16 @@ export interface PayrollInput {
 export function payrollHtml(input: PayrollInput): string {
   const live = input.rows.filter((r) => r.status !== "void");
   const totalGross = live.reduce((a, r) => a + r.grossCents, 0);
+  const scope = input.scope && input.scope.filters.length > 0 ? input.scope : null;
+  const scopeSentence = scope
+    ? `Esta planilla NO es la nómina completa. Muestra ${input.rows.length} de ` +
+      `${scope.totalRows} liquidaciones, porque se aplicó un filtro: ` +
+      `${scope.filters.join("; ")}. Sin el filtro, el bruto vigente de la finca ` +
+      `es ${money(scope.totalGrossCents)}.`
+    : "";
+  const scopeBanner = scope
+    ? `<div class="prov"><strong>PLANILLA PARCIAL.</strong> ${esc(scopeSentence)}</div>`
+    : "";
   const totalQty = live.reduce((a, r) => a + (r.quantity ?? 0), 0);
   const anyQty = live.some((r) => r.quantity !== null);
 
@@ -305,8 +344,11 @@ export function payrollHtml(input: PayrollInput): string {
   return documentShell(
     input.title,
     `${headerHtml({ farmName: input.farmName, date: input.date }, input.title)}
+     ${scopeBanner}
      <div class="meta">
-       <div class="card"><div class="k">Bruto liquidado</div>
+       <div class="card"><div class="k">${
+         scope ? "Bruto liquidado (filtrado)" : "Bruto liquidado"
+       }</div>
          <div class="v">${esc(money(totalGross))}</div></div>
        ${
          anyQty && input.unit
@@ -342,6 +384,7 @@ export function payrollHtml(input: PayrollInput): string {
              }`
            : ""
        }</span>
+       ${scope ? `<span>PARCIAL · ${esc(scope.filters.join("; "))}</span>` : ""}
        <span>Firma por la finca</span>
      </div>`,
   );

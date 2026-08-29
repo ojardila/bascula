@@ -42,8 +42,16 @@ export type { ApiErrorBody, DayISO, Instant, Uuid };
  */
 export type Role = "owner" | "administrator" | "weigher";
 
-/** Derived from `suspendedAt`. There is no trial state in the API. */
-export type FarmStatus = "trial" | "active" | "suspended";
+/**
+ * Derived from `suspendedAt`, which is the only farm lifecycle the API has.
+ *
+ * `"trial"` is gone. It was never a state the server could report — there is
+ * no trial anywhere in the API and `trialDaysLeft` is documented as always
+ * null — so the two screens that branched on it were branching on something
+ * unreachable, and one of them would have printed "Prueba · null días" if it
+ * ever had been reached.
+ */
+export type FarmStatus = "active" | "suspended";
 
 /** Derived from `deletedAt`/`archivedAt`: the server has no status column. */
 export type RecordStatus = "active" | "inactive";
@@ -122,11 +130,25 @@ export interface FarmUser {
   role: Role;
   status: FarmUserStatus;
   /**
-   * NULL, not a zero date, until they have logged in once. "Nunca ha entrado"
-   * is a fact worth showing; 1 de enero de 1970 is a lie about one.
+   * THREE STATES, not two.
+   *
+   *   a date      they were last in then
+   *   `null`      the server reports this and they have never been in
+   *   `undefined` the server does not report it at all
+   *
+   * `/v1/users` is the third case today: the query behind it never selects a
+   * last login. Collapsing that into `null` is what printed "Nunca ha entrado"
+   * next to the owner while he was reading the screen. 1 de enero de 1970
+   * would be a lie about a date; "nunca" is a lie about a person.
    */
-  lastLoginAt: string | null;
+  lastLoginAt?: string | null;
   createdAt: string | null;
+  /**
+   * The password the server minted for a newly invited person, returned once
+   * by `POST /v1/users` and readable nowhere afterwards. Present only on the
+   * result of an invitation; always absent from the list.
+   */
+  temporaryPassword?: string | null;
 }
 
 export interface FarmUserInput {
@@ -257,8 +279,17 @@ export interface Plot {
   name: string;
   department: string;
   municipality: string;
-  /** What the owner declared. */
-  areaHa: number;
+  /**
+   * What the owner declared, and NULL when they declared nothing.
+   *
+   * The adapter used to write `p.areaHa ?? 0`, which turned an unknown area
+   * into "0,00 ha" on the list and on the lot's own file — and then added that
+   * zero into the farm's declared total, understating it with no sign that
+   * anything was missing. `AreaComparison` has always accepted a null here;
+   * the `?? 0` was destroying a distinction the components downstream were
+   * already built to show.
+   */
+  areaHa: number | null;
   /**
    * What PostGIS measured of the drawn polygon. Null until one is drawn. Both
    * figures are returned and both are shown: they always disagree, and
@@ -360,6 +391,11 @@ export interface Balance {
   balanceCents: number;
   /** A DAY, not an instant: the ledger is keyed by local day. */
   lastMovementOn: DayISO | null;
+  /**
+   * False for somebody who has left the payroll and is still owed money. They
+   * remain in `/v1/balances` precisely so the debt does not vanish with them.
+   */
+  active: boolean;
 }
 
 export interface LedgerEntry {
@@ -395,8 +431,17 @@ export interface WorkerProfile {
   worker: Worker;
   balance: Balance;
   workRecords: WorkRecord[];
-  /** Sum of the work no live settlement has claimed yet. */
-  pendingCents: number;
+  /**
+   * Sum of the work no live settlement has claimed yet, and NULL when
+   * `/v1/workers/{id}/payables` could not be reached.
+   *
+   * It used to be `payables?.grossCents ?? 0`. With that request down, an
+   * employee owed $868.000 read "Pendiente de liquidar $0" and the detail
+   * block below it disappeared entirely — a screen that looks like a person
+   * who is square with the farm, produced by a failed GET. Null has no
+   * rendering that could be mistaken for a figure.
+   */
+  pendingCents: number | null;
   ledger: LedgerEntry[];
   notes: WorkerNote[];
 }
@@ -582,6 +627,14 @@ export interface PaymentInput {
    * guard fires, which is the difference between a refusal and an explanation.
    */
   expectedLines?: PayableLine[];
+  /**
+   * The id for the settlement that `createPayment` writes before the payment
+   * itself, minted by the caller at the moment the figure was approved and
+   * reused by every retry of that same approval. Without it the settlement
+   * gets a fresh id per attempt and the server's idempotency — which is what
+   * makes a retry safe — never gets the chance to fire. See `lib/writeOnce.ts`.
+   */
+  settlementId?: Uuid;
 }
 
 /* -- settlements ----------------------------------------------------- */

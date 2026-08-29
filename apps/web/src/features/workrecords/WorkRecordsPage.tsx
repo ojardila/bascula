@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Alert, Box, Chip, Stack, Typography } from "@mui/material";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
-import { Money } from "../../components/Money";
+import { Value } from "../harvest/Figures";
+import { totalsOfRecords } from "../harvest/totals";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
@@ -73,16 +74,14 @@ export function WorkRecordsPage() {
         key: "amount",
         header: "Valor",
         align: "right",
-        render: (r) => (
-          <Stack alignItems="flex-end">
-            <Money cents={r.estimatedAmountCents} />
-            {r.rateCents === null && (
-              <Typography variant="caption" color="warning.dark">
-                estimado
-              </Typography>
-            )}
-          </Stack>
-        ),
+        /**
+         * `amountIsEstimate`, not `rateCents === null`. The server sends the
+         * flag expressly, and the two are not the same question: a rate can be
+         * absent for reasons that have nothing to do with whether the amount
+         * is still moving. `<Value>` is the harvest module's, so an estimate
+         * reads the same everywhere in the console.
+         */
+        render: (r) => <Value total={totalsOfRecords([r])} />,
       });
     }
     cols.push({
@@ -101,7 +100,10 @@ export function WorkRecordsPage() {
   if (denied) return <PermissionDenied moduleName="ver las labores" />;
 
   const pending = (data ?? []).filter((r) => !r.settled);
-  const pendingCents = pending.reduce((a, r) => a + r.estimatedAmountCents, 0);
+  // The whole point of the fold: on the seeded farm every unsettled labor is
+  // priced by the week, so this total is 100% estimate and used to print as a
+  // firm figure.
+  const pendingTotals = totalsOfRecords(pending);
 
   return (
     <Box>
@@ -145,10 +147,10 @@ export function WorkRecordsPage() {
         emptyBody="Una labor es el registro de que alguien ejecutó una actividad sobre un lote, en una fecha, por una cantidad."
         footer={
           showMoney && data ? (
-            <>
-              {pending.length} pendientes de liquidar ·{" "}
-              <Money cents={pendingCents} variant="small" />
-            </>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <span>{pending.length} pendientes de liquidar ·</span>
+              <Value total={pendingTotals} variant="small" align="flex-start" />
+            </Stack>
           ) : null
         }
       />

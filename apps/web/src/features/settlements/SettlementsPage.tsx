@@ -11,18 +11,29 @@
  *
  *   cuáles hay      every settlement the farm has made, newest first
  *   de quién        the worker's name, joined — never a UUID
- *   de qué semana   the period ACTUALLY covered, which is the Monday of the
- *                   earliest payable and not the window the client asked over
+ *   de qué periodo  the period ACTUALLY covered — BOTH ends of it. It starts
+ *                   at the Monday of the earliest payable rather than the
+ *                   window the client asked over, and it is frequently not a
+ *                   week: the running farm's settlements span from August 2026
+ *                   to August 2027
  *   cuánto          the gross, and what is still owed after it
  *   cuáles están anuladas   voided ones are LISTED, struck through, with the
  *                   date — never filtered out, because the ledger carries the
  *                   reversal and a list that hides the settlement cannot be
  *                   reconciled against it
  *
- * There is no `GET /v1/settlements`; `api.listSettlements` composes the list
- * out of the ledgers and says how. That composition is a fan-out, which is why
- * this screen loads once and filters in the browser rather than round-tripping
- * on every keystroke — and why the empty state says what it is doing.
+ * `GET /v1/settlements` exists now and answers in one request;
+ * `api.listSettlements` still keeps a fan-out behind it for an older server
+ * and says so. Either way this screen loads once and filters IN THE BROWSER
+ * rather than round-tripping on every keystroke.
+ *
+ * WHICH MAKES THE FILTER PART OF EVERY FIGURE ON THE PAGE, and that is the
+ * thing this screen got wrong for a whole sprint. The three cards and the
+ * printed payroll are all sums over the filtered rows, under labels that read
+ * as facts about the farm. Typing "Rosa" turned a $2.220.080 payroll into a
+ * $335.280 one — on screen AND on the sheet that gets signed and filed, with
+ * no mark on the paper to say so. Now the filter names itself in one place and
+ * that name reaches the banner, the card labels, the button and the document.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -36,7 +47,8 @@ import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
-import { formatDate, formatWeekRange, todayInFarm } from "../../lib/dates";
+import { formatDate, formatPeriod, todayInFarm } from "../../lib/dates";
+import { formatMoney } from "../../lib/money";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { SettlementSummary } from "../../api/types";
@@ -76,14 +88,45 @@ export function SettlementsPage() {
   const totalCents = live.reduce((a, s) => a + s.grossCents, 0);
   const voided = (rows ?? []).length - live.length;
 
+  /**
+   * ── WHAT THE FIGURES ABOVE ARE ACTUALLY ABOUT ────────────────────────
+   *
+   * Everything on this screen — the three cards and the printed sheet — is a
+   * sum over `rows`, and `rows` is what the FILTERS left. That was never
+   * stated anywhere. "BRUTO LIQUIDADO (VIGENTES)" reads as a fact about the
+   * farm, and "vigentes" means "not voided", not "matching what you typed".
+   * Typing "Rosa" turned $2.220.080 into $335.280 under a label that claimed
+   * to be about the farm.
+   *
+   * So the filters are named, in Spanish, once — and that one list drives the
+   * banner, the card labels and the paper. A screen that says "filtrado" and a
+   * sheet that does not would be the same bug with an extra step.
+   */
+  const activeFilters: string[] = [];
+  if (search.trim() !== "") activeFilters.push(`empleado contiene «${search.trim()}»`);
+  if (status === "open") activeFilters.push("solo las vigentes");
+  if (status === "void") activeFilters.push("solo las anuladas");
+  const filtered = activeFilters.length > 0;
+
+  /** The farm's real totals, so the banner can say what is being left out. */
+  const allLive = (data ?? []).filter((s) => s.status === "open");
+  const allTotalCents = allLive.reduce((a, s) => a + s.grossCents, 0);
+
   function printPayroll() {
     if (!rows || rows.length === 0) return;
     printDocument(
       payrollHtml({
         farmName: user?.farm.name ?? "Finca",
-        title: "Planilla de liquidaciones",
+        title: filtered ? "Planilla de liquidaciones (parcial)" : "Planilla de liquidaciones",
         date: todayInFarm(user?.farm.timezone ?? "America/Bogota"),
         unit: null,
+        // The sheet declares its own scope. Without this the paper is a search
+        // result wearing the farm's letterhead, with a signature column.
+        scope: {
+          filters: activeFilters,
+          totalRows: data?.length ?? rows.length,
+          totalGrossCents: allTotalCents,
+        },
         rows: rows.map((s) => ({
           name: s.workerName,
           // The list carries no document number and no weighed quantity: both
@@ -120,16 +163,41 @@ export function SettlementsPage() {
           disabled={!rows || rows.length === 0}
           onClick={printPayroll}
         >
-          Planilla
+          {filtered ? "Planilla (parcial)" : "Planilla"}
         </Button>
       </Stack>
+
+      {filtered && rows !== null && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                setSearch("");
+                setStatus("all");
+              }}
+            >
+              Quitar el filtro
+            </Button>
+          }
+        >
+          Está viendo <strong>{rows.length}</strong> de{" "}
+          <strong>{data?.length ?? rows.length}</strong> liquidaciones (
+          {activeFilters.join("; ")}). Las cifras de abajo y la planilla son de esas{" "}
+          {rows.length}, no de la finca entera: sin el filtro el bruto vigente es{" "}
+          <strong>{formatMoney(allTotalCents)}</strong>.
+        </Alert>
+      )}
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid size={{ xs: 12, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                Bruto liquidado (vigentes)
+                {filtered ? "Bruto liquidado (vigentes, filtrado)" : "Bruto liquidado (vigentes)"}
               </Typography>
               {/* No figure at all until the list has loaded. A "$0" while a
                   fan-out is in flight is a claim that the farm has settled
@@ -146,7 +214,7 @@ export function SettlementsPage() {
           <Card variant="outlined">
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                Vigentes
+                {filtered ? "Vigentes (filtrado)" : "Vigentes"}
               </Typography>
               <Typography variant="h2">{rows === null ? "—" : live.length}</Typography>
             </CardContent>
@@ -156,7 +224,7 @@ export function SettlementsPage() {
           <Card variant="outlined">
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                Anuladas
+                {filtered ? "Anuladas (filtrado)" : "Anuladas"}
               </Typography>
               <Typography variant="h2">{rows === null ? "—" : voided}</Typography>
             </CardContent>
@@ -233,14 +301,14 @@ function SettlementRow({ s, onOpen }: { s: SettlementSummary; onOpen: () => void
         {s.workerName}
       </TableCell>
       <TableCell>
-        <Stack>
-          <Typography variant="body2">{formatWeekRange(s.periodStart)}</Typography>
-          {s.periodStart.slice(0, 7) !== s.periodEnd.slice(0, 7) && (
-            <Typography variant="caption" color="text.secondary">
-              hasta {formatDate(s.periodEnd)}
-            </Typography>
-          )}
-        </Stack>
+        {/* BOTH ENDS. `formatWeekRange(periodStart)` prints the seven days
+            after a Monday, which is a different period from the one the
+            settlement covers whenever it is not exactly a week — and on the
+            running farm none of them are. Every row read "24–30 ago" while
+            the printed sheet, which had it right, said otherwise. */}
+        <Typography variant="body2">
+          {formatPeriod(s.periodStart, s.periodEnd)}
+        </Typography>
       </TableCell>
       <TableCell>{formatDate(s.createdAt.slice(0, 10))}</TableCell>
       <TableCell align="right">{s.lineCount}</TableCell>

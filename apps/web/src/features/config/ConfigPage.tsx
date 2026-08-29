@@ -5,6 +5,14 @@ import {
 import PeopleIcon from "@mui/icons-material/People";
 import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
+import { useAsync } from "../../lib/useAsync";
+import { api } from "../../api/endpoints";
+
+/** In Spanish, because this is a label somebody reads and not an enum. */
+const FARM_STATUS: Record<"active" | "suspended", string> = {
+  active: "Activa",
+  suspended: "Suspendida",
+};
 
 /**
  * Read-only for now. The sprint cut keeps CONFIGURACIÓN to "farm data, prices
@@ -15,9 +23,27 @@ import { PermissionDenied } from "../../components/Guards";
  */
 export function ConfigPage() {
   const { user, can } = useAuth();
+
+  /**
+   * ── DE DÓNDE SALE «ESTADO» ──────────────────────────────────────────
+   *
+   * NOT from the session. `/v1/me` reports no farm lifecycle at all, so
+   * `toMeUser` infers "active" from the fact that somebody is holding a live
+   * token — a fair inference for deciding read-only, and not a fact to print.
+   * This screen printed it anyway, in English, as though the server had said
+   * so: "Estado: active".
+   *
+   * `GET /v1/farm` has the real column, `suspendedAt`. Until it answers there
+   * is no state to show, and "—" says that rather than guessing.
+   */
+  const { data: farmDetail, error: farmError } = useAsync(() => api.getFarm(), []);
+
+  // The permission check comes after the hooks, not before: an early return
+  // above a `useAsync` changes the hook order between renders.
   if (!can("config.farm")) return <PermissionDenied moduleName="ver la configuración" />;
 
-  const farm = user?.farm;
+  const farm = farmDetail ?? user?.farm;
+  const status = farmDetail?.status ?? null;
 
   return (
     <Box>
@@ -45,16 +71,25 @@ export function ConfigPage() {
                 ))}
                 <Stack direction="row" justifyContent="space-between">
                   <Typography color="text.secondary">Estado</Typography>
-                  <Chip
-                    size="small"
-                    label={
-                      farm?.status === "trial"
-                        ? `En prueba · ${farm.trialDaysLeft} días`
-                        : farm?.status
-                    }
-                    color={farm?.status === "suspended" ? "error" : "warning"}
-                    variant="outlined"
-                  />
+                  {status === null ? (
+                    <Typography
+                      sx={{ color: "text.disabled", fontWeight: 600 }}
+                      title={
+                        farmError
+                          ? "No se pudo consultar el estado de la finca."
+                          : "Consultando el estado de la finca…"
+                      }
+                    >
+                      —
+                    </Typography>
+                  ) : (
+                    <Chip
+                      size="small"
+                      label={FARM_STATUS[status]}
+                      color={status === "suspended" ? "error" : "success"}
+                      variant="outlined"
+                    />
+                  )}
                 </Stack>
               </Stack>
               <Alert severity="info" sx={{ mt: 2 }}>

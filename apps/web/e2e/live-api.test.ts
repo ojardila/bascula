@@ -1071,6 +1071,78 @@ suite(suiteName, () => {
     expect((await api.workerBalance(workerId)).balanceCents).toBe(before);
   });
 
+  /**
+   * ── EL DOBLE CLIC, CONTRA POSTGRES ────────────────────────────────────
+   *
+   * The auditor drove the browser and got two `POST /v1/payments`, both 201,
+   * and $20.000 handed over where the foreman had approved $10.000. Two
+   * separate things had to be true for that:
+   *
+   *   1. the second click reached the network at all, because
+   *      `disabled={busy}` is React state and both clicks of a double click
+   *      land in one task, before any re-render; and
+   *   2. the second request carried a DIFFERENT id, because the id was minted
+   *      inside the call — so the server, which is idempotent by
+   *      `(farm_id, id)`, correctly saw a different payment and wrote it.
+   *
+   * The unit suite proves the first half at the screen. This proves the second
+   * against the real ledger, which is the only place it can be proved: MSW can
+   * be made to agree with anything, and `store.AddLedgerEntry`'s
+   * `ON CONFLICT (id) DO NOTHING` cannot.
+   *
+   * Both halves of the comparison are run, deliberately. A test that only
+   * showed the fix working would not show that the mechanism is what makes it
+   * work.
+   */
+  describe("dos peticiones idénticas no pueden pagar dos veces", () => {
+    it("mismo id: la segunda recibe el pago que ya existe, y la plata sale una vez", async () => {
+      const before = await api.workerBalance(workerId);
+      expect(before.balanceCents).toBeGreaterThan(2_000_00);
+
+      // The id the screen mints ONCE, when the figure is approved, and reuses
+      // for every attempt at that same approved fact. See lib/writeOnce.ts.
+      const id = uuidv7();
+      const pay = () =>
+        api.createPayment({ id, workerId, amountCents: 1_000_00, method: "efectivo" });
+
+      // Fired without awaiting in between, which is what two clicks in one
+      // task look like from the network's point of view.
+      const [a, b] = await Promise.all([pay(), pay()]);
+
+      // One payment, one id, one movement in the ledger.
+      expect(a.id).toBe(b.id);
+      const payments = (await api.workerLedger(workerId)).filter(
+        (e) => e.kind === "pago" && e.id === id,
+      );
+      expect(payments).toHaveLength(1);
+
+      // And the money: $1.000 left the farm, not $2.000.
+      const after = await api.workerBalance(workerId);
+      expect(before.balanceCents - after.balanceCents).toBe(1_000_00);
+    });
+
+    it("ids distintos: el servidor escribe dos pagos — que es el fallo, no el servidor", async () => {
+      const before = await api.workerBalance(workerId);
+      const pay = () =>
+        api.createPayment({
+          // A FRESH id per attempt, which is exactly what the screen used to
+          // do. The server is right to accept both: two ids are two payments.
+          id: uuidv7(),
+          workerId,
+          amountCents: 1_000_00,
+          method: "efectivo",
+        });
+
+      const [a, b] = await Promise.all([pay(), pay()]);
+      expect(a.id).not.toBe(b.id);
+
+      // $2.000 handed over where $1.000 was approved. This is the auditor's
+      // finding, reproduced, and it is why the id has to be minted once.
+      const after = await api.workerBalance(workerId);
+      expect(before.balanceCents - after.balanceCents).toBe(2_000_00);
+    });
+  });
+
   it("refresca el token sin que nadie se entere", async () => {
     const before = getTokens()!;
 

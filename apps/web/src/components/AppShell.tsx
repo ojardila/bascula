@@ -143,14 +143,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <Typography sx={{ fontWeight: 600 }}>{user?.farm?.name}</Typography>
 
-          {user?.farm?.status === "trial" && (
-            <Chip
-              size="small"
-              color="warning"
-              variant="outlined"
-              label={`Prueba · ${user.farm.trialDaysLeft} días`}
-            />
-          )}
+          {/* There was a "Prueba · N días" chip here, branching on a farm
+              status of "trial". The API has no trial and `trialDaysLeft` is
+              documented as always null, so the branch could never be taken —
+              and if it somehow had been, it would have rendered "Prueba · null
+              días". Suspension is the only lifecycle there is, and `readOnly`
+              below is how it reaches a person. */}
           {readOnly && (
             <Chip size="small" color="error" label="Suspendida · solo lectura" />
           )}

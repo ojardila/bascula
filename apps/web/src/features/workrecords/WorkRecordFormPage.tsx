@@ -22,7 +22,7 @@ import { PermissionDenied } from "../../components/Guards";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { formatMonday, mondayOf, todayInFarm } from "../../lib/dates";
 import { parseMoneyInput } from "../../lib/money";
 import {
@@ -48,7 +48,7 @@ export function WorkRecordFormPage() {
   const [rateText, setRateText] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
   const [saved, setSaved] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
@@ -132,28 +132,41 @@ export function WorkRecordFormPage() {
   async function submit(andAnother: boolean) {
     setError(null);
     setSaved(null);
-    const result = validateWorkRecord(draft, activity, uuidv7());
-    setErrors(result.errors);
-    if (!result.valid || !result.input) return;
+    /**
+     * The id used to be minted here, fresh on every press. A double click
+     * therefore registered the SAME work twice under two ids — two labores to
+     * pay for one afternoon's picking — and the server, seeing two different
+     * ids, was right to accept both. `useWriteOnce` mints it once per version
+     * of this form and lets a retry be a retry. See `lib/writeOnce.ts`.
+     */
+    const intent = ["labor", draft.workerId, draft.activityId, draft.quantity,
+                    draft.dateFrom, draft.dateTo, draft.rateCents,
+                    [...draft.plotIds].sort().join("+"),
+                    [...draft.plotCropIds].sort().join("+")].join("|");
 
-    setBusy(true);
-    try {
-      await api.createWorkRecord(result.input);
-      if (andAnother) {
-        // Keep activity, plots, crops and date: a picker registers ten of
-        // these in a row, and only the worker and the quantity change.
-        setDraft((v) => ({ ...v, workerId: "", quantity: "", note: "" }));
-        setSaved("Labor guardada. Puede registrar la siguiente.");
-      } else {
-        navigate("/labores");
-      }
-    } catch (e) {
+    const outcome = await runOnce(intent, async (mint) => {
+      const result = validateWorkRecord(draft, activity, mint());
+      setErrors(result.errors);
+      if (!result.valid || !result.input) return null;
+      return api.createWorkRecord(result.input);
+    }).catch((e: unknown) => {
       if (e instanceof ApiError && Object.keys(e.fieldErrors).length) {
         setErrors(e.fieldErrors as FieldErrors);
       }
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
+      return { ran: false } as const;
+    });
+
+    // `value === null` is a form that did not validate: no request left the
+    // browser, so there is nothing to report and nothing to keep.
+    if (!outcome.ran || outcome.value === null) return;
+    if (andAnother) {
+      // Keep activity, plots, crops and date: a picker registers ten of these
+      // in a row, and only the worker and the quantity change.
+      setDraft((v) => ({ ...v, workerId: "", quantity: "", note: "" }));
+      setSaved("Labor guardada. Puede registrar la siguiente.");
+    } else {
+      navigate("/labores");
     }
   }
 

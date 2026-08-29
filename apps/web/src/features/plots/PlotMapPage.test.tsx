@@ -23,6 +23,9 @@ import { AuthProvider } from "../../auth/AuthContext";
 import { setTokens } from "../../api/client";
 import { theme } from "../../theme";
 import { resetDb } from "../../mocks/db";
+import { PlotsPage } from "./PlotsPage";
+import { server } from "../../mocks/node";
+import { http, HttpResponse } from "msw";
 
 /** "La Cuchilla" in the seed: declared 2,75 ha, no polygon yet. */
 const UNDRAWN = "0192f3a0-0004-7000-8000-000000000002";
@@ -172,5 +175,73 @@ describe("drawing a lot on the map", () => {
     // The seed has two drawn lots; the one being edited is not its own neighbour.
     expect(within(canvas).getByText("Bajo del Río")).toBeInTheDocument();
     expect(within(canvas).getByText("El Alto")).toBeInTheDocument();
+  }, 20000);
+});
+
+/**
+ * ── UNA SUPERFICIE DESCONOCIDA NO ES CERO HECTÁREAS ────────────────────
+ *
+ * `Plot.areaHa` is nullable in the contract — the owner may never have
+ * declared one — and `toPlot` wrote `p.areaHa ?? 0`. That turned "no lo sé"
+ * into "0,00 ha" on the list and on the lot's own file, and then ADDED the
+ * zero into the farm's declared total, which is the part that costs: a farm
+ * with two undeclared lots reads smaller than it is, and nothing on the line
+ * says a lot was left out.
+ *
+ * `AreaComparison` has accepted `declaredHa: number | null` since it was
+ * written. The `?? 0` was destroying a distinction the component below it was
+ * already built to draw.
+ */
+describe("una parcela sin superficie declarada", () => {
+  it("dice «—» y no entra en el total de la finca", async () => {
+    server.use(
+      http.get("*/v1/plots", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "0192f3a0-0004-7000-8000-0000000000a1",
+              name: "Con área",
+              areaHa: 4.2,
+              computedAreaHa: null,
+              department: "Caldas",
+              municipality: "Manizales",
+              boundary: null,
+              crops: [],
+              deletedAt: null,
+            },
+            {
+              id: "0192f3a0-0004-7000-8000-0000000000a2",
+              name: "Sin área",
+              areaHa: null,
+              computedAreaHa: null,
+              department: "Caldas",
+              municipality: "Manizales",
+              boundary: null,
+              crops: [],
+              deletedAt: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(
+      <ThemeProvider theme={theme}>
+        <MemoryRouter initialEntries={["/parcelas"]}>
+          <AuthProvider>
+            <PlotsPage />
+          </AuthProvider>
+        </MemoryRouter>
+      </ThemeProvider>,
+    );
+
+    const row = (await screen.findByText("Sin área")).closest("tr")!;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+    expect(within(row).queryByText("0,00 ha")).not.toBeInTheDocument();
+
+    // The total is over the lots that declared one, and the footer says how
+    // many were left out rather than folding them in as zeroes.
+    expect(await screen.findByText(/4,20 ha declaradas/)).toBeInTheDocument();
+    expect(screen.getByText(/1 sin superficie declarada/)).toBeInTheDocument();
   }, 20000);
 });

@@ -180,9 +180,22 @@ export interface WireFarmUser {
   role: WireRole;
   /** `invited` until the address is confirmed; `revoked` closes the door. */
   status?: string | null;
-  /** Null until they have actually logged in once. Never a zero date. */
+  /**
+   * ABSENT AND NULL ARE DIFFERENT FACTS, and this is the field where the
+   * difference cost us. `store.ListFarmUsers` does not select a last login at
+   * all — the column is not in the query — so the key never arrives. Null
+   * would mean "we know, and they have never been in"; absent means "the
+   * server does not report this". Rendering the second as the first told the
+   * owner, mid-session, that he had never logged in.
+   */
   lastLoginAt?: Instant | null;
   createdAt?: Instant | null;
+  /**
+   * Returned by `POST /v1/users` ONCE and never again — the row keeps only an
+   * argon2id hash. There is no mail sender in the service, so this string is
+   * the entire invitation: without it the invited person can never log in.
+   */
+  temporaryPassword?: string | null;
 }
 
 /**
@@ -545,7 +558,23 @@ export interface WireSettlement {
   note: string | null;
   createdAt: Instant;
   voidedAt: Instant | null;
+  /**
+   * ALWAYS EMPTY on `GET /v1/settlements` — the spec says so in as many words
+   * — and full only on `GET /v1/settlements/{id}`. Counting this array to get
+   * "how many lines" therefore printed LÍNEAS: 0 on every row of the list.
+   */
   items: WirePayable[];
+  /**
+   * How many LIVE lines the settlement has, sent on the list route. It is not
+   * `items.length` and it is not the same thing either: a voided settlement
+   * keeps its line rows, and this counts the ones that still stand.
+   */
+  itemCount?: number;
+  /**
+   * Joined in by the list route so thirty settlements are not thirty more
+   * requests. Absent on the detail route.
+   */
+  workerName?: string;
 }
 
 /**
@@ -561,6 +590,16 @@ export interface WireBalance {
   /** Derived from the ledger on every read. Never a stored total. */
   balanceCents: number;
   lastMovementOn: Instant | null;
+  /**
+   * False for somebody no longer on the payroll.
+   *
+   * They stay on `GET /v1/balances` while they still have movements, which is
+   * the point of the field: dropping a deactivated worker who is still owed
+   * money would make the debt disappear from the only screen anybody looks at
+   * while it sat untouched in the ledger. The spec is explicit that the caller
+   * renders the difference rather than guessing at an absence.
+   */
+  active: boolean;
 }
 
 /**

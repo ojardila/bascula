@@ -23,10 +23,10 @@ import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
 import { GREEN_DARK } from "../../theme";
-import type { AdminFarm } from "../../api/types";
+import type { AdminFarm, FarmStatus } from "../../api/types";
 
-const STATUS_LABEL: Record<string, string> = {
-  trial: "En prueba",
+/** No "en prueba": there is no trial anywhere in this API. */
+const STATUS_LABEL: Record<FarmStatus, string> = {
   active: "Activa",
   suspended: "Suspendida",
 };
@@ -76,7 +76,7 @@ export function SuperAdminPage() {
         <Chip
           size="small"
           label={STATUS_LABEL[f.status]}
-          color={f.status === "suspended" ? "error" : f.status === "trial" ? "warning" : "success"}
+          color={f.status === "suspended" ? "error" : "success"}
           variant={f.status === "active" ? "filled" : "outlined"}
         />
       ),

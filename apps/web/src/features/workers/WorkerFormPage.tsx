@@ -9,6 +9,7 @@ import { PhotoField } from "./PhotoField";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import type { DocumentType } from "../../api/types";
 
 const DOC_TYPES: Array<{ value: DocumentType; label: string }> = [
@@ -37,7 +38,16 @@ export function WorkerFormPage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  /**
+   * This form was ALREADY half-safe: `workerId` is minted once with
+   * `useState(() => id ?? uuidv7())`, so a double click posts the same id
+   * twice and the server answers the second one with the row it already has.
+   * That is the half that protects the data. `useWriteOnce` adds the other
+   * half — the request that never leaves — and, being the same primitive
+   * every other write on this app now uses, it keeps one answer to the
+   * question instead of two.
+   */
+  const { busy, run: runOnce } = useWriteOnce();
   /**
    * The same document already belongs to somebody who is DEACTIVATED.
    *
@@ -92,8 +102,7 @@ export function WorkerFormPage() {
     ev.preventDefault();
     setError(null);
     if (!validate()) return;
-    setBusy(true);
-    try {
+    const outcome = await runOnce(`empleado|${workerId}|${documentNumber.trim()}`, async () => {
       const body = {
         id: workerId,
         name: name.trim(),
@@ -107,11 +116,8 @@ export function WorkerFormPage() {
         photoDataUrl: photo,
         startedAt: startedAt || undefined,
       };
-      const saved = editing
-        ? await api.updateWorker(workerId, body)
-        : await api.createWorker(body);
-      navigate(`/empleados/${saved.id}`, { replace: true });
-    } catch (e) {
+      return editing ? api.updateWorker(workerId, body) : api.createWorker(body);
+    }).catch(async (e: unknown) => {
       if (e instanceof ApiError && e.code === "EMPLOYEE_EXISTS_DELETED") {
         const existingId = String(e.details.employeeId ?? "");
         // Fetch the name so the offer says WHO, not "the existing worker". A
@@ -125,23 +131,24 @@ export function WorkerFormPage() {
         if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
         setError(messageFor(e));
       }
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    navigate(`/empleados/${outcome.value.id}`, { replace: true });
   }
 
   async function reactivate() {
     if (!existingDeleted?.id) return;
-    setBusy(true);
-    try {
-      await api.reactivateWorker(existingDeleted.id);
-      navigate(`/empleados/${existingDeleted.id}`, { replace: true });
-    } catch (e) {
-      setError(messageFor(e));
-      setExistingDeleted(null);
-    } finally {
-      setBusy(false);
-    }
+    const who = existingDeleted.id;
+    const outcome = await runOnce(`reactivar|${who}`, () => api.reactivateWorker(who)).catch(
+      (e: unknown) => {
+        setError(messageFor(e));
+        setExistingDeleted(null);
+        return { ran: false } as const;
+      },
+    );
+    if (!outcome.ran) return;
+    navigate(`/empleados/${who}`, { replace: true });
   }
 
   return (

@@ -40,6 +40,7 @@ import { formatDate, formatDateRange, formatWeekRange, todayInFarm } from "../..
 import { formatQuantity } from "../../lib/money";
 import { settlementHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
+import { useWriteOnce } from "../../lib/writeOnce";
 
 export function SettlementDetailPage() {
   const { id = "" } = useParams();
@@ -48,7 +49,7 @@ export function SettlementDetailPage() {
 
   const { data, error, denied, reload } = useAsync(() => api.getSettlement(id), [id]);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
   const [actionError, setActionError] = useState<string | null>(null);
 
   if (denied) return <PermissionDenied moduleName="ver una liquidación" />;
@@ -61,17 +62,19 @@ export function SettlementDetailPage() {
   const unit = data.lines.find((l) => l.unitLabel)?.unitLabel ?? null;
 
   async function voidIt() {
-    setBusy(true);
-    setActionError(null);
-    try {
-      await api.voidSettlement(id);
-      setConfirming(false);
-      reload();
-    } catch (e) {
+    // The reversal carries its own id, and it used to be minted inside the
+    // call — so a double click on "Sí, anular" sent two different reversal
+    // ids for one settlement. See `lib/writeOnce.ts`.
+    const outcome = await runOnce(`anular|${id}`, async (mint) => {
+      setActionError(null);
+      return api.voidSettlement(id, mint());
+    }).catch((e: unknown) => {
       setActionError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    setConfirming(false);
+    reload();
   }
 
   function print() {

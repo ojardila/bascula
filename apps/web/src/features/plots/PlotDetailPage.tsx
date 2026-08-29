@@ -11,7 +11,8 @@ import { AreaComparison } from "./AreaComparison";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
-import { Money } from "../../components/Money";
+import { Value } from "../harvest/Figures";
+import { totalsOfRecords } from "../harvest/totals";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { PermissionDenied } from "../../components/Guards";
 import { formatArea } from "../../lib/money";
@@ -21,6 +22,7 @@ export function PlotDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { can } = useAuth();
+  const showMoney = can("money.read");
   const { data: plot, error, denied } = useAsync(() => api.getPlot(id), [id]);
   const { data: records } = useAsync(() => api.listWorkRecords({ plotId: id }), [id]);
   // The other lots, only so the map has context to draw behind this one.
@@ -190,7 +192,16 @@ export function PlotDetailPage() {
                       {r.workerName} · {formatDateRange(r.dateFrom, r.dateTo)}
                     </Typography>
                   </Box>
-                  <Money cents={r.estimatedAmountCents} variant="small" />
+                  {/* ── THE HOLE THE WEIGHER GOT THE PRICE THROUGH ──────
+                      `WorkRecordsPage` gates this exact column behind
+                      `money.read`; this one did not. The server sends the
+                      amount on a weigher's own rows — it is his work — and
+                      strips the price per kilo from `/v1/farm` and
+                      `/v1/activities` for that role. But an amount and a
+                      quantity on the same line is a division: $32.000 over
+                      40 kg is $800 a kilo, and the whole projection comes
+                      apart. So the amount goes where the price goes. */}
+                  {showMoney && <Value total={totalsOfRecords([r])} variant="small" />}
                 </Stack>
               ))}
               {records !== null && records.length === 0 && (

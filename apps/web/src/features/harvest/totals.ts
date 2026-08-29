@@ -113,6 +113,51 @@ export function foldTotals(rows: Totals[]): Totals {
   return out;
 }
 
+/**
+ * ── THE SAME MACHINERY, FOR THE SCREENS THAT PREDATE IT ─────────────────
+ *
+ * `/v1/reports/*` hands the harvest module a `ReportTotals` with the holes
+ * already declared. The older screens — the dashboard, `/labores`, an
+ * employee's file, a plot's file — do not have that: they hold a list of
+ * `WorkRecord`s and were adding up `estimatedAmountCents` into a bare number.
+ *
+ * A bare number is exactly what loses `amountIsEstimate`. The server sends
+ * that flag on every record expressly so that what the farm OWES and what it
+ * has PAID cannot look alike, and it had zero readers anywhere in `features/`:
+ * the dashboard printed "$1.507.920" for 44 labores that are 100% estimate,
+ * with no mark, and so did the foot of `/labores` and the employee's file.
+ *
+ * Rather than invent a second vocabulary for the same fact, those screens fold
+ * their records into a `Totals` here and render it with `<Value>`, which
+ * already knows how to say "estimado · precio de la semana".
+ */
+export interface RecordLike {
+  quantity: number;
+  unitLabel: string | null;
+  estimatedAmountCents: number;
+  amountIsEstimate: boolean;
+}
+
+export function totalsOfRecords(records: RecordLike[]): Totals {
+  const inKg = records.filter((r) => r.unitLabel === "kg");
+  return {
+    records: records.length,
+    // Null rather than 0 when not one row is weighed in kilos: "0 kg" is a
+    // claim that nothing was picked.
+    kg: inKg.length > 0 ? inKg.reduce((a, r) => a + r.quantity, 0) : null,
+    recordsNotInKg: records.length - inKg.length,
+    // Null rather than 0 for an empty list, for the same reason. With rows,
+    // `estimatedAmountCents` is always a number on the wire — the server
+    // computes it — so there is no per-row hole to declare here.
+    valueCents: records.length > 0 ? records.reduce((a, r) => a + r.estimatedAmountCents, 0) : null,
+    recordsWithoutValue: 0,
+    // ONE estimated row makes the whole sum an estimate. It is the same rule
+    // `foldTotals` uses, and the conservative direction: a total that contains
+    // something provisional is provisional.
+    valueIsEstimate: records.some((r) => r.amountIsEstimate),
+  };
+}
+
 /** An empty row, for a column or a cell the server did not send. */
 export const NO_TOTALS: Totals = {
   records: 0,

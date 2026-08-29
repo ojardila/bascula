@@ -122,6 +122,42 @@ export function formatWeekRange(monday: string, today: Date = new Date()): strin
   return `${a.getUTCDate()} ${aM}${aY} – ${b.getUTCDate()} ${bM}${bY}`;
 }
 
+/**
+ * THE PERIOD A DOCUMENT ACTUALLY COVERS, from both of its ends.
+ *
+ * `formatWeekRange` takes ONE day and prints the seven days that follow it,
+ * because a harvest week is keyed by its Monday and its end is arithmetic. A
+ * settlement's period is not: `periodStart` is the Monday of the earliest
+ * payable taken in and `periodEnd` is the last, and those can be a year apart
+ * — the running farm has settlements from 2026-08-24 to 2027-08-29.
+ *
+ * Passing only the start to `formatWeekRange` therefore labelled every one of
+ * them "24–30 ago", which is not a rounding: it is a different period. The
+ * printed payroll got it right, so the screen and the paper contradicted each
+ * other about the same document.
+ *
+ * The week form is kept for the case where it is TRUE — exactly seven days —
+ * because "24–30 ago" is how people say that week, and only then.
+ */
+export function formatPeriod(from: string, to: string, today: Date = new Date()): string {
+  const a = parseDay(from);
+  const b = parseDay(to);
+  if (from === to) return formatDate(from);
+  if (addDays(a, 6).toISOString().slice(0, 10) === to) return formatWeekRange(from, today);
+
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+  const showYear = !sameYear || b.getUTCFullYear() !== today.getUTCFullYear();
+  const aY = showYear ? ` ${a.getUTCFullYear()}` : "";
+  const bY = showYear ? ` ${b.getUTCFullYear()}` : "";
+  if (a.getUTCMonth() === b.getUTCMonth() && sameYear) {
+    return `${a.getUTCDate()}–${b.getUTCDate()} ${MONTHS_SHORT[b.getUTCMonth()]}${bY}`;
+  }
+  return (
+    `${a.getUTCDate()} ${MONTHS_SHORT[a.getUTCMonth()]}${aY} – ` +
+    `${b.getUTCDate()} ${MONTHS_SHORT[b.getUTCMonth()]}${bY}`
+  );
+}
+
 /** "Esta semana" / "Semana pasada", or null when it is neither. */
 export function weekTag(monday: string, today: string): string | null {
   const current = mondayOf(today);

@@ -282,7 +282,7 @@ const MATRIX: Record<Action, Rule> = {
 
   /**
    * OWNER ONLY, and that is not a transcription — `perm.go` has no such action
-   * because `routes.go` has no `/v1/users`. It comes from
+   * because `routes.go` had no `/v1/users` when it was written. It comes from
    * `docs/diagramas/sistema.md` §3.3, whose capability table puts "gestión de
    * usuarios de la finca" in the owner column and leaves the administrator's
    * blank. An administrator therefore meets a real 403 here, exactly as they
@@ -777,11 +777,19 @@ export const handlers = [
   /**
    * `GET|POST|PATCH /v1/users`, per `docs/arquitectura-api.md` §329.
    *
-   * NOT TRANSCRIBED FROM A HANDLER: there is no `/v1/users` in `routes.go`
-   * yet, so this is the design document's minimum, implemented so the console
-   * screen is reviewable and testable ahead of the route. When the Go handler
-   * lands and disagrees, this file is the one that is wrong — the standing
-   * rule at the top of this file applies here too.
+   * THE GO HANDLER HAS LANDED, and where the two disagree this file is the one
+   * that is wrong — the standing rule at the top of this file. Two things were
+   * corrected against `handlers_users.go` after the console shipped a lie
+   * built on each of them:
+   *
+   *   NO `lastLoginAt`. `store.ListFarmUsers` does not select one. The mock
+   *   used to send `null`, the screen read that as "nunca ha entrado", and the
+   *   owner was told he had never logged in while he was logged in.
+   *
+   *   THE INVITE RETURNS A PASSWORD. There is no mail sender in the service;
+   *   the handler mints a password and returns it once. The mock used to model
+   *   an emailed invitation that does not exist, which is what let the form
+   *   promise a letter nobody sends.
    *
    * The store already had `users` and `memberships`; a membership is what this
    * lists, which is why the owner of two farms appears once per farm and not
@@ -821,22 +829,42 @@ export const handlers = [
     }
 
     const userId = existing?.id ?? body.id ?? crypto.randomUUID();
+    /**
+     * THE SERVER MINTS THE PASSWORD AND RETURNS IT ONCE.
+     *
+     * The old comment here said the invited person "sets their own from the
+     * mail". There is no mail sender in `services/api` and there never was —
+     * `handleInviteUser` says so in as many words — so it mints a password,
+     * hashes it, marks the address verified because an administrator vouched
+     * for it, and puts the plaintext in THIS response and nowhere else. A mock
+     * that modelled the imaginary email is what let the console ship a screen
+     * promising a letter nobody sends.
+     */
+    const temporary = existing ? "" : `temporal-${Math.random().toString(36).slice(2, 10)}`;
     if (!existing) {
       db.users.push({
         id: userId,
         email,
-        // No password: the invited person sets their own from the mail. A mock
-        // that invented one would model a flow the server does not have.
-        password: "",
+        password: temporary,
         name,
         superadmin: false,
-        // Not verified yet — which is what makes the membership `invited`.
-        emailVerified: false,
+        // Verified: somebody with a session on this farm vouched for the
+        // address, which is what `store.VerifyUserEmail` does on the server.
+        emailVerified: true,
         role,
       });
     }
     db.memberships.push({ farmId: g.p.farmId, userId, role });
-    return HttpResponse.json(projectFarmUser({ farmId: g.p.farmId, userId, role }), {
+    return HttpResponse.json({
+      ...projectFarmUser({ farmId: g.p.farmId, userId, role }),
+      ...(temporary
+        ? {
+            temporaryPassword: temporary,
+            temporaryPasswordNote:
+              "shown once: hand it over now, it cannot be read again",
+          }
+        : {}),
+    }, {
       status: 201,
     });
   }),
@@ -2082,25 +2110,50 @@ export const handlers = [
   }),
 
   /**
-   * 405, DELIBERATELY, and this is the only handler in this file whose whole
-   * job is to refuse.
+   * THE COLLECTION ROUTE LANDED, and this handler used to answer 405 because
+   * once upon a time it did not exist. Verified against the running server:
+   * `GET /v1/settlements` answers 200 with `{items, total}`.
    *
-   * `routes.go` registers `/v1/settlements` for POST only, so a GET reaches
-   * Go's mux and comes back `405 Method Not Allowed` — verified against the
-   * running server. Without this handler MSW would answer "no matching
-   * handler", which surfaces as a network error, and `api.listSettlements`
-   * would take its "something is really wrong" branch instead of its fallback.
-   * The console would then work against Postgres and fail against the mock,
-   * which is precisely the divergence this file exists to prevent.
+   * Two fields on a row are the reason this matters more than tidiness, and
+   * both of them were being invented on this side while the mock refused:
    *
-   * Delete this the day the collection route lands.
+   *   `items` IS ALWAYS EMPTY here. The lines live on the detail route. The
+   *   console counted this array for its "Líneas" column and therefore printed
+   *   0 against every settlement in the farm.
+   *
+   *   `itemCount` IS THE COUNT, and it counts the LIVE lines — a voided
+   *   settlement keeps its rows and counting those would say a cancelled
+   *   document still claims twelve weighings.
+   *
+   * `workerName` is joined in so that listing thirty settlements is not thirty
+   * more requests.
    */
-  http.get("*/v1/settlements", () =>
-    HttpResponse.json(
-      { error: { code: "METHOD_NOT_ALLOWED", message: "method not allowed" } },
-      { status: 405 },
-    ),
-  ),
+  http.get("*/v1/settlements", ({ request }) => {
+    const g = guard(request, "settlements.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    const workerId = url.searchParams.get("workerId");
+
+    const rows = t.settlements
+      .filter((s) => !status || s.status === status)
+      .filter((s) => !workerId || s.workerId === workerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((s) => {
+        const worker = t.workers.find((w) => w.id === s.workerId);
+        const { items, ...rest } = s;
+        return {
+          ...rest,
+          // Empty on purpose, exactly as the server sends it.
+          items: [],
+          workerName: worker ? `${worker.name} ${worker.lastName ?? ""}`.trim() : "",
+          itemCount: items.filter((i) => i.voidedAt === null).length,
+        };
+      });
+
+    return HttpResponse.json({ items: rows, total: rows.length });
+  }),
 
   http.get("*/v1/settlements/:id", ({ request, params }) => {
     const g = guard(request, "settlements.read");
@@ -3127,6 +3180,35 @@ function ledgerHandler(kind: WireLedgerKind, checkBalance: boolean) {
     if (!body.workerId) return badRequest("workerId is required");
     if (!body.amountCents) return badRequest("amountCents cannot be zero");
 
+    /**
+     * IDEMPOTENT BY ID, like every other write here and like the server.
+     *
+     * `store.AddLedgerEntry` inserts with `ON CONFLICT (id) DO NOTHING` and
+     * answers 200 with the row that is already there, so a resent payment
+     * cannot become a second one. This handler used to push unconditionally,
+     * which made the mock strictly more permissive than production — and that
+     * is the worst kind of mock bug: the double-payment the auditor found by
+     * double-clicking could not be reproduced by any test, because the thing
+     * the tests run against had no idempotency to violate.
+     *
+     * The check goes above the balance check on purpose. A retry of a payment
+     * that already emptied the balance must answer with that payment, not with
+     * AMOUNT_EXCEEDS_BALANCE.
+     */
+    if (body.id) {
+      const existing = t.ledger.find((e) => e.id === body.id);
+      if (existing) {
+        if (existing.kind !== kind || existing.workerId !== body.workerId) {
+          return conflict(
+            "IDEMPOTENCY_KEY_REUSED",
+            "that id already names a different movement",
+            { existing },
+          );
+        }
+        return HttpResponse.json(existing, { status: 200 });
+      }
+    }
+
     let amount = body.amountCents;
     if (kind !== "ajuste") {
       // Accept either convention from the client and normalise; the database
@@ -3601,7 +3683,12 @@ function projectFarmUser(m: db.MockMembership): WireFarmUser | null {
       : user.emailVerified
         ? "active"
         : "invited",
-    lastLoginAt: null,
+    // NO `lastLoginAt`. `store.ListFarmUsers` does not select one — the column
+    // is not in the query — so the key never reaches a browser. Sending `null`
+    // here made the mock kinder than the server and hid the bug it caused: the
+    // screen read null as "nunca ha entrado" and told the owner, mid-session,
+    // that he had never logged in. Absent is the truth; the screen now says
+    // "—" for it.
     createdAt: null,
   };
 }

@@ -29,6 +29,7 @@ import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { areaHaOfRing, asGeometry, openRing, outerRings, type PolygonGeometry } from "../../lib/geo";
 import { formatArea } from "../../lib/money";
 import type { CatalogItem, PlotInput } from "../../api/types";
@@ -76,7 +77,7 @@ export function PlotFormPage() {
   const [rows, setRows] = useState<CropRow[]>([]);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
   /**
    * The polygon, held here rather than inside the map, because the form saves
    * it: `POST /v1/plots` and `PATCH /v1/plots/{id}` both accept a `boundary`
@@ -217,9 +218,11 @@ export function PlotFormPage() {
 
   async function save() {
     if (!validateStep2()) return;
-    setBusy(true);
-    setError(null);
-    try {
+    // `plotId` is already stable across clicks — `useState(() => id ?? uuidv7())`
+    // — so the server's idempotency covers the data. This is the other half:
+    // the second request that never leaves. See `lib/writeOnce.ts`.
+    const outcome = await runOnce(`parcela|${plotId}|${name.trim()}|${parsedArea}`, async () => {
+      setError(null);
       const crops: PlotInput["crops"] = [];
       for (const r of rows) {
         if (!r.cropType) continue;
@@ -248,14 +251,14 @@ export function PlotFormPage() {
         ...(boundary ? { boundary } : {}),
         crops,
       };
-      const saved = editing ? await api.updatePlot(plotId, body) : await api.createPlot(body);
-      navigate(`/parcelas/${saved.id}`, { replace: true });
-    } catch (e) {
+      return editing ? api.updatePlot(plotId, body) : api.createPlot(body);
+    }).catch((e: unknown) => {
       if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    navigate(`/parcelas/${outcome.value.id}`, { replace: true });
   }
 
   return (

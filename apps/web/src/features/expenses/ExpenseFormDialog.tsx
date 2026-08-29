@@ -38,7 +38,7 @@ import {
 } from "@mui/material";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
-import { uuidv7 } from "../../lib/uuid";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { parseMoneyInput } from "../../lib/money";
 import { todayInFarm } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
@@ -72,7 +72,7 @@ export function ExpenseFormDialog({
   const [note, setNote] = useState(expense?.note ?? "");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, run: runOnce } = useWriteOnce();
 
   const amountCents = parseMoneyInput(amount);
   const plot = plots.find((p) => p.id === plotId) ?? null;
@@ -97,24 +97,27 @@ export function ExpenseFormDialog({
 
   async function save() {
     if (!validate() || amountCents === null) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const id = expense?.id ?? uuidv7();
+    // An edit already has a stable id; a NEW expense used to mint one inside
+    // the call, so a double click wrote the same cost twice and neither the
+    // server's idempotency nor `disabled={busy}` could tell. See
+    // `lib/writeOnce.ts`.
+    const intent = ["gasto", expense?.id ?? "nuevo", target, concept.trim(),
+                    amountCents, date, activityId, plotId, plotCropId].join("|");
+    const outcome = await runOnce(intent, async (mint) => {
+      setError(null);
+      const id = expense?.id ?? mint();
       const common = { id, concept: concept.trim(), amountCents, date, note: note.trim() || null };
       const body: ExpenseInput =
         target === "activity"
           ? { ...common, target: "activity", activityId }
           : { ...common, target: "plot", plotId, plotCropId: plotCropId || null };
-      const saved = expense
-        ? await api.updateExpense(expense.id, body)
-        : await api.createExpense(body);
-      onSaved(saved);
-    } catch (e) {
+      return expense ? api.updateExpense(expense.id, body) : api.createExpense(body);
+    }).catch((e: unknown) => {
       setError(messageFor(e));
-    } finally {
-      setBusy(false);
-    }
+      return { ran: false } as const;
+    });
+    if (!outcome.ran) return;
+    onSaved(outcome.value);
   }
 
   return (
