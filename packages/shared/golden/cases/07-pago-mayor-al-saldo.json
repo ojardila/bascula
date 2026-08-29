@@ -1,0 +1,67 @@
+{
+  "id": "pago-mayor-al-saldo",
+  "title": "Un pago mayor al saldo, que el diario trata como anticipo",
+  "why": "El diario no tiene tope. Pagar más de lo devengado deja el saldo en negativo y esa diferencia se comporta exactamente como un anticipo: se la come la siguiente liquidación. Un servidor que valide 'no se puede pagar más del saldo' rompe el caso real —el patrón redondea al alza al entregar el efectivo— y uno que recorte el pago al saldo entrega menos dinero del que dice la pantalla. El saldo se DERIVA de la suma del diario; nunca se guarda ni se recorta.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 80000,
+  "people": [{ "id": 1, "name": "Ana", "lastName": "Rodríguez" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 50, "at": "2026-08-25T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" },
+    { "op": "pay", "personId": 1, "amountCents": 5000000, "on": "2026-08-30", "method": "efectivo" },
+    { "op": "checkpoint", "label": "cobró 50.000 de más: queda debiéndolos" },
+
+    { "op": "pickup", "id": 2, "personId": 1, "cropId": 1, "quantity": 20, "at": "2026-09-01T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-09-06", "on": "2026-09-06" }
+  ],
+  "expect": {
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2026-08-24",
+        "periodEnd": "2026-08-30",
+        "grossCents": 4000000,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2026-08-24", "quantity": 50, "costPerUnitCents": 80000, "amountCents": 4000000, "voided": false }
+        ]
+      },
+      {
+        "id": 2,
+        "personId": 1,
+        "periodStart": "2026-08-31",
+        "periodEnd": "2026-09-06",
+        "grossCents": 1600000,
+        "status": "open",
+        "items": [
+          { "pickupId": 2, "week": "2026-08-31", "quantity": 20, "costPerUnitCents": 80000, "amountCents": 1600000, "voided": false }
+        ]
+      }
+    ],
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 4000000, "date": "2026-08-30", "settlementId": 1, "reversesId": null },
+      { "id": 2, "personId": 1, "kind": "pago", "amountCents": -5000000, "date": "2026-08-30", "settlementId": null, "reversesId": null },
+      { "id": 3, "personId": 1, "kind": "devengo", "amountCents": 1600000, "date": "2026-09-06", "settlementId": 2, "reversesId": null }
+    ],
+    "checkpoints": [
+      {
+        "label": "cobró 50.000 de más: queda debiéndolos",
+        "balances": [
+          { "personId": 1, "earnedCents": 4000000, "paidCents": 5000000, "deductedCents": 0, "balanceCents": -1000000, "lastMovementAt": "2026-08-30" }
+        ]
+      }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 5600000,
+        "paidCents": 5000000,
+        "deductedCents": 0,
+        "balanceCents": 600000,
+        "lastMovementAt": "2026-09-06"
+      }
+    ]
+  }
+}

@@ -25,6 +25,11 @@ import Account from "./src/screens/Account";
 import Adjust from "./src/screens/Adjust";
 import CropDetail from "./src/screens/CropDetail";
 import WeekDetail from "./src/screens/WeekDetail";
+import SyncStatus from "./src/screens/SyncStatus";
+import SyncSetup from "./src/screens/SyncSetup";
+import SeasonImport from "./src/screens/SeasonImport";
+import SyncChip from "./src/components/SyncChip";
+import { SyncProvider } from "./src/sync/SyncProvider";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -76,6 +81,10 @@ function MainTabs() {
               accessibilityLabel={t("nav.back")}
             />
           ) : undefined,
+        // §7.1: one chip, in the header, always visible, tappable. The
+        // pesador should never have to go looking for the answer to "is my
+        // work safe".
+        headerRight: () => <SyncChip />,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "#9aa39a",
         tabBarStyle: {
@@ -155,6 +164,21 @@ function AppInner() {
           component={Adjust}
           options={{ title: t("pay.newMovement"), presentation: "card" }}
         />
+        <Stack.Screen
+          name="SyncStatus"
+          component={SyncStatus}
+          options={{ title: t("stack.sync"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="SyncSetup"
+          component={SyncSetup}
+          options={{ title: t("stack.syncSetup"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="SeasonImport"
+          component={SeasonImport}
+          options={{ title: t("stack.seasonImport"), presentation: "card" }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -199,7 +223,16 @@ export default function App() {
           }}
         >
           <StatusBar style="light" />
-          {dbError ? <DbError message={dbError} /> : <AppInner />}
+          {dbError ? (
+            <DbError message={dbError} />
+          ) : (
+            // Inside the error guard: the provider opens the secrets table on
+            // the same connection, so a database that would not migrate must
+            // reach the error screen rather than take this down with it.
+            <SyncProvider>
+              <AppInner />
+            </SyncProvider>
+          )}
         </PaperProvider>
       </LangProvider>
     </SafeAreaProvider>

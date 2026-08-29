@@ -1,0 +1,181 @@
+import { useNavigate } from "react-router-dom";
+import {
+  Box, Button, Card, CardContent, Grid, Stack, Typography,
+} from "@mui/material";
+import TerrainIcon from "@mui/icons-material/Terrain";
+import GroupsIcon from "@mui/icons-material/Groups";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
+import { Money } from "../../components/Money";
+import { useAsync } from "../../lib/useAsync";
+import { api } from "../../api/endpoints";
+import { useAuth } from "../../auth/AuthContext";
+import { formatArea, formatQuantity } from "../../lib/money";
+import { mondayOf, todayInFarm, formatMonday } from "../../lib/dates";
+import { Value } from "../harvest/Figures";
+import { totalsOfRecords } from "../harvest/totals";
+
+/**
+ * The farm at a glance. Deliberately four figures and not twelve: the useful
+ * dashboard is the one somebody actually reads on the way to doing something,
+ * so every tile is also a door.
+ */
+/**
+ * What a tile shows when the figure could not be fetched.
+ *
+ * Not "$0". A zero is a number a farm can genuinely owe, so printing it for
+ * "we do not know" makes a failed request indistinguishable from being square
+ * with everybody — which is the one mistake this screen must not make.
+ *
+ * AND IT IS NOT ONLY THE MONEY TILES. This function existed, with that comment
+ * on it, while the two tiles next to it printed "0 kg" and "0" out of the very
+ * same failed requests: `kgThisWeek` folds the `records` list that the tile
+ * above it correctly refuses to sum, and "Parcelas activas" printed `plots
+ * ?.length ?? 0`, which is 0 for a farm whose lots could not be loaded. A
+ * quantity and a count are as capable of meaning "I do not know" as a peso is.
+ */
+function Unknown() {
+  return (
+    <Typography variant="h1" sx={{ fontSize: "1.9rem", color: "text.disabled" }}>
+      —
+    </Typography>
+  );
+}
+
+export function DashboardPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const timezone = user?.farm?.timezone ?? "America/Bogota";
+  const monday = mondayOf(todayInFarm(timezone));
+
+  // The error was not even captured before, which is why the tile could not
+  // have told the truth however carefully it was written.
+  const { data: plots, error: plotsError } = useAsync(() => api.listPlots({ status: "active" }), []);
+  const { data: records, error: recordsError } = useAsync(
+    () => api.listWorkRecords({ status: "active" }),
+    [],
+  );
+  // The farm's position comes from /v1/balances, which derives it from the
+  // ledger. Adding up a `balanceCents` on the worker list is what this used to
+  // do, and that endpoint has never sent one — so the tile read $0 for a farm
+  // that was owing a week of picking, with no sign anything was missing.
+  const { data: balances, error: balancesError } = useAsync(() => api.listBalances(), []);
+
+  const owed = (balances ?? []).reduce((a, b) => a + Math.max(0, b.balanceCents), 0);
+  const pending = (records ?? []).filter((r) => !r.settled);
+  /**
+   * Folded rather than summed, so the tile keeps `amountIsEstimate`. On the
+   * seeded farm all 44 unsettled labores are priced by the week, which makes
+   * this figure 100% estimate — and it printed as a firm "$1.507.920".
+   */
+  const pendingTotals = totalsOfRecords(pending);
+  const kgThisWeek = (records ?? [])
+    .filter((r) => r.unitLabel === "kg" && mondayOf(r.dateFrom) === monday)
+    .reduce((a, r) => a + r.quantity, 0);
+  // Only the lots that declared one. A lot with no area used to add a zero
+  // here and quietly shrink the farm.
+  const declaredPlots = (plots ?? []).filter((p) => p.areaHa !== null);
+  const totalHa = declaredPlots.reduce((a, p) => a + (p.areaHa as number), 0);
+  const undeclaredPlots = (plots ?? []).length - declaredPlots.length;
+
+  const tiles = [
+    {
+      label: "Pendiente de pago a los empleados",
+      value: balancesError ? <Unknown /> : <Money cents={owed} variant="big" />,
+      hint: balancesError ? "no se pudo consultar" : "derivado del libro, no un total guardado",
+      to: "/empleados",
+    },
+    {
+      label: "Pendiente de liquidar",
+      value: recordsError ? (
+        <Unknown />
+      ) : (
+        <Value total={pendingTotals} variant="big" align="flex-start" />
+      ),
+      hint: recordsError ? "no se pudo consultar" : `${pending.length} labores sin liquidar`,
+      to: "/labores",
+    },
+    {
+      label: `Kilos de la semana del ${formatMonday(monday)}`,
+      // SAME REQUEST as the tile above. When `/v1/work-records` fails, the
+      // money tile said "—" and this one said "0 kg" — out of the identical
+      // failure, side by side on one screen.
+      value: recordsError ? (
+        <Unknown />
+      ) : (
+        <Typography variant="h1" sx={{ fontSize: "1.9rem" }}>
+          {formatQuantity(kgThisWeek)} kg
+        </Typography>
+      ),
+      hint: recordsError ? "no se pudo consultar" : "solo actividades pagadas por kilo",
+      to: "/labores",
+    },
+    {
+      label: "Parcelas activas",
+      // "0 parcelas activas" is a statement about a farm, and a farm with no
+      // lots does not exist. `plots?.length ?? 0` made it out of a failed GET.
+      value: plotsError ? (
+        <Unknown />
+      ) : (
+        <Typography variant="h1" sx={{ fontSize: "1.9rem" }}>
+          {plots?.length ?? 0}
+        </Typography>
+      ),
+      hint: plotsError
+        ? "no se pudo consultar"
+        : `${formatArea(totalHa)} ha declaradas` +
+          (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
+      to: "/parcelas",
+    },
+  ];
+
+  return (
+    <Box>
+      <Typography variant="h1" gutterBottom>
+        {user?.farm?.name}
+      </Typography>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        Buenos días, {user?.name?.split(" ")[0]}.
+      </Typography>
+
+      <Grid container spacing={2.5}>
+        {tiles.map((t) => (
+          <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={t.label}>
+            <Card
+              onClick={() => navigate(t.to)}
+              sx={{ cursor: "pointer", height: "100%", "&:hover": { borderColor: "primary.main" } }}
+            >
+              <CardContent>
+                <Typography variant="overline" color="text.secondary" sx={{ display: "block", minHeight: 32 }}>
+                  {t.label}
+                </Typography>
+                {t.value}
+                <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                  {t.hint}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h3" gutterBottom>
+            Qué hacer ahora
+          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
+            <Button variant="contained" startIcon={<FactCheckIcon />} onClick={() => navigate("/labores/nueva")}>
+              Registrar labor
+            </Button>
+            <Button variant="outlined" startIcon={<GroupsIcon />} onClick={() => navigate("/empleados/nuevo")}>
+              Nuevo empleado
+            </Button>
+            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate("/parcelas/nueva")}>
+              Nueva parcela
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    </Box>
+  );
+}

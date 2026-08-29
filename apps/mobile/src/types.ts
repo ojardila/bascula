@@ -21,4 +21,10 @@ export type RootStackParamList = {
   Adjust: { personId: number; kind: "anticipo" | "deduccion" };
   CropDetail: { cropId: number };
   WeekDetail: { monday: string };
+  /** §7.1's chip opens this. Pending, last sync, conflicts, one button. */
+  SyncStatus: undefined;
+  /** Registering the phone against a farm. §3.1. */
+  SyncSetup: undefined;
+  /** §8 fase 3 and 4: handing the season on this phone to the server. */
+  SeasonImport: undefined;
 };

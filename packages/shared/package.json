@@ -1,0 +1,12 @@
+{
+  "name": "@bascula/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Domain rules that must not diverge between the phone, the API and the web.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "node --test src/*.test.ts golden/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -42,7 +42,14 @@ export default function WorkerDetail({
   // What is actually owed, from the ledger. The gross value of everything
   // ever harvested is a different number and must not be labelled "to pay":
   // it keeps showing a debt for someone who was already paid in full.
+  // Decision 7 and §2.2: on a phone that has heard from the server this is the
+  // WHOLE balance, jornales and contracts included, even though the breakdown
+  // below it can only account for the weighings. A tile that showed half of
+  // what somebody is owed, with no way for the reader to know, is the lie that
+  // decision was written to stop. On a phone that has never synced it is
+  // exactly the number it always was.
   const [balanceCents, setBalanceCents] = useState(0);
+  const [notItemisableCents, setNotItemisableCents] = useState(0);
   const [config, setConfig] = useState<CropConfig | null>(null);
 
   useFocusEffect(
@@ -59,7 +66,9 @@ export default function WorkerDetail({
       setRecent(WorkerReports.recent(personId));
       const c = Config.get();
       setConfig(c ?? null);
-      setBalanceCents(Payments.balance(personId).balanceCents);
+      const full = Payments.fullBalance(personId);
+      setBalanceCents(full.balanceCents);
+      setNotItemisableCents(full.notItemisableCents);
     }, [personId]),
   );
 
@@ -123,6 +132,16 @@ export default function WorkerDetail({
           highlight
         />
       </View>
+
+      {/* Which part of it the kilos below cannot explain. Without this line
+          the tile is a number the rest of the screen does not add up to. */}
+      {notItemisableCents !== 0 && (
+        <Text style={styles.notItemisable}>
+          {t("pay.notItemisable", {
+            amount: money(fromCents(Math.abs(notItemisableCents))),
+          })}
+        </Text>
+      )}
 
       {/* By week */}
       <Card style={styles.card} mode="elevated">
@@ -218,6 +237,7 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
+  notItemisable: { opacity: 0.65, paddingHorizontal: 12, paddingBottom: 8, lineHeight: 18 },
   container: { padding: 16, gap: 14 },
   account: { marginBottom: 12, borderRadius: 12 },
   tall: { height: 52 },

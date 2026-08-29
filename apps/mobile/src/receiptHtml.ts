@@ -1,5 +1,5 @@
-import type { Lang } from "./format.ts";
-import { formatMoney, formatNumber, formatDay, formatWeekRange } from "./format.ts";
+import type { Lang } from "../../../packages/shared/src/format.ts";
+import { formatMoney, formatNumber, formatDay, formatWeekRange } from "../../../packages/shared/src/format.ts";
 import { translate } from "./strings.ts";
 
 /**

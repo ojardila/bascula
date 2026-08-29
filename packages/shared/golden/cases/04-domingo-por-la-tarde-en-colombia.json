@@ -1,0 +1,43 @@
+{
+  "id": "domingo-por-la-tarde-en-colombia",
+  "title": "Una pesada del domingo por la tarde pertenece a la semana que se está pagando",
+  "why": "Este bug ya ocurrió. La pesada se guarda como instante UTC: las 19:30 del domingo en Colombia son las 00:30 del LUNES en UTC. Si el día del negocio se saca cortando el ISO, la pesada cae en la semana siguiente, se queda fuera de la liquidación del domingo y además se paga al precio de la otra semana. Aquí las dos semanas tienen precios distintos a propósito: si el día se deriva mal, no falla el total, falla la tarifa. En Go: convertir a la zona de la finca ANTES de sacar el día, nunca time.UTC.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 80000,
+  "weeklyRateCents": { "2026-08-24": 95000, "2026-08-31": 60000 },
+  "people": [{ "id": 1, "name": "Carlos", "lastName": "Muñoz" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 40, "at": "2026-08-30T19:30" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" }
+  ],
+  "expect": {
+    "pickups": [{ "id": 1, "localDay": "2026-08-30", "week": "2026-08-24" }],
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2026-08-24",
+        "periodEnd": "2026-08-30",
+        "grossCents": 3800000,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2026-08-24", "quantity": 40, "costPerUnitCents": 95000, "amountCents": 3800000, "voided": false }
+        ]
+      }
+    ],
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 3800000, "date": "2026-08-30", "settlementId": 1, "reversesId": null }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 3800000,
+        "paidCents": 0,
+        "deductedCents": 0,
+        "balanceCents": 3800000,
+        "lastMovementAt": "2026-08-30"
+      }
+    ]
+  }
+}

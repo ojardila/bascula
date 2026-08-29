@@ -51,6 +51,10 @@ import {
   EXPORT_LEDGER_SQL,
   EXPORT_BALANCES_SQL,
 } from "./schema.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../packages/shared/src/time.ts";
 
 function seeded() {
   const db = new DatabaseSync(":memory:");
@@ -60,8 +64,9 @@ function seeded() {
   db.prepare("INSERT INTO people (id,name,lastName,docId) VALUES (1,'Carlos','Muñoz, Jr','CC123')").run();
   db.prepare("INSERT INTO crops (id,name,dimension) VALUES (1,'Café lote 1',2.5)").run();
   db.prepare(
-    "INSERT INTO pickups (personId,cropId,weight,date) VALUES (1,1,52.5,'2026-08-25T14:00:00Z')",
-  ).run();
+    `INSERT INTO pickups (personId,cropId,weight,date,localDay,week)
+     VALUES (1,1,52.5,'2026-08-25T14:00:00Z',?,?)`,
+  ).run(dayInZone("2026-08-25T14:00:00Z"), weekInZone("2026-08-25T14:00:00Z"));
   db.prepare(
     `INSERT INTO ledger (personId,kind,amountCents,date,method,note,createdAt)
      VALUES (1,'pago',-4000000,'2026-08-27','efectivo','abono, parcial','x')`,

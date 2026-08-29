@@ -12,6 +12,8 @@ import {
   Divider,
   Snackbar,
   SegmentedButtons,
+  Dialog,
+  Portal,
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -24,12 +26,20 @@ import {
   Demo,
   Export,
   Reports as ReportsDb,
+  ConfirmationRequired,
   type CostOverride,
 } from "../db";
 import { csvDocument } from "../csv";
 import { useT, formatWeekRange, type Lang } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
 
 export default function Settings() {
+  // Decision 6: the weekly price is the owner's, on the web. Once this phone
+  // belongs to a farm it reads the price and does not set it — because a price
+  // edited in two places with "last one wins" reprices a whole farm's week,
+  // and there is no conflict to resolve there, there is a payroll.
+  const { status: syncStatus } = useSync();
+  const priceIsReadOnly = syncStatus.registered;
   const { t, lang, setLang, money } = useT();
   // Active crop config
   const [cropType, setCropType] = useState("cafe");
@@ -96,6 +106,48 @@ export default function Settings() {
   }
 
   const [exporting, setExporting] = useState(false);
+
+  // Wiping the farm.
+  //
+  // `Demo.clear` was one unguarded tap in this screen, next to "load demo",
+  // on the phone that holds the only copy of the season
+  // (`docs/diagramas/movil.md` §9.15). It now needs the farm's own name typed
+  // out — and so does "load demo", which begins by wiping.
+  //
+  // A name to type rather than a build-time guard: hiding the buttons in
+  // production would leave a farm that genuinely needs to start over — a new
+  // season, a phone handed on, a demo loaded on day one by mistake — with no
+  // way out but reinstalling, which loses the CSV export path too. Typing the
+  // name cannot happen by accident with gloves on, and the guard lives in the
+  // data layer where a test can reach it, not in this component.
+  const [wipe, setWipe] = useState<null | "clear" | "seed">(null);
+  const [wipeName, setWipeName] = useState("");
+  const [wipeError, setWipeError] = useState(false);
+
+  function askToWipe(what: "clear" | "seed") {
+    setWipeName("");
+    setWipeError(false);
+    setWipe(what);
+  }
+
+  function confirmWipe() {
+    if (!wipe) return;
+    try {
+      if (wipe === "seed") Demo.seed(wipeName);
+      else Demo.clear(wipeName);
+      setWipe(null);
+      load();
+      setSnack(t(wipe === "seed" ? "settings.demoLoaded" : "settings.cleared"));
+    } catch (e) {
+      // The only expected failure is the name not matching; anything else is
+      // a real error and must not be reported as a typo.
+      if (e instanceof ConfirmationRequired) setWipeError(true);
+      else {
+        setWipe(null);
+        setSnack(t("settings.exportFailed"));
+      }
+    }
+  }
 
   // One button per set rather than one that exports everything: chaining
   // three sharing sheets forced the user through two they had not asked for,
@@ -241,7 +293,9 @@ export default function Settings() {
             )}
           />
           <Card.Content style={{ gap: 8 }}>
-            {weeks.length === 0 ? (
+            {priceIsReadOnly ? (
+              <Text style={styles.empty}>{t("sync.changePrices")}</Text>
+            ) : weeks.length === 0 ? (
               <Text style={styles.empty}>{t("settings.noWeeks")}</Text>
             ) : (
               <>
@@ -287,16 +341,18 @@ export default function Settings() {
                       title={formatWeekRange(o.week, lang)}
                       description={`${money(o.costPerUnit)} · ${unit || t("unit.default")}`}
                       left={(p) => <List.Icon {...p} icon="calendar-week" />}
-                      right={(p) => (
-                        <IconButton
-                          {...p}
-                          icon="delete-outline"
-                          onPress={() => {
-                            Overrides.remove(o.id);
-                            setOverrides(Overrides.all());
-                          }}
-                        />
-                      )}
+                      right={(p) =>
+                        priceIsReadOnly ? null : (
+                          <IconButton
+                            {...p}
+                            icon="delete-outline"
+                            onPress={() => {
+                              Overrides.remove(o.id);
+                              setOverrides(Overrides.all());
+                            }}
+                          />
+                        )
+                      }
                     />
                   </View>
                 ))}
@@ -329,7 +385,16 @@ export default function Settings() {
           </Card.Content>
         </Card>
 
-        {/* Demo data */}
+        {/*
+          §2: hidden once the phone belongs to a farm. `seed` begins by wiping,
+          and a wipe on a synced farm is a catastrophe with a button on it —
+          the rows go, the outbox goes with them, and the next pull brings back
+          a hollow copy of a season nobody can reconcile. The guard that
+          demands the farm's own name typed out stays underneath; this only
+          stops the button being somewhere a thumb can find it at eleven at
+          night.
+        */}
+        {!syncStatus.registered && (
         <Card style={styles.card} mode="elevated">
           <Card.Title
             title={t("settings.demoTitle")}
@@ -343,11 +408,7 @@ export default function Settings() {
               mode="contained"
               icon="database-import"
               style={{ flex: 1 }}
-              onPress={() => {
-                Demo.seed();
-                load();
-                setSnack(t("settings.demoLoaded"));
-              }}
+              onPress={() => askToWipe("seed")}
             >
               {t("settings.loadDemo")}
             </Button>
@@ -355,17 +416,50 @@ export default function Settings() {
               mode="outlined"
               icon="delete-sweep"
               textColor="#b3261e"
-              onPress={() => {
-                Demo.clear();
-                load();
-                setSnack(t("settings.cleared"));
-              }}
+              onPress={() => askToWipe("clear")}
             >
               {t("settings.clearAll")}
             </Button>
           </Card.Content>
         </Card>
+        )}
       </ScrollView>
+
+      <Portal>
+        <Dialog visible={!!wipe} onDismiss={() => setWipe(null)}>
+          <Dialog.Title>{t("settings.wipeTitle")}</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              {t(wipe === "seed" ? "settings.wipeSeedBody" : "settings.wipeClearBody")}
+            </Text>
+            <TextInput
+              mode="outlined"
+              style={{ marginTop: 12 }}
+              label={t("settings.wipeField")}
+              placeholder={Demo.clearToken()}
+              value={wipeName}
+              onChangeText={(v) => {
+                setWipeName(v);
+                setWipeError(false);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+              error={wipeError}
+            />
+            <HelperText type={wipeError ? "error" : "info"} visible>
+              {wipeError
+                ? t("settings.wipeMismatch")
+                : t("settings.wipeConfirm", { name: Demo.clearToken() })}
+            </HelperText>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setWipe(null)}>{t("settings.wipeCancel")}</Button>
+            <Button textColor="#b3261e" onPress={confirmWipe}>
+              {t(wipe === "seed" ? "settings.loadDemo" : "settings.clearAll")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={2200}>
         {snack}

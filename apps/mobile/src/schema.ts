@@ -18,16 +18,25 @@ export const BASE_SCHEMA = `
     CREATE TABLE IF NOT EXISTS pickups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       personId INTEGER, cropId INTEGER, weight REAL NOT NULL, date TEXT,
-      createdAt TEXT
+      createdAt TEXT,
+      -- Added at v7 and declared here too, so a database created fresh is
+      -- born with them. On the phone that is already in production this whole
+      -- statement is a no-op (IF NOT EXISTS) and migrateToV7 does the work
+      -- by ALTER; the two paths have to end at the same shape.
+      deletedAt TEXT, localDay TEXT, week TEXT
     );
     CREATE TABLE IF NOT EXISTS config (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      cropType TEXT, label TEXT, unit TEXT, yieldUnit TEXT, costPerUnit REAL
+      cropType TEXT, label TEXT, unit TEXT, yieldUnit TEXT, costPerUnit REAL,
+      costPerUnitCents INTEGER, timezone TEXT
     );
     CREATE TABLE IF NOT EXISTS cost_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      week TEXT UNIQUE, costPerUnit REAL
+      week TEXT UNIQUE, costPerUnit REAL, costPerUnitCents INTEGER
     );
+    -- Every read of a weighing goes through here. See PICKUPS_LIVE_VIEW.
+    CREATE VIEW IF NOT EXISTS pickups_live AS
+      SELECT * FROM pickups WHERE deletedAt IS NULL;
 `;
 
 export const PAYMENTS_SCHEMA = `
@@ -73,6 +82,9 @@ export const PAYMENTS_SCHEMA = `
     note         TEXT,
     reversesId   INTEGER REFERENCES ledger(id),
     createdAt    TEXT NOT NULL,
+    -- The farm's business day, materialised at v7. A copy of date, which
+    -- every writer already stamps with the farm's day.
+    localDay     TEXT,
     CHECK ( (kind = 'devengo' AND amountCents > 0)
          OR (kind IN ('pago','anticipo','deduccion') AND amountCents < 0)
          OR (kind IN ('ajuste','reverso')) )
@@ -81,6 +93,23 @@ export const PAYMENTS_SCHEMA = `
   CREATE INDEX IF NOT EXISTS ix_ledger_sett ON ledger(settlementId);
   CREATE UNIQUE INDEX IF NOT EXISTS ux_ledger_reverses
     ON ledger(reversesId) WHERE reversesId IS NOT NULL;
+`;
+
+/**
+ * `pickups` had no index of any kind, on the one table that grows for ever.
+ * Added at `user_version = 5`.
+ *
+ * - `ix_pickups_date` serves every "recent" and windowed scan, and the ORDER BY
+ *   the review rules use to show the newest suspects first.
+ * - `ix_pickups_dup` serves the duplicate rule, which is a self-join on
+ *   (person, plot, weight): without it SQLite scanned the whole table once per
+ *   candidate row, which is why that one rule cost more than the other four
+ *   together and grew faster than linearly with the season.
+ */
+export const PICKUP_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS ix_pickups_date ON pickups(date);
+  CREATE INDEX IF NOT EXISTS ix_pickups_dup
+    ON pickups(personId, cropId, weight, createdAt);
 `;
 
 /** Local calendar day of a stored instant. */
@@ -108,12 +137,68 @@ export const BALANCE_SQL = `
     FROM ledger WHERE personId = ?
 `;
 
+/**
+ * What was actually handed over against ONE settlement (`movil.md` §9.3).
+ *
+ * The receipt used to guess, filtering the ledger with
+ * `kind = 'pago' AND date >= settlement.periodStart`. `periodStart` is the
+ * Monday of the oldest UNSETTLED week, which on a farm running behind is
+ * months back, so the receipt swept in money handed over for documents closed
+ * long ago and told the worker they had been paid more than they had.
+ *
+ * Two clauses, and the order matters:
+ *
+ * 1. `settlementId = s.id` — the payment says which document it is for. Every
+ *    payment written from the two settle-and-pay screens now does.
+ * 2. The fallback, for the payments already sitting on phones in the field
+ *    with a null link. Nothing records what those were for, so a guess is all
+ *    there is — but it is narrowed from "after the work started" to "after the
+ *    DOCUMENT existed", which is the difference §9.3 is about.
+ *
+ * A payment carrying another settlement's id is excluded by both clauses,
+ * which is the double-count the fix exists to stop.
+ */
+export const PAID_AGAINST_SQL = `
+  SELECT COALESCE(-SUM(l.amountCents), 0) AS cents
+    FROM ledger l
+    JOIN settlements s ON s.id = ?
+   WHERE l.personId = s.personId
+     AND l.kind = 'pago'
+     AND ( l.settlementId = s.id
+        OR ( l.settlementId IS NULL
+             AND date(l.date) >= ${DAY_OF("s.createdAt")} ) )
+`;
+
+/**
+ * Cash handed over per worker between two days, inclusive.
+ *
+ * For the payroll sheet, and it exists because the sheet used to build the
+ * same figure in JavaScript out of `Payments.history(personId, 50)` — one
+ * query per worker, and a HARD LIMIT of fifty movements. A worker past their
+ * fiftieth movement of the season had this week's payment fall off the end of
+ * the window and printed as if they had been handed nothing, on the sheet
+ * they sign (`movil.md` §9.6: «la historia se trunca en silencio»).
+ *
+ * Same predicate the JS had, deliberately: every `pago` dated in the range.
+ * A `pago` that was later reversed still counts, exactly as it did before —
+ * whether an undone payment should stay on a signed sheet is a question about
+ * a document somebody keeps, not a truncation bug, and it is not this
+ * function's to answer.
+ */
+export const PAID_IN_RANGE_SQL = `
+  SELECT personId, COALESCE(-SUM(amountCents), 0) AS cents
+    FROM ledger
+   WHERE kind = 'pago' AND date >= ? AND date <= ?
+   GROUP BY personId
+  HAVING cents > 0
+`;
+
 /** Pickups in range that no live settlement has claimed. */
 export const PENDING_SQL = `
-  SELECT pk.id, pk.weight, ${WEEK_OF("pk.date")} AS week
-    FROM pickups pk
+  SELECT pk.id, pk.weight, pk.week AS week
+    FROM pickups_live pk
    WHERE pk.personId = ?
-     AND ${DAY_OF("pk.date")} BETWEEN date(?) AND date(?)
+     AND pk.localDay BETWEEN date(?) AND date(?)
      AND pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
    ORDER BY pk.date
 `;
@@ -127,9 +212,9 @@ export const PENDING_SQL = `
  */
 export const INDEX_SQL = `
   WITH dw AS (
-    SELECT pk.personId, pk.cropId, ${DAY_OF("pk.date")} AS d, SUM(pk.weight) AS kg
-      FROM pickups pk
-     WHERE ${DAY_OF("pk.date")} >= date('now','localtime',?)
+    SELECT pk.personId, pk.cropId, pk.localDay AS d, SUM(pk.weight) AS kg
+      FROM pickups_live pk
+     WHERE pk.localDay >= ?
      GROUP BY pk.personId, pk.cropId, d
   ),
   base AS (
@@ -147,44 +232,79 @@ export const INDEX_SQL = `
 // with a number nobody can justify out loud destroys the trust the app runs
 // on. They are here so tests can prove each one actually fires — the
 // extra-zero rule spent several versions algebraically unable to.
+//
+// ---- The window ---------------------------------------------------------
+//
+// Every rule takes the same first two parameters and ends with a row cap:
+//
+//     ?1  raw instant bound   — an ISO instant, for the pickups(date) index
+//     ?2  local day bound     — YYYY-MM-DD, the predicate that actually decides
+//     ?n  LIMIT
+//
+// They are not redundant. `date(col,'localtime') >= date(?)` is the correct
+// test, but no index can serve a call on the column, so on its own every rule
+// still read every row the farm had ever weighed. `col >= ?` on the raw stored
+// instant is sargable; it is set a day earlier than the local bound so it can
+// never exclude a row the exact test would have kept, whatever offset the phone
+// is on. See `windowBounds` in `data/sqliteRepository.ts`.
+//
+// What the window changes: a mis-weighing older than the window stops being
+// reported. What it deliberately does NOT change is any reference value — the
+// extra-zero rule still measures a load against this person's whole history,
+// and the crew rule still compares a whole plot-day. The window decides what is
+// worth showing, never what normal looks like.
 
 export const RULE_IMPOSSIBLE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.weight <= 0 OR pk.weight > ?`;
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
+          AND (pk.weight <= 0 OR pk.weight > ?)
+        ORDER BY pk.date DESC LIMIT ?`;
 
 export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups a
-         JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
+         FROM pickups_live a
+         JOIN pickups_live b ON b.personId = a.personId AND b.cropId = a.cropId
                        AND b.weight = a.weight AND b.id < a.id
                        AND (julianday(a.createdAt) - julianday(b.createdAt))
                              BETWEEN 0 AND 3.0 / 1440
          LEFT JOIN people pe ON pe.id = a.personId
-         LEFT JOIN crops cr ON cr.id = a.cropId`;
+         LEFT JOIN crops cr ON cr.id = a.cropId
+        WHERE a.date >= ? AND a.localDay >= date(?)
+        ORDER BY a.date DESC LIMIT ?`;
 
-export const RULE_DIGIT_SQL = `WITH stats AS (
-         SELECT id, personId, weight,
-                (SUM(weight) OVER (PARTITION BY personId) - weight)
-                  / NULLIF(COUNT(*) OVER (PARTITION BY personId) - 1, 0) AS others
-           FROM pickups
+// `tot` is the same arithmetic the window functions did — the person's total
+// and count minus this row — as a plain GROUP BY. The window-function form had
+// to sort the whole table into partitions before a single row could be tested,
+// which no window on the outer query could avoid.
+export const RULE_DIGIT_SQL = `WITH tot AS (
+         SELECT personId, SUM(weight) AS s, COUNT(*) AS n
+           FROM pickups_live GROUP BY personId
        )
-       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, st.others AS reference,
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) AS reference,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk JOIN stats st ON st.id = pk.id
+         FROM pickups_live pk JOIN tot ON tot.personId = pk.personId
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE st.others > 0 AND pk.weight >= 4 * st.others`;
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
+          AND (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) > 0
+          AND pk.weight >= 4 * ((tot.s - pk.weight) / NULLIF(tot.n - 1, 0))
+        ORDER BY pk.date DESC LIMIT ?`;
 
+// The window goes on `dayplot`, not on the final SELECT: a plot-day is either
+// wholly inside the window or wholly outside it, so `agg` — the mates' total
+// and headcount for that day — comes out identical for every day that is kept.
 export const RULE_OUTLIER_SQL = `WITH dayplot AS (
          SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
-                date(pk.date,'localtime') AS d
-           FROM pickups pk
+                pk.localDay AS d
+           FROM pickups_live pk
+          WHERE pk.date >= ? AND pk.localDay >= date(?)
        ),
        agg AS (
          SELECT cropId, d, SUM(weight) AS tot, COUNT(*) AS n
@@ -200,26 +320,31 @@ export const RULE_OUTLIER_SQL = `WITH dayplot AS (
          LEFT JOIN crops cr ON cr.id = dp.cropId
         WHERE agg.n >= 5
           AND (agg.tot - dp.weight) / (agg.n - 1) > 0
-          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))`;
+          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))
+        ORDER BY dp.date DESC LIMIT ?`;
 
+// A row dated in the future is by definition after the window's start, so the
+// bounds cost nothing here and buy the index.
 export const RULE_FUTURE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime') > date('now','localtime')`;
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
+          AND pk.localDay > ?
+        ORDER BY pk.date DESC LIMIT ?`;
 
 // What leaves the phone when the season is exported.
 
 export const EXPORT_PICKUPS_SQL = `SELECT pk.id,
-              date(pk.date,'localtime') AS dia,
-              date(pk.date,'localtime','-6 days','weekday 1') AS semana,
+              pk.localDay AS dia,
+              pk.week AS semana,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS recolector,
               pe.docId AS documento,
               COALESCE(cr.name,'?') AS lote,
               pk.weight AS peso
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
         ORDER BY pk.date`;
@@ -244,18 +369,18 @@ export const EXPORT_BALANCES_SQL = `SELECT pe.id,
 
 // The week detail: day by day, who worked, and the person-by-plot grid.
 
-export const WEEK_BY_DAY_SQL = `SELECT date(date,'localtime') AS day, SUM(weight) AS kg,
+export const WEEK_BY_DAY_SQL = `SELECT localDay AS day, SUM(weight) AS kg,
               COUNT(DISTINCT personId) AS pickers, COUNT(DISTINCT cropId) AS plots
-         FROM pickups
-        WHERE date(date,'localtime','-6 days','weekday 1') = ?
+         FROM pickups_live
+        WHERE week = ?
         GROUP BY day ORDER BY day`;
 
 export const WEEK_BY_WORKER_SQL = `SELECT pk.personId,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
               SUM(pk.weight) AS kg,
-              COUNT(DISTINCT date(pk.date,'localtime')) AS days
-         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+              COUNT(DISTINCT pk.localDay) AS days
+         FROM pickups_live pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE pk.week = ?
         GROUP BY pk.personId ORDER BY kg DESC`;
 
 export const WEEK_GRID_SQL = `SELECT pk.personId,
@@ -263,25 +388,483 @@ export const WEEK_GRID_SQL = `SELECT pk.personId,
               pk.cropId,
               COALESCE(cr.name,'?') AS crop,
               SUM(pk.weight) AS kg
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        WHERE pk.week = ?
         GROUP BY pk.personId, pk.cropId`;
 
 export const WEEK_PLOTS_SQL = `SELECT pk.cropId, COALESCE(cr.name,'?') AS crop, SUM(pk.weight) AS kg
-         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+         FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE pk.week = ?
         GROUP BY pk.cropId ORDER BY kg DESC`;
 
 /** Kilos per worker and day of the week: who came which days, and how much. */
 export const WEEK_GRID_DAY_SQL = `
   SELECT pk.personId,
          COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
-         date(pk.date,'localtime') AS day,
+         pk.localDay AS day,
          SUM(pk.weight) AS kg
-    FROM pickups pk
+    FROM pickups_live pk
     LEFT JOIN people pe ON pe.id = pk.personId
-   WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+   WHERE pk.week = ?
    GROUP BY pk.personId, day
+`;
+
+// ---- user_version = 6: the identity sync needs -------------------------
+//
+// Nothing below sends anything. It gives every row that will one day travel a
+// name the server can recognise, and it records which rows are waiting. The
+// protocol itself is being written separately; what is here is what any
+// reasonable protocol needs and nothing that presumes one.
+//
+// The integer primary keys STAY. They are in every join, every screen and
+// every foreign key in this file, and rewriting them would mean rewriting the
+// app during a harvest to buy nothing: a local `id` and a global `uuid` can
+// coexist, and the mapping between them is one indexed column.
+
+/** A table whose rows travel, and how the migration dates each row. */
+export interface SyncedTable {
+  /** Table name, and the entity name the outbox and the server use. */
+  name: string;
+  /**
+   * The SQL expression giving the instant this row belongs at, used to seed
+   * its UUIDv7. Chronology is the whole point of a v7, so a row backfilled
+   * with the migration's clock would be a row whose id lies about when it
+   * happened.
+   */
+  bornAt: string;
+}
+
+/**
+ * In the order the server should receive them: a parent before the rows that
+ * reference it. Two rows written in the same millisecond are separated by this
+ * order, so a settlement can never sort after its own lines.
+ */
+export const SYNCED_TABLES: SyncedTable[] = [
+  // The farm's own singleton: one row, no history, nothing to be chronological
+  // about. `NULL` tells the backfill to date it at migration time, which puts
+  // it after everything the farm has ever recorded — correct, since that is
+  // the moment this row acquired an identity worth sending.
+  { name: "config", bornAt: "NULL" },
+  { name: "people", bornAt: "createdAt" },
+  { name: "crops", bornAt: "createdAt" },
+  // No timestamp of its own; a weekly price belongs to the Monday it prices.
+  { name: "cost_overrides", bornAt: "week" },
+  // `date` is when the load was weighed, `createdAt` when the phone stored it.
+  // The weighing is the event the farm and the server care about.
+  { name: "pickups", bornAt: "COALESCE(date, createdAt)" },
+  { name: "settlements", bornAt: "createdAt" },
+  // A line is born with its document.
+  {
+    name: "settlement_items",
+    bornAt:
+      "(SELECT s.createdAt FROM settlements s WHERE s.id = settlement_items.settlementId)",
+  },
+  // Append-only, and `date` can be back-dated by a correction, so the order
+  // the rows were written is the order that actually happened.
+  { name: "ledger", bornAt: "COALESCE(createdAt, date)" },
+];
+
+/** The two columns every travelling row grows, plus the farm's own identity. */
+export const SYNC_COLUMNS: Record<string, string[]> = {
+  ...Object.fromEntries(
+    SYNCED_TABLES.map((t) => [t.name, ["uuid TEXT", "updatedAt TEXT"]]),
+  ),
+  // `farmId` lives here and only here. See `docs/diagramas/movil.md` and the
+  // note on `SyncRepo` in `data/repository.ts`: one phone is one farm, the
+  // value is unknown until the farm is registered on the server, and putting
+  // it on every row would mean rewriting eighteen thousand of them at exactly
+  // the moment the owner is trying to sign up.
+  config: [
+    "uuid TEXT",
+    "updatedAt TEXT",
+    "farmId TEXT",
+    "deviceId TEXT",
+    "syncedAt TEXT",
+  ],
+};
+
+/**
+ * The outbox: what this phone still owes the server.
+ *
+ * Why a queue and not a `WHERE updatedAt > lastSync` watermark:
+ *
+ * 1. `pickups.remove` is a hard DELETE. Once the row is gone there is no
+ *    `updatedAt` left to compare, so a watermark can never tell the server
+ *    about it — and the server would keep charging the farm for a weighing
+ *    that was cancelled. The `delete` row below is the only surviving trace.
+ * 2. A watermark trusts the device clock, and `docs/sync-and-roles.md` says
+ *    plainly that these clocks drift and are set by hand. One backwards jump
+ *    and a watermark skips every row written in the gap, permanently and
+ *    silently. `seq` is an integer this device controls.
+ * 3. Retry. A push that dies halfway has to be safe to repeat: a queued row is
+ *    dropped only once the server has said it has it, which no watermark can
+ *    do atomically across a network.
+ *
+ * One row per changed entity, not one per change: `UNIQUE(entity, entityUuid)`
+ * coalesces, so correcting the same weighing forty times still owes the server
+ * one row. The seq of the FIRST change is kept, which is what keeps a pickup
+ * ahead of the settlement that claims it; `revision` counts the coalesces so
+ * an ack cannot drop a change made after the push was assembled.
+ *
+ * There is no payload column. Push reads the row live by uuid, so the queue
+ * carries "this changed", not a snapshot that could be stale before it is sent.
+ */
+export const OUTBOX_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS outbox (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity     TEXT    NOT NULL,
+    entityUuid TEXT    NOT NULL,
+    op         TEXT    NOT NULL CHECK (op IN ('upsert','delete')),
+    localId    INTEGER,
+    revision   INTEGER NOT NULL DEFAULT 1,
+    queuedAt   TEXT    NOT NULL,
+    UNIQUE (entity, entityUuid)
+  );
+  CREATE INDEX IF NOT EXISTS ix_outbox_seq ON outbox(seq);
+`;
+
+/**
+ * The triggers that fill it.
+ *
+ * Deliberately in SQL rather than in the eighteen writers of
+ * `sqliteRepository.ts`. A writer that forgets to queue its row is a row that
+ * never reaches the server and that nothing ever complains about; a trigger
+ * cannot be forgotten, and it also covers `demo.seed`, `wipe` and whatever the
+ * next sprint adds. The uuid still has to be minted in TypeScript — SQLite has
+ * no way to generate a v7, and a BEFORE trigger cannot write to NEW.
+ *
+ * `queuedAt` copies the row's own `updatedAt` instead of calling `now`, so the
+ * queue obeys the repository's injected clock and the tests stay deterministic.
+ * The COALESCE is there only so a row that somehow arrived without one still
+ * gets queued rather than taking the write down with it.
+ */
+export function outboxTriggersSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+  const enqueue = (entity: string, row: "NEW" | "OLD", op: "upsert" | "delete") => `
+    INSERT INTO outbox (entity, entityUuid, op, localId, queuedAt)
+    VALUES ('${entity}', ${row}.uuid, '${op}',
+            ${op === "delete" ? "NULL" : `${row}.id`},
+            COALESCE(${row}.updatedAt, ${stamp}))
+    ON CONFLICT(entity, entityUuid) DO UPDATE SET
+      op = excluded.op, localId = excluded.localId,
+      queuedAt = excluded.queuedAt, revision = outbox.revision + 1;`;
+
+  // A row the phone is WRITING BECAUSE THE SERVER SENT IT is not a row the
+  // phone owes the server. Without this guard every pull re-queues everything
+  // it just applied, the next push sends it all straight back, that push
+  // changes rows on the server, and the farm has a loop that never empties an
+  // outbox and never stops using data. The engine holds `sync_apply` open for
+  // exactly the length of one apply transaction.
+  const notApplying = "NOT EXISTS (SELECT 1 FROM sync_apply)";
+
+  return tables
+    .map(
+      (t) => `
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_ins;
+  CREATE TRIGGER tg_${t.name}_out_ins AFTER INSERT ON ${t.name}
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL AND ${notApplying}
+  BEGIN${enqueue(t.name, "NEW", "upsert")}
+  END;
+
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_upd;
+  CREATE TRIGGER tg_${t.name}_out_upd AFTER UPDATE ON ${t.name}
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL AND ${notApplying}
+  BEGIN${enqueue(t.name, "NEW", "upsert")}
+  END;
+
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_del;
+  CREATE TRIGGER tg_${t.name}_out_del AFTER DELETE ON ${t.name}
+  FOR EACH ROW WHEN OLD.uuid IS NOT NULL AND ${notApplying}
+  BEGIN${enqueue(t.name, "OLD", "delete")}
+  END;`,
+    )
+    .join("\n");
+}
+
+/**
+ * The flag the triggers above read.
+ *
+ * A table rather than a PRAGMA or a connection variable because a SQLite
+ * trigger can only see the database. One row means "the write happening right
+ * now came down the wire"; no rows means it came from a person, and a person's
+ * write is owed to the server.
+ *
+ * It is emptied in the same transaction that fills it, so a crash mid-apply
+ * cannot leave the phone permanently unable to queue anything — the rollback
+ * takes the flag with it.
+ */
+export const SYNC_APPLY_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sync_apply (id INTEGER PRIMARY KEY CHECK (id = 1));
+  DELETE FROM sync_apply;
+`;
+
+/**
+ * One unique index per table, so a uuid cannot be duplicated locally, plus the
+ * seek the server's `WHERE uuid > ?` pagination will want. Partial, because
+ * during the backfill and for any row an old writer misses the column is NULL,
+ * and SQLite lets NULLs repeat in a unique index.
+ */
+export function uuidIndexesSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  return tables
+    .map(
+      (t) => `CREATE UNIQUE INDEX IF NOT EXISTS ux_${t.name}_uuid
+                ON ${t.name}(uuid) WHERE uuid IS NOT NULL;`,
+    )
+    .join("\n");
+}
+
+/**
+ * Everything still owed, oldest change first. `localId` is how push reads the
+ * row back; for a delete there is nothing left to read, which is the point.
+ */
+export const OUTBOX_PENDING_SQL = `
+  SELECT seq, entity, entityUuid, op, localId, revision, queuedAt
+    FROM outbox ORDER BY seq LIMIT ?
+`;
+
+/**
+ * The initial fill: at `user_version = 6` the server has none of this farm's
+ * history, so every existing row is owed. One statement rather than eighteen
+ * thousand trigger firings, ordered by uuid so `seq` comes out in the same
+ * chronological order the ids do.
+ */
+export function outboxSeedSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  const union = tables
+    .map((t) => `SELECT '${t.name}' AS entity, uuid, id FROM ${t.name} WHERE uuid IS NOT NULL`)
+    .join("\n      UNION ALL ");
+  // OR IGNORE, not because the seed is expected to meet an existing queue —
+  // it runs once, inside the migration — but because `UNIQUE(entity,uuid)` is
+  // the only thing standing between a retry and a duplicate push, and a seed
+  // that would rather throw than notice it is a seed that turns a recoverable
+  // rerun into an app that will not start.
+  return `
+    INSERT OR IGNORE INTO outbox (entity, entityUuid, op, localId, queuedAt)
+    SELECT entity, uuid, 'upsert', id, ?
+      FROM (${union})
+     ORDER BY uuid`;
+}
+
+// ---- user_version = 7: the three things the architect blocked on ---------
+//
+// (a) `pickups.remove` was a physical DELETE. A row deleted after being pushed
+//     comes straight back on the next pull, because the server still has it
+//     and the phone no longer knows it killed it. `deletedAt` plus the view
+//     below is the same discipline `people` and `crops` already had.
+// (b) The day and the week came from `date(col,'localtime')` — the HANDSET's
+//     zone. The server derives them from `farms.timezone`. One notch out and a
+//     Sunday-evening weighing lands in the week after the one being paid, at a
+//     different price, in a different settlement. Golden case 04.
+// (c) The price was `REAL`. Pulling `price_minor bigint` from the server into
+//     a float puts a float in the path of money.
+
+/** Columns `user_version = 7` adds, by table. Nothing is rewritten. */
+export const V7_COLUMNS: Record<string, string[]> = {
+  // The tombstone, and the two business dates the farm's zone decides.
+  pickups: ["deletedAt TEXT", "localDay TEXT", "week TEXT"],
+  // The ledger's business day, materialised for the same reason.
+  ledger: ["localDay TEXT"],
+  // Money as integers. The REAL column stays for the screens that still read
+  // it for display; no path that decides an amount touches it any more.
+  config: ["costPerUnitCents INTEGER", "timezone TEXT"],
+  cost_overrides: ["costPerUnitCents INTEGER"],
+  // Decision 8: a worker who was off the books and turns up with new work is
+  // reactivated automatically — and the reactivation is recorded, because
+  // undoing somebody's decision in silence is the one thing that cannot happen.
+  people: ["reactivatedAt TEXT"],
+};
+
+/**
+ * Every read of `pickups` goes through this view, and every write goes to the
+ * table. That is the point: `AND deletedAt IS NULL` on forty queries is forty
+ * chances to forget, and the query somebody adds next sprint would silently
+ * pay for a cancelled weighing. Here the predicate is written once.
+ *
+ * SQLite flattens a view like this into the outer query, so the indexes below
+ * are used exactly as they were before.
+ */
+export const PICKUPS_LIVE_VIEW = `
+  CREATE VIEW IF NOT EXISTS pickups_live AS
+    SELECT * FROM pickups WHERE deletedAt IS NULL;
+`;
+
+/**
+ * The indexes the materialised columns earn. Grouping by a stored column
+ * instead of calling `date()` on every row makes the week screens sargable for
+ * the first time — they used to scan the whole table to answer "this week".
+ */
+export const V7_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS ix_pickups_week ON pickups(week);
+  CREATE INDEX IF NOT EXISTS ix_pickups_localday ON pickups(localDay);
+  CREATE INDEX IF NOT EXISTS ix_ledger_localday ON ledger(localDay);
+`;
+
+/**
+ * What the phone knows about syncing, as one row.
+ *
+ * `cursor` is the single number of §3: everything the server holds with a
+ * higher sequence is what this phone still has to receive. It is TEXT rather
+ * than INTEGER because the transport that exists today has no server-assigned
+ * sequence to give (see `sync/restTransport.ts`), and a cursor that is an
+ * opaque token the client never interprets is the one shape that survives both
+ * that transport and the feed it will be replaced by.
+ *
+ * `pulledAt` is when a pull last COMPLETED — `more:false`, everything applied.
+ * §6.1 makes it a precondition of settling, so it must mean "up to date", not
+ * "we tried".
+ */
+export const SYNC_STATE_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sync_state (
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    cursor    TEXT,
+    pulledAt  TEXT,
+    pushedAt  TEXT,
+    -- The last thing that went wrong, kept so the status screen can say what
+    -- is happening instead of showing a spinner that never resolves.
+    lastError TEXT,
+    -- When the backoff allows the next attempt. §4.3: 2s, 4s, 8s … 15 min.
+    retryAt   TEXT,
+    attempts  INTEGER NOT NULL DEFAULT 0
+  );
+  INSERT OR IGNORE INTO sync_state (id, attempts) VALUES (1, 0);
+`;
+
+/**
+ * The conflicts of §5 that a person has to close.
+ *
+ * Nothing here auto-resolves and nothing disappears on its own: a row leaves
+ * this table because somebody pressed something, and `resolution` records what
+ * they pressed. `payload` carries the three things §7.3 demands every card
+ * shows — a person, a date, and an amount or a quantity — composed at the
+ * moment the conflict was detected, because by the time anybody reads the card
+ * the rows behind it may have moved on.
+ *
+ * `UNIQUE(kind, entity, entityUuid)` so a push retried nine times raises one
+ * card, not nine.
+ */
+export const CONFLICTS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    entity      TEXT NOT NULL,
+    entityUuid  TEXT NOT NULL,
+    personId    INTEGER,
+    payload     TEXT NOT NULL,
+    detectedAt  TEXT NOT NULL,
+    resolvedAt  TEXT,
+    resolution  TEXT,
+    UNIQUE (kind, entity, entityUuid)
+  );
+  CREATE INDEX IF NOT EXISTS ix_conflicts_open
+    ON conflicts(detectedAt) WHERE resolvedAt IS NULL;
+`;
+
+/**
+ * Decision 8, and the condition the owner attached to it.
+ *
+ * The owner overruled the team: a worker who was taken off the books and shows
+ * up with new work is put back on automatically. The team's objection was that
+ * somebody decided that removal. So the reactivation is a row here, with the
+ * labour that caused it and the device that recorded it, and the person who
+ * signed the removal can see it was undone and by what.
+ */
+export const REACTIVATIONS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS reactivations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    personId   INTEGER NOT NULL,
+    personUuid TEXT,
+    -- The weighing whose arrival did it. This is the "qué labor la provocó".
+    causeEntity TEXT NOT NULL,
+    causeUuid   TEXT NOT NULL,
+    deviceId   TEXT,
+    deletedAt  TEXT,
+    at         TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS ix_reactivations_person ON reactivations(personId, at DESC);
+`;
+
+/**
+ * Every attempt at handing the season over, and what came back (§8 fase 3/4).
+ *
+ * A separate table and NOT a synced one, deliberately on both counts.
+ *
+ * Separate, because §8 fase 8 says the copy previous to the migration is kept
+ * the whole season — «un descuadre se descubre cuando alguien reclama, y eso
+ * pasa a las tres semanas» — and the same argument applies to the record of
+ * what was offered and what was answered. A screen that only remembers the
+ * import while it is open remembers nothing three weeks later.
+ *
+ * Not synced, because a row here must never be pushed. It is not in
+ * `SYNCED_TABLES`, it has no `uuid`, and no outbox trigger names it: an import
+ * that failed to reach the server must not leave behind a row that the next
+ * push tries to send to the server it failed to reach.
+ *
+ * `totals` and `report` are JSON because they are a screen's material, not
+ * something anything queries by. The columns that ARE queried — the id, the
+ * status, when — are columns.
+ */
+/**
+ * The server's balance per worker, as it last came down — decision 7 and §2.2.
+ *
+ * This is the one number in the system that is RECEIVED rather than derived,
+ * and the reason it is allowed to exist needs saying, because three documents
+ * spent their length refusing a materialised balance.
+ *
+ * What they refused is storing a total and then TRUSTING it: deriving money
+ * from a cached sum is how two implementations quietly drift and how a
+ * worker's pay stops being reconstructible from the movements behind it.
+ * Nothing here does that. `BALANCE_SQL` is still the only thing that decides
+ * an amount, `settle` and `pay` never read this table, and every figure the
+ * farm hands over is still derived from the ledger at the moment it is handed
+ * over.
+ *
+ * What this table is for is the opposite problem. §2.2: the web registers
+ * jornales and contracts, the pull filters them out because the phone has no
+ * screen that could show a day's wage in kilos, and so the phone's own
+ * `BALANCE_SQL` sums only the part of the work it happens to carry. Decision 7
+ * is that the phone shows the FULL balance anyway — «un saldo que cuenta la
+ * mitad del trabajo es un saldo que miente, y quien lo lee no tiene forma de
+ * saberlo». To show it, it has to keep it.
+ *
+ * Hence the two columns that make it safe to read: `at`, so the screen can say
+ * WHEN this was true, and `derivedCents`, the phone's own figure at that same
+ * instant — the difference between the two is exactly the work the phone
+ * cannot itemise, and it is what lets a card say "de esto, X son jornales que
+ * están en la web" instead of showing a number out of nowhere.
+ *
+ * Not a synced table: no uuid, no outbox trigger, nothing here ever travels
+ * back up. It is a receipt, not a record.
+ */
+export const SERVER_BALANCES_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS server_balances (
+    -- The worker's uuid, which is what the wire names them by. The local
+    -- integer id is resolved at read time, so a balance that arrived before
+    -- its worker did is not lost.
+    workerUuid   TEXT PRIMARY KEY,
+    balanceCents INTEGER NOT NULL,
+    -- What this phone derived for the same worker at the same moment. The
+    -- gap between the two is the work the phone cannot break down.
+    derivedCents INTEGER NOT NULL,
+    at           TEXT NOT NULL
+  );
+`;
+
+export const IMPORT_RUNS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS import_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    importId    TEXT NOT NULL,
+    startedAt   TEXT NOT NULL,
+    finishedAt  TEXT NOT NULL,
+    -- imported | already-imported | rejected | refused | failed
+    status      TEXT NOT NULL,
+    -- How many rows the request carried. A season goes up as ONE request, so
+    -- this is the whole size of what was offered. Named rowsSent rather than
+    -- rows because ROWS is a keyword in SQLite's window syntax.
+    rowsSent    INTEGER NOT NULL DEFAULT 0,
+    totals      TEXT,
+    report      TEXT,
+    error       TEXT
+  );
+  CREATE INDEX IF NOT EXISTS ix_import_runs_at ON import_runs(startedAt DESC, id DESC);
 `;

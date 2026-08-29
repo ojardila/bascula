@@ -1,0 +1,96 @@
+{
+  "id": "tres-decimales-que-el-float-pierde",
+  "title": "Tres decimales cuyo producto exacto cae en medio, y el float aterriza por debajo",
+  "why": "El caso 06 fija que medio se redondea hacia arriba; este fija que hay que LLEGAR al medio. 1,005 no existe en binario: el double más cercano queda por debajo, el producto exacto 7537,5 aterriza en 7537,499999999999 y Math.round(1,005 * 7500) da 7537 en vez de 7538. Lo mismo con 1,001 (7507 en vez de 7508), 1,003 (7522 en vez de 7523) y 1,007 (7552 en vez de 7553): cuatro líneas, cuatro veces una unidad mínima de menos, cuatro centavos de bruto (30118 en vez de 30122). El servidor multiplica sobre big.Rat y Postgres sobre numeric —los dos exactos— y dan 30122, así que un teléfono que derive su bruto en coma flotante y liquide contra POST /v1/settlements recibe 409 GROSS_CHANGED culpando a pesadas añadidas o a un cambio de precio que nunca ocurrió. La única forma de pasar este caso es multiplicar los DÍGITOS decimales de la cantidad por la tarifa entera, no el float. Y el error siempre va en la misma dirección: en contra del trabajador. La semana del 17 es el control, a 800 pesos planos: las MISMAS cantidades no divergen, porque el producto no cae en medio. Si el control fallara, lo roto sería el arnés y no el redondeo.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 7500,
+  "weeklyRateCents": {
+    "2026-08-17": 80000
+  },
+  "people": [{ "id": 1, "name": "Marta", "lastName": "Quintero" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 1.001, "at": "2026-08-18T09:00" },
+    { "op": "pickup", "id": 2, "personId": 1, "cropId": 1, "quantity": 1.003, "at": "2026-08-19T09:00" },
+    { "op": "pickup", "id": 3, "personId": 1, "cropId": 1, "quantity": 1.005, "at": "2026-08-20T09:00" },
+    { "op": "pickup", "id": 4, "personId": 1, "cropId": 1, "quantity": 1.007, "at": "2026-08-21T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-23", "on": "2026-08-23" },
+    { "op": "checkpoint", "label": "control a 800 pesos: nada diverge" },
+    { "op": "pickup", "id": 5, "personId": 1, "cropId": 1, "quantity": 1.001, "at": "2026-08-25T09:00" },
+    { "op": "pickup", "id": 6, "personId": 1, "cropId": 1, "quantity": 1.003, "at": "2026-08-26T09:00" },
+    { "op": "pickup", "id": 7, "personId": 1, "cropId": 1, "quantity": 1.005, "at": "2026-08-27T09:00" },
+    { "op": "pickup", "id": 8, "personId": 1, "cropId": 1, "quantity": 1.007, "at": "2026-08-28T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" }
+  ],
+  "expect": {
+    "pickups": [
+      { "id": 1, "localDay": "2026-08-18", "week": "2026-08-17" },
+      { "id": 2, "localDay": "2026-08-19", "week": "2026-08-17" },
+      { "id": 3, "localDay": "2026-08-20", "week": "2026-08-17" },
+      { "id": 4, "localDay": "2026-08-21", "week": "2026-08-17" },
+      { "id": 5, "localDay": "2026-08-25", "week": "2026-08-24" },
+      { "id": 6, "localDay": "2026-08-26", "week": "2026-08-24" },
+      { "id": 7, "localDay": "2026-08-27", "week": "2026-08-24" },
+      { "id": 8, "localDay": "2026-08-28", "week": "2026-08-24" }
+    ],
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2026-08-17",
+        "periodEnd": "2026-08-23",
+        "grossCents": 321280,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2026-08-17", "quantity": 1.001, "costPerUnitCents": 80000, "amountCents": 80080, "voided": false },
+          { "pickupId": 2, "week": "2026-08-17", "quantity": 1.003, "costPerUnitCents": 80000, "amountCents": 80240, "voided": false },
+          { "pickupId": 3, "week": "2026-08-17", "quantity": 1.005, "costPerUnitCents": 80000, "amountCents": 80400, "voided": false },
+          { "pickupId": 4, "week": "2026-08-17", "quantity": 1.007, "costPerUnitCents": 80000, "amountCents": 80560, "voided": false }
+        ]
+      },
+      {
+        "id": 2,
+        "personId": 1,
+        "periodStart": "2026-08-24",
+        "periodEnd": "2026-08-30",
+        "grossCents": 30122,
+        "status": "open",
+        "items": [
+          { "pickupId": 5, "week": "2026-08-24", "quantity": 1.001, "costPerUnitCents": 7500, "amountCents": 7508, "voided": false },
+          { "pickupId": 6, "week": "2026-08-24", "quantity": 1.003, "costPerUnitCents": 7500, "amountCents": 7523, "voided": false },
+          { "pickupId": 7, "week": "2026-08-24", "quantity": 1.005, "costPerUnitCents": 7500, "amountCents": 7538, "voided": false },
+          { "pickupId": 8, "week": "2026-08-24", "quantity": 1.007, "costPerUnitCents": 7500, "amountCents": 7553, "voided": false }
+        ]
+      }
+    ],
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 321280, "date": "2026-08-23", "settlementId": 1, "reversesId": null },
+      { "id": 2, "personId": 1, "kind": "devengo", "amountCents": 30122, "date": "2026-08-30", "settlementId": 2, "reversesId": null }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 351402,
+        "paidCents": 0,
+        "deductedCents": 0,
+        "balanceCents": 351402,
+        "lastMovementAt": "2026-08-30"
+      }
+    ],
+    "checkpoints": [
+      {
+        "label": "control a 800 pesos: nada diverge",
+        "balances": [
+          {
+            "personId": 1,
+            "earnedCents": 321280,
+            "paidCents": 0,
+            "deductedCents": 0,
+            "balanceCents": 321280,
+            "lastMovementAt": "2026-08-23"
+          }
+        ]
+      }
+    ]
+  }
+}

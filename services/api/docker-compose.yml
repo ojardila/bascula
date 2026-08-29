@@ -1,0 +1,40 @@
+# Postgres 17 with PostGIS, for local work and for `make test`.
+#
+# The image is imresamu/postgis and not the official postgis/postgis because
+# the latter publishes no linux/arm64 manifest, and half this team develops on
+# Apple silicon. It is the same PostGIS build, packaged for arm64 as well as
+# amd64. On an x86 CI runner postgis/postgis:17-3.5 is a drop-in replacement.
+#
+# Port 5433, not 5432, so it does not fight a Postgres somebody already has
+# running.
+
+services:
+  postgres:
+    image: imresamu/postgis:17-3.5
+    container_name: bascula-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bascula
+      # Keeps the test suite honest about time zones: the server is UTC and
+      # every business date comes from farms.timezone, never from the server.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - bascula-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bascula"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    command:
+      # Small box, small pool. The one setting that matters here is that
+      # nothing turns off row level security.
+      - postgres
+      - -c
+      - max_connections=100
+
+volumes:
+  bascula-pgdata:
