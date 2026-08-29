@@ -95,6 +95,16 @@ export interface RequestOptions {
   anonymous?: boolean;
   /** Do not retry after refreshing. Set internally on the second attempt. */
   noRetry?: boolean;
+  /**
+   * A deadline for THIS request, overriding the client's.
+   *
+   * The default below is sized for a sync batch: at most 200 envelopes or
+   * 1 MB (§3.2), which either lands in a few seconds or is not going to land.
+   * One route does not fit that shape — `POST /v1/import/season` carries a
+   * whole season in one body — and it says so here rather than by making
+   * every request on the phone wait longer than it should.
+   */
+  timeoutMs?: number;
 }
 
 /** 25s. Long enough for a farm's uplink, short enough that a hang is noticed
@@ -134,11 +144,15 @@ export class HttpClient {
       headers.Authorization = `Bearer ${fresh.accessToken}`;
     }
 
-    const res = await this.send(url, {
-      method: opts.method ?? "GET",
-      headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-    });
+    const res = await this.send(
+      url,
+      {
+        method: opts.method ?? "GET",
+        headers,
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      },
+      opts.timeoutMs ?? this.timeoutMs,
+    );
 
     if (res.status === 401 && !opts.anonymous && !opts.noRetry) {
       // Exactly once. A loop of refresh-and-retry against a revoked family is
@@ -176,9 +190,13 @@ export class HttpClient {
    * socket is actually released instead of left running behind a promise
    * nobody is waiting on any more.
    */
-  private async send(url: string, init: RequestInit): Promise<Response> {
+  private async send(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number,
+  ): Promise<Response> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await this.fetchImpl(url, { ...init, signal: controller.signal });
     } catch (e) {

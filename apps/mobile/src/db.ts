@@ -41,6 +41,7 @@ export type {
   CostOverride,
   Crop,
   CropConfig,
+  FullBalance,
   Grouping,
   LedgerEntry,
   LedgerKind,

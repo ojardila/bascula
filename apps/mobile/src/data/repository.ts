@@ -248,6 +248,48 @@ export interface BalanceRow extends Balance {
   inactive: number;
 }
 
+/**
+ * A worker's balance as decision 7 says to SHOW it: the whole of it, even when
+ * this phone can only break down part.
+ *
+ * §2.2 is the rule and it is short: the web registers jornales and contracts,
+ * the pull does not bring them down, and so `BALANCE_SQL` here sums only the
+ * weighings. «Un saldo que cuenta la mitad del trabajo es un saldo que miente,
+ * y quien lo lee no tiene forma de saberlo.» So the screen shows the figure
+ * that came down the feed, marked with when it arrived, and falls back to the
+ * derived one — labelled «provisional» — while this phone still owes the
+ * server movements it has not sent.
+ *
+ * Nothing that decides an amount reads this. `settle`, `pay` and `runPayroll`
+ * all still go through `payments.balance`, which is `BALANCE_SQL` over the
+ * ledger. This is what a person is shown; that is what a person is handed.
+ * Whether those two should be the same number is a question for the owner and
+ * not for this file: paying out the full figure would mean handing over cash
+ * for work whose breakdown the phone cannot print on the receipt.
+ */
+export interface FullBalance {
+  /** What this phone can derive AND break down, from its own ledger. */
+  itemisedCents: number;
+  /** The whole of it, as the server last said. Null on a phone that never heard. */
+  serverCents: number | null;
+  /** When that figure arrived. Null with it. */
+  serverAt: string | null;
+  /** The one to put on the screen, chosen by the rule in §2.2. */
+  balanceCents: number;
+  /**
+   * True while this phone still owes the server movements. §7.4: the figure
+   * shown is then the phone's own and it has to say so — «provisional, faltan
+   * 4 movimientos por enviar».
+   */
+  provisional: boolean;
+  /**
+   * Cents inside `serverCents` that this phone cannot itemise — the jornales
+   * and the contracts. Zero when the phone has heard nothing, which is not the
+   * same as knowing there is nothing.
+   */
+  notItemisableCents: number;
+}
+
 export interface PendingWorker {
   personId: number;
   name: string;
@@ -259,6 +301,33 @@ export interface SettleResult {
   settlementId: number;
   ledgerId: number;
   grossCents: number;
+}
+
+/**
+ * What one run of the crew's payroll did, and everything needed to take it
+ * back.
+ *
+ * `settlementIds` carries EVERY document the run created, including the ones
+ * for workers who ended up with nothing to collect because an advance had
+ * already eaten the week. That is the whole point of the field: the screen
+ * used to record a settlement only after the payment succeeded, so a settled
+ * worker with a zero balance produced a real, committed document that
+ * «Deshacer» could not reach — and the only way back was the ledger by hand
+ * (`docs/diagramas/movil.md` §9.13).
+ */
+export interface PayrollRun {
+  /** Workers who were settled and handed cash. */
+  paid: number;
+  /** Settled, but the balance was zero or negative. Nothing to hand over. */
+  noCash: number;
+  /** Workers whose settle or pay threw. The rest of the crew went on. */
+  failed: number;
+  /** Every settlement created, in order. Undoable whether or not it was paid. */
+  settlementIds: number[];
+  /** Every payment created, in order. */
+  paymentIds: number[];
+  /** Cents actually handed over across the whole run. */
+  paidCents: number;
 }
 
 export interface PlotPerf {
@@ -537,6 +606,21 @@ export interface SyncRepo {
    */
   balanceChecksums(): { uuid: string; personId: number; name: string; balanceCents: number }[];
 
+  /**
+   * Keep what the server said each worker's balance was, and what this phone
+   * derived at the same instant.
+   *
+   * Called only when the phone is level with the server on both sides — an
+   * empty outbox and a pull that finished — because a figure recorded while
+   * either was still moving would be a figure about a moment that never
+   * existed. See `SERVER_BALANCES_SCHEMA` for why storing it at all does not
+   * make it a materialised balance.
+   */
+  recordServerBalances(
+    rows: readonly { workerId: string; balanceCents: number }[],
+    at: string,
+  ): void;
+
   // ---- Conflicts, §5 and §7.3 -----------------------------------------
 
   conflicts(includeResolved?: boolean): Conflict[];
@@ -706,6 +790,28 @@ export interface PaymentsRepo {
     note?: string,
   ): SettleResult | null;
   voidSettlement(settlementId: number, note?: string): void;
+  /**
+   * Settle and pay a whole crew — the payroll button, minus the presentation.
+   *
+   * It lives here and not in `PaymentsPanel` because the sequence *settle →
+   * re-read the balance → pay what the ledger says* is a business rule, and a
+   * business rule inside a React component is a business rule nothing can
+   * test (`movil.md` §9.13). What the screen keeps is the sheet, the ticks and
+   * the snackbar.
+   *
+   * Each worker is independent: one failure must not take the rest of the
+   * payroll down. Each worker is NOT a transaction of its own either — settle
+   * commits before pay is attempted, deliberately, because a settlement that
+   * exists is a settlement that can be undone, and one that vanished with a
+   * failed payment would have taken the released payables with it.
+   */
+  runPayroll(
+    personIds: readonly number[],
+    from: string,
+    to: string,
+    general: number,
+    opts?: { method?: PayMethod; note?: string },
+  ): PayrollRun;
   pay(
     personId: number,
     amountCents: number,
@@ -723,6 +829,11 @@ export interface PaymentsRepo {
   undoRun(paymentIds: number[], settlementIds: number[], note: string): void;
   balance(personId: number): Balance;
   balances(): BalanceRow[];
+  /**
+   * The balance to SHOW, which is not always the balance to pay. Decision 7
+   * and §2.2 — see `FullBalance`.
+   */
+  fullBalance(personId: number): FullBalance;
   history(personId: number, limit?: number): LedgerEntry[];
   /**
    * Cents handed over against one settlement, for its receipt.
@@ -734,6 +845,16 @@ export interface PaymentsRepo {
    * still out there.
    */
   paidAgainst(settlementId: number): number;
+  /**
+   * Cash handed over per worker between two days, inclusive — the payroll
+   * sheet's own figure, in one query and without a row limit.
+   *
+   * It replaces a loop that asked for each worker's last fifty movements and
+   * filtered them by date in JavaScript: past the fiftieth movement of a
+   * season, this week's payment simply was not in the window and the worker
+   * printed as unpaid on a sheet they were about to sign.
+   */
+  paidInRange(from: string, to: string): { personId: number; cents: number }[];
   settlements(personId: number): Settlement[];
   itemsOf(settlementId: number): SettlementItem[];
   pendingAll(general: number, upTo?: string): PendingWorker[];

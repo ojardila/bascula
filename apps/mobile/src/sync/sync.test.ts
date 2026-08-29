@@ -807,3 +807,207 @@ test("two runs cannot overlap", async () => {
   assert.equal(a, b);
   assert.equal(server.pushes.length, 1);
 });
+
+// ---- Lo que quedó a medias de la sincronización -------------------------
+
+test("un pull que se corta por el tope de páginas no se apunta como completo", async () => {
+  // §6.1: the phone does not settle without having synchronised. `pulledAt`
+  // is what `canSettle` reads to decide that, and it used to be written after
+  // EVERY pull — including one that stopped at `maxPages` with the server
+  // still holding changes.
+  //
+  // The farm that meets this is the one that comes back after a fortnight out
+  // of signal: twenty pages drain, thousands of changes are still up there,
+  // and the screen says "al día" while the settle button goes live. The
+  // weighings still to come down are exactly the ones that decide what the
+  // week is worth.
+  const { db, repo } = aPhone();
+
+  let pulls = 0;
+  const endless: SyncTransport = {
+    handshake: async () => ({
+      farmId: "farm-1",
+      farmName: "La Esperanza",
+      timezone: "America/Bogota",
+      currency: "COP",
+      role: "owner" as const,
+      capabilities: {
+        settleOffline: false,
+        writePlots: false,
+        writeWeekPrices: false,
+        money: true,
+      },
+      cursor: null,
+      behind: 5000,
+      serverTime: "2026-08-29T12:00:00.000Z",
+    }),
+    push: async () => ({ results: [], cursor: null }),
+    pull: async () => {
+      pulls++;
+      // Always more. The server has a fortnight of a farm on it.
+      return { changes: [], cursor: `c${pulls}`, more: true, skipped: [] };
+    },
+  };
+
+  const engine = new SyncEngine({ repo, transport: endless, maxPages: 3 });
+  const report = await engine.sync({ force: true });
+
+  assert.equal(pulls, 3, "paró donde le dijeron, que es una cortesía, no un fallo");
+  assert.equal(report.stillBehind, true, "y lo dice");
+  assert.equal(report.behind, 5000, "§3.1: un número, no un spinner");
+  assert.equal(
+    repo.sync.state().pulledAt,
+    null,
+    "no se apuntó como al día, porque no lo está",
+  );
+  // The cursor DID move: what came down is applied and will not come again.
+  assert.equal(repo.sync.state().cursor, "c3");
+
+  // Now the server runs out. Only then is the phone level.
+  let left = 1;
+  const finishing: SyncTransport = {
+    ...endless,
+    pull: async () => {
+      const more = left-- > 0;
+      return { changes: [], cursor: "final", more, skipped: [] };
+    },
+  };
+  const done = await new SyncEngine({ repo, transport: finishing, maxPages: 3 }).sync({
+    force: true,
+  });
+  assert.equal(done.stillBehind, false);
+  assert.ok(repo.sync.state().pulledAt, "ahora sí");
+  db.close();
+});
+
+test("un pull que termina limpio sigue apuntándose, y el saldo se compara", async () => {
+  // The guard above must not have turned every ordinary sync into an
+  // incomplete one: `more: false` is the normal answer and it still counts.
+  const { db, repo } = aPhone();
+  const server = new FakeServer();
+  const engine = new SyncEngine({ repo, transport: server.transport() });
+
+  const report = await engine.sync({ force: true });
+  assert.equal(report.ok, true);
+  assert.equal(report.stillBehind, false);
+  assert.ok(repo.sync.state().pulledAt);
+  db.close();
+});
+
+// ---- Decisión 7: el saldo completo -------------------------------------
+
+test("el saldo que se enseña incluye los jornales que el teléfono no sabe desglosar", async () => {
+  // §2.2 and decision 7. The web registers jornales and contracts, the pull
+  // filters them out — the phone has no screen that could show a day's wage in
+  // kilos — and so `BALANCE_SQL` here sums only the weighings. The owner's
+  // decision is that the phone shows the FULL balance anyway: «un saldo que
+  // cuenta la mitad del trabajo es un saldo que miente, y quien lo lee no
+  // tiene forma de saberlo».
+  //
+  // Before this, the server's figure was compared and thrown away. The card
+  // that came out of the comparison was the only trace of it, and the worker's
+  // own screen went on showing half.
+  const { db, repo } = aPhone();
+  const person = aWorker(repo);
+  const plot = aPlot(repo);
+  const uuid = repo.people.byId(person)!.uuid!;
+
+  // What the phone knows: one week on the scale, settled and unpaid.
+  repo.pickups.add({ personId: person, cropId: plot, weight: 50, date: "2026-08-25T14:00:00.000Z" });
+  repo.payments.settle(person, "1970-01-01", "2099-12-31", 800);
+  const itemised = repo.payments.balance(person).balanceCents;
+  assert.ok(itemised > 0);
+
+  // What the farm knows: the same week, plus two days of jornal booked in the
+  // office. The feed carries the TOTAL and none of the movements behind it.
+  const server = new FakeServer();
+  const jornalCents = 12_000_00;
+  server.balances = [{ workerId: uuid, balanceCents: itemised + jornalCents }];
+
+  const before = repo.payments.fullBalance(person);
+  assert.equal(before.serverCents, null, "todavía no ha hablado con nadie");
+  assert.equal(before.balanceCents, itemised, "y enseña lo único que tiene");
+
+  const report = await engineFor(repo, server).sync({ force: true });
+  assert.equal(report.ok, true);
+
+  const full = repo.payments.fullBalance(person);
+  assert.equal(full.itemisedCents, itemised, "lo que el teléfono puede desglosar");
+  assert.equal(full.serverCents, itemised + jornalCents);
+  assert.equal(full.balanceCents, itemised + jornalCents, "lo que se enseña es el completo");
+  assert.equal(full.notItemisableCents, jornalCents, "y se puede decir cuánto es jornal");
+  assert.equal(full.provisional, false);
+  assert.ok(full.serverAt, "§2.2: con la marca de cuándo llegó");
+
+  // And the money that is HANDED OVER is still derived from this phone's own
+  // ledger, movement by movement. Paying out a figure that arrived on the wire
+  // would be handing cash for work whose breakdown the receipt cannot print,
+  // and that is the owner's call, not this file's.
+  assert.equal(repo.payments.balance(person).balanceCents, itemised);
+  db.close();
+});
+
+test("mientras quede algo sin enviar, el saldo que se enseña es el del teléfono y lo dice", async () => {
+  // §7.4, word for word: «Saldo $340.000 · provisional, faltan 4 movimientos
+  // por enviar». The received figure is a moment behind the instant somebody
+  // handed over cash in a lote, and showing it as if it were current would
+  // tell a pesador they still owe money they just paid.
+  const { db, repo } = aPhone();
+  const person = aWorker(repo);
+  const plot = aPlot(repo);
+  const uuid = repo.people.byId(person)!.uuid!;
+
+  repo.pickups.add({ personId: person, cropId: plot, weight: 50, date: "2026-08-25T14:00:00.000Z" });
+  repo.payments.settle(person, "1970-01-01", "2099-12-31", 800);
+  const itemised = repo.payments.balance(person).balanceCents;
+
+  const server = new FakeServer();
+  server.balances = [{ workerId: uuid, balanceCents: itemised + 12_000_00 }];
+  await engineFor(repo, server).sync({ force: true });
+  assert.equal(repo.payments.fullBalance(person).provisional, false);
+
+  // The pesador hands over cash. Nothing has been pushed yet.
+  repo.payments.pay(person, 10_000_00, { method: "efectivo" });
+  assert.ok(repo.sync.pendingCount() > 0);
+
+  const now = repo.payments.fullBalance(person);
+  assert.equal(now.provisional, true);
+  assert.equal(
+    now.balanceCents,
+    repo.payments.balance(person).balanceCents,
+    "el derivado, que es el único que sabe del pago de hace un minuto",
+  );
+  // The received figure is still there, so the screen can say what it was and
+  // when — it just is not the headline any more.
+  assert.equal(now.serverCents, itemised + 12_000_00);
+  assert.ok(now.serverAt);
+  db.close();
+});
+
+test("el saldo recibido no se guarda cuando el teléfono no está a la par", async () => {
+  // The guard that keeps this from becoming the materialised balance three
+  // documents refused: a figure recorded while the outbox still had rows in it
+  // would describe a moment that never existed on either side.
+  const { db, repo } = aPhone();
+  const person = aWorker(repo);
+  const plot = aPlot(repo);
+  const uuid = repo.people.byId(person)!.uuid!;
+  repo.pickups.add({ personId: person, cropId: plot, weight: 50, date: "2026-08-25T14:00:00.000Z" });
+
+  // A server that refuses every weighing with a code §4.3 leaves queued, so
+  // the outbox never empties.
+  const stubborn = new FakeServer({
+    refuse: { workRecord: { code: "RATE_LIMITED", message: "espera" } },
+  });
+  stubborn.balances = [{ workerId: uuid, balanceCents: 99_999_00 }];
+
+  const report = await engineFor(repo, stubborn).sync({ force: true });
+  assert.ok(report.retrying > 0, "quedó cosa por enviar");
+  assert.equal(report.mismatched, 0, "y no se compara nada, que sería gritar al lobo");
+  assert.equal(
+    repo.payments.fullBalance(person).serverCents,
+    null,
+    "ni se guarda una cifra sobre un momento que no existió",
+  );
+  db.close();
+});

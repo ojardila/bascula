@@ -21,6 +21,7 @@ import {
 import { AppState } from "react-native";
 
 import { repository, rawDb } from "../db";
+import { codeOf, explainSyncError } from "./explain.ts";
 import { HttpClient } from "./http.ts";
 import { FarmSession, sqliteSecretStore, type StoredSession } from "./session.ts";
 import { RestTransport } from "./restTransport.ts";
@@ -41,7 +42,7 @@ const POLL_MS = 15 * 60 * 1000;
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8099";
 
-/** The four states of the chip in §7.1, and only this one is red. */
+/** The four states of the chip in §7.1, and only the last one is red. */
 export type SyncTone = "ok" | "pending" | "offline" | "conflict";
 
 export interface SyncStatus {
@@ -58,6 +59,17 @@ export interface SyncStatus {
   tone: SyncTone;
   /** Everything the last run could not read, e.g. a weigher's money routes. */
   skipped: { what: string; reason: string }[];
+  /**
+   * The pull stopped with the server still holding changes.
+   *
+   * Not an error: `maxPages` is a courtesy bound and the cursor moved over
+   * everything that was applied. It IS the difference between "al día" and
+   * "todavía bajando", and §6.1 makes it the difference between the settle
+   * button being live and not.
+   */
+  stillBehind: boolean;
+  /** How far behind the server said this phone was, at the last handshake. §3.1. */
+  behind: number;
 }
 
 interface SyncContextValue {
@@ -97,6 +109,8 @@ const SyncContext = createContext<SyncContextValue>({
     busy: false,
     tone: "ok",
     skipped: [],
+    stillBehind: false,
+    behind: 0,
   },
   register: async () => {
     throw new Error("no provider");
@@ -135,6 +149,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const startedAt = useRef(Date.now()).current;
 
   const [skipped, setSkipped] = useState<{ what: string; reason: string }[]>([]);
+  // From the last run's report rather than from a column: `behind` is the
+  // server's answer at handshake time and goes stale the moment the pull
+  // starts, so persisting it would be storing a number that lies after a
+  // restart.
+  const [behind, setBehind] = useState({ stillBehind: false, count: 0 });
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
@@ -195,17 +214,29 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const state = repository.sync.state();
     const pending = repository.sync.pendingCount();
     const conflicts = repository.sync.openConflictCount();
-    const offline = !!state.lastError && /NETWORK|TIMEOUT|PARTIAL/.test(state.lastError);
+    // The code at the START of the string, not a match anywhere in it: a
+    // server message that merely mentioned a token used to turn a network
+    // hiccup into "vuelve a conectar el teléfono".
+    const offline =
+      !!state.lastError &&
+      ["NETWORK", "TIMEOUT", "PARTIAL"].includes(codeOf(state.lastError));
+    // A failure that retrying cannot fix — a revoked token, a suspended farm,
+    // a build the server refuses. It used to be invisible whenever the outbox
+    // happened to be empty, which is precisely when nothing else on this
+    // screen would have hinted at it.
+    const stuck = !!state.lastError && !explainSyncError(state.lastError).retryable;
 
     // Only the conflict state is red. §7.1 is explicit about that: a colour
     // that means "look at me" stops meaning anything the moment two different
-    // things wear it.
+    // things wear it. A phone that is stuck wears the amber of "offline",
+    // because what a person does about it is the same — go and find somebody
+    // — and it is never silently green.
     const tone: SyncTone =
       conflicts > 0
         ? "conflict"
-        : offline && pending > 0
+        : stuck || (offline && pending > 0)
           ? "offline"
-          : pending > 0
+          : pending > 0 || behind.stillBehind
             ? "pending"
             : "ok";
 
@@ -220,8 +251,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       busy,
       tone,
       skipped,
+      stillBehind: behind.stillBehind,
+      behind: behind.count,
     };
-  }, [session, busy, skipped, tick]);
+  }, [session, busy, skipped, tick, behind]);
 
   const run = useCallback(
     async (force: boolean): Promise<SyncReport | null> => {
@@ -230,6 +263,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       try {
         const report = await engineFor().sync({ force });
         setSkipped(report.skipped);
+        setBehind({ stillBehind: report.stillBehind, count: report.behind });
         return report;
       } finally {
         setBusy(false);

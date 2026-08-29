@@ -26,6 +26,7 @@ import { repository, fromCents } from "../db";
 import type { Conflict } from "../data/repository.ts";
 import { useT, formatDay } from "../i18n";
 import { useSync } from "../sync/SyncProvider";
+import { explainSyncError } from "../sync/explain.ts";
 
 export default function SyncStatus() {
   const { t, lang, money, num } = useT();
@@ -40,6 +41,8 @@ export default function SyncStatus() {
    * offer to upload it is to stop offering.
    */
   const [seasonUploaded, setSeasonUploaded] = useState(false);
+
+  const explained = explainSyncError(status.lastError ?? "");
 
   const load = useCallback(() => {
     setCards(repository.sync.conflicts());
@@ -140,14 +143,54 @@ export default function SyncStatus() {
             </Card>
           )}
 
-        {/* Why it is not sent, when there is a reason worth naming. "Sin
-            señal" is a different thing from "algo salió mal", and the person
-            reading this can act on the first and not on the second. */}
-        {!!status.lastError && status.pending > 0 && (
-          <Card mode="outlined" style={styles.card}>
+        {/*
+          What went wrong, whenever something did.
+
+          This used to be gated on `status.pending > 0`, which hid the one
+          case that matters most: a phone with an empty outbox whose token was
+          revoked, or whose farm was suspended, or whose build the server will
+          no longer talk to. It has nothing to send, so it showed a green
+          "Todo enviado" and a date — while receiving nothing at all, for days.
+          An empty outbox is not the same thing as being up to date.
+
+          The wording comes from `explain.ts`, which is tested against the
+          protocol's own list of codes, so a state this screen cannot name
+          fails a test instead of reaching a lote as a raw string.
+        */}
+        {!!status.lastError && (
+          <Card mode="outlined" style={[styles.card, !explained.retryable && styles.red]}>
             <Card.Content>
-              <Text style={styles.warn}>{explain(status.lastError, t)}</Text>
-              <Text style={styles.dim}>{t("sync.willRetry")}</Text>
+              <Text style={styles.warn}>{t(explained.key)}</Text>
+              <Text style={styles.dim}>
+                {explained.retryable ? t("sync.willRetry") : t("sync.wontRetry")}
+              </Text>
+              {/* The code, because somebody is going to have to read it out
+                  over the phone to whoever can fix it. */}
+              {!explained.retryable && (
+                <Text style={styles.dim}>{t("sync.errCode", { code: explained.code })}</Text>
+              )}
+            </Card.Content>
+          </Card>
+        )}
+
+        {/*
+          §6.1 and §3.1. The pull stopped with the server still holding
+          changes — a phone that has been out of signal for a fortnight drains
+          what it can and comes back for the rest. Nothing is lost and the
+          cursor did move, but the phone is NOT level, the settle button is
+          off, and the screen has to say which of those two things is true
+          rather than showing a date and letting somebody assume.
+        */}
+        {status.stillBehind && (
+          <Card mode="outlined" style={styles.card}>
+            <Card.Title title={t("sync.behindTitle")} />
+            <Card.Content>
+              <Text style={styles.body}>{t("sync.behindBody")}</Text>
+              {status.behind > 0 && (
+                <Text style={styles.dim}>
+                  {t("sync.behindCount", { n: num(status.behind) })}
+                </Text>
+              )}
             </Card.Content>
           </Card>
         )}
@@ -339,15 +382,56 @@ function ConflictCard({
         </Card>
       );
 
+    // §4.3: the same id already carries different data on the server, so
+    // somebody edited a row the server had already accepted under that id.
+    // The engine raises this and the screen used to have no case for it — the
+    // card printed the literal word "diverged" and nothing else, which is a
+    // card without a sentence on it and therefore, by §7.3, not a card.
+    case "diverged":
+      return (
+        <Card mode="elevated" style={styles.card}>
+          <Card.Content>
+            <Text variant="titleSmall">{person}</Text>
+            <Text variant="labelLarge" style={styles.dim}>
+              {t("conflict.divergedTitle")}
+            </Text>
+            <Text style={styles.body}>{t("conflict.diverged")}</Text>
+          </Card.Content>
+          <Card.Actions>
+            {conflict.personId !== null && (
+              <Button onPress={() => onOpenWorker(conflict.personId!)}>
+                {t("conflict.seeHistory")}
+              </Button>
+            )}
+            <Button
+              mode="contained-tonal"
+              onPress={() => onResolve(conflict, "acknowledged", t("conflict.closed"))}
+            >
+              {t("conflict.understood")}
+            </Button>
+          </Card.Actions>
+        </Card>
+      );
+
     default:
       return (
         <Card mode="elevated" style={styles.card}>
           <Card.Content>
             <Text variant="titleSmall">{person}</Text>
+            {/* A heading, so the card is not a bare server message. The code
+                stays underneath: an error this table has not met is worse to
+                look at than a sentence and better than a phone deciding on
+                its own what to do about somebody's pay. */}
+            <Text variant="labelLarge" style={styles.dim}>
+              {t("conflict.rejectedTitle")}
+            </Text>
             <Text style={styles.body}>
               {String(p.message ?? p.code ?? conflict.kind)}
             </Text>
-            <Text style={styles.dim}>{conflict.entity}</Text>
+            <Text style={styles.dim}>
+              {conflict.entity}
+              {p.code ? ` · ${String(p.code)}` : ""}
+            </Text>
           </Card.Content>
           <Card.Actions>
             <Button
@@ -373,13 +457,6 @@ const heroIcon = (tone: string) =>
 
 const heroColour = (tone: string) =>
   tone === "conflict" ? "#b3261e" : tone === "offline" ? "#b26a00" : "#2e7d32";
-
-function explain(lastError: string, t: (k: string) => string): string {
-  if (/NETWORK|TIMEOUT/.test(lastError)) return t("sync.errNoSignal");
-  if (/PARTIAL/.test(lastError)) return t("sync.errPartial");
-  if (/UNAUTHORIZED|FORBIDDEN|TOKEN/.test(lastError)) return t("sync.errAuth");
-  return lastError;
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

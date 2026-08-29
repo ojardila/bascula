@@ -47,6 +47,22 @@ export interface SyncReport {
   applied: AppliedCounts | null;
   /** Workers whose balance the phone and the server do not agree on. */
   mismatched: number;
+  /**
+   * True when the pull stopped with the server still holding changes.
+   *
+   * `maxPages` is a courtesy bound, not a correctness one — the cursor only
+   * advances over what was applied — but a phone that stopped early is NOT
+   * level with the server, and §6.1 makes being level the condition for
+   * settling. Recorded so nothing downstream has to infer it from a page
+   * count it cannot see.
+   */
+  stillBehind: boolean;
+  /**
+   * How many changes the server said this phone was missing, at handshake
+   * time. §3.1: «lo que convierte el chip de estado de un spinner en un
+   * número». Zero from a transport that cannot know.
+   */
+  behind: number;
   skipped: { what: string; reason: string }[];
   error: { code: string; message: string } | null;
   handshake: Handshake | null;
@@ -129,6 +145,8 @@ export class SyncEngine {
       retrying: this.repo.sync.pendingCount(),
       applied: null,
       mismatched: 0,
+      stillBehind: false,
+      behind: 0,
       skipped: [],
       error: { code, message },
       handshake: null,
@@ -143,6 +161,8 @@ export class SyncEngine {
       retrying: 0,
       applied: null,
       mismatched: 0,
+      stillBehind: false,
+      behind: 0,
       skipped: [],
       error: null,
       handshake: null,
@@ -158,6 +178,7 @@ export class SyncEngine {
         cursor: state.cursor,
       });
       report.handshake = hs;
+      report.behind = hs.behind;
 
       // The farm's zone, adopted before anything is derived from it. A run
       // that pulled weighings and stamped them under the wrong zone would put
@@ -175,19 +196,29 @@ export class SyncEngine {
       report.applied = applied;
 
       // §3.3 and §7.4. The checksum, last, and only when the phone is level
-      // with the server on both sides — otherwise a difference is expected
-      // and saying so would be crying wolf.
-      if (this.repo.sync.pendingCount() === 0)
+      // with the server on BOTH sides — nothing left to send and nothing left
+      // to receive. Otherwise a difference is expected and saying so would be
+      // crying wolf: a red card per worker on a phone whose only problem is
+      // that it has not finished downloading.
+      if (this.repo.sync.pendingCount() === 0 && !report.stillBehind)
         report.mismatched = this.checkBalances(report);
 
       report.retrying = this.repo.sync.pendingCount();
 
-      // `pulledAt` records that the PULL finished, and it did: the changes
-      // were applied and the cursor moved. §6.1 reads it as one of the two
-      // conditions for settling, and the other one — an empty outbox for that
-      // worker — is checked separately, so recording it here cannot let
-      // anybody settle against work that has not been sent.
-      this.repo.sync.saveState({ pulledAt: this.now().toISOString() });
+      // `pulledAt` records that the PULL FINISHED — and only then.
+      //
+      // §6.1 reads it as one of the two conditions for settling. A run that
+      // stopped at `maxPages` with `more` still true has applied everything it
+      // received and moved its cursor, so nothing is lost and the next run
+      // resumes exactly there; but it has NOT caught up, and stamping it as if
+      // it had is what let a phone two weeks out of signal open the settle
+      // button over a week whose weighings were still on the server.
+      //
+      // The other condition — an empty outbox — is checked separately, so
+      // recording it here cannot let anybody settle against work that has not
+      // been sent either.
+      if (!report.stillBehind)
+        this.repo.sync.saveState({ pulledAt: this.now().toISOString() });
 
       if (report.retrying > 0) {
         // Some envelopes came back with a code §4.3 says to retry — a
@@ -524,6 +555,9 @@ export class SyncEngine {
 
     let cursor = this.repo.sync.state().cursor;
     let balances: { workerId: string; balanceCents: number }[] | undefined;
+    // Assume the worst until a page says `more: false`. A `maxPages` of zero,
+    // or a loop that never runs, is a pull that did not catch up either.
+    report.stillBehind = true;
 
     for (let page = 0; page < this.maxPages; page++) {
       const res = await this.transport.pull({ cursor, limit: this.pullLimit });
@@ -539,7 +573,10 @@ export class SyncEngine {
       this.repo.sync.saveState({ cursor });
 
       if (res.balances) balances = res.balances;
-      if (!res.more) break;
+      if (!res.more) {
+        report.stillBehind = false;
+        break;
+      }
     }
 
     this.lastBalances = balances ?? null;
@@ -602,15 +639,39 @@ export class SyncEngine {
     );
     let mismatched = 0;
 
+    // Decision 7, and the half of it that was missing.
+    //
+    // The figures were compared and then thrown away, which satisfied §7.4
+    // (never copy a total to paper over a mismatch) and quietly failed §2.2:
+    // the phone went on showing a `BALANCE_SQL` that counts only weighings,
+    // so a worker who also did jornales had half a balance on the screen and
+    // nothing said so. Keeping the figure is what lets the worker's card show
+    // the whole of it; NOTHING downstream derives an amount from it, and the
+    // pay screens still read `payments.balance`.
+    //
+    // Recorded here rather than in `drainPull` because this is the only place
+    // that runs when the phone is level on both sides — an empty outbox and a
+    // pull that finished. A figure stored while either was still moving would
+    // describe a moment that never existed.
+    this.repo.sync.recordServerBalances(server, this.now().toISOString());
+
     for (const s of server) {
       const mine = local.get(s.workerId);
       if (!mine) continue;
       if (mine.balanceCents === s.balanceCents) continue;
 
-      // Decision 7: the phone shows the full balance even when it cannot
-      // break it down. A phone that has never recorded a movement for this
-      // worker is not disagreeing with the server, it simply has none of the
-      // work — jornales and contracts do not come down (§2.2).
+      // A phone that has never recorded a movement for this worker is not
+      // disagreeing with the server, it simply has none of the work —
+      // jornales and contracts do not come down (§2.2).
+      //
+      // KNOWN LIMIT, and it is written down rather than guessed at: a worker
+      // with BOTH weighings and jornales lands in the other branch and is
+      // reported as a calculation bug, because two totals are not enough to
+      // tell "the phone knows less" from "the two implementations disagree".
+      // The feed would have to carry the shape of what it filtered out for
+      // this to be decidable, and inventing a rule here would either cry wolf
+      // on every mixed worker or bury a real divergence in the noise. Neither
+      // is ours to choose: it is somebody's pay.
       const partial = mine.balanceCents === 0;
 
       mismatched++;

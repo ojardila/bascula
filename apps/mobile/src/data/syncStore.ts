@@ -66,6 +66,17 @@ export interface SyncStore {
   /** Every worker's uuid and balance, for the §3.3 checksum comparison. */
   balanceChecksums(): { uuid: string; personId: number; name: string; balanceCents: number }[];
 
+  /** Decision 7 and §2.2: keep what the server said, and what we derived then. */
+  recordServerBalances(
+    rows: readonly { workerId: string; balanceCents: number }[],
+    at: string,
+  ): void;
+
+  /** The received figure for one worker, by local id. Null if none arrived. */
+  serverBalanceOf(
+    personId: number,
+  ): { balanceCents: number; derivedCents: number; at: string } | null;
+
   wireRow(entity: string, uuid: string): Record<string, unknown> | null;
   personByUuid(
     uuid: string,
@@ -626,6 +637,48 @@ export function createSyncStore(db: SqlDatabase, deps: SyncStoreDeps): SyncStore
       [],
     );
 
+  /**
+   * Decision 7 and §2.2.
+   *
+   * `derivedCents` is written from the SAME pass as the server's figure, not
+   * read back later, because the gap between the two is the whole meaning of
+   * the row: it is the jornales and the contracts the pull filters out, and it
+   * is only that if both halves describe the same instant.
+   *
+   * A worker the server named and this phone does not hold is still recorded,
+   * keyed by uuid: their row may arrive on the next page, and a balance
+   * thrown away for arriving first is a balance nobody ever sees.
+   */
+  function recordServerBalances(
+    rows: readonly { workerId: string; balanceCents: number }[],
+    at: string,
+  ): void {
+    if (!rows.length) return;
+    const derived = new Map(balanceChecksums().map((r) => [r.uuid, r.balanceCents]));
+    db.withTransactionSync(() => {
+      for (const r of rows) {
+        db.runSync(
+          `INSERT INTO server_balances (workerUuid, balanceCents, derivedCents, at)
+           VALUES (?,?,?,?)
+           ON CONFLICT(workerUuid) DO UPDATE SET
+             balanceCents = excluded.balanceCents,
+             derivedCents = excluded.derivedCents,
+             at = excluded.at`,
+          [r.workerId, r.balanceCents, derived.get(r.workerId) ?? 0, at],
+        );
+      }
+    });
+  }
+
+  const serverBalanceOf = (personId: number) =>
+    db.getFirstSync<{ balanceCents: number; derivedCents: number; at: string }>(
+      `SELECT sb.balanceCents, sb.derivedCents, sb.at
+         FROM server_balances sb
+         JOIN people pe ON pe.uuid = sb.workerUuid
+        WHERE pe.id = ?`,
+      [personId],
+    );
+
   const reactivations = (personId?: number) =>
     db.getAllSync<{
       id: number;
@@ -651,6 +704,8 @@ export function createSyncStore(db: SqlDatabase, deps: SyncStoreDeps): SyncStore
     resolveConflict,
     applyPull,
     balanceChecksums,
+    recordServerBalances,
+    serverBalanceOf,
     wireRow,
     personByUuid,
     reactivations,

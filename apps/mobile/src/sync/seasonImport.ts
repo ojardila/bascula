@@ -177,6 +177,31 @@ export interface SeasonImportTransport {
   importSeason(input: SeasonImportInput): Promise<SeasonImportReport>;
 }
 
+/**
+ * How long the phone waits for `POST /v1/import/season` before giving up.
+ *
+ * Fifteen minutes, and the arithmetic is the reason. A real season off the
+ * handset in production is 11,7 MB of JSON in a single body — that is the
+ * contract's shape, not a choice (§8 fase 3: one request, one transaction).
+ * The uplink it goes over is a farm's, which on a bad afternoon settles at
+ * something like 100 kbit/s, or ~13 kB/s. 11,7 MB at 13 kB/s is a little over
+ * thirteen minutes.
+ *
+ * `HttpClient`'s default of 25 s is right for a sync batch and absurd here:
+ * it aborts a perfectly healthy upload after 300 kB, every time, and the
+ * mudanza is a one-shot operation done with the owner standing there. Aborting
+ * loses nothing — a 4xx never commits and every id is the phone's own uuid, so
+ * the retry writes nothing twice — but it costs the whole climb, and on that
+ * link the retry will lose the same race.
+ *
+ * The number is deliberately not "no deadline". A socket with no deadline on a
+ * phone is a screen that says «enviando» until somebody force-quits the app,
+ * and §8's whole promise is that the person watching always knows where they
+ * stand. Fifteen minutes is long enough for the upload and short enough to
+ * have an end the screen can name.
+ */
+export const SEASON_IMPORT_TIMEOUT_MS = 15 * 60 * 1000;
+
 // ---- Phone value → contract --------------------------------------------
 
 /**
@@ -286,6 +311,44 @@ export function toImportInput(x: SeasonExport): SeasonImportInput {
   };
 }
 
+/**
+ * How big the body is, in bytes.
+ *
+ * The screen needs it: «11,7 MB en un solo envío» is what turns a wait nobody
+ * can interpret into one that has a reason, and it is the figure that explains
+ * why the deadline above is fifteen minutes and not twenty-five seconds.
+ *
+ * It serialises the payload a second time — `HttpClient` will do it again on
+ * its way out — which is a few megabytes of garbage once, on an operation that
+ * takes minutes. The alternative is guessing from the row counts and printing
+ * a number that is not the one going over the wire.
+ */
+export const byteLengthOf = (input: SeasonImportInput): number =>
+  utf8Length(JSON.stringify(input));
+
+/**
+ * UTF-8 bytes of a string, without `TextEncoder` or `Buffer`.
+ *
+ * Neither is guaranteed under Hermes, and the difference is not cosmetic on
+ * this payload: a farm's names are full of `ñ` and `í`, which are one JS
+ * character and two bytes, and the size on the screen has to be the size that
+ * has to climb the uplink.
+ */
+function utf8Length(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      // A surrogate pair is four bytes and two indexes.
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+
 /** How many rows one import is, for the screen and the record. */
 export const rowsOf = (input: SeasonImportInput): number =>
   input.workers.length +
@@ -324,6 +387,8 @@ export interface SeasonImportOutcome {
   status: SeasonImportStatus;
   totals: SeasonTotals;
   rows: number;
+  /** How many bytes the body was. Zero when it never got as far as building one. */
+  bytes: number;
   report: SeasonImportReport | null;
   /** Every worker the server disagreed about, named. Only when `rejected`. */
   mismatches: BalanceMismatch[];
@@ -349,6 +414,17 @@ export const seasonWasImported = (o: SeasonImportOutcome): boolean =>
 export interface SeasonImportProgress {
   phase: "building" | "checking" | "sending";
   rows: number;
+  /** The body's size in bytes. Zero until the payload has been built. */
+  bytes: number;
+  /**
+   * Epoch ms at which THIS phase began.
+   *
+   * The screen runs its clock off this rather than off the tap, because
+   * building and checking a season of eighteen thousand weighings is itself
+   * tens of seconds, and an «llevamos 12 minutos» that counted them would be
+   * measuring the wrong thing against the deadline.
+   */
+  since: number;
 }
 
 // ---- The record ---------------------------------------------------------
@@ -436,6 +512,7 @@ export class SeasonImporter {
     let importId = "";
     let totals: SeasonTotals | null = null;
     let rows = 0;
+    let bytes = 0;
 
     const finish = (
       status: SeasonImportStatus,
@@ -450,6 +527,7 @@ export class SeasonImporter {
         status,
         totals: totals ?? emptyTotals(),
         rows,
+        bytes,
         report,
         mismatches,
         problems,
@@ -476,7 +554,12 @@ export class SeasonImporter {
 
     let payload: SeasonExport;
     try {
-      onProgress?.({ phase: "building", rows: 0 });
+      onProgress?.({
+        phase: "building",
+        rows: 0,
+        bytes: 0,
+        since: started.getTime(),
+      });
       payload = this.preview();
       importId = payload.importId;
       totals = payload.totals;
@@ -497,7 +580,12 @@ export class SeasonImporter {
     // The phone's own check, before a single byte leaves. It catches a bug in
     // the exporter, which the server's comparison structurally cannot — see
     // `verifySeasonExport`.
-    onProgress?.({ phase: "checking", rows: 0 });
+    onProgress?.({
+      phase: "checking",
+      rows: 0,
+      bytes: 0,
+      since: this.now().getTime(),
+    });
     const problems = verifySeasonExport(payload);
     if (problems.length)
       return finish("refused", null, [], problems, {
@@ -507,9 +595,13 @@ export class SeasonImporter {
 
     const input = toImportInput(payload);
     rows = rowsOf(input);
+    bytes = byteLengthOf(input);
 
     try {
-      onProgress?.({ phase: "sending", rows });
+      // `since` is stamped HERE, at the start of the one request that has the
+      // fifteen-minute deadline, so the clock on the screen and the clock on
+      // the socket are measuring the same thing.
+      onProgress?.({ phase: "sending", rows, bytes, since: this.now().getTime() });
       const report = await this.transport.importSeason(input);
 
       // §8 fase 3 is meant to be run again and again. `written` is how the

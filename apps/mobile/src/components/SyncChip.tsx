@@ -41,11 +41,22 @@ export default function SyncChip() {
     ? t("sync.connectShort")
     : status.conflicts > 0
       ? t("sync.chipConflicts", { n: status.conflicts })
-      : status.tone === "offline"
-        ? t("sync.chipOffline", { n: status.pending })
+      : // "Sin señal · 12 pendientes" only says something when there ARE
+        // pendientes. A phone whose token was revoked, or whose farm was
+        // suspended, has an empty outbox and used to read "Sincronizado" —
+        // green, in the header, while receiving nothing for days.
+        status.tone === "offline"
+        ? status.pending > 0
+          ? t("sync.chipOffline", { n: status.pending })
+          : t("sync.chipStuck")
         : status.pending > 0
           ? t("sync.chipPending", { n: status.pending })
-          : t("sync.chipOk");
+          : // Nothing to send, and still not up to date: the pull stopped with
+            // the server holding more. §6.1 turns the settle button off for
+            // this, so the chip cannot claim otherwise.
+            status.stillBehind
+            ? t("sync.chipBehind")
+            : t("sync.chipOk");
 
   return (
     <Pressable

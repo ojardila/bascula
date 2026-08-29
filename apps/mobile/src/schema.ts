@@ -169,6 +169,30 @@ export const PAID_AGAINST_SQL = `
              AND date(l.date) >= ${DAY_OF("s.createdAt")} ) )
 `;
 
+/**
+ * Cash handed over per worker between two days, inclusive.
+ *
+ * For the payroll sheet, and it exists because the sheet used to build the
+ * same figure in JavaScript out of `Payments.history(personId, 50)` — one
+ * query per worker, and a HARD LIMIT of fifty movements. A worker past their
+ * fiftieth movement of the season had this week's payment fall off the end of
+ * the window and printed as if they had been handed nothing, on the sheet
+ * they sign (`movil.md` §9.6: «la historia se trunca en silencio»).
+ *
+ * Same predicate the JS had, deliberately: every `pago` dated in the range.
+ * A `pago` that was later reversed still counts, exactly as it did before —
+ * whether an undone payment should stay on a signed sheet is a question about
+ * a document somebody keeps, not a truncation bug, and it is not this
+ * function's to answer.
+ */
+export const PAID_IN_RANGE_SQL = `
+  SELECT personId, COALESCE(-SUM(amountCents), 0) AS cents
+    FROM ledger
+   WHERE kind = 'pago' AND date >= ? AND date <= ?
+   GROUP BY personId
+  HAVING cents > 0
+`;
+
 /** Pickups in range that no live settlement has claimed. */
 export const PENDING_SQL = `
   SELECT pk.id, pk.weight, pk.week AS week
@@ -780,6 +804,52 @@ export const REACTIVATIONS_SCHEMA = `
  * something anything queries by. The columns that ARE queried — the id, the
  * status, when — are columns.
  */
+/**
+ * The server's balance per worker, as it last came down — decision 7 and §2.2.
+ *
+ * This is the one number in the system that is RECEIVED rather than derived,
+ * and the reason it is allowed to exist needs saying, because three documents
+ * spent their length refusing a materialised balance.
+ *
+ * What they refused is storing a total and then TRUSTING it: deriving money
+ * from a cached sum is how two implementations quietly drift and how a
+ * worker's pay stops being reconstructible from the movements behind it.
+ * Nothing here does that. `BALANCE_SQL` is still the only thing that decides
+ * an amount, `settle` and `pay` never read this table, and every figure the
+ * farm hands over is still derived from the ledger at the moment it is handed
+ * over.
+ *
+ * What this table is for is the opposite problem. §2.2: the web registers
+ * jornales and contracts, the pull filters them out because the phone has no
+ * screen that could show a day's wage in kilos, and so the phone's own
+ * `BALANCE_SQL` sums only the part of the work it happens to carry. Decision 7
+ * is that the phone shows the FULL balance anyway — «un saldo que cuenta la
+ * mitad del trabajo es un saldo que miente, y quien lo lee no tiene forma de
+ * saberlo». To show it, it has to keep it.
+ *
+ * Hence the two columns that make it safe to read: `at`, so the screen can say
+ * WHEN this was true, and `derivedCents`, the phone's own figure at that same
+ * instant — the difference between the two is exactly the work the phone
+ * cannot itemise, and it is what lets a card say "de esto, X son jornales que
+ * están en la web" instead of showing a number out of nowhere.
+ *
+ * Not a synced table: no uuid, no outbox trigger, nothing here ever travels
+ * back up. It is a receipt, not a record.
+ */
+export const SERVER_BALANCES_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS server_balances (
+    -- The worker's uuid, which is what the wire names them by. The local
+    -- integer id is resolved at read time, so a balance that arrived before
+    -- its worker did is not lost.
+    workerUuid   TEXT PRIMARY KEY,
+    balanceCents INTEGER NOT NULL,
+    -- What this phone derived for the same worker at the same moment. The
+    -- gap between the two is the work the phone cannot break down.
+    derivedCents INTEGER NOT NULL,
+    at           TEXT NOT NULL
+  );
+`;
+
 export const IMPORT_RUNS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS import_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

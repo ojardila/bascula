@@ -131,56 +131,39 @@ export default function PaymentsPanel() {
   );
   const selectedTotal = selected.reduce((s, r) => s + netOf(r), 0);
 
-  // Settle then pay, for everyone ticked. Each worker is independent: one
-  // failure must not take the rest of the payroll down with it.
+  // Settle then pay, for everyone ticked. The rule itself lives in the data
+  // layer now (`Payments.runPayroll`, `movil.md` §9.13): the sequence settle →
+  // re-read the balance → pay what the ledger says is business logic, and
+  // while it was written out here nothing could test it. What is left in this
+  // function is the sheet, the snackbar and the undo handle.
   function runBulk() {
     if (!config) return;
-    let done = 0;
-    let noCash = 0;
-    let failed = 0;
-    const payments: number[] = [];
-    const settlements: number[] = [];
-    for (const r of selected) {
-      try {
-        const res = Payments.settle(r.personId, EPOCH_START, endOfWeek(monday), config.costPerUnit);
-        if (!res) {
-          noCash++;
-          continue;
-        }
-        // Pay the balance, not the gross: the balance already nets out any
-        // advance handed over during the week. Paying the gross would hand the
-        // advance over a second time, for the whole payroll at once.
-        const owed = Payments.balance(r.personId).balanceCents;
-        if (owed <= 0) {
-          noCash++;
-          continue;
-        }
-        // Recorded before attempting the payment: settle() has already
-        // committed, so if pay() throws the settlement must still be undoable.
-        settlements.push(res.settlementId);
-        // Linked to the document it settles (`movil.md` §9.3), so the receipt
-        // is a lookup rather than a guess over dates.
-        payments.push(
-          Payments.pay(r.personId, owed, {
-            method: "efectivo",
-            settlementId: res.settlementId,
-          }),
-        );
-        done++;
-      } catch {
-        failed++; // skip this worker, keep the rest of the payroll going
-      }
-    }
+    const run = Payments.runPayroll(
+      selected.map((r) => r.personId),
+      EPOCH_START,
+      endOfWeek(monday),
+      config.costPerUnit,
+      { method: "efectivo" },
+    );
+
     setBulk(null);
-    setLastRun(done ? { payments, settlements } : null);
+    // Every settlement the run created, not only the ones a payment followed.
+    // A worker whose advance ate the week is settled all the same, and that
+    // document has to be reachable from Deshacer or it is only undoable by
+    // hand in the ledger.
+    setLastRun(
+      run.settlementIds.length || run.paymentIds.length
+        ? { payments: run.paymentIds, settlements: run.settlementIds }
+        : null,
+    );
     load();
     const extra = [
-      noCash ? t("pay.noCashN", { n: noCash }) : "",
-      failed ? t("pay.failedN", { n: failed }) : "",
+      run.noCash ? t("pay.noCashN", { n: run.noCash }) : "",
+      run.failed ? t("pay.failedN", { n: run.failed }) : "",
     ]
       .filter(Boolean)
       .join(" · ");
-    setSnack(`${t("pay.paidTo", { n: done })}${extra ? ` ${extra}` : ""}`);
+    setSnack(`${t("pay.paidTo", { n: run.paid })}${extra ? ` ${extra}` : ""}`);
   }
 
   // Reverse the payments first, then void the settlements: voiding posts its
@@ -210,14 +193,19 @@ export default function PaymentsPanel() {
   async function printPayroll() {
     if (!config) return;
     const balances = Payments.balances();
-    const paidThisWeek = new Map<number, number>();
-    for (const b of balances) {
-      const hist = Payments.history(b.personId, 50);
-      const paid = hist
-        .filter((h) => h.kind === "pago" && h.date >= monday)
-        .reduce((s, h) => s + Math.abs(h.amountCents), 0);
-      if (paid > 0) paidThisWeek.set(b.personId, paid);
-    }
+    // One query for the whole crew, bounded by the WEEK and not by a row
+    // count. This was `Payments.history(personId, 50)` per worker, filtered by
+    // date afterwards: past their fiftieth movement of the season a worker's
+    // payment for this week fell off the end of the window and they printed as
+    // unpaid, on the sheet they sign (`movil.md` §9.6). The sheet is the
+    // farm's record of what was handed over; it does not get to truncate.
+    //
+    // It also gained an upper bound, which the JavaScript never had: the sheet
+    // is titled with a week's dates, and printing last week's sheet used to
+    // include everything paid since, under that heading.
+    const paidThisWeek = new Map(
+      Payments.paidInRange(monday, endOfWeek(monday)).map((r) => [r.personId, r.cents]),
+    );
     if (!paidThisWeek.size) {
       setSnack(t("pay.emptyHistory"));
       return;

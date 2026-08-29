@@ -23,7 +23,7 @@
  * that the app has not crashed yet.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
 import {
   Text,
@@ -44,6 +44,7 @@ import { useSync } from "../sync/SyncProvider";
 import { SeasonExportError, type SeasonExport } from "../sync/seasonExport.ts";
 import {
   seasonWasImported,
+  SEASON_IMPORT_TIMEOUT_MS,
   type BalanceMismatch,
   type SeasonImportOutcome,
   type SeasonImportProgress,
@@ -79,7 +80,7 @@ export default function SeasonImport() {
     if (!seasonImporter) return;
     setConfirming(false);
     setOutcome(null);
-    setProgress({ phase: "building", rows: 0 });
+    setProgress({ phase: "building", rows: 0, bytes: 0, since: Date.now() });
     try {
       const result = await seasonImporter.run({ onProgress: setProgress });
       setOutcome(result);
@@ -235,12 +236,25 @@ export default function SeasonImport() {
 }
 
 /**
- * Where it is, in rows and not in a spinner.
+ * Where it is, in rows, megabytes and seconds — never in a spinner alone.
  *
  * `POST /v1/import/season` is one request carrying the whole season, so there
- * is no batch counter to show: what the person can be told is which step it is
- * on and how big the thing is. Saying "enviando 55.000 filas" is worth more
- * than a bar that would have to lie about a single upload's progress.
+ * is no batch counter and no percentage: `fetch` does not report how much of a
+ * body has left the phone, and a bar that guessed would be lying about the one
+ * number the person is watching. What CAN be said honestly is said:
+ *
+ *  - which step it is on, and how many rows and megabytes are in flight —
+ *    11,7 MB is the reason this takes what it takes, and a person who is told
+ *    that stops wondering whether the app is stuck;
+ *  - how long it has been going, ticking every second, which is the only
+ *    evidence a viewer has that the process is alive at all;
+ *  - how long it will wait before giving up, so the wait has an end somebody
+ *    can plan around instead of an unbounded one;
+ *  - and, in green and in the same words as everywhere else, that a failure
+ *    here costs nothing. That sentence used to appear only before the button
+ *    and after the answer. The minutes in between are exactly when somebody
+ *    with a bad signal starts wondering whether they have broken the farm's
+ *    payroll, and it is when they most need to be told they have not.
  */
 function Progress({
   progress,
@@ -251,20 +265,63 @@ function Progress({
   t: (k: string, v?: Record<string, string | number>) => string;
   num: (n: number) => string;
 }) {
+  // Anchored to the phase's own start (`since`), not to the tap: building and
+  // checking a season of eighteen thousand weighings is itself tens of
+  // seconds, and counting those against the request's deadline would be
+  // measuring the wrong thing.
+  const [elapsedMs, setElapsedMs] = useState(() => Date.now() - progress.since);
+  useEffect(() => {
+    setElapsedMs(Date.now() - progress.since);
+    const timer = setInterval(() => setElapsedMs(Date.now() - progress.since), 1000);
+    return () => clearInterval(timer);
+  }, [progress.since, progress.phase]);
+
+  const sending = progress.phase === "sending";
   return (
     <Card mode="elevated" style={styles.card}>
       <Card.Content style={styles.hero}>
         <ActivityIndicator />
         <Text variant="titleSmall" style={styles.centered}>
-          {progress.phase === "sending" && progress.rows > 0
+          {sending && progress.rows > 0
             ? t("import.phaseSending", { rows: num(progress.rows) })
             : t(`import.phase.${progress.phase}`)}
         </Text>
+
+        {sending && progress.bytes > 0 && (
+          <Text style={[styles.dim, styles.centered]}>
+            {t("import.size", { mb: num(round1(progress.bytes / 1_000_000)) })}
+          </Text>
+        )}
+
+        {/* The clock. Without it the only difference between "subiendo" and
+            "colgado" is the person's patience. */}
+        <Text style={[styles.centered, styles.strong]}>
+          {t("import.elapsed", { clock: clockOf(elapsedMs) })}
+        </Text>
+        {sending && (
+          <Text style={[styles.dim, styles.centered]}>
+            {t("import.waitUntil", {
+              min: num(Math.round(SEASON_IMPORT_TIMEOUT_MS / 60000)),
+            })}
+          </Text>
+        )}
+
         <Text style={[styles.dim, styles.centered]}>{t("import.dontClose")}</Text>
+        {/* The property §8's whole plan rests on, said while the waiting is
+            happening and not only before and after it. */}
+        <Text style={[styles.centered, styles.safe]}>{t("import.safety")}</Text>
       </Card.Content>
     </Card>
   );
 }
+
+/** `m:ss`, because "134 segundos" is not a length anybody feels. */
+function clockOf(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * What happened, with the balance check first.

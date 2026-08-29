@@ -21,10 +21,12 @@ import {
   today,
   fromCents,
   type Balance,
+  type FullBalance,
   type LedgerEntry,
   type Person,
 } from "../db";
 import { useT, formatDay } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
 import * as Print from "expo-print";
 import { buildReceipt } from "../receipt";
 import { receiptHtml } from "../receiptHtml";
@@ -39,11 +41,18 @@ const ICON: Record<string, string> = {
 };
 
 export default function Account() {
-  const { t, lang, money } = useT();
+  const { t, lang, money, num } = useT();
+  // Only to say HOW MANY things are unsent, which is what §7.4's sentence
+  // needs. Nothing on this screen changes behaviour because of it.
+  const { status } = useSync();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId } = useRoute<RouteProp<RootStackParamList, "Account">>().params;
   const [person, setPerson] = useState<Person | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
+  // Decision 7 and §2.2. The figure to SHOW, which on a phone that has heard
+  // from the server includes the jornales and contracts this app has no screen
+  // for. `balance` above stays the figure that decides what is handed over.
+  const [full, setFull] = useState<FullBalance | null>(null);
   const [rows, setRows] = useState<LedgerEntry[]>([]);
   const [hasSettlement, setHasSettlement] = useState(false);
   // A settlement the user is considering voiding. The app tells people to void
@@ -54,6 +63,7 @@ export default function Account() {
   const load = useCallback(() => {
     setPerson(PeopleDb.byId(personId) ?? null);
     setBalance(Payments.balance(personId));
+    setFull(Payments.fullBalance(personId));
     setRows(Payments.history(personId));
     setHasSettlement(Payments.settlements(personId).some((x) => x.status === "open"));
   }, [personId]);
@@ -65,8 +75,15 @@ export default function Account() {
   const voided = new Set(
     rows.filter((r) => r.reversesId != null).map((r) => r.reversesId as number),
   );
+  // What this phone can hand over, and what it is allowed to pay out. Derived
+  // from the ledger, movement by movement, exactly as before.
   const credit = balance?.balanceCents ?? 0;
-  const owes = credit < 0; // the worker took an advance that is not worked off yet
+  // What the worker is actually owed, which is not the same thing the moment
+  // the farm books a jornal on the web (§2.2). On a phone that has never
+  // synced these two are identical and nothing on this screen changes.
+  const shown = full?.balanceCents ?? credit;
+  const notItemisable = full?.notItemisableCents ?? 0;
+  const owes = shown < 0; // the worker took an advance that is not worked off yet
   const busy = useRef(false);
 
   function payOutCredit() {
@@ -181,16 +198,46 @@ export default function Account() {
           <Card.Content>
             <Text
               variant="labelLarge"
-              style={credit > 0 ? styles.creditText : owes ? styles.owesText : styles.dim}
+              style={shown > 0 ? styles.creditText : owes ? styles.owesText : styles.dim}
             >
-              {credit > 0 ? t("pay.balanceTitle") : owes ? t("pay.owesUs") : t("pay.balanceTitle")}
+              {shown > 0 ? t("pay.balanceTitle") : owes ? t("pay.owesUs") : t("pay.balanceTitle")}
             </Text>
             <Text
               variant="displaySmall"
-              style={credit > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
+              style={shown > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
             >
-              {money(fromCents(Math.abs(credit)))}
+              {money(fromCents(Math.abs(shown)))}
             </Text>
+
+            {/*
+              §2.2 and decision 7. The phone shows the whole balance and then
+              says which part of it it cannot break down — «un saldo que cuenta
+              la mitad del trabajo es un saldo que miente». Without the second
+              line the first one would be a number the history underneath does
+              not add up to, which is its own kind of lie.
+            */}
+            {notItemisable !== 0 && (
+              <>
+                <Text style={styles.dim}>
+                  {t("pay.notItemisable", { amount: money(fromCents(Math.abs(notItemisable))) })}
+                </Text>
+                {credit > 0 && (
+                  <Text style={styles.dim}>
+                    {t("pay.canDeliverHere", { amount: money(fromCents(credit)) })}
+                  </Text>
+                )}
+              </>
+            )}
+            {/* §7.4: while anything is unsent the figure is this phone's own,
+                and it says so rather than passing for the farm's. */}
+            {full?.provisional && full.serverCents !== null && (
+              <Text style={styles.dim}>{t("pay.provisional", { n: num(status.pending) })}</Text>
+            )}
+            {!full?.provisional && full?.serverAt && (
+              <Text style={styles.dim}>
+                {t("pay.fromServer", { when: formatDay(full.serverAt.slice(0, 10), lang) })}
+              </Text>
+            )}
             {credit > 0 ? (
               <Button
                 mode="contained-tonal"

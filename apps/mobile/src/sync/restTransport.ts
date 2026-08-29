@@ -55,10 +55,11 @@
 
 import { mondayOf, parseDay, addDays } from "../../../../packages/shared/src/time.ts";
 import { ApiError, type HttpClient } from "./http.ts";
-import type {
-  SeasonImportInput,
-  SeasonImportReport,
-  SeasonImportTransport,
+import {
+  SEASON_IMPORT_TIMEOUT_MS,
+  type SeasonImportInput,
+  type SeasonImportReport,
+  type SeasonImportTransport,
 } from "./seasonImport.ts";
 import type {
   Handshake,
@@ -712,16 +713,20 @@ export class RestTransport implements SyncTransport, SeasonImportTransport {
    * `ApiError` — 409 `IMPORT_MISMATCH` carrying `details.balances`, which
    * `SeasonImporter` turns into named cards.
    *
-   * `HttpClient`'s 25-second deadline is the one thing worth knowing about:
-   * a season is a few megabytes in a single body, and on a farm's uplink that
-   * request can outlive it. A timeout here is not a lost import — it is an
-   * answer nobody read — and the retry is free precisely because every row is
-   * keyed by the uuid the phone already gave it.
+   * The deadline is the one thing worth knowing about, and it is NOT the
+   * client's default. A season is 11,7 MB in a single body and 25 s aborts
+   * that after a few hundred kilobytes on any farm uplink — every time, on the
+   * one operation that is done once with the owner standing there. A timeout
+   * here is not a lost import, it is an answer nobody read, and the retry is
+   * free precisely because every row is keyed by the uuid the phone already
+   * gave it; but a deadline that can never be met turns a free retry into an
+   * infinite one. See `SEASON_IMPORT_TIMEOUT_MS`.
    */
   async importSeason(input: SeasonImportInput): Promise<SeasonImportReport> {
     return this.http.request<SeasonImportReport>("/v1/import/season", {
       method: "POST",
       body: input,
+      timeoutMs: SEASON_IMPORT_TIMEOUT_MS,
     });
   }
 }

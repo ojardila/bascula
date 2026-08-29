@@ -23,7 +23,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 
-import { ApiError } from "./http.ts";
+import { ApiError, DEFAULT_TIMEOUT_MS, HttpClient, type Session } from "./http.ts";
+import { RestTransport } from "./restTransport.ts";
 import { nodeSqlite } from "../data/nodeSqlite.ts";
 import { createSqliteRepository } from "../data/sqliteRepository.ts";
 import type { Repository } from "../data/repository.ts";
@@ -34,15 +35,83 @@ import {
   type SeasonExport,
 } from "./seasonExport.ts";
 import {
+  byteLengthOf,
+  SEASON_IMPORT_TIMEOUT_MS,
   SeasonImporter,
   seasonWasImported,
   toImportInput,
   type ImportCounts,
   type ImportLedgerInput,
   type SeasonImportInput,
+  type SeasonImportProgress,
   type SeasonImportReport,
   type SeasonImportTransport,
 } from "./seasonImport.ts";
+
+// ---- Small fixtures for the deadline tests at the bottom -----------------
+
+/** A session that never expires and never refreshes. */
+const fixedSession = (): Session => ({
+  current: () => ({
+    accessToken: "t",
+    refreshToken: "r",
+    expiresAt: Date.now() + 3600_000,
+    farmId: "farm",
+    role: "owner",
+  }),
+  refresh: async () => {
+    throw new Error("no refresh in this test");
+  },
+  clear: () => {},
+});
+
+const emptyCounts = (): ImportCounts => ({ written: 0, skipped: 0 });
+
+const emptyReport = (): SeasonImportReport => ({
+  workers: emptyCounts(),
+  plots: emptyCounts(),
+  crops: emptyCounts(),
+  weekPrices: emptyCounts(),
+  workRecords: emptyCounts(),
+  settlements: emptyCounts(),
+  settlementItems: emptyCounts(),
+  ledger: emptyCounts(),
+  balancesChecked: 0,
+  liveItems: 0,
+});
+
+/**
+ * A `fetch` that takes `ms` to answer and ABORTS like the real one.
+ *
+ * Honouring the signal is the whole point: a fake that resolves regardless of
+ * the AbortController would pass a test about deadlines while proving nothing,
+ * because the deadline's only job is to make the socket give up.
+ */
+const answersAfter =
+  (ms: number, answer: (init?: RequestInit) => Response): typeof fetch =>
+  (_input, init) =>
+    new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(answer(init)), ms);
+      const signal = init?.signal;
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        const e = new Error("aborted");
+        e.name = "AbortError";
+        reject(e);
+      });
+    });
+
+/** The smallest thing the contract accepts, for tests about the wire itself. */
+const anInput = (): SeasonImportInput => ({
+  deviceId: "0192e6aa-0000-7000-8000-0000000000de",
+  workers: [],
+  plots: [],
+  weekPrices: [],
+  workRecords: [],
+  settlements: [],
+  ledger: [],
+  balances: [],
+});
 
 // ---- A phone that has been in a farm for months --------------------------
 
@@ -923,4 +992,158 @@ test("una temporada de 18.000 pesadas se empaqueta y se sube en un tiempo humano
   assert.ok(checkMs < 20000, `verificar tardó ${checkMs.toFixed(0)} ms`);
   // The body has to fit the server's 64 MB cap with room to spare.
   assert.ok(json.length < 32e6, `el cuerpo pesa ${(json.length / 1e6).toFixed(1)} MB`);
+});
+
+// ---- El plazo, y una pantalla que no se queda muda -----------------------
+//
+// §8 fase 4 gives the mudanza an hour, with the owner watching. Two things
+// used to make that hour unsurvivable and neither was about the server: the
+// request had 25 seconds to move 11,7 MB, and the screen said nothing at all
+// while it tried.
+
+test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
+  // The arithmetic in `SEASON_IMPORT_TIMEOUT_MS`, pinned so the constant stays
+  // a decision with a reason instead of a number somebody rounds down.
+  const SEASON_BYTES = 11.7e6;
+  // ~100 kbit/s of usable uplink. What a farm's link degrades to on a bad
+  // afternoon, which is the one this has to survive.
+  const BAD_LINK_BYTES_PER_S = 13_000;
+  const needed = (SEASON_BYTES / BAD_LINK_BYTES_PER_S) * 1000;
+
+  assert.ok(
+    SEASON_IMPORT_TIMEOUT_MS >= needed,
+    `${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min no alcanzan para 11,7 MB ` +
+      `a 13 kB/s (hacen falta ${(needed / 60000).toFixed(1)} min)`,
+  );
+  // And it is still a deadline. A socket with no end is a screen that says
+  // "enviando" until somebody force-quits the app.
+  assert.ok(SEASON_IMPORT_TIMEOUT_MS <= 30 * 60 * 1000);
+  // The default is what a sync batch needs and is not what this needs.
+  assert.ok(SEASON_IMPORT_TIMEOUT_MS > DEFAULT_TIMEOUT_MS * 20);
+});
+
+test("una petición puede llevar su propio plazo, más largo que el del cliente", async () => {
+  // The plumbing under the constant: without a per-request deadline the only
+  // way to give the import fifteen minutes is to give every weighing push
+  // fifteen minutes too, which is how a hung socket holds the outbox all day.
+  const http = new HttpClient({
+    baseUrl: "https://api.example",
+    session: fixedSession(),
+    fetchImpl: answersAfter(120, () => new Response("{}", { status: 200 })),
+    timeoutMs: 20,
+  });
+
+  await assert.rejects(
+    () => http.request("/v1/anything"),
+    (e: ApiError) => e.code === "TIMEOUT",
+    "el plazo del cliente sigue mandando cuando la petición no pide otro",
+  );
+
+  // The same client, the same slow answer, one request that asked for room.
+  await http.request("/v1/import/season", { method: "POST", timeoutMs: 5000 });
+});
+
+test("la subida de la temporada no se aborta con el plazo de un lote de sync", async () => {
+  // End to end through the real `RestTransport`, against a client whose
+  // default deadline is far too short. If `importSeason` did not ask for its
+  // own, this would come back TIMEOUT — which is exactly what the farm saw.
+  let seen: SeasonImportInput | null = null;
+  const transport = new RestTransport({
+    http: new HttpClient({
+      baseUrl: "https://api.example",
+      session: fixedSession(),
+      fetchImpl: answersAfter(120, (init) => {
+        seen = JSON.parse(String(init?.body ?? "null"));
+        return new Response(JSON.stringify(emptyReport()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+      timeoutMs: 20,
+    }),
+  });
+
+  const report = await transport.importSeason(anInput());
+  assert.equal(report.balancesChecked, 0);
+  assert.ok(seen, "el cuerpo salió");
+});
+
+test("el tamaño que enseña la pantalla es el que tiene que subir, en bytes", () => {
+  // Names on a farm are full of ñ and í: one JS character, two bytes. A size
+  // measured in characters understates the climb, and the size is the whole
+  // explanation of why the wait is minutes.
+  const plain = anInput();
+  const accented = anInput();
+  accented.workers = [
+    {
+      id: "0192e6aa-0000-7000-8000-000000000001",
+      name: "Ñañez",
+      lastName: null,
+      documentType: null,
+      docId: null,
+      tag: null,
+      createdAt: null,
+      deletedAt: null,
+    },
+  ];
+  const grew = byteLengthOf(accented) - byteLengthOf(plain);
+  const chars = JSON.stringify(accented).length - JSON.stringify(plain).length;
+  assert.ok(grew > chars, "los dos caracteres con tilde cuentan dos bytes cada uno");
+  assert.equal(byteLengthOf(plain), Buffer.byteLength(JSON.stringify(plain), "utf8"));
+  assert.equal(byteLengthOf(accented), Buffer.byteLength(JSON.stringify(accented), "utf8"));
+});
+
+test("la pantalla recibe fase, filas, bytes y un reloj mientras espera", async () => {
+  const phone = aPhone(400);
+  const server = new FakeImportServer();
+  const seen: SeasonImportProgress[] = [];
+
+  const outcome = await importerFor(phone, server).run({
+    onProgress: (p) => seen.push({ ...p }),
+  });
+  assert.equal(outcome.status, "imported", outcome.error?.message ?? "");
+
+  assert.deepEqual(
+    seen.map((p) => p.phase),
+    ["building", "checking", "sending"],
+  );
+
+  const sending = seen[seen.length - 1];
+  assert.equal(sending.rows, outcome.rows);
+  assert.ok(sending.rows > 0);
+  // The megabytes, which are the reason the wait is what it is. Without them
+  // the card is a spinner with a noun on it.
+  assert.ok(sending.bytes > 0, "la pantalla no puede decir cuánto pesa");
+  assert.equal(sending.bytes, outcome.bytes);
+  assert.equal(sending.bytes, byteLengthOf(toImportInput(phone.repo.sync.seasonExport(
+    identityOf(phone.repo),
+    "2026-08-29T12:00:00.000Z",
+  ))));
+  // The clock is anchored to the start of the request that carries the
+  // deadline, not to the tap: building and checking are their own minutes.
+  assert.ok(sending.since >= seen[0].since);
+  assert.ok(sending.since <= Date.now());
+});
+
+test("una importación que se cae por plazo sigue sin haber tocado el teléfono", async () => {
+  // The sentence the screen shows in green while it waits — «si esto falla no
+  // se perdió nada» — has to be true of the timeout too, which is the failure
+  // a fifteen-minute deadline makes MORE likely to be the one that happens.
+  const phone = aPhone(300);
+  const before = fingerprint(phone.db);
+  const owedBefore = phone.repo.sync.pendingCount();
+
+  const server = new FakeImportServer({
+    dieBeforeWriting: { code: "TIMEOUT", message: "la petición tardó demasiado" },
+  });
+  const outcome = await importerFor(phone, server).run();
+
+  assert.equal(outcome.status, "failed");
+  assert.equal(outcome.error?.code, "TIMEOUT");
+  assert.equal(seasonWasImported(outcome), false);
+  assert.equal(server.rows.size, 0);
+  assert.equal(fingerprint(phone.db), before, "el teléfono sigue exactamente igual");
+  assert.equal(phone.repo.sync.pendingCount(), owedBefore);
+  // And the size is on the record, so the retry knows what it is up against.
+  assert.ok(outcome.bytes > 0);
 });

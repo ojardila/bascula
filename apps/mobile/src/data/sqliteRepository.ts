@@ -36,6 +36,7 @@ import {
   BALANCE_SQL,
   PENDING_SQL,
   PAID_AGAINST_SQL,
+  PAID_IN_RANGE_SQL,
   INDEX_SQL,
   RULE_IMPOSSIBLE_SQL,
   RULE_DUPLICATE_SQL,
@@ -53,6 +54,7 @@ import {
   OUTBOX_PENDING_SQL,
   PICKUPS_LIVE_VIEW,
   IMPORT_RUNS_SCHEMA,
+  SERVER_BALANCES_SCHEMA,
 } from "../schema.ts";
 import { buildSeasonExport } from "../sync/seasonExport.ts";
 import type { ImportRun, ImportRunInput } from "../sync/seasonImport.ts";
@@ -96,6 +98,8 @@ import type {
   OutboxEntry,
   Repository,
   ReportsRepo,
+  PayrollRun,
+  FullBalance,
   SettleResult,
   Settlement,
   SettlementItem,
@@ -464,6 +468,7 @@ export function createSqliteRepository(
     // phone in the field re-run a migration to gain a log table. Same shape of
     // decision as `SECRETS_SCHEMA` in `sync/session.ts`.
     db.execSync(IMPORT_RUNS_SCHEMA);
+    db.execSync(SERVER_BALANCES_SCHEMA);
 
     // Seed a sensible default crop config (Café) on first run. It carries its
     // own identity from birth: on a brand-new phone this row is inserted after
@@ -538,6 +543,19 @@ export function createSqliteRepository(
       ),
   };
 
+  /**
+   * A weight the farm can pay on. Finite, and more than nothing.
+   *
+   * Deliberately NOT an upper bound: 120 kg is the `impossible` rule's
+   * threshold and it is configurable because it is a suspicion, not a law —
+   * a bunch of plátano really does weigh more than a day of coffee. Refusing
+   * at the door what a review screen is designed to ask a person about would
+   * lose real work.
+   */
+  function requireWeight(weight: number): void {
+    if (!Number.isFinite(weight) || weight <= 0) throw new Error("BADWEIGHT");
+  }
+
   const pickups: PickupsRepo = {
     // Whether a pickup can still be touched. Once it is inside a settlement its
     // price is frozen and it has been paid on, so correcting it would silently
@@ -551,7 +569,7 @@ export function createSqliteRepository(
 
     setWeight: (id, weight) => {
       if (pickups.isSettled(id)) throw new Error("SETTLED");
-      if (!Number.isFinite(weight) || weight <= 0) throw new Error("BADWEIGHT");
+      requireWeight(weight);
       const r = db.runSync(
         "UPDATE pickups SET weight = ?, updatedAt = ? WHERE id = ?",
         [weight, now(), id],
@@ -583,6 +601,14 @@ export function createSqliteRepository(
     },
 
     add: (p) => {
+      // `movil.md` §9.10: the two writers used to validate differently.
+      // `setWeight` refused a NaN, an Infinity and a zero; `add` refused
+      // nothing at all, and the only barrier on the way in was a `> 0` in
+      // `RegisterPickup`. A weight is what a farm pays on — one guard, both
+      // doors. The screen already blocks everything this rejects, so nothing a
+      // person can type reaches it; what it stops is a caller that is not the
+      // screen.
+      requireWeight(p.weight);
       // The day and the week are decided here, once, in the FARM's zone, and
       // stored. Every query that used to recompute `date(col,'localtime')` now
       // reads these columns, which means a handset whose zone is wrong can no
@@ -637,13 +663,22 @@ export function createSqliteRepository(
   // ---- Reports ---------------------------------------------------------
 
   const reports: ReportsRepo = {
+    // `movil.md` §9.11: these two counts are the ones Home shows, and they
+    // used to include everybody who had been removed. A farm that had let ten
+    // people go read "22 recolectores" on the front page and twelve in the
+    // list on the next screen, with nothing to explain the gap.
+    //
+    // Counting is not money. `payments.balances` still MARKS removed workers
+    // rather than dropping them, on purpose — a person nobody works with any
+    // more can still be owed — but "cuánta gente hay" has one honest answer
+    // and it is the same one the list gives.
     totals: () =>
       db.getFirstSync<FarmTotals>(
         `SELECT
            (SELECT COUNT(*) FROM pickups_live) AS pickups,
            (SELECT COALESCE(SUM(weight),0) FROM pickups_live) AS kg,
-           (SELECT COUNT(*) FROM people) AS people,
-           (SELECT COUNT(*) FROM crops) AS crops`,
+           (SELECT COUNT(*) FROM people WHERE deletedAt IS NULL) AS people,
+           (SELECT COUNT(*) FROM crops  WHERE deletedAt IS NULL) AS crops`,
         [],
       ),
     today: () =>
@@ -1184,7 +1219,29 @@ export function createSqliteRepository(
       "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
       [settlementId],
     );
-    if (devengo) {
+    // A devengo that is ALREADY reversed gets no second reverso.
+    //
+    // `ux_ledger_reverses` is UNIQUE on `reversesId`, so writing one anyway
+    // does not produce a double entry — it throws, and the throw rolls back
+    // this whole transaction: the released lines, the `status = 'void'`, and
+    // under `undoRun` every other worker in the payroll too. The document
+    // stayed open with its payables locked while the money it stood for had
+    // already been cancelled, which is the one state nobody can pay out of.
+    //
+    // Nothing on the phone reverses a devengo by hand. §5.4 does: somebody
+    // voids on the web, and the void, the released lines and the reverso all
+    // come down the feed together (`syncStore.applyLedgerEntry`). From the
+    // moment sync is on, this is reachable from the Deshacer button.
+    //
+    // Skipping is not "losing" the reversal: the earning is already cancelled,
+    // and posting a second one would take the worker into debt for work they
+    // really did. The guard matches `reverseHere`'s.
+    const alreadyReversed =
+      devengo &&
+      db.getFirstSync<{ id: number }>("SELECT id FROM ledger WHERE reversesId = ?", [
+        devengo.id,
+      ]);
+    if (devengo && !alreadyReversed) {
       addEntry({
         personId: s.personId,
         kind: "reverso",
@@ -1273,6 +1330,67 @@ export function createSqliteRepository(
     // Undo a settlement: release its pickups and reverse the earning.
     voidSettlement: (settlementId, note) => {
       db.withTransactionSync(() => voidSettlementHere(settlementId, note));
+    },
+
+    // The crew's payroll, in one call: settle each worker, then hand over what
+    // the LEDGER says is owed — never the figure the screen was showing, which
+    // does not know about an advance somebody took on Wednesday.
+    //
+    // The ordering here is the fix for the bug this replaced. `settle` commits
+    // on its own, so the moment it returns a document exists whether or not
+    // anything is handed over. Recording it only when a payment followed left
+    // every zero-balance worker with a committed settlement that «Deshacer»
+    // could not see — and a zero balance is not the rare case, it is what an
+    // advance produces.
+    runPayroll: (personIds, from, to, general, opts = {}): PayrollRun => {
+      const run: PayrollRun = {
+        paid: 0,
+        noCash: 0,
+        failed: 0,
+        settlementIds: [],
+        paymentIds: [],
+        paidCents: 0,
+      };
+
+      for (const personId of personIds) {
+        try {
+          const res = payments.settle(personId, from, to, general, opts.note);
+          if (!res) {
+            // Nothing pending at all. No document was written, so there is
+            // nothing to undo either.
+            run.noCash++;
+            continue;
+          }
+          // Recorded FIRST, before anything can throw. The settlement is on
+          // the books from here on, and the only question left is whether it
+          // was also paid.
+          run.settlementIds.push(res.settlementId);
+
+          const owed = payments.balance(personId).balanceCents;
+          if (owed <= 0) {
+            // Settled, but the advance ate the week. The document stands and
+            // is undoable; there is simply no cash to count out.
+            run.noCash++;
+            continue;
+          }
+
+          run.paymentIds.push(
+            payments.pay(personId, owed, {
+              method: opts.method ?? "efectivo",
+              settlementId: res.settlementId,
+              note: opts.note,
+            }),
+          );
+          run.paidCents += owed;
+          run.paid++;
+        } catch {
+          // Skip this worker, keep the rest of the payroll going. Whatever
+          // was already recorded for them stays in the run, so a half-done
+          // worker is still reachable from Deshacer.
+          run.failed++;
+        }
+      }
+      return run;
     },
 
     // Cash going out to the worker. Amounts come in positive; the sign is ours.
@@ -1382,6 +1500,64 @@ export function createSqliteRepository(
       });
     },
 
+    /**
+     * The balance to SHOW — decision 7 and §2.2.
+     *
+     * The rule, in the document's own order:
+     *
+     *  1. While this phone still owes the server movements, the honest figure
+     *     is the phone's own, because the server has not seen the payment the
+     *     pesador made ten minutes ago. It is marked `provisional` and §7.4
+     *     gives the screen the words: «provisional, faltan 4 movimientos por
+     *     enviar».
+     *  2. Otherwise the figure that came down the feed, which is the full one:
+     *     the pull filters out jornales and contracts (§2.2), so the phone's
+     *     own sum counts only the weighings. A worker who spent Monday on a
+     *     day's wage and Tuesday on the scale has a balance this phone cannot
+     *     derive, and showing the half it can derive is the lie decision 7 was
+     *     written to stop.
+     *
+     * The gap between the two is reported separately, because «$500.000, de
+     * los cuales $200.000 son jornales que están en la web» is something a
+     * person can act on and a bare total is not.
+     *
+     * NOTHING here decides an amount. `settle`, `pay` and `runPayroll` read
+     * `balance` below, which is `BALANCE_SQL` over this phone's own ledger.
+     */
+    fullBalance: (personId): FullBalance => {
+      const itemisedCents = payments.balance(personId).balanceCents;
+      const received = syncStore.serverBalanceOf(personId);
+      // The whole outbox, not this worker's share of it: a balance is a total,
+      // and one unsent weighing for anybody makes every total on this phone a
+      // moment behind the server's.
+      const provisional =
+        (db.getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM outbox", [])?.n ?? 0) > 0;
+
+      if (!received)
+        return {
+          itemisedCents,
+          serverCents: null,
+          serverAt: null,
+          balanceCents: itemisedCents,
+          provisional,
+          notItemisableCents: 0,
+        };
+
+      // What the server counted that this phone could not, as of the instant
+      // both figures describe. Held on the row rather than recomputed, so a
+      // weighing registered since does not get mistaken for a jornal.
+      const notItemisableCents = received.balanceCents - received.derivedCents;
+
+      return {
+        itemisedCents,
+        serverCents: received.balanceCents,
+        serverAt: received.at,
+        balanceCents: provisional ? itemisedCents : received.balanceCents,
+        provisional,
+        notItemisableCents,
+      };
+    },
+
     balance: (personId): Balance => {
       const r = db.getFirstSync<Balance>(BALANCE_SQL, [personId, personId]);
       return (
@@ -1430,6 +1606,9 @@ export function createSqliteRepository(
     paidAgainst: (settlementId): number =>
       db.getFirstSync<{ cents: number }>(PAID_AGAINST_SQL, [settlementId])?.cents ??
       0,
+
+    paidInRange: (from, to) =>
+      db.getAllSync<{ personId: number; cents: number }>(PAID_IN_RANGE_SQL, [from, to]),
 
     // Newest first, and `id DESC` is not decoration: a late pickup settled
     // moments after the week it belongs to gives two documents the same
@@ -1976,6 +2155,7 @@ export function createSqliteRepository(
 
     applyPull: (changes) => syncStore.applyPull(changes),
     balanceChecksums: () => syncStore.balanceChecksums(),
+    recordServerBalances: (rows, at) => syncStore.recordServerBalances(rows, at),
     wireRow: (entity, uuid) => syncStore.wireRow(entity, uuid),
     personByUuid: (uuid) => syncStore.personByUuid(uuid),
 
