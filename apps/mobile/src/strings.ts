@@ -108,6 +108,15 @@ const es: Dict = {
   "settings.demoSub": "Recolectores, cultivos y 4 semanas de recolecciones",
   "settings.loadDemo": "Cargar demo",
   "settings.clearAll": "Borrar todo",
+  "settings.wipeTitle": "Esto borra la temporada",
+  "settings.wipeClearBody":
+    "Se borran recolectores, lotes, pesadas, liquidaciones y movimientos de esta finca. No hay copia de seguridad y no se puede deshacer.",
+  "settings.wipeSeedBody":
+    "Cargar la demo borra primero todo lo real: recolectores, lotes, pesadas, liquidaciones y movimientos. No hay copia de seguridad y no se puede deshacer.",
+  "settings.wipeConfirm": "Escribe {name} para confirmar",
+  "settings.wipeField": "Nombre de la finca",
+  "settings.wipeCancel": "Cancelar",
+  "settings.wipeMismatch": "El nombre no coincide",
   "settings.languageTitle": "Idioma",
   "settings.languageSub": "Idioma de la aplicación",
   "settings.saved": "✅ Configuración guardada",
@@ -389,6 +398,15 @@ const en: Dict = {
   "settings.demoSub": "Workers, crops and 4 weeks of pickups",
   "settings.loadDemo": "Load demo",
   "settings.clearAll": "Clear all",
+  "settings.wipeTitle": "This erases the season",
+  "settings.wipeClearBody":
+    "Workers, plots, weighings, settlements and movements for this farm are deleted. There is no backup and this cannot be undone.",
+  "settings.wipeSeedBody":
+    "Loading the demo erases everything real first: workers, plots, weighings, settlements and movements. There is no backup and this cannot be undone.",
+  "settings.wipeConfirm": "Type {name} to confirm",
+  "settings.wipeField": "Farm name",
+  "settings.wipeCancel": "Cancel",
+  "settings.wipeMismatch": "The name does not match",
   "settings.languageTitle": "Language",
   "settings.languageSub": "App language",
   "settings.saved": "✅ Configuration saved",
@@ -667,6 +685,15 @@ const pt: Dict = {
   "settings.demoSub": "Colhedores, culturas e 4 semanas de colheitas",
   "settings.loadDemo": "Carregar demo",
   "settings.clearAll": "Apagar tudo",
+  "settings.wipeTitle": "Isto apaga a temporada",
+  "settings.wipeClearBody":
+    "Colhedores, lotes, pesagens, liquidações e movimentos desta fazenda são apagados. Não há cópia de segurança e não é possível desfazer.",
+  "settings.wipeSeedBody":
+    "Carregar a demo apaga primeiro tudo o que é real: colhedores, lotes, pesagens, liquidações e movimentos. Não há cópia de segurança e não é possível desfazer.",
+  "settings.wipeConfirm": "Escreva {name} para confirmar",
+  "settings.wipeField": "Nome da fazenda",
+  "settings.wipeCancel": "Cancelar",
+  "settings.wipeMismatch": "O nome não coincide",
   "settings.languageTitle": "Idioma",
   "settings.languageSub": "Idioma do aplicativo",
   "settings.saved": "✅ Configuração salva",

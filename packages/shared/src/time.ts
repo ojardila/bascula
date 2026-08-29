@@ -37,6 +37,29 @@ export function mondayOf(date: Date | string): string {
   return addDays(d, dow === 0 ? -6 : 1 - dow).toISOString().slice(0, 10);
 }
 
+/**
+ * Sunday of the week that starts on `monday`. A week ends on day six, not on
+ * the following Monday — a settlement dated the next Monday would sweep in the
+ * first day of the week after it.
+ *
+ * Was defined twice, character for character, in `PayWorker` and in
+ * `PaymentsPanel` (`docs/diagramas/movil.md` §9.12) — the two screens that
+ * decide how far a settlement reaches.
+ */
+export const endOfWeek = (monday: string): string =>
+  addDays(parseDay(monday), 6).toISOString().slice(0, 10);
+
+/**
+ * "Since the beginning of the record", as the `from` of a settlement range.
+ *
+ * Both pay screens passed the bare string `"1970-01-01"`. Only `to` really
+ * matters: `PENDING_SQL` selects by pickup id, so anything not yet claimed is
+ * swept in however old it is, and the `BETWEEN` on the lower bound never
+ * excludes anything. Named here so the two screens cannot drift apart, and so
+ * the next reader is told that is the intent rather than left to infer it.
+ */
+export const EPOCH_START = "1970-01-01";
+
 /** ISO week number, shown as a secondary hint only. */
 export function weekNumber(mondayISO: string): number {
   const d = parseDay(mondayISO);

@@ -10,9 +10,15 @@ import {
   RULE_OUTLIER_SQL,
   RULE_FUTURE_SQL,
 } from "./schema.ts";
+import { windowBounds } from "./data/sqliteRepository.ts";
 
 // These rules accuse people of mis-weighing, so each one has to be shown
 // actually firing. The extra-zero rule spent several versions unable to.
+//
+// Every rule now takes the same window bounds and a row cap; `windowBounds`
+// composes them the way the repository does. `Anomalies.all` and the window's
+// own behaviour are covered in `data/repository.test.ts` — what is pinned here
+// is that each rule still fires on exactly the weighings it used to.
 
 let db: DatabaseSync;
 
@@ -25,8 +31,17 @@ function pickup(personId: number, cropId: number, kg: number, daysAgo: number, m
   ).run(personId, cropId, kg, d.toISOString(), d.toISOString());
 }
 
+// Wide enough to reach every weighing these cases create, so the window is not
+// silently doing the filtering the rule is supposed to do.
+const W = windowBounds(3650);
 const run = (sql: string, ...params: unknown[]) =>
-  db.prepare(sql).all(...(params as never[])) as { pickupId: number; weight: number }[];
+  db
+    .prepare(sql)
+    .all(...([W.raw, W.day, ...params, 1000] as never[])) as {
+    pickupId: number;
+    weight: number;
+    reference?: number;
+  }[];
 
 beforeEach(() => {
   db = new DatabaseSync(":memory:");
@@ -77,6 +92,10 @@ test("an extra typed zero is caught — the rule used to be unable to fire", () 
   const found = run(RULE_DIGIT_SQL);
   assert.equal(found.length, 1);
   assert.equal(found[0].weight, 300);
+  // The reference is the person's other loads, this one excluded. Stated
+  // outright because the CTE was rewritten from window functions to a GROUP BY
+  // for speed, and the arithmetic had to come out identical.
+  assert.equal(found[0].reference, 30);
 });
 
 test("a good day is not mistaken for a typo", () => {

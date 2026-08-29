@@ -11,6 +11,8 @@ export {
   formatWeekRange,
   formatDay,
   mondayOf,
+  endOfWeek,
+  EPOCH_START,
   weekNumber,
 } from "../../../packages/shared/src/format.ts";
 import { formatMoney, formatNumber, mondayOf, parseDay, addDays } from "../../../packages/shared/src/format.ts";

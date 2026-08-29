@@ -83,6 +83,23 @@ export const PAYMENTS_SCHEMA = `
     ON ledger(reversesId) WHERE reversesId IS NOT NULL;
 `;
 
+/**
+ * `pickups` had no index of any kind, on the one table that grows for ever.
+ * Added at `user_version = 5`.
+ *
+ * - `ix_pickups_date` serves every "recent" and windowed scan, and the ORDER BY
+ *   the review rules use to show the newest suspects first.
+ * - `ix_pickups_dup` serves the duplicate rule, which is a self-join on
+ *   (person, plot, weight): without it SQLite scanned the whole table once per
+ *   candidate row, which is why that one rule cost more than the other four
+ *   together and grew faster than linearly with the season.
+ */
+export const PICKUP_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS ix_pickups_date ON pickups(date);
+  CREATE INDEX IF NOT EXISTS ix_pickups_dup
+    ON pickups(personId, cropId, weight, createdAt);
+`;
+
 /** Local calendar day of a stored instant. */
 export const DAY_OF = (col: string) => `date(${col},'localtime')`;
 
@@ -147,6 +164,27 @@ export const INDEX_SQL = `
 // with a number nobody can justify out loud destroys the trust the app runs
 // on. They are here so tests can prove each one actually fires — the
 // extra-zero rule spent several versions algebraically unable to.
+//
+// ---- The window ---------------------------------------------------------
+//
+// Every rule takes the same first two parameters and ends with a row cap:
+//
+//     ?1  raw instant bound   — an ISO instant, for the pickups(date) index
+//     ?2  local day bound     — YYYY-MM-DD, the predicate that actually decides
+//     ?n  LIMIT
+//
+// They are not redundant. `date(col,'localtime') >= date(?)` is the correct
+// test, but no index can serve a call on the column, so on its own every rule
+// still read every row the farm had ever weighed. `col >= ?` on the raw stored
+// instant is sargable; it is set a day earlier than the local bound so it can
+// never exclude a row the exact test would have kept, whatever offset the phone
+// is on. See `windowBounds` in `data/sqliteRepository.ts`.
+//
+// What the window changes: a mis-weighing older than the window stops being
+// reported. What it deliberately does NOT change is any reference value — the
+// extra-zero rule still measures a load against this person's whole history,
+// and the crew rule still compares a whole plot-day. The window decides what is
+// worth showing, never what normal looks like.
 
 export const RULE_IMPOSSIBLE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
@@ -154,7 +192,9 @@ export const RULE_IMPOSSIBLE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.we
          FROM pickups pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.weight <= 0 OR pk.weight > ?`;
+        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+          AND (pk.weight <= 0 OR pk.weight > ?)
+        ORDER BY pk.date DESC LIMIT ?`;
 
 export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
@@ -165,26 +205,38 @@ export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight
                        AND (julianday(a.createdAt) - julianday(b.createdAt))
                              BETWEEN 0 AND 3.0 / 1440
          LEFT JOIN people pe ON pe.id = a.personId
-         LEFT JOIN crops cr ON cr.id = a.cropId`;
+         LEFT JOIN crops cr ON cr.id = a.cropId
+        WHERE a.date >= ? AND date(a.date,'localtime') >= date(?)
+        ORDER BY a.date DESC LIMIT ?`;
 
-export const RULE_DIGIT_SQL = `WITH stats AS (
-         SELECT id, personId, weight,
-                (SUM(weight) OVER (PARTITION BY personId) - weight)
-                  / NULLIF(COUNT(*) OVER (PARTITION BY personId) - 1, 0) AS others
-           FROM pickups
+// `tot` is the same arithmetic the window functions did — the person's total
+// and count minus this row — as a plain GROUP BY. The window-function form had
+// to sort the whole table into partitions before a single row could be tested,
+// which no window on the outer query could avoid.
+export const RULE_DIGIT_SQL = `WITH tot AS (
+         SELECT personId, SUM(weight) AS s, COUNT(*) AS n
+           FROM pickups GROUP BY personId
        )
-       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date, st.others AS reference,
+       SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
+              (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) AS reference,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk JOIN stats st ON st.id = pk.id
+         FROM pickups pk JOIN tot ON tot.personId = pk.personId
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE st.others > 0 AND pk.weight >= 4 * st.others`;
+        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+          AND (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) > 0
+          AND pk.weight >= 4 * ((tot.s - pk.weight) / NULLIF(tot.n - 1, 0))
+        ORDER BY pk.date DESC LIMIT ?`;
 
+// The window goes on `dayplot`, not on the final SELECT: a plot-day is either
+// wholly inside the window or wholly outside it, so `agg` — the mates' total
+// and headcount for that day — comes out identical for every day that is kept.
 export const RULE_OUTLIER_SQL = `WITH dayplot AS (
          SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
                 date(pk.date,'localtime') AS d
            FROM pickups pk
+          WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
        ),
        agg AS (
          SELECT cropId, d, SUM(weight) AS tot, COUNT(*) AS n
@@ -200,15 +252,20 @@ export const RULE_OUTLIER_SQL = `WITH dayplot AS (
          LEFT JOIN crops cr ON cr.id = dp.cropId
         WHERE agg.n >= 5
           AND (agg.tot - dp.weight) / (agg.n - 1) > 0
-          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))`;
+          AND dp.weight >= 4 * ((agg.tot - dp.weight) / (agg.n - 1))
+        ORDER BY dp.date DESC LIMIT ?`;
 
+// A row dated in the future is by definition after the window's start, so the
+// bounds cost nothing here and buy the index.
 export const RULE_FUTURE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
          FROM pickups pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime') > date('now','localtime')`;
+        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+          AND date(pk.date,'localtime') > date('now','localtime')
+        ORDER BY pk.date DESC LIMIT ?`;
 
 // What leaves the phone when the season is exported.
 

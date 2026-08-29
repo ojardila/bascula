@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { localDayOf, weekOf, mondayOf } from "./time.ts";
+import { localDayOf, weekOf, mondayOf, endOfWeek, EPOCH_START } from "./time.ts";
 
 // mondayOf and weekNumber are covered in format.test.ts, where they have been
 // since the phone shipped. What is new here is the instant -> local day -> week
@@ -29,4 +29,17 @@ test("months and days keep their leading zero", () => {
 test("the week of new year's eve is the week that started in December", () => {
   assert.equal(weekOf(new Date(2026, 11, 31, 10, 0)), "2026-12-28");
   assert.equal(mondayOf("2027-01-03"), "2026-12-28");
+});
+
+test("a week ends on Sunday, not on the following Monday", () => {
+  // Both pay screens carried their own copy of this; a settlement that reached
+  // the next Monday would sweep in the first day of the week after it.
+  assert.equal(endOfWeek("2026-08-24"), "2026-08-30");
+  assert.equal(endOfWeek("2025-12-29"), "2026-01-04", "across new year");
+  assert.equal(mondayOf(endOfWeek("2026-08-24")), "2026-08-24", "still its own week");
+});
+
+test("the settlement range starts before any farm did", () => {
+  assert.ok(EPOCH_START < "1971-01-01");
+  assert.equal(mondayOf(EPOCH_START), "1969-12-29");
 });

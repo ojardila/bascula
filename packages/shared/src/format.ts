@@ -69,7 +69,16 @@ export function formatNumber(value: number, lang: Lang = "es"): string {
 // they are not formatting. They are re-exported here so every existing caller
 // (and the test below) keeps importing them from the same place.
 import { parseDay, addDays } from "./time.ts";
-export { parseDay, addDays, mondayOf, weekNumber, localDayOf, weekOf } from "./time.ts";
+export {
+  parseDay,
+  addDays,
+  mondayOf,
+  endOfWeek,
+  EPOCH_START,
+  weekNumber,
+  localDayOf,
+  weekOf,
+} from "./time.ts";
 
 /**
  * The date range a week covers: "24–30 ago", "31 ago – 6 sep",

@@ -35,6 +35,8 @@ import {
   weekTag,
   weekNumber,
   mondayOf,
+  endOfWeek,
+  EPOCH_START,
 } from "../i18n";
 
 const DAY = 86400000;
@@ -42,9 +44,6 @@ const shiftWeek = (monday: string, weeks: number) =>
   new Date(new Date(`${monday}T00:00:00Z`).getTime() + weeks * 7 * DAY)
     .toISOString()
     .slice(0, 10);
-// Sunday, not the following Monday: a week ends on day six.
-const endOfWeek = (monday: string) =>
-  new Date(new Date(`${monday}T00:00:00Z`).getTime() + 6 * DAY).toISOString().slice(0, 10);
 
 type Row = { personId: number; name: string; kg: number; amountCents: number };
 
@@ -143,7 +142,7 @@ export default function PaymentsPanel() {
     const settlements: number[] = [];
     for (const r of selected) {
       try {
-        const res = Payments.settle(r.personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
+        const res = Payments.settle(r.personId, EPOCH_START, endOfWeek(monday), config.costPerUnit);
         if (!res) {
           noCash++;
           continue;

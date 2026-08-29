@@ -24,11 +24,7 @@ import {
   type Person,
   type SettlementPreview,
 } from "../db";
-import { useT, formatWeekRange } from "../i18n";
-
-const DAY = 86400000;
-const endOfWeek = (monday: string) =>
-  new Date(new Date(`${monday}T00:00:00Z`).getTime() + 6 * DAY).toISOString().slice(0, 10);
+import { useT, formatWeekRange, endOfWeek, EPOCH_START } from "../i18n";
 
 // Digits only, so a stray "." or "," can't turn 50000 into 50.
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
@@ -55,7 +51,7 @@ export default function PayWorker() {
     const c = Config.get();
     setConfig(c);
     setPerson(PeopleDb.byId(personId) ?? null);
-    if (c) setPreview(Payments.preview(personId, "1970-01-01", endOfWeek(monday), c.costPerUnit));
+    if (c) setPreview(Payments.preview(personId, EPOCH_START, endOfWeek(monday), c.costPerUnit));
     setCreditCents(Payments.balance(personId).balanceCents);
   }, [personId, monday]);
   useFocusEffect(load);
@@ -97,7 +93,7 @@ export default function PayWorker() {
     try {
       // Settle first so the earning is on the books, then pay what the ledger
       // actually says is owed — never the amount the screen was showing.
-      Payments.settle(personId, "1970-01-01", endOfWeek(monday), config.costPerUnit);
+      Payments.settle(personId, EPOCH_START, endOfWeek(monday), config.costPerUnit);
       const owed = Payments.balance(personId).balanceCents;
       const toPay = mode === "full" ? owed : Math.min(typedCents, owed);
       if (toPay <= 0) {
