@@ -47,6 +47,11 @@ import type {
   WireCatalogItem, WireCustomer, WireExpense, WireLabelBatch, WireLedgerEntry,
   WireNote, WirePlot, WirePlotCrop, WireProduct, WireSale, WireStockLevel,
   WireStockMove, WireWeekPrice, WireWorkUnit,
+  WireAnomaly, WireHarvestCurve, WireHarvestShape, WireHarvestWeekTotal,
+  WireReportAnomaliesResult, WireReportCrop, WireReportGrid, WireReportGridCell,
+  WireReportGridColumn, WireReportGridRow, WireReportPerformanceResult,
+  WireReportTotals, WireReportUnattributed, WireReportWeek, WireReportWeekDetail,
+  WireReportWeeksResult, WireWorkerPerformance,
 } from "./wire";
 
 type Schemas = components["schemas"];
@@ -171,10 +176,94 @@ type _Expense = [
  * assertions are collected into one exported type. Nothing imports it; the
  * checking happened above, at the moment each alias was instantiated.
  */
+/* -- reports (cosecha) ---------------------------------------------- */
+
+/**
+ * These six are the ones worth asserting hardest. Every nullable field in
+ * `ReportTotals` exists to stop a zero being printed where nothing is known,
+ * and a transcription that quietly widened one of them back to `number` would
+ * reintroduce exactly the bug the contract was shaped to prevent — with the
+ * screens still compiling.
+ */
+type _ReportTotals = [
+  Check<SameKeys<WireReportTotals, Schemas["ReportTotals"]>>,
+  Assignable<WireReportTotals, Schemas["ReportTotals"]>,
+];
+type _ReportWeek = [
+  Check<SameKeys<WireReportWeek, Schemas["ReportWeek"]>>,
+  Assignable<WireReportWeek, Schemas["ReportWeek"]>,
+];
+type _ReportWeeksResult = [
+  Check<SameKeys<WireReportWeeksResult, Schemas["ReportWeeksResult"]>>,
+  Assignable<WireReportWeeksResult, Schemas["ReportWeeksResult"]>,
+];
+type _ReportGridCell = [
+  Check<SameKeys<WireReportGridCell, Schemas["ReportGridCell"]>>,
+  Assignable<WireReportGridCell, Schemas["ReportGridCell"]>,
+];
+type _ReportGridRow = [
+  Check<SameKeys<WireReportGridRow, Schemas["ReportGridRow"]>>,
+  Assignable<WireReportGridRow, Schemas["ReportGridRow"]>,
+];
+type _ReportGridColumn = [
+  Check<SameKeys<WireReportGridColumn, Schemas["ReportGridColumn"]>>,
+  Assignable<WireReportGridColumn, Schemas["ReportGridColumn"]>,
+];
+type _ReportUnattributed = [
+  Check<SameKeys<WireReportUnattributed, Schemas["ReportUnattributed"]>>,
+  Assignable<WireReportUnattributed, Schemas["ReportUnattributed"]>,
+];
+type _ReportGrid = [
+  Check<SameKeys<WireReportGrid, Schemas["ReportGrid"]>>,
+  Assignable<WireReportGrid, Schemas["ReportGrid"]>,
+];
+type _ReportWeekDetail = [
+  Check<SameKeys<WireReportWeekDetail, Schemas["ReportWeekDetail"]>>,
+  Assignable<WireReportWeekDetail, Schemas["ReportWeekDetail"]>,
+];
+type _ReportCrop = [
+  Check<SameKeys<WireReportCrop, Schemas["ReportCrop"]>>,
+  Assignable<WireReportCrop, Schemas["ReportCrop"]>,
+];
+type _WorkerPerformance = [
+  Check<SameKeys<WireWorkerPerformance, Schemas["WorkerPerformance"]>>,
+  Assignable<WireWorkerPerformance, Schemas["WorkerPerformance"]>,
+];
+type _ReportPerformanceResult = [
+  Check<SameKeys<WireReportPerformanceResult, Schemas["ReportPerformanceResult"]>>,
+  Assignable<WireReportPerformanceResult, Schemas["ReportPerformanceResult"]>,
+];
+type _Anomaly = [
+  Check<SameKeys<WireAnomaly, Schemas["Anomaly"]>>,
+  Assignable<WireAnomaly, Schemas["Anomaly"]>,
+];
+type _ReportAnomaliesResult = [
+  Check<SameKeys<WireReportAnomaliesResult, Schemas["ReportAnomaliesResult"]>>,
+  Assignable<WireReportAnomaliesResult, Schemas["ReportAnomaliesResult"]>,
+];
+type _HarvestWeekTotal = [
+  Check<SameKeys<WireHarvestWeekTotal, Schemas["HarvestWeekTotal"]>>,
+  Assignable<WireHarvestWeekTotal, Schemas["HarvestWeekTotal"]>,
+];
+type _HarvestShape = [
+  Check<SameKeys<WireHarvestShape, Schemas["HarvestShape"]>>,
+  Assignable<WireHarvestShape, Schemas["HarvestShape"]>,
+];
+type _HarvestCurve = [
+  Check<SameKeys<WireHarvestCurve, Schemas["HarvestCurve"]>>,
+  Assignable<WireHarvestCurve, Schemas["HarvestCurve"]>,
+];
+
 export type ContractAssertions = [
   _Plot, _PlotCrop, _Boundary,
   _CatalogItem, _WorkUnit, _ActivityRate, _Activity,
   _Balance, _LedgerEntry, _WeekPrice,
   _Note, _AdminFarm,
   _Product, _Customer, _StockLevel, _StockMove, _LabelBatch, _Sale, _Expense,
+  _ReportTotals, _ReportWeek, _ReportWeeksResult,
+  _ReportGridCell, _ReportGridRow, _ReportGridColumn, _ReportUnattributed,
+  _ReportGrid, _ReportWeekDetail, _ReportCrop,
+  _WorkerPerformance, _ReportPerformanceResult,
+  _Anomaly, _ReportAnomaliesResult,
+  _HarvestWeekTotal, _HarvestShape, _HarvestCurve,
 ];

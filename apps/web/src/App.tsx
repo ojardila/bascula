@@ -16,6 +16,12 @@ import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
 import { WorkRecordsPage } from "./features/workrecords/WorkRecordsPage";
 import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
+import { HarvestLayout } from "./features/harvest/HarvestLayout";
+import { SeasonPage } from "./features/harvest/SeasonPage";
+import { WeekPage } from "./features/harvest/WeekPage";
+import { CropsPage } from "./features/harvest/CropsPage";
+import { YieldPage } from "./features/harvest/YieldPage";
+import { ReviewPage } from "./features/harvest/ReviewPage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SalesPage } from "./features/sales/SalesPage";
 import { ExpensesPage } from "./features/expenses/ExpensesPage";
@@ -125,6 +131,24 @@ function Shell() {
             </RequirePermission>
           }
         />
+
+        {/* Cosecha. Five readings of one set of facts, so they share a layout
+            and a single load — see the note at the top of HarvestLayout. The
+            week detail hangs off the season and has no tab of its own. */}
+        <Route
+          path="cosecha"
+          element={
+            <RequirePermission action="harvest.read" moduleName="ver la cosecha">
+              <HarvestLayout />
+            </RequirePermission>
+          }
+        >
+          <Route index element={<SeasonPage />} />
+          <Route path="semana/:monday" element={<WeekPage />} />
+          <Route path="cultivos" element={<CropsPage />} />
+          <Route path="rendimiento" element={<YieldPage />} />
+          <Route path="revision" element={<ReviewPage />} />
+        </Route>
 
         <Route
           path="labores"

@@ -795,3 +795,219 @@ export interface WireExpenseList {
   items: WireExpense[];
   totals: WireExpenseTotals;
 }
+
+/* ------------------------------------------------------------------ */
+/* Reports (cosecha)                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What every report row adds up to — and the two admissions it is not allowed
+ * to leave out.
+ *
+ * `kg` and `valueCents` are NULLABLE and a null is "this could not be
+ * established", which is a different fact from 0. This is the whole reason the
+ * reports were designed the way they were: a farm read `$0` against every
+ * harvest record in the console because a null amount was rendered as a
+ * figure, and a zero is a sum a farm can genuinely owe.
+ *
+ * The two counts beside them are what make a partial sum readable as partial:
+ *
+ *   recordsNotInKg       weighings left out of `kg` because their work unit
+ *                        has no `kgFactor` — a farm may invent "canasta", and
+ *                        multiplying by a factor that is not there is how a
+ *                        report invents harvest.
+ *   recordsWithoutValue  weighings left out of `valueCents`.
+ *
+ * `records` is a real count and its zero means zero.
+ */
+export interface WireReportTotals {
+  records: number;
+  kg: number | null;
+  recordsNotInKg: number;
+  valueCents: number | null;
+  recordsWithoutValue: number;
+  /** True while some of the value still rides on the week's price. */
+  valueIsEstimate: boolean;
+}
+
+/** Always `harvest`: work paid by the unit of work, never the week's payroll. */
+export type WireReportScope = "harvest";
+
+export interface WireReportWeek extends WireReportTotals {
+  weekStart: DayISO;
+  pickers: number;
+  days: number;
+  /** Null only if the farm has no standing price — a broken farm, not a free week. */
+  priceCents: number | null;
+  /** The week is over. A running week's total is not comparable with a finished one. */
+  finished: boolean;
+}
+
+export interface WireReportWeeksResult {
+  scope: WireReportScope;
+  items: WireReportWeek[];
+}
+
+/**
+ * One cell. `column` is the day in the day grid and the plot-crop id in the
+ * crop grid — and NULL in the crop grid is the unattributed column: work that
+ * names no crop, or names several. Splitting it would be a guess and counting
+ * it twice would break the grid, so it gets a column of its own.
+ */
+export interface WireReportGridCell extends WireReportTotals {
+  column: string | null;
+}
+
+export interface WireReportGridRow {
+  workerId: Uuid;
+  name: string;
+  cells: WireReportGridCell[];
+  total: WireReportTotals;
+}
+
+export interface WireReportGridColumn {
+  key: string | null;
+  label: string;
+  total: WireReportTotals;
+}
+
+/** The only way to tell the unattributed column's two causes apart. */
+export interface WireReportUnattributed {
+  noCropLink: number;
+  sharedAcrossCrops: number;
+}
+
+export interface WireReportGrid {
+  columns: WireReportGridColumn[];
+  rows: WireReportGridRow[];
+  total: WireReportTotals;
+  /** Present only when the crop grid has a null column. */
+  unattributed?: WireReportUnattributed;
+}
+
+export interface WireReportWeekDetail {
+  scope: WireReportScope;
+  weekStart: DayISO;
+  finished: boolean;
+  byDay: WireReportGrid;
+  byCrop: WireReportGrid;
+  total: WireReportTotals;
+}
+
+export interface WireReportCropWeek extends WireReportTotals {
+  weekStart: DayISO;
+  pickers: number;
+  days: number;
+  finished: boolean;
+}
+
+export interface WireReportCrop extends WireReportTotals {
+  scope: WireReportScope;
+  plotCropId: Uuid;
+  /** Crop, variety and plot, as a person would say it. */
+  label: string;
+  pickers: number;
+  days: number;
+  firstOn: DayISO | null;
+  lastOn: DayISO | null;
+  /**
+   * The crop's OWN declared hectares, never the plot's as a fallback: a plot
+   * with two crops would hand the whole area to each.
+   */
+  areaHa: number | null;
+  kgPerHa: number | null;
+  /**
+   * Weighings on this crop that also name another. Counted here in full, so
+   * the same kilos may appear again under the other crop — hence the count
+   * rather than a silent split.
+   */
+  sharedRecords: number;
+  /** Newest first. */
+  byWeek: WireReportCropWeek[];
+}
+
+/** Why somebody has no index. Absent when they have one. */
+export type WirePerformanceReason = "not_enough_comparable_days" | "no_records_in_kilos";
+
+export interface WireWorkerPerformance extends WireReportTotals {
+  workerId: Uuid;
+  name: string;
+  days: number;
+  kgPerDay: number | null;
+  /**
+   * This picker against the mates who worked the same crop the same day, with
+   * this picker taken OUT of the benchmark, averaged over daily ratios. 1.0 is
+   * "exactly what the people beside them did".
+   *
+   * NULL — never a low number — for anybody with too few comparable days.
+   * Printing a zero there would be an accusation the data does not support.
+   */
+  index: number | null;
+  comparableDays: number;
+  reason?: WirePerformanceReason;
+  /** Recent half over earlier half. Null unless both halves carry four days. */
+  trend: number | null;
+}
+
+export interface WireReportPerformanceResult {
+  scope: WireReportScope;
+  days: number;
+  /** First day of the window, in the FARM's calendar, not UTC. */
+  since: DayISO;
+  minComparableDays: number;
+  /** Best index first, everybody without one after them — never interleaved. */
+  items: WireWorkerPerformance[];
+}
+
+export type WireAnomalyRule = "impossible" | "duplicate" | "digit" | "outlier" | "future";
+
+export interface WireAnomaly {
+  recordId: Uuid;
+  workerId: Uuid;
+  worker: string;
+  crop: string | null;
+  quantity: number;
+  kg: number | null;
+  date: DayISO;
+  rule: WireAnomalyRule;
+  /**
+   * What the quantity was judged against. NULL for `future`, where there is
+   * nothing to compare against — the phone put a 0 there, and a 0 in this
+   * field reads as "compared against nothing".
+   */
+  reference: number | null;
+}
+
+export interface WireReportAnomaliesResult {
+  scope: WireReportScope;
+  days: number;
+  maxKg: number;
+  limit: number;
+  since: DayISO;
+  items: WireAnomaly[];
+}
+
+export interface WireHarvestWeekTotal {
+  weekStart: DayISO;
+  /** Null is a week whose kilos could not be established, never a week of nothing. */
+  kg: number | null;
+}
+
+export interface WireHarvestShape {
+  /** Never a zero-valued week: "no peak yet" and "a peak of nothing" differ. */
+  peak: WireHarvestWeekTotal | null;
+  fallingWeeks: number;
+  windingDown: boolean;
+  reason?: "no_finished_weeks";
+}
+
+export interface WireHarvestCurve {
+  scope: WireReportScope;
+  plotCropId: Uuid | null;
+  currentWeek: DayISO;
+  /** Newest first, as the query returns them. */
+  weeks: WireHarvestWeekTotal[];
+  shape: WireHarvestShape;
+  /** Weeks left out of the reading because their kilos are unknown. */
+  weeksWithoutKilos: number;
+}

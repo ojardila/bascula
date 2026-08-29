@@ -47,3 +47,28 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+/**
+ * jsdom implements no ResizeObserver, and the harvest charts measure their
+ * container so the SVG is drawn at real pixels rather than being scaled.
+ *
+ * The shim reports a fixed width and calls back once, which is what a browser
+ * does on observe. Without it the charts throw on mount and every screen that
+ * carries one renders as a blank — a failure that says "ResizeObserver is not
+ * defined" and looks nothing like the assertion that actually failed.
+ */
+if (!globalThis.ResizeObserver) {
+  class TestResizeObserver implements ResizeObserver {
+    constructor(private readonly cb: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.cb(
+        [{ contentRect: { width: 640, height: 200 } } as ResizeObserverEntry],
+        this as unknown as ResizeObserver,
+      );
+      void target;
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
+}

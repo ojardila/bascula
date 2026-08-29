@@ -23,6 +23,7 @@ import SellIcon from "@mui/icons-material/Sell";
 import PaymentsIcon from "@mui/icons-material/Payments";
 import InventoryIcon from "@mui/icons-material/Inventory2";
 import SettingsIcon from "@mui/icons-material/Settings";
+import HarvestIcon from "@mui/icons-material/Grass";
 import LockIcon from "@mui/icons-material/Lock";
 import { useAuth } from "../auth/AuthContext";
 import { MODULES, can } from "../auth/permissions";
@@ -34,6 +35,7 @@ const WIDTH = 232;
 
 const ICONS: Record<string, ReactNode> = {
   dashboard: <DashboardIcon />,
+  harvest: <HarvestIcon />,
   terrain: <TerrainIcon />,
   people: <PeopleIcon />,
   agriculture: <AgricultureIcon />,

@@ -44,7 +44,9 @@
  */
 import { http, HttpResponse, delay } from "msw";
 import * as db from "./db";
-import { mondayOf } from "../lib/dates";
+import { cropLabel } from "../api/adapters";
+import { addDays, mondayOf, parseDay } from "../lib/dates";
+import { readHarvest } from "../../../../packages/shared/src/harvest";
 import * as geo from "../lib/geo";
 import type {
   ActivityRequestBody,
@@ -248,7 +250,8 @@ type Action =
   | "sales.write"
   | "sales.void"
   | "expenses.read"
-  | "expenses.write";
+  | "expenses.write"
+  | "reports.read";
 
 const owners: WireRole[] = ["owner"];
 const admins: WireRole[] = ["owner", "admin"];
@@ -344,6 +347,10 @@ const MATRIX: Record<Action, Rule> = {
   "sales.void": { roles: admins },
   "expenses.read": { roles: admins },
   "expenses.write": { roles: admins },
+
+  // `auth.Matrix` has this as {Roles: admins, Money: true}: a report is a read
+  // of everybody's figures at once, so the weigher gets a 403 on all six.
+  "reports.read": { roles: admins },
 };
 
 /**
@@ -1511,6 +1518,13 @@ export const handlers = [
     const workerId = params.get("workerId");
     const activityId = params.get("activityId");
     const plotId = params.get("plotId");
+    // `workRecordFilter` in handlers_work_records.go takes payScheme and
+    // plotCropId too. The mock ignored both, which meant the harvest module's
+    // `?payScheme=unidad_trabajo` was answered here with every jornal on the
+    // farm and only narrowed client-side — so the one filter the module leans
+    // on was never exercised against anything.
+    const payScheme = params.get("payScheme");
+    const plotCropId = params.get("plotCropId");
     const wanted = listStatus(params);
     const q = params.get("q");
 
@@ -1519,6 +1533,8 @@ export const handlers = [
       .filter((r) => !workerId || r.workerId === workerId)
       .filter((r) => !activityId || r.activityId === activityId)
       .filter((r) => !plotId || r.plotIds.includes(plotId))
+      .filter((r) => !payScheme || r.payScheme === payScheme)
+      .filter((r) => !plotCropId || r.plotCropIds.includes(plotCropId))
       .filter((r) => !from || db.dayOf(r.dateFrom) >= from)
       .filter((r) => !to || db.dayOf(r.dateTo) <= to)
       .filter((r) => {
@@ -2719,6 +2735,184 @@ export const handlers = [
     return noContent();
   }),
 
+  /* -- reports (cosecha) --------------------------------------------- */
+
+  http.get("*/v1/reports/weeks", ({ request }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const params = new URL(request.url).searchParams;
+    const from = params.get("from");
+    const to = params.get("to");
+    const limit = Number(params.get("limit") ?? 0) || 0;
+
+    const rows = harvestOf(t).filter(
+      (r) => (!from || db.dayOf(r.dateFrom) >= from) && (!to || db.dayOf(r.dateFrom) <= to),
+    );
+    const byWeek = groupBy(rows, (r) => db.dayOf(r.weekStart));
+    const items = [...byWeek.entries()]
+      .map(([weekStart, list]) => ({
+        weekStart,
+        ...totalsOf(t, list),
+        pickers: new Set(list.map((r) => r.workerId)).size,
+        days: new Set(list.map((r) => db.dayOf(r.dateFrom))).size,
+        priceCents: db.weekPriceOf(t, weekStart) || null,
+        finished: weekStart < mondayOf(today()),
+      }))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+
+    return HttpResponse.json({
+      scope: "harvest",
+      items: limit > 0 ? items.slice(0, limit) : items,
+    });
+  }),
+
+  http.get("*/v1/reports/weeks/:monday", ({ request, params }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const t = g.p.tenant;
+
+    const rows = harvestOf(t).filter((r) => db.dayOf(r.weekStart) === monday);
+    return HttpResponse.json({
+      scope: "harvest",
+      weekStart: monday,
+      finished: monday < mondayOf(today()),
+      byDay: gridOf(t, rows, "day"),
+      byCrop: gridOf(t, rows, "crop"),
+      total: totalsOf(t, rows),
+    });
+  }),
+
+  http.get("*/v1/reports/crops/:plotCropId", ({ request, params }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const id = String(params.plotCropId);
+
+    // Confirmed to belong to this farm BEFORE anything is summed: a sum over
+    // another farm's id comes back as a plausible "this crop produced nothing".
+    const plot = t.plots.find((p) => (p.crops ?? []).some((c) => c.id === id));
+    const crop = plot?.crops?.find((c) => c.id === id);
+    if (!plot || !crop) return notFound();
+
+    const rows = harvestOf(t).filter((r) => (r.plotCropIds ?? []).includes(id));
+    const days = rows.map((r) => db.dayOf(r.dateFrom)).sort();
+    const totals = totalsOf(t, rows);
+    const byWeek = [...groupBy(rows, (r) => db.dayOf(r.weekStart)).entries()]
+      .map(([weekStart, list]) => ({
+        weekStart,
+        ...totalsOf(t, list),
+        pickers: new Set(list.map((r) => r.workerId)).size,
+        days: new Set(list.map((r) => db.dayOf(r.dateFrom))).size,
+        finished: weekStart < mondayOf(today()),
+      }))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+
+    return HttpResponse.json({
+      scope: "harvest",
+      plotCropId: id,
+      label: `${cropLabel(crop)} — ${plot.name}`,
+      ...totals,
+      pickers: new Set(rows.map((r) => r.workerId)).size,
+      days: new Set(days).size,
+      firstOn: days[0] ?? null,
+      lastOn: days[days.length - 1] ?? null,
+      areaHa: crop.areaHa ?? null,
+      kgPerHa: crop.areaHa && totals.kg !== null ? totals.kg / crop.areaHa : null,
+      sharedRecords: rows.filter((r) => (r.plotCropIds ?? []).length > 1).length,
+      byWeek,
+    });
+  }),
+
+  http.get("*/v1/reports/performance", ({ request }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const days = Number(new URL(request.url).searchParams.get("days") ?? 30) || 30;
+    const since = addDays(parseDay(today()), -days).toISOString().slice(0, 10);
+    const rows = harvestOf(t).filter((r) => db.dayOf(r.dateFrom) >= since);
+
+    return HttpResponse.json({
+      scope: "harvest",
+      days,
+      since,
+      minComparableDays: MIN_COMPARABLE_DAYS,
+      items: performanceOf(t, rows),
+    });
+  }),
+
+  http.get("*/v1/reports/anomalies", ({ request }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const params = new URL(request.url).searchParams;
+    const days = Number(params.get("days") ?? 120) || 120;
+    const maxKg = Number(params.get("maxKg") ?? 120) || 120;
+    const limit = Number(params.get("limit") ?? 200) || 200;
+    const since = addDays(parseDay(today()), -days).toISOString().slice(0, 10);
+    const rows = harvestOf(t).filter((r) => db.dayOf(r.dateFrom) >= since);
+
+    return HttpResponse.json({
+      scope: "harvest",
+      days,
+      maxKg,
+      limit,
+      since,
+      items: anomaliesOf(t, rows, maxKg).slice(0, limit),
+    });
+  }),
+
+  http.get("*/v1/reports/harvest-curve", ({ request }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const params = new URL(request.url).searchParams;
+    const plotCropId = params.get("plotCropId");
+    const weeks = Number(params.get("weeks") ?? 26) || 26;
+
+    if (plotCropId && !t.plots.some((p) => (p.crops ?? []).some((c) => c.id === plotCropId))) {
+      return notFound();
+    }
+
+    const rows = harvestOf(t).filter(
+      (r) => !plotCropId || (r.plotCropIds ?? []).includes(plotCropId),
+    );
+    const series = [...groupBy(rows, (r) => db.dayOf(r.weekStart)).entries()]
+      .map(([weekStart, list]) => ({ weekStart, kg: totalsOf(t, list).kg }))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+      .slice(0, weeks);
+
+    const current = mondayOf(today());
+    // A week whose kilos are unknown is EXCLUDED, not zeroed: treating it as 0
+    // would manufacture a 100 % drop and tell a farm its season was over.
+    const finished = series.filter((w) => w.weekStart < current && w.kg !== null) as {
+      weekStart: string;
+      kg: number;
+    }[];
+
+    const shape = readHarvest(
+      finished.map((w) => ({ week: w.weekStart, kg: w.kg })),
+      current,
+    );
+
+    return HttpResponse.json({
+      scope: "harvest",
+      plotCropId: plotCropId ?? null,
+      currentWeek: current,
+      weeks: series,
+      shape: {
+        peak: shape.peak ? { weekStart: shape.peak.week, kg: shape.peak.kg } : null,
+        fallingWeeks: shape.fallingWeeks,
+        windingDown: shape.windingDown,
+        ...(finished.length === 0 ? { reason: "no_finished_weeks" as const } : {}),
+      },
+      weeksWithoutKilos: series.filter((w) => w.kg === null).length,
+    });
+  }),
+
 ];
 
 /* -- the shared ledger write ----------------------------------------- */
@@ -3352,4 +3546,324 @@ function checkMonday(raw: string): Response | null {
   if (!DAY.test(raw)) return badRequest("the week is named by its Monday, YYYY-MM-DD");
   if (mondayOf(raw) !== raw) return badRequest("that date is not a Monday");
   return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports: the mock's half of `internal/store/reports.go`             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The harvest, as the server defines it: work paid by the unit of work at the
+ * week's price. `store.HarvestActivityID` is the same predicate, and it is a
+ * pair rather than a category because categories are a per-farm catalogue a
+ * farm may rename.
+ */
+function harvestOf(t: db.Tenant): db.MockWorkRecord[] {
+  return t.workRecords.filter(
+    (r) =>
+      r.deletedAt === null && r.payScheme === "unidad_trabajo" && r.rateSource === "weekly_price",
+  );
+}
+
+function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>();
+  for (const r of rows) {
+    const k = key(r);
+    const list = out.get(k);
+    if (list) list.push(r);
+    else out.set(k, [r]);
+  }
+  return out;
+}
+
+/**
+ * `ReportTotals`, with the two admissions the contract will not let a row
+ * leave out.
+ *
+ * `kg` is null when NOT ONE weighing could be expressed in kilos — a farm may
+ * invent a work unit ("canasta") with no `kgFactor`, and multiplying by a
+ * factor that is not there is how a report invents harvest. Those are counted
+ * in `recordsNotInKg` instead. `valueCents` is null on the same principle.
+ *
+ * Neither is ever 0 as a stand-in. That is the whole point of the shape.
+ */
+function totalsOf(t: db.Tenant, rows: db.MockWorkRecord[]) {
+  let kg: number | null = null;
+  let valueCents: number | null = null;
+  let recordsNotInKg = 0;
+  let recordsWithoutValue = 0;
+  let valueIsEstimate = false;
+
+  for (const r of rows) {
+    const unit = t.workUnits.find((u) => u.id === r.unitId);
+    if (unit?.kgFactor != null) kg = (kg ?? 0) + r.quantity * unit.kgFactor;
+    else recordsNotInKg += 1;
+
+    const projected = db.projectWorkRecord(t, r);
+    const amount = projected.estimatedAmountCents ?? projected.amountCents;
+    if (amount != null) {
+      valueCents = (valueCents ?? 0) + amount;
+      if (projected.amountIsEstimate) valueIsEstimate = true;
+    } else {
+      recordsWithoutValue += 1;
+    }
+  }
+
+  return { records: rows.length, kg, recordsNotInKg, valueCents, recordsWithoutValue, valueIsEstimate };
+}
+
+/**
+ * One grid: worker x day, or worker x crop.
+ *
+ * The crop grid can carry a column keyed `null` — work that names no crop, or
+ * names several. Splitting it would be a guess and attributing it twice would
+ * make the columns exceed the grid, so it gets a column of its own and
+ * `unattributed` says which of the two it was. Rows, columns and the grand
+ * total are folded from the SAME cells, so they agree by construction.
+ */
+function gridOf(t: db.Tenant, rows: db.MockWorkRecord[], axis: "day" | "crop") {
+  const colKey = (r: db.MockWorkRecord): string | null => {
+    if (axis === "day") return db.dayOf(r.dateFrom);
+    const ids = r.plotCropIds ?? [];
+    return ids.length === 1 ? ids[0] : null;
+  };
+
+  const label = (key: string | null): string => {
+    if (key === null) return "Sin asignar";
+    if (axis === "day") return key;
+    for (const p of t.plots) {
+      const c = (p.crops ?? []).find((x) => x.id === key);
+      if (c) return `${cropLabel(c)} — ${p.name}`;
+    }
+    return "—";
+  };
+
+  const cellRows = [...groupBy(rows, (r) => r.workerId).entries()].map(([workerId, list]) => {
+    const worker = t.workers.find((w) => w.id === workerId);
+    return {
+      workerId,
+      name: worker ? [worker.name, worker.lastName].filter(Boolean).join(" ") : "—",
+      cells: [...groupBy(list, colKey).entries()].map(([column, cl]) => ({
+        column,
+        ...totalsOf(t, cl),
+      })),
+      total: totalsOf(t, list),
+    };
+  });
+
+  const columns = [...groupBy(rows, colKey).entries()]
+    .map(([key, list]) => ({ key, label: label(key), total: totalsOf(t, list) }))
+    .sort((a, b) => {
+      // The unattributed column always sits last; it is a remainder, not a lot.
+      if (a.key === null) return 1;
+      if (b.key === null) return -1;
+      return axis === "day"
+        ? a.key.localeCompare(b.key)
+        : (b.total.kg ?? 0) - (a.total.kg ?? 0);
+    });
+
+  const unattributedRows = rows.filter((r) => colKey(r) === null);
+  const grid: Record<string, unknown> = {
+    columns,
+    rows: cellRows.sort((a, b) => (b.total.kg ?? 0) - (a.total.kg ?? 0)),
+    total: totalsOf(t, rows),
+  };
+  if (axis === "crop" && unattributedRows.length > 0) {
+    grid.unattributed = {
+      noCropLink: unattributedRows.filter((r) => (r.plotCropIds ?? []).length === 0).length,
+      sharedAcrossCrops: unattributedRows.filter((r) => (r.plotCropIds ?? []).length > 1).length,
+    };
+  }
+  return grid;
+}
+
+/** At least this many people on a crop on a day before anyone is compared. */
+const MIN_CREW_ON_CROP_DAY = 3;
+/** And at least this many such days before anybody gets an index at all. */
+const MIN_COMPARABLE_DAYS = 3;
+
+/**
+ * The comparative index, as `INDEX_SQL` computes it.
+ *
+ * Three things that were all wrong in the phone's first version and must stay
+ * right here: the person is EXCLUDED from their own benchmark, it averages
+ * DAILY RATIOS rather than dividing sums, and a crop-day with fewer than three
+ * people is dropped rather than compared anyway.
+ *
+ * `index` is null — never a low number — for anybody without enough basis, and
+ * `reason` says which. A zero there would be an accusation the data cannot
+ * support.
+ */
+function performanceOf(t: db.Tenant, rows: db.MockWorkRecord[]) {
+  const kgOf = (r: db.MockWorkRecord): number | null => {
+    const unit = t.workUnits.find((u) => u.id === r.unitId);
+    return unit?.kgFactor != null ? r.quantity * unit.kgFactor : null;
+  };
+
+  // (worker, crop, day) -> kilos
+  const cells = new Map<string, { workerId: string; crop: string; day: string; kg: number }>();
+  for (const r of rows) {
+    const kg = kgOf(r);
+    if (kg === null) continue;
+    const crop = (r.plotCropIds ?? [])[0] ?? "—";
+    const day = db.dayOf(r.dateFrom);
+    const key = `${r.workerId}|${crop}|${day}`;
+    const cur = cells.get(key);
+    if (cur) cur.kg += kg;
+    else cells.set(key, { workerId: r.workerId, crop, day, kg });
+  }
+
+  const base = new Map<string, { tot: number; n: number }>();
+  for (const c of cells.values()) {
+    const k = `${c.crop}|${c.day}`;
+    const b = base.get(k) ?? { tot: 0, n: 0 };
+    b.tot += c.kg;
+    b.n += 1;
+    base.set(k, b);
+  }
+
+  const ratios = new Map<string, { day: string; ratio: number }[]>();
+  for (const c of cells.values()) {
+    const b = base.get(`${c.crop}|${c.day}`)!;
+    if (b.n < MIN_CREW_ON_CROP_DAY) continue;
+    const matesMean = (b.tot - c.kg) / (b.n - 1);
+    if (!(matesMean > 0)) continue;
+    const list = ratios.get(c.workerId) ?? [];
+    list.push({ day: c.day, ratio: c.kg / matesMean });
+    ratios.set(c.workerId, list);
+  }
+
+  const items = [...groupBy(rows, (r) => r.workerId).entries()].map(([workerId, list]) => {
+    const worker = t.workers.find((w) => w.id === workerId);
+    const totals = totalsOf(t, list);
+    const days = new Set(list.map((r) => db.dayOf(r.dateFrom))).size;
+    const mine = ratios.get(workerId) ?? [];
+    const comparableDays = new Set(mine.map((r) => r.day)).size;
+    const enough = comparableDays >= MIN_COMPARABLE_DAYS;
+    const index = enough ? mine.reduce((s, r) => s + r.ratio, 0) / mine.length : null;
+
+    return {
+      workerId,
+      name: worker ? [worker.name, worker.lastName].filter(Boolean).join(" ") : "—",
+      ...totals,
+      days,
+      kgPerDay: totals.kg !== null && days > 0 ? totals.kg / days : null,
+      index,
+      comparableDays,
+      ...(index === null
+        ? {
+            reason:
+              totals.kg === null
+                ? ("no_records_in_kilos" as const)
+                : ("not_enough_comparable_days" as const),
+          }
+        : {}),
+      trend: null,
+    };
+  });
+
+  // Best index first, everybody without one after them — never interleaved.
+  return items.sort((a, b) => {
+    if (a.index === null && b.index === null) return (b.kg ?? 0) - (a.kg ?? 0);
+    if (a.index === null) return 1;
+    if (b.index === null) return -1;
+    return b.index - a.index;
+  });
+}
+
+/**
+ * The five review rules, in the order of how sure we are. A weighing that
+ * breaks more than one is reported once, under the first that matched.
+ *
+ * `reference` is what the quantity was judged against and is NULL for
+ * `future`, where there is nothing to compare against — a 0 there would read
+ * as "compared against nothing".
+ */
+function anomaliesOf(t: db.Tenant, rows: db.MockWorkRecord[], maxKg: number) {
+  const kgOf = (r: db.MockWorkRecord): number | null => {
+    const unit = t.workUnits.find((u) => u.id === r.unitId);
+    return unit?.kgFactor != null ? r.quantity * unit.kgFactor : null;
+  };
+  const cropOf = (r: db.MockWorkRecord): string | null => {
+    const id = (r.plotCropIds ?? [])[0];
+    if (!id) return null;
+    for (const p of t.plots) {
+      const c = (p.crops ?? []).find((x) => x.id === id);
+      if (c) return `${cropLabel(c)} — ${p.name}`;
+    }
+    return null;
+  };
+
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  const push = (r: db.MockWorkRecord, rule: string, reference: number | null) => {
+    if (seen.has(r.id)) return;
+    seen.add(r.id);
+    const worker = t.workers.find((w) => w.id === r.workerId);
+    out.push({
+      recordId: r.id,
+      workerId: r.workerId,
+      worker: worker ? [worker.name, worker.lastName].filter(Boolean).join(" ") : "—",
+      crop: cropOf(r),
+      quantity: r.quantity,
+      kg: kgOf(r),
+      date: db.dayOf(r.dateFrom),
+      rule,
+      reference,
+    });
+  };
+
+  for (const r of rows) {
+    const kg = kgOf(r);
+    if (r.quantity <= 0) push(r, "impossible", maxKg);
+    else if (kg !== null && kg > maxKg) push(r, "impossible", maxKg);
+  }
+
+  for (const list of groupBy(
+    rows,
+    (r) => `${r.workerId}|${(r.plotCropIds ?? [])[0] ?? "—"}|${r.quantity}`,
+  ).values()) {
+    if (list.length < 2) continue;
+    const sorted = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    for (let i = 1; i < sorted.length; i++) {
+      const gap = Date.parse(sorted[i].createdAt) - Date.parse(sorted[i - 1].createdAt);
+      if (Number.isFinite(gap) && gap >= 0 && gap <= 3 * 60_000) {
+        push(sorted[i], "duplicate", sorted[i].quantity);
+      }
+    }
+  }
+
+  // The reference EXCLUDES the suspect row: including it makes the rule
+  // algebraically unable to fire, which the phone shipped with for versions.
+  for (const [, list] of groupBy(rows, (r) => r.workerId)) {
+    const kgs = list.map(kgOf).filter((k): k is number => k !== null);
+    if (kgs.length < 2) continue;
+    const sum = kgs.reduce((a, b) => a + b, 0);
+    for (const r of list) {
+      const kg = kgOf(r);
+      if (kg === null) continue;
+      const reference = (sum - kg) / (kgs.length - 1);
+      if (reference > 0 && kg >= 4 * reference) push(r, "digit", reference);
+    }
+  }
+
+  for (const [, list] of groupBy(
+    rows,
+    (r) => `${(r.plotCropIds ?? [])[0] ?? "—"}|${db.dayOf(r.dateFrom)}`,
+  )) {
+    if (list.length < 5) continue;
+    const kgs = list.map(kgOf).filter((k): k is number => k !== null);
+    if (kgs.length < 5) continue;
+    const sum = kgs.reduce((a, b) => a + b, 0);
+    for (const r of list) {
+      const kg = kgOf(r);
+      if (kg === null) continue;
+      const reference = (sum - kg) / (kgs.length - 1);
+      if (reference > 0 && kg >= 4 * reference) push(r, "outlier", reference);
+    }
+  }
+
+  for (const r of rows) if (db.dayOf(r.dateFrom) > today()) push(r, "future", null);
+
+  return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }

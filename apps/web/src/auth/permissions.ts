@@ -35,6 +35,11 @@ export type Action =
   | "workRecords.read"
   | "workRecords.readAll"
   | "workRecords.write"
+  // Reading the harvest: the season curve, the week detail, the crop report,
+  // the yield index and the weighing review. A read of everybody's figures at
+  // once, so it sits with the money surface rather than with `workRecords.read`
+  // — the weigher may see what HE registered, never the whole crew's.
+  | "harvest.read"
   | "money.read"
   | "money.pay"
   // Products, the warehouse, sales and expenses. Four surfaces, eight actions,
@@ -62,6 +67,7 @@ const OWNER: Action[] = [
   "workers.profile", "workers.notes",
   "activities.read", "activities.write", "activities.setRate",
   "workRecords.read", "workRecords.readAll", "workRecords.write",
+  "harvest.read",
   "money.read", "money.pay",
   "products.read", "products.write",
   "stock.read", "stock.write",
@@ -82,6 +88,7 @@ const ADMINISTRATOR: Action[] = [
   "workers.profile", "workers.notes",
   "activities.read", "activities.write",
   "workRecords.read", "workRecords.readAll", "workRecords.write",
+  "harvest.read",
   "money.read", "money.pay",
   "products.read", "products.write",
   "stock.read", "stock.write",
@@ -149,7 +156,7 @@ export function isReadOnly(principal: Principal): boolean {
 /* Navigation                                                          */
 /* ------------------------------------------------------------------ */
 
-export type Sprint = 1 | 2 | 3;
+export type Sprint = 1 | 2 | 3 | 4;
 
 export interface ModuleDef {
   key: string;
@@ -183,6 +190,10 @@ export interface ModuleDef {
  */
 export const MODULES: ModuleDef[] = [
   { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard" },
+  // Straight after the tablero, because it is the screen the owner opens every
+  // morning during the season — not filed behind Labores, where the picking was
+  // effectively hidden until Sprint 4.
+  { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" },
   { key: "plots", label: "Parcelas", path: "/parcelas", action: "plots.read", sprint: 1, available: true, icon: "terrain" },
   { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, available: true, icon: "people" },
   { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },

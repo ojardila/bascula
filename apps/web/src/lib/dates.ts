@@ -76,3 +76,38 @@ export function formatMonday(monday: string): string {
   const d = parseDay(monday);
   return `lun ${d.getUTCDate()} ${MONTHS_SHORT[d.getUTCMonth()]}`;
 }
+
+/**
+ * "24–30 ago" — the week a harvest report groups by, named by its own days.
+ *
+ * A week is keyed by its Monday everywhere in this product, and "2026-08-24"
+ * is not something a person reads as a week. The year is appended only when
+ * the week crosses a new year or ends outside the current one, which is the
+ * same rule the phone uses (`formatWeekRange` in `packages/shared`), so the
+ * two halves of the product name the same week the same way.
+ */
+export function formatWeekRange(monday: string, today: Date = new Date()): string {
+  const a = parseDay(monday);
+  const b = addDays(a, 6);
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+  const currentYear = today.getUTCFullYear();
+  const showYear = !sameYear || b.getUTCFullYear() !== currentYear;
+
+  const aM = MONTHS_SHORT[a.getUTCMonth()];
+  const bM = MONTHS_SHORT[b.getUTCMonth()];
+  const aY = showYear ? ` ${a.getUTCFullYear()}` : "";
+  const bY = showYear ? ` ${b.getUTCFullYear()}` : "";
+
+  if (a.getUTCMonth() === b.getUTCMonth() && sameYear) {
+    return `${a.getUTCDate()}–${b.getUTCDate()} ${bM}${bY}`;
+  }
+  return `${a.getUTCDate()} ${aM}${aY} – ${b.getUTCDate()} ${bM}${bY}`;
+}
+
+/** "Esta semana" / "Semana pasada", or null when it is neither. */
+export function weekTag(monday: string, today: string): string | null {
+  const current = mondayOf(today);
+  if (monday === current) return "Esta semana";
+  if (monday === addDays(parseDay(current), -7).toISOString().slice(0, 10)) return "Semana pasada";
+  return null;
+}

@@ -1394,6 +1394,39 @@ async function activityToWire(body: ActivityInput): Promise<Record<string, unkno
     unitId = unit.id;
   }
 
+  /**
+   * THE SEED RATE, AND WHY A WEEKLY-PRICE ACTIVITY NEEDS ONE.
+   *
+   * An activity priced by the week has no rate of its own — that is the whole
+   * point of it, and the form says so — so this used to send `rateCents: 0`.
+   * `handlers_activities.go` refuses that unconditionally, before it looks at
+   * the rate source, with `400 rate.rateCents must be positive`. The effect
+   * was that NO farm could create a picking activity from the web at all: the
+   * one activity the entire cosecha module is keyed on. The error named a
+   * field the form does not show, so it read as a bug in the server.
+   *
+   * The fix is not to invent a number. `store.WeekPrice` resolves an unpriced
+   * week as `COALESCE(week_prices override, farm_config.price_minor)`, so the
+   * farm's standing price is precisely what the server itself would charge for
+   * a week nobody has priced. Seeding the row with it states what is already
+   * true rather than adding a second opinion.
+   *
+   * A farm with no standing price is refused here, in Spanish, naming what to
+   * do — rather than being passed to the server to be refused in English about
+   * a field nobody typed into.
+   */
+  let seedRateCents = body.defaultRateCents ?? 0;
+  if (seedRateCents <= 0 && body.rateSource === "weekly_price") {
+    seedRateCents = (await api.getFarm()).priceCents ?? 0;
+    if (seedRateCents <= 0) {
+      throw unsupported(
+        "FARM_PRICE_UNSET",
+        "Esta actividad se paga al precio de la semana, y la finca todavía no " +
+          "tiene un precio base. Póngalo en Configuración y vuelva a guardar.",
+      );
+    }
+  }
+
   return {
     id: body.id,
     name: body.name,
@@ -1402,7 +1435,7 @@ async function activityToWire(body: ActivityInput): Promise<Record<string, unkno
     rateSource: rateSourceToWire(body.rateSource),
     ...(unitId ? { unitId } : {}),
     rate: {
-      rateCents: body.defaultRateCents ?? 0,
+      rateCents: seedRateCents,
       validFrom: body.validFrom ? day(body.validFrom) : undefined,
       timeUnit: body.timeUnit ?? null,
     },
