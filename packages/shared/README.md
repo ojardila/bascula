@@ -25,8 +25,12 @@ en la suite, no en una finca un domingo por la tarde.
 
 **El dinero** es una sola multiplicación —`round(quantity × rateCents)`— y una
 tabla de seis signos, y las dos son exactamente donde dos lenguajes divergen en
-silencio: redondeo al par en vez de medio hacia arriba, o redondear el total en
-vez de cada línea. Ver `golden/README.md`.
+silencio: redondeo al par en vez de medio lejos del cero, redondear el total en
+vez de cada línea, o —la tercera, que costó cuatro centavos por liquidación—
+hacer la multiplicación en coma flotante, donde `1,005 × 7500` nunca llega al
+medio que hay que redondear hacia arriba. `amountCents` multiplica los dígitos
+decimales de la cantidad en `BigInt`, como `big.Rat` en Go y `numeric` en
+Postgres. Ver `golden/README.md`.
 
 **El tiempo** decide qué precio se aplica. La semana es la fecha del lunes,
 nunca `%Y-W%W`; el día de negocio es el día **en la zona de la finca**, no en

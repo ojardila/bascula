@@ -55,9 +55,12 @@ sentencia.
    `YYYY-MM-DDTHH:MM` sin desfase, porque el desfase es el de la finca y no el
    del fichero. Ver "Tiempo".
 4. **`quantity` es lo único que puede llevar decimales**: es una medida (kilos
-   en una báscula, canastas, número de jornales), un `float64` IEEE-754. El
-   literal decimal del JSON se decodifica al mismo `double` en Go
-   (`encoding/json`) y en JavaScript, así que no hay ambigüedad.
+   en una báscula, canastas, número de jornales), con **tres decimales como
+   mucho** — el `numeric(12,3)` en el que la guarda el servidor. Lo que el
+   fichero afirma es el **decimal**, no el double más cercano: `1.005` no
+   existe en binario, y multiplicarlo como float da un resultado distinto al
+   del servidor (caso 10). Léelo como texto —`json.Number` en Go, el propio
+   literal en JavaScript— y multiplica sus dígitos, no su double.
 5. **Las claves que aparecen en `expect` se comprueban; las que faltan, no.**
    Un caso afirma lo que dice y nada más.
 6. **Los ids son deterministas.** `people[].id`, `crops[].id` y `pickup.id`
@@ -98,10 +101,22 @@ hoy y dentro de tres años. En el servidor, `on` es *hoy* en la zona de la finca
 ## Las reglas que estos casos fijan
 
 **Dinero.** `amountCents = round(quantity × rateCents)`, redondeando **medio
-hacia arriba** (medio lejos del cero; las cantidades aquí nunca son negativas).
-En Go, `int64(math.Round(quantity * float64(rateCents)))`. **No** es redondeo
-bancario: `2.5 × 8333 = 20832.5` da `20833`, no `20832`. Y se redondea **por
-línea**, sumando después enteros — redondear la suma da otro total.
+lejos del cero**. **No** es redondeo bancario: `2.5 × 8333 = 20832.5` da
+`20833`, no `20832`. Y se redondea **por línea**, sumando después enteros —
+redondear la suma da otro total.
+
+Y la multiplicación es **exacta**, no en coma flotante. `math.Round(quantity *
+float64(rateCents))` en Go, o `Math.round(quantity * rateCents)` en
+JavaScript, **no** cumplen esta regla: el double más cercano a `1,005` queda
+por debajo, el producto exacto `7537,5` aterriza en `7537,499999999999` y el
+redondeo baja a `7537` en vez de subir a `7538`. Siempre una unidad mínima de
+menos, siempre en contra del trabajador. La única forma de dar la misma
+respuesta que `numeric` en Postgres es multiplicar los **dígitos decimales**
+de la cantidad por la tarifa entera: `big.Rat` en Go
+(`domain.AmountMinor`), `BigInt` en TypeScript (`amountCents`). Es el caso 10,
+y con 18.616 pares comprobados contra Postgres —incluida la familia entera
+cuyo producto cae justo en medio, en los dos signos— las tres
+implementaciones coinciden en todos.
 
 **Signos.** Positivo = la finca le debe al trabajador. `devengo` > 0; `pago`,
 `anticipo` y `deduccion` < 0; `ajuste` y `reverso` libres, nunca cero. Los
@@ -151,6 +166,7 @@ con `voidedAt` — que es lo que libera la pesada — y asienta un `reverso` del
 | 07 | `pago-mayor-al-saldo` | Un pago mayor al saldo deja saldo negativo y se comporta como anticipo. El saldo no se recorta. |
 | 08 | `deduccion-reverso-y-ajuste` | La tabla de signos: deducción aparte, reverso clasificado por signo, ajuste fuera del desglose. |
 | 09 | `pesada-tardia-de-semana-ya-liquidada` | Una pesada anotada tarde rueda a la liquidación siguiente, al precio de **su** semana. |
+| 10 | `tres-decimales-que-el-float-pierde` | El producto exacto cae en medio pero el double queda por debajo: la multiplicación tiene que ser exacta, no float. Con un control a precio plano que no diverge. |
 
 ## Añadir un caso
 
