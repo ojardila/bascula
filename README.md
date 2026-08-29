@@ -33,6 +33,14 @@ needed to use it.
 
 ## Design notes
 
+- [Use cases](docs/casos-de-uso.md) — the owner's own specification of the
+  full scope: plots, employees, activities, tasks, inventory, sales and
+  expenses. The mobile app covers a small part of it today.
+- [API and auth design](docs/arquitectura-api.md) — Go layout, REST contract,
+  roles and the cross-tenant worker registry.
+- [Data model](docs/modelo-datos.md) — the PostgreSQL schema, row-level
+  security, and how today's SQLite tables migrate into it.
+- [Sprint 1 plan](docs/plan-sprint-1.md)
 - [Sync and roles](docs/sync-and-roles.md) — how records travel from a phone
   with no signal to the server, what happens when two phones settle the same
   week, and what each role can do.
