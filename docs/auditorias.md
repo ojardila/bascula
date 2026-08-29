@@ -62,18 +62,25 @@ existan**.
 
 | # | Qué | Estado |
 |---|---|---|
-| A1 | **Un doble clic paga dos veces.** Verificado: $20.000 entregados donde se aprobaron $10.000 | En curso |
-| A2 | Al pesador se le escapa el valor por la única ruta sin guarda, y con él el precio por kilo que el servidor le oculta | En curso |
-| A3 | La planilla firmada imprime el resultado de una búsqueda: una nómina de $2.220.080 sale como $335.280 | En curso |
-| A4 | Las cifras de cabecera de liquidaciones son sumas del filtro, sin decirlo | En curso |
-| A5 | El perfil del empleado dice «$0» cuando la petición falló | En curso |
-| A6 | El tablero: dos casillas honestas y dos que mienten con la misma petición fallida | En curso |
-| A7 | Estimaciones sumadas y presentadas como firmes; `amountIsEstimate` no se pinta en ningún sitio | En curso |
-| A8 | «Nunca ha entrado», mostrado al dueño que estaba usando la aplicación | En curso |
-| A9 | La invitación promete un correo que nadie envía y tira la contraseña: el invitado no puede entrar nunca | En curso |
-| A10 | «Líneas: 0» en todas las liquidaciones: el servidor manda el conteo y la web cuenta un array vacío | En curso |
-| A11 | La columna «Periodo» siempre muestra una semana; el papel lo imprime bien y la pantalla no | En curso |
-| A12 | Menores: un pie que dice «0 ventas» bajo una alerta de error, un estado inventado en inglés, un formulario que se pierde al recargar | En curso |
+| A1 | **Un doble clic paga dos veces.** Verificado: $20.000 entregados donde se aprobaron $10.000 | **Cerrado** |
+| A2 | Al pesador se le escapa el valor por la única ruta sin guarda, y con él el precio por kilo que el servidor le oculta | **Cerrado** |
+| A3 | La planilla firmada imprime el resultado de una búsqueda: una nómina de $2.220.080 sale como $335.280 | **Cerrado** |
+| A4 | Las cifras de cabecera de liquidaciones son sumas del filtro, sin decirlo | **Cerrado** |
+| A5 | El perfil del empleado dice «$0» cuando la petición falló | **Cerrado** |
+| A6 | El tablero: dos casillas honestas y dos que mienten con la misma petición fallida | **Cerrado** |
+| A7 | Estimaciones sumadas y presentadas como firmes; `amountIsEstimate` no se pinta en ningún sitio | **Cerrado** |
+| A8 | «Nunca ha entrado», mostrado al dueño que estaba usando la aplicación | **Cerrado** |
+| A9 | La invitación promete un correo que nadie envía y tira la contraseña: el invitado no puede entrar nunca | **Cerrado** |
+| A10 | «Líneas: 0» en todas las liquidaciones: el servidor manda el conteo y la web cuenta un array vacío | **Cerrado** |
+| A11 | La columna «Periodo» siempre muestra una semana; el papel lo imprime bien y la pantalla no | **Cerrado** |
+| A12 | Menores: un pie que dice «0 ventas» bajo una alerta de error, un estado inventado en inglés | **Cerrado** salvo el formulario que se pierde al recargar, que es una función nueva y no una mentira |
+
+Cuatro de las siete sospechas del auditor resultaron ciertas y están cerradas:
+un área desconocida que se convertía en «0,00 ha» y se sumaba al total de la
+finca; un total que sumaba bultos con kilos y lo rotulaba con la primera unidad
+que encontraba; unas existencias caídas que se pintaban como bodega vacía y
+**empujaban a desactivar la guarda del servidor**; y un reparto de peticiones que
+convertía un fallo en «todavía no se ha liquidado nada en esta finca».
 
 ## Lo que estas dos auditorías enseñan
 
@@ -85,3 +92,16 @@ numérico para el caso desconocido. Y no volvió a las pantallas viejas.
 La lección no es «cuidado con los ceros». Es que **un patrón resuelto en un sitio
 no se propaga solo**, y que la única forma de saber dónde falta es que alguien
 ajeno lo busque.
+
+### Y una lección sobre las propias pruebas
+
+El doble pago no salía en la suite por dos razones que conviene recordar:
+
+`fireEvent` y `userEvent` envuelven en `act()`, y con eso le regalan a React el
+re-renderizado que un doble clic de verdad **no** le da. La prueba era más
+amable que el mundo.
+
+Y el simulacro del servidor **no era idempotente por identificador**, aunque su
+propia cabecera prometía que sí. Era más permisivo que producción, así que el
+fallo no podía reproducirse contra él. Un simulacro que se aparta del servidor
+en la dirección de dejar pasar más cosas no es una red: es una venda.
