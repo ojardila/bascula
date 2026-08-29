@@ -25,3 +25,7 @@ export {
   formatDay,
 } from "./format.ts";
 export * from "./harvest.ts";
+// The identity a row keeps once it leaves the device. Shared for the same
+// reason the money is: the three sides have to agree on what an id means, and
+// a v7 means "this happened at this millisecond".
+export * from "./uuid.ts";

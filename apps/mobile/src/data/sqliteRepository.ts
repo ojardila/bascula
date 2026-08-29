@@ -20,12 +20,15 @@ import {
   amountCents,
 } from "../../../../packages/shared/src/money.ts";
 import { localDayOf } from "../../../../packages/shared/src/time.ts";
+import { createUuidV7 } from "../../../../packages/shared/src/uuid.ts";
+import { migrateToV6 } from "./migrateToV6.ts";
 import {
   BASE_SCHEMA,
   PAYMENTS_SCHEMA,
   PICKUP_INDEXES_SQL,
   BALANCE_SQL,
   PENDING_SQL,
+  PAID_AGAINST_SQL,
   INDEX_SQL,
   RULE_IMPOSSIBLE_SQL,
   RULE_DUPLICATE_SQL,
@@ -40,6 +43,7 @@ import {
   WEEK_GRID_SQL,
   WEEK_PLOTS_SQL,
   WEEK_GRID_DAY_SQL,
+  OUTBOX_PENDING_SQL,
 } from "../schema.ts";
 import type {
   AnomaliesRepo,
@@ -78,12 +82,15 @@ import type {
   PriceResponseRow,
   RealCost,
   RecentPickup,
+  OutboxEntry,
   Repository,
   ReportsRepo,
   SettleResult,
   Settlement,
   SettlementItem,
   SettlementPreview,
+  SyncIdentity,
+  SyncRepo,
   ValuedGroup,
   WeekCropRow,
   WeekDay,
@@ -118,7 +125,7 @@ export interface SqlDatabase {
 
 // ---- Pure helpers ------------------------------------------------------
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 // Monday of the "%Y-Www" week that strftime('%W') would have produced:
 // week 01 starts on the year's first Monday, and earlier days fall in week 00.
@@ -214,6 +221,19 @@ export function createSqliteRepository(
   /** The stored instant of a write. */
   const now = () => clock().toISOString();
 
+  /**
+   * The name a new row will be known by on the server.
+   *
+   * One generator for the life of this repository, so two rows written inside
+   * the same millisecond — which happens on every `settle`, where the document,
+   * its lines and the ledger entry all land at once — still come out in the
+   * order they were written. It is deliberately NOT the one the v6 migration
+   * uses: that one walks backwards through the farm's whole history, and a
+   * shared counter would drag its oldest row up to today.
+   */
+  const uuid = createUuidV7();
+  const newUuid = () => uuid(clock().getTime());
+
   // The business date of a movement: the LOCAL calendar day, not the UTC one.
   // Every query here groups by local day, and a payment made on Sunday evening
   // in Bogota would otherwise be stamped with tomorrow's date and shown as a
@@ -298,7 +318,26 @@ export function createSqliteRepository(
       // self-join on (person, plot, weight) and without an index it was doing
       // a table scan per candidate row.
       db.execSync(PICKUP_INDEXES_SQL);
-      db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      db.execSync("PRAGMA user_version = 5");
+    }
+
+    if (v < 6) {
+      // Identity for sync: a UUIDv7 on every row that will travel, an
+      // `updatedAt`, the farm's and device's names on the config row, and the
+      // queue of what is still owed. See `migrateToV6.ts` for the how and the
+      // why; what matters here is the shape of this branch.
+      //
+      // All of it inside one transaction, `PRAGMA user_version` included.
+      // SQLite journals the version header along with the data, so a failure
+      // at any point leaves a database that is still exactly a version-5
+      // database and an app that still starts. The `v < 2` branch above is
+      // there because that lesson was learned the expensive way: a migration
+      // that threw halfway left a farm unable to open the app at all, on every
+      // launch, until someone reinstalled it.
+      db.withTransactionSync(() => {
+        migrateToV6(db, clock());
+        db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      });
     }
   }
 
@@ -324,11 +363,22 @@ export function createSqliteRepository(
     }
     migrate();
 
-    // Seed a sensible default crop config (Café) on first run.
+    // Seed a sensible default crop config (Café) on first run. It carries its
+    // own identity from birth: on a brand-new phone this row is inserted after
+    // the migration has run, so nothing else would ever give it one.
     db.runSync(
-      `INSERT OR IGNORE INTO config (id, cropType, label, unit, yieldUnit, costPerUnit, language)
-       VALUES (1, 'cafe', 'Café', 'kg', 'kg por recolector', 800, 'es')`,
-      [],
+      `INSERT OR IGNORE INTO config
+         (id, cropType, label, unit, yieldUnit, costPerUnit, language, uuid, updatedAt, deviceId)
+       VALUES (1, 'cafe', 'Café', 'kg', 'kg por recolector', 800, 'es', ?, ?, ?)`,
+      [newUuid(), now(), newUuid()],
+    );
+
+    // And a database that got its config row some other way — an upgrade from
+    // before any of this, a restored backup — still needs a device name. Costs
+    // one no-op UPDATE per launch once it is set.
+    db.runSync(
+      "UPDATE config SET deviceId = ? WHERE id = 1 AND deviceId IS NULL",
+      [newUuid()],
     );
   }
 
@@ -352,12 +402,16 @@ export function createSqliteRepository(
       ),
     add: (p) =>
       db.runSync(
-        "INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt) VALUES (?,?,?,?,?,?,?)",
-        [p.name, p.lastName, p.documentType, p.docId, p.tag, p.image, now()],
+        `INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt,uuid,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [p.name, p.lastName, p.documentType, p.docId, p.tag, p.image, now(), newUuid(), now()],
       ),
     // Soft delete: hide the worker but keep their pickups intact.
     remove: (id) =>
-      db.runSync("UPDATE people SET deletedAt = ? WHERE id = ?", [now(), id]),
+      db.runSync(
+        "UPDATE people SET deletedAt = ?, updatedAt = ? WHERE id = ?",
+        [now(), now(), id],
+      ),
   };
 
   const crops: CropsRepo = {
@@ -370,12 +424,16 @@ export function createSqliteRepository(
       db.getFirstSync<Crop>("SELECT * FROM crops WHERE id = ?", [id]),
     add: (c) =>
       db.runSync(
-        "INSERT INTO crops (name,type,variety,dimension,createdAt) VALUES (?,?,?,?,?)",
-        [c.name, c.type, c.variety, c.dimension, now()],
+        `INSERT INTO crops (name,type,variety,dimension,createdAt,uuid,updatedAt)
+         VALUES (?,?,?,?,?,?,?)`,
+        [c.name, c.type, c.variety, c.dimension, now(), newUuid(), now()],
       ),
     // Soft delete: hide the plot but keep every pickup that references it.
     remove: (id) =>
-      db.runSync("UPDATE crops SET deletedAt = ? WHERE id = ?", [now(), id]),
+      db.runSync(
+        "UPDATE crops SET deletedAt = ?, updatedAt = ? WHERE id = ?",
+        [now(), now(), id],
+      ),
   };
 
   const pickups: PickupsRepo = {
@@ -392,10 +450,10 @@ export function createSqliteRepository(
     setWeight: (id, weight) => {
       if (pickups.isSettled(id)) throw new Error("SETTLED");
       if (!Number.isFinite(weight) || weight <= 0) throw new Error("BADWEIGHT");
-      const r = db.runSync("UPDATE pickups SET weight = ? WHERE id = ?", [
-        weight,
-        id,
-      ]);
+      const r = db.runSync(
+        "UPDATE pickups SET weight = ?, updatedAt = ? WHERE id = ?",
+        [weight, now(), id],
+      );
       // Without this an update that matched nothing reported success.
       if (r.changes === 0) throw new Error("NOTFOUND");
     },
@@ -407,8 +465,15 @@ export function createSqliteRepository(
 
     add: (p) =>
       db.runSync(
-        "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-        [p.personId, p.cropId, p.weight, p.date, now()],
+        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
+         VALUES (?,?,?,?,?,?,?)`,
+        // The uuid is seeded from the weighing's own instant, not from the
+        // moment the row is stored, so a load entered late still sorts where
+        // it happened. That is the same rule the v6 backfill follows.
+        [
+          p.personId, p.cropId, p.weight, p.date, now(),
+          uuid(Date.parse(p.date) || clock().getTime()), now(),
+        ],
       ),
 
     recent: () =>
@@ -556,13 +621,15 @@ export function createSqliteRepository(
       ),
     save: (c) =>
       db.runSync(
-        `INSERT INTO config (id, cropType, label, unit, yieldUnit, costPerUnit)
-         VALUES (1, ?, ?, ?, ?, ?)
+        `INSERT INTO config (id, cropType, label, unit, yieldUnit, costPerUnit, uuid, updatedAt)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            cropType = excluded.cropType, label = excluded.label,
            unit = excluded.unit, yieldUnit = excluded.yieldUnit,
-           costPerUnit = excluded.costPerUnit`,
-        [c.cropType, c.label, c.unit, c.yieldUnit, c.costPerUnit],
+           costPerUnit = excluded.costPerUnit,
+           uuid = COALESCE(config.uuid, excluded.uuid),
+           updatedAt = excluded.updatedAt`,
+        [c.cropType, c.label, c.unit, c.yieldUnit, c.costPerUnit, newUuid(), now()],
       ),
   };
 
@@ -576,9 +643,11 @@ export function createSqliteRepository(
     },
     setLang: (l) =>
       db.runSync(
-        `INSERT INTO config (id, language) VALUES (1, ?)
-         ON CONFLICT(id) DO UPDATE SET language = excluded.language`,
-        [l],
+        `INSERT INTO config (id, language, uuid, updatedAt) VALUES (1, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET language = excluded.language,
+           uuid = COALESCE(config.uuid, excluded.uuid),
+           updatedAt = excluded.updatedAt`,
+        [l, newUuid(), now()],
       ),
   };
 
@@ -590,9 +659,13 @@ export function createSqliteRepository(
       ),
     set: (week, costPerUnit) =>
       db.runSync(
-        `INSERT INTO cost_overrides (week, costPerUnit) VALUES (?, ?)
-         ON CONFLICT(week) DO UPDATE SET costPerUnit = excluded.costPerUnit`,
-        [week, costPerUnit],
+        `INSERT INTO cost_overrides (week, costPerUnit, uuid, updatedAt) VALUES (?, ?, ?, ?)
+         ON CONFLICT(week) DO UPDATE SET costPerUnit = excluded.costPerUnit,
+           uuid = COALESCE(cost_overrides.uuid, excluded.uuid),
+           updatedAt = excluded.updatedAt`,
+        // Seeded from the Monday it prices, so a price set for a past week
+        // sorts with that week and not with today.
+        [week, costPerUnit, uuid(Date.parse(`${week}T00:00:00.000Z`) || clock().getTime()), now()],
       ),
     remove: (id) =>
       db.runSync("DELETE FROM cost_overrides WHERE id = ?", [id]),
@@ -673,7 +746,8 @@ export function createSqliteRepository(
       const pids: number[] = [];
       names.forEach(([name, lastName], i) => {
         const r = db.runSync(
-          "INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt) VALUES (?,?,?,?,?,?,?)",
+          `INSERT INTO people (name,lastName,documentType,docId,tag,image,createdAt,uuid,updatedAt)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
           [
             name,
             lastName,
@@ -681,6 +755,8 @@ export function createSqliteRepository(
             String(1000000000 + i * 137),
             "T" + (i + 1),
             "",
+            now(),
+            newUuid(),
             now(),
           ],
         );
@@ -695,8 +771,9 @@ export function createSqliteRepository(
       const cids: number[] = [];
       plots.forEach(([name, type, variety, dim]) => {
         const r = db.runSync(
-          "INSERT INTO crops (name,type,variety,dimension,createdAt) VALUES (?,?,?,?,?)",
-          [name, type, variety, dim, now()],
+          `INSERT INTO crops (name,type,variety,dimension,createdAt,uuid,updatedAt)
+           VALUES (?,?,?,?,?,?,?)`,
+          [name, type, variety, dim, now(), newUuid(), now()],
         );
         cids.push(r.lastInsertRowId);
       });
@@ -740,15 +817,11 @@ export function createSqliteRepository(
               4,
               Math.round(((base * skill[idx % skill.length]) / loads) * 10) / 10,
             );
+            const when = iso(8 + k * 3, (idx * 7) % 60);
             db.runSync(
-              "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-              [
-                pid,
-                cid,
-                weight,
-                iso(8 + k * 3, (idx * 7) % 60),
-                iso(8 + k * 3, (idx * 7) % 60),
-              ],
+              `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
+               VALUES (?,?,?,?,?,?,?)`,
+              [pid, cid, weight, when, when, uuid(Date.parse(when)), when],
             );
           }
         });
@@ -766,15 +839,17 @@ export function createSqliteRepository(
       };
       // A typed extra zero: 520 kg where this person carries ~50.
       db.runSync(
-        "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-        [pids[2], cids[0], 520, badIso(9), badIso(9)],
+        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
+         VALUES (?,?,?,?,?,?,?)`,
+        [pids[2], cids[0], 520, badIso(9), badIso(9), uuid(Date.parse(badIso(9))), badIso(9)],
       );
       // The same weighing saved twice by a double tap.
       const dup = badIso(11);
       for (let k = 0; k < 2; k++) {
         db.runSync(
-          "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-          [pids[4], cids[1], 47, dup, dup],
+          `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
+           VALUES (?,?,?,?,?,?,?)`,
+          [pids[4], cids[1], 47, dup, dup, uuid(Date.parse(dup)), dup],
         );
       }
 
@@ -830,8 +905,8 @@ export function createSqliteRepository(
 
   function addEntry(e: Omit<LedgerEntry, "id" | "createdAt">): number {
     const r = db.runSync(
-      `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt,uuid,updatedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
         e.personId,
         e.kind,
@@ -841,6 +916,10 @@ export function createSqliteRepository(
         e.method,
         e.note,
         e.reversesId,
+        now(),
+        // From the write instant, not from `date`: the ledger is append-only
+        // and a back-dated correction must still sort after what it corrects.
+        newUuid(),
         now(),
       ],
     );
@@ -886,12 +965,12 @@ export function createSqliteRepository(
     );
     if (!s || s.status === "void") return;
     db.runSync(
-      "UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?",
-      [now(), settlementId],
+      "UPDATE settlement_items SET voidedAt = ?, updatedAt = ? WHERE settlementId = ?",
+      [now(), now(), settlementId],
     );
     db.runSync(
-      "UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?",
-      [now(), settlementId],
+      "UPDATE settlements SET status = 'void', voidedAt = ?, updatedAt = ? WHERE id = ?",
+      [now(), now(), settlementId],
     );
     const devengo = db.getFirstSync<{ id: number; amountCents: number }>(
       "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
@@ -946,15 +1025,15 @@ export function createSqliteRepository(
       const postedAt = to > today0 ? today0 : to;
       db.withTransactionSync(() => {
         const s = db.runSync(
-          `INSERT INTO settlements (personId,periodStart,periodEnd,grossCents,status,note,createdAt)
-           VALUES (?,?,?,?, 'open', ?, ?)`,
-          [personId, periodStart, to, grossCents, note ?? null, now()],
+          `INSERT INTO settlements (personId,periodStart,periodEnd,grossCents,status,note,createdAt,uuid,updatedAt)
+           VALUES (?,?,?,?, 'open', ?, ?, ?, ?)`,
+          [personId, periodStart, to, grossCents, note ?? null, now(), newUuid(), now()],
         );
         settlementId = s.lastInsertRowId;
         for (const i of items) {
           db.runSync(
-            `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)
-             VALUES (?,?,?,?,?,?)`,
+            `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents,uuid,updatedAt)
+             VALUES (?,?,?,?,?,?,?,?)`,
             [
               settlementId,
               i.pickupId,
@@ -962,6 +1041,10 @@ export function createSqliteRepository(
               i.weight,
               i.costPerUnitCents,
               i.amountCents,
+              // Minted after the document's own, so a line can never sort
+              // ahead of the settlement it belongs to.
+              newUuid(),
+              now(),
             ],
           );
         }
@@ -1134,9 +1217,20 @@ export function createSqliteRepository(
         [personId, limit],
       ),
 
+    // What the receipt may claim was handed over for this document. See
+    // PAID_AGAINST_SQL: it is a lookup where it used to be a guess.
+    paidAgainst: (settlementId): number =>
+      db.getFirstSync<{ cents: number }>(PAID_AGAINST_SQL, [settlementId])?.cents ??
+      0,
+
+    // Newest first, and `id DESC` is not decoration: a late pickup settled
+    // moments after the week it belongs to gives two documents the same
+    // `createdAt` to the second, and `Account` takes the FIRST open one as
+    // the settlement whose receipt it prints. Without the tiebreak that is
+    // whichever SQLite felt like returning.
     settlements: (personId): Settlement[] =>
       db.getAllSync<Settlement>(
-        "SELECT * FROM settlements WHERE personId = ? ORDER BY createdAt DESC",
+        "SELECT * FROM settlements WHERE personId = ? ORDER BY createdAt DESC, id DESC",
         [personId],
       ),
 
@@ -1561,6 +1655,72 @@ export function createSqliteRepository(
     plots: (monday) => db.getAllSync<WeekPlot>(WEEK_PLOTS_SQL, [monday]),
   };
 
+  // ---- Sync: identity now, protocol later -------------------------------
+  //
+  // Nothing here sends anything. `docs/sync-and-roles.md` puts sync last on
+  // purpose — "it is the part that can lose money" — and the protocol is being
+  // written in parallel. What a phone needs before any protocol arrives is a
+  // name for every row and an honest record of what it still owes, and that is
+  // all this is. The queue is filled by the triggers in `schema.ts`, not from
+  // here, so a writer added next sprint that nobody remembers to instrument is
+  // still queued.
+
+  const sync: SyncRepo = {
+    identity: (): SyncIdentity => {
+      const r = db.getFirstSync<{
+        farmId: string | null;
+        deviceId: string | null;
+        syncedAt: string | null;
+      }>("SELECT farmId, deviceId, syncedAt FROM config WHERE id = 1", []);
+      return {
+        farmId: r?.farmId ?? null,
+        // Never empty: `init` mints one, and a config row without one gets
+        // filled on the next launch. Reported as "" only if init has not run.
+        deviceId: r?.deviceId ?? "",
+        syncedAt: r?.syncedAt ?? null,
+      };
+    },
+
+    // Once. A farm id that could be changed on a device already holding a
+    // season of rows is a way to hand one farm's payroll to another, and no
+    // legitimate flow needs it: a phone that has to move farms is a phone that
+    // has to be wiped.
+    claimFarm: (farmId) => {
+      const current = sync.identity().farmId;
+      if (current && current !== farmId) throw new Error("FARM_ALREADY_CLAIMED");
+      if (current === farmId) return;
+      db.runSync("UPDATE config SET farmId = ?, updatedAt = ? WHERE id = 1", [
+        farmId,
+        now(),
+      ]);
+    },
+
+    pending: (limit = 500) =>
+      db.getAllSync<OutboxEntry>(OUTBOX_PENDING_SQL, [limit]),
+
+    pendingCount: () =>
+      db.getFirstSync<{ n: number }>("SELECT COUNT(*) AS n FROM outbox", [])?.n ??
+      0,
+
+    // Dropping by (seq, revision) rather than by seq is the whole safety of
+    // this queue. A worker's weight is corrected while the push is in flight;
+    // the trigger coalesces onto the same seq and bumps the revision; the
+    // server acks the seq it was sent, and the entry stays because the
+    // revision moved on. Acking by seq alone would lose that correction for
+    // good, and nothing would ever notice.
+    ack: (sent) => {
+      let dropped = 0;
+      db.withTransactionSync(() => {
+        for (const e of sent)
+          dropped += db.runSync(
+            "DELETE FROM outbox WHERE seq = ? AND revision = ?",
+            [e.seq, e.revision],
+          ).changes;
+      });
+      return dropped;
+    },
+  };
+
   return {
     init,
     people,
@@ -1578,6 +1738,7 @@ export function createSqliteRepository(
     performance,
     anomalies,
     export: exportRows,
+    sync,
     weekCrops,
     reportBy,
     costForWeek,

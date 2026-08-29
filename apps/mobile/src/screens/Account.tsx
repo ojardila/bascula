@@ -73,6 +73,10 @@ export default function Account() {
     if (busy.current || credit <= 0) return;
     busy.current = true;
     try {
+      // Deliberately unlinked, unlike the two settle-and-pay screens: this
+      // hands over an accumulated balance that can span several settlements
+      // and none in particular. Naming one of them would be a worse lie than
+      // naming none.
       Payments.pay(personId, credit, { method: "efectivo", note: t("pay.deliverCredit") });
       load();
       setSnack(
@@ -97,9 +101,10 @@ export default function Account() {
     const settlement = Payments.settlements(personId).find((x) => x.status === "open");
     if (!settlement) return;
     const items = Payments.itemsOf(settlement.id);
-    const paidCents = rows
-      .filter((r) => r.kind === "pago" && r.date >= settlement.periodStart)
-      .reduce((sum, r) => sum + Math.abs(r.amountCents), 0);
+    // Was `rows.filter(r => r.kind === 'pago' && r.date >= periodStart)`, which
+    // counted payments made for settlements closed months earlier — see
+    // `movil.md` §9.3 and `PAID_AGAINST_SQL`.
+    const paidCents = Payments.paidAgainst(settlement.id);
     try {
       await Print.printAsync({
         html: receiptHtml(
@@ -133,13 +138,10 @@ export default function Account() {
     // document work that was annulled.
     const settlement = Payments.settlements(personId).find((x) => x.status === "open");
     const items = settlement ? Payments.itemsOf(settlement.id) : [];
-    // Every payment made for that period, not just the last one: a week paid
-    // in two instalments would otherwise report only the second.
-    const paidCents = settlement
-      ? rows
-          .filter((r) => r.kind === "pago" && r.date >= settlement.periodStart)
-          .reduce((sum, r) => sum + Math.abs(r.amountCents), 0)
-      : 0;
+    // Every payment made against THIS document, not just the last one: a week
+    // paid in two instalments would otherwise report only the second. Against
+    // this document and no other — see `movil.md` §9.3.
+    const paidCents = settlement ? Payments.paidAgainst(settlement.id) : 0;
     const text = buildReceipt(
       {
         workerName: person ? `${person.name} ${person.lastName}`.trim() : "",

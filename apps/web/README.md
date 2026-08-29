@@ -21,7 +21,9 @@ el administrador, el pesador y el super-admin.
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` | servidor de desarrollo |
-| `npm run build` | `tsc -b` + bundle de producción en `dist/` |
+| `npm run build` | comprueba los tipos generados, `tsc -b` y bundle en `dist/` |
+| `npm run types:api` | regenera `src/api/schema.ts` desde `services/api/openapi.yaml` |
+| `npm run types:check` | falla si esos tipos están desactualizados (lo corre `build`) |
 | `npm test` | Vitest contra MSW: hermético, sin red |
 | `npm run test:e2e` | Vitest contra la API viva (ver abajo) |
 | `npm run typecheck` | `tsc -b` |
@@ -101,10 +103,13 @@ src/
     client.ts     fetch, refresh transparente, errores como `ApiError`
     errors.ts     traducción de `code` -> frase en español
     mode.ts       simulado o real, explícito y visible
+    schema.ts     GENERADO de openapi.yaml; no se edita
+    contract.assert.ts  comprueba wire.ts contra schema.ts al compilar
   auth/           sesión y la matriz de roles (una tabla, no ifs)
   components/     AppShell, ModuleList (el molde de módulo), Money, guards
-  features/       una carpeta por módulo
-  lib/            dinero, fechas, uuidv7
+  features/       una carpeta por módulo (plots, workers, activities,
+                  workrecords, inventory, sales, expenses, config, admin)
+  lib/            dinero, fechas, uuidv7, geometría del mapa (geo.ts), stock.ts
   mocks/          MSW, emulando la API real ruta por ruta
 e2e/              la prueba contra el servidor vivo
 ```
@@ -133,18 +138,37 @@ Cinco cosas que conviene saber antes de tocar nada:
    `apps/mobile/src/format.ts`; se irá a `packages/shared` cuando ese paquete
    exista, y ese es el único sitio donde habrá que tocar.
 
-### Cuando aparezca `openapi.yaml`
+### El contrato, y quién manda sobre los tipos
 
-`services/api/openapi.yaml` no existía cuando se escribió esto, así que
-`wire.ts` está transcrito a mano de los structs de Go, con la procedencia
-anotada archivo por archivo. El día que aparezca:
+`services/api/openapi.yaml` ya existe, así que la deuda declarada en el sprint 2
+—«`wire.ts` está transcrito a mano»— se cerró, pero **no** reemplazando
+`wire.ts` por lo generado. Los tres archivos conviven y cada uno tiene un
+trabajo:
 
-```sh
-npx openapi-typescript ../../services/api/openapi.yaml -o src/api/wire.ts
+```
+src/api/schema.ts           generado, nunca se edita a mano (npm run types:api)
+src/api/wire.ts             escrito a mano, comentado, lo que importa la app
+src/api/contract.assert.ts  sin runtime: comprueba que los dos dicen lo mismo
 ```
 
-y nada más se entera, que era justamente el objetivo de meter todo acceso a
-campos por `adapters.ts`.
+Lo generado son 6.500 líneas de `components["schemas"]["Sale"]["properties"]`.
+Leer el flujo de datos de una pantalla a través de eso es peor que leerlo en
+`wire.ts`, y cada comentario de «por qué esto llega en null» —los que costaron
+una tarde cada uno— no tiene dónde vivir en un archivo generado. Así que lo
+generado es el **juez**, no la fuente:
+
+- `contract.assert.ts` compara, en tiempo de compilación, el conjunto de campos
+  y los tipos de cada `Wire*` contra su esquema. Si el servidor renombra un
+  campo, `tsc` falla **diciendo cuál**: `["sobra en wire.ts:", "warehouse"]`.
+- `scripts/check-openapi-types.mjs` corre en cada `npm run build` y falla si
+  `schema.ts` se quedó atrás del `openapi.yaml`. Regenerar es un acto
+  deliberado con un diff revisable, y **ese diff es el aviso de que el contrato
+  se movió**. Regenerar en silencio dentro del build es justamente cómo el
+  sprint 1 pasó una semana con las dos mitades en desacuerdo y verde en las dos.
+
+Ya encontró cosas: `WireActivityRate.timeUnit` estaba como `string` cuando el
+contrato tiene una enumeración de cinco valores (y el servidor dice
+`personalizado` donde la interfaz dice `custom`).
 
 ## Lo que la API todavía no tiene
 
@@ -163,12 +187,72 @@ para una cifra que nadie calcula:
   *es* la restricción.
 - **Periodo de prueba de la finca.** No existe en la API. Lo inventó el mock.
 
+## El mapa
+
+El polígono del lote se dibuja, se edita y se guarda contra
+`PUT /v1/plots/{id}/boundary` (GeoJSON de ida y de vuelta). Vive en
+`features/plots/PlotBoundaryEditor.tsx` y en `lib/geo.ts`.
+
+**No hay teselas, y eso no es una versión degradada.** Esta consola se publica
+bajo una política que rechaza peticiones a servidores que no sean su propio
+origen —la misma regla que permite servirla junto a la API sin CORS—. Todo mapa
+en teselas (OSM, Mapbox, Esri, Google) es un `fetch` por cuadro de 256 píxeles
+contra el dominio de otro, así que Leaflet o MapLibre aquí no serían «un mapa
+con teselas lentas»: serían un rectángulo gris con gestos, 140 kB de caché de
+teselas, y un dueño que concluye, con razón, que la pantalla está rota. Se
+comprobó antes de escribir nada: ninguna fuente de teselas es del mismo origen,
+el repositorio no trae un paquete de teselas fuera de línea, y la API no sirve
+`/tiles`.
+
+Lo que hay en su lugar es un **lienzo de coordenadas**: un plano equirectangular
+local en metros, centrado en el lote, con cuadrícula métrica, barra de escala,
+la latitud y la longitud reales de cada esquina, y **los demás lotes de la finca
+dibujados detrás en gris**. Eso último es lo que hace el trabajo que haría una
+foto aérea: a partir del segundo lote, el linde que importa es el del vecino.
+Además, opcionalmente: una **imagen de fondo que aporta el dueño** (un dron, un
+plano catastral, una captura hecha en otra parte), anclada al encuadre sobre el
+que se soltó, que se queda en ese navegador y no se sube a ningún sitio; y la
+**ubicación del propio equipo** por `navigator.geolocation`, que es un permiso
+del navegador y no un servidor externo.
+
+Las dos superficies —la declarada y la del polígono— se muestran siempre juntas
+y del mismo tamaño (`AreaComparison`), con la diferencia dicha en hectáreas y en
+porcentaje, en tono neutro y sin regañar: la declarada viene de la escritura y
+el polígono de trazar una ladera con el ratón, y quién de las dos sirve lo
+decide el dueño. Un `INVALID_GEOMETRY` se dice en español y **sobre el dibujo**:
+`lib/geo.ts` detecta el cruce antes de la red y pinta de rojo los dos lados que
+se pisan.
+
+El área que se ve mientras se dibuja usa la suma de exceso esférico sobre la
+**esfera autálica** (latitud autálica incluida), que es lo que hace `ST_Area`
+sobre `geography` por dentro: para el cuadrado de ejemplo de `openapi.yaml`,
+PostGIS responde 122,506 ha y este código calcula 122,5055. La versión ingenua
+del mismo cálculo da 123,04, y media hectárea de salto al pulsar Guardar es
+exactamente lo que hace que nadie se fíe de ninguna de las dos cifras.
+
+## Inventario, ventas y gastos
+
+RSP-018 … RSP-033, sobre el mismo `ModuleList`. Dos reglas del diseño están
+metidas en los tipos, no en un comentario dentro de un formulario:
+
+- **Las existencias se derivan de los movimientos.** No hay ningún campo en
+  ninguna pantalla que acepte escribir una cantidad en stock, y no hay
+  `updateStock` en `endpoints.ts`. La única forma de que un número se mueva es
+  `createStockMove`, que añade un hecho. El diálogo enseña el resultado antes de
+  guardar —«hoy hay 28, después quedan 38»— para que el número que uno iba a
+  teclear siga estando a la vista, pero se llegue a él diciendo qué pasó. El
+  signo lo pone el motivo (`stock_sign`), no la persona.
+- **Un gasto se imputa a una actividad o a un lote/cultivo, nunca a las dos ni a
+  ninguna.** `ExpenseInput` es una unión discriminada, así que «a las dos» y «a
+  ninguna» no son formas que el formulario pueda construir; y en pantalla, los
+  campos del tipo que no se eligió no están deshabilitados, **no existen**.
+
 ## Lo que aún no está
 
-Ventas, gastos, inventario, liquidaciones como pantalla propia, usuarios y
-RSP-009. El polígono en el mapa ya viaja en la API (`PUT /v1/plots/{id}/boundary`,
-GeoJSON de ida y de vuelta) pero el panel sigue maquetado y deshabilitado. La
-barra lateral muestra los módulos futuros desactivados con el sprint en que
+Liquidaciones como pantalla propia, usuarios, RSP-009 y el adjunto del
+comprobante de venta (`/v1/uploads` existe en el servidor; la pantalla todavía
+no sube archivos, y prefiere no poner una casilla que se traga la foto). La
+barra lateral muestra los módulos que faltan desactivados con el sprint en que
 llegan.
 
 **El aviso de sincronización sigue puesto y sigue siendo cierto**: hasta que

@@ -74,7 +74,7 @@ describe("the seeded farm renders what the wireframes promise", () => {
     expect(screen.getByText("4,20 ha")).toBeInTheDocument();
     expect(screen.getByText("Café Castillo")).toBeInTheDocument();
     // The plot with a drawn polygon shows both figures, never one.
-    expect(screen.getByText(/calculada 5,71 ha/)).toBeInTheDocument();
+    expect(screen.getByText(/calculada 5,69 ha/)).toBeInTheDocument();
   }, 20000);
 
   it("shows a worker's balance derived from the ledger, to the peso", async () => {

@@ -33,6 +33,9 @@ export type { SqlDatabase } from "./data/sqliteRepository.ts";
 export type {
   AppLang,
   Anomaly,
+  OutboxEntry,
+  SyncEntity,
+  SyncIdentity,
   Balance,
   BalanceRow,
   CostOverride,
@@ -80,6 +83,15 @@ export const Payments = repository.payments;
 export const Performance = repository.performance;
 export const Anomalies = repository.anomalies;
 export const Export = repository.export;
+
+/**
+ * The phone's identity and what it still owes the server. No push and no pull
+ * — the protocol is being written separately (`docs/sync-and-roles.md` puts
+ * sync last on purpose). What is behind this is the farm id, the device id and
+ * the outbox, which any protocol will need and none of which can be added
+ * safely once there is a season of rows with no names.
+ */
+export const Sync = repository.sync;
 
 export const weekCrops = repository.weekCrops;
 export const reportBy = repository.reportBy;

@@ -93,7 +93,12 @@ export default function PayWorker() {
     try {
       // Settle first so the earning is on the books, then pay what the ledger
       // actually says is owed — never the amount the screen was showing.
-      Payments.settle(personId, EPOCH_START, endOfWeek(monday), config.costPerUnit);
+      const settled = Payments.settle(
+        personId,
+        EPOCH_START,
+        endOfWeek(monday),
+        config.costPerUnit,
+      );
       const owed = Payments.balance(personId).balanceCents;
       const toPay = mode === "full" ? owed : Math.min(typedCents, owed);
       if (toPay <= 0) {
@@ -103,7 +108,14 @@ export default function PayWorker() {
         setSnack(t("pay.settledNoCash"));
         return;
       }
-      Payments.pay(personId, toPay, { method: "efectivo" });
+      // Carrying the settlement is the whole of `movil.md` §9.3: without it the
+      // receipt has to guess which payments belong to which document by date,
+      // and with a late week in the mix it guesses high and tells the worker
+      // they were handed more than they were.
+      Payments.pay(personId, toPay, {
+        method: "efectivo",
+        settlementId: settled?.settlementId ?? null,
+      });
       setSnack(
         t("pay.success", {
           amount: money(fromCents(toPay)),

@@ -43,15 +43,22 @@ import type {
   AdminFarm,
   Balance,
   CatalogItem,
+  Customer,
+  Expense,
   FarmSummary,
+  LabelBatch,
   LedgerEntry,
   MeUser,
   Payables,
   PayMode,
   Plot,
   PlotCrop,
+  Product,
   RateSource,
   Role,
+  Sale,
+  StockLevel,
+  StockMove,
   WeekPrice,
   Worker,
   WorkerNote,
@@ -69,10 +76,17 @@ import type {
   WireNote,
   WirePayables,
   WirePayScheme,
+  WireCustomer,
+  WireExpense,
+  WireLabelBatch,
   WirePlot,
   WirePlotCrop,
+  WireProduct,
   WireRateSource,
   WireRole,
+  WireSale,
+  WireStockLevel,
+  WireStockMove,
   WireWeekPrice,
   WireWorkerPublic,
   WireWorkRecord,
@@ -597,4 +611,139 @@ export function toWeekPrice(w: WireWeekPrice): WeekPrice {
 
 export function toCatalogItem(c: WireCatalogItem): CatalogItem {
   return { id: c.id, name: c.name };
+}
+
+/* ------------------------------------------------------------------ */
+/* Products, inventory, sales and expenses                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The translations here are thinner than the ones above, because these routes
+ * were designed after the vocabulary settled: the server already sends the
+ * resolved names beside the ids, so there is no `refs.ts` join to do.
+ *
+ * What still has to happen is the same three things as everywhere else:
+ * `deletedAt` becomes a `status`, `localDay` (an RFC 3339 instant at midnight,
+ * because Go marshals a `time.Time`) becomes a plain business day, and a
+ * server word becomes an interface word — `voidedAt` becomes `voided`,
+ * `qty` becomes `quantity` on a sale, `docId` becomes `documentNumber`.
+ */
+
+export function toProduct(p: WireProduct): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    categoryId: p.categoryId,
+    categoryName: p.category,
+    storageUnitId: p.storageUnitId,
+    storageUnit: p.storageUnit,
+    note: p.note,
+    // A SUM over the movements, computed by the server on every read. Passed
+    // through and never cached, for the same reason it is not a column.
+    stock: p.stock ?? 0,
+    status: p.deletedAt ? "inactive" : "active",
+  };
+}
+
+export function toCustomer(c: WireCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name,
+    documentType: c.documentType,
+    documentNumber: c.docId,
+    phone: c.phone,
+    status: c.deletedAt ? "inactive" : "active",
+  };
+}
+
+export function toStockMove(m: WireStockMove): StockMove {
+  return {
+    id: m.id,
+    productId: m.productId,
+    productName: m.product,
+    warehouseId: m.warehouseId,
+    warehouseName: m.warehouse,
+    plotId: m.plotId,
+    plotName: m.plot,
+    plotCropId: m.plotCropId,
+    qty: m.qty,
+    reason: m.reason,
+    note: m.note,
+    saleId: m.saleId,
+    reversesId: m.reversesId,
+    reversedById: m.reversedById,
+    date: day(m.localDay),
+    labelBatchId: m.labelBatchId,
+  };
+}
+
+export function toStockLevel(l: WireStockLevel): StockLevel {
+  return {
+    productId: l.productId,
+    productName: l.product,
+    storageUnit: l.storageUnit,
+    warehouseId: l.warehouseId,
+    warehouseName: l.warehouse,
+    qty: l.qty,
+  };
+}
+
+export function toLabelBatch(b: WireLabelBatch): LabelBatch {
+  return {
+    id: b.id,
+    stockMoveId: b.stockMoveId,
+    count: b.count,
+    labels: (b.labels ?? []).map((l) => ({
+      code: l.code,
+      productName: l.product,
+      storageUnit: l.storageUnit,
+      qty: l.qty,
+      warehouseName: l.warehouse,
+      plotName: l.plot,
+      date: day(l.localDay),
+    })),
+  };
+}
+
+export function toSale(s: WireSale): Sale {
+  return {
+    id: s.id,
+    productId: s.productId,
+    productName: s.product,
+    storageUnit: s.storageUnit,
+    customerId: s.customerId,
+    customerName: s.customer,
+    warehouseId: s.warehouseId,
+    warehouseName: s.warehouse,
+    quantity: s.qty,
+    amountCents: s.amountCents,
+    note: s.note,
+    date: day(s.localDay),
+    stockMoveId: s.stockMoveId,
+    // A voided sale is still a row, and it still shows: it happened, and then
+    // it was undone. Hiding it would leave the warehouse's reversal movement
+    // pointing at nothing anybody can see.
+    voided: s.voidedAt !== null,
+  };
+}
+
+export function toExpense(e: WireExpense): Expense {
+  return {
+    id: e.id,
+    concept: e.concept,
+    amountCents: e.amountCents,
+    date: day(e.localDay),
+    // Derived server-side from which column is set. Trusted rather than
+    // recomputed: the server is the one that knows which of the two the
+    // database accepted.
+    target: e.target,
+    activityId: e.activityId,
+    activityName: e.activity,
+    plotId: e.plotId,
+    plotName: e.plot,
+    plotCropId: e.plotCropId,
+    cropName: e.crop,
+    note: e.note,
+    status: e.deletedAt ? "inactive" : "active",
+  };
 }

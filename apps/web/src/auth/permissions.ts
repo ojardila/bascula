@@ -37,6 +37,19 @@ export type Action =
   | "workRecords.write"
   | "money.read"
   | "money.pay"
+  // Products, the warehouse, sales and expenses. Four surfaces, eight actions,
+  // and the weigher has none of them: `docs/modelo-datos.md` §790 puts
+  // `ventas`, `gastos` and `stock_moves` outside his projection with the same
+  // shape as the ledger, and the movements go with them because a movement
+  // names what a lot produced.
+  | "products.read"
+  | "products.write"
+  | "stock.read"
+  | "stock.write"
+  | "sales.read"
+  | "sales.write"
+  | "expenses.read"
+  | "expenses.write"
   | "config.farm"
   | "config.users"
   | "config.prices"
@@ -50,6 +63,10 @@ const OWNER: Action[] = [
   "activities.read", "activities.write", "activities.setRate",
   "workRecords.read", "workRecords.readAll", "workRecords.write",
   "money.read", "money.pay",
+  "products.read", "products.write",
+  "stock.read", "stock.write",
+  "sales.read", "sales.write",
+  "expenses.read", "expenses.write",
   "config.farm", "config.users", "config.prices",
 ];
 
@@ -66,6 +83,10 @@ const ADMINISTRATOR: Action[] = [
   "activities.read", "activities.write",
   "workRecords.read", "workRecords.readAll", "workRecords.write",
   "money.read", "money.pay",
+  "products.read", "products.write",
+  "stock.read", "stock.write",
+  "sales.read", "sales.write",
+  "expenses.read", "expenses.write",
   "config.farm",
 ];
 
@@ -104,6 +125,7 @@ const WRITE_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "activities.write", "activities.setRate",
   "workRecords.write",
   "money.pay",
+  "products.write", "stock.write", "sales.write", "expenses.write",
   "config.farm", "config.users", "config.prices",
 ]);
 
@@ -135,8 +157,20 @@ export interface ModuleDef {
   path: string;
   /** The action that has to be allowed for this entry to appear at all. */
   action: Action;
-  /** Sprint 2 and 3 entries render disabled, so the map stays visible. */
+  /** Which sprint the module arrived (or arrives) in. Shown on the chip. */
   sprint: Sprint;
+  /**
+   * Whether THIS BUILD serves that path.
+   *
+   * Not `sprint <= CURRENT_SPRINT`, which is what this used to be in effect,
+   * and which broke the moment sprint 3 landed three of these and not the
+   * fourth: "Liquidación" is a sprint-2 idea that never became a route of its
+   * own, because settling happens inside the payment screen. Deriving
+   * availability from the number would have turned that entry into a live link
+   * to a path the router does not have, and the router's catch-all would have
+   * bounced whoever clicked it back to the dashboard with no explanation.
+   */
+  available: boolean;
   icon: string;
 }
 
@@ -148,16 +182,18 @@ export interface ModuleDef {
  * unfinished product, while one that shows what is coming reads as a plan.
  */
 export const MODULES: ModuleDef[] = [
-  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, icon: "dashboard" },
-  { key: "plots", label: "Parcelas", path: "/parcelas", action: "plots.read", sprint: 1, icon: "terrain" },
-  { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, icon: "people" },
-  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, icon: "agriculture" },
-  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, icon: "task" },
-  { key: "settlements", label: "Liquidación", path: "/liquidaciones", action: "money.pay", sprint: 2, icon: "receipt" },
-  { key: "sales", label: "Ventas", path: "/ventas", action: "money.read", sprint: 2, icon: "sell" },
-  { key: "expenses", label: "Gastos", path: "/gastos", action: "money.read", sprint: 2, icon: "payments" },
-  { key: "inventory", label: "Inventario", path: "/inventario", action: "money.read", sprint: 3, icon: "inventory" },
-  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, icon: "settings" },
+  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard" },
+  { key: "plots", label: "Parcelas", path: "/parcelas", action: "plots.read", sprint: 1, available: true, icon: "terrain" },
+  { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, available: true, icon: "people" },
+  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
+  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" },
+  // Settling is a step inside "pagar empleado" and has no screen of its own.
+  // The entry stays, disabled, because the owner asked to see the whole map.
+  { key: "settlements", label: "Liquidación", path: "/liquidaciones", action: "money.pay", sprint: 2, available: false, icon: "receipt" },
+  { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" },
+  { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" },
+  { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments" },
+  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings" },
 ];
 
 /** What this principal is allowed to see in the sidebar. */

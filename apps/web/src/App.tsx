@@ -8,6 +8,7 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { PlotsPage } from "./features/plots/PlotsPage";
 import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
+import { PlotMapPage } from "./features/plots/PlotMapPage";
 import { WorkersPage } from "./features/workers/WorkersPage";
 import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
@@ -15,6 +16,9 @@ import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
 import { WorkRecordsPage } from "./features/workrecords/WorkRecordsPage";
 import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
+import { InventoryPage } from "./features/inventory/InventoryPage";
+import { SalesPage } from "./features/sales/SalesPage";
+import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ConfigPage } from "./features/config/ConfigPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 
@@ -51,6 +55,18 @@ function Shell() {
           }
         />
         <Route path="parcelas/:id" element={<PlotDetailPage />} />
+        {/* The map is `plots.read`, not `plots.write`: a weigher may look at
+            the boundary of the lot he is standing in. The editor itself goes
+            read-only without `plots.write`, and the server refuses the PUT
+            with its own action, `plots.boundary.write`. */}
+        <Route
+          path="parcelas/:id/mapa"
+          element={
+            <RequirePermission action="plots.read" moduleName="ver el mapa de la parcela">
+              <PlotMapPage />
+            </RequirePermission>
+          }
+        />
         <Route
           path="parcelas/:id/editar"
           element={
@@ -123,6 +139,34 @@ function Shell() {
           element={
             <RequirePermission action="workRecords.write" moduleName="registrar labores">
               <WorkRecordFormPage />
+            </RequirePermission>
+          }
+        />
+
+        {/* RSP-018 … RSP-033. The weigher reaches none of these three: the
+            money surface and the warehouse are outside his projection, and
+            the guard says so before the server has to. */}
+        <Route
+          path="inventario"
+          element={
+            <RequirePermission action="products.read" moduleName="ver el inventario">
+              <InventoryPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="ventas"
+          element={
+            <RequirePermission action="sales.read" moduleName="ver las ventas">
+              <SalesPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="gastos"
+          element={
+            <RequirePermission action="expenses.read" moduleName="ver los gastos">
+              <ExpensesPage />
             </RequirePermission>
           }
         />

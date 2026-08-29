@@ -36,9 +36,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { api } from "../src/api/endpoints";
 import { ApiError } from "../src/api/errors";
-import { getTokens, setTokens } from "../src/api/client";
+import { getTokens, http, setTokens } from "../src/api/client";
 import { invalidateRefs } from "../src/api/refs";
 import { uuidv7 } from "../src/lib/uuid";
+import { areaHaOf, asGeometry, ringProblem, type Geometry } from "../src/lib/geo";
 
 const API_URL = process.env.BASCULA_API_URL ?? "http://localhost:8099";
 
@@ -135,6 +136,9 @@ suite(suiteName, () => {
   let workerId = "";
   let plotId = "";
   let activityId = "";
+  let productId = "";
+  let warehouseId = "";
+  let saleId = "";
   const recordIds: string[] = [];
 
   beforeAll(() => {
@@ -241,6 +245,124 @@ suite(suiteName, () => {
     plotId = plot.id;
     expect(plot.crops).toHaveLength(1);
     expect(plot.crops[0].cropTypeName).toBe("Café");
+  });
+
+  /**
+   * The map, against PostGIS.
+   *
+   * This is the only place in the repository where the polygon story is
+   * checked end to end: the editor's own arithmetic, the wire format, ST_Multi,
+   * ST_IsValid and ST_Area all have to agree, and none of the other suites can
+   * see more than one of them. `npm test` measures a ring against a mock that
+   * shares its area function, so of course they agree.
+   *
+   * The number to watch is 122,506 ha. That is what `ST_Area` on the geography
+   * column returns for the square in `openapi.yaml`'s example, and it is what
+   * `lib/geo.ts` has to land on for the area shown while somebody is dragging
+   * a corner to be the same area they get after pressing Guardar.
+   */
+  it("guarda el polígono del lote, lo mide y avisa de los solapes", async () => {
+    const square = (west: number): Geometry => ({
+      type: "Polygon",
+      coordinates: [
+        [
+          [west, 5.66],
+          [west + 0.01, 5.66],
+          [west + 0.01, 5.67],
+          [west, 5.67],
+          [west, 5.66],
+        ],
+      ],
+    });
+
+    const drawn = square(-75.88);
+    const { plot, overlaps } = await api
+      .setPlotBoundary(plotId, drawn)
+      .catch((e) => explain(e, "guardar el polígono"));
+
+    // GeoJSON in, GeoJSON out — and a MultiPolygon out, because ST_Multi
+    // promotes on the way into the column. A client that assumes it gets back
+    // what it sent draws nothing on the next reload.
+    const stored = asGeometry(plot.boundary);
+    expect(stored?.type).toBe("MultiPolygon");
+
+    // Both figures, always. The declared 2,5 ha is untouched.
+    expect(plot.areaHa).toBe(2.5);
+    expect(plot.computedAreaHa).toBeCloseTo(122.506, 2);
+
+    // And the browser's own preview agrees with PostGIS to five figures, which
+    // is what keeps the number from jumping when the save lands.
+    expect(areaHaOf(drawn)).toBeCloseTo(plot.computedAreaHa!, 2);
+
+    expect(overlaps).toEqual([]);
+
+    // A second lot on top of the first: stored, and reported. A warning, never
+    // a refusal — two lots that touch are sometimes a terrace above a cafetal.
+    const neighbour = await api
+      .createPlot({
+        id: uuidv7(),
+        name: `El Solape ${Date.now()}`,
+        department: "Caldas",
+        municipality: "Chinchiná",
+        areaHa: 1,
+        crops: [],
+        boundary: square(-75.875),
+      })
+      .catch((e) => explain(e, "crear el lote solapado con su polígono"));
+
+    // The boundary went in with the plot, in one write, and was measured.
+    expect(asGeometry(neighbour.boundary)?.type).toBe("MultiPolygon");
+    expect(neighbour.computedAreaHa).toBeCloseTo(122.506, 2);
+
+    const again = await api
+      .setPlotBoundary(neighbour.id, square(-75.875))
+      .catch((e) => explain(e, "reescribir el polígono del vecino"));
+    expect(again.overlaps.map((o) => o.name)).toContain(
+      (await api.getPlot(plotId)).name,
+    );
+  });
+
+  /**
+   * INVALID_GEOMETRY, in Spanish, from the code and not from the English text.
+   *
+   * The server's `message` is `ST_IsValidReason`'s output —
+   * "Self-intersection[-75.875 5.665]" — which is our database talking. What a
+   * person sees comes out of `ERROR_MESSAGES`, keyed by `code`.
+   */
+  it("rechaza un polígono que se cruza a sí mismo, y lo dice en español", async () => {
+    const bowtie: Geometry = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [-75.88, 5.66],
+          [-75.87, 5.67],
+          [-75.87, 5.66],
+          [-75.88, 5.67],
+          [-75.88, 5.66],
+        ],
+      ],
+    };
+
+    // The editor refuses it before the network does, naming the two sides.
+    const problem = ringProblem(bowtie.coordinates[0]);
+    expect(problem?.kind).toBe("selfIntersects");
+
+    const failure = await api
+      .setPlotBoundary(plotId, bowtie)
+      .then(() => null)
+      .catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(ApiError);
+    const err = failure as ApiError;
+    expect(err.status).toBe(400);
+    expect(err.code).toBe("INVALID_GEOMETRY");
+    expect(err.message).toMatch(/Self-intersection/); // the server's, for the log
+    expect(err.spanishMessage).toMatch(/polígono/i); // ours, for the person
+    expect(err.spanishMessage).not.toMatch(/Self-intersection/);
+
+    // Refused means refused: the lot still has the square from the last test.
+    const after = await api.getPlot(plotId).catch((e) => explain(e, "releer el lote"));
+    expect(after.computedAreaHa).toBeCloseTo(122.506, 2);
   });
 
   it("crea una actividad con precio fijo por kilo", async () => {
@@ -421,6 +543,353 @@ suite(suiteName, () => {
     await expect(api.deactivateWorkRecord(recordIds[0])).rejects.toMatchObject({
       code: "WORK_RECORD_SETTLED",
     });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Inventario, ventas y gastos — RSP-018 … RSP-033                     */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The rule the whole inventory module is shaped around, checked against the
+   * database that enforces it: EXISTENCIAS ARE DERIVED.
+   *
+   * `stock_moves` is append-only — a trigger and a REVOKE, the same defence
+   * the ledger has — so `product.stock` is a SUM computed on every read. What
+   * this walk proves is that the number the screen shows is the number that
+   * falls out of the movements, through the real SQL and not through a mock
+   * that shares our arithmetic.
+   */
+  it("deriva las existencias de los movimientos, y no hay otra forma de moverlas", async () => {
+    const warehouse = await api
+      .createWarehouse("Bodega principal")
+      .catch((e) => explain(e, "crear la bodega"));
+    warehouseId = warehouse.id;
+
+    // Idempotent by lower(name), like every picker in this service: asking
+    // twice is one row, which is what makes "escríbala si no está" safe.
+    const again = await api.createWarehouse("bodega principal");
+    expect(again.id).toBe(warehouseId);
+
+    const product = await api
+      .createProduct({
+        id: uuidv7(),
+        name: `Café pergamino ${Date.now()}`,
+        categoryName: "Producto procesado",
+        storageUnit: "Bulto",
+      })
+      .catch((e) => explain(e, "crear el producto"));
+    productId = product.id;
+    // Brand new, so nothing has moved: zero, and not null and not undefined.
+    expect(product.stock).toBe(0);
+    expect(product.storageUnit).toBe("Bulto");
+
+    const harvest = await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: 40,
+        reason: "cosecha",
+        date: today(),
+      })
+      .catch((e) => explain(e, "registrar la cosecha"));
+    expect(harvest.move.qty).toBe(40);
+
+    await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: -5,
+        reason: "merma",
+        note: "Se mojó un bulto y medio",
+        date: today(),
+      })
+      .catch((e) => explain(e, "registrar la merma"));
+
+    const after = await api.getProduct(productId).catch((e) => explain(e, "releer el producto"));
+    expect(after.stock).toBe(35);
+
+    const levels = await api.stockLevels({ productId });
+    expect(levels).toHaveLength(1);
+    expect(levels[0].qty).toBe(35);
+    expect(levels[0].warehouseId).toBe(warehouseId);
+  });
+
+  /**
+   * THE SIGN IS NOT THE CALLER'S TO GET WRONG — and the server CORRECTS it
+   * rather than refusing, which is worth knowing precisely.
+   *
+   * `handleCreateStockMove` flips the quantity to match the reason before
+   * writing, and `stock_sign` catches anything that got past. So
+   * `{qty: 5, reason: "merma"}` is a loss of five and a 201, not a 400. A form
+   * built to show a validation error there would be defending against
+   * something that never happens; `lib/stock.ts` applies the same rule on this
+   * side only so the preview can say what the movement will do BEFORE it is
+   * sent.
+   */
+  it("corrige el signo del movimiento según el motivo, en vez de rechazarlo", async () => {
+    const before = (await api.getProduct(productId)).stock;
+    const { move } = await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: 5, // POSITIVE, for a reason that takes product out
+        reason: "merma",
+        date: today(),
+      })
+      .catch((e) => explain(e, "registrar la merma con el signo al revés"));
+
+    expect(move.qty).toBe(-5);
+    expect((await api.getProduct(productId)).stock).toBe(before - 5);
+  });
+
+  /**
+   * The stock guard is on EVERY outgoing movement, not only on a sale. A
+   * `consumo` for more than there is comes back 409 with the two numbers, and
+   * `allowNegative` records it anyway — the same escape hatch, spelled the way
+   * the movement schema spells it.
+   */
+  it("guarda la bodega en cualquier salida, no solo en una venta", async () => {
+    const onHand = (await api.getProduct(productId)).stock;
+
+    const refused = await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: onHand + 50,
+        reason: "consumo",
+        date: today(),
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ApiError);
+    expect((refused as ApiError).code).toBe("INSUFFICIENT_STOCK");
+    expect((refused as ApiError).details.onHand).toBe(onHand);
+
+    const forced = await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: onHand + 50,
+        reason: "consumo",
+        date: today(),
+        allowNegative: true,
+      })
+      .catch((e) => explain(e, "forzar el consumo"));
+    expect(forced.move.qty).toBe(-(onHand + 50));
+    expect((await api.getProduct(productId)).stock).toBe(-50);
+
+    // And the way back out of an append-only table: its exact opposite, once.
+    // This also puts the warehouse where the next case needs it, which is the
+    // honest way to do it — there is no DELETE to reach for.
+    const undone = await api
+      .reverseStockMove(forced.move.id, "Se registró por error")
+      .catch((e) => explain(e, "reversar el consumo"));
+    expect(undone.qty).toBe(onHand + 50);
+    expect(undone.reason).toBe("ajuste");
+    expect(undone.reversesId).toBe(forced.move.id);
+    expect((await api.getProduct(productId)).stock).toBe(onHand);
+
+    // Once. A second attempt is a conflict with a name of its own.
+    await expect(api.reverseStockMove(forced.move.id, "otra vez")).rejects.toMatchObject({
+      code: "ALREADY_REVERSED",
+    });
+  });
+
+  /** A `venta` movement belongs to a sale. Through this door it is refused. */
+  it("no deja registrar una venta por la puerta del inventario", async () => {
+    const direct = await api
+      .createStockMove({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        qty: -1,
+        reason: "venta",
+        date: today(),
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(direct).toBeInstanceOf(ApiError);
+    expect((direct as ApiError).status).toBe(400);
+  });
+
+  /**
+   * A sale and its outgoing movement in one transaction, and a void that puts
+   * the coffee back. This is the seam that cannot be checked anywhere else:
+   * two lists that have to agree, kept in step by the database.
+   */
+  it("una venta saca producto de la bodega, y anularla lo devuelve", async () => {
+    const before = (await api.getProduct(productId)).stock;
+
+    const sale = await api
+      .createSale({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        customerName: "Cooperativa de Caficultores",
+        quantity: 12,
+        amountCents: 14_400_000,
+        date: today(),
+      })
+      .catch((e) => explain(e, "registrar la venta"));
+    saleId = sale.id;
+    expect(sale.quantity).toBe(12);
+    expect(sale.amountCents).toBe(14_400_000);
+    expect(sale.voided).toBe(false);
+    // The movement written with it, in the same transaction.
+    expect(sale.stockMoveId).toBeTruthy();
+
+    expect((await api.getProduct(productId)).stock).toBe(before - 12);
+
+    const list = await api.listSales({});
+    expect(list.items.map((s) => s.id)).toContain(saleId);
+    // The total is the server's sum over the LIVE sales, not ours.
+    expect(list.totalCents).toBeGreaterThanOrEqual(14_400_000);
+
+    const voided = await api.voidSale(saleId).catch((e) => explain(e, "anular la venta"));
+    expect(voided.voided).toBe(true);
+    // Flagged AND given back. Flagging alone would leave the coffee sold in
+    // one list and gone from the other forever.
+    expect((await api.getProduct(productId)).stock).toBe(before);
+
+    // Once. There is no way back from a void: the reversal cannot itself be
+    // reversed, so undoing the undo is not something the database can express.
+    await expect(api.voidSale(saleId)).rejects.toMatchObject({
+      code: "SALE_ALREADY_VOID",
+    });
+  });
+
+  /**
+   * Selling more than there is: refused with a code of its own, and
+   * recordable with the override — the same shape as `allowOverpayment`, and
+   * for the same reason. A warehouse whose opening balance was never entered
+   * is ordinary, and a server that made it impossible to record what actually
+   * left the farm would be a server nobody could use.
+   */
+  it("avisa cuando no hay tanto en bodega, y deja registrarlo de todos modos", async () => {
+    const onHand = (await api.getProduct(productId)).stock;
+
+    const refused = await api
+      .createSale({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        quantity: onHand + 100,
+        amountCents: 1_000_000,
+        date: today(),
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(ApiError);
+    expect((refused as ApiError).code).toBe("INSUFFICIENT_STOCK");
+    // In Spanish, and saying what to do about it.
+    expect((refused as ApiError).spanishMessage).toMatch(/No hay suficiente producto/);
+
+    const anyway = await api
+      .createSale({
+        id: uuidv7(),
+        productId,
+        warehouseId,
+        quantity: onHand + 100,
+        amountCents: 1_000_000,
+        date: today(),
+        allowNegativeStock: true,
+      })
+      .catch((e) => explain(e, "registrar la venta con el sobregiro"));
+    expect(anyway.quantity).toBe(onHand + 100);
+    expect((await api.getProduct(productId)).stock).toBe(-100);
+  });
+
+  /**
+   * `expense_target`: a un gasto se le carga UNA cosa. Both and neither are
+   * the two failures, and both come back as EXPENSE_TARGET_INVALID — one code
+   * for one constraint.
+   */
+  it("carga un gasto a una sola cosa, y rechaza las dos y ninguna", async () => {
+    const charged = await api
+      .createExpense({
+        id: uuidv7(),
+        concept: "Fungicida para la roya",
+        amountCents: 250_000_00,
+        date: today(),
+        target: "plot",
+        plotId,
+      })
+      .catch((e) => explain(e, "registrar el gasto"));
+    expect(charged.target).toBe("plot");
+    expect(charged.plotId).toBe(plotId);
+    expect(charged.activityId).toBeNull();
+
+    const toActivity = await api
+      .createExpense({
+        id: uuidv7(),
+        concept: "Combustible de la guadaña",
+        amountCents: 180_000_00,
+        date: today(),
+        target: "activity",
+        activityId,
+      })
+      .catch((e) => explain(e, "registrar el gasto de actividad"));
+    expect(toActivity.target).toBe("activity");
+    expect(toActivity.plotId).toBeNull();
+
+    // Charged to nothing. The form cannot construct this — `ExpenseInput` is a
+    // union — so the body is assembled by hand to prove the server refuses it.
+    const neither = await http
+      .post("/v1/expenses", {
+        id: uuidv7(),
+        concept: "Sin imputar",
+        amountCents: 1000,
+        localDay: `${today()}T00:00:00Z`,
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(neither).toBeInstanceOf(ApiError);
+    expect((neither as ApiError).code).toBe("EXPENSE_TARGET_INVALID");
+
+    const both = await http
+      .post("/v1/expenses", {
+        id: uuidv7(),
+        concept: "Imputado dos veces",
+        amountCents: 1000,
+        localDay: `${today()}T00:00:00Z`,
+        activityId,
+        plotId,
+      })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(both).toBeInstanceOf(ApiError);
+    expect((both as ApiError).code).toBe("EXPENSE_TARGET_INVALID");
+
+    // And the total is the server's, over the live rows.
+    const list = await api.listExpenses({});
+    expect(list.count).toBe(2);
+    expect(list.totalCents).toBe(250_000_00 + 180_000_00);
+  });
+
+  /**
+   * The other half of "un gasto no es una deuda". RSP-030 and RSP-007 use the
+   * same word for the cost of a spraying and for what an employee owes the
+   * farm; wiring them together would take money out of somebody's wages every
+   * time a bag of fertiliser was recorded.
+   */
+  it("un gasto no toca el saldo de nadie", async () => {
+    const before = (await api.workerBalance(workerId)).balanceCents;
+    await api
+      .createExpense({
+        id: uuidv7(),
+        concept: "Arriendo de la despulpadora",
+        amountCents: 420_000_00,
+        date: today(),
+        target: "activity",
+        activityId,
+      })
+      .catch((e) => explain(e, "registrar el gasto"));
+    expect((await api.workerBalance(workerId)).balanceCents).toBe(before);
   });
 
   it("refresca el token sin que nadie se entere", async () => {

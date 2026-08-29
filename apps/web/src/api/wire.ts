@@ -345,12 +345,30 @@ export interface WirePlot {
   crops: WirePlotCrop[];
 }
 
+/**
+ * What `handleSetPlotBoundary` writes: the plot, and the lots it now touches.
+ *
+ * The plot in here carries no crops — the UPDATE returns the plot's own
+ * columns and the handler does not re-join `plot_crops`.
+ */
+export interface WireBoundaryResult {
+  plot: WirePlot;
+  overlaps: WireCatalogItem[];
+}
+
 /* -- activities ------------------------------------------------------ */
 
 export interface WireActivityRate {
   validFrom: Instant;
   rateCents: number;
-  timeUnit: string | null;
+  /**
+   * NARROWED TO THE CONTRACT'S ENUM, which `contract.assert.ts` found this
+   * file had widened to a bare string. Note the last member: the server says
+   * `personalizado` and the interface says `custom` — `toActivity` is where
+   * the two meet, and typing this as `string` is what let that mapping be
+   * wrong without anything noticing.
+   */
+  timeUnit: "jornal" | "semanal" | "quincenal" | "mensual" | "personalizado" | null;
   customQty: number | null;
   customUnit: string | null;
 }
@@ -556,4 +574,216 @@ export interface WireSettlementRequest {
 export interface WireWeekPrice {
   weekStart: DayISO;
   priceCents: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Products, warehouses, sales and expenses  (RSP-018 … RSP-033)       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * TRANSCRIBED FROM THE STORE, NOT FROM A DESIGN DOCUMENT.
+ *
+ * `services/api/internal/httpapi` has no routes for any of this yet — the
+ * other pair is writing the handlers as this is written. What DOES exist, and
+ * is what these types were copied from field by field, is the store layer that
+ * the handlers will marshal:
+ *
+ *   internal/store/products.go    Product, NewProduct, Customer
+ *   internal/store/stock.go       StockMove, StockLevel, LabelBatch, Label
+ *   internal/store/sales.go       Sale, NewSale, SalePatch
+ *   internal/store/expenses.go    Expense, ExpenseTotals
+ *   migrations/00009…00011        the columns and the CHECK constraints
+ *
+ * Copying the Go structs rather than `docs/modelo-datos.md` is the lesson of
+ * Sprint 1 applied early: the document and the service disagreed in a couple
+ * of dozen places, and the half of the app built against the document had to
+ * be rewritten. A struct with `json:` tags on it cannot be wrong about what it
+ * marshals.
+ *
+ * Two field names to watch, because they are not what a reader expects:
+ *   `amountCents`  is `AmountMinor` in Go. The tag says amountCents.
+ *   `localDay`     is a `time.Time`, so it arrives as a full RFC 3339 instant
+ *                  at midnight and NOT as "2026-08-29". `day()` narrows it.
+ */
+
+/**
+ * RSP-018/019. There is no editable stock field and there never will be:
+ * `stock` is a SUM over `stock_moves` computed on read. See the note on
+ * `WireStockMove`.
+ */
+export interface WireProduct {
+  id: Uuid;
+  name: string;
+  categoryId: Uuid | null;
+  /** The resolved catalogue name. */
+  category: string | null;
+  storageUnitId: Uuid;
+  storageUnit: string;
+  note: string | null;
+  createdAt: Instant;
+  deletedAt: Instant | null;
+  /** Derived: `sum(stock_moves.qty)` across every warehouse. Never a column. */
+  stock: number;
+}
+
+/** RSP-027's "Cliente (ej. cooperativa)". Idempotent by `lower(name)`. */
+export interface WireCustomer {
+  id: Uuid;
+  name: string;
+  documentType: string | null;
+  docId: string | null;
+  phone: string | null;
+  createdAt: Instant;
+  deletedAt: Instant | null;
+}
+
+/** The seven values of the `stock_reason` enum, in the database's order. */
+export type WireStockReason =
+  | "cosecha"
+  | "compra"
+  | "venta"
+  | "consumo"
+  | "merma"
+  | "traslado"
+  | "ajuste";
+
+/**
+ * One fact about the warehouse. The table is APPEND-ONLY — a trigger and a
+ * REVOKE enforce it, exactly as they do for the ledger.
+ *
+ * This is the shape that makes "editar la cantidad en stock" impossible to
+ * build even by accident: there is no PATCH and no PUT for a movement, and the
+ * only way back is `reversesId`, a second movement that is the exact opposite
+ * of the first, once.
+ *
+ * The sign travels with the reason and Postgres checks the pair
+ * (`stock_sign`): cosecha and compra are positive, venta, consumo and merma
+ * are negative, traslado and ajuste may be either.
+ */
+export interface WireStockMove {
+  id: Uuid;
+  productId: Uuid;
+  product: string;
+  warehouseId: Uuid;
+  warehouse: string;
+  plotId: Uuid | null;
+  plot: string | null;
+  plotCropId: Uuid | null;
+  qty: number;
+  reason: WireStockReason;
+  note: string | null;
+  workRecordId: Uuid | null;
+  saleId: Uuid | null;
+  /** Set on a movement that undoes another one. */
+  reversesId: Uuid | null;
+  /** Set on a movement that has already been undone. */
+  reversedById: Uuid | null;
+  localDay: Instant;
+  createdBy: Uuid | null;
+  createdAt: Instant;
+  labelBatchId: Uuid | null;
+}
+
+/** One line of the existencias screen. A SUM, never a stored total. */
+export interface WireStockLevel {
+  productId: Uuid;
+  product: string;
+  storageUnit: string;
+  warehouseId: Uuid;
+  warehouse: string;
+  qty: number;
+}
+
+/**
+ * RSP-025's "el sistema imprime los stickers", on a server with no printer:
+ * the batch is generated and given an id, and whatever holds the paper asks
+ * for it.
+ */
+export interface WireLabelBatch {
+  id: Uuid;
+  stockMoveId: Uuid;
+  count: number;
+  printedAt: Instant | null;
+  createdAt: Instant;
+  labels: WireLabel[];
+}
+
+export interface WireLabel {
+  code: string;
+  product: string;
+  storageUnit: string;
+  qty: number;
+  warehouse: string;
+  plot: string | null;
+  /** A plain day here, unlike everywhere else: it is printed, not parsed. */
+  localDay: DayISO;
+}
+
+/**
+ * RSP-026/027. A sale and its outgoing movement are written in ONE
+ * transaction; `stockMoveId` is the movement it wrote. Voiding writes the
+ * reversal rather than deleting either.
+ *
+ * `qty` cannot be patched — it is half of an append-only movement — so an
+ * amount typed wrong is a void and a fresh sale.
+ */
+export interface WireSale {
+  id: Uuid;
+  productId: Uuid;
+  product: string;
+  storageUnit: string;
+  customerId: Uuid | null;
+  customer: string | null;
+  warehouseId: Uuid;
+  warehouse: string;
+  qty: number;
+  amountCents: number;
+  receiptId: Uuid | null;
+  note: string | null;
+  localDay: Instant;
+  createdBy: Uuid | null;
+  createdAt: Instant;
+  voidedAt: Instant | null;
+  stockMoveId: Uuid | null;
+  reversalMoveId: Uuid | null;
+}
+
+/**
+ * RSP-030/031. `target` is derived by the server from which column is set, so
+ * the form's "Tipo de gasto" round-trips without the client working it out.
+ *
+ * EXACTLY ONE of `activityId` and `plotId` is set, and `expense_target` in the
+ * database is what says so — not a convention anybody can forget. An expense
+ * charged to nothing shows up in the total and in no breakdown, and an expense
+ * charged to both is counted twice.
+ */
+export interface WireExpense {
+  id: Uuid;
+  concept: string;
+  amountCents: number;
+  localDay: Instant;
+  activityId: Uuid | null;
+  activity: string | null;
+  plotId: Uuid | null;
+  plot: string | null;
+  plotCropId: Uuid | null;
+  crop: string | null;
+  receiptId: Uuid | null;
+  note: string | null;
+  createdBy: Uuid | null;
+  createdAt: Instant;
+  deletedAt: Instant | null;
+  target: "activity" | "plot";
+}
+
+/** The one number the gastos screen puts at the bottom. A SUM on the way out. */
+export interface WireExpenseTotals {
+  count: number;
+  totalCents: number;
+}
+
+/** `GET /v1/expenses` answers the list AND its total, in one envelope. */
+export interface WireExpenseList {
+  items: WireExpense[];
+  totals: WireExpenseTotals;
 }

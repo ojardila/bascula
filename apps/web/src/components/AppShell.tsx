@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {MODULES.map((m) => {
           const allowed = can(principal, m.action);
           if (!allowed) return null; // Hidden, not disabled: it is not theirs.
-          const future = m.sprint > 1;
+          const future = !m.available;
           const selected = location.pathname.startsWith(m.path);
           const item = (
             <ListItemButton

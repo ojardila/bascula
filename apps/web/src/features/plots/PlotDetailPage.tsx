@@ -1,18 +1,21 @@
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Divider, Grid, Stack,
+  Alert, Box, Button, Card, CardContent, Chip, Grid, Stack,
   Table, TableBody, TableCell, TableHead, TableRow, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
-import { MapPanelPlaceholder } from "./MapPanelPlaceholder";
+import MapIcon from "@mui/icons-material/Map";
+import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
+import { AreaComparison } from "./AreaComparison";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
-import { formatArea } from "../../lib/money";
 import { Money } from "../../components/Money";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { PermissionDenied } from "../../components/Guards";
+import { formatArea } from "../../lib/money";
+import { asGeometry } from "../../lib/geo";
 
 export function PlotDetailPage() {
   const { id = "" } = useParams();
@@ -20,15 +23,19 @@ export function PlotDetailPage() {
   const { can } = useAuth();
   const { data: plot, error, denied } = useAsync(() => api.getPlot(id), [id]);
   const { data: records } = useAsync(() => api.listWorkRecords({ plotId: id }), [id]);
+  // The other lots, only so the map has context to draw behind this one.
+  const { data: siblings } = useAsync(() => api.listPlots({ status: "active" }), [id]);
 
   if (denied) return <PermissionDenied moduleName="ver esta parcela" />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!plot) return null;
 
-  const diff =
-    plot.computedAreaHa !== null && plot.areaHa > 0
-      ? Math.round(((plot.areaHa - plot.computedAreaHa) / plot.areaHa) * 100)
-      : null;
+  const boundary = asGeometry(plot.boundary);
+  const neighbours: MapNeighbour[] = (siblings ?? []).flatMap((p) => {
+    if (p.id === plot.id) return [];
+    const g = asGeometry(p.boundary);
+    return g ? [{ id: p.id, name: p.name, boundary: g }] : [];
+  });
 
   return (
     <Box>
@@ -75,28 +82,13 @@ export function PlotDetailPage() {
               <Typography variant="overline" color="text.secondary">
                 Superficie
               </Typography>
-              <Stack direction="row" spacing={4} sx={{ mt: 1 }}>
-                <Box>
-                  <Typography variant="h2">{formatArea(plot.areaHa)} ha</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    declarada
-                  </Typography>
-                </Box>
-                <Divider orientation="vertical" flexItem />
-                <Box>
-                  <Typography variant="h2" color={plot.computedAreaHa === null ? "text.disabled" : undefined}>
-                    {plot.computedAreaHa === null ? "—" : `${formatArea(plot.computedAreaHa)} ha`}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    calculada del polígono
-                  </Typography>
-                </Box>
-              </Stack>
-              {diff !== null && diff !== 0 && (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  Las dos cifras difieren un {Math.abs(diff)}%. Ninguna de las dos es
-                  «la buena» por sí sola: la declarada es la suya, la calculada sale
-                  del polígono dibujado.
+              <Box sx={{ mt: 1 }}>
+                <AreaComparison declaredHa={plot.areaHa} computedHa={plot.computedAreaHa} />
+              </Box>
+              {plot.computedAreaHa === null && can("plots.write") && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  Todavía no hay polígono dibujado, así que solo hay una cifra. Dibújelo en
+                  el mapa y el sistema mide las hectáreas por su cuenta.
                 </Alert>
               )}
             </CardContent>
@@ -141,7 +133,42 @@ export function PlotDetailPage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 5 }}>
-          <MapPanelPlaceholder height={280} />
+          <Card>
+            <CardContent>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ mb: 1.5 }}
+              >
+                <Typography variant="h3">Mapa</Typography>
+                {can("plots.write") && (
+                  <Button
+                    size="small"
+                    startIcon={<MapIcon />}
+                    onClick={() => navigate(`/parcelas/${plot.id}/mapa`)}
+                  >
+                    {boundary ? "Editar el polígono" : "Dibujar el polígono"}
+                  </Button>
+                )}
+              </Stack>
+              {boundary ? (
+                <PlotBoundaryEditor
+                  plotId={plot.id}
+                  initialBoundary={plot.boundary}
+                  neighbours={neighbours}
+                  declaredAreaHa={plot.areaHa}
+                  readOnly
+                  height={240}
+                />
+              ) : (
+                <Typography color="text.secondary" variant="body2">
+                  Esta parcela todavía no tiene su contorno dibujado. Mientras no lo tenga,
+                  la única superficie que existe es la que usted declaró.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
 
           <Card sx={{ mt: 3 }}>
             <CardContent>

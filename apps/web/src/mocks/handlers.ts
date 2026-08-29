@@ -45,30 +45,44 @@
 import { http, HttpResponse, delay } from "msw";
 import * as db from "./db";
 import { mondayOf } from "../lib/dates";
+import * as geo from "../lib/geo";
 import type {
   ActivityRequestBody,
   CatalogItemRequestBody,
+  CustomerRequestBody,
+  ExpenseRequestBody,
   LoginRequestBody,
   PlotCropRequestBody,
   PlotRequestBody,
+  ProductRequestBody,
   RateRequestBody,
   RefreshRequestBody,
   ReverseRequestBody,
+  SaleRequestBody,
   SignupRequestBody,
+  StockMoveRequestBody,
   VerifyEmailRequestBody,
   WeekPriceRequestBody,
   WireActivity,
   WireActivityRate,
   WireCatalogItem,
+  WireCustomer,
   WireEmployee,
+  WireExpense,
   WireLedgerEntry,
   WireLedgerKind,
   WireLedgerRequest,
   WireNote,
   WirePayMethod,
+  WireLabel,
+  WireLabelBatch,
   WirePlot,
   WirePlotCrop,
+  WireProduct,
   WireRole,
+  WireSale,
+  WireStockMove,
+  WireStockReason,
   WireSession,
   WireSettlementRequest,
   WireWorkRecordRequest,
@@ -225,7 +239,16 @@ type Action =
   | "ledger.advance"
   | "ledger.deduction"
   | "ledger.adjust"
-  | "ledger.reverse";
+  | "ledger.reverse"
+  | "products.read"
+  | "products.write"
+  | "stock.read"
+  | "stock.write"
+  | "sales.read"
+  | "sales.write"
+  | "sales.void"
+  | "expenses.read"
+  | "expenses.write";
 
 const owners: WireRole[] = ["owner"];
 const admins: WireRole[] = ["owner", "admin"];
@@ -292,7 +315,72 @@ const MATRIX: Record<Action, Rule> = {
   "ledger.deduction": { roles: admins },
   "ledger.adjust": { roles: admins },
   "ledger.reverse": { roles: admins },
+
+  /**
+   * The four new surfaces, and the weigher is on none of them.
+   *
+   * `docs/modelo-datos.md` §790: "ventas, gastos y stock_moves quedan fuera del
+   * pesador con la misma forma que ledger." The movements go with the money
+   * for a reason that is not obvious until you look at one: a movement names
+   * the plot and the crop it came out of, so the list of them is a yield
+   * report, and a yield report is exactly the figure the ledger keeps away
+   * from whoever holds the scale.
+   *
+   * Migrations 00009 and 00010 say the same thing one layer down — every one
+   * of these tables carries `current_role_name() IN ('owner','admin')` inside
+   * its RLS policy, so a weigher who got past this table would still read
+   * nothing. Denying it here is the message; denying it there is the guarantee.
+   */
+  "products.read": { roles: admins },
+  "products.write": { roles: admins },
+  "stock.read": { roles: admins },
+  "stock.write": { roles: admins },
+  "sales.read": { roles: admins },
+  "sales.write": { roles: admins },
+  // Voiding has an ACTION OF ITS OWN in `auth.Matrix`, not because the roles
+  // differ today — they are the same `admins` — but because it is the one
+  // write in this module that moves stock backwards, and an action is the
+  // only unit the role table can later be changed in.
+  "sales.void": { roles: admins },
+  "expenses.read": { roles: admins },
+  "expenses.write": { roles: admins },
 };
+
+/**
+ * Every picker that answers "add it if it is not there", with the PATH and the
+ * ACTION each one really has in `routes.go`.
+ *
+ * Two things here were guesses that turned out wrong, and both are worth
+ * keeping written down rather than silently fixed:
+ *
+ *   BODEGAS ARE NOT UNDER /v1/catalogs. They are `/v1/warehouses`, a resource
+ *   of their own. Reading the route table rather than inferring from the shape
+ *   is the whole lesson: a warehouse looks exactly like a catalogue from here
+ *   — id and name, idempotent by lower(name), same handler on the server
+ *   (`handleListCatalog(store.CatalogWarehouses)`) — and it still is not at
+ *   that path.
+ *
+ *   THE PRODUCT PICKERS ARE NOT `catalogs.*`. `product-categories` and
+ *   `storage-units` live under /v1/catalogs but are guarded by
+ *   `products.read`/`products.write`, which is what puts them behind the same
+ *   door as the module they belong to. A weigher may read crop types and may
+ *   NOT read storage units, and that difference is only visible in the route
+ *   table.
+ *
+ * Every POST here answers 200 and never 201: the caller does not need to know
+ * whether the row already existed, only that this is the row that name means
+ * on this farm. That is what makes the button safe to press twice.
+ */
+const CATALOG_ROUTES: Array<
+  [path: string, pick: (t: db.Tenant) => WireCatalogItem[], read: Action, write: Action]
+> = [
+  ["catalogs/activity-categories", (t) => t.activityCategories, "catalogs.read", "catalogs.write"],
+  ["catalogs/crop-types", (t) => t.cropTypes, "catalogs.read", "catalogs.write"],
+  ["catalogs/varieties", (t) => t.varieties, "catalogs.read", "catalogs.write"],
+  ["catalogs/product-categories", (t) => t.productCategories, "products.read", "products.write"],
+  ["catalogs/storage-units", (t) => t.storageUnits, "products.read", "products.write"],
+  ["warehouses", (t) => t.warehouses, "products.read", "products.write"],
+];
 
 /** Authenticate, then consult the table. Every handler starts with this. */
 function guard(request: Request, action: Action): Guarded {
@@ -758,21 +846,15 @@ export const handlers = [
    * this farm. That is what makes "add it if it is not there" safe to press
    * twice.
    */
-  ...(
-    [
-      ["activity-categories", (t: db.Tenant) => t.activityCategories],
-      ["crop-types", (t: db.Tenant) => t.cropTypes],
-      ["varieties", (t: db.Tenant) => t.varieties],
-    ] as const
-  ).flatMap(([slug, pick]) => [
-    http.get(`*/v1/catalogs/${slug}`, ({ request }) => {
-      const g = guard(request, "catalogs.read");
+  ...CATALOG_ROUTES.flatMap(([path, pick, read, write]) => [
+    http.get(`*/v1/${path}`, ({ request }) => {
+      const g = guard(request, read);
       if (g.deny) return g.deny;
       const items = [...pick(g.p.tenant)].sort((a, b) => a.name.localeCompare(b.name, "es"));
       return HttpResponse.json({ items });
     }),
-    http.post(`*/v1/catalogs/${slug}`, async ({ request }) => {
-      const g = guard(request, "catalogs.write");
+    http.post(`*/v1/${path}`, async ({ request }) => {
+      const g = guard(request, write);
       if (g.deny) return g.deny;
       const body = (await request.json()) as CatalogItemRequestBody;
       if (!body.name) return badRequest("name is required");
@@ -1119,6 +1201,13 @@ export const handlers = [
       deletedAt: null,
       crops: (body.crops ?? []).map((c) => buildCrop(t, id, c)),
     };
+    // `handleCreatePlot` stores a boundary sent with the form rather than
+    // dropping it: the form is one form, and an ignored field in an accepted
+    // request is the worst of both answers.
+    if (body.boundary != null) {
+      const stored = applyBoundary(created, body.boundary);
+      if (stored instanceof Response) return stored;
+    }
     t.plots.unshift(created);
     return HttpResponse.json(created, { status: 201 });
   }),
@@ -1158,7 +1247,10 @@ export const handlers = [
     patch(plot, body.areaHa, "areaHa");
     patch(plot, body.department, "department");
     patch(plot, body.municipality, "municipality");
-    if (body.boundary != null) plot.boundary = body.boundary;
+    if (body.boundary != null) {
+      const stored = applyBoundary(plot, body.boundary);
+      if (stored instanceof Response) return stored;
+    }
     return HttpResponse.json(plot);
   }),
 
@@ -1169,9 +1261,13 @@ export const handlers = [
    * that wants a second look and sometimes a terrace above a coffee lot, and
    * the server does not get to decide which.
    *
-   * What is NOT emulated: `computedAreaHa` and the overlap set are PostGIS
-   * measurements. The mock stores the geometry, leaves the measured area
-   * exactly as it was, and reports no overlaps.
+   * SPRINT 3 STOPPED PRETENDING HERE. This handler used to store the geometry,
+   * leave `computedAreaHa` exactly as it was and report no overlaps — which
+   * meant the map screen could be developed and tested end to end without ever
+   * exercising the three things the route exists for. `applyBoundary` now does
+   * what `store.SetPlotBoundary` does: refuse an invalid ring with
+   * INVALID_GEOMETRY, promote a Polygon to a MultiPolygon the way `ST_Multi`
+   * does, and measure the hectares.
    */
   http.put("*/v1/plots/:id/boundary", async ({ request, params }) => {
     const g = guard(request, "plots.boundary.write");
@@ -1181,8 +1277,9 @@ export const handlers = [
     const body = (await request.json()) as { boundary?: unknown; geojson?: unknown };
     const geo = body.boundary ?? body.geojson;
     if (geo == null) return badRequest("boundary is required, as a GeoJSON geometry");
-    plot.boundary = geo;
-    return HttpResponse.json({ plot, overlaps: [] });
+    const stored = applyBoundary(plot, geo);
+    if (stored instanceof Response) return stored;
+    return HttpResponse.json({ plot, overlaps: overlappingPlots(g.p.tenant, plot) });
   }),
 
   /**
@@ -1891,6 +1988,731 @@ export const handlers = [
     t.ledger.push(created);
     return HttpResponse.json(created, { status: 201 });
   }),
+  /* ---- products (RSP-018 … RSP-021) ---- */
+
+  /**
+   * "Agrupa por categoría mostrando nombre y unidades existentes" — and the
+   * unidades existentes are summed from the movements on every read, which is
+   * why there is nothing to keep in step and nothing to fall behind.
+   */
+  http.get("*/v1/products", ({ request }) => {
+    const g = guard(request, "products.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    const wanted = listStatus(params);
+    const q = params.get("q");
+    const categoryId = params.get("categoryId");
+    const t = g.p.tenant;
+    return HttpResponse.json({
+      items: t.products
+        .filter((p) => wanted(p.deletedAt))
+        .filter((p) => matches(p.name, q))
+        .filter((p) => !categoryId || p.categoryId === categoryId)
+        .map((p) => projectProduct(t, p))
+        .sort(
+          (a, b) =>
+            (a.category ?? "").localeCompare(b.category ?? "", "es") ||
+            a.name.localeCompare(b.name, "es"),
+        ),
+    });
+  }),
+
+  http.post("*/v1/products", async ({ request }) => {
+    const g = guard(request, "products.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as ProductRequestBody;
+    const t = g.p.tenant;
+    if (!body.name || !body.name.trim()) return badRequest("name is required");
+
+    const id = body.id ?? crypto.randomUUID();
+    const already = t.products.find((p) => p.id === id);
+    if (already) return HttpResponse.json(projectProduct(t, already));
+
+    // ux_products_name, partial on `deleted_at IS NULL`: a product taken out of
+    // service does not block the name being used again.
+    if (t.products.some((p) => p.deletedAt === null && sameName(p.name, body.name!))) {
+      return conflict("DUPLICATE_NAME", "this farm already has a product with that name");
+    }
+
+    const storageUnitId = resolveCatalog(t.storageUnits, body.storageUnitId, body.storageUnit);
+    if (!storageUnitId) return badRequest("storageUnitId or storageUnit is required");
+
+    const created: db.MockProduct = {
+      id,
+      name: body.name.trim(),
+      // A category is optional; the storage unit is not. `resolveCatalog`
+      // answers null for both when nothing was sent, and this is where the two
+      // stop being the same case.
+      categoryId: resolveCatalog(t.productCategories, body.categoryId, body.category),
+      storageUnitId,
+      note: body.note ?? null,
+      createdAt: nowInstant(),
+      deletedAt: null,
+    };
+    t.products.push(created);
+    return HttpResponse.json(projectProduct(t, created), { status: 201 });
+  }),
+
+  http.get("*/v1/products/:id", ({ request, params }) => {
+    const g = guard(request, "products.read");
+    if (g.deny) return g.deny;
+    const product = g.p.tenant.products.find((p) => p.id === params.id);
+    return product ? HttpResponse.json(projectProduct(g.p.tenant, product)) : notFound();
+  }),
+
+  http.patch("*/v1/products/:id", async ({ request, params }) => {
+    const g = guard(request, "products.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as ProductRequestBody;
+    const bad = validStatus(body.status);
+    if (bad) return bad;
+    const t = g.p.tenant;
+    const product = t.products.find((p) => p.id === params.id);
+    if (!product) return notFound();
+
+    if (body.status === "inactive") product.deletedAt ??= nowInstant();
+    if (body.status === "active") product.deletedAt = null;
+
+    patch(product, body.name?.trim(), "name");
+    patch(product, resolveCatalog(t.productCategories, body.categoryId, body.category), "categoryId");
+    patch(product, resolveCatalog(t.storageUnits, body.storageUnitId, body.storageUnit), "storageUnitId");
+    patch(product, body.note, "note");
+    return HttpResponse.json(projectProduct(t, product));
+  }),
+
+  /**
+   * RSP-021, logical. The movements it already has stay exactly where they
+   * are — they are facts, and a product leaving the catalogue does not
+   * un-harvest last week's coffee.
+   */
+  http.delete("*/v1/products/:id", ({ request, params }) => {
+    const g = guard(request, "products.write");
+    if (g.deny) return g.deny;
+    const product = g.p.tenant.products.find((p) => p.id === params.id && p.deletedAt === null);
+    if (!product) return notFound();
+    product.deletedAt = nowInstant();
+    return noContent();
+  }),
+
+  /* ---- customers (RSP-027's "Cliente") ---- */
+
+  http.get("*/v1/customers", ({ request }) => {
+    const g = guard(request, "sales.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    const wanted = listStatus(params);
+    const q = params.get("q");
+    return HttpResponse.json({
+      items: g.p.tenant.customers
+        .filter((c) => wanted(c.deletedAt))
+        .filter((c) => matches(c.name, q) || matches(c.docId, q))
+        .sort((a, b) => a.name.localeCompare(b.name, "es")),
+    });
+  }),
+
+  /**
+   * `EnsureCustomer`: idempotent by lower(name), and the existing row wins
+   * with its blanks filled in. The sales screen must not be able to produce
+   * two "Cooperativa" that are different rows.
+   */
+  http.post("*/v1/customers", async ({ request }) => {
+    const g = guard(request, "sales.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as CustomerRequestBody;
+    if (!body.name || !body.name.trim()) return badRequest("name is required");
+    const t = g.p.tenant;
+
+    const existing = t.customers.find((c) => c.deletedAt === null && sameName(c.name, body.name!));
+    if (existing) {
+      patch(existing, body.documentType, "documentType");
+      patch(existing, body.docId, "docId");
+      patch(existing, body.phone, "phone");
+      return HttpResponse.json(existing);
+    }
+    const created: WireCustomer = {
+      id: body.id ?? crypto.randomUUID(),
+      name: body.name.trim(),
+      documentType: body.documentType ?? null,
+      docId: body.docId ?? null,
+      phone: body.phone ?? null,
+      createdAt: nowInstant(),
+      deletedAt: null,
+    };
+    t.customers.push(created);
+    // 200, like every other picker: `handleCreateCustomer` answers
+    // `http.StatusOK` whether it inserted or found. The caller does not need
+    // to know which, only that this is the row that name means here.
+    return HttpResponse.json(created);
+  }),
+
+  /* ---- existencias y movimientos (RSP-025) ---- */
+
+  /**
+   * The `stock_levels` view. Note what is NOT here: any way to write one.
+   * The level is the sum of the movements and the only verb is "append".
+   */
+  http.get("*/v1/stock", ({ request }) => {
+    const g = guard(request, "stock.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    const productId = params.get("productId") ?? undefined;
+    const warehouseId = params.get("warehouseId") ?? undefined;
+    const t = g.p.tenant;
+    // StockLevels' warning, applied: a narrowing id has to be confirmed as
+    // this farm's BEFORE it is summed, because a sum over somebody else's id
+    // answers 0 and "0 bultos in the warehouse" is a perfectly credible wrong
+    // answer.
+    const foreign = confirmOurs(t, { product: productId, warehouse: warehouseId });
+    if (foreign) return foreign;
+    const items = db.stockLevels(t, productId, warehouseId);
+    return HttpResponse.json({
+      items,
+      total: db.round3(items.reduce((a, l) => a + l.qty, 0)),
+    });
+  }),
+
+  /**
+   * The per-product breakdown — the sharpest form of the zero trap in this
+   * module, one product and one number, which is why the product is confirmed
+   * to be ours before the sum runs. A product of another farm is a 404 and
+   * never a believable "0 bultos".
+   */
+  http.get("*/v1/products/:id/stock", ({ request, params }) => {
+    const g = guard(request, "stock.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const id = String(params.id);
+    const foreign = confirmOurs(t, { product: id });
+    if (foreign) return foreign;
+    const byWarehouse = db.stockLevels(t, id);
+    return HttpResponse.json({
+      productId: id,
+      byWarehouse,
+      total: db.round3(byWarehouse.reduce((a, l) => a + l.qty, 0)),
+    });
+  }),
+
+  http.get("*/v1/stock/moves", ({ request }) => {
+    const g = guard(request, "stock.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    const t = g.p.tenant;
+    const productId = params.get("productId");
+    const warehouseId = params.get("warehouseId");
+    const reason = params.get("reason");
+    const from = params.get("from");
+    const to = params.get("to");
+    if (reason && !STOCK_REASONS.includes(reason as WireStockReason)) {
+      return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
+    }
+    const foreign = confirmOurs(t, { product: productId, warehouse: warehouseId });
+    if (foreign) return foreign;
+    const limitParam = Number(params.get("limit") ?? 0);
+    const limit = limitParam > 0 && limitParam <= 500 ? limitParam : 200;
+
+    return HttpResponse.json({
+      items: t.stockMoves
+        .filter((m) => !productId || m.productId === productId)
+        .filter((m) => !warehouseId || m.warehouseId === warehouseId)
+        .filter((m) => !reason || m.reason === reason)
+        .filter((m) => !from || m.localDay.slice(0, 10) >= from)
+        .filter((m) => !to || m.localDay.slice(0, 10) <= to)
+        .sort(
+          (a, b) =>
+            b.localDay.localeCompare(a.localDay) || b.createdAt.localeCompare(a.createdAt),
+        )
+        .slice(0, limit)
+        .map((m) => projectStockMove(t, m)),
+    });
+  }),
+
+  /**
+   * The ONLY way the warehouse changes. There is deliberately no PATCH and no
+   * PUT beside it: `stock_moves_is_append_only()` raises on UPDATE and DELETE
+   * and `REVOKE UPDATE, DELETE` backs it up, so a route that edited one could
+   * not be written even if somebody wanted it.
+   */
+  http.post("*/v1/stock/moves", async ({ request }) => {
+    const g = guard(request, "stock.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as StockMoveBody;
+    const t = g.p.tenant;
+
+    // Both ids are required and neither may be a name: `StockMoveInput` has no
+    // `warehouse` field, and the server decodes with DisallowUnknownFields.
+    if (!body.productId || !body.warehouseId) {
+      return badRequest("productId and warehouseId are required");
+    }
+    if (body.qty === 0) return badRequest("qty cannot be zero");
+    if (!body.reason || !STOCK_REASONS.includes(body.reason)) {
+      return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
+    }
+    // A 'venta' movement is the shadow of a sale and is written by the sales
+    // handler, in the same transaction as the sale. Letting one in here would
+    // be the one way to get stock and sales to disagree.
+    if (body.reason === "venta") {
+      return badRequest("record the sale at POST /v1/sales; it writes its own stock movement");
+    }
+    const labels = body.labels ?? 0;
+    if (!Number.isInteger(labels) || labels < 0 || labels > 500) {
+      return badRequest("labels must be between 0 and 500");
+    }
+
+    const foreign = confirmOurs(t, {
+      product: body.productId,
+      warehouse: body.warehouseId,
+      plot: body.plotId,
+      plotCrop: body.plotCropId,
+      workRecord: body.workRecordId,
+    });
+    if (foreign) return foreign;
+
+    const id = body.id ?? crypto.randomUUID();
+    // A retry answers the BARE movement, not the envelope: there is nothing to
+    // generate a second time, and a second label batch is exactly what a retry
+    // must not produce.
+    const already = t.stockMoves.find((m) => m.id === id);
+    if (already) return HttpResponse.json(projectStockMove(t, already));
+
+    // The guard only runs on the way out, and only when it was not waived.
+    const signed =
+      OUTGOING_REASONS.has(body.reason) && (body.qty ?? 0) > 0 ? -(body.qty ?? 0) : (body.qty ?? 0);
+    if (signed < 0 && !body.allowNegative) {
+      const short = guardStock(t, body.productId, body.warehouseId, signed);
+      if (short) return short;
+    }
+
+    const created = insertStockMove(t, { ...body, id }, g.p.user.id);
+    if (created instanceof Response) return created;
+
+    // `{move, labelBatch?}` — an envelope, because RSP-025's stickers are asked
+    // for ON the movement (`labels`) and not at a route of their own. The
+    // server generates the batch and does not print: a request that blocked on
+    // a printer would fail a harvest because the paper ran out.
+    const out: Record<string, unknown> = { move: projectStockMove(t, created) };
+    if (labels > 0) {
+      const batch: db.MockLabelBatch = {
+        id: crypto.randomUUID(),
+        stockMoveId: created.id,
+        count: labels,
+        printedAt: null,
+        createdAt: nowInstant(),
+      };
+      t.labelBatches.push(batch);
+      out.labelBatch = projectLabelBatch(t, batch);
+    }
+    return HttpResponse.json(out, { status: 201 });
+  }),
+
+  http.post("*/v1/stock/moves/:id/reverse", async ({ request, params }) => {
+    const g = guard(request, "stock.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json().catch(() => ({}))) as ReverseRequestBody;
+    const created = reverseStockMove(g.p.tenant, String(params.id), body.note ?? null, g.p.user.id);
+    if (created instanceof Response) return created;
+    return HttpResponse.json(projectStockMove(g.p.tenant, created), { status: 201 });
+  }),
+
+  http.get("*/v1/label-batches/:id", ({ request, params }) => {
+    const g = guard(request, "stock.read");
+    if (g.deny) return g.deny;
+    const batch = g.p.tenant.labelBatches.find((b) => b.id === params.id);
+    if (!batch) return notFound();
+    return HttpResponse.json(projectLabelBatch(g.p.tenant, batch));
+  }),
+
+  /* ---- ventas (RSP-026 … RSP-029) ---- */
+
+  http.get("*/v1/sales", ({ request }) => {
+    const g = guard(request, "sales.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    // `SaleFilter` reuses the vocabulary of every other list — "active" hides
+    // the voided ones — even though the column is `voided_at` and not
+    // `deleted_at`, because on the screen it is the same switch.
+    const wanted = listStatus(params);
+    const q = params.get("q");
+    const productId = params.get("productId");
+    const customerId = params.get("customerId");
+    const from = params.get("from");
+    const to = params.get("to");
+    const t = g.p.tenant;
+
+    // A filter by another farm's product would list nothing and total zero,
+    // which reads as "we have sold none of that" rather than "that is not
+    // ours". Confirm before adding up.
+    const foreign = confirmOurs(t, { product: productId, customer: customerId });
+    if (foreign) return foreign;
+
+    const items = t.sales
+      .filter((s) => wanted(s.voidedAt))
+      .map((s) => projectSale(t, s))
+      .filter((s) => matches(s.product, q) || matches(s.customer, q))
+      .filter((s) => !productId || s.productId === productId)
+      .filter((s) => !customerId || s.customerId === customerId)
+      .filter((s) => !from || s.localDay.slice(0, 10) >= from)
+      .filter((s) => !to || s.localDay.slice(0, 10) <= to)
+      .sort(
+        (a, b) => b.localDay.localeCompare(a.localDay) || b.createdAt.localeCompare(a.createdAt),
+      );
+
+    // The totals count LIVE sales only, even when the voided ones are in the
+    // list: a sale that was undone is not money the farm took.
+    const live = items.filter((sale) => sale.voidedAt === null);
+    return HttpResponse.json({
+      items,
+      totalCents: live.reduce((a, sale) => a + sale.amountCents, 0),
+      totalQty: db.round3(live.reduce((a, sale) => a + sale.qty, 0)),
+    });
+  }),
+
+  /**
+   * `CreateSale` writes the sale AND its outgoing movement, in one
+   * transaction. Splitting them is how the sales list and the warehouse start
+   * disagreeing with nothing to say which is right, and the database is in on
+   * it: `stock_venta_has_sale` makes the movement impossible without the sale.
+   */
+  http.post("*/v1/sales", async ({ request }) => {
+    const g = guard(request, "sales.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as SaleRequestBody;
+    const t = g.p.tenant;
+
+    if (!body.productId) return badRequest("productId is required");
+    if (!body.warehouseId) {
+      return badRequest("warehouseId is required: a sale takes the product out of somewhere");
+    }
+    if (typeof body.qty !== "number" || !(body.qty > 0)) return badRequest("qty must be positive");
+    if (
+      typeof body.amountCents !== "number" ||
+      !Number.isInteger(body.amountCents) ||
+      body.amountCents <= 0
+    ) {
+      return badRequest("amountCents must be positive");
+    }
+
+    // The customer picker resolves a NAME into a row, so the sales screen can
+    // offer "add it if it is not there" like every other picker here.
+    let customerId = body.customerId ?? null;
+    if (!customerId && body.customer) {
+      const existing = t.customers.find(
+        (c) => c.deletedAt === null && sameName(c.name, body.customer!),
+      );
+      if (existing) {
+        customerId = existing.id;
+      } else {
+        const created: WireCustomer = {
+          id: crypto.randomUUID(),
+          name: body.customer.trim(),
+          documentType: null,
+          docId: null,
+          phone: null,
+          createdAt: nowInstant(),
+          deletedAt: null,
+        };
+        t.customers.push(created);
+        customerId = created.id;
+      }
+    }
+
+    const foreign = confirmOurs(t, {
+      product: body.productId,
+      warehouse: body.warehouseId,
+      customer: customerId,
+    });
+    if (foreign) return foreign;
+
+    const id = body.id ?? crypto.randomUUID();
+    const already = t.sales.find((sale) => sale.id === id);
+    if (already) return HttpResponse.json(projectSale(t, already));
+
+    if (!body.allowNegativeStock) {
+      const short = guardStock(t, body.productId, body.warehouseId, -body.qty);
+      if (short) return short;
+    }
+
+    const sale: db.MockSale = {
+      id,
+      productId: body.productId,
+      customerId,
+      warehouseId: body.warehouseId,
+      qty: db.round3(body.qty),
+      amountCents: body.amountCents,
+      receiptId: body.receiptId ?? null,
+      note: body.note ?? null,
+      localDay: db.dayInstant(body.localDay || today()),
+      createdBy: g.p.user.id,
+      createdAt: nowInstant(),
+      voidedAt: null,
+    };
+    const move = insertStockMove(
+      t,
+      {
+        productId: body.productId,
+        warehouseId: body.warehouseId,
+        qty: -sale.qty, // out. stock_sign refuses any other answer for 'venta'.
+        reason: "venta",
+        localDay: body.localDay ?? null,
+      },
+      g.p.user.id,
+      { fromSale: id },
+    );
+    if (move instanceof Response) return move;
+    t.sales.push(sale);
+    return HttpResponse.json(projectSale(t, sale), { status: 201 });
+  }),
+
+  http.get("*/v1/sales/:id", ({ request, params }) => {
+    const g = guard(request, "sales.read");
+    if (g.deny) return g.deny;
+    const sale = g.p.tenant.sales.find((s) => s.id === params.id);
+    return sale ? HttpResponse.json(projectSale(g.p.tenant, sale)) : notFound();
+  }),
+
+  /**
+   * RSP-028, minus the one field that cannot move.
+   *
+   * `qty` is half of a stock movement that is already written and append-only.
+   * Changing it here would leave the warehouse claiming one number and the
+   * sales list another, so `SalePatch` simply has no such field and the server
+   * decodes with `DisallowUnknownFields` — which makes a body carrying `qty` a
+   * 400 about an unknown field. That is emulated rather than dressed up in a
+   * code of its own, because a code the server does not send is a code no
+   * screen may branch on.
+   */
+  http.patch("*/v1/sales/:id", async ({ request, params }) => {
+    const g = guard(request, "sales.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as SaleRequestBody & { status?: string };
+    const t = g.p.tenant;
+    // `salePatchRequest` accepts both of these ONLY to refuse them with an
+    // explanation. Silently ignoring a field the caller sent is the worst of
+    // both answers: the request succeeds and the number on the screen is not
+    // the number stored.
+    if (body.qty !== undefined) {
+      return badRequest(
+        "the quantity of a sale is fixed by its stock movement: void the sale and record it again",
+      );
+    }
+    if (body.status === "inactive") {
+      return badRequest(
+        "use DELETE to void a sale; voiding returns the stock as well as flagging the row",
+      );
+    }
+    if (body.status === "active") {
+      return badRequest("a voided sale is not restored: record a new one");
+    }
+    // `UPDATE ... WHERE id = $1 AND voided_at IS NULL` — a voided sale is not
+    // edited (`sales_void_is_final`), and it matches no row, so: 404.
+    const sale = t.sales.find((s) => s.id === params.id && s.voidedAt === null);
+    if (!sale) return notFound();
+    if (body.amountCents !== undefined) {
+      const bad = validAmount(body.amountCents);
+      if (bad) return bad;
+    }
+    patch(sale, body.customerId, "customerId");
+    patch(sale, body.amountCents, "amountCents");
+    patch(sale, body.receiptId, "receiptId");
+    patch(sale, body.note, "note");
+    if (body.localDay) sale.localDay = db.dayInstant(body.localDay);
+    return HttpResponse.json(projectSale(t, sale));
+  }),
+
+  /**
+   * RSP-029's "eliminar deja la venta inactiva", done honestly: the row is
+   * flagged AND the coffee comes back, as a reversing movement in the same
+   * transaction. Flagging alone would leave it sold in the list and gone from
+   * the warehouse forever.
+   *
+   * IT IS A DELETE AND IT ANSWERS 200 WITH THE SALE — not a POST to /void, and
+   * not a 204. The verb is the interesting part: "eliminar" in the use case IS
+   * a void here, so DELETE is the honest spelling of it, and the body comes
+   * back because the caller needs the `voidedAt` and the `reversalMoveId` the
+   * sale now carries.
+   *
+   * It has an ACTION of its own, `sales.void`, and the guard uses it.
+   *
+   * There is no un-void. `ux_moves_reverses` lets a movement be reversed
+   * exactly once, so a sale recorded by mistake is followed by a NEW sale.
+   */
+  http.delete("*/v1/sales/:id", ({ request, params }) => {
+    const g = guard(request, "sales.void");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const sale = t.sales.find((s) => s.id === params.id);
+    if (!sale) return notFound();
+    if (sale.voidedAt !== null) {
+      return conflict("SALE_ALREADY_VOID", "that sale is already void");
+    }
+    const move = t.stockMoves.find((m) => m.saleId === sale.id && m.reason === "venta");
+    if (!move) return fail(500, "INTERNAL", "the sale has no stock movement to reverse");
+    const reversal = reverseStockMove(t, move.id, `void of sale ${sale.id}`, g.p.user.id);
+    if (reversal instanceof Response) return reversal;
+    sale.voidedAt = nowInstant();
+    return HttpResponse.json(projectSale(t, sale));
+  }),
+
+  /* ---- gastos (RSP-030 … RSP-033) ---- */
+
+  /**
+   * The list AND its total, in one envelope, because the screen shows both and
+   * a second round trip for a SUM the server already walked would be a second
+   * chance for the two to disagree.
+   *
+   * The total counts LIVE rows only, exactly as `ListExpenses` does: a
+   * logically deleted expense may be visible under the "Inactivos" filter and
+   * is still not money the farm spent.
+   */
+  http.get("*/v1/expenses", ({ request }) => {
+    const g = guard(request, "expenses.read");
+    if (g.deny) return g.deny;
+    const params = new URL(request.url).searchParams;
+    const wanted = listStatus(params);
+    const q = params.get("q");
+    const activityId = params.get("activityId");
+    const plotId = params.get("plotId");
+    const from = params.get("from");
+    const to = params.get("to");
+    const t = g.p.tenant;
+
+    const items = t.expenses
+      .filter((e) => wanted(e.deletedAt))
+      .filter((e) => matches(e.concept, q))
+      .filter((e) => !activityId || e.activityId === activityId)
+      .filter((e) => !plotId || e.plotId === plotId)
+      .filter((e) => !from || e.localDay.slice(0, 10) >= from)
+      .filter((e) => !to || e.localDay.slice(0, 10) <= to)
+      .sort(
+        (a, b) => b.localDay.localeCompare(a.localDay) || b.createdAt.localeCompare(a.createdAt),
+      )
+      .map((e) => projectExpense(t, e));
+
+    // TOP LEVEL, not nested: `{items, totalCents, count}`. And the total counts
+    // LIVE rows only, exactly as `ListExpenses` does — an expense visible
+    // under the "Inactivos" filter is still not money the farm spent.
+    const live = items.filter((e) => e.deletedAt === null);
+    return HttpResponse.json({
+      items,
+      totalCents: live.reduce((a, e) => a + e.amountCents, 0),
+      count: live.length,
+    });
+  }),
+
+  http.post("*/v1/expenses", async ({ request }) => {
+    const g = guard(request, "expenses.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as ExpenseRequestBody;
+    const t = g.p.tenant;
+
+    if (!body.concept || !body.concept.trim()) return badRequest("concept is required");
+    const badAmount = validAmount(body.amountCents);
+    if (badAmount) return badAmount;
+    const target = validateExpenseTarget(t, body);
+    if (target) return target;
+    const foreign = confirmOurs(t, {
+      activity: body.activityId,
+      plot: body.plotId,
+      plotCrop: body.plotCropId,
+    });
+    if (foreign) return foreign;
+
+    // The id check comes AFTER the validation and the ownership checks, which
+    // is the order `handleCreateExpense` uses: a retry of a request that was
+    // never valid should get the same refusal it got the first time.
+    const id = body.id ?? crypto.randomUUID();
+    const already = t.expenses.find((e) => e.id === id);
+    if (already) return HttpResponse.json(projectExpense(t, already));
+
+    const created: db.MockExpense = {
+      id,
+      concept: body.concept.trim(),
+      amountCents: body.amountCents!,
+      localDay: db.dayInstant(body.localDay || today()),
+      activityId: body.activityId ?? null,
+      plotId: body.plotId ?? null,
+      plotCropId: body.plotCropId ?? null,
+      receiptId: body.receiptId ?? null,
+      note: body.note ?? null,
+      createdBy: g.p.user.id,
+      createdAt: nowInstant(),
+      deletedAt: null,
+    };
+    // NOTHING HAPPENS TO ANYBODY'S LEDGER HERE, and there is no worker id to
+    // do it with. RSP-030's "gasto" is the farm's own accounting; RSP-007's is
+    // a line in one person's file. Wiring them together takes money out of
+    // somebody's wages, silently and correctly according to the code.
+    t.expenses.push(created);
+    return HttpResponse.json(projectExpense(t, created), { status: 201 });
+  }),
+
+  http.get("*/v1/expenses/:id", ({ request, params }) => {
+    const g = guard(request, "expenses.read");
+    if (g.deny) return g.deny;
+    const expense = g.p.tenant.expenses.find((e) => e.id === params.id);
+    return expense ? HttpResponse.json(projectExpense(g.p.tenant, expense)) : notFound();
+  }),
+
+  /**
+   * RSP-032. The imputation can MOVE — from an activity to a plot — so the
+   * three target columns are patched as a triple rather than one by one:
+   * COALESCE would keep the old `activity_id` alive and `expense_target` would
+   * then refuse the result, correctly and unhelpfully.
+   */
+  http.patch("*/v1/expenses/:id", async ({ request, params }) => {
+    const g = guard(request, "expenses.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as ExpenseRequestBody;
+    const bad = validStatus(body.status);
+    if (bad) return bad;
+    const t = g.p.tenant;
+    const expense = t.expenses.find((e) => e.id === params.id);
+    if (!expense) return notFound();
+
+    if (body.status === "inactive") expense.deletedAt ??= nowInstant();
+    if (body.status === "active") expense.deletedAt = null;
+
+    if (body.amountCents !== undefined) {
+      const badAmount = validAmount(body.amountCents);
+      if (badAmount) return badAmount;
+    }
+
+    const retarget =
+      body.activityId != null || body.plotId != null || body.plotCropId != null;
+    if (retarget) {
+      const target = validateExpenseTarget(t, body);
+      if (target) return target;
+      const foreign = confirmOurs(t, {
+        activity: body.activityId,
+        plot: body.plotId,
+        plotCrop: body.plotCropId,
+      });
+      if (foreign) return foreign;
+      // The imputation moves as a UNIT. "Charge this to the plot instead" is
+      // impossible to express field by field: the old activityId would survive
+      // a COALESCE patch and `expense_target` would refuse the result,
+      // correctly and unhelpfully.
+      expense.activityId = body.activityId ?? null;
+      expense.plotId = body.plotId ?? null;
+      expense.plotCropId = body.plotCropId ?? null;
+    }
+
+    patch(expense, body.concept?.trim(), "concept");
+    patch(expense, body.amountCents, "amountCents");
+    patch(expense, body.note, "note");
+    patch(expense, body.receiptId, "receiptId");
+    if (body.localDay) expense.localDay = db.dayInstant(body.localDay);
+    return HttpResponse.json(projectExpense(t, expense));
+  }),
+
+  http.delete("*/v1/expenses/:id", ({ request, params }) => {
+    const g = guard(request, "expenses.write");
+    if (g.deny) return g.deny;
+    const expense = g.p.tenant.expenses.find((e) => e.id === params.id && e.deletedAt === null);
+    if (!expense) return notFound();
+    expense.deletedAt = nowInstant();
+    return noContent();
+  }),
+
 ];
 
 /* -- the shared ledger write ----------------------------------------- */
@@ -2008,6 +2830,469 @@ function isTimezone(name: string): boolean {
 }
 
 /**
+ * `store.SetPlotBoundary`, in the three steps that matter to a caller.
+ *
+ * 1. ST_IsValid. A ring that crosses itself has no area anybody would agree
+ *    on, so `computedAreaHa` would be a confident lie and the write is
+ *    refused with INVALID_GEOMETRY. So is a Point, a LineString, or a body
+ *    that is not GeoJSON at all — same code, different sentence, exactly as
+ *    the Go store does it.
+ * 2. ST_Multi. The column is a MultiPolygon, so a plain Polygon is PROMOTED
+ *    on the way in and comes back out as a MultiPolygon. Emulating this is
+ *    the whole reason the editor reads MultiPolygon: without it, the map
+ *    would work perfectly against the mock and break on the first reload
+ *    against the real server.
+ * 3. ST_Area/10000. Measured here with the same spherical sum the editor
+ *    previews with, which is within a tenth of a percent of PostGIS on the
+ *    ellipsoid — close enough that the mock cannot teach a screen to expect
+ *    the wrong order of magnitude.
+ *
+ * Returns a Response when it refused, and nothing when it stored.
+ */
+function applyBoundary(plot: WirePlot, raw: unknown): Response | void {
+  const geometry = geo.asGeometry(raw);
+  if (!geometry) {
+    return fail(400, "INVALID_GEOMETRY", "that is not a GeoJSON geometry this service can read");
+  }
+  for (const ring of geo.outerRings(geometry)) {
+    const problem = geo.ringProblem(ring);
+    if (problem) {
+      return fail(400, "INVALID_GEOMETRY", `Self-intersection or degenerate ring: ${problem.kind}`);
+    }
+  }
+  const multi: geo.MultiPolygonGeometry = {
+    type: "MultiPolygon",
+    coordinates: geo.polygonsOf(geometry).map((rings) => rings.map(geo.closeRing)),
+  };
+  plot.boundary = multi;
+  plot.computedAreaHa = Number(geo.areaHaOf(multi).toFixed(4));
+}
+
+/**
+ * `store.OverlappingPlots`: the other live plots whose polygon this one runs
+ * into. A warning, never a refusal.
+ */
+function overlappingPlots(t: db.Tenant, plot: WirePlot): WireCatalogItem[] {
+  const mine = geo.asGeometry(plot.boundary);
+  if (!mine) return [];
+  return t.plots
+    .filter((p) => p.id !== plot.id && p.deletedAt === null && p.boundary != null)
+    .flatMap((p) => {
+      const theirs = geo.asGeometry(p.boundary);
+      return theirs && geo.geometriesIntersect(mine, theirs) ? [{ id: p.id, name: p.name }] : [];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/* ------------------------------------------------------------------ */
+/* Products, the warehouse, sales and expenses                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The joins and the sum, on the way out.
+ *
+ * `stock` is `productCols`'s correlated sub-select and is computed here on
+ * every single read, exactly as it is there. It is the whole point of
+ * migration 00009 and it is worth being blunt about: THERE IS NO ROUTE THAT
+ * SETS A QUANTITY. If a screen wants the number to change, it records a
+ * movement. A mock that stored a total would let "editar existencias" be built
+ * and tested and shipped, and only production would ever disagree.
+ */
+function projectProduct(t: db.Tenant, p: db.MockProduct): WireProduct {
+  return {
+    ...p,
+    category: t.productCategories.find((c) => c.id === p.categoryId)?.name ?? null,
+    storageUnit: t.storageUnits.find((u) => u.id === p.storageUnitId)?.name ?? "",
+    stock: db.productStock(t, p.id),
+  };
+}
+
+/**
+ * `reversedById` is a sub-select and not a column: a movement does not know it
+ * has been undone, the undoing knows what it undid. Storing the back-pointer
+ * would mean writing to an append-only row to record that it was reversed,
+ * which is the exact thing the trigger forbids.
+ */
+function projectStockMove(t: db.Tenant, m: db.MockStockMove): WireStockMove {
+  return {
+    ...m,
+    product: t.products.find((p) => p.id === m.productId)?.name ?? "",
+    warehouse: t.warehouses.find((w) => w.id === m.warehouseId)?.name ?? "",
+    plot: (m.plotId && t.plots.find((p) => p.id === m.plotId)?.name) || null,
+    reversedById: t.stockMoves.find((r) => r.reversesId === m.id)?.id ?? null,
+    labelBatchId:
+      t.labelBatches
+        .filter((b) => b.stockMoveId === m.id)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]?.id ?? null,
+  };
+}
+
+function projectSale(t: db.Tenant, s: db.MockSale): WireSale {
+  const product = t.products.find((p) => p.id === s.productId);
+  const move = t.stockMoves.find((m) => m.saleId === s.id && m.reason === "venta");
+  const reversal = move ? t.stockMoves.find((r) => r.reversesId === move.id) : undefined;
+  return {
+    ...s,
+    product: product?.name ?? "",
+    storageUnit: t.storageUnits.find((u) => u.id === product?.storageUnitId)?.name ?? "",
+    customer: (s.customerId && t.customers.find((c) => c.id === s.customerId)?.name) || null,
+    warehouse: t.warehouses.find((w) => w.id === s.warehouseId)?.name ?? "",
+    stockMoveId: move?.id ?? null,
+    reversalMoveId: reversal?.id ?? null,
+  };
+}
+
+/**
+ * `target` is derived from WHICH COLUMN IS SET and never from anything the
+ * caller sent — `scanExpense` does exactly this. A client able to name the
+ * target independently of the ids could send "activity" with only a plot on
+ * it, and every per-activity breakdown would be wrong in a way no constraint
+ * could catch, because both halves would be individually valid.
+ *
+ * `crop` is the crop TYPE's name (ct.name in `expenseFrom`), not the variety.
+ */
+function projectExpense(t: db.Tenant, e: db.MockExpense): WireExpense {
+  const plot = e.plotId ? t.plots.find((p) => p.id === e.plotId) : undefined;
+  const crop = e.plotCropId ? plot?.crops.find((c) => c.id === e.plotCropId) : undefined;
+  return {
+    ...e,
+    activity: (e.activityId && t.activities.find((a) => a.id === e.activityId)?.name) || null,
+    plot: plot?.name ?? null,
+    crop: crop?.cropType ?? null,
+    target: e.activityId ? "activity" : "plot",
+  };
+}
+
+/**
+ * `GetLabelBatch`: the stickers are RENDERED from the movement every time they
+ * are read, never frozen into rows. A sticker is a picture of a fact, not a
+ * fact of its own — and a batch whose stored text disagreed with the movement
+ * it names would be a lie printed on paper and stuck to a sack.
+ *
+ * The quantity splits evenly and the REMAINDER GOES ON THE LAST ONE, which is
+ * what keeps the total on the paper equal to the total in the warehouse:
+ * eleven arrobas over four labels is 2,75 each, and eleven over three is
+ * 3,667 + 3,667 + 3,666.
+ */
+function projectLabelBatch(t: db.Tenant, b: db.MockLabelBatch): WireLabelBatch | null {
+  const move = t.stockMoves.find((m) => m.id === b.stockMoveId);
+  if (!move) return null;
+  const product = t.products.find((p) => p.id === move.productId);
+  const each = move.qty / b.count;
+  const labels: WireLabel[] = [];
+  for (let i = 0; i < b.count; i++) {
+    labels.push({
+      code: `${b.id.slice(0, 8)}-${i + 1}`,
+      product: product?.name ?? "",
+      storageUnit: t.storageUnits.find((u) => u.id === product?.storageUnitId)?.name ?? "",
+      qty: db.round3(i === b.count - 1 ? move.qty - each * (b.count - 1) : each),
+      warehouse: t.warehouses.find((w) => w.id === move.warehouseId)?.name ?? "",
+      plot: (move.plotId && t.plots.find((p) => p.id === move.plotId)?.name) || null,
+      localDay: move.localDay.slice(0, 10),
+    });
+  }
+  return { ...b, labels };
+}
+
+/**
+ * `confirmOurs` in `handlers_stock.go`: every id the caller named has to
+ * belong to this farm BEFORE anything is added up.
+ *
+ * This is the trap the API pair says has bitten the project twice, and it is
+ * the reason so many of these routes 404 on a filter. RLS narrows rows rather
+ * than raising, so a SUM over another farm's product returns 0 and a list
+ * returns []. "There are no sacks in that warehouse" is a completely credible
+ * answer, and it is the same answer an empty warehouse gives. A wrong answer
+ * that looks right is the expensive kind.
+ *
+ * The mock has no RLS to be fooled by — a tenant's arrays simply do not
+ * contain another farm's rows — but it has to answer 404 in the same places,
+ * or a screen gets built expecting an empty list where production sends an
+ * error.
+ */
+function confirmOurs(t: db.Tenant, checks: Partial<Record<Owned, string | null | undefined>>): Response | null {
+  for (const [kind, id] of Object.entries(checks) as Array<[Owned, string | null | undefined]>) {
+    if (!id) continue;
+    const found = {
+      product: () => t.products.some((p) => p.id === id),
+      warehouse: () => t.warehouses.some((w) => w.id === id),
+      plot: () => t.plots.some((p) => p.id === id),
+      plotCrop: () => t.plots.some((p) => p.crops.some((c) => c.id === id)),
+      customer: () => t.customers.some((c) => c.id === id),
+      activity: () => t.activities.some((a) => a.id === id),
+      workRecord: () => t.workRecords.some((rec) => rec.id === id),
+    }[kind]();
+    if (!found) return fail(404, "NOT_FOUND", `no ${kind} with that id on this farm`);
+  }
+  return null;
+}
+
+type Owned =
+  | "product"
+  | "warehouse"
+  | "plot"
+  | "plotCrop"
+  | "customer"
+  | "activity"
+  | "workRecord";
+
+/**
+ * `stockMoveRequest` in `handlers_stock.go`: the store's write shape plus the
+ * two fields the HTTP layer adds on top of it.
+ *
+ * Declared here rather than in `mocks/types.ts` only because that file belongs
+ * to the other half of this pair and is being edited right now. It wants
+ * folding back in.
+ */
+type StockMoveBody = StockMoveRequestBody & {
+  /** RSP-025's stickers, asked for ON the movement. 0..500. */
+  labels?: number;
+  /**
+   * The stock guard's escape hatch. NOTE THE SPELLING: it is `allowNegative`
+   * here and `allowNegativeStock` on a sale. Two names for one idea is not a
+   * tidiness problem to fix on this side — it is what the two request schemas
+   * say, and a mock that accepted either would let a screen ship sending the
+   * wrong one to a server that would silently ignore it and refuse the write.
+   */
+  allowNegative?: boolean;
+};
+
+/** `store.StockReasons`, in the enum's own order. */
+const STOCK_REASONS: WireStockReason[] = [
+  "cosecha",
+  "compra",
+  "venta",
+  "consumo",
+  "merma",
+  "traslado",
+  "ajuste",
+];
+
+/** `store.OutgoingReasons`: the ones `stock_sign` requires to be negative. */
+const OUTGOING_REASONS = new Set<WireStockReason>(["venta", "consumo", "merma"]);
+const INCOMING_REASONS = new Set<WireStockReason>(["cosecha", "compra"]);
+
+/**
+ * `resolveCatalog`: "either an id or a name" becomes an id, creating the row
+ * when only a name arrived. Returns null when neither was sent, and the caller
+ * decides what that means — a category is optional, a storage unit is not.
+ */
+function resolveCatalog(
+  list: WireCatalogItem[],
+  id: string | null | undefined,
+  name: string | undefined,
+): string | null {
+  if (id) return id;
+  if (!name || !name.trim()) return null;
+  return ensureCatalogItem(list, name).id;
+}
+
+/**
+ * `InsertStockMove` plus every CHECK, trigger and index that guards it, and
+ * the one courtesy the handler adds on top.
+ *
+ * THE SIGN IS APPLIED, NOT DEMANDED. `handleCreateStockMove` flips the
+ * quantity to match the reason before the row is built — a client that sends
+ * 40 for a merma gets a merma of 40 out, not a 400 it has to guess its way out
+ * of. `traslado` and `ajuste` keep whatever sign they were given, because
+ * those two are the ones `stock_sign` leaves free and there is nothing to
+ * infer. The database still checks the pair; this is the courtesy, not the
+ * guarantee, which is why the CHECK is emulated below as well.
+ *
+ * (The first version of this mock REFUSED a mismatched sign with a 400. That
+ * was a guess, and it was wrong in the direction that matters: a screen built
+ * against it would have shipped a validation error the server never sends.)
+ *
+ * Returns the row it appended, or the Response it refused with.
+ */
+function insertStockMove(
+  t: db.Tenant,
+  body: StockMoveRequestBody,
+  createdBy: string,
+  opts: { fromSale?: string } = {},
+): db.MockStockMove | Response {
+  const reason = body.reason;
+  if (!reason || !STOCK_REASONS.includes(reason)) {
+    return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
+  }
+  let qty = body.qty;
+  if (typeof qty !== "number" || !Number.isFinite(qty) || qty === 0) {
+    return badRequest("qty cannot be zero");
+  }
+  if (OUTGOING_REASONS.has(reason) && qty > 0) qty = -qty;
+  if (INCOMING_REASONS.has(reason) && qty < 0) qty = -qty;
+
+  // stock_sign, for the pair the handler could not infer.
+  if ((INCOMING_REASONS.has(reason) && qty < 0) || (OUTGOING_REASONS.has(reason) && qty > 0)) {
+    return badRequest(
+      "the sign of the quantity does not match the reason: cosecha and compra come in, venta, consumo and merma go out",
+    );
+  }
+
+  // stock_crop_needs_plot, then check_stock_move_crop(): a movement that said
+  // "lote 3, café del lote 7" would make every per-plot report quietly wrong.
+  if (body.plotCropId && !body.plotId) {
+    return badRequest("plotCropId needs the plotId it is planted in");
+  }
+  if (body.plotId && body.plotCropId) {
+    const plot = t.plots.find((p) => p.id === body.plotId);
+    if (!plot?.crops.some((c) => c.id === body.plotCropId)) {
+      return badRequest(`crop ${body.plotCropId} is not planted in plot ${body.plotId}`);
+    }
+  }
+
+  // check_stock_reverso(): once, and never a reversal of a reversal.
+  if (body.reversesId) {
+    const origin = t.stockMoves.find((m) => m.id === body.reversesId);
+    if (!origin) return badRequest("reversal without origin");
+    if (origin.reversesId) {
+      return conflict("ALREADY_REVERSED", "a reversal cannot be reversed");
+    }
+    if (t.stockMoves.some((m) => m.reversesId === origin.id)) {
+      return conflict("ALREADY_REVERSED", "that movement has already been reversed");
+    }
+    if (origin.productId !== body.productId || origin.warehouseId !== body.warehouseId) {
+      return badRequest("reversal crosses product or warehouse");
+    }
+    if (db.round3(qty) !== db.round3(-origin.qty)) {
+      return badRequest("the reversal does not cancel its origin");
+    }
+  }
+
+  const created: db.MockStockMove = {
+    id: body.id ?? crypto.randomUUID(),
+    productId: body.productId!,
+    warehouseId: body.warehouseId!,
+    plotId: body.plotId ?? null,
+    plotCropId: body.plotCropId ?? null,
+    qty: db.round3(qty),
+    reason,
+    note: body.note ?? null,
+    workRecordId: body.workRecordId ?? null,
+    saleId: opts.fromSale ?? null,
+    reversesId: body.reversesId ?? null,
+    // `set_stock_move_local_day()`: absent means the FARM's today, computed by
+    // the database. Requests carry a plain `YYYY-MM-DD`; responses carry the
+    // instant a Go `time.Time` marshals to.
+    localDay: db.dayInstant(body.localDay || today()),
+    createdBy,
+    createdAt: nowInstant(),
+  };
+  t.stockMoves.push(created);
+  return created;
+}
+
+/**
+ * `guardStock`: refuse to take out more than is there, unless told to go
+ * ahead. It runs on the DERIVED level and it is only ever a 409 the caller can
+ * override — a warehouse whose opening balance was never recorded is ordinary,
+ * and a server that made it impossible to record what actually left would be a
+ * server nobody could use.
+ *
+ * `qty` is signed, so the details read `{onHand, requested}` with `requested`
+ * positive.
+ */
+function guardStock(t: db.Tenant, productId: string, warehouseId: string, qty: number): Response | null {
+  const onHand = db.stockOnHand(t, productId, warehouseId);
+  if (onHand + qty < 0) {
+    return conflict("INSUFFICIENT_STOCK", "there is not that much in the warehouse", {
+      onHand,
+      requested: -qty,
+    });
+  }
+  return null;
+}
+
+/** `ReverseStockMove`: the only way back through an append-only table. */
+function reverseStockMove(
+  t: db.Tenant,
+  id: string,
+  note: string | null,
+  createdBy: string,
+): db.MockStockMove | Response {
+  const origin = t.stockMoves.find((m) => m.id === id);
+  if (!origin) return notFound();
+  return insertStockMove(
+    t,
+    {
+      productId: origin.productId,
+      warehouseId: origin.warehouseId,
+      plotId: origin.plotId,
+      plotCropId: origin.plotCropId,
+      qty: -origin.qty,
+      // 'ajuste' is the one reason whose sign is free, which is what lets the
+      // opposite of an outgoing movement be positive without lying about why
+      // it exists. `reversesId` is what says what it really is.
+      reason: "ajuste",
+      note,
+      reversesId: origin.id,
+    },
+    createdBy,
+  );
+}
+
+/**
+ * `validateExpenseTarget`, which is RSP-031's "Tipo de gasto" as a rule rather
+ * than as a select:
+ *
+ *     (activity_id IS NOT NULL)::int
+ *   + (COALESCE(plot_id, plot_crop_id) IS NOT NULL)::int = 1
+ *
+ * Not both, and NOT NEITHER. "Neither" is the case worth refusing loudly: an
+ * expense charged to nothing appears in the total and in no breakdown, and the
+ * gap between the two is what nobody can account for at the end of the year.
+ *
+ * TWO SENTENCES, ONE CODE. `TranslateExpenseError` answers
+ * EXPENSE_TARGET_INVALID for both halves, and the handler's own check writes a
+ * different message for each — so a form can put the right words on the screen
+ * while a screen may only ever branch on the code. Splitting it into two codes
+ * (which is what the first version of this mock did) would let a screen depend
+ * on a distinction the server has never drawn.
+ *
+ * NOTE WHAT IS NOT COUNTED. The handler weighs `activityId` and `plotId` only;
+ * `plotCropId` is NOT a target on its own. A body carrying just a crop is
+ * therefore "neither", not "a plot expense" — which is the same thing
+ * `expense_crop_needs_plot` says one layer down, arrived at from the other
+ * side.
+ */
+function validateExpenseTarget(t: db.Tenant, body: ExpenseRequestBody): Response | null {
+  const hasActivity = Boolean(body.activityId);
+  const hasPlot = Boolean(body.plotId);
+  if (hasActivity && hasPlot) {
+    return fail(
+      400,
+      "EXPENSE_TARGET_INVALID",
+      "an expense is charged to an activity or to a plot/crop, not to both",
+    );
+  }
+  if (!hasActivity && !hasPlot) {
+    return fail(
+      400,
+      "EXPENSE_TARGET_INVALID",
+      "an expense is charged to an activity or to a plot/crop; it cannot be charged to neither",
+    );
+  }
+  // check_expense_crop(): the same rule as the stock movement, for the same
+  // reason — a crop belongs to the plot it was named with, or every per-plot
+  // cost report is quietly wrong.
+  if (body.plotId && body.plotCropId) {
+    const plot = t.plots.find((p) => p.id === body.plotId);
+    if (!plot?.crops.some((c) => c.id === body.plotCropId)) {
+      return badRequest(`crop ${body.plotCropId} is not planted in plot ${body.plotId}`);
+    }
+  }
+  return null;
+}
+
+/** `amount_minor bigint NOT NULL CHECK (amount_minor > 0)`, said in TypeScript. */
+function validAmount(cents: unknown): Response | null {
+  if (typeof cents !== "number" || !Number.isInteger(cents) || cents <= 0) {
+    return badRequest("amountCents must be a positive whole number of cents");
+  }
+  return null;
+}
+
+/**
  * `CreatePlotCrop` resolves the crop type and the variety through their
  * catalogues first, creating the entry when the caller sent a name that is not
  * there yet. That is what "with an option to add it if it is not there" means.
@@ -2037,11 +3322,16 @@ function buildCrop(t: db.Tenant, plotId: string, c: PlotCropRequestBody): WirePl
 
 /** `rateRequest.toStore`: an absent validFrom means today. */
 function toRate(body: RateRequestBody, payScheme: string): WireActivityRate {
+  // `timeUnit` on the request is still a loose string — the mock RECEIVES it
+  // and the server's decoder is what rejects a value outside the enum. Narrowed
+  // here rather than at the field, so an unknown one becomes the server's own
+  // refusal below instead of a type error nobody can act on.
+  const timeUnit = (body.timeUnit ?? null) as WireActivityRate["timeUnit"];
   return {
     validFrom: db.dayInstant(body.validFrom ?? today()),
     rateCents: body.rateCents ?? 0,
     // A time-based rate is per jornal unless it says otherwise.
-    timeUnit: payScheme === "tiempo" ? (body.timeUnit ?? "jornal") : (body.timeUnit ?? null),
+    timeUnit: payScheme === "tiempo" ? (timeUnit ?? "jornal") : timeUnit,
     customQty: body.customQty ?? null,
     customUnit: body.customUnit ?? null,
   };

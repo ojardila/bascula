@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Box, Chip, Stack, Tooltip, Typography } from "@mui/material";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
@@ -53,16 +52,22 @@ export function PlotsPage() {
             <span>{formatArea(p.areaHa)} ha</span>
             {/* Declared and computed always disagree. Showing only one is
                 deciding for the owner which of them lies, so both are here. */}
-            {p.computedAreaHa !== null && (
+            {p.computedAreaHa === null ? (
+              <Typography variant="caption" color="text.disabled">
+                sin polígono
+              </Typography>
+            ) : (
               <Tooltip
                 title={`Declarada ${formatArea(p.areaHa)} ha · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
               >
-                <Stack direction="row" spacing={0.5} alignItems="center">
-                  <WarningAmberIcon sx={{ fontSize: 14 }} color="warning" />
-                  <Typography variant="caption" color="warning.dark">
-                    calculada {formatArea(p.computedAreaHa)} ha
-                  </Typography>
-                </Stack>
+                {/* No warning icon and no amber. The two figures differing is
+                    the normal state of the world, not an incident: a deed says
+                    one thing and a hillside traced with a mouse says another.
+                    A yellow triangle on every row with a polygon teaches
+                    people to ignore yellow triangles. */}
+                <Typography variant="caption" color="text.secondary">
+                  calculada {formatArea(p.computedAreaHa)} ha
+                </Typography>
               </Tooltip>
             )}
           </Stack>

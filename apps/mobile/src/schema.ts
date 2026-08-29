@@ -125,6 +125,38 @@ export const BALANCE_SQL = `
     FROM ledger WHERE personId = ?
 `;
 
+/**
+ * What was actually handed over against ONE settlement (`movil.md` §9.3).
+ *
+ * The receipt used to guess, filtering the ledger with
+ * `kind = 'pago' AND date >= settlement.periodStart`. `periodStart` is the
+ * Monday of the oldest UNSETTLED week, which on a farm running behind is
+ * months back, so the receipt swept in money handed over for documents closed
+ * long ago and told the worker they had been paid more than they had.
+ *
+ * Two clauses, and the order matters:
+ *
+ * 1. `settlementId = s.id` — the payment says which document it is for. Every
+ *    payment written from the two settle-and-pay screens now does.
+ * 2. The fallback, for the payments already sitting on phones in the field
+ *    with a null link. Nothing records what those were for, so a guess is all
+ *    there is — but it is narrowed from "after the work started" to "after the
+ *    DOCUMENT existed", which is the difference §9.3 is about.
+ *
+ * A payment carrying another settlement's id is excluded by both clauses,
+ * which is the double-count the fix exists to stop.
+ */
+export const PAID_AGAINST_SQL = `
+  SELECT COALESCE(-SUM(l.amountCents), 0) AS cents
+    FROM ledger l
+    JOIN settlements s ON s.id = ?
+   WHERE l.personId = s.personId
+     AND l.kind = 'pago'
+     AND ( l.settlementId = s.id
+        OR ( l.settlementId IS NULL
+             AND date(l.date) >= ${DAY_OF("s.createdAt")} ) )
+`;
+
 /** Pickups in range that no live settlement has claimed. */
 export const PENDING_SQL = `
   SELECT pk.id, pk.weight, ${WEEK_OF("pk.date")} AS week
@@ -342,3 +374,213 @@ export const WEEK_GRID_DAY_SQL = `
    WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
    GROUP BY pk.personId, day
 `;
+
+// ---- user_version = 6: the identity sync needs -------------------------
+//
+// Nothing below sends anything. It gives every row that will one day travel a
+// name the server can recognise, and it records which rows are waiting. The
+// protocol itself is being written separately; what is here is what any
+// reasonable protocol needs and nothing that presumes one.
+//
+// The integer primary keys STAY. They are in every join, every screen and
+// every foreign key in this file, and rewriting them would mean rewriting the
+// app during a harvest to buy nothing: a local `id` and a global `uuid` can
+// coexist, and the mapping between them is one indexed column.
+
+/** A table whose rows travel, and how the migration dates each row. */
+export interface SyncedTable {
+  /** Table name, and the entity name the outbox and the server use. */
+  name: string;
+  /**
+   * The SQL expression giving the instant this row belongs at, used to seed
+   * its UUIDv7. Chronology is the whole point of a v7, so a row backfilled
+   * with the migration's clock would be a row whose id lies about when it
+   * happened.
+   */
+  bornAt: string;
+}
+
+/**
+ * In the order the server should receive them: a parent before the rows that
+ * reference it. Two rows written in the same millisecond are separated by this
+ * order, so a settlement can never sort after its own lines.
+ */
+export const SYNCED_TABLES: SyncedTable[] = [
+  // The farm's own singleton: one row, no history, nothing to be chronological
+  // about. `NULL` tells the backfill to date it at migration time, which puts
+  // it after everything the farm has ever recorded — correct, since that is
+  // the moment this row acquired an identity worth sending.
+  { name: "config", bornAt: "NULL" },
+  { name: "people", bornAt: "createdAt" },
+  { name: "crops", bornAt: "createdAt" },
+  // No timestamp of its own; a weekly price belongs to the Monday it prices.
+  { name: "cost_overrides", bornAt: "week" },
+  // `date` is when the load was weighed, `createdAt` when the phone stored it.
+  // The weighing is the event the farm and the server care about.
+  { name: "pickups", bornAt: "COALESCE(date, createdAt)" },
+  { name: "settlements", bornAt: "createdAt" },
+  // A line is born with its document.
+  {
+    name: "settlement_items",
+    bornAt:
+      "(SELECT s.createdAt FROM settlements s WHERE s.id = settlement_items.settlementId)",
+  },
+  // Append-only, and `date` can be back-dated by a correction, so the order
+  // the rows were written is the order that actually happened.
+  { name: "ledger", bornAt: "COALESCE(createdAt, date)" },
+];
+
+/** The two columns every travelling row grows, plus the farm's own identity. */
+export const SYNC_COLUMNS: Record<string, string[]> = {
+  ...Object.fromEntries(
+    SYNCED_TABLES.map((t) => [t.name, ["uuid TEXT", "updatedAt TEXT"]]),
+  ),
+  // `farmId` lives here and only here. See `docs/diagramas/movil.md` and the
+  // note on `SyncRepo` in `data/repository.ts`: one phone is one farm, the
+  // value is unknown until the farm is registered on the server, and putting
+  // it on every row would mean rewriting eighteen thousand of them at exactly
+  // the moment the owner is trying to sign up.
+  config: [
+    "uuid TEXT",
+    "updatedAt TEXT",
+    "farmId TEXT",
+    "deviceId TEXT",
+    "syncedAt TEXT",
+  ],
+};
+
+/**
+ * The outbox: what this phone still owes the server.
+ *
+ * Why a queue and not a `WHERE updatedAt > lastSync` watermark:
+ *
+ * 1. `pickups.remove` is a hard DELETE. Once the row is gone there is no
+ *    `updatedAt` left to compare, so a watermark can never tell the server
+ *    about it — and the server would keep charging the farm for a weighing
+ *    that was cancelled. The `delete` row below is the only surviving trace.
+ * 2. A watermark trusts the device clock, and `docs/sync-and-roles.md` says
+ *    plainly that these clocks drift and are set by hand. One backwards jump
+ *    and a watermark skips every row written in the gap, permanently and
+ *    silently. `seq` is an integer this device controls.
+ * 3. Retry. A push that dies halfway has to be safe to repeat: a queued row is
+ *    dropped only once the server has said it has it, which no watermark can
+ *    do atomically across a network.
+ *
+ * One row per changed entity, not one per change: `UNIQUE(entity, entityUuid)`
+ * coalesces, so correcting the same weighing forty times still owes the server
+ * one row. The seq of the FIRST change is kept, which is what keeps a pickup
+ * ahead of the settlement that claims it; `revision` counts the coalesces so
+ * an ack cannot drop a change made after the push was assembled.
+ *
+ * There is no payload column. Push reads the row live by uuid, so the queue
+ * carries "this changed", not a snapshot that could be stale before it is sent.
+ */
+export const OUTBOX_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS outbox (
+    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity     TEXT    NOT NULL,
+    entityUuid TEXT    NOT NULL,
+    op         TEXT    NOT NULL CHECK (op IN ('upsert','delete')),
+    localId    INTEGER,
+    revision   INTEGER NOT NULL DEFAULT 1,
+    queuedAt   TEXT    NOT NULL,
+    UNIQUE (entity, entityUuid)
+  );
+  CREATE INDEX IF NOT EXISTS ix_outbox_seq ON outbox(seq);
+`;
+
+/**
+ * The triggers that fill it.
+ *
+ * Deliberately in SQL rather than in the eighteen writers of
+ * `sqliteRepository.ts`. A writer that forgets to queue its row is a row that
+ * never reaches the server and that nothing ever complains about; a trigger
+ * cannot be forgotten, and it also covers `demo.seed`, `wipe` and whatever the
+ * next sprint adds. The uuid still has to be minted in TypeScript — SQLite has
+ * no way to generate a v7, and a BEFORE trigger cannot write to NEW.
+ *
+ * `queuedAt` copies the row's own `updatedAt` instead of calling `now`, so the
+ * queue obeys the repository's injected clock and the tests stay deterministic.
+ * The COALESCE is there only so a row that somehow arrived without one still
+ * gets queued rather than taking the write down with it.
+ */
+export function outboxTriggersSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  const stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+  const enqueue = (entity: string, row: "NEW" | "OLD", op: "upsert" | "delete") => `
+    INSERT INTO outbox (entity, entityUuid, op, localId, queuedAt)
+    VALUES ('${entity}', ${row}.uuid, '${op}',
+            ${op === "delete" ? "NULL" : `${row}.id`},
+            COALESCE(${row}.updatedAt, ${stamp}))
+    ON CONFLICT(entity, entityUuid) DO UPDATE SET
+      op = excluded.op, localId = excluded.localId,
+      queuedAt = excluded.queuedAt, revision = outbox.revision + 1;`;
+
+  return tables
+    .map(
+      (t) => `
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_ins;
+  CREATE TRIGGER tg_${t.name}_out_ins AFTER INSERT ON ${t.name}
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL
+  BEGIN${enqueue(t.name, "NEW", "upsert")}
+  END;
+
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_upd;
+  CREATE TRIGGER tg_${t.name}_out_upd AFTER UPDATE ON ${t.name}
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL
+  BEGIN${enqueue(t.name, "NEW", "upsert")}
+  END;
+
+  DROP TRIGGER IF EXISTS tg_${t.name}_out_del;
+  CREATE TRIGGER tg_${t.name}_out_del AFTER DELETE ON ${t.name}
+  FOR EACH ROW WHEN OLD.uuid IS NOT NULL
+  BEGIN${enqueue(t.name, "OLD", "delete")}
+  END;`,
+    )
+    .join("\n");
+}
+
+/**
+ * One unique index per table, so a uuid cannot be duplicated locally, plus the
+ * seek the server's `WHERE uuid > ?` pagination will want. Partial, because
+ * during the backfill and for any row an old writer misses the column is NULL,
+ * and SQLite lets NULLs repeat in a unique index.
+ */
+export function uuidIndexesSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  return tables
+    .map(
+      (t) => `CREATE UNIQUE INDEX IF NOT EXISTS ux_${t.name}_uuid
+                ON ${t.name}(uuid) WHERE uuid IS NOT NULL;`,
+    )
+    .join("\n");
+}
+
+/**
+ * Everything still owed, oldest change first. `localId` is how push reads the
+ * row back; for a delete there is nothing left to read, which is the point.
+ */
+export const OUTBOX_PENDING_SQL = `
+  SELECT seq, entity, entityUuid, op, localId, revision, queuedAt
+    FROM outbox ORDER BY seq LIMIT ?
+`;
+
+/**
+ * The initial fill: at `user_version = 6` the server has none of this farm's
+ * history, so every existing row is owed. One statement rather than eighteen
+ * thousand trigger firings, ordered by uuid so `seq` comes out in the same
+ * chronological order the ids do.
+ */
+export function outboxSeedSql(tables: SyncedTable[] = SYNCED_TABLES): string {
+  const union = tables
+    .map((t) => `SELECT '${t.name}' AS entity, uuid, id FROM ${t.name} WHERE uuid IS NOT NULL`)
+    .join("\n      UNION ALL ");
+  // OR IGNORE, not because the seed is expected to meet an existing queue —
+  // it runs once, inside the migration — but because `UNIQUE(entity,uuid)` is
+  // the only thing standing between a retry and a duplicate push, and a seed
+  // that would rather throw than notice it is a seed that turns a recoverable
+  // rerun into an app that will not start.
+  return `
+    INSERT OR IGNORE INTO outbox (entity, entityUuid, op, localId, queuedAt)
+    SELECT entity, uuid, 'upsert', id, ?
+      FROM (${union})
+     ORDER BY uuid`;
+}

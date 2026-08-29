@@ -141,6 +141,30 @@ export const ERROR_MESSAGES: Record<string, string> = {
   DUPLICATE_DOCUMENT: "Ya hay un empleado con esa identificación en esta finca.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
 
+  /* -- inventory, sales and expenses --------------------------------- */
+  // The warehouse said no. `details.available` and `details.requested` carry
+  // the two numbers, and the sales screen puts them in the sentence rather
+  // than making somebody go and look them up.
+  INSUFFICIENT_STOCK:
+    "No hay suficiente producto en esa bodega para esa venta. Registre primero la entrada que falta, o marque «registrar de todos modos» si la bodega está desactualizada.",
+  SALE_ALREADY_VOID: "Esa venta ya estaba anulada.",
+  // ONE code, not the two this table first guessed at.
+  //
+  // `expense_target` covers three refusals — charged to nothing, charged to
+  // both, and a crop named without its lot — and `domain/errors.go` gives all
+  // three the same name, because they are the same constraint failing. Two
+  // Spanish sentences keyed to codes the server has never sent would both fall
+  // through to the server's English, which is how a translation table quietly
+  // stops translating. Checked against `AllCodes()`.
+  EXPENSE_TARGET_INVALID:
+    "Un gasto se carga a una actividad O a un lote, nunca a las dos cosas ni a ninguna. Elija una, y si eligió un cultivo, diga también en qué lote está.",
+  UPLOAD_TOO_LARGE: "El archivo pesa demasiado. Use uno más liviano.",
+  UPLOAD_NOT_READY:
+    "El comprobante todavía se está subiendo. Espere a que termine y vuelva a guardar.",
+  UNSUPPORTED_MEDIA_TYPE: "Ese tipo de archivo no se puede adjuntar.",
+  IDEMPOTENCY_KEY_REUSED:
+    "Ese registro ya se usó para otra cosa. Recargue la pantalla antes de volver a guardar.",
+
   /* -- routes this build knows the server does not have --------------- */
   // Local refusals (status 0). They never reach the network: saying "todavía
   // no" is better than a 404 the user reads as a bug.
@@ -148,6 +172,12 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "La consola de administración todavía no está disponible en el servidor.",
   NOT_IMPLEMENTED_NOTES: "Las notas de empleado todavía no están disponibles.",
   NOT_IMPLEMENTED_UNDELETE: "Reactivar todavía no está disponible en el servidor.",
+  // Raised locally by `routeMayBeMissing` when a collection route answers 404,
+  // which can only mean the route is absent. The message carries the module's
+  // name, so it is the ApiError's own text that is shown and not this one —
+  // this entry exists so that the code is never displayed bare.
+  NOT_IMPLEMENTED_MODULE:
+    "Ese módulo todavía no está disponible en el servidor. Puede verlo con datos simulados.",
 
   /* -- media --------------------------------------------------------- */
   FILE_TOO_LARGE: "La foto pesa más de 5 MB. Use una más liviana.",

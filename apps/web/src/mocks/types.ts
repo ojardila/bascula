@@ -21,6 +21,10 @@ export type {
   WireActivityRate,
   WireBalance,
   WireCatalogItem,
+  WireCustomer,
+  WireExpense,
+  WireExpenseList,
+  WireExpenseTotals,
   WireEmployee,
   WireFarmChoice,
   WireLedgerEntry,
@@ -33,10 +37,17 @@ export type {
   WirePayScheme,
   WirePayable,
   WirePending,
+  WireLabel,
+  WireLabelBatch,
   WirePlot,
   WirePlotCrop,
+  WireProduct,
   WireRateSource,
   WireRole,
+  WireSale,
+  WireStockLevel,
+  WireStockMove,
+  WireStockReason,
   WireSession,
   WireSettlement,
   WireSettlementPreview,
@@ -51,7 +62,7 @@ export type {
   WireWorkerPublic,
 } from "../api/wire";
 
-import type { DayISO, Uuid, WirePayScheme, WireRateSource } from "../api/wire";
+import type { DayISO, Uuid, WirePayScheme, WireRateSource, WireStockReason } from "../api/wire";
 
 /* -- auth ------------------------------------------------------------ */
 
@@ -115,6 +126,13 @@ export interface PlotRequestBody {
   computedAreaHa?: number | null;
   department?: string | null;
   municipality?: string | null;
+  /**
+   * The shape drawn on the map, accepted on the create and the patch as well
+   * as on the dedicated PUT. `hasBoundary` in the Go handler treats an absent
+   * field and a null as the same thing, so an edit that never opened the map
+   * cannot erase a polygon.
+   */
+  boundary?: unknown;
   crops?: PlotCropRequestBody[];
 }
 
@@ -169,4 +187,105 @@ export interface ReverseRequestBody {
 export interface SignupRequestBody {
   farm?: { name?: string; timezone?: string; currency?: string; priceCents?: number };
   owner?: { email?: string; name?: string; password?: string };
+}
+
+/* -- products, stock, sales and expenses (RSP-018 … RSP-033) --------- */
+
+/**
+ * The write shapes, transcribed from the Go store's `New…` structs the same
+ * way the ones above were. Category, storage unit, warehouse and customer may
+ * arrive as an ID OR AS A NAME: `resolveCatalog` and `EnsureCustomer` create
+ * the row when only a name came, which is the "con opción de crear" that
+ * RSP-019 and RSP-027 ask for, and it is idempotent by `lower(name)` so a
+ * picker cannot accumulate five "Bodega principal".
+ */
+export interface ProductRequestBody {
+  id?: Uuid;
+  name?: string;
+  categoryId?: Uuid | null;
+  category?: string;
+  storageUnitId?: Uuid | null;
+  storageUnit?: string;
+  note?: string | null;
+  status?: string;
+}
+
+export interface CustomerRequestBody {
+  id?: Uuid;
+  name?: string;
+  documentType?: string | null;
+  docId?: string | null;
+  phone?: string | null;
+}
+
+/**
+ * `localDay` absent means "the farm's today", which the DATABASE decides. Go
+ * has no business ruling on which calendar day 19:30 in Bogotá belongs to, and
+ * neither does this mock.
+ */
+export interface StockMoveRequestBody {
+  id?: Uuid;
+  productId?: Uuid;
+  /**
+   * REQUIRED, and by id only. A warehouse is not created on the way past the
+   * way a category is — `POST /v1/warehouses` is its own call — so there is no
+   * `warehouse` name field here. The first draft of this file had one, copied
+   * from the sale's body, which is exactly the kind of invented field a mock
+   * teaches a client to send and production answers 400 to.
+   */
+  warehouseId?: Uuid;
+  plotId?: Uuid | null;
+  plotCropId?: Uuid | null;
+  /**
+   * MAY ARRIVE UNSIGNED. `handleCreateStockMove` flips it to match the reason
+   * before writing, so `{qty: 40, reason: "merma"}` is a merma of −40 and a
+   * 201, NOT a 400. Only `traslado` and `ajuste` keep the caller's sign, being
+   * the two the CHECK leaves free.
+   */
+  qty?: number;
+  reason?: WireStockReason;
+  note?: string | null;
+  workRecordId?: Uuid | null;
+  saleId?: Uuid | null;
+  reversesId?: Uuid | null;
+  localDay?: string | null;
+  /** How many identification stickers to generate. RSP-025. 0..500. */
+  labels?: number;
+  /**
+   * Record an outgoing movement that takes the level below zero. Guards EVERY
+   * outgoing movement and not only a sale: a `consumo` for more than there is
+   * answers 409 INSUFFICIENT_STOCK with `details.onHand` and
+   * `details.requested`, exactly as a sale does.
+   */
+  allowNegative?: boolean;
+}
+
+export interface SaleRequestBody {
+  id?: Uuid;
+  productId?: Uuid;
+  customerId?: Uuid | null;
+  /** A name instead of an id; created if it is not there yet. */
+  customer?: string;
+  /** Required: a sale takes the product out of somewhere. By id only. */
+  warehouseId?: Uuid;
+  qty?: number;
+  amountCents?: number;
+  receiptId?: Uuid | null;
+  note?: string | null;
+  localDay?: string | null;
+  /** "Yes, I know the warehouse says there is not that much. Record it." */
+  allowNegativeStock?: boolean;
+}
+
+export interface ExpenseRequestBody {
+  id?: Uuid;
+  concept?: string;
+  amountCents?: number;
+  localDay?: string | null;
+  activityId?: Uuid | null;
+  plotId?: Uuid | null;
+  plotCropId?: Uuid | null;
+  receiptId?: Uuid | null;
+  note?: string | null;
+  status?: string;
 }

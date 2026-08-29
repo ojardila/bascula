@@ -40,13 +40,20 @@ import type {
   WireActivityRate,
   WireBalance,
   WireCatalogItem,
+  WireCustomer,
   WireEmployee,
+  WireExpense,
+  WireLabelBatch,
   WireLedgerEntry,
   WireNote,
   WirePayable,
   WirePlot,
+  WireProduct,
   WireRole,
+  WireSale,
   WireSettlement,
+  WireStockLevel,
+  WireStockMove,
   WireWeekPrice,
   WireWorkRecord,
   WireWorkUnit,
@@ -203,6 +210,60 @@ export interface MockSettlementItem {
 
 export type MockSettlement = Omit<WireSettlement, "items"> & { items: MockSettlementItem[] };
 
+/* -- products, warehouses, sales and expenses ------------------------ */
+
+/**
+ * WHAT IS NOT ON THESE ROWS IS THE POINT.
+ *
+ * Every one of them is `Omit<Wire…, the joins and the sums>`. The wire shape
+ * carries `product`, `warehouse`, `category`, `storageUnit` and `stock`
+ * because the server's `SELECT` joins them on the way out; storing them here
+ * would let the seed hold a name that no longer matches the catalogue row it
+ * came from, and — far worse for `stock` — would let a screen be built against
+ * a total nobody recomputes.
+ *
+ * `stock` is the one that has to be said out loud, because it is the whole
+ * decision of migration 00009: THERE IS NO STOCK COLUMN. `products.go` reads
+ * it as `coalesce((SELECT sum(m.qty) FROM stock_moves m WHERE m.product_id =
+ * p.id), 0)`, on every read, and `projectProduct` below does the same over
+ * `t.stockMoves`. If you find yourself wanting to add a number here so a
+ * handler can be quicker, that is the bug the schema was shaped to prevent.
+ */
+export type MockProduct = Omit<WireProduct, "category" | "storageUnit" | "stock">;
+
+/**
+ * One fact about the warehouse. APPEND-ONLY: `stock_moves_is_append_only()` is
+ * a trigger and `REVOKE UPDATE, DELETE ON stock_moves` is the belt to it, so
+ * nothing in `handlers.ts` may mutate one of these after it is pushed. The way
+ * back is `reversesId`, once.
+ *
+ * `reversedById` and `labelBatchId` are correlated sub-selects on the server
+ * (`stockMoveCols`), so they are derived here too — a movement does not know
+ * it has been undone, the undoing knows what it undid.
+ */
+export type MockStockMove = Omit<
+  WireStockMove,
+  "product" | "warehouse" | "plot" | "reversedById" | "labelBatchId"
+>;
+
+/** `stockMoveId` and `reversalMoveId` are sub-selects over the movements. */
+export type MockSale = Omit<
+  WireSale,
+  "product" | "storageUnit" | "customer" | "warehouse" | "stockMoveId" | "reversalMoveId"
+>;
+
+/**
+ * `target` is DERIVED on the way out — `scanExpense` sets it from which column
+ * is populated, and never from anything a caller sent. A client that could
+ * name the target independently of the ids could send a row that says
+ * "activity" with only a plot on it, and every breakdown built on `target`
+ * would be wrong in a way no constraint could catch.
+ */
+export type MockExpense = Omit<WireExpense, "activity" | "plot" | "crop" | "target">;
+
+/** The labels themselves are rendered from the movement on every read. */
+export type MockLabelBatch = Omit<WireLabelBatch, "labels">;
+
 export interface Tenant {
   farmId: string;
   workUnits: WireWorkUnit[];
@@ -217,6 +278,17 @@ export interface Tenant {
   ledger: WireLedgerEntry[];
   settlements: MockSettlement[];
   notes: WireNote[];
+  /* -- RSP-018 … RSP-033 -- */
+  productCategories: WireCatalogItem[];
+  storageUnits: WireCatalogItem[];
+  warehouses: WireCatalogItem[];
+  products: MockProduct[];
+  /** Append-only. Nothing removes from this array and nothing edits it. */
+  stockMoves: MockStockMove[];
+  customers: WireCustomer[];
+  sales: MockSale[];
+  expenses: MockExpense[];
+  labelBatches: MockLabelBatch[];
 }
 
 /* -- the store ------------------------------------------------------- */
@@ -309,6 +381,22 @@ export function emptyTenant(farmId: string, priceCents: number, id: () => string
     ledger: [],
     settlements: [],
     notes: [],
+    // A NEW FARM HAS NO WAREHOUSE, no storage unit and no product category,
+    // because `SeedCatalogs` seeds the three activity categories and nothing
+    // else. That is not an oversight to paper over here: the first product a
+    // farm registers creates its storage unit through `resolveCatalog`'s
+    // "either an id or a name", and the first movement creates its warehouse
+    // the same way. A mock that handed out a "Bodega principal" nobody asked
+    // for would hide the one path every real farm walks on its first day.
+    productCategories: [],
+    storageUnits: [],
+    warehouses: [],
+    products: [],
+    stockMoves: [],
+    customers: [],
+    sales: [],
+    expenses: [],
+    labelBatches: [],
   };
 }
 
@@ -453,6 +541,78 @@ export function rateInForce(a: MockActivity, on: string): WireActivityRate | nul
     .filter((r) => dayOf(r.validFrom) <= on)
     .sort((x, y) => x.validFrom.localeCompare(y.validFrom));
   return eligible.length ? eligible[eligible.length - 1] : null;
+}
+
+/* -- existencias, derived, exactly as the view derives them ---------- */
+
+/**
+ * `productCols`'s sub-select: `sum(m.qty)` over every movement of this
+ * product, across every warehouse.
+ *
+ * No filter on `deleted_at`, deliberately — the Go query has none either. A
+ * product taken out of the catalogue keeps whatever is physically on the
+ * shelf, because RSP-021 removes it from the pickers and does not un-harvest
+ * last week's coffee.
+ */
+export function productStock(t: Tenant, productId: string): number {
+  return round3(
+    t.stockMoves.filter((m) => m.productId === productId).reduce((a, m) => a + m.qty, 0),
+  );
+}
+
+/**
+ * The `stock_levels` VIEW, including the part everybody forgets:
+ *
+ *     HAVING SUM(qty) <> 0
+ *
+ * A product that came in and went out again does NOT appear as a zero row. The
+ * screen showing existencias is a list of what is there, and a page of zeroes
+ * for everything the farm ever touched is a page nobody reads.
+ */
+export function stockLevels(t: Tenant, productId?: string, warehouseId?: string): WireStockLevel[] {
+  const byPair = new Map<string, number>();
+  for (const m of t.stockMoves) {
+    if (productId && m.productId !== productId) continue;
+    if (warehouseId && m.warehouseId !== warehouseId) continue;
+    const key = `${m.productId}|${m.warehouseId}`;
+    byPair.set(key, (byPair.get(key) ?? 0) + m.qty);
+  }
+  const out: WireStockLevel[] = [];
+  for (const [key, qty] of byPair) {
+    if (round3(qty) === 0) continue;
+    const [pid, wid] = key.split("|");
+    const product = t.products.find((p) => p.id === pid);
+    const unit = t.storageUnits.find((u) => u.id === product?.storageUnitId);
+    out.push({
+      productId: pid,
+      product: product?.name ?? "",
+      storageUnit: unit?.name ?? "",
+      warehouseId: wid,
+      warehouse: t.warehouses.find((w) => w.id === wid)?.name ?? "",
+      qty: round3(qty),
+    });
+  }
+  return out.sort(
+    (a, b) => a.product.localeCompare(b.product, "es") || a.warehouse.localeCompare(b.warehouse, "es"),
+  );
+}
+
+/** `StockOnHand`: the same sum, asked for the one pair a write is about. */
+export function stockOnHand(t: Tenant, productId: string, warehouseId: string): number {
+  return round3(
+    t.stockMoves
+      .filter((m) => m.productId === productId && m.warehouseId === warehouseId)
+      .reduce((a, m) => a + m.qty, 0),
+  );
+}
+
+/**
+ * `round3` in `stock.go`. The column is `numeric(14,3)`, so a total that came
+ * out of floating-point addition as 59.999999999999996 has to land on 60
+ * before anybody reads it — a warehouse count is compared against a shelf.
+ */
+export function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
 }
 
 /* -- the seed -------------------------------------------------------- */
@@ -629,10 +789,27 @@ export function resetDb(): void {
       id: "0192f3a0-0004-7000-8000-000000000001",
       name: "El Alto",
       areaHa: 4.2,
-      computedAreaHa: null,
+      // A second drawn plot, so the map has a NEIGHBOUR to draw behind the one
+      // being edited. One polygon in the whole seed made the context layer —
+      // the thing that replaces a satellite photo on this screen — impossible
+      // to look at without drawing a second lot by hand first.
+      computedAreaHa: 4.04,
       department: "Caldas",
       municipality: "Manizales",
-      boundary: null,
+      boundary: {
+        type: "MultiPolygon",
+        coordinates: [
+          [
+            [
+              [-75.61047, 4.98554],
+              [-75.60866, 4.98567],
+              [-75.60853, 4.98386],
+              [-75.61034, 4.98373],
+              [-75.61047, 4.98554],
+            ],
+          ],
+        ],
+      },
       createdAt: "2026-01-12T14:00:00Z",
       deletedAt: null,
       crops: [
@@ -693,22 +870,28 @@ export function resetDb(): void {
       areaHa: 6,
       // The only plot with a drawn polygon in the seed, so the "declared vs
       // computed" row of the wireframe has something to show.
-      computedAreaHa: 5.71,
+      // Measured off the ring below with the same authalic sum `lib/geo.ts`
+      // uses, rather than invented. Sprint 1 wrote 5.71 next to a polygon that
+      // actually measures 13.6 ha, which made the seed teach the screen a
+      // relationship the server would never produce.
+      computedAreaHa: 5.69,
       department: "Caldas",
       municipality: "Chinchiná",
-      // The one plot in the seed with a polygon on it, so the map has
-      // something to draw and the "declared vs computed" row has both figures.
-      // GeoJSON, because that is what crosses the wire in both directions —
-      // no PostGIS type ever does.
+      // A MULTIPOLYGON, because that is what comes back. The column is a
+      // MultiPolygon geography and `ST_Multi` promotes whatever is sent, so a
+      // client that stores a Polygon reads a MultiPolygon on the next load —
+      // verified against the running server, not assumed.
       boundary: {
-        type: "Polygon",
+        type: "MultiPolygon",
         coordinates: [
           [
-            [-75.6072, 4.9821],
-            [-75.6039, 4.9824],
-            [-75.6036, 4.9791],
-            [-75.6070, 4.9788],
-            [-75.6072, 4.9821],
+            [
+              [-75.60657, 4.98157],
+              [-75.60444, 4.98176],
+              [-75.60424, 4.97963],
+              [-75.60644, 4.97944],
+              [-75.60657, 4.98157],
+            ],
           ],
         ],
       },
@@ -857,7 +1040,12 @@ export function resetDb(): void {
   const rate = (
     validFrom: string,
     rateCents: number,
-    timeUnit: string | null = null,
+    // Not `string | null`. `contract.assert.ts` caught `wire.ts` widening this
+    // to a bare string, and a bare string is exactly what let the server's
+    // `personalizado` and the interface's `custom` drift apart with nothing
+    // noticing. The seed only ever passes "jornal" and null, so nothing here
+    // changes but the type.
+    timeUnit: WireActivityRate["timeUnit"] = null,
   ): WireActivityRate => ({
     validFrom: dayInstant(validFrom),
     rateCents,
@@ -1277,6 +1465,455 @@ export function resetDb(): void {
     },
   ];
 
+  /* -- productos, bodegas e inventario (RSP-018 … RSP-025) -- */
+
+  /**
+   * The catalogues RSP-019 puts behind an "add it if it is not there" button.
+   *
+   * `storage_units` carries a single `name` and NOT the `code`+`label` pair
+   * `docs/modelo-datos.md` gave it. Migration 00009 says why in as many words:
+   * `work_units` needs two identifiers because it also carries `kg_factor`,
+   * and a factor is what makes one farm's "canasta" comparable with another's.
+   * A storage unit converts to nothing and is only ever shown in a picker.
+   */
+  const productCategories: WireCatalogItem[] = [
+    { id: "0192f3a0-000e-7000-8000-000000000001", name: "Materia prima" },
+    { id: "0192f3a0-000e-7000-8000-000000000002", name: "Producto procesado" },
+  ];
+
+  const storageUnits: WireCatalogItem[] = [
+    { id: "0192f3a0-000f-7000-8000-000000000001", name: "Bulto" },
+    { id: "0192f3a0-000f-7000-8000-000000000002", name: "Kilo" },
+    { id: "0192f3a0-000f-7000-8000-000000000003", name: "Caja" },
+  ];
+
+  const warehouses: WireCatalogItem[] = [
+    { id: "0192f3a0-0010-7000-8000-000000000001", name: "Bodega principal" },
+    { id: "0192f3a0-0010-7000-8000-000000000002", name: "Beneficiadero" },
+  ];
+
+  /**
+   * Not one `stock` field among them. What each product has on the shelf is
+   * `productStock()` over the movements below, and the two are only ever equal
+   * because there is nothing else for them to be.
+   */
+  const products: MockProduct[] = [
+    {
+      id: "0192f3a0-0011-7000-8000-000000000001",
+      name: "Café pergamino seco",
+      categoryId: productCategories[1].id,
+      storageUnitId: storageUnits[0].id,
+      note: "Listo para venta a la cooperativa.",
+      createdAt: "2026-02-01T14:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0011-7000-8000-000000000002",
+      name: "Café cereza",
+      categoryId: productCategories[0].id,
+      storageUnitId: storageUnits[1].id,
+      note: null,
+      createdAt: "2026-02-01T14:01:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0011-7000-8000-000000000003",
+      name: "Abono compuesto",
+      categoryId: productCategories[0].id,
+      storageUnitId: storageUnits[0].id,
+      note: null,
+      createdAt: "2026-02-01T14:02:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0011-7000-8000-000000000004",
+      name: "Fungicida",
+      categoryId: productCategories[0].id,
+      storageUnitId: storageUnits[2].id,
+      note: null,
+      createdAt: "2026-02-01T14:03:00Z",
+      deletedAt: null,
+    },
+    {
+      // Out of the catalogue (RSP-021) and therefore out of the pickers. Its
+      // movements, if it had any, would stay exactly where they are: taking a
+      // product out of service does not un-harvest last week's coffee.
+      id: "0192f3a0-0011-7000-8000-000000000005",
+      name: "Café pasilla",
+      categoryId: productCategories[1].id,
+      storageUnitId: storageUnits[0].id,
+      note: null,
+      createdAt: "2026-02-01T14:04:00Z",
+      deletedAt: "2026-07-15T15:00:00Z",
+    },
+  ];
+
+  const MAIN_STORE = warehouses[0].id;
+  const WET_MILL = warehouses[1].id;
+  const PERGAMINO = products[0].id;
+  const CEREZA = products[1].id;
+  const ABONO = products[2].id;
+  const FUNGICIDA = products[3].id;
+
+  const SALE_ID = "0192f3a0-0014-7000-8000-000000000001";
+  const VOIDED_SALE_ID = "0192f3a0-0014-7000-8000-000000000002";
+
+  /**
+   * A fortnight of the warehouse, as facts.
+   *
+   *   Café cereza     1200 + 860 − 2000  =   60 kg      (Beneficiadero)
+   *   Café pergamino     40 − 12 − 5 + 5 =   28 bultos  (Bodega principal)
+   *   Abono              25 −  8 − 1     =   16 bultos  (Bodega principal)
+   *   Fungicida           6              =    6 cajas   (Bodega principal)
+   *
+   * Those four totals are not written anywhere. They are what
+   * `productStock()` computes from these rows, and the contract test asserts
+   * them against this arithmetic rather than against a constant, so that a
+   * seventh movement added here cannot leave a stale figure behind.
+   *
+   * The signs obey `stock_sign` because Postgres would refuse them otherwise:
+   * cosecha and compra in, consumo and merma out, ajuste free — which is what
+   * lets the reversal of an outgoing movement be positive without lying about
+   * why it exists.
+   */
+  const stockMoves: MockStockMove[] = [
+    {
+      id: "0192f3a0-0012-7000-8000-000000000001",
+      productId: CEREZA,
+      warehouseId: WET_MILL,
+      plotId: plots[0].id,
+      plotCropId: plots[0].crops[0].id,
+      qty: 1200,
+      reason: "cosecha",
+      note: "Pase del 18",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-18"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-18T23:10:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000002",
+      productId: CEREZA,
+      warehouseId: WET_MILL,
+      plotId: plots[1].id,
+      plotCropId: plots[1].crops[0].id,
+      qty: 860,
+      reason: "cosecha",
+      note: null,
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-20"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-20T23:05:00Z",
+    },
+    {
+      // Into the dryer. It leaves as cereza and comes back as pergamino, which
+      // is two movements and not one "conversion": the pair of facts is what a
+      // person can check, and a single row saying "transformed" is not.
+      id: "0192f3a0-0012-7000-8000-000000000003",
+      productId: CEREZA,
+      warehouseId: WET_MILL,
+      plotId: null,
+      plotCropId: null,
+      qty: -2000,
+      reason: "consumo",
+      note: "Al secado",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-21"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-21T22:00:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000004",
+      productId: PERGAMINO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: 40,
+      reason: "cosecha",
+      note: "Salida del secado",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-22"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-22T22:30:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000005",
+      productId: ABONO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: 25,
+      reason: "compra",
+      note: "Factura 4471",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-10"),
+      createdBy: OWNER,
+      createdAt: "2026-08-10T15:00:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000006",
+      productId: ABONO,
+      warehouseId: MAIN_STORE,
+      plotId: plots[0].id,
+      plotCropId: plots[0].crops[0].id,
+      qty: -8,
+      reason: "consumo",
+      note: "Fertilización El Alto",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-14"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-14T16:00:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000007",
+      productId: ABONO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: -1,
+      reason: "merma",
+      note: "Bulto roto en la bodega",
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-15"),
+      createdBy: ADMIN,
+      createdAt: "2026-08-15T16:20:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-000000000008",
+      productId: FUNGICIDA,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: 6,
+      reason: "compra",
+      note: null,
+      workRecordId: null,
+      saleId: null,
+      reversesId: null,
+      localDay: dayInstant("2026-08-05"),
+      createdBy: OWNER,
+      createdAt: "2026-08-05T15:30:00Z",
+    },
+    {
+      // The shadow of a sale. `stock_venta_has_sale` makes a 'venta' movement
+      // without a `saleId` a row Postgres refuses, which is what keeps the
+      // sales list and the warehouse from ever disagreeing.
+      id: "0192f3a0-0012-7000-8000-000000000009",
+      productId: PERGAMINO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: -12,
+      reason: "venta",
+      note: null,
+      workRecordId: null,
+      saleId: SALE_ID,
+      reversesId: null,
+      localDay: dayInstant("2026-08-24"),
+      createdBy: OWNER,
+      createdAt: "2026-08-24T17:00:00Z",
+    },
+    {
+      id: "0192f3a0-0012-7000-8000-00000000000a",
+      productId: PERGAMINO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: -5,
+      reason: "venta",
+      note: null,
+      workRecordId: null,
+      saleId: VOIDED_SALE_ID,
+      reversesId: null,
+      localDay: dayInstant("2026-08-25"),
+      createdBy: OWNER,
+      createdAt: "2026-08-25T17:00:00Z",
+    },
+    {
+      // The void of that sale. `ajuste` is the reason a correction carries —
+      // the only one whose sign is free — and `reversesId` is what says what
+      // it really is. Voiding the sale flagged the row AND put the coffee
+      // back; flagging alone would have left it sold and gone.
+      id: "0192f3a0-0012-7000-8000-00000000000b",
+      productId: PERGAMINO,
+      warehouseId: MAIN_STORE,
+      plotId: null,
+      plotCropId: null,
+      qty: 5,
+      reason: "ajuste",
+      note: "void of sale " + VOIDED_SALE_ID,
+      workRecordId: null,
+      saleId: null,
+      reversesId: "0192f3a0-0012-7000-8000-00000000000a",
+      localDay: dayInstant("2026-08-26"),
+      createdBy: OWNER,
+      createdAt: "2026-08-26T14:00:00Z",
+    },
+  ];
+
+  /** RSP-025: one sticker per bulto, generated and waiting for whatever prints. */
+  const labelBatches: MockLabelBatch[] = [
+    {
+      id: "0192f3a0-0016-7000-8000-000000000001",
+      stockMoveId: "0192f3a0-0012-7000-8000-000000000004",
+      count: 40,
+      printedAt: null,
+      createdAt: "2026-08-22T22:31:00Z",
+    },
+  ];
+
+  /* -- ventas y gastos (RSP-026 … RSP-033) -- */
+
+  const customers: WireCustomer[] = [
+    {
+      id: "0192f3a0-0013-7000-8000-000000000001",
+      name: "Cooperativa de Caficultores de Manizales",
+      documentType: "NIT",
+      docId: "890801167-3",
+      phone: "6068801234",
+      createdAt: "2026-02-01T14:10:00Z",
+      deletedAt: null,
+    },
+  ];
+
+  /**
+   * $1.200.000 the bulto, twelve bultos: $14.400.000. In cents, because a
+   * `double` peso is how you lose a peso per sale and find out in December —
+   * migration 00010 refuses RSP-027's "Valor — double" in as many words.
+   */
+  const sales: MockSale[] = [
+    {
+      id: SALE_ID,
+      productId: PERGAMINO,
+      customerId: customers[0].id,
+      warehouseId: MAIN_STORE,
+      qty: 12,
+      amountCents: 1_440_000_00,
+      receiptId: null,
+      note: "Remisión 1188",
+      localDay: dayInstant("2026-08-24"),
+      createdBy: OWNER,
+      createdAt: "2026-08-24T17:00:00Z",
+      voidedAt: null,
+    },
+    {
+      // Recorded against the wrong buyer and voided the next day. A voided
+      // sale is never restored and never edited (`sales_void_is_final`): the
+      // way back is a new sale, which is why this one is still here.
+      id: VOIDED_SALE_ID,
+      productId: PERGAMINO,
+      customerId: customers[0].id,
+      warehouseId: MAIN_STORE,
+      qty: 5,
+      amountCents: 600_000_00,
+      receiptId: null,
+      note: "Comprador equivocado",
+      localDay: dayInstant("2026-08-25"),
+      createdBy: OWNER,
+      createdAt: "2026-08-25T17:00:00Z",
+      voidedAt: "2026-08-26T14:00:00Z",
+    },
+  ];
+
+  /**
+   * A GASTO IS NOT A DEUDA, and this seed is one of the places that has to
+   * keep saying so. Not one of these rows touches `ledger`, and there is no
+   * `employeeId` to touch it with: an expense is the farm's own accounting,
+   * a debt is a line in one person's file (POST /v1/deductions).
+   *
+   * Exactly one target each — `expense_target` counts
+   * `(activity_id IS NOT NULL) + (COALESCE(plot_id, plot_crop_id) IS NOT NULL)`
+   * and demands 1. The live four total $2.200.000.
+   */
+  const expenses: MockExpense[] = [
+    {
+      id: "0192f3a0-0015-7000-8000-000000000001",
+      concept: "Abono para el lote El Alto",
+      amountCents: 1_250_000_00,
+      localDay: dayInstant("2026-08-14"),
+      activityId: null,
+      plotId: plots[0].id,
+      plotCropId: plots[0].crops[0].id,
+      receiptId: null,
+      note: "Ocho bultos del abono comprado el 10",
+      createdBy: OWNER,
+      createdAt: "2026-08-14T16:05:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0015-7000-8000-000000000002",
+      concept: "Combustible de la guadaña",
+      amountCents: 180_000_00,
+      localDay: dayInstant("2026-08-12"),
+      activityId: activities[1].id,
+      plotId: null,
+      plotCropId: null,
+      receiptId: null,
+      note: null,
+      createdBy: ADMIN,
+      createdAt: "2026-08-12T15:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0015-7000-8000-000000000003",
+      concept: "Reparación de la despulpadora",
+      amountCents: 420_000_00,
+      localDay: dayInstant("2026-08-19"),
+      activityId: null,
+      plotId: plots[2].id,
+      plotCropId: null,
+      receiptId: null,
+      note: null,
+      createdBy: OWNER,
+      createdAt: "2026-08-19T18:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0015-7000-8000-000000000004",
+      concept: "Análisis de suelos",
+      amountCents: 350_000_00,
+      localDay: dayInstant("2026-08-08"),
+      activityId: activities[2].id,
+      plotId: null,
+      plotCropId: null,
+      receiptId: null,
+      note: null,
+      createdBy: OWNER,
+      createdAt: "2026-08-08T14:00:00Z",
+      deletedAt: null,
+    },
+    {
+      // Out of service (RSP-033), so the "Inactivos" filter has something and
+      // the total below has one row it must NOT count.
+      id: "0192f3a0-0015-7000-8000-000000000005",
+      concept: "Alquiler de motobomba",
+      amountCents: 95_000_00,
+      localDay: dayInstant("2026-07-30"),
+      activityId: activities[3].id,
+      plotId: null,
+      plotCropId: null,
+      receiptId: null,
+      note: "Registrado dos veces por error",
+      createdBy: ADMIN,
+      createdAt: "2026-07-30T15:00:00Z",
+      deletedAt: "2026-07-31T13:00:00Z",
+    },
+  ];
+
   tenants.set(FARM_ID, {
     farmId: FARM_ID,
     workUnits,
@@ -1291,6 +1928,15 @@ export function resetDb(): void {
     ledger,
     settlements,
     notes,
+    productCategories,
+    storageUnits,
+    warehouses,
+    products,
+    stockMoves,
+    customers,
+    sales,
+    expenses,
+    labelBatches,
   });
 }
 

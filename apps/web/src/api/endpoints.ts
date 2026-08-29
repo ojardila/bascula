@@ -57,7 +57,14 @@ import {
   toMeUser,
   toNote,
   toPayables,
+  toCustomer,
+  toExpense,
+  toLabelBatch,
   toPlot,
+  toProduct,
+  toSale,
+  toStockLevel,
+  toStockMove,
   toWeekPrice,
   toWorkRecord,
   toWorker,
@@ -80,8 +87,23 @@ import type {
   Payables,
   Payment,
   PaymentInput,
+  BoundaryResult,
+  Customer,
+  Expense,
+  ExpenseInput,
+  ExpenseList,
+  SaleList,
+  LabelBatch,
   Plot,
   PlotInput,
+  Product,
+  ProductInput,
+  Sale,
+  SaleInput,
+  StockLevel,
+  StockMove,
+  StockMoveInput,
+  StockReason,
   Session,
   SignupRequest,
   SignupResponse,
@@ -106,7 +128,15 @@ import type {
   WireMe,
   WireNote,
   WirePayables,
+  WireBoundaryResult,
+  WireCustomer,
+  WireExpense,
+  WireLabelBatch,
   WirePlot,
+  WireProduct,
+  WireSale,
+  WireStockLevel,
+  WireStockMove,
   WireSession,
   WireSettlement,
   WireSignupResponse,
@@ -362,6 +392,15 @@ export const api = {
   getPlot: async (id: Uuid): Promise<Plot> =>
     toPlot(await http.get<WirePlot>(`/v1/plots/${id}`)),
 
+  /**
+   * The plot, its crops and the shape drawn on the map, in one write.
+   *
+   * `handleCreatePlot` stores a `boundary` sent here rather than dropping it,
+   * so the new-plot form does not have to make a second call that could fail
+   * on its own and leave a lot with no polygon and no explanation. The
+   * dedicated PUT stays for the edit screen, where the point of the call is
+   * the overlap list that only it returns.
+   */
   createPlot: async (body: PlotInput): Promise<Plot> => {
     const created = await http.post<WirePlot>("/v1/plots", plotToWire(body));
     invalidateRefs();
@@ -377,6 +416,10 @@ export const api = {
       areaHa: body.areaHa,
       department: body.department,
       municipality: body.municipality,
+      // Absent unless the form actually redrew it: `hasBoundary` treats null
+      // as "not sent", so an edit that never opened the map cannot wipe a
+      // polygon somebody spent ten minutes on.
+      ...(body.boundary ? { boundary: body.boundary } : {}),
     });
     invalidateRefs();
     return toPlot(updated);
@@ -401,12 +444,31 @@ export const api = {
 
   /**
    * Store the polygon the owner drew. GeoJSON in, GeoJSON out — no PostGIS
-   * type ever crosses the wire. The response carries both hectare figures and
-   * any plots this one now overlaps; an overlap is a warning, never a refusal.
+   * type ever crosses the wire.
+   *
+   * THE RESPONSE IS NOT A PLOT. `handleSetPlotBoundary` answers
+   * `{plot, overlaps}`, and this function used to read it as if it were the
+   * plot itself: every field came back undefined and the recomputed hectares —
+   * the one figure the whole call exists to fetch — silently became null. It
+   * was never caught because nothing called it: the map was a placeholder
+   * until this sprint, so the only consumer of this line was the type
+   * annotation that made it look right.
+   *
+   * `overlaps` is a WARNING and never a refusal. Two plots that touch on the
+   * map are usually a drawing worth a second look and sometimes a terrace
+   * above a coffee lot, and the server does not get to decide which — so it
+   * comes back beside the plot and the screen says so without blocking.
+   *
+   * `plot.crops` arrives EMPTY: the UPDATE returns the plot's own columns and
+   * the handler does not re-join what is planted in it. Callers holding a
+   * fuller plot should keep their crops rather than take these.
    */
-  setPlotBoundary: async (id: Uuid, boundary: unknown): Promise<Plot> => {
-    const p = await http.put<WirePlot>(`/v1/plots/${id}/boundary`, { boundary });
-    return toPlot(p);
+  setPlotBoundary: async (id: Uuid, boundary: unknown): Promise<BoundaryResult> => {
+    const res = await http.put<WireBoundaryResult>(`/v1/plots/${id}/boundary`, { boundary });
+    return {
+      plot: toPlot(res.plot),
+      overlaps: (res.overlaps ?? []).map((o) => ({ id: o.id, name: o.name })),
+    };
   },
 
   /* -- workers ------------------------------------------------------- */
@@ -775,6 +837,374 @@ export const api = {
       await http.post<WireLedgerEntry>(`/v1/ledger/${id}/reverse`, { note: reason }),
     ),
 
+  /* -- products and inventory (RSP-018 … RSP-025) -------------------- */
+
+  /**
+   * EXISTENCIAS ARE DERIVED, so there is no `updateStock` on this object and
+   * there is no field on `ProductInput` that carries a quantity. The only way
+   * a number moves is `createStockMove`, which appends a fact. Anybody looking
+   * for the missing "set the stock to 40" function: it is missing on purpose,
+   * and `docs/modelo-datos.md` says why — "un stock materializado es un total
+   * que se desincroniza de sus hechos".
+   */
+  listProducts: async (params?: {
+    q?: string;
+    status?: string;
+    categoryId?: Uuid;
+  }): Promise<Product[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireProduct>>("/v1/products", {
+          query: {
+            q: params?.q,
+            status: statusParam(params?.status),
+            categoryId: params?.categoryId,
+          },
+        }),
+        "inventario",
+      ),
+    ).map(toProduct),
+
+  getProduct: async (id: Uuid): Promise<Product> =>
+    toProduct(await http.get<WireProduct>(`/v1/products/${id}`)),
+
+  createProduct: async (body: ProductInput): Promise<Product> =>
+    toProduct(await http.post<WireProduct>("/v1/products", productToWire(body))),
+
+  updateProduct: async (id: Uuid, body: Partial<ProductInput>): Promise<Product> =>
+    toProduct(
+      await http.patch<WireProduct>(`/v1/products/${id}`, productToWire(body as ProductInput)),
+    ),
+
+  deactivateProduct: async (id: Uuid): Promise<Product> =>
+    toProduct(await http.patch<WireProduct>(`/v1/products/${id}`, { status: "inactive" })),
+
+  reactivateProduct: async (id: Uuid): Promise<Product> =>
+    toProduct(await http.patch<WireProduct>(`/v1/products/${id}`, { status: "active" })),
+
+  /** Bodegas, categorías de producto y unidades de almacenamiento. */
+  warehouses: async (): Promise<CatalogItem[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireCatalogItem>>("/v1/warehouses"),
+        "inventario",
+      ),
+    ).map(toCatalogItem),
+
+  createWarehouse: async (name: string): Promise<CatalogItem> =>
+    toCatalogItem(
+      await http.post<WireCatalogItem>("/v1/warehouses", { id: uuidv7(), name }),
+    ),
+
+  productCategories: async (): Promise<CatalogItem[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireCatalogItem>>("/v1/catalogs/product-categories"),
+        "inventario",
+      ),
+    ).map(toCatalogItem),
+
+  createProductCategory: async (name: string): Promise<CatalogItem> =>
+    toCatalogItem(
+      await http.post<WireCatalogItem>("/v1/catalogs/product-categories", {
+        id: uuidv7(),
+        name,
+      }),
+    ),
+
+  storageUnits: async (): Promise<CatalogItem[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireCatalogItem>>("/v1/catalogs/storage-units"),
+        "inventario",
+      ),
+    ).map(toCatalogItem),
+
+  createStorageUnit: async (name: string): Promise<CatalogItem> =>
+    toCatalogItem(
+      await http.post<WireCatalogItem>("/v1/catalogs/storage-units", { id: uuidv7(), name }),
+    ),
+
+  /**
+   * The derived levels: one line per product per warehouse, and their total.
+   *
+   * Lines that net to zero are ABSENT rather than present as a zero — the view
+   * has a `HAVING sum(qty) <> 0` — so a screen must read "not in the list" as
+   * "none left" and never as "no such product".
+   */
+  stockLevels: async (params?: {
+    productId?: Uuid;
+    warehouseId?: Uuid;
+  }): Promise<StockLevel[]> => {
+    const res = await routeMayBeMissing(
+      http.get<{ items: WireStockLevel[]; total: number }>("/v1/stock", {
+        query: { productId: params?.productId, warehouseId: params?.warehouseId },
+      }),
+      "inventario",
+    );
+    return (res?.items ?? []).map(toStockLevel);
+  },
+
+  // NOT WRAPPED: `GET /v1/products/{id}/stock` exists and is the sharper form
+  // of this — one product, confirmed to be ours, 404 instead of a credible
+  // zero. Nothing calls it, because the movement dialog already holds the full
+  // level list it loaded for the table, so a second round trip would buy only
+  // freshness. The day the dialog needs that freshness, that is the route.
+
+  listStockMoves: async (params?: {
+    productId?: Uuid;
+    warehouseId?: Uuid;
+    reason?: StockReason;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }): Promise<StockMove[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireStockMove>>("/v1/stock/moves", {
+          query: {
+            productId: params?.productId,
+            warehouseId: params?.warehouseId,
+            reason: params?.reason,
+            from: params?.from,
+            to: params?.to,
+            limit: params?.limit ? String(params.limit) : undefined,
+          },
+        }),
+        "inventario",
+      ),
+    ).map(toStockMove),
+
+  /**
+   * The one write that changes what the warehouse holds.
+   *
+   * `qty` arrives SIGNED and the sign has to agree with the reason —
+   * `stock_sign` in the database refuses the pair otherwise, so "a sale that
+   * increased the stock" is not a state this system can reach. The form works
+   * in positive numbers and calls `signedQty` on the way here, because asking
+   * a storekeeper to type a minus sign is asking for the one day they forget.
+   */
+  createStockMove: async (
+    body: StockMoveInput,
+  ): Promise<{ move: StockMove; labelBatch: LabelBatch | null }> => {
+    const res = await http.post<{ move: WireStockMove; labelBatch?: WireLabelBatch }>(
+      "/v1/stock/moves",
+      {
+        id: body.id,
+        productId: body.productId,
+        warehouseId: body.warehouseId,
+        plotId: body.plotId ?? null,
+        plotCropId: body.plotCropId ?? null,
+        qty: body.qty,
+        reason: body.reason,
+        note: body.note ?? null,
+        // RFC 3339, NOT the plain day `openapi.yaml` promises.
+        //
+        // The spec says `localDay: {type: string, format: date}` on every one
+        // of these three input schemas. The handlers decode into
+        // `store.NewStockMove`, whose `LocalDay` is a `*time.Time`, and Go
+        // will not parse "2026-08-29" into one: the answer is a 400
+        // "malformed request body" that names no field, which is the single
+        // most confusing failure this integration produces. Verified against
+        // the running server, not inferred — see `instantOf`, which exists
+        // because `plantedOn` did exactly this in Sprint 2.
+        //
+        // Absent means "today in the farm's timezone", which the DATABASE
+        // decides — not this browser, whose clock may be anywhere.
+        ...(body.date ? { localDay: instantOf(body.date) } : {}),
+        // RSP-025's stickers, asked for with the movement rather than in a
+        // second call: the server generates the batch and prints nothing.
+        ...(body.labels ? { labels: body.labels } : {}),
+        ...(body.allowNegative ? { allowNegative: true } : {}),
+      },
+    );
+    // The 200-on-retry answers a bare movement; the 201 answers the envelope.
+    const wire = (res as { move?: WireStockMove }).move ?? (res as unknown as WireStockMove);
+    return {
+      move: toStockMove(wire),
+      labelBatch: res?.labelBatch ? toLabelBatch(res.labelBatch) : null,
+    };
+  },
+
+  /**
+   * The only way back through an append-only table: a second movement that is
+   * the exact opposite of the first, once. `reason` is `ajuste` because that
+   * is the only one whose sign is free; `reversesId` is what says what it
+   * really is. A second attempt is 409 ALREADY_REVERSED.
+   */
+  reverseStockMove: async (id: Uuid, note: string): Promise<StockMove> =>
+    toStockMove(await http.post<WireStockMove>(`/v1/stock/moves/${id}/reverse`, { note })),
+
+  /**
+   * Read a batch that already exists, rather than making another one.
+   *
+   * Reprinting is a GET. A screen that made a fresh batch every time somebody
+   * clicked "ver stickers" would put a different code on the second sheet of
+   * labels for the same sacks, which is exactly the thing the codes exist to
+   * prevent.
+   */
+  getLabelBatch: async (id: Uuid): Promise<LabelBatch> =>
+    toLabelBatch(await http.get<WireLabelBatch>(`/v1/label-batches/${id}`)),
+
+  /* -- sales (RSP-026 … RSP-029) ------------------------------------- */
+
+  /**
+   * `status` and not an `includeVoided` flag.
+   *
+   * The column here is `voided_at` and not `deleted_at`, so an
+   * `includeVoided` parameter looked like the honest name — until
+   * `store.SaleFilter` turned out to embed the same `Filter` as every other
+   * list route, for the reason its comment gives: on the screen it is the same
+   * three chips. One vocabulary for "activo / inactivo / todos" across nine
+   * list routes is worth more than a parameter named after the column.
+   */
+  listSales: async (params?: {
+    q?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    productId?: Uuid;
+    customerId?: Uuid;
+  }): Promise<SaleList> => {
+    const res = await routeMayBeMissing(
+      http.get<{ items: WireSale[]; totalCents: number; totalQty: number }>("/v1/sales", {
+        query: {
+          q: params?.q,
+          status: statusParam(params?.status),
+          from: params?.from,
+          to: params?.to,
+          productId: params?.productId,
+          customerId: params?.customerId,
+        },
+      }),
+      "ventas",
+    );
+    return {
+      items: (res?.items ?? []).map(toSale),
+      // The server's own sum over the LIVE sales. Adding the rows up here
+      // would total whatever happened to load.
+      totalCents: res?.totalCents ?? 0,
+      totalQty: res?.totalQty ?? 0,
+    };
+  },
+
+  /**
+   * A sale and its outgoing movement are ONE write. Splitting them would let
+   * the sales list and the warehouse disagree with no third record to say
+   * which is right.
+   */
+  createSale: async (body: SaleInput): Promise<Sale> =>
+    toSale(
+      await http.post<WireSale>("/v1/sales", {
+        id: body.id,
+        productId: body.productId,
+        customerId: body.customerId ?? null,
+        customer: body.customerName,
+        warehouseId: body.warehouseId,
+        qty: body.quantity,
+        amountCents: body.amountCents,
+        note: body.note ?? null,
+        // RFC 3339, not the plain day the spec promises. See createStockMove.
+        localDay: instantOf(body.date),
+        allowNegativeStock: body.allowNegativeStock ?? false,
+      }),
+    ),
+
+  /**
+   * RSP-028, minus the quantity. That number is half of a movement that is
+   * already written and append-only; changing it here would leave the
+   * warehouse claiming one figure and the sales list another. The server
+   * answers 400 SALE_QTY_IMMUTABLE and this signature does not offer it.
+   */
+  updateSale: async (
+    id: Uuid,
+    body: { customerId?: Uuid | null; amountCents?: number; note?: string | null; date?: string },
+  ): Promise<Sale> =>
+    toSale(
+      await http.patch<WireSale>(`/v1/sales/${id}`, {
+        customerId: body.customerId,
+        amountCents: body.amountCents,
+        note: body.note,
+        localDay: body.date ? instantOf(body.date) : undefined,
+      }),
+    ),
+
+  /**
+   * RSP-029, and it is a DELETE.
+   *
+   * "Eliminar deja la venta inactiva" done honestly: the row is flagged AND
+   * the product comes back into the warehouse as a reversing movement, in the
+   * same transaction. Flagging alone would leave the coffee sold in one list
+   * and gone from the other forever.
+   *
+   * There is no way back. The movement it reversed can be reversed only once,
+   * so undoing the undo is not something the database can express — record a
+   * new sale instead. That is why this is the one screen in the console whose
+   * row menu has no "Reactivar".
+   */
+  voidSale: async (id: Uuid): Promise<Sale> =>
+    toSale(await http.del<WireSale>(`/v1/sales/${id}`)),
+
+  listCustomers: async (params?: { q?: string }): Promise<Customer[]> =>
+    items(
+      await routeMayBeMissing(
+        http.get<WireList<WireCustomer>>("/v1/customers", { query: { q: params?.q } }),
+        "ventas",
+      ),
+    ).map(toCustomer),
+
+  createCustomer: async (name: string): Promise<Customer> =>
+    toCustomer(await http.post<WireCustomer>("/v1/customers", { id: uuidv7(), name })),
+
+  /* -- expenses (RSP-030 … RSP-033) ---------------------------------- */
+
+  /**
+   * The list comes back with its own total, because the screen shows one and a
+   * total summed in the browser would only be the total of the page that
+   * happened to load.
+   */
+  listExpenses: async (params?: {
+    q?: string;
+    status?: string;
+    activityId?: Uuid;
+    plotId?: Uuid;
+    from?: string;
+    to?: string;
+  }): Promise<ExpenseList> => {
+    const res = await routeMayBeMissing(
+      http.get<{ items: WireExpense[]; totalCents: number; count: number }>("/v1/expenses", {
+        query: {
+          q: params?.q,
+          status: statusParam(params?.status),
+          activityId: params?.activityId,
+          plotId: params?.plotId,
+          from: params?.from,
+          to: params?.to,
+        },
+      }),
+      "gastos",
+    );
+    return {
+      items: (res?.items ?? []).map(toExpense),
+      // `count` and `totalCents` sit at the TOP of the envelope, beside
+      // `items`, and not under a `totals` object.
+      count: res?.count ?? 0,
+      totalCents: res?.totalCents ?? 0,
+    };
+  },
+
+  createExpense: async (body: ExpenseInput): Promise<Expense> =>
+    toExpense(await http.post<WireExpense>("/v1/expenses", expenseToWire(body))),
+
+  updateExpense: async (id: Uuid, body: ExpenseInput): Promise<Expense> =>
+    toExpense(await http.patch<WireExpense>(`/v1/expenses/${id}`, expenseToWire(body))),
+
+  deactivateExpense: async (id: Uuid): Promise<Expense> =>
+    toExpense(await http.patch<WireExpense>(`/v1/expenses/${id}`, { status: "inactive" })),
+
+  reactivateExpense: async (id: Uuid): Promise<Expense> =>
+    toExpense(await http.patch<WireExpense>(`/v1/expenses/${id}`, { status: "active" })),
+
   /* -- super-admin --------------------------------------------------- */
 
   /**
@@ -835,6 +1265,84 @@ function workerToWire(body: Partial<WorkerInput>): Record<string, unknown> {
   return out;
 }
 
+
+/**
+ * A 404 on a COLLECTION route means the route is not there, not that a record
+ * is missing.
+ *
+ * `services/api` is growing the products, sales and expenses handlers while
+ * this is being written: the store layer and the migrations are in, the HTTP
+ * routes are not, and `openapi.yaml` does not list them yet. Against the mock
+ * everything answers; against a real server that has not caught up, a bare
+ * `GET /v1/products` comes back as chi's 404 and the screen would say "no
+ * encontramos ese registro", which sends whoever is looking at it hunting for
+ * a product that was never created.
+ *
+ * The rule is only safe on collections, and that is why it is applied by hand
+ * at each call site rather than in the client: `GET /v1/products/{id}` has a
+ * perfectly good reason to answer 404 and must keep saying so.
+ *
+ * Nothing has to be flipped when the routes land. The day they answer, this
+ * stops firing.
+ */
+async function routeMayBeMissing<T>(call: Promise<T>, module: string): Promise<T> {
+  try {
+    return await call;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      throw unsupported(
+        "NOT_IMPLEMENTED_MODULE",
+        `El servidor todavía no tiene el módulo de ${module}.`,
+      );
+    }
+    throw e;
+  }
+}
+
+function productToWire(body: ProductInput): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (body.id) out.id = body.id;
+  if (body.name !== undefined) out.name = body.name;
+  // Id OR name. `resolveCatalog` creates the row when only a name arrived,
+  // which is the "con opción de crear" of RSP-019, and it is idempotent by
+  // lower(name) so the catalogue cannot collect five "Bulto".
+  if (body.categoryId) out.categoryId = body.categoryId;
+  else if (body.categoryName) out.category = body.categoryName;
+  if (body.storageUnitId) out.storageUnitId = body.storageUnitId;
+  else if (body.storageUnit) out.storageUnit = body.storageUnit;
+  if (body.note !== undefined) out.note = body.note || null;
+  return out;
+}
+
+/**
+ * The union collapses to the wire's four nullable columns here, and this is
+ * the ONLY place it does.
+ *
+ * `expense_target` refuses a row with both targets or neither, so the fields
+ * not named by `target` are sent as explicit nulls rather than omitted: on a
+ * PATCH that moves an expense from an activity to a lot, an omitted
+ * `activityId` would COALESCE back to the old one and the update would arrive
+ * at the database charged to both.
+ */
+function expenseToWire(body: ExpenseInput): Record<string, unknown> {
+  const common = {
+    id: body.id,
+    concept: body.concept,
+    amountCents: body.amountCents,
+    // RFC 3339, not the plain day the spec promises. See createStockMove.
+    localDay: instantOf(body.date),
+    note: body.note ?? null,
+  };
+  return body.target === "activity"
+    ? { ...common, activityId: body.activityId, plotId: null, plotCropId: null }
+    : {
+        ...common,
+        activityId: null,
+        plotId: body.plotId,
+        plotCropId: body.plotCropId ?? null,
+      };
+}
+
 function plotToWire(body: PlotInput): Record<string, unknown> {
   return {
     id: body.id,
@@ -842,6 +1350,7 @@ function plotToWire(body: PlotInput): Record<string, unknown> {
     areaHa: body.areaHa,
     department: body.department || null,
     municipality: body.municipality || null,
+    ...(body.boundary ? { boundary: body.boundary } : {}),
     crops: (body.crops ?? []).map((c) => ({
       id: c.id,
       cropTypeId: c.cropTypeId,

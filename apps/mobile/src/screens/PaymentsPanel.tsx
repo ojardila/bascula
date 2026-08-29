@@ -158,7 +158,14 @@ export default function PaymentsPanel() {
         // Recorded before attempting the payment: settle() has already
         // committed, so if pay() throws the settlement must still be undoable.
         settlements.push(res.settlementId);
-        payments.push(Payments.pay(r.personId, owed, { method: "efectivo" }));
+        // Linked to the document it settles (`movil.md` §9.3), so the receipt
+        // is a lookup rather than a guess over dates.
+        payments.push(
+          Payments.pay(r.personId, owed, {
+            method: "efectivo",
+            settlementId: res.settlementId,
+          }),
+        );
         done++;
       } catch {
         failed++; // skip this worker, keep the rest of the payroll going

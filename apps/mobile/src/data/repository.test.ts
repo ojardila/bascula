@@ -7,6 +7,7 @@ import {
   createSqliteRepository,
 } from "./sqliteRepository.ts";
 import type { Repository } from "./repository.ts";
+import { isUuidV7, uuidV7Time } from "../../../../packages/shared/src/uuid.ts";
 
 /**
  * The data layer, driven through the real implementation.
@@ -66,7 +67,7 @@ beforeEach(() => {
 
 test("a fresh database comes up at the current schema version", () => {
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 5);
+  assert.equal(v.user_version, 6);
   assert.deepEqual({ ...repo.config.get() }, {
     cropType: "cafe",
     label: "Café",
@@ -92,12 +93,20 @@ test("starting up twice changes nothing — every launch runs this", () => {
   const person = aWorker();
   aPlot();
   repo.pickups.add({ personId: person, cropId: 1, weight: 40, date: at(2) });
+  const before = raw.prepare("SELECT uuid FROM pickups WHERE id = 1").get() as {
+    uuid: string;
+  };
   repo.init();
   repo.init();
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 5);
+  assert.equal(v.user_version, 6);
   assert.equal(repo.reports.totals()?.pickups, 1);
   assert.equal(repo.config.get()?.label, "Café");
+  // A re-run must not re-mint an identity the server may already know.
+  assert.deepEqual(
+    raw.prepare("SELECT uuid FROM pickups WHERE id = 1").get(),
+    before,
+  );
 });
 
 test("a database from the first release migrates all the way up", () => {
@@ -124,11 +133,18 @@ test("a database from the first release migrates all the way up", () => {
   upgraded.init();
 
   const v = old.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 5);
+  assert.equal(v.user_version, 6);
   assert.equal(upgraded.reports.totals()?.pickups, 1, "the season survives");
   assert.equal(upgraded.people.all().length, 1, "deletedAt was added, not reset");
   // The payments half now exists and works.
   assert.equal(upgraded.payments.balance(1).balanceCents, 0);
+  // ...and five versions later the row that was there from the first release
+  // has an identity, dated at the weighing rather than at the upgrade.
+  const pk = old.prepare("SELECT uuid FROM pickups WHERE id = 1").get() as {
+    uuid: string;
+  };
+  assert.ok(isUuidV7(pk.uuid));
+  assert.equal(uuidV7Time(pk.uuid), Date.parse("2026-08-25T14:00:00Z"));
 });
 
 test("two legacy labels for the same week collapse instead of crashing the app", () => {
@@ -639,4 +655,99 @@ test("the CSV export is the season, and it survives being asked for", () => {
   assert.equal(repo.export.pickups().length, 1);
   assert.equal(repo.export.ledger().length, 2);
   assert.equal(repo.export.balances().length, 1);
+});
+
+// ---- What a receipt says was handed over (movil.md §9.3) ----------------
+
+test("a receipt counts the payments made against ITS settlement, not the ones before", () => {
+  // The shape `movil.md` §9.3 describes, and it is not exotic: weeks run
+  // behind, so a settlement's `periodStart` is the Monday of the oldest
+  // UNSETTLED week, which can be months back. The receipt then filtered
+  // payments by `date >= periodStart` and swept in money handed over for
+  // documents that were closed long before.
+  const person = aWorker();
+  const plot = aPlot();
+  const weeksBack = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n * 7);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  };
+
+  repo.pickups.add({ personId: person, cropId: plot, weight: 100, date: weeksBack(8) });
+  repo.pickups.add({ personId: person, cropId: plot, weight: 50, date: weeksBack(0) });
+
+  const first = settleAll(person)!;
+  repo.payments.pay(person, 40000, { method: "efectivo", settlementId: first.settlementId });
+
+  // A load from that same old week turns up late — golden case 09's shape. It
+  // rolls into a NEW settlement whose period still starts eight weeks back.
+  repo.pickups.add({ personId: person, cropId: plot, weight: 10, date: weeksBack(8) });
+  const second = settleAll(person)!;
+  repo.payments.pay(person, 10000, { method: "efectivo", settlementId: second.settlementId });
+
+  const s2 = repo.payments.settlements(person)[0]!;
+  assert.equal(s2.id, second.settlementId);
+  // The old rule, spelled out, so the test says what it is protecting against.
+  const byTheOldGuess = repo.payments
+    .history(person)
+    .filter((r) => r.kind === "pago" && r.date >= s2.periodStart)
+    .reduce((sum, r) => sum + Math.abs(r.amountCents), 0);
+  assert.equal(byTheOldGuess, 50000, "the guess still overstates, as it always did");
+
+  assert.equal(repo.payments.paidAgainst(second.settlementId), 10000);
+  assert.equal(repo.payments.paidAgainst(first.settlementId), 40000);
+});
+
+test("a payment written before the link existed is still attributed by date", () => {
+  // Phones in the field are carrying payments with `settlementId` null. They
+  // cannot be re-linked — nothing records what they were for — so the date
+  // guess stays as the fallback, and only as the fallback.
+  const person = aWorker();
+  const plot = aPlot();
+  const day = new Date();
+  day.setDate(day.getDate() - 2);
+  repo.pickups.add({ personId: person, cropId: plot, weight: 100, date: day.toISOString() });
+  const s = settleAll(person)!;
+  // Exactly what the old screens wrote.
+  repo.payments.pay(person, 30000, { method: "efectivo" });
+
+  assert.equal(repo.payments.paidAgainst(s.settlementId), 30000);
+});
+
+test("an unlinked payment predating the settlement is not counted into it", () => {
+  // The narrowing the fix buys even for old rows: a payment can only be
+  // against a document that already existed when it was made. The old rule
+  // compared against `periodStart`, which is the start of the WORK, not of the
+  // document, and that is the whole of §9.3.
+  const person = aWorker();
+  const plot = aPlot();
+  const old = new Date();
+  old.setDate(old.getDate() - 40);
+  repo.pickups.add({ personId: person, cropId: plot, weight: 100, date: old.toISOString() });
+
+  // An advance handed over 40 days ago, recorded as a payment by an old build.
+  repo.payments.pay(person, 5000, { method: "efectivo", date: "2000-01-01" });
+
+  const s = settleAll(person)!;
+  assert.equal(
+    repo.payments.paidAgainst(s.settlementId),
+    0,
+    "money handed over before the document existed was not paid against it",
+  );
+});
+
+test("paidAgainst does not reach across workers", () => {
+  const ana = aWorker("Ana");
+  const juan = aWorker("Juan");
+  const plot = aPlot();
+  const day = new Date();
+  day.setDate(day.getDate() - 2);
+  repo.pickups.add({ personId: ana, cropId: plot, weight: 100, date: day.toISOString() });
+  repo.pickups.add({ personId: juan, cropId: plot, weight: 100, date: day.toISOString() });
+  const sa = settleAll(ana)!;
+  settleAll(juan);
+  repo.payments.pay(juan, 70000, { method: "efectivo" });
+
+  assert.equal(repo.payments.paidAgainst(sa.settlementId), 0);
 });

@@ -14,10 +14,16 @@ import {
   type ExpectedPickup,
   type ExpectedSettlement,
 } from "./runner.ts";
-import { DAY_OF, WEEK_OF } from "../../../apps/mobile/src/schema.ts";
+import {
+  BASE_SCHEMA,
+  DAY_OF,
+  PAYMENTS_SCHEMA,
+  WEEK_OF,
+} from "../../../apps/mobile/src/schema.ts";
 import { nodeSqlite } from "../../../apps/mobile/src/data/nodeSqlite.ts";
 import { createSqliteRepository } from "../../../apps/mobile/src/data/sqliteRepository.ts";
 import { fromCents } from "../src/money.ts";
+import { isUuidV7 } from "../src/uuid.ts";
 
 /**
  * The same nine cases, replayed through the phone's REAL data layer.
@@ -35,7 +41,42 @@ import { fromCents } from "../src/money.ts";
  *
  * If this file and `golden.test.ts` ever disagree, the fixtures are describing
  * something the phone does not do, and Go is being held to the wrong contract.
+ *
+ * Every case is replayed twice: once on a database born at the current schema
+ * version, and once on a phone that was carrying a season at `user_version = 5`
+ * and upgraded. A migration that adds a column to `ledger`, `settlements` and
+ * `settlement_items` is a migration standing between the farm and its money,
+ * and "the tests passed on a fresh install" is not an answer to that.
  */
+
+/**
+ * A phone as it shipped at version 5, with this case's people and plots
+ * already on it — which is what a farm actually has when the upgrade lands.
+ * Only the tables that exist before a harvest starts; the weighings and the
+ * money have to be written *after* the migration, because several cases turn
+ * on the order a pickup arrives in relative to a settlement.
+ */
+function seedAtV5(db: DatabaseSync, c: GoldenCase): void {
+  // The v5 shape is today's base and payments schemas — version 6 only ADDS
+  // columns, by ALTER — plus the three columns earlier migrations bolted on.
+  db.exec(BASE_SCHEMA.replace("PRAGMA journal_mode = WAL;", ""));
+  db.exec(PAYMENTS_SCHEMA);
+  db.exec(`
+    ALTER TABLE people ADD COLUMN image TEXT;
+    ALTER TABLE people ADD COLUMN deletedAt TEXT;
+    ALTER TABLE crops ADD COLUMN deletedAt TEXT;
+    ALTER TABLE config ADD COLUMN language TEXT;
+    PRAGMA user_version = 5;
+  `);
+  for (const p of c.people)
+    db.prepare(
+      "INSERT INTO people (id,name,lastName,createdAt) VALUES (?,?,?,'2026-01-05T12:00:00.000Z')",
+    ).run(p.id, p.name, p.lastName);
+  for (const cr of c.crops)
+    db.prepare(
+      "INSERT INTO crops (id,name,createdAt) VALUES (?,?,'2026-01-05T12:00:00.000Z')",
+    ).run(cr.id, cr.name);
+}
 
 /** Midday local on a business date: `localDayOf` of it is that date anywhere. */
 function noonOf(day: string): Date {
@@ -43,8 +84,12 @@ function noonOf(day: string): Date {
   return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
 
-function replay(c: GoldenCase): GoldenExpectation {
+function replay(c: GoldenCase, from: "fresh" | "v5" = "fresh"): GoldenExpectation {
   const db = new DatabaseSync(":memory:");
+  // The upgrade path: a version-5 phone with its crew already on it. `init`
+  // below performs the real migration before a single peso is calculated.
+  if (from === "v5") seedAtV5(db, c);
+
   let clock = noonOf("2000-01-01");
   const repo = createSqliteRepository(nodeSqlite(db), { clock: () => clock });
   repo.init();
@@ -57,14 +102,16 @@ function replay(c: GoldenCase): GoldenExpectation {
   db.prepare("INSERT INTO config (id, costPerUnit) VALUES (1, ?)").run(
     generalPesos,
   );
-  for (const p of c.people)
-    db.prepare("INSERT INTO people (id,name,lastName) VALUES (?,?,?)").run(
-      p.id,
-      p.name,
-      p.lastName,
-    );
-  for (const cr of c.crops)
-    db.prepare("INSERT INTO crops (id,name) VALUES (?,?)").run(cr.id, cr.name);
+  if (from === "fresh") {
+    for (const p of c.people)
+      db.prepare("INSERT INTO people (id,name,lastName) VALUES (?,?,?)").run(
+        p.id,
+        p.name,
+        p.lastName,
+      );
+    for (const cr of c.crops)
+      db.prepare("INSERT INTO crops (id,name) VALUES (?,?)").run(cr.id, cr.name);
+  }
   for (const [week, cents] of Object.entries(c.weeklyRateCents ?? {}))
     repo.overrides.set(week, fromCents(cents));
 
@@ -173,6 +220,21 @@ function replay(c: GoldenCase): GoldenExpectation {
 
   if (c.expect.checkpoints) actual.checkpoints = checkpoints;
 
+  // Whatever else the case proves, every row the real code wrote has to have
+  // come out with an identity: a settlement or a ledger entry the server can
+  // never be told about is money that exists on one device only.
+  for (const t of ["settlements", "settlement_items", "ledger"]) {
+    const ids = db
+      .prepare(`SELECT uuid FROM ${t} ORDER BY id`)
+      .all() as unknown as { uuid: string | null }[];
+    for (const r of ids)
+      assert.ok(isUuidV7(r.uuid), `${c.id}: a ${t} row with no uuid (${r.uuid})`);
+    // Written in order, so sorted in order. This is what lets the server apply
+    // a reversal after the entry it reverses.
+    const sorted = ids.map((r) => r.uuid!);
+    assert.deepEqual([...sorted].sort(), sorted, `${c.id}: ${t} out of order`);
+  }
+
   db.close();
   return actual;
 }
@@ -180,6 +242,12 @@ function replay(c: GoldenCase): GoldenExpectation {
 for (const c of loadCases()) {
   test(`the phone's own code satisfies: ${c.id} — ${c.title}`, () => {
     const actual = replay(c);
+    for (const key of Object.keys(c.expect) as (keyof GoldenExpectation)[])
+      assert.deepEqual(actual[key], c.expect[key], `${c.id}: ${key}\n${c.why}`);
+  });
+
+  test(`...and still does after migrating to 6: ${c.id} — ${c.title}`, () => {
+    const actual = replay(c, "v5");
     for (const key of Object.keys(c.expect) as (keyof GoldenExpectation)[])
       assert.deepEqual(actual[key], c.expect[key], `${c.id}: ${key}\n${c.why}`);
   });

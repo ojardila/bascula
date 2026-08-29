@@ -22,7 +22,23 @@ export type { LedgerKind, PayMethod, SettlementStatus };
 
 // ---- Entities -----------------------------------------------------------
 
-export interface Person {
+/**
+ * What every row that will one day travel carries, on top of what it always
+ * had. The integer `id` stays the local primary key — it is in every join and
+ * every screen — and `uuid` is the name the server knows the row by.
+ *
+ * Both are optional in the type only because rows written before
+ * `user_version = 6` existed without them for a season, and the compiler
+ * should keep reminding the next reader of that rather than let a `!` hide it.
+ */
+export interface Synced {
+  /** UUIDv7, minted on the device. Its first 48 bits are when the row happened. */
+  uuid?: string;
+  /** ISO instant of the last change to this row's content. */
+  updatedAt?: string;
+}
+
+export interface Person extends Synced {
   id: number;
   name: string;
   lastName: string;
@@ -34,7 +50,7 @@ export interface Person {
   deletedAt?: string | null;
 }
 
-export interface Crop {
+export interface Crop extends Synced {
   id: number;
   name: string;
   type: string;
@@ -44,7 +60,7 @@ export interface Crop {
   deletedAt?: string | null;
 }
 
-export interface Pickup {
+export interface Pickup extends Synced {
   id: number;
   personId: number;
   cropId: number;
@@ -63,14 +79,14 @@ export interface CropConfig {
 
 export type AppLang = "es" | "en" | "pt";
 
-export interface CostOverride {
+export interface CostOverride extends Synced {
   id: number;
   /** Monday of the week, YYYY-MM-DD — the same key `byWeek()` labels rows with. */
   week: string;
   costPerUnit: number;
 }
 
-export interface LedgerEntry {
+export interface LedgerEntry extends Synced {
   id: number;
   personId: number;
   kind: LedgerKind;
@@ -83,7 +99,7 @@ export interface LedgerEntry {
   createdAt: string;
 }
 
-export interface Settlement {
+export interface Settlement extends Synced {
   id: number;
   personId: number;
   periodStart: string;
@@ -95,7 +111,7 @@ export interface Settlement {
   voidedAt: string | null;
 }
 
-export interface SettlementItem {
+export interface SettlementItem extends Synced {
   id: number;
   settlementId: number;
   pickupId: number;
@@ -326,6 +342,91 @@ export interface AnomalyWindow {
   limit: number;
 }
 
+
+// ---- Sync: identity now, protocol later ---------------------------------
+
+/** A table whose rows travel. The outbox names them with these strings. */
+export type SyncEntity =
+  | "config"
+  | "people"
+  | "crops"
+  | "cost_overrides"
+  | "pickups"
+  | "settlements"
+  | "settlement_items"
+  | "ledger";
+
+/** One thing this phone still owes the server. */
+export interface OutboxEntry {
+  /** This device's own counter. Ascending is the order the server should apply. */
+  seq: number;
+  entity: SyncEntity;
+  entityUuid: string;
+  /**
+   * `delete` is not a tidy-up. A hard-deleted pickup leaves no row to compare
+   * timestamps against, so this queue entry is the only thing that will ever
+   * tell the server the weighing was cancelled.
+   */
+  op: "upsert" | "delete";
+  /** Where to read the current content. Null for a delete: there is nothing left. */
+  localId: number | null;
+  /** How many times this entity changed while it sat in the queue. */
+  revision: number;
+  queuedAt: string;
+}
+
+/** The farm's and the device's identity, as far as the server is concerned. */
+export interface SyncIdentity {
+  /**
+   * Null until the farm is registered on the server.
+   *
+   * It lives on the single `config` row and nowhere else. One phone is one
+   * farm — `config` is `CHECK (id = 1)` and there is one wipe button — so a
+   * copy on all eighteen thousand pickups would carry no information the
+   * config row does not. It would also have to be written into every one of
+   * those rows the moment the owner signs up, which is a second full-table
+   * migration triggered by a button press on a phone in a field. And the
+   * server must not trust a farm id a device sends anyway: `sync-and-roles.md`
+   * puts tenant isolation in Postgres row-level security, derived from the
+   * authenticated token, precisely so that a wrong or forged value on the wire
+   * cannot cross farms.
+   */
+  farmId: string | null;
+  /**
+   * This installation. Minted once, never changes, survives a wipe.
+   * `sync-and-roles.md` orders concurrent events by a per-device counter, and
+   * a counter needs a device to belong to; `outbox.seq` is that counter.
+   */
+  deviceId: string;
+  /** When a push last succeeded. Null forever until there is a protocol. */
+  syncedAt: string | null;
+}
+
+/**
+ * What the phone knows about syncing. Deliberately no `push` and no `pull`:
+ * the protocol is being specified in parallel and guessing at it here would
+ * produce code written against an imagined server. What is below is true of
+ * any protocol worth having — every row has a name, and the phone knows what
+ * it still owes.
+ */
+export interface SyncRepo {
+  identity(): SyncIdentity;
+  /** Record the farm the server assigned. Idempotent; refuses to change it. */
+  claimFarm(farmId: string): void;
+  /** Oldest change first. This is the push order. */
+  pending(limit?: number): OutboxEntry[];
+  pendingCount(): number;
+  /**
+   * Forget the queued changes the server has confirmed.
+   *
+   * Takes the entries that were sent, not their seqs, because `revision` is
+   * the guard: if the row changed again while the push was in flight the
+   * revision moved and the entry stays queued. Acking by seq alone would drop
+   * a correction the server never received. Returns how many were dropped.
+   */
+  ack(sent: readonly Pick<OutboxEntry, "seq" | "revision">[]): number;
+}
+
 // ---- The interface ------------------------------------------------------
 
 export interface PeopleRepo {
@@ -337,14 +438,14 @@ export interface PeopleRepo {
    * else, which is the one place a duplicate card can still be caught.
    */
   byTag(tag: string): Person | null;
-  add(p: Omit<Person, "id" | "createdAt">): WriteResult;
+  add(p: Omit<Person, "id" | "createdAt" | keyof Synced>): WriteResult;
   remove(id: number): WriteResult;
 }
 
 export interface CropsRepo {
   all(): Crop[];
   byId(id: number): Crop | null;
-  add(c: Omit<Crop, "id" | "createdAt">): WriteResult;
+  add(c: Omit<Crop, "id" | "createdAt" | keyof Synced>): WriteResult;
   remove(id: number): WriteResult;
 }
 
@@ -352,7 +453,7 @@ export interface PickupsRepo {
   isSettled(id: number): boolean;
   setWeight(id: number, weight: number): void;
   remove(id: number): void;
-  add(p: Omit<Pickup, "id" | "createdAt">): WriteResult;
+  add(p: Omit<Pickup, "id" | "createdAt" | keyof Synced>): WriteResult;
   recent(): RecentPickup[];
 }
 
@@ -435,6 +536,16 @@ export interface PaymentsRepo {
   balance(personId: number): Balance;
   balances(): BalanceRow[];
   history(personId: number, limit?: number): LedgerEntry[];
+  /**
+   * Cents handed over against one settlement, for its receipt.
+   *
+   * Lives here rather than in each screen because both `Account` and the
+   * payroll sheet needed it and each had written its own filter
+   * (`movil.md` §9.3, and §9.12 on what happens when two screens own the same
+   * rule). It is also the only place that knows about the pre-link payments
+   * still out there.
+   */
+  paidAgainst(settlementId: number): number;
   settlements(personId: number): Settlement[];
   itemsOf(settlementId: number): SettlementItem[];
   pendingAll(general: number, upTo?: string): PendingWorker[];
@@ -496,6 +607,7 @@ export interface Repository {
   performance: PerformanceRepo;
   anomalies: AnomaliesRepo;
   export: ExportRepo;
+  sync: SyncRepo;
 
   weekCrops(): WeekCropRow[];
   reportBy(g: Grouping, general: number): LabelledKg[] | ValuedGroup[];
