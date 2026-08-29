@@ -34,7 +34,7 @@ Consecuencia práctica: `pickups` no existe en Postgres. Existe `labores` con `m
 
 **H2 · Alta de finca, auth y permisos** (L · BE2) — AC: alta de finca con su primer usuario dueño; login/refresh con `farm_id` y rol; matriz dueño/administrador/pesador aplicada **en servidor** con test por rol y por módulo; `403` documentado; argon2id y rate limit.
 
-**H3 · Esquema multitenant con RLS y baja lógica** (M · DBA + BE1) — AC: `farm_id` y `deleted_at` en toda tabla; RLS con `app.current_farm`, rol de aplicación sin `BYPASSRLS`; test de dos fincas sembradas que prueba el aislamiento; ninguna ruta hace `DELETE`.
+**H3 · Esquema multitenant con RLS y baja lógica** (M · DBA + BE1) — AC: `farm_id` y `deleted_at` en toda tabla; RLS con `app.farm_id`, rol de aplicación sin `BYPASSRLS`; test de dos fincas sembradas que prueba el aislamiento; ninguna ruta hace `DELETE`.
 
 **H4 · Parcelas, lotes y cultivos** (M · BE1) — AC: parcela con nombre, departamento, municipio, área y **varios cultivos**; lotes dentro de la parcela; campo `poligono` en el esquema, sin endpoint aún; baja lógica que no huérfana labores.
 

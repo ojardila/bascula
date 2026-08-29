@@ -41,6 +41,10 @@ needed to use it.
 - [Data model](docs/modelo-datos.md) — the PostgreSQL schema, row-level
   security, and how today's SQLite tables migrate into it.
 - [Sprint 1 plan](docs/plan-sprint-1.md)
+- [Owner decisions](docs/decisiones.md) — the calls the team could not make on
+  its own, with what each one costs.
+- Diagrams: [mobile app](docs/diagramas/movil.md) ·
+  [system](docs/diagramas/sistema.md) · [web app](docs/diagramas/web.md)
 - [Sync and roles](docs/sync-and-roles.md) — how records travel from a phone
   with no signal to the server, what happens when two phones settle the same
   week, and what each role can do.
