@@ -51,6 +51,7 @@ export type {
   WireSession,
   WireSettlement,
   WireSettlementPreview,
+  WireFarmUser,
   WireSettlementRequest,
   WireSignupRequest,
   WireSignupResponse,

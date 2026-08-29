@@ -46,9 +46,12 @@ import type {
   Customer,
   Expense,
   FarmSummary,
+  FarmUser,
+  FarmUserStatus,
   LabelBatch,
   LedgerEntry,
   MeUser,
+  PayableLine,
   Payables,
   PayMode,
   Plot,
@@ -71,9 +74,11 @@ import type {
   WireCatalogItem,
   WireEmployee,
   WireFarm,
+  WireFarmUser,
   WireLedgerEntry,
   WireMe,
   WireNote,
+  WirePayable,
   WirePayables,
   WirePayScheme,
   WireCustomer,
@@ -270,6 +275,33 @@ const namesFor = (ids: string[] | null | undefined, table: Map<string, string>):
  *                        returns when the address belongs to several, and it
  *                        is not readable afterwards.
  */
+/**
+ * A membership row -> the users screen.
+ *
+ * Read defensively on purpose. `WireFarmUser` is the one wire type in this
+ * codebase transcribed from a design note instead of from a running handler
+ * (see its comment), so the route may land with `state` where this expects
+ * `status`, or with no `lastLoginAt` at all. Every one of those becomes a
+ * visible absence — `"unknown"`, `null` — and never a plausible default:
+ * defaulting an unreadable membership to `"active"` would tell an owner that
+ * somebody can log in when nobody here knows whether they can.
+ */
+export function toFarmUser(w: WireFarmUser): FarmUser {
+  const status = String(w.status ?? "").toLowerCase();
+  return {
+    id: w.id,
+    email: w.email ?? "",
+    name: w.name ?? "",
+    role: roleFromWire(w.role),
+    status:
+      status === "invited" || status === "active" || status === "revoked"
+        ? (status as FarmUserStatus)
+        : "unknown",
+    lastLoginAt: w.lastLoginAt ?? null,
+    createdAt: w.createdAt ?? null,
+  };
+}
+
 export function toMeUser(w: WireMe): MeUser {
   return {
     id: w.id,
@@ -534,18 +566,39 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
  * plot list for a piece of work lives on the work record, which the profile
  * screen shows separately.
  */
+/**
+ * One `WirePayable` -> one `PayableLine`.
+ *
+ * Shared by the payment screen, the settlement preview and the settlement's
+ * own lines, because all three are the same row read at different moments —
+ * and `api/grossChange.ts` compares two of those moments. If they were mapped
+ * separately, the comparison would be comparing two shapes rather than two
+ * facts, and a field added to one and forgotten in the other would show up as
+ * a phantom change on the difference screen.
+ *
+ * `dateFrom` and `dateTo` are both the payable's single date: a payable is one
+ * priced row, not a range. The pair exists so the line renders through the
+ * same `formatDateRange` as a work record.
+ */
+export function toPayableLine(refs: Refs): (p: WirePayable) => PayableLine {
+  return (p) => ({
+    id: p.payableId,
+    activityName: p.activity,
+    dateFrom: day(p.date),
+    dateTo: day(p.date),
+    weekStart: day(p.weekStart),
+    plotNames: [],
+    quantity: quantityFromWire(p.quantity),
+    unitLabel: p.unitId ? (refs.units.get(p.unitId) ?? null) : null,
+    rateCents: p.rateCents,
+    rateSource: rateSourceFromWire(p.rateSource),
+    amountCents: p.amountCents,
+  });
+}
+
 export function toPayables(w: WirePayables, refs: Refs): Payables {
   return {
-    workRecords: (w.tasks ?? []).map((p) => ({
-      id: p.payableId,
-      activityName: p.activity,
-      dateFrom: day(p.date),
-      dateTo: day(p.date),
-      plotNames: [],
-      quantity: quantityFromWire(p.quantity),
-      unitLabel: p.unitId ? (refs.units.get(p.unitId) ?? null) : null,
-      amountCents: p.amountCents,
-    })),
+    workRecords: (w.tasks ?? []).map(toPayableLine(refs)),
     debts: (w.debts ?? []).map((d) => {
       const e = toLedgerEntry(d);
       return { id: e.id, concept: e.concept, date: e.date, amountCents: e.amountCents };

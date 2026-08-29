@@ -44,6 +44,12 @@
 import { http, getTokens, setTokens } from "./client";
 import { ApiError } from "./errors";
 import {
+  GROSS_CHANGED,
+  explainGrossChange,
+  readGrossDetails,
+  type GrossChange,
+} from "./grossChange";
+import {
   day,
   payModeToWire,
   quantityToWire,
@@ -53,9 +59,11 @@ import {
   toBalance,
   toCatalogItem,
   toFarmSummary,
+  toFarmUser,
   toLedgerEntry,
   toMeUser,
   toNote,
+  toPayableLine,
   toPayables,
   toCustomer,
   toExpense,
@@ -66,6 +74,8 @@ import {
   toStockLevel,
   toStockMove,
   toWeekPrice,
+  roleToWire,
+  type Refs,
   toWorkRecord,
   toWorker,
 } from "./adapters";
@@ -80,10 +90,14 @@ import type {
   CatalogItem,
   DeductionInput,
   FarmSummary,
+  FarmUser,
+  FarmUserInput,
+  FarmUserStatus,
   LedgerEntry,
   LoginChoice,
   LoginRequest,
   MeUser,
+  PayableLine,
   Payables,
   Payment,
   PaymentInput,
@@ -98,8 +112,11 @@ import type {
   PlotInput,
   Product,
   ProductInput,
+  Role,
   Sale,
   SaleInput,
+  Settlement,
+  SettlementSummary,
   StockLevel,
   StockMove,
   StockMoveInput,
@@ -123,6 +140,7 @@ import type {
   WireCatalogItem,
   WireEmployee,
   WireFarm,
+  WireFarmUser,
   WireLedgerEntry,
   WireList,
   WireMe,
@@ -139,6 +157,7 @@ import type {
   WireStockMove,
   WireSession,
   WireSettlement,
+  WireSettlementPreview,
   WireSignupResponse,
   WireWeekPrice,
   WireWorkerProfile,
@@ -198,6 +217,112 @@ function everRange(): { from: string; to: string } {
   const to = new Date();
   to.setUTCFullYear(to.getUTCFullYear() + 1);
   return { from: "1970-01-01", to: to.toISOString().slice(0, 10) };
+}
+
+/* ------------------------------------------------------------------ */
+/* The settlement race guard                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Turn a 409 GROSS_CHANGED into something the payment screen can put in front
+ * of somebody.
+ *
+ * The server has already refused and written nothing. What is missing is a
+ * NAME and a DATE on the payable ids it named, so a fresh preview is fetched —
+ * deliberately unfiltered, because a payable that arrived after the screen
+ * loaded has an id nobody here has seen and filtering by the approved set
+ * would hide the very rows that moved the figure.
+ *
+ * When that preview cannot be fetched — the network went away between the two
+ * calls — the dialog still gets both figures and the counts, which is enough
+ * to refuse safely. What it never gets is an invented cause.
+ */
+async function withGrossExplanation(
+  e: ApiError,
+  workerId: Uuid,
+  approved: PayableLine[],
+): Promise<ApiError> {
+  const details = readGrossDetails(e.details);
+  if (!details) return e;
+
+  let fresh: PayableLine[] = [];
+  try {
+    fresh = (await api.previewSettlement(workerId)).lines;
+  } catch {
+    // Keep what the server said.
+  }
+
+  return new ApiError(409, {
+    error: {
+      code: GROSS_CHANGED,
+      message: e.message,
+      details: explainGrossChange(details, approved, fresh) as unknown as Record<string, unknown>,
+    },
+  });
+}
+
+/** Reads the explanation back off the error the screen caught. */
+export function grossChangeOf(e: unknown): GrossChange | null {
+  if (!(e instanceof ApiError) || e.code !== GROSS_CHANGED) return null;
+  const d = e.details as Partial<GrossChange>;
+  if (typeof d.beforeCents !== "number" || typeof d.afterCents !== "number") return null;
+  return {
+    beforeCents: d.beforeCents,
+    afterCents: d.afterCents,
+    deltaCents: d.deltaCents ?? d.afterCents - d.beforeCents,
+    addedIds: d.addedIds ?? [],
+    removedIds: d.removedIds ?? [],
+    added: d.added ?? [],
+    removed: d.removed ?? [],
+    repriced: d.repriced ?? [],
+    causeIsKnown: d.causeIsKnown === true,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Settlements as records                                              */
+/* ------------------------------------------------------------------ */
+
+const byNewestFirst = (a: SettlementSummary, b: SettlementSummary) =>
+  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+
+/**
+ * A row of the settlements list.
+ *
+ * `workerName` is joined from the worker list, and an id that resolves to
+ * nothing becomes "—" rather than a UUID or a blank: the list is read to
+ * answer "de quién", and a blank there reads as "nobody" instead of "we could
+ * not find out".
+ */
+function toSettlementSummary(s: WireSettlement, names: Map<Uuid, string>): SettlementSummary {
+  return {
+    id: s.id,
+    workerId: s.workerId,
+    workerName: names.get(s.workerId) || "—",
+    periodStart: day(s.periodStart),
+    periodEnd: day(s.periodEnd),
+    grossCents: s.grossCents,
+    status: s.status === "void" ? "void" : "open",
+    lineCount: (s.items ?? []).length,
+    note: s.note,
+    createdAt: s.createdAt,
+    voidedAt: s.voidedAt,
+  };
+}
+
+function toSettlement(s: WireSettlement, refs: Refs, workerName: string): Settlement {
+  return {
+    ...toSettlementSummary(s, new Map([[s.workerId, workerName]])),
+    lines: (s.items ?? []).map(toPayableLine(refs)),
+    /**
+     * A line voided on its own, inside a settlement that is still open, cannot
+     * happen through any route this app calls — voiding is whole-settlement.
+     * It is surfaced anyway because the wire carries it, and a line that stops
+     * counting towards the gross without saying so is exactly the sort of
+     * silent arithmetic this screen exists to make visible.
+     */
+    voidedLineIds: (s.items ?? []).filter((p) => p.voided).map((p) => p.payableId),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -333,6 +458,80 @@ export const api = {
     if (body.address !== undefined) out.address = body.address || null;
     if (body.areaHa !== undefined) out.areaHa = body.areaHa;
     return toFarmSummary(await http.put<WireFarm>("/v1/farm", out));
+  },
+
+  /* -- the farm's users ---------------------------------------------- */
+
+  /**
+   * WHO CAN GET INTO THIS FARM, AND AS WHAT.
+   *
+   * `docs/casos-de-uso.md` §8 lists "Gestión de usuarios — listar y agregar
+   * usuarios" and then says "pendiente de detallar", and
+   * `docs/arquitectura-api.md` §329 answers it with the minimum that unblocks:
+   * `GET|POST|PATCH /v1/users`, owner only. That is the shape written against
+   * here, and it is written against the DOCUMENT rather than invented, which
+   * is the difference between anticipating a route and making one up.
+   *
+   * THE SERVER DOES NOT SERVE IT YET. `routes.go` has no `/v1/users` and the
+   * running build answers 404, which `routeMayBeMissing` turns into the local
+   * NOT_IMPLEMENTED refusal every other early module in this file uses. The
+   * screen shows that refusal by name — it does not show an empty list, which
+   * would read as "this farm has one user" and is a lie about who can log in.
+   *
+   * Only the owner. `docs/diagramas/sistema.md` §3.3 puts user management in
+   * the owner column and NOT the administrator column, which is stricter than
+   * `casos-de-uso.md` reads on its own; `permissions.ts` has said so since
+   * sprint 1 (`config.users` is in OWNER and in neither of the others).
+   */
+  listFarmUsers: async (): Promise<FarmUser[]> => {
+    const res = await routeMayBeMissing(
+      http.get<WireList<WireFarmUser>>("/v1/users"),
+      "usuarios",
+    );
+    return items(res).map(toFarmUser);
+  },
+
+  /**
+   * Invite somebody, with the role they get.
+   *
+   * The server owns the invitation: this app never creates a password and
+   * never sees one. What comes back is the membership in whatever state the
+   * server puts it in — `invited` until they confirm their address, `active`
+   * after — and the screen shows that state rather than assuming success.
+   */
+  inviteFarmUser: async (body: FarmUserInput): Promise<FarmUser> => {
+    const created = await routeMayBeMissing(
+      http.post<WireFarmUser>("/v1/users", {
+        id: body.id,
+        email: body.email.trim().toLowerCase(),
+        name: body.name.trim(),
+        role: roleToWire(body.role),
+      }),
+      "usuarios",
+    );
+    return toFarmUser(created);
+  },
+
+  /**
+   * Change somebody's role, or take their access away.
+   *
+   * There is no delete. A membership that is revoked keeps its row, because
+   * every work record and every settlement in the farm names the user that
+   * wrote it, and a user id that resolves to nothing turns an audit trail into
+   * a list of UUIDs. `status: "revoked"` is what closes the door.
+   */
+  updateFarmUser: async (
+    id: Uuid,
+    body: { role?: Role; status?: FarmUserStatus },
+  ): Promise<FarmUser> => {
+    const out: Record<string, unknown> = {};
+    if (body.role !== undefined) out.role = roleToWire(body.role);
+    if (body.status !== undefined) out.status = body.status;
+    const updated = await routeMayBeMissing(
+      http.patch<WireFarmUser>(`/v1/users/${id}`, out),
+      "usuarios",
+    );
+    return toFarmUser(updated);
   },
 
   /* -- catalogues ---------------------------------------------------- */
@@ -727,9 +926,67 @@ export const api = {
   /* -- money --------------------------------------------------------- */
 
   /**
+   * What settling this worker right now would produce, priced by the server.
+   *
+   * `/v1/settlements/preview` is not a convenience: the spec calls it "the same
+   * code path the real settlement uses, so what the screen shows and what gets
+   * written cannot drift apart". It honours `payableIds`, so the figure this
+   * returns for a subset is exactly the figure `POST /v1/settlements` will
+   * check `expectedGrossCents` against — which is what makes the guard below
+   * a comparison of two identical derivations rather than of two similar ones.
+   */
+  previewSettlement: async (
+    workerId: Uuid,
+    payableIds?: Uuid[],
+  ): Promise<{ lines: PayableLine[]; grossCents: number; balanceCents: number }> => {
+    const range = everRange();
+    const [preview, refs] = await Promise.all([
+      http.post<WireSettlementPreview>("/v1/settlements/preview", {
+        id: uuidv7(),
+        workerId,
+        from: range.from,
+        to: range.to,
+        ...(payableIds && payableIds.length > 0 ? { payableIds } : {}),
+        note: null,
+      }),
+      loadRefs(),
+    ]);
+    return {
+      lines: (preview.items ?? []).map(toPayableLine(refs)),
+      // The SERVER'S figure, not a sum over the rows above. They agree today,
+      // and the day a rounding rule changes they would not — and the one that
+      // has to be shown is the one that will be written.
+      grossCents: preview.grossCents,
+      balanceCents: preview.balance?.balanceCents ?? 0,
+    };
+  },
+
+  /**
    * Settle a set of pending work records: the write that turns work into money
    * owed. One `devengo` in the ledger for the gross, and every claimed record
    * marked settled so nothing can claim it twice.
+   *
+   * ── THE FIGURE THAT WAS APPROVED IS PART OF THE REQUEST ──────────────
+   *
+   * `expectedGrossCents` is REQUIRED BY THE SERVER, and required here for the
+   * same reason: between the screen rendering a gross and somebody pressing
+   * the button, a late weighing can arrive or the week's price can be changed,
+   * and a settlement written without this field signs a figure nobody read.
+   * The spec puts it plainly — "a money guard a client may omit is a guard
+   * that is off in exactly the moment it matters."
+   *
+   * It comes from `/v1/settlements/preview`, which now honours `payableIds`,
+   * so the figure shown IS the figure signed. Deriving it by adding up a table
+   * on this side would be a second implementation of the server's pricing, and
+   * the two would drift the first time a rounding rule changed.
+   *
+   * When the figure has moved the server answers 409 GROSS_CHANGED, having
+   * written nothing, and the error that reaches the caller carries the reason
+   * — see `withGrossExplanation`. There is deliberately no retry here and none
+   * anywhere above: a retry that re-sends the stale approval is the same bug
+   * with an extra click in front of it. The only way forward is a new
+   * approval, which means a new `expectedGrossCents`, which means somebody
+   * looked.
    *
    * 409 NOTHING_TO_SETTLE when the selection matches nothing in the period;
    * 409 PAYABLE_ALREADY_CLAIMED when somebody else settled it first, which is
@@ -738,18 +995,158 @@ export const api = {
   settle: async (
     workerId: Uuid,
     payableIds: Uuid[],
-    note?: string,
+    opts: { expectedGrossCents: number; expectedLines?: PayableLine[]; note?: string },
   ): Promise<{ id: Uuid; grossCents: number }> => {
+    if (!Number.isInteger(opts.expectedGrossCents)) {
+      // A programming error, not a user error, and it is caught here rather
+      // than at the server's 400 so the message names the cause: reaching the
+      // network without an approved figure would settle whatever the server
+      // happens to hold.
+      throw new Error("settle() requires expectedGrossCents: the figure the user approved");
+    }
+    if (payableIds.length === 0) {
+      /**
+       * NAMING THE SET IS NOT OPTIONAL EITHER, and it is worth being blunt
+       * about why. An empty `payableIds` means "settle everything pending",
+       * and it has two costs that compound:
+       *
+       *   1. It re-opens the race the guard exists to close. Naming the set
+       *      does not merely REPORT the conflict, it REMOVES it — the
+       *      settlement takes exactly what was approved, and a weighing that
+       *      arrived since is simply not in it. The spec says so in as many
+       *      words: "Send `payableIds`."
+       *   2. When it does conflict, the server sets `payableIdsProvided:
+       *      false` and sends no added/removed lists, because it was never
+       *      told what the screen was showing. The difference dialog then has
+       *      two figures and no cause — which is honest, and useless.
+       *
+       * So this app never sends it empty. A screen with nothing ticked has
+       * nothing to settle and must not call this at all.
+       */
+      throw new Error("settle() requires the payables the user approved, by id");
+    }
     const range = everRange();
-    const s = await http.post<WireSettlement>("/v1/settlements", {
-      id: uuidv7(),
-      workerId,
-      from: range.from,
-      to: range.to,
-      payableIds,
-      note: note ?? null,
-    });
-    return { id: s.id, grossCents: s.grossCents };
+    try {
+      const s = await http.post<WireSettlement>("/v1/settlements", {
+        id: uuidv7(),
+        workerId,
+        from: range.from,
+        to: range.to,
+        payableIds,
+        note: opts.note ?? null,
+        expectedGrossCents: opts.expectedGrossCents,
+      });
+      return { id: s.id, grossCents: s.grossCents };
+    } catch (e) {
+      if (e instanceof ApiError && e.code === GROSS_CHANGED) {
+        throw await withGrossExplanation(e, workerId, opts.expectedLines ?? []);
+      }
+      throw e;
+    }
+  },
+
+  /* -- settlements as records ---------------------------------------- */
+
+  /**
+   * Every settlement the farm has made.
+   *
+   * THERE IS NO `GET /v1/settlements`. The route exists for POST only and
+   * answers 405 to a GET, which is checked against the running server rather
+   * than guessed. So this composes the list out of what the API does serve,
+   * and the composition is the honest one rather than the cheap one:
+   *
+   *   the ledger is the index   every settlement writes exactly one `devengo`
+   *                             carrying its `settlementId`, so the union of
+   *                             the workers' ledgers IS the set of settlements,
+   *                             with no possibility of one being missed
+   *   the settlement is the row `GET /v1/settlements/{id}` is what carries the
+   *                             period actually covered and the frozen lines,
+   *                             and the period is half of what the screen is
+   *                             for ("de qué semana")
+   *
+   * It costs one request per worker plus one per settlement, which is why the
+   * two fan-outs are parallel and why this is not called from the dashboard.
+   * When the collection route lands, the first branch below takes over and the
+   * rest of this function becomes dead code to delete — that is deliberate:
+   * the fallback is written so it can be removed in one piece.
+   */
+  listSettlements: async (): Promise<SettlementSummary[]> => {
+    const workers = await api.listWorkers({ status: "all" });
+    const names = new Map(workers.map((w) => [w.id, `${w.name} ${w.lastName}`.trim()]));
+
+    // If the collection route ever answers, prefer it: one request, and the
+    // server's own ordering.
+    try {
+      const res = await http.get<WireList<WireSettlement>>("/v1/settlements");
+      return items(res)
+        .map((s) => toSettlementSummary(s, names))
+        .sort(byNewestFirst);
+    } catch (e) {
+      // 405 today, 404 if the route is renamed. Anything else — a 403, an
+      // expired session — is a real failure and must not be papered over by a
+      // slow fallback that will fail the same way.
+      if (!(e instanceof ApiError) || (e.status !== 404 && e.status !== 405)) throw e;
+    }
+
+    const ledgers = await Promise.all(
+      workers.map((w) =>
+        http
+          .get<WireList<WireLedgerEntry>>(`/v1/workers/${w.id}/ledger`)
+          .then((r) => items(r))
+          .catch(() => [] as WireLedgerEntry[]),
+      ),
+    );
+
+    const ids = new Set<Uuid>();
+    for (const entries of ledgers) {
+      for (const e of entries) {
+        if (e.kind === "devengo" && e.settlementId) ids.add(e.settlementId);
+      }
+    }
+
+    const settled = await Promise.all(
+      [...ids].map((id) =>
+        http.get<WireSettlement>(`/v1/settlements/${id}`).catch(() => null),
+      ),
+    );
+    return settled
+      .filter((s): s is WireSettlement => s !== null)
+      .map((s) => toSettlementSummary(s, names))
+      .sort(byNewestFirst);
+  },
+
+  /**
+   * One settlement with the lines it froze.
+   *
+   * The worker is fetched alongside rather than after: the settlement carries
+   * a `workerId` and no name, and a receipt headed by a UUID is not a receipt.
+   * A worker who has since been removed still resolves — `getWorker` reads the
+   * row, not the tombstone — because a settlement outlives the employment.
+   */
+  getSettlement: async (id: Uuid): Promise<Settlement> => {
+    const s = await http.get<WireSettlement>(`/v1/settlements/${id}`);
+    const [refs, worker] = await Promise.all([
+      loadRefs(),
+      api.getWorker(s.workerId).catch(() => null),
+    ]);
+    return toSettlement(s, refs, worker ? `${worker.name} ${worker.lastName}`.trim() : "—");
+  },
+
+  /**
+   * Cancel a settlement. The lines keep their rows and gain a `voidedAt`,
+   * which is what releases their payables; the earning is cancelled by a
+   * reversal, never deleted.
+   *
+   * `docs/diagramas/movil.md`: "No hay void -> open. Anular es definitivo."
+   * The screen asks before calling this, and says that sentence while asking.
+   */
+  voidSettlement: async (id: Uuid): Promise<Settlement> => {
+    const s = await http.post<WireSettlement>(`/v1/settlements/${id}/void`, { id: uuidv7() });
+    const [refs, worker] = await Promise.all([
+      loadRefs(),
+      api.getWorker(s.workerId).catch(() => null),
+    ]);
+    return toSettlement(s, refs, worker ? `${worker.name} ${worker.lastName}`.trim() : "—");
   },
 
   /**
@@ -769,7 +1166,16 @@ export const api = {
    */
   createPayment: async (body: PaymentInput): Promise<Payment> => {
     if (body.payableIds && body.payableIds.length > 0) {
-      await api.settle(body.workerId, body.payableIds);
+      if (body.expectedGrossCents === undefined) {
+        throw new Error(
+          "createPayment() with payableIds requires expectedGrossCents: " +
+            "the gross the user saw and approved",
+        );
+      }
+      await api.settle(body.workerId, body.payableIds, {
+        expectedGrossCents: body.expectedGrossCents,
+        expectedLines: body.expectedLines,
+      });
     }
     const before = await api.workerBalance(body.workerId);
     const entry = await http.post<WireLedgerEntry>("/v1/payments", {

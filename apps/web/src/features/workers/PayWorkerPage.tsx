@@ -3,6 +3,16 @@
  *
  * The parts that are easy to get wrong:
  *
+ * - **The gross on screen can stop being true while somebody looks at it.**
+ *   This is the one that costs real money. A late pickup arrives, or the
+ *   week's price is changed, and the settlement writes a `devengo` for a
+ *   figure the approver never read. So every settle carries the figure that
+ *   WAS approved (`expectedGrossCents`), and when it no longer matches, this
+ *   screen does not show an error — it shows the DIFFERENCE, says what moved,
+ *   and offers exactly one way out: look again. There is deliberately no
+ *   "reintentar", because a retry that skips the check is the same bug with an
+ *   extra click in front of it. See `api/grossChange.ts`.
+ *
  * - **Pago total re-reads the balance.** It pays exactly what the balance is
  *   at the moment of writing, not the number that was on screen when the page
  *   loaded. Reading before and posting after is how two people paying at once
@@ -26,19 +36,34 @@ import {
   Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import PrintIcon from "@mui/icons-material/Print";
+import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
 import { Money } from "../../components/Money";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
-import { formatDateRange } from "../../lib/dates";
+import { formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { uuidv7 } from "../../lib/uuid";
-import type { PayMethod, Payment } from "../../api/types";
+import { useAuth } from "../../auth/AuthContext";
+import { grossChangeOf } from "../../api/endpoints";
+import { sentenceFor, type GrossChange } from "../../api/grossChange";
+
+/**
+ * How the difference dialog writes figures and dates. Passed in rather than
+ * imported by `grossChange.ts`, which stays free of the formatting layer so
+ * its arithmetic can be tested on plain numbers.
+ */
+const FMT = { money: formatMoney, week: formatDayLong };
+import { paymentReceiptHtml } from "../documents/documents";
+import { printDocument } from "../documents/print";
+import type { PayableLine, PayMethod, Payment } from "../../api/types";
 
 export function PayWorkerPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const { data, error, denied, reload } = useAsync(
     () => Promise.all([api.getWorker(id), api.workerPayables(id), api.workerBalance(id)]),
@@ -50,8 +75,14 @@ export function PayWorkerPage() {
   const [partial, setPartial] = useState("");
   const [busy, setBusy] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<Payment | null>(null);
+  const [receipt, setReceipt] = useState<{ payment: Payment; lines: PayableLine[] } | null>(null);
   const [excess, setExcess] = useState<{ amount: number; balance: number } | null>(null);
+  /**
+   * The figure moved under the person's hands. Non-null means the screen is
+   * BLOCKED: no payment can be made from this state, and the only control
+   * offered reloads what is owed.
+   */
+  const [changed, setChanged] = useState<GrossChange | null>(null);
 
   if (denied) return <PermissionDenied moduleName="pagar a un empleado" />;
   if (error) return <Alert severity="error">{error}</Alert>;
@@ -76,6 +107,10 @@ export function PayWorkerPage() {
   async function pay(amountCents: number, alsoAdvance = 0) {
     setBusy(true);
     setPayError(null);
+    // The lines behind the figure, captured at the moment of approval. They go
+    // with the request so that a refusal can say WHAT moved and not just that
+    // something did.
+    const approved = payables.workRecords.filter((w) => checked.has(w.id));
     try {
       const result = await api.createPayment({
         id: uuidv7(),
@@ -83,6 +118,8 @@ export function PayWorkerPage() {
         amountCents,
         method,
         payableIds: [...checked],
+        expectedGrossCents: selectedCents,
+        expectedLines: approved,
       });
       if (alsoAdvance > 0) {
         await api.createAdvance({
@@ -93,12 +130,17 @@ export function PayWorkerPage() {
           note: "Excedente del pago, registrado como anticipo",
         });
       }
-      setReceipt(result);
+      setReceipt({ payment: result, lines: approved });
       setSelected(new Set());
       setPartial("");
       reload();
     } catch (e) {
-      if (e instanceof ApiError && e.code === "AMOUNT_EXCEEDS_BALANCE") {
+      const change = grossChangeOf(e);
+      if (change) {
+        // Nothing was written — `api.settle` refuses before posting — so the
+        // screen has only to stop and explain.
+        setChanged(change);
+      } else if (e instanceof ApiError && e.code === "AMOUNT_EXCEEDS_BALANCE") {
         const serverBalance = Number(e.details.balanceCents ?? 0);
         setExcess({ amount: amountCents, balance: serverBalance });
       } else {
@@ -107,6 +149,33 @@ export function PayWorkerPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * The ONLY exit from the difference dialog. It throws away the selection and
+   * reloads what is owed, so the next figure the person approves is one they
+   * have actually read. Deliberately not a "reintentar": that button would
+   * re-send the stale approval, which is the thing this whole screen is built
+   * to prevent.
+   */
+  function reviewAgain() {
+    setChanged(null);
+    setSelected(null);
+    setPartial("");
+    reload();
+  }
+
+  function printReceipt() {
+    if (!receipt) return;
+    const ok = printDocument(
+      paymentReceiptHtml({
+        farmName: user?.farm.name ?? "Finca",
+        worker,
+        payment: receipt.payment,
+        lines: receipt.lines,
+      }),
+    );
+    if (!ok) setPayError("No se pudo abrir la impresión. Revise el navegador.");
   }
 
   const partialCents = parseMoneyInput(partial);
@@ -168,7 +237,23 @@ export function PayWorkerPage() {
                           inputProps={{ "aria-label": `Incluir ${w.activityName}` }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{w.activityName}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>
+                        {w.activityName}
+                        {/* Estimado no es definitivo. This row is priced by the
+                            week's price, which is not fixed until the week
+                            closes — so what is next to it is what it WOULD be
+                            worth, not what is owed. It is also exactly the row
+                            that can move under an open payment screen. */}
+                        {w.rateSource === "weekly_price" && (
+                          <Chip
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            label="provisional"
+                            sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell>{formatDateRange(w.dateFrom, w.dateTo)}</TableCell>
                       <TableCell>{w.plotNames.join(", ")}</TableCell>
                       <TableCell align="right">
@@ -188,6 +273,14 @@ export function PayWorkerPage() {
                   )}
                 </TableBody>
               </Table>
+              {payables.workRecords.some((w) => w.rateSource === "weekly_price") && (
+                <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
+                  Las labores marcadas <strong>provisional</strong> se pagan al precio de
+                  la semana, que se fija al cerrar la semana. Si ese precio cambia antes
+                  de que usted liquide, el total cambia — y esta pantalla se lo dirá
+                  antes de registrar nada.
+                </Alert>
+              )}
             </CardContent>
           </Card>
 
@@ -269,7 +362,7 @@ export function PayWorkerPage() {
                 variant="contained"
                 fullWidth
                 size="large"
-                disabled={busy || toPayCents <= 0}
+                disabled={busy || !!changed || toPayCents <= 0}
                 onClick={() => pay(toPayCents)}
                 sx={{ mb: 2 }}
               >
@@ -295,7 +388,7 @@ export function PayWorkerPage() {
                 />
                 <Button
                   variant="outlined"
-                  disabled={busy || partialCents === null || partialCents <= 0}
+                  disabled={busy || !!changed || partialCents === null || partialCents <= 0}
                   onClick={() => pay(partialCents as number)}
                   sx={{ height: 56 }}
                 >
@@ -311,6 +404,118 @@ export function PayWorkerPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* ── THE FIGURE MOVED ──────────────────────────────────────────────
+          Not an error box. An error box says "something went wrong" and offers
+          a retry; what actually happened is that the farm now owes a different
+          amount, and the person has to see the new one before approving it.
+
+          `onClose` is not wired and the escape key is disabled on purpose:
+          every way out of this dialog goes through `reviewAgain`, which throws
+          the stale approval away and reloads. There is no path from here to a
+          write. */}
+      <Dialog open={!!changed} disableEscapeKeyDown maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ChangeCircleIcon color="warning" />
+          El total cambió mientras revisaba
+        </DialogTitle>
+        <DialogContent>
+          {changed && (
+            <>
+              <DialogContentText component="div" sx={{ fontSize: "1.05rem" }}>
+                {sentenceFor(changed, FMT)}
+              </DialogContentText>
+
+              <Stack
+                direction="row"
+                spacing={2}
+                sx={{ mt: 2.5, mb: 1 }}
+                divider={<Divider orientation="vertical" flexItem />}
+              >
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Lo que usted aprobó
+                  </Typography>
+                  <Money cents={changed.beforeCents} />
+                </Box>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Lo que se registraría ahora
+                  </Typography>
+                  <Money cents={changed.afterCents} variant="big" />
+                </Box>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Diferencia
+                  </Typography>
+                  <Money cents={changed.deltaCents} signed colored />
+                </Box>
+              </Stack>
+
+              {/* The rows themselves, so the sentence above can be checked. */}
+              {(changed.added.length > 0 || changed.removed.length > 0) && (
+                <Table size="small" sx={{ mt: 1 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Qué cambió</TableCell>
+                      <TableCell>Actividad</TableCell>
+                      <TableCell>Fecha</TableCell>
+                      <TableCell align="right">Valor</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {changed.added.map((l) => (
+                      <TableRow key={`a-${l.id}`}>
+                        <TableCell>
+                          <Chip size="small" color="warning" label="Entró" />
+                        </TableCell>
+                        <TableCell>{l.activityName}</TableCell>
+                        <TableCell>{formatDateRange(l.dateFrom, l.dateTo)}</TableCell>
+                        <TableCell align="right">
+                          <Money cents={l.amountCents} variant="small" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {changed.removed.map((l) => (
+                      <TableRow key={`r-${l.id}`}>
+                        <TableCell>
+                          <Chip size="small" variant="outlined" label="Salió" />
+                        </TableCell>
+                        <TableCell>{l.activityName}</TableCell>
+                        <TableCell>{formatDateRange(l.dateFrom, l.dateTo)}</TableCell>
+                        <TableCell align="right">
+                          <Money cents={-l.amountCents} signed variant="small" />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              {changed.repriced.length > 0 && (
+                <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+                  {changed.repriced.length === 1
+                    ? "Una labor"
+                    : `${changed.repriced.length} labores`}{" "}
+                  se pagan al precio de la semana, y ese precio cambió: de{" "}
+                  <strong>{formatMoney(changed.repriced[0].fromRateCents)}</strong> a{" "}
+                  <strong>{formatMoney(changed.repriced[0].toRateCents)}</strong> por unidad.
+                </Alert>
+              )}
+
+              <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
+                No se registró ningún pago ni ninguna liquidación. Vuelva a mirar el
+                detalle y apruebe la cifra nueva.
+              </Alert>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button variant="contained" onClick={reviewAgain} autoFocus>
+            Volver a revisar
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Paying more than the balance: RSP-008 forbids it, the ledger allows
           it, so the person decides — and the excess is named correctly. */}
@@ -349,18 +554,18 @@ export function PayWorkerPage() {
         <DialogTitle>Pago registrado</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
-            <Chip label={`Recibo #${receipt?.receiptNumber}`} sx={{ alignSelf: "flex-start" }} />
+            <Chip label={`Recibo #${receipt?.payment.receiptNumber}`} sx={{ alignSelf: "flex-start" }} />
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Pagado</Typography>
-              <Money cents={receipt?.amountCents ?? 0} />
+              <Money cents={receipt?.payment.amountCents ?? 0} />
             </Stack>
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Saldo antes</Typography>
-              <Money cents={receipt?.balanceBeforeCents ?? 0} variant="small" />
+              <Money cents={receipt?.payment.balanceBeforeCents ?? 0} variant="small" />
             </Stack>
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Saldo después</Typography>
-              <Money cents={receipt?.balanceAfterCents ?? 0} variant="small" />
+              <Money cents={receipt?.payment.balanceAfterCents ?? 0} variant="small" />
             </Stack>
           </Stack>
         </DialogContent>
@@ -368,8 +573,14 @@ export function PayWorkerPage() {
           <Button onClick={() => setReceipt(null)} color="inherit">
             Seguir aquí
           </Button>
-          <Button variant="contained" onClick={() => navigate(`/empleados/${id}`)}>
+          <Button onClick={() => navigate(`/empleados/${id}`)} color="inherit">
             Ver el perfil
+          </Button>
+          {/* RSP-008: "el sistema genera el recibo de pago". It is the primary
+              action, because a payment the worker has no paper for is a
+              payment they cannot check. */}
+          <Button variant="contained" startIcon={<PrintIcon />} onClick={printReceipt}>
+            Imprimir recibo
           </Button>
         </DialogActions>
       </Dialog>

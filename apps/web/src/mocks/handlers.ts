@@ -71,6 +71,7 @@ import type {
   WireCustomer,
   WireEmployee,
   WireExpense,
+  WireFarmUser,
   WireLedgerEntry,
   WireLedgerKind,
   WireLedgerRequest,
@@ -209,6 +210,8 @@ type Action =
   | "auth.logout"
   | "farm.read"
   | "farm.write"
+  | "users.read"
+  | "users.write"
   | "admin.farms.read"
   | "admin.farms.write"
   | "workers.read"
@@ -276,6 +279,17 @@ const MATRIX: Record<Action, Rule> = {
   // his projection. Only the owner writes it.
   "farm.read": { roles: everyone },
   "farm.write": { roles: owners },
+
+  /**
+   * OWNER ONLY, and that is not a transcription — `perm.go` has no such action
+   * because `routes.go` has no `/v1/users`. It comes from
+   * `docs/diagramas/sistema.md` §3.3, whose capability table puts "gestión de
+   * usuarios de la finca" in the owner column and leaves the administrator's
+   * blank. An administrator therefore meets a real 403 here, exactly as they
+   * would on a server that had the route.
+   */
+  "users.read": { roles: owners },
+  "users.write": { roles: owners },
 
   "admin.farms.read": { roles: everyone, superadmin: true },
   "admin.farms.write": { roles: everyone, superadmin: true },
@@ -758,6 +772,100 @@ export const handlers = [
     });
   }),
 
+  /* ---- the farm's users ---- */
+
+  /**
+   * `GET|POST|PATCH /v1/users`, per `docs/arquitectura-api.md` §329.
+   *
+   * NOT TRANSCRIBED FROM A HANDLER: there is no `/v1/users` in `routes.go`
+   * yet, so this is the design document's minimum, implemented so the console
+   * screen is reviewable and testable ahead of the route. When the Go handler
+   * lands and disagrees, this file is the one that is wrong — the standing
+   * rule at the top of this file applies here too.
+   *
+   * The store already had `users` and `memberships`; a membership is what this
+   * lists, which is why the owner of two farms appears once per farm and not
+   * twice in one.
+   */
+  http.get("*/v1/users", ({ request }) => {
+    const g = guard(request, "users.read");
+    if (g.deny) return g.deny;
+    const items = db.memberships
+      .filter((m) => m.farmId === g.p.farmId)
+      .map((m) => projectFarmUser(m))
+      .filter((u): u is WireFarmUser => u !== null);
+    return HttpResponse.json({ items });
+  }),
+
+  http.post("*/v1/users", async ({ request }) => {
+    const g = guard(request, "users.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as Partial<WireFarmUser>;
+
+    const email = (body.email ?? "").trim().toLowerCase();
+    const name = (body.name ?? "").trim();
+    const fields: Record<string, string> = {};
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fields.email = "invalid";
+    if (name === "") fields.name = "required";
+    // No `owner`: a second owner is not something this form hands out. The
+    // real handler will have to say the same or the screen is lying.
+    const role = body.role;
+    if (role !== "admin" && role !== "weigher") fields.role = "invalid";
+    if (Object.keys(fields).length || (role !== "admin" && role !== "weigher")) {
+      return badRequest("invalid user", { fields });
+    }
+
+    const existing = db.users.find((u) => u.email === email);
+    if (existing && db.memberships.some((m) => m.farmId === g.p.farmId && m.userId === existing.id)) {
+      return conflict("EMAIL_TAKEN", "that address already belongs to this farm");
+    }
+
+    const userId = existing?.id ?? body.id ?? crypto.randomUUID();
+    if (!existing) {
+      db.users.push({
+        id: userId,
+        email,
+        // No password: the invited person sets their own from the mail. A mock
+        // that invented one would model a flow the server does not have.
+        password: "",
+        name,
+        superadmin: false,
+        // Not verified yet — which is what makes the membership `invited`.
+        emailVerified: false,
+        role,
+      });
+    }
+    db.memberships.push({ farmId: g.p.farmId, userId, role });
+    return HttpResponse.json(projectFarmUser({ farmId: g.p.farmId, userId, role }), {
+      status: 201,
+    });
+  }),
+
+  http.patch("*/v1/users/:id", async ({ request, params }) => {
+    const g = guard(request, "users.write");
+    if (g.deny) return g.deny;
+    const membership = db.memberships.find(
+      (m) => m.farmId === g.p.farmId && m.userId === params.id,
+    );
+    if (!membership) return notFound();
+    const body = (await request.json()) as { role?: WireRole; status?: string };
+
+    // The farm must keep an owner, and nobody demotes themselves out of the
+    // only role that could put them back.
+    if (membership.role === "owner" && (body.role !== undefined || body.status === "revoked")) {
+      return conflict("CONFLICT", "the farm's owner cannot be changed here");
+    }
+    if (body.role !== undefined) {
+      if (body.role !== "admin" && body.role !== "weigher") {
+        return badRequest("invalid role", { fields: { role: "invalid" } });
+      }
+      membership.role = body.role;
+    }
+    if (body.status === "revoked") revokedMemberships.add(`${g.p.farmId}:${membership.userId}`);
+    else if (body.status === "active") revokedMemberships.delete(`${g.p.farmId}:${membership.userId}`);
+    return HttpResponse.json(projectFarmUser(membership));
+  }),
+
   /* ---- the farm, and the console outside it ---- */
 
   /**
@@ -1079,6 +1187,25 @@ export const handlers = [
       return conflict(
         "DUPLICATE_DOCUMENT",
         "another worker on this farm already has that document",
+      );
+    }
+
+    /**
+     * The same document on somebody who is DEACTIVATED.
+     *
+     * `ux_employees_doc` is partial on `deleted_at IS NULL`, so this insert
+     * would otherwise succeed — and from then on there are two files for one
+     * person, the handset writes to one and the web to the other, the balance
+     * is split in two, and nothing says so. `docs/sincronizacion.md` lists it
+     * as the one conflict with no automatic repair, which is why it is a 409
+     * that names the existing row rather than a silent success.
+     */
+    const deleted = t.workers.find((w) => w.deletedAt != null && body.docId && w.docId === body.docId);
+    if (deleted) {
+      return conflict(
+        "EMPLOYEE_EXISTS_DELETED",
+        "a worker with that document is here and deactivated",
+        { employeeId: deleted.id },
       );
     }
 
@@ -1852,28 +1979,64 @@ export const handlers = [
     if (chosen.length === 0) {
       return conflict("NOTHING_TO_SETTLE", "there is nothing to settle in that period");
     }
-    // `db.pending` already drops anything a live settlement holds, so this can
-    // only fire on a race — which is exactly when the unique index fires on the
-    // server. It is kept so the client's recovery path has something to meet.
-    for (const p of chosen) {
-      const claim = db.liveClaim(t, p.payableId);
-      if (claim) {
-        return conflict(
-          "PAYABLE_ALREADY_CLAIMED",
-          "a payable is already part of a live settlement",
-          {
-            payableId: p.payableId,
-            winningSettlement: {
-              id: claim.settlement.id,
-              grossCents: claim.settlement.grossCents,
-              createdAt: claim.settlement.createdAt,
-            },
-          },
-        );
-      }
+
+    /**
+     * ── expectedGrossCents ──────────────────────────────────────────────
+     *
+     * REQUIRED, exactly as `handleCreateSettlement` now requires it. Not
+     * optional-if-present: a money guard a client may omit is a guard that is
+     * off in the moment it matters, and a mock that let it through would be
+     * the only configuration where the console could settle a figure nobody
+     * read.
+     *
+     * The one call that does not consult it is a retry — an `id` that already
+     * names a settlement answered 200 above, before this ran, because by then
+     * the cash has been counted.
+     *
+     * The check runs AFTER the payables are gathered and BEFORE anything is
+     * written, which is the only safe ordering: the number compared has to be
+     * the number that would be written.
+     */
+    const grossOfChosen = chosen.reduce((a, p) => a + p.amountCents, 0);
+    const expected = (body as { expectedGrossCents?: unknown }).expectedGrossCents;
+    if (typeof expected !== "number" || !Number.isInteger(expected)) {
+      return badRequest("expectedGrossCents is required and must be an integer");
+    }
+    if (expected !== grossOfChosen) {
+      /**
+       * `weeksInSettlement` is EVERY week this settlement spans with the price
+       * now in force — NOT the weeks that changed. The server cannot know
+       * which changed, because it does not know what the screen was showing;
+       * the client does, and joins the two. Naming it accurately is the whole
+       * point: a client that read it as "weeks that changed" would announce a
+       * reprice every time a late weighing arrived.
+       *
+       * `addedPayableIds` / `removedPayableIds` are exact only when the caller
+       * named the set it saw. `payableIdsProvided` is what lets a screen tell
+       * "nothing moved" apart from "we were not told what you saw".
+       */
+      const asked = new Set(body.payableIds ?? []);
+      const pendingIds = new Set(all.map((p) => p.payableId));
+      const provided = asked.size > 0;
+      const weeks = [...new Set(chosen.map((p) => p.weekStart.slice(0, 10)))].map((weekStart) => ({
+        weekStart,
+        priceCents: db.weekPriceOf(t, weekStart),
+      }));
+      return conflict("GROSS_CHANGED", "the gross changed since it was approved", {
+        expectedCents: expected,
+        actualCents: grossOfChosen,
+        addedPayableIds: provided
+          ? all.filter((p) => !asked.has(p.payableId)).map((p) => p.payableId)
+          : [],
+        removedPayableIds: provided
+          ? [...asked].filter((id) => !pendingIds.has(id))
+          : [],
+        payableIdsProvided: provided,
+        weeksInSettlement: weeks,
+      });
     }
 
-    const grossCents = chosen.reduce((a, p) => a + p.amountCents, 0);
+    const grossCents = grossOfChosen;
     if (grossCents <= 0) return conflict("NOTHING_TO_SETTLE", "the settlement adds up to nothing");
 
     // The period the settlement records is the one it actually covers, not the
@@ -1917,6 +2080,27 @@ export const handlers = [
     });
     return HttpResponse.json(projectSettlement(t, settlement), { status: 201 });
   }),
+
+  /**
+   * 405, DELIBERATELY, and this is the only handler in this file whose whole
+   * job is to refuse.
+   *
+   * `routes.go` registers `/v1/settlements` for POST only, so a GET reaches
+   * Go's mux and comes back `405 Method Not Allowed` — verified against the
+   * running server. Without this handler MSW would answer "no matching
+   * handler", which surfaces as a network error, and `api.listSettlements`
+   * would take its "something is really wrong" branch instead of its fallback.
+   * The console would then work against Postgres and fail against the mock,
+   * which is precisely the divergence this file exists to prevent.
+   *
+   * Delete this the day the collection route lands.
+   */
+  http.get("*/v1/settlements", () =>
+    HttpResponse.json(
+      { error: { code: "METHOD_NOT_ALLOWED", message: "method not allowed" } },
+      { status: 405 },
+    ),
+  ),
 
   http.get("*/v1/settlements/:id", ({ request, params }) => {
     const g = guard(request, "settlements.read");
@@ -3392,6 +3576,36 @@ function insertStockMove(
  * `qty` is signed, so the details read `{onHand, requested}` with `requested`
  * positive.
  */
+
+/**
+ * A membership -> `WireFarmUser`.
+ *
+ * `status` is DERIVED and not stored, the same way every other status in this
+ * mock is: `invited` while the address is unconfirmed, `revoked` when the
+ * membership has been switched off, `active` otherwise. There is no
+ * `lastLoginAt` in the store, so it is `null` — never a plausible date, which
+ * would be a claim about somebody's activity that nothing computed.
+ */
+const revokedMemberships = new Set<string>();
+
+function projectFarmUser(m: db.MockMembership): WireFarmUser | null {
+  const user = db.users.find((u) => u.id === m.userId);
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: m.role,
+    status: revokedMemberships.has(`${m.farmId}:${m.userId}`)
+      ? "revoked"
+      : user.emailVerified
+        ? "active"
+        : "invited",
+    lastLoginAt: null,
+    createdAt: null,
+  };
+}
+
 function guardStock(t: db.Tenant, productId: string, warehouseId: string, qty: number): Response | null {
   const onHand = db.stockOnHand(t, productId, warehouseId);
   if (onHand + qty < 0) {

@@ -198,17 +198,29 @@ describe("the mock is the server", () => {
   });
 
   it("settles, then pays, and refuses an overpayment", async () => {
+    // `expectedGrossCents` is REQUIRED, exactly as `handleCreateSettlement`
+    // requires it. Omitting it is a 400 and not a settlement: a money guard a
+    // client may leave out is a guard that is off in the moment it matters.
+    const noFigure = await post("/v1/settlements", OWNER, {
+      id: crypto.randomUUID(), workerId: MARIA, from: "2026-08-01", to: "2026-08-31",
+    });
+    expect(noFigure.status).toBe(400);
+
     const settle = await post("/v1/settlements", OWNER, {
       id: crypto.randomUUID(), workerId: MARIA, from: "2026-08-01", to: "2026-08-31",
+      expectedGrossCents: 15360000,
     });
     expect(settle.status).toBe(201);
     expect(settle.body.grossCents).toBe(15360000);
     // One devengo, and the balance moved by exactly the gross.
     const after = await get(`/v1/workers/${MARIA}/balance`, OWNER);
     expect(after.body.balanceCents).toBe(18450000 + 15360000);
-    // Nothing left pending, and re-settling is a 409.
+    // Nothing left pending, and re-settling is a 409 — NOTHING_TO_SETTLE and
+    // not GROSS_CHANGED, because the server establishes there is nothing to
+    // price before it asks whether the price is the expected one.
     const again = await post("/v1/settlements", OWNER, {
       id: crypto.randomUUID(), workerId: MARIA, from: "2026-08-01", to: "2026-08-31",
+      expectedGrossCents: 15360000,
     });
     expect(again.status).toBe(409);
     expect(again.body.error.code).toBe("NOTHING_TO_SETTLE");

@@ -1,4 +1,8 @@
-import { Alert, Box, Card, CardContent, Chip, Grid, Stack, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
+import {
+  Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, Typography,
+} from "@mui/material";
+import PeopleIcon from "@mui/icons-material/People";
 import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
 
@@ -62,6 +66,34 @@ export function ConfigPage() {
           </Card>
         </Grid>
 
+        {/* Gestión de usuarios. Owner only — sistema.md §3.3 leaves the
+            administrator's column blank for this one — so the card is not even
+            shown to an administrator, who would only meet PermissionDenied. */}
+        {can("config.users") && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  Usuarios de la finca
+                </Typography>
+                <Typography color="text.secondary" sx={{ mb: 2 }}>
+                  Invite a un administrador o a un pesador y decida qué puede ver cada
+                  uno. Hasta ahora, la única forma de crear un usuario era registrar una
+                  finca nueva.
+                </Typography>
+                <Button
+                  component={RouterLink}
+                  to="/configuracion/usuarios"
+                  variant="outlined"
+                  startIcon={<PeopleIcon />}
+                >
+                  Gestionar usuarios
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>
             <CardContent>
@@ -70,10 +102,9 @@ export function ConfigPage() {
               </Typography>
               <Stack spacing={1.5} sx={{ mt: 2 }}>
                 {[
-                  ["Usuarios e invitaciones", "Sprint 2"],
                   ["Precios de trabajo con historial", "en Actividades"],
-                  ["Dispositivos y sesiones", "Sprint 3"],
-                  ["Bitácora de auditoría", "Sprint 2"],
+                  ["Dispositivos y sesiones", "más adelante"],
+                  ["Bitácora de auditoría", "más adelante"],
                 ].map(([k, v]) => (
                   <Stack key={k} direction="row" justifyContent="space-between" alignItems="center">
                     <Typography color="text.secondary">{k}</Typography>

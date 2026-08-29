@@ -139,6 +139,16 @@ export const ERROR_MESSAGES: Record<string, string> = {
   RANGE_NEEDS_FROZEN_RATE:
     "Para varios días hay que fijar el valor de la labor. Escriba el valor o registre un día a la vez.",
   DUPLICATE_DOCUMENT: "Ya hay un empleado con esa identificación en esta finca.",
+  // The screen catches this one before the message is ever shown, because the
+  // useful thing is the button, not the sentence: `details.employeeId` names
+  // the person who is already here, and WorkerFormPage offers to reactivate
+  // them. The text is here so the code is never displayed bare — a 409 on a
+  // form somebody is trying to submit, with no way forward, is how a
+  // duplicate file gets created under a slightly different document number.
+  EMPLOYEE_EXISTS_DELETED:
+    "Esa identificación ya existe en la finca, en un empleado que está inactivo. " +
+    "Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda " +
+    "con dos cuentas y el saldo se parte en dos.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
 
   /* -- inventory, sales and expenses --------------------------------- */

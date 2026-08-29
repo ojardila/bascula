@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Grid, MenuItem, Stack, TextField, Typography,
+  Alert, AlertTitle, Box, Button, Card, CardContent, Grid, MenuItem, Stack, TextField,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PhotoField } from "./PhotoField";
@@ -37,6 +38,21 @@ export function WorkerFormPage() {
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * The same document already belongs to somebody who is DEACTIVATED.
+   *
+   * Not an error to display and walk away from. `ux_employees_doc` is partial
+   * on `deleted_at IS NULL`, so nothing in the database stops a second file
+   * for one person — from then on the handset writes to one and the web to the
+   * other, the balance is split in two, and nothing says so.
+   * `docs/sincronizacion.md` lists it as the one conflict with no automatic
+   * repair. So the screen offers the repair: reactivate the person who is
+   * already here.
+   *
+   * Leaving somebody stuck at a red box is how the duplicate gets created
+   * anyway, under a document number with a dot moved.
+   */
+  const [existingDeleted, setExistingDeleted] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -96,8 +112,33 @@ export function WorkerFormPage() {
         : await api.createWorker(body);
       navigate(`/empleados/${saved.id}`, { replace: true });
     } catch (e) {
-      if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
+      if (e instanceof ApiError && e.code === "EMPLOYEE_EXISTS_DELETED") {
+        const existingId = String(e.details.employeeId ?? "");
+        // Fetch the name so the offer says WHO, not "the existing worker". A
+        // person deciding whether to reactivate needs to recognise them.
+        const who = existingId ? await api.getWorker(existingId).catch(() => null) : null;
+        setExistingDeleted({
+          id: existingId,
+          name: who ? `${who.name} ${who.lastName}`.trim() : "",
+        });
+      } else {
+        if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
+        setError(messageFor(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reactivate() {
+    if (!existingDeleted?.id) return;
+    setBusy(true);
+    try {
+      await api.reactivateWorker(existingDeleted.id);
+      navigate(`/empleados/${existingDeleted.id}`, { replace: true });
+    } catch (e) {
       setError(messageFor(e));
+      setExistingDeleted(null);
     } finally {
       setBusy(false);
     }
@@ -120,6 +161,34 @@ export function WorkerFormPage() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+
+      {existingDeleted && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Stack direction="row" spacing={1}>
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => navigate(`/empleados/${existingDeleted.id}`)}
+              >
+                Ver la ficha
+              </Button>
+              <Button variant="contained" size="small" disabled={busy} onClick={reactivate}>
+                Reactivar
+              </Button>
+            </Stack>
+          }
+        >
+          <AlertTitle>Esa identificación ya existe en la finca</AlertTitle>
+          {existingDeleted.name
+            ? `${existingDeleted.name} tiene ese documento y está inactivo.`
+            : "Un empleado con ese documento ya está registrado y está inactivo."}{" "}
+          Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda con dos
+          cuentas, el saldo se parte en dos y nada avisa de ello.
         </Alert>
       )}
 

@@ -2014,6 +2014,187 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sync/handshake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What this handset may do, and how far behind it is
+         * @description The first thing a handset does when it is paired, and again on every
+         *     launch. It answers with the farm's timezone — which is what lets the
+         *     handset compute the same `localDay` the server's trigger computes — the
+         *     currency, where the server's cursor is now, and how many changes the
+         *     handset has still to receive.
+         *
+         *     `capabilities` is not courtesy: it is what turns buttons off in an app
+         *     already in a farm's pocket, without shipping a new build the day the
+         *     owner changes their mind. It does NOT grant anything — the server still
+         *     answers 403 whether or not the button was visible, because hiding a
+         *     button is not a permission.
+         *
+         *     `settleOffline` is false by decision 5: cash handed over in the field is
+         *     an `anticipo`, which claims no payable, takes no lock, and is amortised
+         *     to the cent when the settlement runs. `writePlots` and `writeWeekPrices`
+         *     are false by decision 6.
+         */
+        post: operations["syncHandshake"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sync/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * An ordered batch of envelopes, each with its own outcome
+         * @description The order is the handset's own insertion order, which is the causal
+         *     order: a parent was always inserted before its child.
+         *
+         *     **It always answers 200.** The state of each envelope is in its own row,
+         *     because a batch of two hundred weighings where one names a worker the
+         *     web deleted has to get the other hundred and ninety-nine in. Every
+         *     envelope runs in its own `SAVEPOINT` for exactly that reason.
+         *
+         *     `opId` is THE IDEMPOTENCY KEY — of the act, not of the row; the row has
+         *     its own uuid. Before applying anything the server looks the `opId` up in
+         *     `sync_ops` and, if it is there, returns the recorded result LITERALLY
+         *     without executing a thing. That is what covers the operations a
+         *     client-generated uuid cannot: voiding and reversing, whose second
+         *     attempt has a different answer from the first.
+         *
+         *     At most 200 envelopes or 1 MB. The handset slices; on a farm's network a
+         *     large batch is a batch that never finishes.
+         *
+         *     `op` is `append` for the ledger and `upsert` for everything else. There
+         *     is no `delete`: a deletion is an upsert carrying `deletedAt`, because a
+         *     physical delete leaves no headstone and rises again on the next pull.
+         *
+         *     Outgoing money is accepted WITHOUT a balance check. A `pago`, an
+         *     `anticipo` or a `deduccion` is a fact — somebody handed over cash — and
+         *     refusing its arrival does not undo the fact, it only makes the database
+         *     lie. The balance goes negative and the excess behaves as an advance,
+         *     which is what the handset already does and what golden case 07 fixes. A
+         *     `devengo` is refused: it is written by POST /v1/settlements and only
+         *     travels down.
+         */
+        post: operations["syncPush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sync/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everything that changed after a cursor
+         * @description Changes in `seq` order, each with the body composed AT PULL TIME from
+         *     the real table. The feed row itself carries only an identity, so a row
+         *     corrected five times is sent once, in its current state, and the feed
+         *     can never become a second copy of the money that drifts from the first.
+         *
+         *     A settlement always travels WHOLE, with its lines. Never a header
+         *     without its rows: a document for $1.187.500 with nothing underneath it
+         *     is exactly what the handset's `user_version = 4` migration existed to
+         *     repair.
+         *
+         *     The reader never sees a change out of order and the cursor never jumps
+         *     over one, because the query stops below a horizon: the lowest `seq`
+         *     still owned by a transaction that may not have committed. A row held
+         *     back is not lost — it appears in the next poll, in its place.
+         *
+         *     A weigher's pull carries no `settlement` and no `ledgerEntry` body and
+         *     no `balances`. His cursor still advances past them, because a cursor
+         *     stranded behind the first payroll of the season would never move again.
+         *
+         *     `balances` is a CHECKSUM, not a datum, and it arrives only in the last
+         *     batch (`more: false`), when the handset is already up to date. The
+         *     handset recomputes with its own BALANCE_SQL and compares; if they
+         *     differ it flags the worker rather than copying the number. A total that
+         *     arrives on the wire and is stored is the materialised total this design
+         *     has refused three documents running.
+         */
+        get: operations["syncPull"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/import/season": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a season that already exists on a handset onto the server
+         * @description A farm has been running this season on a handset. Until that history is
+         *     here, settlement cannot move here either: a settlement created on the
+         *     server would claim payables the server has never seen, and the anti
+         *     double-pay lock would have nothing to lock against. So the order is
+         *     import first, and this is the import.
+         *
+         *     **The handset's UUIDs are kept.** Every `id` below is the uuid the
+         *     handset generated, and `payableId` on a settlement line points at the
+         *     same uuid it pointed at there. The money is not remapped: a remap is a
+         *     rewrite of the very column the anti double-pay index lives on, in the
+         *     database that holds the only copy of a farm's season.
+         *
+         *     The one identifier that is NOT the handset's is the plot's. The handset
+         *     has `crops` and no plots, so a plot is invented around each crop and
+         *     named after the lot the user had in their head; the `plot_crop`
+         *     INHERITS the crop's uuid, because that is what the weighings point at.
+         *
+         *     **It is idempotent** by (farm_id, id) like every other write here, and
+         *     the report says what it wrote and what was already there. Phase 3 is
+         *     meant to be run against a copy over and over until it comes out clean.
+         *
+         *     **It reconciles to the cent, inside the transaction, and aborts if it
+         *     does not.** `balances` is what the handset's own BALANCE_SQL says each
+         *     worker's position is; it is not imported — nothing derived is ever
+         *     stored — it is the check. One cent of disagreement is 409
+         *     IMPORT_MISMATCH with every offending worker listed, and NOTHING is
+         *     written: a 4xx never commits. Half an imported payroll is worse than
+         *     none, because the figures look plausible and nobody goes looking.
+         *
+         *     Nothing about this touches the handset, which is the whole safety
+         *     argument of phase 4: if it fails, the farm is exactly as it was and
+         *     there is nothing to undo.
+         *
+         *     The owner's alone, and Money. It writes a year of settlements and a year
+         *     of ledger in one act.
+         */
+        post: operations["importSeason"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2027,7 +2208,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -2879,6 +3060,27 @@ export interface components {
         SettlementInput: {
             /** Format: uuid */
             id?: string;
+            /**
+             * Format: int64
+             * @description What the caller was shown by POST /v1/settlements/preview.
+             *
+             *     REQUIRED on POST /v1/settlements, ignored by the preview itself.
+             *     If the settlement would not add up to this, the server writes
+             *     nothing and answers 409 GROSS_CHANGED with the new figure and what
+             *     moved it. Between reading the screen and pressing the button the
+             *     owner can reprice the week from the web and a late weighing can
+             *     arrive; a settlement that comes out to a different number than the
+             *     one the person read is a number they are about to count out in
+             *     cash.
+             *
+             *     It is required and not optional on purpose, and the reasoning is in
+             *     the doc comment on handleCreateSettlement: a money guard a client
+             *     may omit is a guard that is off in exactly the moment it matters.
+             *     The one call that does not consult it is a retry — an `id` that
+             *     already names a settlement answers 200 with that settlement without
+             *     looking at this field, because by then the cash has been counted.
+             */
+            expectedGrossCents?: number;
             /** Format: uuid */
             workerId: string;
             /** Format: date */
@@ -3660,6 +3862,362 @@ export interface components {
              */
             weeksWithoutKilos: number;
         };
+        /**
+         * @description The wire name of a table, which is the handset's name and not the
+         *     server's: the handset knows `worker`, `crop` and `workRecord`.
+         *
+         *     Direction is per entity and is not symmetric (§2 of
+         *     docs/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
+         *     both ways. `farmConfig`, `plot`, `crop`, `weekPrice` and `settlement`
+         *     only come down; pushing one is refused with its reason.
+         * @enum {string}
+         */
+        SyncEntity: "farmConfig" | "worker" | "plot" | "crop" | "weekPrice" | "workRecord" | "settlement" | "ledgerEntry";
+        SyncHandshakeInput: {
+            /**
+             * Format: uuid
+             * @description Stable, generated once on the handset.
+             */
+            deviceId: string;
+            appVersion?: string;
+            /**
+             * @description The handset's local `user_version`. Below 6 the answer is 409
+             *     SCHEMA_TOO_OLD and nothing else happens.
+             */
+            schemaVersion: number;
+            /**
+             * Format: int64
+             * @description Where the handset is. 0 the first time.
+             */
+            cursor?: number;
+        };
+        SyncHandshake: {
+            /** Format: uuid */
+            farmId: string;
+            /**
+             * @description The farm's IANA zone. With it the handset computes the same
+             *     `localDay` and `weekStart` the server's trigger computes — which is
+             *     what makes a Sunday-evening weighing land in the same week on both
+             *     sides.
+             */
+            timezone: string;
+            currency: string;
+            minorUnit: number;
+            /** Format: date-time */
+            serverTime: string;
+            /**
+             * Format: int64
+             * @description Where the server is now.
+             */
+            cursor: number;
+            /**
+             * Format: int64
+             * @description How many changes the handset has still to receive. It is what turns
+             *     the status chip from a spinner into a number a person can act on
+             *     before they leave the lot.
+             */
+            behind: number;
+            role: components["schemas"]["Role"];
+            capabilities: {
+                settleOffline: boolean;
+                writePlots: boolean;
+                writeWeekPrices: boolean;
+            };
+        };
+        SyncPushOp: {
+            /**
+             * Format: uuid
+             * @description The idempotency key of the ENVELOPE. Recorded with its result, so a
+             *     resend returns the same answer rather than performing the act a
+             *     second time.
+             */
+            opId: string;
+            entity: components["schemas"]["SyncEntity"];
+            /**
+             * @description `append` for the ledger, `upsert` for everything else. There is no
+             *     `delete`: a deletion is an upsert carrying `deletedAt`.
+             * @enum {string}
+             */
+            op: "upsert" | "append";
+            /**
+             * @description The row, in the handset's vocabulary. Unknown fields are a 400 for
+             *     that envelope on purpose — a field silently dropped shows up as a
+             *     missing note three weeks later.
+             *
+             *     `worker`: id, name, lastName, documentType, docId, tag, createdAt,
+             *     deletedAt.
+             *
+             *     `workRecord`: id, workerId, cropId, quantity, occurredAt, note,
+             *     deviceId, deletedAt. `occurredAt` is an RFC3339 INSTANT WITH ITS
+             *     OFFSET, never a bare day: the farm's calendar day is written by the
+             *     server's trigger from the farm's own timezone, and Go never
+             *     computes it.
+             *
+             *     `ledgerEntry`: id, workerId, kind, amountCents, date, method, note.
+             *     `kind` is pago, anticipo, deduccion or ajuste — a `devengo` is
+             *     written by POST /v1/settlements and only travels down.
+             */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        SyncPushInput: {
+            /** Format: uuid */
+            deviceId: string;
+            ops: components["schemas"]["SyncPushOp"][];
+        };
+        SyncOpResult: {
+            /** Format: uuid */
+            opId: string;
+            /**
+             * @description `applied` — written. `duplicate` — it was already here, which after
+             *     a lost response is the normal case and is a success. `rejected` —
+             *     it will not be written, and `error.code` says whether the handset
+             *     should retry, treat it as done, or put it in front of a person.
+             * @enum {string}
+             */
+            status: "applied" | "duplicate" | "rejected";
+            /**
+             * Format: uuid
+             * @description The row this envelope names, on applied and duplicate.
+             */
+            id?: string;
+            error?: components["schemas"]["SyncOpError"];
+        };
+        SyncOpError: {
+            code: components["schemas"]["ErrorCode"];
+            message: string;
+            details?: {
+                [key: string]: unknown;
+            };
+        };
+        SyncPushResult: {
+            /**
+             * Format: int64
+             * @description Where the feed is after the batch; the handset may pull from here.
+             */
+            cursor: number;
+            results: components["schemas"]["SyncOpResult"][];
+        };
+        SyncChange: {
+            /** Format: int64 */
+            seq: number;
+            entity: components["schemas"]["SyncEntity"];
+            /** @enum {string} */
+            op: "upsert" | "append";
+            /**
+             * @description The row as it stands now, composed from the real table at pull time.
+             *
+             *     `settlement` carries its `items` — always, never a header alone.
+             *     `workRecord` carries only work paid by the unit of work; a day's
+             *     wage on a screen that only knows how to show kilos is worse than
+             *     nothing, which is what GET /v1/pickups/{id} already decided.
+             */
+            row: {
+                [key: string]: unknown;
+            };
+        };
+        SyncPull: {
+            changes: components["schemas"]["SyncChange"][];
+            /**
+             * Format: int64
+             * @description The last `seq` consumed — which is not always the last `seq`
+             *     RETURNED, because a change whose body this caller may not see is
+             *     skipped while its seq is still consumed. The handset applies the
+             *     batch in seq order in one transaction and only then advances to
+             *     here; a cut halfway leaves the cursor where it was and the batch
+             *     repeats, and applying an upsert by uuid twice is a no-op.
+             */
+            cursor: number;
+            more: boolean;
+            /**
+             * @description Present ONLY in the last batch, and only for owner and admin. A
+             *     checksum: the handset recomputes and compares, and a difference is
+             *     a worker to flag, never a number to copy.
+             */
+            balances?: {
+                /** Format: uuid */
+                workerId: string;
+                /** Format: int64 */
+                balanceCents: number;
+            }[];
+        };
+        /**
+         * @description The handset's whole season, in dependency order. The order of the fields
+         *     is the order they are written, and it is the same receiving order the
+         *     feed uses: references first — people, lots, crops, prices — and only
+         *     then work and money.
+         */
+        SeasonImportInput: {
+            /**
+             * Format: uuid
+             * @description An import is a named handset's season, not an anonymous file.
+             */
+            deviceId: string;
+            workers?: {
+                /**
+                 * Format: uuid
+                 * @description The handset's own uuid. It becomes the employee's id.
+                 */
+                id: string;
+                name: string;
+                lastName?: string | null;
+                documentType?: string | null;
+                docId?: string | null;
+                tag?: string | null;
+                /** Format: date-time */
+                createdAt?: string | null;
+                /** Format: date-time */
+                deletedAt?: string | null;
+            }[];
+            /**
+             * @description One entry per crop on the handset. The `plot_crop` is written with
+             *     `cropId` as its id — it inherits the handset's uuid, because that is
+             *     what the weighings point at — and a plot is created around it with
+             *     an id of its own.
+             */
+            plots?: {
+                /** Format: uuid */
+                cropId: string;
+                name: string;
+                cropType?: string;
+                variety?: string | null;
+                areaHa?: number | null;
+                /** Format: date-time */
+                deletedAt?: string | null;
+            }[];
+            weekPrices?: components["schemas"]["WeekPrice"][];
+            /**
+             * @description The weighings. Each becomes a work record of the seeded harvest
+             *     activity, `rateSource: weekly_price`, with the activity's unit and
+             *     `quantity` = the weight. `localDay` is never sent: the trigger
+             *     computes it from the farm's timezone.
+             */
+            workRecords?: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workerId: string;
+                /** Format: uuid */
+                cropId?: string | null;
+                quantity: number;
+                /** Format: date-time */
+                occurredAt: string;
+                note?: string | null;
+                /** Format: uuid */
+                deviceId?: string | null;
+                /** Format: date-time */
+                deletedAt?: string | null;
+            }[];
+            settlements?: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workerId: string;
+                /** Format: date */
+                periodStart: string;
+                /** Format: date */
+                periodEnd: string;
+                /** Format: int64 */
+                grossCents: number;
+                /** @enum {string} */
+                status?: "open" | "void";
+                note?: string | null;
+                /** Format: date-time */
+                createdAt?: string | null;
+                /** Format: date-time */
+                voidedAt?: string | null;
+                items: {
+                    /** Format: uuid */
+                    id?: string;
+                    /**
+                     * Format: uuid
+                     * @description The weighing's own uuid, unchanged. This is the column
+                     *     the anti double-pay index lives on, and it is why the
+                     *     money survives the move without being remapped.
+                     */
+                    payableId: string;
+                    /** Format: date */
+                    weekStart: string;
+                    quantity: number;
+                    /** Format: int64 */
+                    priceCents: number;
+                    /**
+                     * Format: int64
+                     * @description Must equal round(quantity × priceCents). The database
+                     *     checks it; a line that does not add up refuses the whole
+                     *     import.
+                     */
+                    amountCents: number;
+                    /** Format: date-time */
+                    voidedAt?: string | null;
+                }[];
+            }[];
+            /**
+             * @description Every movement, with `settlementId` and `reversesId` resolved by
+             *     uuid. Reversals are written last, because the trigger that checks a
+             *     reversal reads the row it cancels.
+             */
+            ledger?: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workerId: string;
+                kind: components["schemas"]["LedgerKind"];
+                /**
+                 * Format: int64
+                 * @description With the ledger's own sign, not a friendly positive: a `pago`
+                 *     is negative and the database refuses a positive one outright.
+                 */
+                amountCents: number;
+                /** Format: date */
+                date: string;
+                method?: string | null;
+                note?: string | null;
+                /** Format: uuid */
+                settlementId?: string | null;
+                /** Format: uuid */
+                reversesId?: string | null;
+                /** Format: date-time */
+                createdAt?: string | null;
+            }[];
+            /**
+             * @description REQUIRED, and it is the reason this endpoint can be trusted. What
+             *     the handset's own BALANCE_SQL says each worker's position is. It is
+             *     not imported — nothing derived is ever stored — it is what the
+             *     server checks its own derivation against, to the cent, before the
+             *     transaction commits.
+             */
+            balances: {
+                /** Format: uuid */
+                workerId: string;
+                /** Format: int64 */
+                balanceCents: number;
+            }[];
+        };
+        ImportCounts: {
+            written: number;
+            /** @description Already here. On a re-run this is the whole file. */
+            skipped: number;
+        };
+        SeasonImportReport: {
+            workers: components["schemas"]["ImportCounts"];
+            plots: components["schemas"]["ImportCounts"];
+            crops: components["schemas"]["ImportCounts"];
+            weekPrices: components["schemas"]["ImportCounts"];
+            workRecords: components["schemas"]["ImportCounts"];
+            settlements: components["schemas"]["ImportCounts"];
+            settlementItems: components["schemas"]["ImportCounts"];
+            ledger: components["schemas"]["ImportCounts"];
+            /**
+             * @description How many workers' balances were compared and agreed. Reported even
+             *     when it passes: a number only printed when it is wrong is a number
+             *     nobody ever sees be right.
+             */
+            balancesChecked: number;
+            /** @description Live settlement lines on the farm after the import. */
+            liveItems: number;
+        };
     };
     responses: {
         /** @description BAD_REQUEST — malformed body, unknown field, or a bad value. */
@@ -4210,7 +4768,19 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description DUPLICATE_DOCUMENT — another worker here has that document. */
+            /**
+             * @description DUPLICATE_DOCUMENT — another worker who is ON the payroll has that
+             *     document.
+             *
+             *     EMPLOYEE_EXISTS_DELETED with `details.employeeId` — a worker with
+             *     that document is here and DEACTIVATED. `ux_employees_doc` is
+             *     partial on `deleted_at IS NULL`, so this insert would otherwise
+             *     succeed and create a second file for one person: from then on the
+             *     handset writes to one and the web to the other, the balance is
+             *     split in two, and nothing says so. Restore the existing one with
+             *     PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
+             *     conflict in docs/sincronizacion.md with no automatic repair.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5620,9 +6190,27 @@ export interface operations {
             404: components["responses"]["NotFound"];
             /**
              * @description NOTHING_TO_SETTLE, PAYABLE_ALREADY_CLAIMED with
-             *     `details.payableId` and `details.winningSettlement`, or
+             *     `details.payableId` and `details.winningSettlement`,
              *     IDEMPOTENCY_KEY_REUSED when `id` already names a settlement for
-             *     another worker.
+             *     another worker, or GROSS_CHANGED.
+             *
+             *     GROSS_CHANGED carries `details.expectedCents`,
+             *     `details.actualCents`, `details.addedPayableIds`,
+             *     `details.removedPayableIds`, `details.weeksInSettlement` — the weeks
+             *     this settlement spans with the price NOW in force, NOT a list of
+             *     weeks that changed — and `details.payableIdsProvided`.
+             *
+             *     Added and removed are exact whenever the caller named the set it
+             *     saw in `payableIds`. When it did not, both lists are empty and
+             *     `payableIdsProvided` is false: that means "we were not told what
+             *     you saw", never "nothing moved". A screen that cannot tell those
+             *     apart will blame a reprice for a late weighing.
+             *
+             *     Send `payableIds`. Naming the set removes the race entirely rather
+             *     than reporting it: the settlement takes exactly what was approved,
+             *     and anything that arrived since is simply not in it. Nothing here is
+             *     guessed: a cause the server cannot establish is not reported as
+             *     one.
              */
             409: {
                 headers: {
@@ -7164,6 +7752,196 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    syncHandshake: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncHandshakeInput"];
+            };
+        };
+        responses: {
+            /** @description Where the server is, and what this handset may do. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncHandshake"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description SCHEMA_TOO_OLD — the handset's local schema predates the UUID
+             *     columns, so it cannot name a row in a way this server understands.
+             *     It updates before it pushes a byte. `details.minimumSchemaVersion`
+             *     says what it needs.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    syncPush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncPushInput"];
+            };
+        };
+        responses: {
+            /** @description One result per envelope, and where the feed now is. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPushResult"];
+                };
+            };
+            /**
+             * @description The BATCH is malformed — no `deviceId`, more than 200 envelopes. A
+             *     single bad envelope is never a 400: it comes back as a `rejected`
+             *     row with its own code.
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    syncPull: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The last `seq` this handset applied. 0 means "everything", which is
+                 *     a full bootstrap: the feed was backfilled when it was created, so a
+                 *     farm that predates synchronisation still answers from 0 with its
+                 *     whole state rather than with an empty list.
+                 */
+                cursor?: number;
+                /** @description At most 500, which is also the default. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The changes after that cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPull"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description CURSOR_TOO_OLD — that cursor is older than the oldest change still
+             *     retained (180 days), so the feed can no longer say what was missed.
+             *     `details.oldestRetainedSeq` says where the feed starts. The handset
+             *     pulls again from cursor 0. Skipping the gap in silence would lose
+             *     changes for ever, which is why this is an error and not a shrug.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    importSeason: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeasonImportInput"];
+            };
+        };
+        responses: {
+            /**
+             * @description Everything was written and the reconciliation came out clean. The
+             *     counts distinguish what this call wrote from what was already
+             *     there, which is the whole answer to "did the retry do anything".
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonImportReport"];
+                };
+            };
+            /**
+             * @description The file is malformed, or a row of it was refused by a constraint —
+             *     a line that does not add up, a movement with the wrong sign, a week
+             *     that is not a Monday. The message names the row.
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description IMPORT_MISMATCH — a balance the handset sent does not match what the
+             *     server derives from the ledger it just received, or fewer live
+             *     settlement lines survived than were sent. `details.balances` lists
+             *     every worker with both figures and the difference. Nothing was
+             *     written.
+             *
+             *     PAYABLE_ALREADY_CLAIMED — the file itself claims one payable in two
+             *     live settlements. That is a handset whose own lock was bypassed, and
+             *     it is not something to paper over.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

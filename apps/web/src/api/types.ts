@@ -102,6 +102,40 @@ export interface Session {
   user: MeUser;
 }
 
+/**
+ * Where a membership stands. Three states and no fourth, because the fourth
+ * everybody reaches for — "deleted" — is the one that must not exist: a
+ * settlement names the user who wrote it, and a user id resolving to nothing
+ * turns an audit trail into a list of UUIDs.
+ *
+ * `unknown` is not a state the server has; it is what this app shows when the
+ * server sends something it does not recognise. It renders as "—", never as
+ * "activo", because guessing that an unreadable membership is a working one is
+ * the guess that opens a door.
+ */
+export type FarmUserStatus = "invited" | "active" | "revoked" | "unknown";
+
+export interface FarmUser {
+  id: Uuid;
+  email: string;
+  name: string;
+  role: Role;
+  status: FarmUserStatus;
+  /**
+   * NULL, not a zero date, until they have logged in once. "Nunca ha entrado"
+   * is a fact worth showing; 1 de enero de 1970 is a lie about one.
+   */
+  lastLoginAt: string | null;
+  createdAt: string | null;
+}
+
+export interface FarmUserInput {
+  id: Uuid;
+  email: string;
+  name: string;
+  role: Role;
+}
+
 export interface MeUser {
   id: Uuid;
   email: string;
@@ -467,18 +501,49 @@ export interface WorkRecordInput {
 
 /* -- money ----------------------------------------------------------- */
 
+/**
+ * One line of what is owed: a work record seen from the settlement's side.
+ *
+ * `rateCents` and `weekStart` are here for one reason — `api/grossChange.ts`
+ * compares two of these lists to work out WHY a gross moved between the moment
+ * somebody read it and the moment they approved it. Without the rate, a week
+ * whose price changed is indistinguishable from a week whose weighings
+ * changed, and the difference screen can only say "the number is different".
+ */
+export interface PayableLine {
+  id: Uuid;
+  activityName: string;
+  dateFrom: DayISO;
+  dateTo: DayISO;
+  /** The Monday the payable belongs to. What a weekly price is keyed on. */
+  weekStart: DayISO;
+  /** Empty: a payable carries the activity and the money, not the plots. */
+  plotNames: string[];
+  quantity: number;
+  /** Non-null only for work paid by weighed quantity — a *pesada*. */
+  unitLabel: string | null;
+  /**
+   * Resolved by the server even when the record itself has no frozen price:
+   * a `weekly_price` payable is priced at settlement time, which is exactly
+   * the value that can move underneath an open payment screen.
+   */
+  rateCents: number;
+  /**
+   * `weekly_price` means THIS ROW IS NOT DECIDED YET: it is priced at
+   * settlement time from the week's price, so the amount below is what it
+   * would be worth today and not what anybody owes. Everything else is frozen.
+   *
+   * The screens show the difference. What the farm owes and what it might owe
+   * must not look alike in a column of pesos — and it is the same rows that
+   * move underneath an open payment screen, which is why the guard in
+   * `grossChange.ts` and this flag describe the same fact from two sides.
+   */
+  rateSource: RateSource;
+  amountCents: number;
+}
+
 export interface Payables {
-  workRecords: Array<{
-    id: Uuid;
-    activityName: string;
-    dateFrom: DayISO;
-    dateTo: DayISO;
-    /** Empty: a payable carries the activity and the money, not the plots. */
-    plotNames: string[];
-    quantity: number;
-    unitLabel: string | null;
-    amountCents: number;
-  }>;
+  workRecords: PayableLine[];
   /**
    * FOR DISPLAY ONLY. These advances and deductions are already inside
    * `balanceCents`; subtracting them again charges the worker twice for the
@@ -504,6 +569,58 @@ export interface PaymentInput {
    * alone". Settling is a separate write; see `api.createPayment`.
    */
   payableIds?: Uuid[];
+  /**
+   * The gross the user SAW and approved, in cents. Required whenever
+   * `payableIds` is non-empty — `createPayment` throws without it rather than
+   * settling whatever the server happens to hold at the moment of the write.
+   * See the note on `api.settle`.
+   */
+  expectedGrossCents?: number;
+  /**
+   * The lines that made up that gross. Not needed for the guard, which is
+   * arithmetic on one number; needed to say WHY the figure moved when the
+   * guard fires, which is the difference between a refusal and an explanation.
+   */
+  expectedLines?: PayableLine[];
+}
+
+/* -- settlements ----------------------------------------------------- */
+
+/**
+ * A settlement as the farm's list shows it: who, which weeks, how much, and
+ * whether it still stands.
+ *
+ * `status` has two values and no third. A void settlement is never reopened —
+ * `docs/sincronizacion.md`: "Ninguna liquidación cerrada se reabre nunca, por
+ * ningún motivo" — so there is no "reversed to draft" state to model, and the
+ * screen offers no control that would imply one.
+ */
+export interface SettlementSummary {
+  id: Uuid;
+  workerId: Uuid;
+  /** Joined from the worker list. "—" when the id resolves to nothing. */
+  workerName: string;
+  /**
+   * The period ACTUALLY covered — the Monday of the earliest payable taken in
+   * — not the window the caller asked over. A settlement asked for "everything
+   * outstanding" would otherwise be filed under 1970.
+   */
+  periodStart: DayISO;
+  periodEnd: DayISO;
+  grossCents: number;
+  status: "open" | "void";
+  /** How many payables it froze. Shown so a row's weight is visible at once. */
+  lineCount: number;
+  note: string | null;
+  createdAt: string;
+  voidedAt: string | null;
+}
+
+export interface Settlement extends SettlementSummary {
+  /** The frozen lines: what was settled, at the price it was settled at. */
+  lines: PayableLine[];
+  /** Lines the server marks voided. Normally empty unless the whole is void. */
+  voidedLineIds: Uuid[];
 }
 
 export interface Payment {

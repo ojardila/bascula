@@ -34,12 +34,18 @@
  * Point it somewhere else with BASCULA_API_URL.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { api } from "../src/api/endpoints";
+import { api, grossChangeOf } from "../src/api/endpoints";
+import { sentenceFor, type Formatters } from "../src/api/grossChange";
 import { ApiError } from "../src/api/errors";
 import { getTokens, http, setTokens } from "../src/api/client";
 import { invalidateRefs } from "../src/api/refs";
+import { formatDayLong } from "../src/lib/dates";
+import { formatMoney } from "../src/lib/money";
 import { uuidv7 } from "../src/lib/uuid";
 import { areaHaOf, asGeometry, ringProblem, type Geometry } from "../src/lib/geo";
+
+/** How the difference sentence writes figures and dates. */
+const FMT: Formatters = { money: formatMoney, week: formatDayLong };
 
 const API_URL = process.env.BASCULA_API_URL ?? "http://localhost:8099";
 
@@ -445,8 +451,14 @@ suite(suiteName, () => {
   });
 
   it("liquidar es lo que convierte el trabajo en plata debida", async () => {
+    const approved = await api.previewSettlement(workerId, recordIds);
+    expect(approved.grossCents).toBe(5_080_000);
+
     const settlement = await api
-      .settle(workerId, recordIds)
+      .settle(workerId, recordIds, {
+        expectedGrossCents: approved.grossCents,
+        expectedLines: approved.lines,
+      })
       .catch((e) => explain(e, "liquidar"));
 
     expect(settlement.grossCents).toBe(5_080_000);
@@ -457,9 +469,36 @@ suite(suiteName, () => {
     expect(balance.balanceCents).toBe(5_080_000);
 
     // The same records are now claimed, so there is nothing left to settle.
-    await expect(api.settle(workerId, recordIds)).rejects.toMatchObject({
-      code: "NOTHING_TO_SETTLE",
-    });
+    // NOTHING_TO_SETTLE and not GROSS_CHANGED, and the ordering is the
+    // server's on purpose: it establishes there is nothing to price before it
+    // asks whether the price is the expected one. "Su cifra cambió" about an
+    // empty selection would send somebody looking for a weighing that moved.
+    await expect(
+      api.settle(workerId, recordIds, { expectedGrossCents: 5_080_000 }),
+    ).rejects.toMatchObject({ code: "NOTHING_TO_SETTLE" });
+  });
+
+  /**
+   * The settlement is now a record the farm can look up, which is what the
+   * `/liquidaciones` screen reads. There is no `GET /v1/settlements` on the
+   * server — it answers 405 — so `listSettlements` composes the list out of
+   * the ledgers; this proves the composition finds what was just written.
+   */
+  it("la liquidación queda listada, con su periodo y sus líneas", async () => {
+    const list = await api.listSettlements().catch((e) => explain(e, "listar liquidaciones"));
+    const mine = list.filter((s) => s.workerId === workerId);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].grossCents).toBe(5_080_000);
+    expect(mine[0].status).toBe("open");
+    expect(mine[0].workerName).toBe("Rosa Quintero");
+    // The period recorded is the one actually covered, not the 1970 the client
+    // asks over when it means "everything outstanding".
+    expect(mine[0].periodStart.slice(0, 4)).not.toBe("1970");
+
+    const detail = await api.getSettlement(mine[0].id);
+    expect(detail.lines).toHaveLength(2);
+    expect(detail.lines.reduce((a, l) => a + l.amountCents, 0)).toBe(5_080_000);
+    expect(detail.lines.every((l) => l.rateCents === PRICE_PER_KG)).toBe(true);
   });
 
   it("no deja pagar más de lo que se debe", async () => {
@@ -542,6 +581,146 @@ suite(suiteName, () => {
     // payment.
     await expect(api.deactivateWorkRecord(recordIds[0])).rejects.toMatchObject({
       code: "WORK_RECORD_SETTLED",
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* El candado de la liquidación                                        */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * These two run on a worker of their OWN, hired here, and deliberately after
+   * the walk above has finished asserting its by-hand arithmetic. They move
+   * work records around to stage a race, and doing that to Rosa would quietly
+   * rewrite the figures every comment in this file quotes.
+   */
+  describe("cuando el bruto se mueve entre mirarlo y aprobarlo", () => {
+    let raceWorkerId = "";
+    const raceRecords: string[] = [];
+
+    beforeAll(async () => {
+      const worker = await api
+        .createWorker({
+          id: uuidv7(),
+          name: "Carmen",
+          lastName: "Ospina",
+          documentType: "CC",
+          documentNumber: `9${Date.now()}`.slice(0, 10),
+          phone: "",
+          country: "Colombia",
+        })
+        .catch((e) => explain(e, "contratar para la prueba del candado"));
+      raceWorkerId = worker.id;
+
+      for (const quantity of [10, 20]) {
+        const r = await api
+          .createWorkRecord({
+            id: uuidv7(),
+            workerId: raceWorkerId,
+            activityId,
+            plotIds: [plotId],
+            plotCropIds: [],
+            dateFrom: today(),
+            dateTo: today(),
+            quantity,
+          })
+          .catch((e) => explain(e, "registrar labor para la prueba del candado"));
+        raceRecords.push(r.id);
+      }
+    });
+
+    /**
+     * NAMING THE SET REMOVES THE RACE.
+     *
+     * This is the behaviour the contract asks for in as many words — "Send
+     * `payableIds`. Naming the set removes the race entirely rather than
+     * reporting it" — and it is worth proving rather than believing, because
+     * it is the difference between a screen that refuses weekly and one that
+     * never has to.
+     */
+    it("una pesada tardía no entra en lo que ya se aprobó", async () => {
+      const approved = await api
+        .previewSettlement(raceWorkerId, raceRecords)
+        .catch((e) => explain(e, "previsualizar"));
+      // 10 kg + 20 kg at $800.
+      expect(approved.grossCents).toBe(2_400_000);
+
+      await api
+        .createWorkRecord({
+          id: uuidv7(),
+          workerId: raceWorkerId,
+          activityId,
+          plotIds: [plotId],
+          plotCropIds: [],
+          dateFrom: today(),
+          dateTo: today(),
+          quantity: 5,
+          note: "pesada tardía, entra después de que la pantalla mostró el bruto",
+        })
+        .catch((e) => explain(e, "registrar la pesada tardía"));
+
+      // The preview of the SAME named set is unmoved: the late weighing is
+      // pending, and simply not part of what was approved.
+      const again = await api.previewSettlement(raceWorkerId, raceRecords);
+      expect(again.grossCents).toBe(2_400_000);
+    });
+
+    /**
+     * And when the figure DOES move, nothing is written and the refusal says
+     * what moved it.
+     *
+     * Staged as a payable disappearing from under the approval, which on a
+     * farm is somebody else's settlement getting to it first. The assertions
+     * are on the LEDGER, not on the error code: a guard that refused after
+     * writing would produce the right code and the wrong balance.
+     */
+    it("se niega a liquidar una cifra distinta de la que se aprobó", async () => {
+      const approved = await api.previewSettlement(raceWorkerId, raceRecords);
+      const gone = approved.lines.find((l) => l.id === raceRecords[1])!;
+
+      await api.deactivateWorkRecord(gone.id);
+
+      const refusal = await api
+        .settle(raceWorkerId, raceRecords, {
+          expectedGrossCents: approved.grossCents,
+          expectedLines: approved.lines,
+        })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(refusal).toMatchObject({ code: "GROSS_CHANGED" });
+
+      // Nothing was written, so the person can look again and approve the
+      // real figure.
+      const balance = await api.workerBalance(raceWorkerId);
+      expect(balance.earnedCents).toBe(0);
+      expect(balance.balanceCents).toBe(0);
+
+      // And the refusal carries the explanation, not just a code.
+      const change = grossChangeOf(refusal);
+      expect(change).not.toBeNull();
+      expect(change!.beforeCents).toBe(approved.grossCents);
+      expect(change!.afterCents).toBe(approved.grossCents - gone.amountCents);
+      expect(change!.removedIds).toEqual([gone.id]);
+      expect(change!.causeIsKnown).toBe(true);
+      expect(sentenceFor(change!, FMT)).toContain("salió una pesada de la liquidación");
+      // The week is NOT reported as repriced: its price did not move, even
+      // though `weeksInSettlement` carried it — as it always does.
+      expect(change!.repriced).toEqual([]);
+    });
+
+    it("y aprobada de nuevo, la cifra nueva sí se liquida", async () => {
+      const approved = await api.previewSettlement(raceWorkerId, raceRecords);
+      const settlement = await api
+        .settle(
+          raceWorkerId,
+          approved.lines.map((l) => l.id),
+          { expectedGrossCents: approved.grossCents, expectedLines: approved.lines },
+        )
+        .catch((e) => explain(e, "liquidar la cifra nueva"));
+      expect(settlement.grossCents).toBe(approved.grossCents);
+      expect((await api.workerBalance(raceWorkerId)).earnedCents).toBe(approved.grossCents);
     });
   });
 

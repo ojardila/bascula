@@ -12,6 +12,11 @@ const MONTHS_SHORT = [
   "jul", "ago", "sep", "oct", "nov", "dic",
 ];
 
+const MONTHS_LONG = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
 /** Read a plain YYYY-MM-DD key without letting the local timezone shift it. */
 export function parseDay(iso: string): Date {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
@@ -69,6 +74,19 @@ export function formatDateRange(from: string, to: string): string {
     return `${a.getUTCDate()}–${formatDate(to)}`;
   }
   return `${formatDate(from)} – ${formatDate(to)}`;
+}
+
+/**
+ * "24 de agosto" — a day written out, for a sentence rather than a table.
+ *
+ * The short forms above are for columns, where space is the constraint and the
+ * reader is scanning. This one goes inside prose — "el precio de la semana del
+ * 24 de agosto pasó de $800 a $850" — where "24 ago" reads as an abbreviation
+ * somebody has to decode mid-sentence.
+ */
+export function formatDayLong(iso: string): string {
+  const d = parseDay(iso);
+  return `${d.getUTCDate()} de ${MONTHS_LONG[d.getUTCMonth()]}`;
 }
 
 /** "lun 24 ago" — used to name the week a weekly price belongs to. */

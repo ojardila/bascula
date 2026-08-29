@@ -14,6 +14,9 @@ import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
 import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
+import { SettlementsPage } from "./features/settlements/SettlementsPage";
+import { SettlementDetailPage } from "./features/settlements/SettlementDetailPage";
+import { FarmUsersPage } from "./features/users/FarmUsersPage";
 import { WorkRecordsPage } from "./features/workrecords/WorkRecordsPage";
 import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
 import { HarvestLayout } from "./features/harvest/HarvestLayout";
@@ -123,6 +126,27 @@ function Shell() {
           }
         />
 
+        {/* Liquidaciones. Settling still happens inside "pagar empleado" —
+            that is where the decision is made — but the settlements themselves
+            are now records the farm can look up, print and anull. Reading them
+            is `money.read`; anulling is guarded inside the detail screen. */}
+        <Route
+          path="liquidaciones"
+          element={
+            <RequirePermission action="money.read" moduleName="ver las liquidaciones">
+              <SettlementsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="liquidaciones/:id"
+          element={
+            <RequirePermission action="money.read" moduleName="ver una liquidación">
+              <SettlementDetailPage />
+            </RequirePermission>
+          }
+        />
+
         <Route
           path="actividades"
           element={
@@ -200,6 +224,19 @@ function Shell() {
           element={
             <RequirePermission action="config.farm" moduleName="ver la configuración">
               <ConfigPage />
+            </RequirePermission>
+          }
+        />
+        {/* Gestión de usuarios. OWNER ONLY, and that is stricter than
+            `casos-de-uso.md` reads on its own: `docs/diagramas/sistema.md`
+            §3.3 puts this in the owner column and not the administrator's, so
+            an admin who reaches the URL is shown the door rather than a
+            screen the server would refuse anyway. */}
+        <Route
+          path="configuracion/usuarios"
+          element={
+            <RequirePermission action="config.users" moduleName="gestionar los usuarios">
+              <FarmUsersPage />
             </RequirePermission>
           }
         />

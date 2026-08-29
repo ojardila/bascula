@@ -150,6 +150,42 @@ export interface WireMe {
 }
 
 /**
+ * A membership of this farm: `GET|POST|PATCH /v1/users`.
+ *
+ * NOT TRANSCRIBED FROM A RUNNING SERVER, and the only type in this file that
+ * is not. `routes.go` has no `/v1/users` and `openapi.yaml` has no `User`
+ * schema — `docs/casos-de-uso.md` §8 leaves the use case "pendiente de
+ * detallar" and `docs/arquitectura-api.md` §329 answers it with "alta de
+ * usuario con rol" over those three verbs. This is that shape, and nothing
+ * more than that shape: id, who, what role, what state.
+ *
+ * Consequences of it being a guess, and how they are contained:
+ *
+ *   - it is NOT asserted against `schema.ts` in `contract.assert.ts`, because
+ *     there is nothing in the spec to assert it against, and an assertion
+ *     against an invention is theatre;
+ *   - every call that uses it goes through `routeMayBeMissing`, so the screen
+ *     says "the server does not have this yet" rather than showing an empty
+ *     list of users;
+ *   - `toFarmUser` reads every field defensively, so a server that lands with
+ *     `state` instead of `status` produces a visible "—" and not a crash.
+ *
+ * When the route lands, this type is what gets corrected against it, and the
+ * assertion belongs in `contract.assert.ts` the same day.
+ */
+export interface WireFarmUser {
+  id: Uuid;
+  email: string;
+  name: string;
+  role: WireRole;
+  /** `invited` until the address is confirmed; `revoked` closes the door. */
+  status?: string | null;
+  /** Null until they have actually logged in once. Never a zero date. */
+  lastLoginAt?: Instant | null;
+  createdAt?: Instant | null;
+}
+
+/**
  * A login that matched several farms is a 400 whose `details.farms` carries
  * the choice. It is an error envelope, not a success body — the client has to
  * catch it, which is why `LoginChoice` cannot be a union arm of the response.

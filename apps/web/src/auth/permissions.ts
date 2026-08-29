@@ -198,9 +198,12 @@ export const MODULES: ModuleDef[] = [
   { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, available: true, icon: "people" },
   { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
   { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" },
-  // Settling is a step inside "pagar empleado" and has no screen of its own.
-  // The entry stays, disabled, because the owner asked to see the whole map.
-  { key: "settlements", label: "Liquidación", path: "/liquidaciones", action: "money.pay", sprint: 2, available: false, icon: "receipt" },
+  // Sprint 5 gave settling a screen of its own. Making one still happens
+  // inside "pagar empleado" — that is where the figure is approved — but the
+  // settlements themselves are records now: which ones exist, whose, for which
+  // week, and which are void. The action is `money.read` and not `money.pay`,
+  // because looking at what was settled is a read.
+  { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt" },
   { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" },
   { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" },
   { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments" },
