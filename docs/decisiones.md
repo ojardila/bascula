@@ -136,3 +136,50 @@ está bien mientras solo haya laptops. Antes de desplegar hay que elegir: servir
 la web y la API detrás del mismo origen, o montar CORS en el servidor con una
 lista de orígenes permitidos. La primera es más simple y no abre nada; la
 segunda hace falta si la web va a vivir en otro dominio.
+
+---
+
+## 2026-08-29 — Sincronización: las cuatro que faltaban
+
+### 5. El teléfono deja de liquidar sin señal
+
+En el lote se entrega un **anticipo**, que se amortiza exacto cuando se liquide.
+El cierre de semana se hace con señal, contra el servidor, que es el único dueño
+del candado anti doble pago.
+
+No es una renuncia disfrazada: un anticipo no reclama ninguna pesada, así que no
+toma ningún candado y dos teléfonos sin señal se funden por unión sin
+posibilidad de conflicto. El caso de oro 02 ya demuestra que un anticipo mayor
+que la semana se amortiza contra las siguientes con el saldo exacto.
+
+Lo que se evita es lo contrario: con dos candados, uno en cada base, pagar desde
+el teléfono y desde la web en la misma semana paga dos veces, y re-derivar
+después no devuelve el efectivo que ya salió del bolsillo.
+
+### 6. Lotes y precio semanal, solo en la web
+
+El teléfono los lee y no los cambia. Evita que dos personas pongan precios
+distintos para la misma semana, que es el conflicto que no tiene una respuesta
+correcta: cualquiera de los dos precios deja a alguien mal pagado.
+
+Coste que hay que asumir y decir en voz alta: abrir un lote nuevo a mitad de
+cosecha ya no se puede hacer desde el lote. Alguien tiene que llegar a un
+computador.
+
+### 7. El teléfono muestra el saldo completo, aunque no pueda detallarlo
+
+Cuando la web registre jornales y contratos, el teléfono sumará todo lo que la
+persona tiene pendiente, no solo lo suyo de recolección, aunque solo pueda
+desglosar las pesadas. Un saldo que solo cuenta la mitad del trabajo es un saldo
+que miente, y quien lo lee no tiene forma de saberlo.
+
+### 8. Un trabajador de baja con trabajo nuevo se reactiva solo
+
+Si volvió a trabajar, es que sigue en la finca. El equipo recomendaba lo
+contrario —dejarlo de baja y avisar, porque la baja la decidió alguien— y el
+dueño decidió la reactivación automática.
+
+Consecuencia que hay que cubrir: la reactivación **queda registrada** con qué
+labor la provocó y desde qué dispositivo, para que quien dio la baja pueda ver
+que se deshizo y por qué. Deshacer en silencio una decisión de una persona es lo
+único que no puede pasar aquí.
