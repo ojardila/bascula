@@ -500,10 +500,14 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
     dateTo: day(r.dateTo),
     quantity: quantityFromWire(r.quantity),
     rateCents: r.rateCents,
-    // Null until the week is priced. Zero is the honest figure to show for
-    // "not decided yet" only because the screen prints it next to the
-    // `rateCents === null` badge that explains why; see WorkRecordsPage.
-    estimatedAmountCents: r.amountCents ?? 0,
+    // The server now always says what a record is worth: the settled amount
+    // when there is one, otherwise the quantity at the price in force for its
+    // week. `amountCents` stays null for weekly-price work — that is the row's
+    // own truth — and reading it here printed $0 against every harvest record,
+    // settled ones included, because that price is not chosen until settlement.
+    estimatedAmountCents: r.estimatedAmountCents ?? r.amountCents ?? 0,
+    /** False once a settlement froze it. See WorkRecordsPage for the badge. */
+    amountIsEstimate: r.amountIsEstimate ?? r.rateCents === null,
     note: r.note,
     settled: r.settled,
     status: statusOf(r.deletedAt),

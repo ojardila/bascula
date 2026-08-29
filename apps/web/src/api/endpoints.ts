@@ -539,6 +539,16 @@ export const api = {
   workerBalance: async (id: Uuid): Promise<Balance> =>
     toBalance(await http.get<WireBalance>(`/v1/workers/${id}/balance`)),
 
+  /**
+   * Every worker's position in one call. The dashboard used to add up a
+   * `balanceCents` on the worker list, which that endpoint has never sent, so
+   * the tile read $0 for a farm that owed a week of picking.
+   */
+  listBalances: async (): Promise<Balance[]> => {
+    const res = await http.get<WireList<WireBalance>>("/v1/balances");
+    return res.items.map(toBalance);
+  },
+
   workerLedger: async (id: Uuid): Promise<LedgerEntry[]> =>
     items(await http.get<WireList<WireLedgerEntry>>(`/v1/workers/${id}/ledger`)).map(
       toLedgerEntry,

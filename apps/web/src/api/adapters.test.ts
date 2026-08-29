@@ -296,6 +296,8 @@ const refs: Refs = {
 };
 
 const record: WireWorkRecord = {
+  estimatedAmountCents: 3_080_000,
+  amountIsEstimate: false,
   id: "r1",
   workerId: "w1",
   activityId: "a1",
@@ -343,15 +345,33 @@ describe("work records are joined client-side", () => {
     expect(r.unitLabel).toBeNull();
   });
 
-  it("treats an unfrozen price as zero-so-far, and says which", () => {
+  it("carries what unfrozen work is worth, and marks it an estimate", () => {
+    // This used to assert zero, which is how every harvest record in the
+    // console came to read $0 — settled ones included. A price the week has
+    // not frozen yet is still a price: the server applies the week's rate and
+    // sends what a settlement would post today.
     const open = toWorkRecord(
-      { ...record, rateSource: "weekly_price", rateCents: null, amountCents: null },
+      {
+        ...record,
+        rateSource: "weekly_price",
+        rateCents: null,
+        amountCents: null,
+        estimatedAmountCents: 3_080_000,
+        amountIsEstimate: true,
+      },
       refs,
     );
-    // The screen prints this next to the "rate not decided" badge; the null on
-    // rateCents is what tells it to.
     expect(open.rateCents).toBeNull();
-    expect(open.estimatedAmountCents).toBe(0);
+    expect(open.estimatedAmountCents).toBe(3_080_000);
+    expect(open.amountIsEstimate).toBe(true);
+  });
+
+  it("stops calling the amount an estimate once a settlement froze it", () => {
+    const settled = toWorkRecord(
+      { ...record, estimatedAmountCents: 3_080_000, amountIsEstimate: false },
+      refs,
+    );
+    expect(settled.amountIsEstimate).toBe(false);
   });
 });
 

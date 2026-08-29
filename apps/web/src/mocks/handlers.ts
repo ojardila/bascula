@@ -1637,6 +1637,12 @@ export const handlers = [
       unitId: activity.unitId,
       rateCents,
       amountCents,
+      // What it is worth, always a number — the server derives the same thing.
+      // A brand new record cannot be settled, so an unfrozen amount here is
+      // always the week's price applied to the quantity.
+      estimatedAmountCents:
+        amountCents ?? db.amountCents(quantity, db.weekPriceOf(g.p.tenant, mondayOf(from))),
+      amountIsEstimate: amountCents === null,
       note: body.note ?? null,
       createdBy: g.p.user.id,
       createdAt: nowInstant(),

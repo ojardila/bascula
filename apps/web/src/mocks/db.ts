@@ -1154,15 +1154,34 @@ export function resetDb(): void {
    * the range.
    */
   const record = (
-    r: Omit<MockWorkRecord, "startedAt" | "endedAt" | "weekStart" | "createdAt"> & {
-      createdAt: string;
-    },
-  ): MockWorkRecord => ({
-    ...r,
-    startedAt: noonInstant(dayOf(r.dateFrom)),
-    endedAt: r.dateTo === r.dateFrom ? null : noonInstant(dayOf(r.dateTo)),
-    weekStart: dayInstant(mondayOf(dayOf(r.dateFrom))),
-  });
+    r: Omit<
+      MockWorkRecord,
+      | "startedAt"
+      | "endedAt"
+      | "weekStart"
+      | "createdAt"
+      | "estimatedAmountCents"
+      | "amountIsEstimate"
+    > & { createdAt: string },
+  ): MockWorkRecord => {
+    const monday = mondayOf(dayOf(r.dateFrom));
+    // Derived here, exactly as the server derives it, so a seed row cannot
+    // state an amount that contradicts its own quantity and price. A settled
+    // record is worth what it froze; an unsettled weekly-price one is worth
+    // its quantity at that week's price.
+    const weekPrice =
+      weekPrices.find((p) => p.weekStart === monday)?.priceCents ?? 80000; // La Esperanza's standing price, seeded above
+    const settledOrFrozen = r.amountCents;
+    return {
+      ...r,
+      startedAt: noonInstant(dayOf(r.dateFrom)),
+      endedAt: r.dateTo === r.dateFrom ? null : noonInstant(dayOf(r.dateTo)),
+      weekStart: dayInstant(monday),
+      estimatedAmountCents:
+        settledOrFrozen ?? Math.round(Number(r.quantity) * weekPrice),
+      amountIsEstimate: settledOrFrozen === null,
+    };
+  };
 
   const workRecords: MockWorkRecord[] = [
     record({

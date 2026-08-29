@@ -441,6 +441,12 @@ export interface WorkRecord {
   rateCents: number | null;
   /** What it is worth today. Not a ledger entry until it is settled. */
   estimatedAmountCents: number;
+  /**
+   * False once a settlement froze the amount, true while it still comes from
+   * the week's price and could move if that price changes. What the farm owes
+   * and what it has paid must not look alike on a screen.
+   */
+  amountIsEstimate: boolean;
   note: string | null;
   settled: boolean;
   status: RecordStatus;

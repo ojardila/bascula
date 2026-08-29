@@ -17,6 +17,21 @@ import { mondayOf, todayInFarm, formatMonday } from "../../lib/dates";
  * dashboard is the one somebody actually reads on the way to doing something,
  * so every tile is also a door.
  */
+/**
+ * What a money tile shows when the figure could not be fetched.
+ *
+ * Not "$0". A zero is a number a farm can genuinely owe, so printing it for
+ * "we do not know" makes a failed request indistinguishable from being square
+ * with everybody — which is the one mistake this screen must not make.
+ */
+function Unknown() {
+  return (
+    <Typography variant="h1" sx={{ fontSize: "1.9rem", color: "text.disabled" }}>
+      —
+    </Typography>
+  );
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -24,10 +39,17 @@ export function DashboardPage() {
   const monday = mondayOf(todayInFarm(timezone));
 
   const { data: plots } = useAsync(() => api.listPlots({ status: "active" }), []);
-  const { data: workers } = useAsync(() => api.listWorkers({ status: "active" }), []);
-  const { data: records } = useAsync(() => api.listWorkRecords({ status: "active" }), []);
+  const { data: records, error: recordsError } = useAsync(
+    () => api.listWorkRecords({ status: "active" }),
+    [],
+  );
+  // The farm's position comes from /v1/balances, which derives it from the
+  // ledger. Adding up a `balanceCents` on the worker list is what this used to
+  // do, and that endpoint has never sent one — so the tile read $0 for a farm
+  // that was owing a week of picking, with no sign anything was missing.
+  const { data: balances, error: balancesError } = useAsync(() => api.listBalances(), []);
 
-  const owed = (workers ?? []).reduce((a, w) => a + Math.max(0, w.balanceCents ?? 0), 0);
+  const owed = (balances ?? []).reduce((a, b) => a + Math.max(0, b.balanceCents), 0);
   const pending = (records ?? []).filter((r) => !r.settled);
   const pendingCents = pending.reduce((a, r) => a + r.estimatedAmountCents, 0);
   const kgThisWeek = (records ?? [])
@@ -37,15 +59,15 @@ export function DashboardPage() {
 
   const tiles = [
     {
-      label: "Saldo a favor de los empleados",
-      value: <Money cents={owed} variant="big" />,
-      hint: "derivado del libro, no un total guardado",
+      label: "Pendiente de pago a los empleados",
+      value: balancesError ? <Unknown /> : <Money cents={owed} variant="big" />,
+      hint: balancesError ? "no se pudo consultar" : "derivado del libro, no un total guardado",
       to: "/empleados",
     },
     {
       label: "Pendiente de liquidar",
-      value: <Money cents={pendingCents} variant="big" />,
-      hint: `${pending.length} labores sin liquidar`,
+      value: recordsError ? <Unknown /> : <Money cents={pendingCents} variant="big" />,
+      hint: recordsError ? "no se pudo consultar" : `${pending.length} labores sin liquidar`,
       to: "/labores",
     },
     {

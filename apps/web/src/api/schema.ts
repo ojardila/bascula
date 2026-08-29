@@ -2433,6 +2433,23 @@ export interface components {
             plotCropIds?: string[];
             /** @description A live settlement has claimed it. It cannot be edited or removed. */
             settled?: boolean;
+            /**
+             * Format: int64
+             * @description What the record is worth, always a number. `amountCents` above is
+             *     the row's own truth and is null for anything priced by the week,
+             *     because that price is not chosen until the week is settled — which
+             *     left every harvest record in the console reading as $0, settled ones
+             *     included. This is the settled amount when there is one, and
+             *     otherwise the quantity at the price in force for its week: the
+             *     number a settlement would post today.
+             */
+            estimatedAmountCents?: number;
+            /**
+             * @description False once the amount is frozen by a settlement, true while it is
+             *     still derived from the week's price and could move if that price
+             *     changes. What we owe and what we paid must never look alike.
+             */
+            amountIsEstimate?: boolean;
         };
         WorkRecordInput: {
             /** Format: uuid */

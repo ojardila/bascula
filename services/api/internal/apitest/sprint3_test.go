@@ -960,3 +960,57 @@ func TestAPlainDateIsAcceptedWhereTheContractPromisesOne(t *testing.T) {
 		t.Fatalf("the 400 does not name the field: %s", res.Raw)
 	}
 }
+
+// TestAWorkRecordAlwaysKnowsWhatItIsWorth covers what made the console show $0
+// against every harvest record it listed, settled ones included.
+//
+// A record paid at the week's price has no amount of its own until the week is
+// settled — that is correct, and it is why `amountCents` is nullable. But a
+// list that renders that null as a figure says the farm owes nothing when it
+// owes a week of picking, and it says it with the same confidence as the truth.
+func TestAWorkRecordAlwaysKnowsWhatItIsWorth(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca del cero visible", 80000)
+	w := h.createWorker(t, f, "Rosa", "1099000777")
+	p := h.createPlot(t, f, "Lote del cero")
+	act := h.harvestActivityID(t, f)
+
+	h.mustDo(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
+		"activityId": act, "workerId": w, "quantity": 100,
+		"dateFrom": "2026-08-25", "dateTo": "2026-08-25", "plotIds": []string{p},
+	}, http.StatusCreated)
+
+	read := func() map[string]any {
+		res := h.mustDo(t, http.MethodGet, "/v1/work-records", f.OwnerToken, nil, http.StatusOK)
+		items, _ := res.Body["items"].([]any)
+		if len(items) != 1 {
+			t.Fatalf("%d records, want 1: %s", len(items), res.Raw)
+		}
+		return items[0].(map[string]any)
+	}
+
+	// Unsettled: no frozen amount, but 100 kg at 800 pesos is not unknowable.
+	r := read()
+	if r["amountCents"] != nil {
+		t.Fatalf("an unsettled weekly-price record froze an amount: %v", r["amountCents"])
+	}
+	if got := r["estimatedAmountCents"]; got != float64(8_000_000) {
+		t.Fatalf("100kg at 800 is worth %v, want 8000000", got)
+	}
+	if r["amountIsEstimate"] != true {
+		t.Fatal("an unsettled amount is an estimate and has to say so")
+	}
+
+	// Settled: the same number, now final rather than an estimate.
+	h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
+	}, http.StatusCreated)
+
+	r = read()
+	if got := r["estimatedAmountCents"]; got != float64(8_000_000) {
+		t.Fatalf("settling changed what the record is worth: %v", got)
+	}
+	if r["amountIsEstimate"] != false {
+		t.Fatal("a settled amount is not an estimate any more")
+	}
+}

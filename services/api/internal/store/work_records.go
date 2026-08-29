@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,16 +30,32 @@ type WorkRecord struct {
 	EndLocalDay time.Time         `json:"dateTo"`
 	WeekStart   time.Time         `json:"weekStart"`
 	Quantity    json.Number       `json:"quantity"`
-	UnitID      *string           `json:"unitId"`
-	PriceMinor  *int64            `json:"rateCents"`
-	AmountMinor *int64            `json:"amountCents"`
-	Note        *string           `json:"note"`
-	CreatedBy   *string           `json:"createdBy"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	DeletedAt   *time.Time        `json:"deletedAt"`
-	PlotIDs     []string          `json:"plotIds"`
-	PlotCropIDs []string          `json:"plotCropIds"`
-	Settled     bool              `json:"settled"`
+	// settledAmount is what the live settlement line paid for this record, if
+	// any. Unexported: callers read EffectiveMinor.
+	settledAmount *int64     `json:"-"`
+	UnitID        *string    `json:"unitId"`
+	PriceMinor    *int64     `json:"rateCents"`
+	AmountMinor   *int64     `json:"amountCents"`
+	Note          *string    `json:"note"`
+	CreatedBy     *string    `json:"createdBy"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	DeletedAt     *time.Time `json:"deletedAt"`
+	PlotIDs       []string   `json:"plotIds"`
+	PlotCropIDs   []string   `json:"plotCropIds"`
+	Settled       bool       `json:"settled"`
+
+	// What the record is worth, always a number, so a screen never has to show
+	// a zero it does not mean. AmountMinor above is the row's own truth and is
+	// null for anything priced by the week, because that price is not chosen
+	// until the week is settled — which left every harvest record in the
+	// console showing $0, settled ones included.
+	//
+	// EffectiveMinor is the settled amount when there is one, and otherwise the
+	// quantity at the price in force for its week: the same number the
+	// settlement would post today. AmountIsEstimate says which of the two it
+	// is, because "what we owe" and "what we paid" must never look alike.
+	EffectiveMinor   int64 `json:"estimatedAmountCents"`
+	AmountIsEstimate bool  `json:"amountIsEstimate"`
 }
 
 const workRecordCols = `l.id::text, l.employee_id::text, l.activity_id::text, l.pay_scheme,
@@ -45,7 +63,9 @@ const workRecordCols = `l.id::text, l.employee_id::text, l.activity_id::text, l.
 	l.quantity::text, l.unit_id::text, l.price_minor, l.amount_minor, l.note,
 	l.created_by::text, l.created_at, l.deleted_at,
 	EXISTS (SELECT 1 FROM settlement_items si
-	         WHERE si.payable_id = l.id AND si.voided_at IS NULL) AS settled`
+	         WHERE si.payable_id = l.id AND si.voided_at IS NULL) AS settled,
+	(SELECT si.amount_minor FROM settlement_items si
+	  WHERE si.payable_id = l.id AND si.voided_at IS NULL LIMIT 1) AS settled_amount`
 
 func scanWorkRecord(row pgx.Row) (*WorkRecord, error) {
 	var l WorkRecord
@@ -53,7 +73,7 @@ func scanWorkRecord(row pgx.Row) (*WorkRecord, error) {
 	err := row.Scan(&l.ID, &l.EmployeeID, &l.ActivityID, &l.PayScheme, &l.RateSource,
 		&l.StartedAt, &l.EndedAt, &l.LocalDay, &l.EndLocalDay, &l.WeekStart,
 		&qty, &l.UnitID, &l.PriceMinor, &l.AmountMinor, &l.Note,
-		&l.CreatedBy, &l.CreatedAt, &l.DeletedAt, &l.Settled)
+		&l.CreatedBy, &l.CreatedAt, &l.DeletedAt, &l.Settled, &l.settledAmount)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +179,53 @@ func GetWorkRecord(ctx context.Context, tx pgx.Tx, id string) (*WorkRecord, erro
 	return &out[0], nil
 }
 
+// priceWorkRecords fills in what each record is worth, so no screen has to
+// decide what a null amount means. A settled record is worth what its
+// settlement line paid; an unsettled one priced by the week is worth its
+// quantity at the price in force for that week — the number the settlement
+// would post if it ran now. Everything else already froze its own amount.
+//
+// Week prices are looked up once per distinct week, not once per record: a
+// season list is thousands of rows over a few dozen weeks.
+func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) error {
+	prices := map[string]int64{}
+	for i := range records {
+		r := &records[i]
+		switch {
+		case r.settledAmount != nil:
+			r.EffectiveMinor, r.AmountIsEstimate = *r.settledAmount, false
+		case r.AmountMinor != nil:
+			r.EffectiveMinor, r.AmountIsEstimate = *r.AmountMinor, false
+		case r.RateSource == domain.RateWeeklyPrice:
+			key := r.WeekStart.Format("2006-01-02")
+			price, ok := prices[key]
+			if !ok {
+				p, err := WeekPrice(ctx, tx, r.WeekStart)
+				if err != nil {
+					return err
+				}
+				price = p
+				prices[key] = price
+			}
+			qty, ok := new(big.Rat).SetString(r.Quantity.String())
+			if !ok {
+				return fmt.Errorf("work record %s has an unreadable quantity %q", r.ID, r.Quantity)
+			}
+			r.EffectiveMinor = domain.AmountMinor(qty, price)
+			r.AmountIsEstimate = true
+		default:
+			// No frozen amount and no way to derive one. Zero here is the truth,
+			// not a stand-in for a value we failed to fetch.
+			r.EffectiveMinor, r.AmountIsEstimate = 0, true
+		}
+	}
+	return nil
+}
+
 func attachWorkRecordLinks(ctx context.Context, tx pgx.Tx, records []WorkRecord, ids []string) ([]WorkRecord, error) {
+	if err := priceWorkRecords(ctx, tx, records); err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 {
 		return records, nil
 	}
@@ -242,6 +308,15 @@ func CreateWorkRecord(ctx context.Context, tx pgx.Tx, farmID string, l WorkRecor
 		}
 		out.PlotCropIDs = append(out.PlotCropIDs, cropID)
 	}
+	// Price it before it goes back, so what the caller is handed after writing
+	// is the same shape it will read a second later. A create that answered
+	// with a zero and a list that answered with the real figure is a difference
+	// nobody would think to look for.
+	priced := []WorkRecord{*out}
+	if err := priceWorkRecords(ctx, tx, priced); err != nil {
+		return nil, err
+	}
+	out.EffectiveMinor, out.AmountIsEstimate = priced[0].EffectiveMinor, priced[0].AmountIsEstimate
 	return out, nil
 }
 

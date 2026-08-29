@@ -425,6 +425,14 @@ export interface WireWorkRecord {
   /** Null while the price is still open (weekly_price, until settlement). */
   rateCents: number | null;
   amountCents: number | null;
+  /**
+   * What the record is worth, always a number. `amountCents` is the row's own
+   * truth and stays null for weekly-price work; rendering that null printed $0
+   * against every harvest record the console listed, settled ones included.
+   */
+  estimatedAmountCents: number;
+  /** False once a settlement froze the amount, true while it is still derived. */
+  amountIsEstimate: boolean;
   note: string | null;
   createdBy: Uuid | null;
   createdAt: Instant;
