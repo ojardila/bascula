@@ -183,3 +183,46 @@ Consecuencia que hay que cubrir: la reactivación **queda registrada** con qué
 labor la provocó y desde qué dispositivo, para que quien dio la baja pueda ver
 que se deshizo y por qué. Deshacer en silencio una decisión de una persona es lo
 único que no puede pasar aquí.
+
+## 2026-08-29 — Los cinco huecos que la sincronización destapó
+
+Al implementar el protocolo aparecieron cinco casos que no cubría. Ninguno lo
+decidió la pareja que los encontró, que es lo correcto: deciden pagos.
+
+### Los tres que cierra el equipo
+
+**Una pesada que llega nombrando a alguien que el teléfono no tiene.** El
+protocolo cubre un cultivo *borrado*, no uno *ausente*. Un referente ausente no
+es un conflicto, es un pull incompleto: el teléfono pidió las pesadas antes que
+las personas. Se ordena la recepción para que los referentes bajen primero
+—fincas, personas, lotes, cultivos, actividades, precios y solo entonces
+labores y movimientos— y una pesada huérfana pasa a ser un error del cliente que
+se reintenta, no una fila que se guarda apuntando a nada.
+
+**Un trabajador reactivado que la web vuelve a dar de baja entre dos
+sincronizaciones.** Gana la baja. La reactivación es automática y la baja la
+decide una persona mirando el caso; una decisión humana posterior no la puede
+deshacer un automatismo. El trabajo registrado no se pierde —queda, y la persona
+queda inactiva—, y el teléfono lo muestra como conflicto para que alguien lo
+mire.
+
+**`IDEMPOTENCY_KEY_REUSED` no está en la tabla de conflictos del protocolo.**
+Es un código real del servidor y significa algo preciso: el mismo id con un
+cuerpo distinto. No es un reintento y no se debe reintentar — es un error de
+programación del cliente o una colisión de identificadores, y las dos cosas
+tienen que verse. Entra en la tabla como caso que se muestra y no se resuelve
+solo.
+
+### Los dos que son trabajo de servidor, y esperan
+
+**El teléfono todavía liquida en local.** El protocolo quiere que la liquidación
+la cree el servidor, y la pareja hizo bien en no moverla: la temporada de
+liquidaciones que ya existe en el teléfono no se ha importado, así que una
+liquidación creada en el servidor reclamaría pesadas que el servidor no tiene.
+El orden correcto es importar primero. Hasta entonces el botón exige estar
+sincronizado, que es la mitad de la garantía.
+
+**La carrera entre previsualizar y liquidar no está protegida.** El protocolo
+pide que el cliente mande el bruto que vio (`expectedGrossCents`) y que el
+servidor rechace la liquidación si ha cambiado. Ese campo no existe todavía. Sin
+él, alguien puede liquidar mirando una cifra y firmar otra.
