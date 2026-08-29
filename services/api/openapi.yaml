@@ -4953,6 +4953,20 @@ components:
             returned as a string. It is a string because a float64 round trip
             is exactly where two languages start disagreeing in the third
             decimal and nobody notices until payday.
+
+            AT MOST THREE PLACES IS ENFORCED, and a fourth is a 400 naming the
+            field and the limit. The column is numeric(12, 3) and Postgres
+            would ROUND a fourth place rather than refuse it: 1,0005 kg at $75
+            is 7504 on the handset and would be stored here as 1,001 and
+            charged at 7508, with a 200 and no mention of it anywhere. Round it
+            on the client, in front of the person whose kilos they are. At most
+            nine digits before the point, for the same reason: a larger number
+            is a bad request, not a 500.
+
+            The same rule holds for every fixed-scale field a client can
+            write - `areaHa`, `qty`, `rate.customQty`, `kgFactor` - because a
+            rule enforced on one field and not its neighbours is a rule nobody
+            can rely on.
         unitId: { type: string, format: uuid, nullable: true }
         rateCents:
           type: integer
@@ -5002,7 +5016,7 @@ components:
         id: { type: string, format: uuid }
         activityId: { type: string, format: uuid }
         workerId: { type: string, format: uuid }
-        quantity: { type: number, description: Positive; ignored and set to 1 for a contract. }
+        quantity: { type: number, description: "Positive, at most three decimal places; a fourth is a 400. Ignored and set to 1 for a contract." }
         rateCents:
           type: integer
           format: int64
@@ -5033,7 +5047,7 @@ components:
         The rejected fields are listed so the refusal has a sentence in it
         rather than a bare "malformed body": they are deliberate, not typos.
       properties:
-        quantity: { type: number, description: Positive. The amount is recomputed. }
+        quantity: { type: number, description: "Positive, at most three decimal places; a fourth is a 400. The amount is recomputed." }
         note: { type: string, nullable: true }
         status: { type: string, enum: [active, inactive] }
         rateCents: { type: integer, format: int64, description: Rejected. }
@@ -5069,7 +5083,13 @@ components:
       description: |
         Derived from the ledger, never stored: a stored total is a total that
         one day lies. Positive means the farm owes them.
-      required: [workerId, earnedCents, paidCents, deductedCents, balanceCents]
+
+        A worker who has been taken off the payroll and is still owed money
+        STAYS on `GET /v1/balances`, with `active: false`. Dropping them would
+        make the debt vanish from the only screen anybody looks at while the
+        money sat untouched in the ledger. The only row that leaves the list is
+        somebody deactivated who never moved a peso.
+      required: [workerId, earnedCents, paidCents, deductedCents, balanceCents, active]
       properties:
         workerId: { type: string, format: uuid }
         earnedCents: { type: integer, format: int64 }
@@ -5077,6 +5097,12 @@ components:
         deductedCents: { type: integer, format: int64 }
         balanceCents: { type: integer, format: int64 }
         lastMovementOn: { type: string, format: date-time, nullable: true }
+        active:
+          type: boolean
+          description: |
+            False for somebody no longer on the payroll. They are listed all
+            the same while they have movements; the caller renders the
+            difference rather than guessing at an absence.
 
     LedgerEntry:
       type: object

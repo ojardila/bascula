@@ -117,6 +117,22 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 				"that address already has an account"))
 			return
 		}
+		// The count runs against `memberships`, whose policy is
+		// `farm_id = current_farm() OR user_id = current_user_id()`. At this
+		// point in a signup NEITHER is set: there is no token, no farm has
+		// been generated yet, and app.user_id is still empty. RLS therefore
+		// answered every count with 0 and the cap never once fired — the
+		// silent zero this codebase spends three documents refusing, sitting
+		// in the limit that is supposed to hold the most exposed surface in
+		// the system.
+		//
+		// The user is pinned first. It is the same pin login uses before a
+		// farm is chosen, and SetForSignup overwrites it a few lines below
+		// with the pair the farm's own rows need.
+		if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
+			writeError(w, r, err)
+			return
+		}
 		owned, err := store.CountOwnedFarms(r.Context(), tx, user.ID)
 		if err != nil {
 			writeError(w, r, err)

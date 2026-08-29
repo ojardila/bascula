@@ -6,10 +6,46 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 )
+
+// The window a season is allowed to fall in.
+//
+// A date is the one field of an import nothing downstream can contradict: a
+// `pago` dated 1900-01-01 sorts before every settlement for ever and a
+// 9999-12-31 `anticipo` sorts after every one of them, so both sit permanently
+// outside whatever period a report or a settlement asks about. The handset
+// cannot produce either — its own calendar starts when the farm bought the
+// phone — so a file carrying one is a file that was edited.
+//
+// The floor is a constant because a farm's season is not older than the app.
+// The ceiling is relative to now, and one year rather than one day, because a
+// handset with a wrong clock is ordinary and a handset a year fast is not.
+var importEarliestDay = time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func importHorizon(now time.Time) time.Time { return now.UTC().AddDate(1, 0, 0) }
+
+// checkImportDay refuses a day outside the window, naming the row it came from.
+func checkImportDay(what string, day, now time.Time) error {
+	horizon := importHorizon(now)
+	if day.Before(importEarliestDay) || day.After(horizon) {
+		return domain.BadRequest(what + " is dated " + day.Format("2006-01-02") +
+			", outside the window an import may cover (" +
+			importEarliestDay.Format("2006-01-02") + " to " + horizon.Format("2006-01-02") + ")")
+	}
+	return nil
+}
+
+// isUUID keeps a malformed identifier out of a query whose column is uuid.
+// Postgres answers a bad cast with an error that aborts the whole transaction,
+// which turns one bad row of a file into a refusal that names nothing.
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
 
 // The season import. docs/sincronizacion.md §8, phases 3 and 4.
 //
@@ -172,11 +208,15 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 	in SeasonImport, newID func() string) (*ImportReport, error) {
 
 	var rep ImportReport
+	now := time.Now()
 
 	// 1. People. The handset's uuid becomes the employee's id.
 	for _, wkr := range in.Workers {
 		if wkr.ID == "" || wkr.Name == "" {
 			return nil, domain.BadRequest("every imported worker needs an id and a name")
+		}
+		if !isUUID(wkr.ID) {
+			return nil, domain.BadRequest("worker " + wkr.ID + ": ids travel as the handset's own uuids")
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
@@ -196,6 +236,12 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 	for _, pl := range in.Plots {
 		if pl.CropID == "" || pl.Name == "" {
 			return nil, domain.BadRequest("every imported lot needs a cropId and a name")
+		}
+		if pl.AreaHa != nil {
+			if err := domain.CheckNumericFloat("lot "+pl.Name+" areaHa", *pl.AreaHa,
+				domain.AreaPrecision, domain.AreaScale); err != nil {
+				return nil, err
+			}
 		}
 		// Already imported? The crop's id is what says so, not the plot's,
 		// because the plot's id is invented here and a retry would invent a
@@ -258,6 +304,9 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		if wp.PriceCents <= 0 {
 			return nil, domain.BadRequest("a week price must be positive: " + wp.WeekStart)
 		}
+		if err := checkImportDay("the week price of "+wp.WeekStart, week, now); err != nil {
+			return nil, err
+		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO week_prices (farm_id, week_start, price_minor) VALUES ($1, $2, $3)
 			ON CONFLICT (farm_id, week_start) DO NOTHING`, farmID, week, wp.PriceCents)
@@ -286,6 +335,16 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		}
 		if wr.OccurredAt.IsZero() {
 			return nil, domain.BadRequest("weighing " + wr.ID + " has no occurredAt")
+		}
+		if !isUUID(wr.ID) || !isUUID(wr.WorkerID) {
+			return nil, domain.BadRequest("weighing " + wr.ID + ": ids travel as the handset's own uuids")
+		}
+		if err := checkImportDay("weighing "+wr.ID, wr.OccurredAt, now); err != nil {
+			return nil, err
+		}
+		if err := domain.CheckNumeric("weighing "+wr.ID+" quantity", wr.Quantity.String(),
+			domain.QuantityPrecision, domain.QuantityScale); err != nil {
+			return nil, err
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO work_records (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
@@ -336,6 +395,34 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 			return nil, domain.BadRequest(
 				"settlement " + st.ID + ": a void settlement carries voidedAt and an open one does not")
 		}
+		if !isUUID(st.ID) || !isUUID(st.WorkerID) {
+			return nil, domain.BadRequest("settlement " + st.ID + ": ids travel as the handset's own uuids")
+		}
+		if err := checkImportDay("settlement "+st.ID, periodStart, now); err != nil {
+			return nil, err
+		}
+		if err := checkImportDay("settlement "+st.ID, periodEnd, now); err != nil {
+			return nil, err
+		}
+		if periodEnd.Before(periodStart) {
+			return nil, domain.BadRequest("settlement " + st.ID + ": periodEnd is before periodStart")
+		}
+		// A void settlement with a live line is the one shape from which
+		// there is no way back. VoidSettlement answers SETTLEMENT_ALREADY_VOID
+		// before it reaches the lines, DELETE is revoked on settlement_items,
+		// and ux_items_payable_live keeps that line's payable claimed for
+		// ever — the day's picking earns nothing and no route on this server
+		// frees it. It is refused here because here is the only place it can
+		// still be refused.
+		if status == "void" {
+			for _, it := range st.Items {
+				if it.VoidedAt == nil {
+					return nil, domain.BadRequest("settlement " + st.ID +
+						": a void settlement cannot carry a live line — payable " + it.PayableID +
+						" would stay claimed by a settlement no route can void again")
+				}
+			}
+		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO settlements (id, farm_id, employee_id, period_start, period_end,
 			                         gross_minor, status, note, created_by, created_at, voided_at)
@@ -349,6 +436,17 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		count(&rep.Settlements, tag.RowsAffected())
 
 		for _, it := range st.Items {
+			if !isUUID(it.PayableID) {
+				return nil, domain.BadRequest("settlement " + st.ID +
+					": a line's payableId travels as the handset's own uuid")
+			}
+			// A rounded line quantity would break the column's own CHECK
+			// (amount_minor = round(quantity * price_minor)) and come back as
+			// a 500 that names nothing.
+			if err := domain.CheckNumeric("settlement "+st.ID+" line quantity",
+				it.Quantity.String(), domain.QuantityPrecision, domain.QuantityScale); err != nil {
+				return nil, err
+			}
 			// A line's identity for the purpose of "have I already imported
 			// this" is (settlement, payable) and not the line's own uuid. The
 			// handset does have a uuid per line, but a file that omits one
@@ -415,10 +513,16 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 			if l.AmountCents == 0 {
 				return nil, domain.BadRequest("movement " + l.ID + " has an amount of zero")
 			}
+			if !isUUID(l.ID) || !isUUID(l.WorkerID) {
+				return nil, domain.BadRequest("movement " + l.ID + ": ids travel as the handset's own uuids")
+			}
 			kind := domain.LedgerKind(l.Kind)
 			day, err := time.Parse("2006-01-02", l.Date)
 			if err != nil {
 				return nil, domain.BadRequest("movement " + l.ID + ": date must be YYYY-MM-DD")
+			}
+			if err := checkImportDay("movement "+l.ID, day, now); err != nil {
+				return nil, err
 			}
 			tag, err := tx.Exec(ctx, `
 				INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
@@ -448,15 +552,66 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 // request that answered 4xx — so a mismatch leaves the server exactly as it
 // was and the handset, which was never modified, is still the whole truth.
 func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *ImportReport) error {
-	// 1. The balance, per worker, to the cent. Any disagreement aborts.
-	mismatches := []map[string]any{}
+	// 0. THE CALLER DOES NOT CHOOSE WHO IS CHECKED.
+	//
+	// A reconciliation over the workers the file happens to name is a
+	// reconciliation the file controls: name nobody, or name a uuid that does
+	// not exist, and every sum below is zero against zero and passes. The set
+	// of people to check is therefore derived from the file's own movements,
+	// not read off its `balances`, and every one of them has to be declared.
+	declared := map[string]bool{}
 	for _, b := range in.Balances {
+		declared[b.WorkerID] = true
+	}
+	undeclared := []string{}
+	seen := map[string]bool{}
+	note := func(workerID string) {
+		if workerID == "" || seen[workerID] || declared[workerID] {
+			return
+		}
+		seen[workerID] = true
+		undeclared = append(undeclared, workerID)
+	}
+	for _, wkr := range in.Workers {
+		note(wkr.ID)
+	}
+	for _, wr := range in.WorkRecords {
+		note(wr.WorkerID)
+	}
+	for _, st := range in.Settlements {
+		note(st.WorkerID)
+	}
+	for _, l := range in.Ledger {
+		note(l.WorkerID)
+	}
+	if len(undeclared) > 0 {
+		return domain.Conflict(domain.CodeImportMismatch,
+			"the file moves money for workers it does not declare a balance for; nothing was written").
+			WithDetails(map[string]any{"undeclaredWorkers": undeclared})
+	}
+
+	// 1. The balance, per worker, to the cent. Any disagreement aborts — and
+	//    so does a worker that is not there: a sum over nobody is zero, which
+	//    is exactly the silent-zero this whole endpoint exists to refuse.
+	mismatches := []map[string]any{}
+	unknown := []string{}
+	for _, b := range in.Balances {
+		if !isUUID(b.WorkerID) {
+			unknown = append(unknown, b.WorkerID)
+			continue
+		}
+		var exists bool
 		var derived int64
-		err := tx.QueryRow(ctx,
-			`SELECT COALESCE(SUM(amount_minor), 0) FROM ledger WHERE employee_id = $1`,
-			b.WorkerID).Scan(&derived)
+		err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM employees WHERE id = $1),
+			       COALESCE((SELECT SUM(amount_minor) FROM ledger WHERE employee_id = $1), 0)`,
+			b.WorkerID).Scan(&exists, &derived)
 		if err != nil {
 			return importFailure("balance of worker "+b.WorkerID, err)
+		}
+		if !exists {
+			unknown = append(unknown, b.WorkerID)
+			continue
 		}
 		if derived != b.BalanceCents {
 			mismatches = append(mismatches, map[string]any{
@@ -467,10 +622,83 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 		}
 	}
 	rep.BalancesChecked = len(in.Balances)
+	if len(unknown) > 0 {
+		return domain.Conflict(domain.CodeImportMismatch,
+			"the reconciliation names workers this farm does not have; nothing was written").
+			WithDetails(map[string]any{"unknownWorkers": unknown})
+	}
 	if len(mismatches) > 0 {
 		return domain.Conflict(domain.CodeImportMismatch,
 			"the imported balances do not match what the server derives; nothing was written").
 			WithDetails(map[string]any{"balances": mismatches})
+	}
+
+	// 2. Every settlement's gross IS the sum of its lines, and every line
+	//    belongs to the settlement's own worker.
+	//
+	//    Neither of these was checked before, and each on its own is enough to
+	//    invent payroll out of nothing: a gross the lines do not support is a
+	//    receipt for work nobody did, and a line pointing at somebody else's
+	//    weighing pays one person for another person's day AND — because
+	//    ux_items_payable_live is on payable_id alone — leaves the real picker
+	//    with nothing left to settle and no way to get it back.
+	grossBad := []map[string]any{}
+	strays := []map[string]any{}
+	for _, st := range in.Settlements {
+		var gross, lines int64
+		var employeeID string
+		err := tx.QueryRow(ctx, `
+			SELECT s.gross_minor, s.employee_id::text,
+			       COALESCE((SELECT SUM(i.amount_minor) FROM settlement_items i
+			                  WHERE i.settlement_id = s.id), 0)
+			  FROM settlements s WHERE s.id = $1`, st.ID).Scan(&gross, &employeeID, &lines)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Conflict(domain.CodeImportMismatch,
+				"settlement "+st.ID+" is not on this farm after the import; nothing was written")
+		}
+		if err != nil {
+			return importFailure("settlement "+st.ID, err)
+		}
+		if gross != lines {
+			grossBad = append(grossBad, map[string]any{
+				"settlementId": st.ID, "grossCents": gross, "linesCents": lines,
+				"differenceCents": gross - lines,
+			})
+		}
+
+		rows, err := tx.Query(ctx, `
+			SELECT i.payable_id::text, w.employee_id::text
+			  FROM settlement_items i
+			  JOIN work_records w ON w.id = i.payable_id
+			 WHERE i.settlement_id = $1 AND w.employee_id <> $2`, st.ID, employeeID)
+		if err != nil {
+			return importFailure("settlement "+st.ID, err)
+		}
+		for rows.Next() {
+			var payableID, owner string
+			if err := rows.Scan(&payableID, &owner); err != nil {
+				rows.Close()
+				return importFailure("settlement "+st.ID, err)
+			}
+			strays = append(strays, map[string]any{
+				"settlementId": st.ID, "payableId": payableID,
+				"settlementWorkerId": employeeID, "payableWorkerId": owner,
+			})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return importFailure("settlement "+st.ID, err)
+		}
+	}
+	if len(strays) > 0 {
+		return domain.Conflict(domain.CodeImportMismatch,
+			"a settlement claims weighings that belong to another worker; nothing was written").
+			WithDetails(map[string]any{"lines": strays})
+	}
+	if len(grossBad) > 0 {
+		return domain.Conflict(domain.CodeImportMismatch,
+			"a settlement's gross is not the sum of its lines; nothing was written").
+			WithDetails(map[string]any{"settlements": grossBad})
 	}
 
 	// 2. The lock: as many live lines as the handset had, not one more. This

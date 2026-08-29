@@ -100,6 +100,11 @@ func (s *Server) handleCreateSale(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("qty must be positive"))
 		return
 	}
+	if err := checkFixedScale("qty", &body.Qty,
+		domain.StockQtyPrecision, domain.StockQtyScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if body.AmountMinor <= 0 {
 		writeError(w, r, domain.BadRequest("amountCents must be positive"))
 		return

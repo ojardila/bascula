@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
@@ -78,6 +80,17 @@ func (s *Server) handleSyncHandshake(w http.ResponseWriter, r *http.Request) {
 	cursor, err := store.SyncCursor(r.Context(), tx)
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	// The same refusal the pull makes, made here where the handset asks first.
+	// `behind: 0` against a cursor no sequence ever handed out is the status
+	// chip of §7.1 reporting "up to date" to a phone that will never receive
+	// another change.
+	if body.Cursor > cursor {
+		writeError(w, r, domain.Conflict(domain.CodeCursorTooOld,
+			"that cursor is ahead of this farm's feed and cannot have come from this server; "+
+				"pull again from cursor 0").
+			WithDetails(map[string]any{"cursor": body.Cursor, "serverCursor": cursor}))
 		return
 	}
 	behind, err := store.SyncBehind(r.Context(), tx, body.Cursor)
@@ -172,6 +185,27 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// And the other end of the same wound. A cursor AHEAD of the feed cannot
+	// have come from this server: the sequence only goes up and only this
+	// server hands it out. Answering "you are up to date" to a handset holding
+	// 9 223 372 036 854 775 807 is telling it, truthfully for ever, that it
+	// will never receive another change — a phone permanently and silently
+	// out of sync, which is the same failure CURSOR_TOO_OLD exists to refuse
+	// at the bottom. It is told to start again from zero, which the backfill
+	// makes a complete bootstrap rather than an empty farm.
+	head, err := store.SyncCursor(r.Context(), tx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if cursor > head {
+		writeError(w, r, domain.Conflict(domain.CodeCursorTooOld,
+			"that cursor is ahead of this farm's feed and cannot have come from this server; "+
+				"pull again from cursor 0").
+			WithDetails(map[string]any{"cursor": cursor, "serverCursor": head}))
+		return
+	}
+
 	p, _ := auth.PrincipalFrom(r.Context())
 	changes, next, more, err := store.SyncChanges(r.Context(), tx, cursor, int(limit), p.Role)
 	if err != nil {
@@ -258,14 +292,39 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 				"every op needs an opId: it is the key a resend is recognised by")))
 			continue
 		}
+		// The shape is checked BEFORE the registry is consulted, because
+		// sync_ops.op_id is a uuid column: a lookup with `no-soy-un-uuid` in
+		// it is a cast error, and a cast error aborts the REQUEST transaction
+		// — not the savepoint, which has not been opened yet. One malformed
+		// envelope then took the whole batch down with a 404, against the
+		// "always 200, one result per envelope" this handler documents four
+		// lines above.
+		if _, err := uuid.Parse(op.OpID); err != nil {
+			results = append(results, rejected(op.OpID, domain.BadRequest(
+				"an opId is a uuid: it is the key a resend is recognised by")))
+			continue
+		}
 
 		// §4.2, and it comes first. If this envelope has been seen, its stored
 		// answer is returned LITERALLY and nothing is executed. The alternative
 		// — re-running it — is how a resent void hands the money back twice.
-		if prior, err := store.FindSyncOp(r.Context(), tx, op.OpID); err != nil {
+		//
+		// "Seen" means the same act, not merely the same key. The fingerprint
+		// carries the question so that a key reused for a DIFFERENT act is
+		// refused instead of being handed the first act's row id — which is
+		// how a phone was told `applied` about a weighing that was never
+		// written and then dropped it from its outbox.
+		fp := store.SyncOpFingerprint(op.Entity, op.Op, op.Payload)
+		prior, err := store.FindSyncOp(r.Context(), tx, op.OpID, fp)
+		if err != nil {
+			if errors.Is(err, store.ErrOpIDReused) {
+				results = append(results, rejected(op.OpID, err))
+				continue
+			}
 			writeError(w, r, err)
 			return
-		} else if prior != nil {
+		}
+		if prior != nil {
 			results = append(results, *prior)
 			continue
 		}
@@ -273,7 +332,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		res := s.applyPushOp(r, tx, farmID, body.DeviceID, p, op)
 		results = append(results, res)
 
-		if err := store.RecordSyncOp(r.Context(), tx, farmID, op.OpID, body.DeviceID, res); err != nil {
+		if err := store.RecordSyncOp(r.Context(), tx, farmID, op.OpID, body.DeviceID, fp, res); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -349,7 +408,22 @@ func applyPushEntity(ctx context.Context, tx pgx.Tx, farmID, deviceID string,
 	return rejected(op.OpID, domain.BadRequest("unknown entity `"+op.Entity+"`"))
 }
 
+// pushWorker writes the phone's half of the people table — and it is the SAME
+// door as PATCH /v1/workers, so it answers to the same rule.
+//
+// A weigher has no REST route that creates, renames, re-documents or
+// deactivates a person: ActionWorkersWrite is `admins`. Leaving that check off
+// the push made the two doors disagree, and the push is the one that is open
+// to a handset in a jacket pocket. The refusal is FORBIDDEN and not a database
+// error for the reason §4.3 gives — INTERNAL is "retry with backoff, for ever",
+// and a handset retrying a forbidden write until the battery dies is worse than
+// being told to stop.
 func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, p *auth.Principal, op pushOp) store.SyncOpResult {
+	if p == nil || !auth.Allowed(p.Role, auth.ActionWorkersWrite) {
+		return rejected(op.OpID, domain.Forbidden(
+			"a weigher does not add, rename or deactivate people; that is the same rule "+
+				"PATCH /v1/workers answers to, and the channel does not change it"))
+	}
 	var payload struct {
 		ID           string  `json:"id"`
 		Name         string  `json:"name"`
@@ -451,6 +525,15 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 	qty, ok := new(big.Rat).SetString(payload.Quantity.String())
 	if !ok || qty.Sign() <= 0 {
 		return rejected(op.OpID, domain.BadRequest("quantity must be a positive number"))
+	}
+	// numeric(12, 3), and the push is the door the scale actually arrives
+	// through: a handset that lets somebody type a fourth decimal place would
+	// otherwise have it rounded here, silently, into a different weight and a
+	// different amount than the phone computed. BAD_REQUEST is §4.3's "never
+	// retry — it is a client bug", which is exactly what it is.
+	if err := domain.CheckNumeric("quantity", payload.Quantity.String(),
+		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		return rejected(op.OpID, err)
 	}
 
 	activityID, err := store.HarvestActivityID(ctx, tx)

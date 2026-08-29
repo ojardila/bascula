@@ -190,6 +190,11 @@ func (s *Server) handleCreateStockMove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("qty cannot be zero"))
 		return
 	}
+	if err := checkFixedScale("qty", &body.Qty,
+		domain.StockQtyPrecision, domain.StockQtyScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if !store.IsStockReason(body.Reason) {
 		writeError(w, r, domain.BadRequest(
 			"reason must be one of "+strings.Join(store.StockReasons, ", ")))

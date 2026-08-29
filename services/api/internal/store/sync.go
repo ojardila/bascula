@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -44,8 +46,21 @@ const (
 // message rather than the guarantee — but a weigher whose pull silently
 // returned nothing for half the feed would look like a bug, and this way it is
 // a decision with a name.
+//
+// `weekPrice` is on the list and it is not an afterthought. GET
+// /v1/prices/weeks/* answers 403 to a weigher and GET /v1/farm hands him the
+// farm with priceCents removed; the feed was handing him the whole season's
+// price list — every week, to the peso — through the one endpoint his handset
+// is required to call. A weekPrice row is nothing BUT a price, so there is no
+// reduced body worth composing: the seq is consumed and the row is not sent,
+// exactly as for a settlement.
+//
+// farmConfig is not here, because a weigher does need it: it carries the
+// timezone, the currency and the minor unit, without which his screen cannot
+// render a date or an amount. It travels with priceCents dropped — see
+// composeFarmConfig — which is the same projection /v1/farm already applies.
 func (e SyncEntity) money() bool {
-	return e == EntitySettlement || e == EntityLedgerEntry
+	return e == EntitySettlement || e == EntityLedgerEntry || e == EntityWeekPrice
 }
 
 // SyncChange is one row of the feed with its body attached.
@@ -210,10 +225,18 @@ func composeFarmConfig(ctx context.Context, tx pgx.Tx) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
+	row := map[string]any{
 		"cropType": cropType, "label": label, "unit": unit, "yieldUnit": yieldUnit,
-		"priceCents": price, "timezone": tz, "currency": currency, "minorUnit": minorUnit,
-	}, nil
+		"timezone": tz, "currency": currency, "minorUnit": minorUnit,
+	}
+	// The same projection GET /v1/farm applies, applied here too. The price of
+	// a kilo is the number ActionPricesRead keeps behind an administrator, and
+	// a field that is refused on one route and delivered on another is not
+	// refused at all.
+	if currentRoleIsMoney(ctx, tx) {
+		row["priceCents"] = price
+	}
+	return row, nil
 }
 
 // composeWorker sends what the phone's own screen holds, plus the fields that
@@ -451,21 +474,56 @@ type SyncOpError struct {
 	Details map[string]any `json:"details,omitempty"`
 }
 
+// SyncOpFingerprint is the sha-256 of the QUESTION an envelope asked: its
+// entity, its op and its payload, byte for byte as they arrived.
+//
+// The payload is hashed raw and not re-marshalled. A resend from the same
+// handset sends the same bytes; normalising them first would be inventing an
+// equivalence — is a reordered object the same act? is a trailing zero? — that
+// nothing here needs and that would decide, wrongly, in the one case that
+// matters.
+func SyncOpFingerprint(entity, op string, payload []byte) string {
+	sum := sha256.New()
+	sum.Write([]byte(entity))
+	sum.Write([]byte{0})
+	sum.Write([]byte(op))
+	sum.Write([]byte{0})
+	sum.Write(payload)
+	return hex.EncodeToString(sum.Sum(nil))
+}
+
+// ErrOpIDReused is the answer to an opId that came back carrying a different
+// act. See migration 00015: returning the first act's answer told the handset
+// its second weighing was `applied`, and the handset believed it.
+var ErrOpIDReused = domain.Conflict(domain.CodeIdempotencyKeyReused,
+	"that opId was already used for a different operation; a new act needs a new key")
+
 // FindSyncOp returns the answer this opId already got, or nil.
 //
 // This is the layer client-side UUIDs cannot provide. An insert of a row with
 // its own uuid is idempotent by construction; voiding and reversing are not —
 // their second attempt has a different answer from the first — and this table
 // is what makes those safe to resend too.
-func FindSyncOp(ctx context.Context, tx pgx.Tx, opID string) (*SyncOpResult, error) {
+//
+// `fingerprint` is what separates a resend from a collision. It matches, and
+// the stored answer is returned as §4.2 says. It differs, and ErrOpIDReused
+// comes back instead — the one thing that must never happen is answering
+// `applied` with somebody else's row id. An empty fingerprint, or a stored row
+// from before migration 00015, cannot be compared and falls back to the old
+// behaviour.
+func FindSyncOp(ctx context.Context, tx pgx.Tx, opID, fingerprint string) (*SyncOpResult, error) {
 	var raw []byte
+	var stored *string
 	err := tx.QueryRow(ctx,
-		`SELECT result FROM sync_ops WHERE op_id = $1`, opID).Scan(&raw)
+		`SELECT result, fingerprint FROM sync_ops WHERE op_id = $1`, opID).Scan(&raw, &stored)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if fingerprint != "" && stored != nil && *stored != fingerprint {
+		return nil, ErrOpIDReused
 	}
 	var out SyncOpResult
 	if err := json.Unmarshal(raw, &out); err != nil {
@@ -474,15 +532,18 @@ func FindSyncOp(ctx context.Context, tx pgx.Tx, opID string) (*SyncOpResult, err
 	return &out, nil
 }
 
-func RecordSyncOp(ctx context.Context, tx pgx.Tx, farmID, opID, deviceID string, r SyncOpResult) error {
+func RecordSyncOp(ctx context.Context, tx pgx.Tx, farmID, opID, deviceID, fingerprint string,
+	r SyncOpResult) error {
+
 	raw, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO sync_ops (op_id, farm_id, device_id, status, result)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (op_id) DO NOTHING`, opID, farmID, deviceID, r.Status, raw)
+		INSERT INTO sync_ops (op_id, farm_id, device_id, status, result, fingerprint)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (op_id) DO NOTHING`,
+		opID, farmID, deviceID, r.Status, raw, nilIfEmpty(fingerprint))
 	return err
 }
 
@@ -506,6 +567,20 @@ func UpsertSyncWorker(ctx context.Context, tx pgx.Tx, farmID string, e Employee)
 		return out, true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
+		// A collision on the document or the tag, rendered as the answer the
+		// REST route gives rather than as the constraint that fired. The
+		// caller here is always an administrator — pushWorker refuses the
+		// weigher before this is reached — and an administrator reads the
+		// document off /v1/workers anyway, so naming it tells them nothing
+		// they could not already see.
+		if IsUniqueViolation(err, "ux_employees_doc") {
+			return nil, false, domain.Conflict(domain.CodeDuplicateDocument,
+				"another worker on this farm already carries that document")
+		}
+		if IsUniqueViolation(err, "ux_employees_tag") {
+			return nil, false, domain.Conflict(domain.CodeDuplicateName,
+				"another worker on this farm already carries that tag")
+		}
 		return nil, false, err
 	}
 

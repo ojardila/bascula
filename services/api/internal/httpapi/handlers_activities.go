@@ -63,6 +63,11 @@ func (rr rateRequest) toStore() (store.ActivityRate, error) {
 		RateMinor: rr.RateCents, TimeUnit: rr.TimeUnit,
 		CustomQty: rr.CustomQty, CustomUnit: rr.CustomUnit,
 	}
+	// activity_rates.custom_qty is numeric(8, 2).
+	if err := checkFixedScale("rate.customQty", rr.CustomQty,
+		domain.CustomQtyPrecision, domain.CustomQtyScale); err != nil {
+		return out, err
+	}
 	if rr.ValidFrom == "" {
 		out.ValidFrom = time.Now().UTC().Truncate(24 * time.Hour)
 		return out, nil
@@ -346,6 +351,13 @@ func (s *Server) handleCreateWorkUnit(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ID == "" {
 		body.ID = newID()
+	}
+	// work_units.kg_factor is numeric(10, 4), and it multiplies every weight
+	// converted through this unit: a rounded factor is a rounded harvest.
+	if err := checkFixedScale("kgFactor", body.KgFactor,
+		domain.KgFactorPrecision, domain.KgFactorScale); err != nil {
+		writeError(w, r, err)
+		return
 	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {

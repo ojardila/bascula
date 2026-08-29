@@ -46,6 +46,12 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("priceCents must be positive"))
 		return
 	}
+	// farms.area_ha is numeric(10, 3).
+	if err := checkFixedScale("areaHa", body.AreaHa,
+		domain.AreaPrecision, domain.AreaScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)

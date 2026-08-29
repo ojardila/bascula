@@ -110,6 +110,14 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		writeError(w, r, domain.BadRequest("quantity must be a positive number"))
 		return
 	}
+	// The column is numeric(12, 3) and Postgres would ROUND a fourth decimal
+	// place rather than refuse it — storing a weight nobody weighed and
+	// charging for it. See domain/numeric.go.
+	if err := domain.CheckNumeric("quantity", string(quantity),
+		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
 
 	record := store.WorkRecord{
 		ID: body.ID, EmployeeID: body.WorkerID, ActivityID: activity.ID,
@@ -337,6 +345,11 @@ func (s *Server) handleUpdateWorkRecord(w http.ResponseWriter, r *http.Request) 
 		qty, ok := new(big.Rat).SetString(body.Quantity.String())
 		if !ok || qty.Sign() <= 0 {
 			writeError(w, r, domain.BadRequest("quantity must be a positive number"))
+			return
+		}
+		if err := domain.CheckNumeric("quantity", body.Quantity.String(),
+			domain.QuantityPrecision, domain.QuantityScale); err != nil {
+			writeError(w, r, err)
 			return
 		}
 	}

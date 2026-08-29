@@ -132,3 +132,21 @@ func createdStatus(created bool) int {
 	}
 	return http.StatusOK
 }
+
+// checkFixedScale refuses an optional decimal the column cannot hold exactly.
+//
+// Every fixed-scale numeric that takes a value from a client goes through this
+// or through domain.CheckNumeric. Postgres does not refuse a decimal place a
+// numeric(p, s) has no room for — it ROUNDS it, on the way in, and answers 200 —
+// so the caller is told their number was accepted and a different one is
+// stored. On `quantity` that is somebody's pay; on an area or a sale line it is
+// smaller and it is the same bug, and a rule enforced on one field and not its
+// four neighbours is a rule nobody can rely on.
+//
+// Nil is fine: an absent optional field is not a wrong one.
+func checkFixedScale(field string, v *float64, precision, scale int) error {
+	if v == nil {
+		return nil
+	}
+	return domain.CheckNumericFloat(field, *v, precision, scale)
+}

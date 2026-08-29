@@ -146,4 +146,9 @@ type Balance struct {
 	DeductedMinor  int64      `json:"deductedCents"`
 	BalanceMinor   int64      `json:"balanceCents"`
 	LastMovementOn *time.Time `json:"lastMovementOn"`
+	// Active is false for somebody who has been taken off the payroll. They
+	// stay on the balances list all the same, because their debt does: a
+	// deactivation that made money disappear from the only screen anybody
+	// looks at would be a way to hide it. The caller renders the difference.
+	Active bool `json:"active"`
 }

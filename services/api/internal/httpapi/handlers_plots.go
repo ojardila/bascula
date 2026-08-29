@@ -54,12 +54,23 @@ func (s *Server) handleCreatePlot(w http.ResponseWriter, r *http.Request) {
 	if body.ID == "" {
 		body.ID = newID()
 	}
+	// plots.area_ha and plot_crops.area_ha are numeric(10, 3).
+	if err := checkFixedScale("areaHa", body.AreaHa,
+		domain.AreaPrecision, domain.AreaScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	for i := range body.Crops {
 		if body.Crops[i].ID == "" {
 			body.Crops[i].ID = newID()
 		}
 		if body.Crops[i].CropType == "" && body.Crops[i].CropTypeID == "" {
 			writeError(w, r, domain.BadRequest("every crop needs cropTypeId or cropType"))
+			return
+		}
+		if err := checkFixedScale("crops[].areaHa", body.Crops[i].AreaHa,
+			domain.AreaPrecision, domain.AreaScale); err != nil {
+			writeError(w, r, err)
 			return
 		}
 	}
@@ -117,6 +128,11 @@ func (s *Server) handleUpdatePlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validStatus(body.Status); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := checkFixedScale("areaHa", body.AreaHa,
+		domain.AreaPrecision, domain.AreaScale); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -275,6 +291,11 @@ func (s *Server) handleCreatePlotCrop(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.CropType == "" && body.CropTypeID == "" {
 		writeError(w, r, domain.BadRequest("cropTypeId or cropType is required"))
+		return
+	}
+	if err := checkFixedScale("areaHa", body.AreaHa,
+		domain.AreaPrecision, domain.AreaScale); err != nil {
+		writeError(w, r, err)
 		return
 	}
 	if body.ID == "" {

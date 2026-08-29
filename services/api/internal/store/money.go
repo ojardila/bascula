@@ -38,7 +38,9 @@ const balanceSQL = `
            AS paid_minor,
          COALESCE(-SUM(CASE WHEN kind = 'deduccion' THEN amount_minor END), 0) AS deducted_minor,
          COALESCE(SUM(amount_minor), 0) AS balance_minor,
-         MAX(local_day) AS last_movement_on
+         MAX(local_day) AS last_movement_on,
+         COALESCE((SELECT e.deleted_at IS NULL FROM employees e WHERE e.id = $1), true)
+           AS active
     FROM ledger WHERE employee_id = $1`
 
 // pendingSQL: payables in range that no live settlement has claimed.
@@ -72,7 +74,7 @@ func Balance(ctx context.Context, tx pgx.Tx, employeeID string) (*domain.Balance
 	var b domain.Balance
 	err := tx.QueryRow(ctx, balanceSQL, employeeID).
 		Scan(&b.EmployeeID, &b.EarnedMinor, &b.PaidMinor, &b.DeductedMinor,
-			&b.BalanceMinor, &b.LastMovementOn)
+			&b.BalanceMinor, &b.LastMovementOn, &b.Active)
 	if err != nil {
 		return nil, err
 	}
@@ -1029,6 +1031,21 @@ func ListLedger(ctx context.Context, tx pgx.Tx, employeeID string, limit int) ([
 }
 
 // ListBalances is the farm-wide view: every worker with their position.
+//
+// A DEACTIVATED WORKER WITH MOVEMENTS IS STILL ON THIS LIST. Filtering them out
+// is how a debt disappears: somebody takes a person off the payroll — from the
+// web, or from a handset over the sync push — and the twenty million pesos owed
+// to them leave the only screen anybody looks at, with the money still sitting
+// in the ledger. The deletion is logical everywhere else in this service for
+// exactly that reason, and the phone already gets it right: it marks them
+// inactive and keeps showing them.
+//
+// So the rule is not "active people" but "people with a position": deactivated
+// AND never moved a peso is the only combination that drops off, and that one
+// is a row with nothing in it.
+//
+// `active` is what lets the caller render the difference. A farm that wants
+// only the current payroll filters on it; nobody has to guess.
 func ListBalances(ctx context.Context, tx pgx.Tx) ([]domain.Balance, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT e.id::text,
@@ -1038,10 +1055,11 @@ func ListBalances(ctx context.Context, tx pgx.Tx) ([]domain.Balance, error) {
 		                          WHEN l.kind = 'reverso' AND l.amount_minor > 0 THEN l.amount_minor END), 0),
 		       COALESCE(-SUM(CASE WHEN l.kind = 'deduccion' THEN l.amount_minor END), 0),
 		       COALESCE(SUM(l.amount_minor), 0),
-		       MAX(l.local_day)
+		       MAX(l.local_day),
+		       e.deleted_at IS NULL
 		  FROM employees e LEFT JOIN ledger l ON l.employee_id = e.id
-		 WHERE e.deleted_at IS NULL
-		 GROUP BY e.id
+		 GROUP BY e.id, e.deleted_at
+		HAVING e.deleted_at IS NULL OR COUNT(l.id) > 0
 		 ORDER BY 5 DESC`)
 	if err != nil {
 		return nil, err
@@ -1052,7 +1070,7 @@ func ListBalances(ctx context.Context, tx pgx.Tx) ([]domain.Balance, error) {
 	for rows.Next() {
 		var b domain.Balance
 		if err := rows.Scan(&b.EmployeeID, &b.EarnedMinor, &b.PaidMinor,
-			&b.DeductedMinor, &b.BalanceMinor, &b.LastMovementOn); err != nil {
+			&b.DeductedMinor, &b.BalanceMinor, &b.LastMovementOn, &b.Active); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
