@@ -4,6 +4,7 @@
 #   make migrate  apply the migrations (a separate step, before any rollout)
 #   make test     run the suite against that same Postgres
 #   make run      serve on :8080
+#   make dev      serve on :8099 with the signup cap lifted, for the e2e suite
 #
 # ADMIN_DATABASE_URL owns the schema. DATABASE_URL is the application role,
 # which has no BYPASSRLS — that is the whole point of having two.
@@ -11,13 +12,14 @@
 SHELL := /bin/bash
 
 PGPORT ?= 5433
+PORT_DEV ?= 8099
 ADMIN_DATABASE_URL ?= postgres://postgres:postgres@localhost:$(PGPORT)/bascula?sslmode=disable
 DATABASE_URL       ?= postgres://bascula_api:bascula_api_dev@localhost:$(PGPORT)/bascula?sslmode=disable
 
 export ADMIN_DATABASE_URL
 export DATABASE_URL
 
-.PHONY: up down migrate test test-verbose run build fmt vet tidy psql logs clean
+.PHONY: up down migrate test test-verbose run dev build fmt vet tidy psql logs clean
 
 up:
 	docker compose up -d
@@ -44,6 +46,12 @@ test-verbose:
 
 run:
 	go run ./cmd/api
+
+# The same server, set up so the end-to-end suite in apps/web can run more than
+# once an hour. Signups are capped at 5 per IP by default, which is right in
+# production and useless on a laptop where a test run spends four of them.
+dev:
+	PORT=$(PORT_DEV) SIGNUPS_PER_IP_PER_HOUR=1000 go run ./cmd/api
 
 build:
 	go build -o bin/api ./cmd/api
