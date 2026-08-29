@@ -11,5 +11,12 @@
     "ios": "npm --workspace apps/mobile run ios",
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   }
 }

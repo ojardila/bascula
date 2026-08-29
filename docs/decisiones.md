@@ -104,3 +104,26 @@ producto y unidades de almacenamiento.
 Siguen siendo enumeraciones cerradas las que el código ramifica y que no
 significan nada si una finca inventa un valor: `ledger_kind`, `pay_method`,
 `farm_role`, `settlement_status`, `pay_scheme`, `time_unit` y `stock_reason`.
+
+## 2026-08-29 — Una labor se llama `work_record`, y solo así
+
+Los documentos traían tres nombres para la misma entidad: `arquitectura-api.md`
+usa `/v1/tasks` en su Entrega 2 y `work_records` en la revisión 2, y
+`modelo-datos.md` la llama `labors`. Con eso, el frontend construyó contra un
+nombre y el backend iba camino de otro.
+
+Queda `work_records`: tabla, endpoints `/v1/work-records`, y `payable_id` en
+`settlement_items` con el índice parcial anti doble pago intacto. `tasks` es
+demasiado genérico y choca con cualquier tarea de sistema; `labors` en inglés
+significa otra cosa. En la interfaz en español se sigue llamando «labor», que es
+la palabra del dueño.
+
+## 2026-08-29 — Un solo React en todo el monorepo
+
+La app móvil fija React en la versión que trae su Expo SDK. La web pedía un
+rango que resolvía a otra, y npm instalaba las dos. Dos instancias de React en
+el mismo proceso devuelven contextos nulos y tumban cualquier hook que los lea:
+las pruebas de la web fallaban por eso, no por su código.
+
+El `package.json` raíz fija ahora `react` y `react-dom` con `overrides`. Cuando
+Expo suba de versión, ese es el único sitio que hay que tocar.
