@@ -90,23 +90,42 @@ type WorkRecordFilter struct {
 	EmployeeID string
 	ActivityID string
 	PlotID     string
+	PlotCropID string
 	From       *time.Time
 	To         *time.Time
+	// PayScheme narrows to one way of paying. It is what makes the legacy
+	// /v1/pickups facade a filter rather than a second table: a weighing is a
+	// work record of an 'unidad_trabajo' activity and nothing else.
+	PayScheme domain.PayScheme
+	Filter
 }
 
 func ListWorkRecords(ctx context.Context, tx pgx.Tx, f WorkRecordFilter) ([]WorkRecord, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT `+workRecordCols+`
 		  FROM work_records l
-		 WHERE l.deleted_at IS NULL
+		  JOIN activities a ON a.farm_id = l.farm_id AND a.id = l.activity_id
+		  JOIN employees  e ON e.farm_id = l.farm_id AND e.id = l.employee_id
+		 WHERE ($6 OR l.deleted_at IS NULL)
+		   AND (NOT $7 OR l.deleted_at IS NOT NULL)
 		   AND ($1::uuid IS NULL OR l.employee_id = $1)
 		   AND ($2::uuid IS NULL OR l.activity_id = $2)
 		   AND ($3::date IS NULL OR l.local_day >= $3)
 		   AND ($4::date IS NULL OR l.end_local_day <= $4)
 		   AND ($5::uuid IS NULL OR EXISTS (
 		         SELECT 1 FROM work_record_plots lp WHERE lp.work_record_id = l.id AND lp.plot_id = $5))
+		   AND ($8::uuid IS NULL OR EXISTS (
+		         SELECT 1 FROM work_record_plot_crops lc
+		          WHERE lc.work_record_id = l.id AND lc.plot_crop_id = $8))
+		   AND ($9::pay_scheme IS NULL OR l.pay_scheme = $9)
+		   AND ($10::text IS NULL
+		        OR a.name ILIKE '%' || $10 || '%'
+		        OR (e.name || ' ' || coalesce(e.last_name, '')) ILIKE '%' || $10 || '%'
+		        OR coalesce(l.note, '') ILIKE '%' || $10 || '%')
 		 ORDER BY l.local_day DESC, l.created_at DESC`,
-		nilUUID(f.EmployeeID), nilUUID(f.ActivityID), f.From, f.To, nilUUID(f.PlotID))
+		nilUUID(f.EmployeeID), nilUUID(f.ActivityID), f.From, f.To, nilUUID(f.PlotID),
+		f.includeDeleted(), f.onlyDeleted(), nilUUID(f.PlotCropID),
+		nilIfEmpty(string(f.PayScheme)), nilIfEmpty(f.Q))
 	if err != nil {
 		return nil, err
 	}
@@ -224,6 +243,81 @@ func CreateWorkRecord(ctx context.Context, tx pgx.Tx, farmID string, l WorkRecor
 		out.PlotCropIDs = append(out.PlotCropIDs, cropID)
 	}
 	return out, nil
+}
+
+// IsSettled reports whether a live settlement has claimed this record.
+func IsSettled(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
+	var settled bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM settlement_items si
+		                WHERE si.payable_id = $1 AND si.voided_at IS NULL)`, id).Scan(&settled)
+	return settled, err
+}
+
+// UpdateWorkRecord corrects a record that has not been paid yet, and it can
+// change exactly two things: the quantity and the note.
+//
+// What it refuses to change is the interesting half. The worker is somebody
+// else's money. The date decides which rate period and which week apply, so
+// moving it silently reprices the line. The activity decides the pay scheme,
+// which a composite foreign key pins to the row. And the frozen price stays
+// frozen: that is the answer to "why was I paid this". Any of those is a
+// different work record — delete this one and write that one, in that order,
+// so the anti double-pay lock sees both.
+//
+// The amount is recomputed here rather than accepted from the caller, by the
+// one money rule: amount = round(quantity * rate). A caller that could send
+// its own total could send one that does not match its own line.
+func UpdateWorkRecord(ctx context.Context, tx pgx.Tx, id string,
+	quantity *json.Number, note *string) (*WorkRecord, error) {
+
+	settled, err := IsSettled(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if settled {
+		return nil, domain.Conflict(domain.CodeWorkRecordSettled,
+			"the work record is part of a live settlement; void the settlement first")
+	}
+
+	var qty *string
+	if quantity != nil {
+		q := quantity.String()
+		qty = &q
+	}
+	out, err := scanWorkRecord(tx.QueryRow(ctx, `
+		WITH upd AS (
+			UPDATE work_records SET
+				quantity     = coalesce($2::numeric, quantity),
+				amount_minor = CASE WHEN price_minor IS NULL THEN NULL
+				                    ELSE round(coalesce($2::numeric, quantity) * price_minor)::bigint END,
+				note         = coalesce($3, note)
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING *
+		)
+		SELECT `+workRecordCols+` FROM upd l`, id, qty, note))
+	if err != nil {
+		return nil, err
+	}
+	res, err := attachWorkRecordLinks(ctx, tx, []WorkRecord{*out}, []string{out.ID})
+	if err != nil {
+		return nil, err
+	}
+	return &res[0], nil
+}
+
+// RestoreWorkRecord puts a logically deleted record back. It becomes payable
+// again the moment it returns, which is why it is an administrator's action.
+func RestoreWorkRecord(ctx context.Context, tx pgx.Tx, id string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE work_records SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return NoRows
+	}
+	return nil
 }
 
 // SoftDeleteWorkRecord refuses to touch a record a live settlement has

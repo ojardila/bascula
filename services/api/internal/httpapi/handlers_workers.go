@@ -3,6 +3,8 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -35,7 +37,7 @@ func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	list, err := store.ListEmployees(r.Context(), tx, r.URL.Query().Get("includeDeleted") == "true")
+	list, err := store.ListEmployees(r.Context(), tx, listFilter(r))
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -106,19 +108,59 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
+// updateWorkerRequest is the employee columns plus a status, because the whole
+// interface says "Eliminar nunca borra": taking somebody off the payroll and
+// putting them back on next harvest are both a PATCH on the same row, never a
+// DELETE and a second registration under a new id that loses their history.
+type updateWorkerRequest struct {
+	store.Employee
+	Status string `json:"status"`
+}
+
 func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
-	var body store.Employee
+	var body updateWorkerRequest
 	if err := decode(r, &body); err != nil {
 		writeError(w, r, err)
 		return
 	}
+	if err := validStatus(body.Status); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	id := chi.URLParam(r, "id")
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	updated, err := store.UpdateEmployee(r.Context(), tx, chi.URLParam(r, "id"), body)
+
+	// The status transition runs first, so a body that both reactivates and
+	// renames works: UpdateEmployee only touches rows that are not deleted.
+	switch body.Status {
+	case "inactive":
+		if err := store.SoftDeleteEmployee(r.Context(), tx, id); err != nil && err != store.NoRows {
+			writeError(w, r, err)
+			return
+		}
+	case "active":
+		if _, err := store.RestoreEmployee(r.Context(), tx, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	updated, err := store.UpdateEmployee(r.Context(), tx, id, body.Employee)
 	if err != nil {
+		if body.Status == "inactive" {
+			// Deactivating and nothing else: UpdateEmployee skips deleted
+			// rows by design, so read the row back instead of 404-ing on a
+			// change that did happen.
+			e, getErr := store.GetEmployee(r.Context(), tx, id)
+			if getErr == nil {
+				writeJSON(w, http.StatusOK, e)
+				return
+			}
+		}
 		writeError(w, r, err)
 		return
 	}
@@ -171,12 +213,184 @@ func (s *Server) handleWorkerProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	notes, err := store.ListNotes(r.Context(), tx, id, limitParam(r, 50))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"worker":  worker,
 		"balance": balance,
 		"ledger":  entries,
 		"tasks":   tasks,
+		"notes":   notes,
 	})
+}
+
+// handleWorkerPayables is the RSP-008 screen: one list of work, one list of
+// debts, and one total.
+//
+// The guard on the first line is the whole reason this is not three calls. Every
+// number below comes out of a SUM, and a SUM over an id that matches nothing
+// returns zero rather than an error. Zero is a perfectly credible answer —
+// "this person is settled up" — and it is what a worker of another farm and a
+// worker who never existed would both produce. So the worker is confirmed to be
+// ours before anything is added up, and a miss falls through to the ordinary
+// 404.
+func (s *Server) handleWorkerPayables(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if _, err := store.GetEmployee(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	// No range given means everything outstanding, which is what the screen
+	// asks for: the owner pays what is owed, not what is owed this fortnight.
+	from, to := time.Unix(0, 0).UTC(), time.Now().UTC().AddDate(1, 0, 0)
+	if raw := r.URL.Query().Get("from"); raw != "" {
+		if from, err = time.Parse("2006-01-02", raw); err != nil {
+			writeError(w, r, domain.BadRequest("from must be YYYY-MM-DD"))
+			return
+		}
+	}
+	if raw := r.URL.Query().Get("to"); raw != "" {
+		if to, err = time.Parse("2006-01-02", raw); err != nil {
+			writeError(w, r, domain.BadRequest("to must be YYYY-MM-DD"))
+			return
+		}
+	}
+
+	tasks, err := store.Pending(r.Context(), tx, id, from, to)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	debts, err := store.Debts(r.Context(), tx, id)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	balance, err := store.Balance(r.Context(), tx, id)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	var gross int64
+	for _, t := range tasks {
+		gross += t.AmountMinor
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workerId": id,
+		"tasks":    tasks,
+		"debts":    debts,
+		"balance":  balance,
+		// grossCents is the unsettled work above. balanceCents is what the
+		// ledger already says, deductions and advances included. totalCents is
+		// their sum: what the farm would owe if everything listed were settled
+		// right now.
+		//
+		// The debts are NOT subtracted again here and must not be by the
+		// caller either — they are already inside balanceCents, and taking
+		// them off twice charges the worker for the same debt twice.
+		"grossCents":   gross,
+		"balanceCents": balance.BalanceMinor,
+		"totalCents":   balance.BalanceMinor + gross,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+
+func (s *Server) handleListWorkerNotes(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// Same reasoning as the balance: an unknown worker must not read as a
+	// person with nothing written about them.
+	if _, err := store.GetEmployee(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	notes, err := store.ListNotes(r.Context(), tx, id, limitParam(r, 100))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": notes})
+}
+
+// handleAddWorkerNote appends a note. There is no PATCH and no DELETE on one,
+// and there never will be: a note that can be rewritten afterwards is not a
+// record of anything. It is also the most dangerous free text in the system,
+// which is why decision 1 nails it to the farm — the registry service has no
+// read path to this table and the column that would let one exist was never
+// created.
+func (s *Server) handleAddWorkerNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID   string  `json:"id"`
+		Text string  `json:"text"`
+		Date string  `json:"date"`
+		Note *string `json:"note"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if body.Text == "" && body.Note != nil {
+		body.Text = *body.Note
+	}
+	if strings.TrimSpace(body.Text) == "" {
+		writeError(w, r, domain.BadRequest("text is required"))
+		return
+	}
+	if body.ID == "" {
+		body.ID = newID()
+	}
+	var on *time.Time
+	if body.Date != "" {
+		d, err := time.Parse("2006-01-02", body.Date)
+		if err != nil {
+			writeError(w, r, domain.BadRequest("date must be YYYY-MM-DD"))
+			return
+		}
+		on = &d
+	}
+
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	farmID, err := tenant.FarmID(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if _, err := store.GetEmployee(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	p, _ := auth.PrincipalFrom(r.Context())
+
+	note, err := store.CreateNote(r.Context(), tx, farmID, store.NewNote{
+		ID: body.ID, EmployeeID: id, Body: body.Text, NotedOn: on, CreatedBy: p.UserID,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, note)
 }
 
 // callerSeesPrivateData is a projection decision, not an authorisation one:
@@ -197,4 +411,29 @@ func limitParam(r *http.Request, def int) int {
 		return def
 	}
 	return n
+}
+
+// listFilter reads the two query parameters every list endpoint takes. The
+// legacy `includeDeleted=true` is kept as a synonym for `status=all`, because
+// the phone already sends it.
+func listFilter(r *http.Request) store.Filter {
+	f := store.Filter{
+		Q:      strings.TrimSpace(r.URL.Query().Get("q")),
+		Status: r.URL.Query().Get("status"),
+	}
+	if f.Status == "" && r.URL.Query().Get("includeDeleted") == "true" {
+		f.Status = "all"
+	}
+	return f
+}
+
+// validStatus rejects a status nobody meant. An unrecognised value is a 400
+// rather than a silent no-op: "status":"Inactive" quietly doing nothing is how
+// a delete button ships broken.
+func validStatus(status string) error {
+	switch status {
+	case "", "active", "inactive":
+		return nil
+	}
+	return domain.BadRequest(`status must be "active" or "inactive"`)
 }

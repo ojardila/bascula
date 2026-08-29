@@ -56,5 +56,17 @@ func IsUniqueViolation(err error, constraint string) bool {
 	return constraint == "" || pe.ConstraintName == constraint
 }
 
+// IsCheckViolation reports whether err is a CHECK constraint violation,
+// optionally a specific one. It is how a rule the database owns — a valid IANA
+// timezone, a line that adds up — becomes a message a form can show instead of
+// a 500.
+func IsCheckViolation(err error, constraint string) bool {
+	pe, ok := PgErr(err)
+	if !ok || pe.Code != "23514" {
+		return false
+	}
+	return constraint == "" || pe.ConstraintName == constraint
+}
+
 // NoRows is pgx.ErrNoRows, re-exported so handlers need not import pgx.
 var NoRows = pgx.ErrNoRows

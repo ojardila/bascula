@@ -23,12 +23,25 @@ const (
 	ActionLogout      Action = "auth.logout"
 	ActionMeRead      Action = "me.read"
 
-	ActionWorkersRead    Action = "workers.read"
-	ActionWorkersWrite   Action = "workers.write"
-	ActionWorkersPrivate Action = "workers.read_private"
+	ActionWorkersRead     Action = "workers.read"
+	ActionWorkersWrite    Action = "workers.write"
+	ActionWorkersPrivate  Action = "workers.read_private"
+	ActionWorkerNotesRead Action = "workers.notes.read"
+	ActionWorkerNotesAdd  Action = "workers.notes.write"
+	ActionWorkerPayables  Action = "workers.payables.read"
 
-	ActionPlotsRead  Action = "plots.read"
-	ActionPlotsWrite Action = "plots.write"
+	ActionPlotsRead     Action = "plots.read"
+	ActionPlotsWrite    Action = "plots.write"
+	ActionPlotsBoundary Action = "plots.boundary.write"
+
+	ActionFarmRead  Action = "farm.read"
+	ActionFarmWrite Action = "farm.write"
+
+	// The super-admin console. Decision 2 shrank it to what it still needs:
+	// see the farms, suspend one, and nothing else. It never reads a worker,
+	// a work record or a peso of anybody's money.
+	ActionAdminFarmsRead  Action = "admin.farms.read"
+	ActionAdminFarmsWrite Action = "admin.farms.write"
 
 	ActionCatalogsRead  Action = "catalogs.read"
 	ActionCatalogsWrite Action = "catalogs.write"
@@ -75,6 +88,11 @@ type Rule struct {
 	// other action goes through the tenant middleware and gets a transaction
 	// with app.farm_id set.
 	TenantOptional bool
+	// Superadmin means the platform flag on the user is required on top of
+	// the farm role. It is not a fourth farm role: a super-admin administers
+	// farms from the outside and cannot read inside one, which is why the
+	// only actions carrying this are the two in the console.
+	Superadmin bool
 }
 
 var owners = []domain.Role{domain.RoleOwner}
@@ -98,8 +116,27 @@ var Matrix = map[Action]Rule{
 	ActionWorkersWrite:   {Roles: admins},
 	ActionWorkersPrivate: {Roles: admins, Money: true},
 
-	ActionPlotsRead:  {Roles: everyone},
-	ActionPlotsWrite: {Roles: admins},
+	// Notes are a person's private file. Decision 1 says they are born
+	// private and have no exit route out of the farm; §6 puts them on the
+	// weigher's deny list next to payroll, and the RLS policy on
+	// employee_notes says it a second time.
+	ActionWorkerNotesRead: {Roles: admins, Money: true},
+	ActionWorkerNotesAdd:  {Roles: admins, Money: true},
+	ActionWorkerPayables:  {Roles: admins, Money: true},
+
+	ActionPlotsRead:     {Roles: everyone},
+	ActionPlotsWrite:    {Roles: admins},
+	ActionPlotsBoundary: {Roles: admins},
+
+	// The farm's own record. Everybody reads it — the weigher's client needs
+	// the timezone and the currency to render a date and an amount — but the
+	// projection drops priceCents for him, because that is the price of a
+	// kilo. Only the owner writes it.
+	ActionFarmRead:  {Roles: everyone},
+	ActionFarmWrite: {Roles: owners},
+
+	ActionAdminFarmsRead:  {Roles: everyone, Superadmin: true, Money: true},
+	ActionAdminFarmsWrite: {Roles: everyone, Superadmin: true, Money: true},
 
 	// Catalogues are names, not prices. The weigher reads them because his
 	// screens have the same pickers; only an administrator adds to them.
@@ -135,8 +172,17 @@ var Matrix = map[Action]Rule{
 	ActionLedgerReverse:      {Roles: admins, Money: true},
 }
 
-// Allowed reports whether a role may perform an action.
-func Allowed(role domain.Role, a Action) bool {
+// Allowed reports whether a farm role, on its own, may perform an action.
+//
+// A rule that asks for the platform flag is never satisfied by a farm role, so
+// the super-admin console is invisible to every member of every farm — the
+// owner included. That is what makes it correct for the contract test to walk
+// this table alone and conclude that the weigher is refused: the answer here
+// and the answer at the door are the same answer.
+func Allowed(role domain.Role, a Action) bool { return AllowedFor(role, false, a) }
+
+// AllowedFor is Allowed with the platform flag from the token.
+func AllowedFor(role domain.Role, superadmin bool, a Action) bool {
 	rule, ok := Matrix[a]
 	if !ok {
 		// An unknown action is a closed door, never an open one.
@@ -144,6 +190,9 @@ func Allowed(role domain.Role, a Action) bool {
 	}
 	if rule.Public {
 		return true
+	}
+	if rule.Superadmin && !superadmin {
+		return false
 	}
 	for _, r := range rule.Roles {
 		if r == role {

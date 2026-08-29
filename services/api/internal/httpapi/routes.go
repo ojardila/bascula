@@ -33,6 +33,15 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/auth/logout", auth.ActionLogout, s.handleLogout},
 		{http.MethodGet, "/v1/me", auth.ActionMeRead, s.handleMe},
 
+		// The farm's own record. The weigher reads it without the price.
+		{http.MethodGet, "/v1/farm", auth.ActionFarmRead, s.handleGetFarm},
+		{http.MethodPut, "/v1/farm", auth.ActionFarmWrite, s.handleUpdateFarm},
+
+		// The super-admin console, and all of it. Decision 2 made the public
+		// signup the front door and left this with two jobs.
+		{http.MethodGet, "/v1/admin/farms", auth.ActionAdminFarmsRead, s.handleListAdminFarms},
+		{http.MethodPatch, "/v1/admin/farms/{id}", auth.ActionAdminFarmsWrite, s.handleSetFarmStatus},
+
 		// Workers.
 		{http.MethodGet, "/v1/workers", auth.ActionWorkersRead, s.handleListWorkers},
 		{http.MethodPost, "/v1/workers", auth.ActionWorkersWrite, s.handleCreateWorker},
@@ -40,6 +49,9 @@ func (s *Server) Routes() []Route {
 		{http.MethodPatch, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleUpdateWorker},
 		{http.MethodDelete, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleDeleteWorker},
 		{http.MethodGet, "/v1/workers/{id}/profile", auth.ActionWorkersPrivate, s.handleWorkerProfile},
+		{http.MethodGet, "/v1/workers/{id}/payables", auth.ActionWorkerPayables, s.handleWorkerPayables},
+		{http.MethodGet, "/v1/workers/{id}/notes", auth.ActionWorkerNotesRead, s.handleListWorkerNotes},
+		{http.MethodPost, "/v1/workers/{id}/notes", auth.ActionWorkerNotesAdd, s.handleAddWorkerNote},
 
 		// Plots, with their crops nested: the form is one form.
 		{http.MethodGet, "/v1/plots", auth.ActionPlotsRead, s.handleListPlots},
@@ -47,6 +59,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/plots/{id}", auth.ActionPlotsRead, s.handleGetPlot},
 		{http.MethodPatch, "/v1/plots/{id}", auth.ActionPlotsWrite, s.handleUpdatePlot},
 		{http.MethodDelete, "/v1/plots/{id}", auth.ActionPlotsWrite, s.handleDeletePlot},
+		{http.MethodPut, "/v1/plots/{id}/boundary", auth.ActionPlotsBoundary, s.handleSetPlotBoundary},
 		{http.MethodPost, "/v1/plots/{id}/crops", auth.ActionPlotsWrite, s.handleCreatePlotCrop},
 		{http.MethodDelete, "/v1/plots/{id}/crops/{cropId}", auth.ActionPlotsWrite, s.handleDeletePlotCrop},
 
@@ -54,6 +67,7 @@ func (s *Server) Routes() []Route {
 		// comes back without a single rate in it.
 		{http.MethodGet, "/v1/activities", auth.ActionActivitiesRead, s.handleListActivities},
 		{http.MethodPost, "/v1/activities", auth.ActionActivitiesWrite, s.handleCreateActivity},
+		{http.MethodPatch, "/v1/activities/{id}", auth.ActionActivitiesWrite, s.handleUpdateActivity},
 		{http.MethodDelete, "/v1/activities/{id}", auth.ActionActivitiesWrite, s.handleArchiveActivity},
 		{http.MethodGet, "/v1/activities/{id}/rates", auth.ActionActivityRate, s.handleListActivityRates},
 		{http.MethodPut, "/v1/activities/{id}/rate", auth.ActionActivityRate, s.handleSetActivityRate},
@@ -81,7 +95,16 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/work-records", auth.ActionWorkRecordsRead, s.handleListWorkRecords},
 		{http.MethodPost, "/v1/work-records", auth.ActionWorkRecordsWrite, s.handleCreateWorkRecord},
 		{http.MethodGet, "/v1/work-records/{id}", auth.ActionWorkRecordsRead, s.handleGetWorkRecord},
+		{http.MethodPatch, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleUpdateWorkRecord},
 		{http.MethodDelete, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleDeleteWorkRecord},
+
+		// The legacy pickup facade, so the phone in a farm's pocket keeps
+		// working through the transition. It is a translation onto the routes
+		// above, not a second implementation: see handlers_pickups.go.
+		{http.MethodGet, "/v1/pickups", auth.ActionWorkRecordsRead, s.handleListPickups},
+		{http.MethodPost, "/v1/pickups", auth.ActionWorkRecordsWrite, s.handleCreatePickup},
+		{http.MethodGet, "/v1/pickups/{id}", auth.ActionWorkRecordsRead, s.handleGetPickup},
+		{http.MethodDelete, "/v1/pickups/{id}", auth.ActionWorkRecordsAdmin, s.handleDeletePickup},
 
 		// Prices.
 		{http.MethodGet, "/v1/prices/weeks/{monday}", auth.ActionPricesRead, s.handleGetWeekPrice},

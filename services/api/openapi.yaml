@@ -1,0 +1,3073 @@
+# Báscula API — the contract.
+#
+# This file is not documentation. It is checked against the running router by
+# internal/apitest/openapi_test.go on every `make test`, and the build goes red
+# when the two disagree about:
+#
+#   * which routes exist        — every mounted route is here, and every
+#                                 operation here is mounted, with the same
+#                                 method and the same path parameters;
+#   * who may call them         — `x-roles` on every operation is compared
+#                                 against auth.Matrix, the one permission
+#                                 table this service has;
+#   * which action backs them   — `x-action` is the auth.Action the route
+#                                 declares, so a route cannot be documented
+#                                 under somebody else's permissions;
+#   * which errors exist        — the ErrorCode enum below is compared against
+#                                 domain.AllCodes().
+#
+# A hand-written contract that nobody verifies rots in a fortnight, and a rotten
+# contract is worse than none: the client generates types from it and trusts
+# them. So this one cannot rot silently.
+#
+# CONVENTIONS THAT APPLY EVERYWHERE, stated once instead of on sixty operations:
+#
+#   * The tenant travels in the access token and never in a path. There is no
+#     {farmId} anywhere below, deliberately (§6 of docs/arquitectura-api.md):
+#     a farm id in a path invites somebody to trust it.
+#   * A resource of another farm answers 404, never an empty list and never a
+#     zero total. An endpoint that adds something up confirms the resource
+#     belongs to this farm before it adds, because a zero is a credible answer
+#     and a credible wrong answer is the dangerous kind.
+#   * Money is integer minor units (`...Cents`), int64, always. There is no
+#     float anywhere near a peso.
+#   * Every write accepts a client-generated `id` (UUIDv7) and is idempotent by
+#     (farm_id, id): retrying after a timeout returns 200 with the existing
+#     resource, not 409.
+#   * "Delete" is logical everywhere. DELETE marks the row inactive and PATCH
+#     {"status":"active"} brings it back.
+#   * Business dates are calendar days in the farm's own timezone. Several
+#     responses carry them as `date-time` at midnight UTC rather than as
+#     `date`, because they are Go time.Time values on the wire. That is
+#     recorded here rather than tidied away: the spec describes what the server
+#     sends.
+#   * Errors are always {"error":{"code","message","details"}}. The client
+#     branches on `code`; `message` is English and is not shown to a picker.
+#
+# `x-roles` values: "public" (no token at all), "superadmin" (the platform
+# flag on the user, which no farm role can substitute for), or the farm roles
+# that may call it, in seniority order: owner, admin, weigher.
+
+openapi: 3.0.3
+
+info:
+  title: Báscula API
+  version: "1.0.0"
+  description: |
+    Multi-tenant farm labour and payroll API. One binary, one Postgres, four
+    roles. Isolation is row level security keyed on `app.farm_id`, set from the
+    access token inside the transaction that serves the request.
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+  - name: auth
+  - name: farm
+  - name: admin
+  - name: workers
+  - name: plots
+  - name: activities
+  - name: catalogs
+  - name: work-records
+  - name: pickups
+  - name: money
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Health
+  # ---------------------------------------------------------------------------
+  /health:
+    get:
+      tags: [health]
+      operationId: health
+      summary: Liveness
+      description: |
+        Touches no database and opens no transaction, so it answers even when
+        the tenant machinery cannot.
+      x-action: health
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+
+  # ---------------------------------------------------------------------------
+  # Auth
+  # ---------------------------------------------------------------------------
+  /v1/signup:
+    post:
+      tags: [auth]
+      operationId: signup
+      summary: Register a farm and its first owner
+      description: |
+        Public by decision 2: a farm goes live without anybody at the platform
+        intervening. It is therefore the most exposed surface in the system and
+        carries three limits — a per-IP rate limit that survives a restart
+        because it lives in Postgres, a cap on farms per email address, and
+        mandatory email verification before the first session.
+
+        An address that already has an account may open a second farm, but only
+        by presenting that account's password.
+      x-action: signup
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignupRequest" }
+      responses:
+        "201":
+          description: The farm exists and is active; the owner cannot log in yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignupResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: |
+            EMAIL_TAKEN when the address exists and the password did not match,
+            FARM_LIMIT_REACHED when it already owns as many farms as it may.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: RATE_LIMITED — too many signups from this address this hour.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Open a session
+      description: |
+        Answers 200 with a session when the account belongs to exactly one farm
+        or `farmId` was given. When it belongs to several and none was chosen,
+        it answers 400 with `details.farms`, which is a list to choose from and
+        not a failure.
+
+        An unknown address and a wrong password produce the same
+        INVALID_CREDENTIALS.
+      x-action: auth.login
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: A token pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400":
+          description: |
+            Malformed, or the account belongs to more than one farm and none
+            was chosen — then `details.farms` lists them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: INVALID_CREDENTIALS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: EMAIL_NOT_VERIFIED, FARM_SUSPENDED, or no membership at all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Rotate the token pair
+      description: |
+        Every refresh token is single use. Presenting one that was already
+        rotated means a replay or a stolen copy, so the whole family is revoked
+        rather than the request merely failing — that is how a lent phone gets
+        killed from the web.
+      x-action: auth.refresh
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: A new token pair; the presented refresh token is now dead.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: TOKEN_EXPIRED, or TOKEN_REUSED — which also closed the session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: FARM_SUSPENDED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/verify-email:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: Verify the owner's address
+      description: |
+        Consumes the token echoed by signup (in development) or mailed to the
+        address. Until this succeeds, login answers EMAIL_NOT_VERIFIED.
+      x-action: auth.verify_email
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [userId, verified]
+                properties:
+                  userId: { type: string, format: uuid }
+                  verified: { type: boolean }
+        "400":
+          description: The link is not valid any more.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Close the session
+      description: |
+        Revokes the whole refresh family. Logging out an unknown token is still
+        a successful logout: the caller asked to have no session and now has
+        none.
+      x-action: auth.logout
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "204": { description: Closed. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me:
+    get:
+      tags: [auth]
+      operationId: me
+      summary: The caller and their farm
+      x-action: me.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: Who this token belongs to.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ---------------------------------------------------------------------------
+  # The farm's own record
+  # ---------------------------------------------------------------------------
+  /v1/farm:
+    get:
+      tags: [farm]
+      operationId: getFarm
+      summary: The farm this token points at
+      description: |
+        There is no `/v1/farms/{id}`: the tenant travels in the token.
+
+        The weigher gets the same route and a shorter answer — `priceCents` is
+        absent for him, because that is the price of a kilo. Timezone and
+        currency stay, because his client needs them to render a date and an
+        amount.
+      x-action: farm.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The farm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Farm" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [farm]
+      operationId: updateFarm
+      summary: Edit the farm's configuration
+      description: |
+        A partial body: a field that is absent keeps its value. The timezone is
+        editable and validated — a bad IANA name would silently shift every
+        business day the farm has ever recorded, so it is a 400 and not a
+        stored value.
+      x-action: farm.write
+      x-roles: [owner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FarmPatch" }
+      responses:
+        "200":
+          description: The farm as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Farm" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ---------------------------------------------------------------------------
+  # Super-admin console
+  # ---------------------------------------------------------------------------
+  /v1/admin/farms:
+    get:
+      tags: [admin]
+      operationId: adminListFarms
+      summary: List the farms on the platform
+      description: |
+        Decision 2 made the public signup the front door and left this console
+        with two jobs: see the farms and suspend one. It cannot read an
+        employee, a work record or a peso of anybody's money, and the
+        projection is the enforcement of that — every field returned is a
+        column of `farms`.
+
+        The platform flag on the user is required. No farm role, not even
+        owner, substitutes for it.
+      x-action: admin.farms.read
+      x-roles: [superadmin]
+      parameters:
+        - name: q
+          in: query
+          description: Substring of the farm's name, case-insensitive.
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, suspended] }
+      responses:
+        "200":
+          description: Every farm, or those matching the filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminFarm" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/farms/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [admin]
+      operationId: adminSetFarmStatus
+      summary: Suspend a farm, or bring it back
+      description: |
+        Suspension is not a delete and it is not instant. Login and refresh
+        both refuse a suspended farm, so a phone already holding an access
+        token keeps working until that token expires — at most fifteen minutes.
+        That is the intended trade: a shorter token to make suspension
+        immediate would mean refreshing every few minutes on a handset that
+        spends the day without signal.
+      x-action: admin.farms.write
+      x-roles: [superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, suspended] }
+      responses:
+        "200":
+          description: The farm as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFarm" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Workers
+  # ---------------------------------------------------------------------------
+  /v1/workers:
+    get:
+      tags: [workers]
+      operationId: listWorkers
+      summary: List workers
+      description: |
+        Same route, two projections. An owner or administrator gets the whole
+        row; the weigher gets `id`, `name`, `lastName` and `tag` and nothing
+        else — no document, no phone, no address, no photo.
+
+        `q` searches the name, the document and the basket tag for everybody,
+        the weigher included: he can find a person by the number on their card
+        without the number coming back on the wire.
+      x-action: workers.read
+      x-roles: [owner, admin, weigher]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - $ref: "#/components/parameters/QueryIncludeDeleted"
+      responses:
+        "200":
+          description: The farm's people.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Worker" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [workers]
+      operationId: createWorker
+      summary: Register a worker
+      description: |
+        Idempotent by (farm_id, id): posting the same client-generated id twice
+        answers 200 with the existing row rather than 409, so a retry after a
+        timeout is safe.
+      x-action: workers.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkerInput" }
+      responses:
+        "200":
+          description: That id already existed here; this is the row it means.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+        "201":
+          description: Registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: DUPLICATE_DOCUMENT — another worker here has that document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/workers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [workers]
+      operationId: getWorker
+      summary: One worker
+      description: The weigher's projection applies here too.
+      x-action: workers.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The worker.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [workers]
+      operationId: updateWorker
+      summary: Edit a worker, or take them off the payroll
+      description: |
+        A field that is absent keeps its value. `status` is how somebody comes
+        off the payroll and back on for the next harvest: the row and its
+        financial history stay put, which is the whole reason a delete here is
+        logical.
+      x-action: workers.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkerPatch" }
+      responses:
+        "200":
+          description: The worker as they now stand.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [workers]
+      operationId: deleteWorker
+      summary: Take a worker off the payroll
+      description: |
+        Logical. Nothing in this service issues a DELETE against a row: the
+        financial history has to survive the person leaving. Equivalent to
+        PATCH {"status":"inactive"}.
+      x-action: workers.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked inactive. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/profile:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [workers]
+      operationId: workerProfile
+      summary: The RSP-007 screen in one call
+      description: |
+        The person, their balance derived from the ledger, their recent
+        movements, their work and their notes. One call because it is one
+        screen, and five calls would render it in five states.
+      x-action: workers.read_private
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryLimit"
+      responses:
+        "200":
+          description: The profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkerProfile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/payables:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [workers, money]
+      operationId: workerPayables
+      summary: The RSP-008 payment screen
+      description: |
+        One list of unsettled work, one list of debts, and one total.
+
+        `debts` are already inside `balanceCents`. They are listed so the
+        screen can show them, and they must NOT be subtracted again — doing so
+        charges the worker for the same debt twice. `totalCents` is
+        `balanceCents + grossCents`: what the farm would owe if everything
+        listed were settled right now.
+
+        A debt is a `deduccion` or an `anticipo` in the worker's ledger. It is
+        not an expense: an expense is the farm's own accounting and never
+        touches anybody's ledger, because otherwise the cost of a spraying
+        comes out of somebody's wage.
+
+        Without `from`/`to` this is everything outstanding, which is what the
+        screen asks for: the owner pays what is owed, not what is owed this
+        fortnight.
+      x-action: workers.payables.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+      responses:
+        "200":
+          description: What this person is owed and what they owe.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payables" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/notes:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [workers]
+      operationId: listWorkerNotes
+      summary: A worker's notes
+      description: |
+        Notes are born private and have no route out of the farm. Decision 1
+        is explicit: the registry service cannot read this table, and the
+        column that would let it was never created. The schema is the defence,
+        not a policy somebody could relax.
+      x-action: workers.notes.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryLimit"
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Note" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [workers]
+      operationId: addWorkerNote
+      summary: Append a note
+      description: |
+        Append-only. There is no PATCH and no DELETE on a note, and there will
+        not be: a note that can be rewritten afterwards is not a record of
+        anything.
+      x-action: workers.notes.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "201":
+          description: Written.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/balance:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [money]
+      operationId: workerBalance
+      summary: One worker's position
+      description: |
+        Derived from the ledger, never stored. Positive means the farm owes
+        them.
+
+        The worker is confirmed to belong to this farm before anything is
+        summed: a SUM over an id that matches nothing returns zero, and zero
+        reads exactly like "settled up". A worker of another farm and a worker
+        who never existed both answer 404 here.
+      x-action: balances.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The balance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Balance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/ledger:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [money]
+      operationId: workerLedger
+      summary: One worker's movements
+      description: |
+        Newest first. The same guard as the balance, one step quieter: an empty
+        list would read as "no movements yet" rather than "no such person", so
+        an unknown worker is a 404.
+      x-action: ledger.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryLimit"
+      responses:
+        "200":
+          description: The movements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/LedgerEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Plots and crops
+  # ---------------------------------------------------------------------------
+  /v1/plots:
+    get:
+      tags: [plots]
+      operationId: listPlots
+      summary: List plots with their crops
+      x-action: plots.read
+      x-roles: [owner, admin, weigher]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - $ref: "#/components/parameters/QueryIncludeDeleted"
+      responses:
+        "200":
+          description: The farm's plots.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Plot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [plots]
+      operationId: createPlot
+      summary: Register a plot and what is planted in it
+      description: |
+        The plot and its crops arrive in one body because the form the owner
+        fills in is one form: identity, location, what is planted, and the
+        shape drawn on the map.
+
+        A crop may name its type and variety by id or by name; a name the
+        catalogue has not seen is added to it rather than rejected, which is
+        the "add it if it is not there" button RSP-001 asks for.
+      x-action: plots.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlotInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plot" }
+        "201":
+          description: Registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plot" }
+        "400":
+          description: |
+            Malformed, or INVALID_GEOMETRY when the boundary is not a valid
+            Polygon or MultiPolygon.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: DUPLICATE_NAME — this farm already has a plot with that name.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/plots/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [plots]
+      operationId: getPlot
+      summary: One plot with its crops
+      x-action: plots.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The plot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [plots]
+      operationId: updatePlot
+      summary: Edit a plot, or take it out of service
+      description: |
+        A field that is absent keeps its value. Crops are not replaced from
+        here — they have their own routes, so an edit to the plot's name
+        cannot silently drop what is planted in it.
+      x-action: plots.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlotPatch" }
+      responses:
+        "200":
+          description: The plot as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Plot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            PLOT_HAS_ACTIVE_CROPS — a plot is not taken out of service while
+            something is planted in it, because that would orphan the work
+            records pointing at that crop. `details.activeCrops` says how many.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [plots]
+      operationId: deletePlot
+      summary: Take a plot out of service
+      description: Logical. Equivalent to PATCH {"status":"inactive"}.
+      x-action: plots.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked inactive. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: PLOT_HAS_ACTIVE_CROPS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/plots/{id}/boundary:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    put:
+      tags: [plots]
+      operationId: setPlotBoundary
+      summary: Store the polygon drawn on the map
+      description: |
+        GeoJSON in, GeoJSON out. PostGIS stops at this boundary on purpose: the
+        web and the phone never see a geography type, which is what keeps
+        changing engines possible.
+
+        Three PostGIS functions are used in this whole service. `ST_IsValid`
+        rejects a ring that crosses itself before it can be stored, because a
+        self-intersecting polygon has no area anybody would agree on and
+        `computedAreaHa` would then be a confident lie. `ST_Area/10000`
+        produces `computedAreaHa`, which comes back alongside the declared
+        `areaHa` and never instead of it — the two always disagree, and
+        choosing which to show is the owner's decision. `ST_Intersects` fills
+        `overlaps`, which is a warning and never a refusal: two plots that
+        touch are usually a drawing worth a second look, and sometimes they are
+        a terrace above a coffee lot.
+
+        A plain Polygon is promoted to a MultiPolygon: a plot in two separate
+        pieces is ordinary.
+      x-action: plots.boundary.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BoundaryInput" }
+      responses:
+        "200":
+          description: Stored, with the recomputed hectares and any overlaps.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoundaryResult" }
+        "400":
+          description: |
+            INVALID_GEOMETRY — not GeoJSON, not a polygon, or a ring that
+            crosses itself. The message carries `ST_IsValidReason`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/plots/{id}/crops:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    post:
+      tags: [plots]
+      operationId: addPlotCrop
+      summary: Plant something in a plot
+      description: |
+        Work records point at a `plot_crop` and not at the plot: if a plot has
+        coffee and plantain, "how did the coffee do" is only answerable at this
+        grain.
+      x-action: plots.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlotCropInput" }
+      responses:
+        "201":
+          description: Planted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlotCrop" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/plots/{id}/crops/{cropId}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+      - name: cropId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [plots]
+      operationId: removePlotCrop
+      summary: Remove a crop from a plot
+      description: Logical, like everything else.
+      x-action: plots.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Activities
+  # ---------------------------------------------------------------------------
+  /v1/activities:
+    get:
+      tags: [activities]
+      operationId: listActivities
+      summary: The farm's activity catalogue
+      description: |
+        Same route, different projection: the weigher's list arrives without a
+        single rate in it — `rate` is absent, not null. The RLS policies on the
+        `activity_pay_*` tables say the same thing a second time, so a
+        forgotten projection here still cannot leak a price.
+
+        `on` asks which rate was in force on a given day, which is how a past
+        payment stays explainable.
+      x-action: activities.read
+      x-roles: [owner, admin, weigher]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - name: category
+          in: query
+          description: Category id, or its exact name.
+          schema: { type: string }
+        - name: on
+          in: query
+          description: Which day's rate to report. Defaults to today.
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Grouped by category, then by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Activity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [activities]
+      operationId: createActivity
+      summary: Register an activity
+      description: |
+        The pay scheme decides the shape. `unidad_trabajo` needs a `unitId` and
+        nothing else may have one. `weekly_price` is only available to
+        `unidad_trabajo`, and `explicit` is not an activity's rate source at
+        all — it belongs to a single work record.
+
+        The first rate period is created in the same transaction; a deferred
+        constraint refuses an activity that ends the transaction without one.
+      x-action: activities.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActivityInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Activity" }
+        "201":
+          description: Registered, with its first rate period.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Activity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: DUPLICATE_NAME.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/activities/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    patch:
+      tags: [activities]
+      operationId: updateActivity
+      summary: Rename, recategorise, archive or unarchive an activity
+      description: |
+        `payScheme` and `rateSource` cannot be changed and sending either is a
+        400. Work records already written are pinned to (activity_id,
+        pay_scheme) by a composite foreign key, and their price shape was
+        decided by that scheme on the day they were written; turning "tala por
+        jornal" into a per-kilo activity would rewrite the meaning of money
+        already earned. An activity that pays differently is a different
+        activity.
+
+        The price is not editable here either: it has its own route, because a
+        new price opens a validity period rather than overwriting the old one.
+      x-action: activities.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActivityPatch" }
+      responses:
+        "200":
+          description: The activity as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Activity" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: DUPLICATE_NAME.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [activities]
+      operationId: archiveActivity
+      summary: Archive an activity
+      description: |
+        Logical. Its rate history is not deleted either: a payment made under
+        an old price stays explainable.
+      x-action: activities.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Archived. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/activities/{id}/rates:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [activities]
+      operationId: listActivityRates
+      summary: The whole price history of one activity
+      description: |
+        Newest first. This is what makes a past payment explainable: the answer
+        to "why was I paid this" is a row with a date on it.
+      x-action: activities.rate.write
+      x-roles: [owner]
+      responses:
+        "200":
+          description: Every validity period.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ActivityRate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/activities/{id}/rate:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    put:
+      tags: [activities]
+      operationId: setActivityRate
+      summary: Open a new price period
+      description: |
+        Decision 4: activity prices have a history with validity dates, exactly
+        like the weekly collection price already did. This never edits an
+        earlier period — a rate already frozen onto a work record has to stay
+        explainable — except when `validFrom` names a period that already
+        starts on that day, which is a correction rather than a new price.
+
+        The consequence a client must know: a work record whose price is
+        derived from a date has to be a single day. A wage from Tuesday to
+        Tuesday has no single validity period.
+      x-action: activities.rate.write
+      x-roles: [owner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RateInput" }
+      responses:
+        "200":
+          description: The activity's price history, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [activityId, rates]
+                properties:
+                  activityId: { type: string, format: uuid }
+                  rates:
+                    type: array
+                    items: { $ref: "#/components/schemas/ActivityRate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Catalogues
+  # ---------------------------------------------------------------------------
+  /v1/catalogs/activity-categories:
+    get:
+      tags: [catalogs]
+      operationId: listActivityCategories
+      summary: Activity categories
+      description: |
+        None of the catalogues is a Postgres enum. Every use case that mentions
+        them says a farm may invent a value ("con opción de crear una nueva"),
+        and a closed type would make each invented value an ALTER TYPE in
+        production. A new farm is seeded with siembra, mantenimiento and
+        cosecha; anything it adds afterwards is exactly as valid.
+      x-action: catalogs.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [catalogs]
+      operationId: createActivityCategory
+      summary: Add an activity category
+      description: |
+        Idempotent by (farm_id, lower(name)) and answers 200, never 201: the
+        caller does not need to know whether it existed, only which row that
+        name means on this farm. The autocomplete can therefore never produce
+        two of anything.
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/catalogs/crop-types:
+    get:
+      tags: [catalogs]
+      operationId: listCropTypes
+      summary: Crop types
+      x-action: catalogs.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [catalogs]
+      operationId: createCropType
+      summary: Add a crop type
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/catalogs/varieties:
+    get:
+      tags: [catalogs]
+      operationId: listVarieties
+      summary: Varieties
+      x-action: catalogs.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [catalogs]
+      operationId: createVariety
+      summary: Add a variety
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/catalogs/work-units:
+    get:
+      tags: [catalogs]
+      operationId: listWorkUnits
+      summary: Units of work
+      description: |
+        Kilos, arrobas, canastas. `kgFactor` is what a unit weighs, for the
+        farms that count in baskets and report in kilos.
+      x-action: catalogs.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The farm's units.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/WorkUnit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [catalogs]
+      operationId: createWorkUnit
+      summary: Add a unit of work
+      description: Idempotent by (farm_id, lower(code)); answers 200.
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkUnitInput" }
+      responses:
+        "200":
+          description: The row that code means on this farm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkUnit" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ---------------------------------------------------------------------------
+  # Work records — "labores"
+  # ---------------------------------------------------------------------------
+  /v1/work-records:
+    get:
+      tags: [work-records]
+      operationId: listWorkRecords
+      summary: List work records
+      description: |
+        The weigher gets only the rows he recorded, and that narrowing is the
+        RLS policy on `work_records`, not a WHERE clause in a handler.
+
+        `q` matches the activity's name, the worker's name or the note.
+      x-action: work_records.read
+      x-roles: [owner, admin, weigher]
+      parameters:
+        - $ref: "#/components/parameters/QueryWorkerID"
+        - name: activityId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: plotId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: plotCropId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: payScheme
+          in: query
+          schema: { $ref: "#/components/schemas/PayScheme" }
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - $ref: "#/components/parameters/QueryIncludeDeleted"
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/WorkRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [work-records]
+      operationId: createWorkRecord
+      summary: Record that somebody performed an activity
+      description: |
+        The one write in the system that decides money at write time, so most
+        of it is about which price applies and when it froze:
+
+          * `rateCents` given — the caller named the price, it freezes here,
+            and a date range is legal;
+          * the activity is priced by the week — the price is looked up when
+            the settlement runs, which is exactly what the phone does today;
+          * otherwise — the activity's rate in force on the day of the work,
+            frozen now. NO_RATE_IN_FORCE when there is none.
+
+        A record whose price is derived from a date must be a single day
+        (decision 4); a range needs `rateCents`, and asking for both is 400
+        with `details.code = RANGE_NEEDS_FROZEN_RATE`.
+
+        A weigher may only record work priced by the week, and may not send a
+        rate. He never sees a price and never needs to.
+      x-action: work_records.write
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkRecordInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "201":
+          description: Recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: NO_RATE_IN_FORCE — that activity has no price on that date.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/work-records/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [work-records]
+      operationId: getWorkRecord
+      summary: One work record
+      x-action: work_records.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [work-records]
+      operationId: updateWorkRecord
+      summary: Correct a work record that has not been paid
+      description: |
+        Exactly two things can change: the quantity and the note. The amount is
+        recomputed here by the one money rule, `round(quantity × rate)` — a
+        caller that could send its own total could send one that does not match
+        its own line.
+
+        What it refuses is the interesting half. The worker is somebody else's
+        money. The date decides which rate period and which week apply, so
+        moving it silently reprices the line. The activity decides the pay
+        scheme, which a composite foreign key pins to the row. And the frozen
+        price stays frozen: that is the answer to "why was I paid this". Any of
+        those is a different work record — delete this one and write that one,
+        in that order, so the anti double-pay lock sees both.
+      x-action: work_records.admin
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkRecordPatch" }
+      responses:
+        "200":
+          description: The record as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            WORK_RECORD_SETTLED — a live settlement has claimed it. Work that
+            has been paid is cancelled by voiding its settlement, never by
+            editing it away underneath the payment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [work-records]
+      operationId: deleteWorkRecord
+      summary: Remove a work record
+      description: Logical, and refused on a settled record.
+      x-action: work_records.admin
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: WORK_RECORD_SETTLED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  # ---------------------------------------------------------------------------
+  # The legacy pickup facade
+  # ---------------------------------------------------------------------------
+  /v1/pickups:
+    get:
+      tags: [pickups]
+      operationId: listPickups
+      summary: List weighings (legacy)
+      description: |
+        DEPRECATED. The same list as `/v1/work-records`, filtered to
+        `payScheme=unidad_trabajo`. A day's wage is not a weighing and never
+        appears here, which is what keeps the phone's screens looking exactly
+        as they did.
+
+        There is no pickups table and there never will be: two payable tables
+        mean two anti double-pay locks and no way for one settlement to take
+        both, and a picker who also cleared brush the same week needs one
+        settlement, not two.
+      deprecated: true
+      x-action: work_records.read
+      x-roles: [owner, admin, weigher]
+      parameters:
+        - $ref: "#/components/parameters/QueryWorkerID"
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+      responses:
+        "200":
+          description: Weighings, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/WorkRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [pickups]
+      operationId: createPickup
+      summary: Record a weighing (legacy)
+      description: |
+        DEPRECATED. Translates the phone's vocabulary and hands the result to
+        the ordinary work-record handler, so there is one implementation of this
+        write and both doors go through it: the price rules, the timezone
+        handling, the idempotency and the weigher's restrictions cannot drift
+        between them.
+
+        Without `activityId` it resolves the farm's own activity priced by the
+        week — seeded as "Recoleccion" — by lookup and never by a hardcoded id,
+        which would belong to somebody else's farm.
+
+        `cropId` is a `plot_crop` here. That mapping is 1:1 and deterministic
+        only until a farm registers a second crop in one lot; after that the
+        facade cannot invent which one was meant. That, and not a preference, is
+        the real deadline on the phone's migration.
+      deprecated: true
+      x-action: work_records.write
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickupInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "201":
+          description: Recorded, as a work record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            NO_RATE_IN_FORCE, which here also covers "this farm has no activity
+            priced by the week; send activityId explicitly".
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/pickups/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [pickups]
+      operationId: getPickup
+      summary: One weighing (legacy)
+      description: |
+        DEPRECATED. A work record that is not paid by the unit of work answers
+        404 through this door: the row exists and belongs to this farm, but a
+        day's wage on a screen that only knows how to show kilos is worse than
+        nothing.
+      deprecated: true
+      x-action: work_records.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The weighing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [pickups]
+      operationId: deletePickup
+      summary: Remove a weighing (legacy)
+      description: DEPRECATED. Logical, and refused on a settled record.
+      deprecated: true
+      x-action: work_records.admin
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: WORK_RECORD_SETTLED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  # ---------------------------------------------------------------------------
+  # Weekly price
+  # ---------------------------------------------------------------------------
+  /v1/prices/weeks/{monday}:
+    parameters:
+      - name: monday
+        in: path
+        required: true
+        description: |
+          The week is named by its Monday's ISO date. Any other day is a 400 —
+          the phone's old "2026-W33" form is obsolete.
+        schema: { type: string, format: date, example: "2026-08-24" }
+    get:
+      tags: [money]
+      operationId: getWeekPrice
+      summary: What a kilo is worth this week
+      description: |
+        The week's override if the owner set one, otherwise the farm's standing
+        price. A work record priced by the week reads this at settlement time,
+        not at write time.
+      x-action: prices.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The price in force for that week.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeekPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [money]
+      operationId: setWeekPrice
+      summary: Set this week's price
+      description: |
+        Owner only. Setting a past week's price reprices every weighing of that
+        week that has not been settled yet, and none that has: a settled line
+        keeps the price it was settled at.
+      x-action: prices.write
+      x-roles: [owner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priceCents]
+              properties:
+                priceCents: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeekPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Money
+  # ---------------------------------------------------------------------------
+  /v1/pending:
+    get:
+      tags: [money]
+      operationId: pending
+      summary: What a worker is owed for but has not been paid
+      description: |
+        Payables in the range that no live settlement has claimed, each already
+        priced. Two freezing moments meet here: a line priced by the week is
+        priced now, at read time; every other line was frozen when it was
+        written and is only read back.
+
+        Deliberately not filtered by pay scheme. Filtering it would bring back
+        the two-path problem that the single payable table removed — a picker
+        who also cleared brush must receive one settlement.
+
+        The worker is confirmed to be ours before anything is summed.
+      x-action: pending.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: workerId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: The unsettled lines and their total.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/balances:
+    get:
+      tags: [money]
+      operationId: listBalances
+      summary: Every worker's position
+      description: Derived from the ledger, largest credit first.
+      x-action: balances.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: One row per worker.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Balance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/settlements/preview:
+    post:
+      tags: [money]
+      operationId: previewSettlement
+      summary: Price a period without writing anything
+      description: |
+        The same code path the real settlement uses, so what the screen shows
+        and what gets written cannot drift apart.
+      x-action: settlements.preview
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettlementInput" }
+      responses:
+        "200":
+          description: What settling this period would produce.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettlementPreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/settlements:
+    post:
+      tags: [money]
+      operationId: createSettlement
+      summary: Turn a set of payables into one settlement and one earning
+      description: |
+        The anti double-pay lock is a partial unique index in Postgres, not a
+        check in application code: a payable belongs to exactly one live
+        settlement and the database is what says so. Two concurrent settlements
+        racing for the same payable end with one unique violation, surfaced as
+        409 PAYABLE_ALREADY_CLAIMED with the winning settlement in `details` so
+        a client can re-derive its state.
+
+        Omitting `payableIds` settles everything pending in the range. The
+        period recorded is the period actually covered — the Monday of the
+        earliest payable taken in — and not whatever window the caller asked
+        over: a caller asking from 1970 means "everything outstanding", and
+        writing 1970 on the receipt would be nonsense.
+      x-action: settlements.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettlementInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "201":
+          description: Settled, with one `devengo` written to the ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            NOTHING_TO_SETTLE, or PAYABLE_ALREADY_CLAIMED with
+            `details.payableId` and `details.winningSettlement`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/settlements/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [money]
+      operationId: getSettlement
+      summary: One settlement with its lines
+      x-action: settlements.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The settlement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/settlements/{id}/void:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    post:
+      tags: [money]
+      operationId: voidSettlement
+      summary: Cancel a settlement
+      description: |
+        Without editing a thing. The lines keep their rows for the record but
+        gain a `voidedAt`, which is what releases their payables from the lock;
+        the earning is cancelled by a reversal, never deleted.
+      x-action: settlements.void
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The settlement, now void.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: SETTLEMENT_ALREADY_VOID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/payments:
+    post:
+      tags: [money]
+      operationId: createPayment
+      summary: Record money handed over
+      description: |
+        Send a positive `amountCents`; the sign is applied by the server, and
+        the database refuses the wrong one outright.
+
+        Partial and full payment need no flag of their own — a payment is
+        partial when it is less than the balance, checked against the derived
+        balance and never against a stored total. A payment larger than the
+        balance is 409 AMOUNT_EXCEEDS_BALANCE with `details.balanceCents`,
+        which is the guard against a typo on the payment screen.
+
+        `allowOverpayment` is how a caller says "yes, I know, pay it anyway",
+        at which point the excess behaves as an advance — exactly what the
+        phone does today with real money. Both behaviours are needed: the guard
+        because the web is a keyboard, and the override because the server must
+        not be less capable than the phone while both are live.
+      x-action: ledger.payment
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentInput" }
+      responses:
+        "201":
+          description: Written to the ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: AMOUNT_EXCEEDS_BALANCE, with `details.balanceCents`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/advances:
+    post:
+      tags: [money]
+      operationId: createAdvance
+      summary: Record money handed over ahead of the work
+      description: |
+        No balance check: exceeding the balance is what an advance is.
+      x-action: ledger.advance
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentInput" }
+      responses:
+        "201":
+          description: Written to the ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/deductions:
+    post:
+      tags: [money]
+      operationId: createDeduction
+      summary: Record what the worker owes the farm
+      description: |
+        A deduction is not an expense. An expense is the farm's own accounting
+        and never touches anybody's ledger; mixing them would take the cost of
+        a spraying out of somebody's pay. A deduction therefore has no payment
+        method, and sending one is a 400.
+      x-action: ledger.deduction
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeductionInput" }
+      responses:
+        "201":
+          description: Written to the ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/adjustments:
+    post:
+      tags: [money]
+      operationId: createAdjustment
+      summary: Correct a balance
+      description: |
+        The one movement whose sign the caller chooses, because an adjustment
+        can go either way. It is not a way around the ledger's rules: it is
+        still an appended row with an author and a note.
+      x-action: ledger.adjust
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustmentInput" }
+      responses:
+        "201":
+          description: Written to the ledger.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/ledger/{id}/reverse:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    post:
+      tags: [money]
+      operationId: reverseLedgerEntry
+      summary: Undo a movement
+      description: |
+        The only way back. Nothing in the ledger is edited or deleted — the
+        database has triggers that forbid both — so a mistake is cancelled by a
+        movement that is its exact opposite, once. A partial unique index on
+        `reversesId` is what makes it once; a second attempt is 409
+        ALREADY_REVERSED. A reversal cannot itself be reversed.
+      x-action: ledger.reverse
+      x-roles: [owner, admin]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, nullable: true }
+      responses:
+        "201":
+          description: The reversing movement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: ALREADY_REVERSED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A 15-minute access token with claims `sub`, `farm_id`, `role`,
+        `device_id`. The farm comes from here and from nowhere else.
+
+  parameters:
+    PathID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    QueryQ:
+      name: q
+      in: query
+      description: Free-text needle, case-insensitive substring.
+      schema: { type: string }
+    QueryStatus:
+      name: status
+      in: query
+      description: |
+        `active` (the default), `inactive` for what has been logically removed,
+        `all` for both.
+      schema: { type: string, enum: [active, inactive, all] }
+    QueryIncludeDeleted:
+      name: includeDeleted
+      in: query
+      description: Legacy synonym for `status=all`, kept because the phone sends it.
+      deprecated: true
+      schema: { type: boolean }
+    QueryLimit:
+      name: limit
+      in: query
+      description: Rows to return. Out-of-range values fall back to the default.
+      schema: { type: integer, minimum: 1, maximum: 500 }
+    QueryFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date }
+    QueryTo:
+      name: to
+      in: query
+      schema: { type: string, format: date }
+    QueryWorkerID:
+      name: workerId
+      in: query
+      schema: { type: string, format: uuid }
+
+  requestBodies:
+    CatalogItem:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string, minLength: 1 }
+
+  responses:
+    BadRequest:
+      description: BAD_REQUEST — malformed body, unknown field, or a bad value.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: UNAUTHORIZED — no token, or a token this server did not issue.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: FORBIDDEN — the permission table refused this role.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: |
+        NOT_FOUND. Also what a resource of another farm answers, and what an id
+        that is not a UUID answers: nothing with that id exists here.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    CatalogList:
+      description: The farm's entries, by name.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: { $ref: "#/components/schemas/CatalogItem" }
+    CatalogItem:
+      description: The row that name means on this farm.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CatalogItem" }
+
+  schemas:
+
+    ErrorCode:
+      type: string
+      description: |
+        The machine-readable half of every failure. The client branches on
+        this; the translation lives in the client, which is why `message` is
+        English.
+
+        This enum is compared against domain.AllCodes() by the contract test,
+        so a code cannot exist in the server without appearing here.
+      enum:
+        - BAD_REQUEST
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - INTERNAL
+        - TENANT_NOT_SET
+        - INVALID_CREDENTIALS
+        - EMAIL_NOT_VERIFIED
+        - EMAIL_TAKEN
+        - TOKEN_EXPIRED
+        - TOKEN_REUSED
+        - RATE_LIMITED
+        - FARM_LIMIT_REACHED
+        - FARM_SUSPENDED
+        - WORK_RECORD_SETTLED
+        - PAYABLE_ALREADY_CLAIMED
+        - SETTLEMENT_ALREADY_VOID
+        - ALREADY_REVERSED
+        - NOTHING_TO_SETTLE
+        - AMOUNT_EXCEEDS_BALANCE
+        - INVALID_GEOMETRY
+        - PLOT_HAS_ACTIVE_CROPS
+        - NO_RATE_IN_FORCE
+        - RANGE_NEEDS_FROZEN_RATE
+        - DUPLICATE_DOCUMENT
+        - DUPLICATE_NAME
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { $ref: "#/components/schemas/ErrorCode" }
+            message:
+              type: string
+              description: English, for a developer and a log. Never shown to a picker.
+            details:
+              type: object
+              additionalProperties: true
+              description: |
+                What a client needs to recover. The canonical case is
+                PAYABLE_ALREADY_CLAIMED, where `winningSettlement` lets the
+                phone re-derive its state.
+
+    Role:
+      type: string
+      enum: [owner, admin, weigher]
+
+    PayScheme:
+      type: string
+      description: |
+        How an activity pays. Spanish values because they are the values stored
+        in the Postgres enum, which the design documents fixed.
+      enum: [contrato, tiempo, unidad_trabajo]
+
+    RateSource:
+      type: string
+      description: |
+        When the price froze. `explicit` — the caller named it, frozen at write
+        time. `activity_dated` — the activity's rate in force on the record's
+        day, frozen at write time. `weekly_price` — read from the week at
+        settlement time, which is what the phone does today. The two derived
+        forms require a single-day record.
+      enum: [explicit, activity_dated, weekly_price]
+
+    LedgerKind:
+      type: string
+      description: |
+        These six describe a coffee pickup, a day's wage and a pruning contract
+        equally well, which is why generalising the payable side required no
+        change here at all.
+      enum: [devengo, pago, anticipo, deduccion, ajuste, reverso]
+
+    PayMethod:
+      type: string
+      enum: [efectivo, transferencia, otro]
+
+    TimeUnit:
+      type: string
+      enum: [jornal, semanal, quincenal, mensual, personalizado]
+
+    # -- auth ----------------------------------------------------------------
+
+    SignupRequest:
+      type: object
+      required: [farm, owner]
+      properties:
+        farm:
+          type: object
+          required: [name, priceCents]
+          properties:
+            name: { type: string, minLength: 1 }
+            timezone:
+              type: string
+              default: America/Bogota
+              description: |
+                An IANA name. Mandatory in the schema and validated: every
+                business day in this system is a day in the farm's zone, so a
+                bad name would misfile work by a day.
+            currency: { type: string, default: COP, minLength: 3, maxLength: 3 }
+            priceCents:
+              type: integer
+              format: int64
+              minimum: 1
+              description: The farm's standing price per unit of collection.
+        owner:
+          type: object
+          required: [email, password]
+          properties:
+            email: { type: string, format: email }
+            name: { type: string }
+            password: { type: string, minLength: 10 }
+
+    SignupResponse:
+      type: object
+      required: [farmId, userId, verificationRequired]
+      properties:
+        farmId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        verificationRequired: { type: boolean }
+        verificationToken:
+          type: string
+          description: |
+            Present only when the server runs with DevEcho on, because there is
+            no mail sender yet. The server refuses to start with it on outside
+            development.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        farmId:
+          type: string
+          format: uuid
+          description: Required only when the account belongs to more than one farm.
+        deviceId: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+        deviceId: { type: string }
+
+    Session:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, farmId, farmName, role]
+      properties:
+        accessToken: { type: string }
+        refreshToken:
+          type: string
+          description: |
+            Opaque, 60 days, single use. Only its sha256 is stored, so a dump of
+            the table hands out no sessions.
+        expiresIn: { type: integer, description: Seconds until the access token expires. }
+        farmId: { type: string, format: uuid }
+        farmName: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+
+    Me:
+      type: object
+      required: [id, email, name, role, farm, superadmin]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        superadmin: { type: boolean }
+        farm:
+          type: object
+          required: [id, name, timezone, currency]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            timezone: { type: string }
+            currency: { type: string }
+
+    # -- farm ----------------------------------------------------------------
+
+    Farm:
+      type: object
+      required: [id, name, timezone, currency, minorUnit]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        timezone: { type: string }
+        currency: { type: string }
+        minorUnit: { type: integer, description: Decimal places in the currency. }
+        phone: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        areaHa: { type: number, format: double, nullable: true }
+        suspendedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        priceCents:
+          type: integer
+          format: int64
+          description: |
+            The standing price per unit of collection. Absent — not null — for
+            the weigher.
+
+    FarmPatch:
+      type: object
+      properties:
+        name: { type: string }
+        timezone: { type: string }
+        currency: { type: string }
+        phone: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        areaHa: { type: number, format: double, nullable: true }
+        priceCents: { type: integer, format: int64, minimum: 1 }
+
+    AdminFarm:
+      type: object
+      description: |
+        Every field the platform administrator may see about a farm, and the
+        list is short on purpose.
+      required: [id, name, timezone, currency, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        timezone: { type: string }
+        currency: { type: string }
+        country: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        status: { type: string, enum: [active, suspended] }
+        suspendedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    # -- workers -------------------------------------------------------------
+
+    Worker:
+      type: object
+      description: |
+        Two shapes behind one name. An owner or administrator receives every
+        field; the weigher receives `id`, `name`, `lastName` and `tag` only,
+        and the rest are absent rather than null.
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        lastName: { type: string, nullable: true }
+        tag:
+          type: string
+          nullable: true
+          description: The number on the basket, unique within the farm.
+        documentType: { type: string, nullable: true }
+        docId: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        municipality: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        photoId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Non-null means off the payroll. The row and its history stay.
+
+    WorkerInput:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        lastName: { type: string, nullable: true }
+        documentType: { type: string, nullable: true }
+        docId: { type: string, nullable: true }
+        tag: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        municipality: { type: string, nullable: true }
+        country: { type: string, nullable: true, default: CO }
+        photoId: { type: string, format: uuid, nullable: true }
+
+    WorkerPatch:
+      allOf:
+        - $ref: "#/components/schemas/WorkerInput"
+        - type: object
+          properties:
+            name: { type: string }
+            status: { type: string, enum: [active, inactive] }
+
+    Note:
+      type: object
+      required: [id, workerId, date, text, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        date:
+          type: string
+          format: date-time
+          description: The business day it refers to, midnight UTC.
+        text: { type: string }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    NoteInput:
+      type: object
+      required: [text]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string, minLength: 1 }
+        date:
+          type: string
+          format: date
+          description: Defaults to today in the farm's timezone.
+
+    WorkerProfile:
+      type: object
+      required: [worker, balance, ledger, tasks, notes]
+      properties:
+        worker: { $ref: "#/components/schemas/Worker" }
+        balance: { $ref: "#/components/schemas/Balance" }
+        ledger:
+          type: array
+          items: { $ref: "#/components/schemas/LedgerEntry" }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/WorkRecord" }
+        notes:
+          type: array
+          items: { $ref: "#/components/schemas/Note" }
+
+    Payables:
+      type: object
+      required: [workerId, tasks, debts, balance, grossCents, balanceCents, totalCents]
+      properties:
+        workerId: { type: string, format: uuid }
+        tasks:
+          type: array
+          description: Unsettled work, each line already priced.
+          items: { $ref: "#/components/schemas/Payable" }
+        debts:
+          type: array
+          description: |
+            Live deductions and advances, with the ledger's own negative sign.
+            Already inside `balanceCents`; do not subtract them again.
+          items: { $ref: "#/components/schemas/LedgerEntry" }
+        balance: { $ref: "#/components/schemas/Balance" }
+        grossCents: { type: integer, format: int64, description: Sum of `tasks`. }
+        balanceCents: { type: integer, format: int64, description: Same as balance.balanceCents. }
+        totalCents:
+          type: integer
+          format: int64
+          description: balanceCents + grossCents — what settling everything listed would owe.
+
+    # -- plots ---------------------------------------------------------------
+
+    GeoJsonGeometry:
+      type: object
+      description: |
+        A GeoJSON Polygon or MultiPolygon in WGS 84. PostGIS never crosses this
+        boundary: the wire format is GeoJSON so the clients never see a
+        geography type and changing engines stays possible.
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: [Polygon, MultiPolygon] }
+        coordinates:
+          type: array
+          items: {}
+      example:
+        type: Polygon
+        coordinates: [[[-75.88, 5.66], [-75.87, 5.66], [-75.87, 5.67], [-75.88, 5.67], [-75.88, 5.66]]]
+
+    Plot:
+      type: object
+      required: [id, name, crops]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        areaHa:
+          type: number
+          format: double
+          nullable: true
+          description: What the owner declared.
+        computedAreaHa:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            ST_Area of the polygon, in hectares. Returned alongside `areaHa`
+            and never instead of it: they always disagree, and hiding one
+            decides for the owner which one lies. Null until a boundary exists.
+        department: { type: string, nullable: true }
+        municipality: { type: string, nullable: true }
+        boundary:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
+          nullable: true
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        crops:
+          type: array
+          items: { $ref: "#/components/schemas/PlotCrop" }
+
+    PlotCrop:
+      type: object
+      required: [id, plotId, cropTypeId, cropType]
+      properties:
+        id: { type: string, format: uuid }
+        plotId: { type: string, format: uuid }
+        cropTypeId: { type: string, format: uuid }
+        cropType: { type: string }
+        varietyId: { type: string, format: uuid, nullable: true }
+        variety: { type: string, nullable: true }
+        areaHa: { type: number, format: double, nullable: true }
+        plantedOn: { type: string, format: date-time, nullable: true }
+        removedOn: { type: string, format: date-time, nullable: true }
+        deletedAt: { type: string, format: date-time, nullable: true }
+
+    PlotCropInput:
+      type: object
+      description: |
+        Type and variety may be given by id or by name. A name the catalogue
+        has not seen is added to it, which is the "add it if it is not there"
+        button rather than a rejection.
+      properties:
+        id: { type: string, format: uuid }
+        cropTypeId: { type: string, format: uuid }
+        cropType: { type: string }
+        varietyId: { type: string, format: uuid, nullable: true }
+        variety: { type: string, nullable: true }
+        areaHa: { type: number, format: double, nullable: true }
+        plantedOn: { type: string, format: date-time, nullable: true }
+        removedOn: { type: string, format: date-time, nullable: true }
+
+    PlotInput:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        areaHa: { type: number, format: double, nullable: true }
+        department: { type: string, nullable: true }
+        municipality: { type: string, nullable: true }
+        boundary:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
+          nullable: true
+        crops:
+          type: array
+          items: { $ref: "#/components/schemas/PlotCropInput" }
+
+    PlotPatch:
+      allOf:
+        - $ref: "#/components/schemas/PlotInput"
+        - type: object
+          properties:
+            name: { type: string }
+            status: { type: string, enum: [active, inactive] }
+
+    BoundaryInput:
+      type: object
+      description: |
+        `boundary` is the field; `geojson` is accepted as a synonym because the
+        design document used that word.
+      properties:
+        boundary:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
+        geojson:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
+          deprecated: true
+
+    BoundaryResult:
+      type: object
+      required: [plot, overlaps]
+      properties:
+        plot: { $ref: "#/components/schemas/Plot" }
+        overlaps:
+          type: array
+          description: |
+            Other plots this one now intersects. A warning, never a refusal.
+          items: { $ref: "#/components/schemas/CatalogItem" }
+
+    # -- catalogues and activities -------------------------------------------
+
+    CatalogItem:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    WorkUnit:
+      type: object
+      required: [id, code, label]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: kg }
+        label: { type: string, example: Kilo }
+        kgFactor:
+          type: number
+          format: double
+          nullable: true
+          description: What one of these weighs, for farms that count in baskets.
+
+    WorkUnitInput:
+      type: object
+      required: [code]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, minLength: 1 }
+        label: { type: string, description: Defaults to `code`. }
+        kgFactor: { type: number, format: double, nullable: true }
+
+    ActivityRate:
+      type: object
+      description: |
+        One validity period of an activity's price. Decision 4: the rate is not
+        a loose column, it is a row with a `validFrom`, and a work record
+        freezes the one in force on its day.
+      required: [validFrom, rateCents]
+      properties:
+        validFrom: { type: string, format: date-time }
+        rateCents: { type: integer, format: int64 }
+        timeUnit:
+          allOf: [{ $ref: "#/components/schemas/TimeUnit" }]
+          nullable: true
+        customQty: { type: number, format: double, nullable: true }
+        customUnit: { type: string, nullable: true }
+
+    Activity:
+      type: object
+      required: [id, name, categoryId, category, payScheme, rateSource]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        categoryId: { type: string, format: uuid }
+        category: { type: string }
+        payScheme: { $ref: "#/components/schemas/PayScheme" }
+        rateSource: { $ref: "#/components/schemas/RateSource" }
+        unitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            On the activity and not on its rate: the unit is what is being
+            counted, not what it costs. That is what lets a weigher see he is
+            weighing kilos while being unable to read a single price.
+        archivedAt: { type: string, format: date-time, nullable: true }
+        rate:
+          allOf: [{ $ref: "#/components/schemas/ActivityRate" }]
+          nullable: true
+          description: |
+            The period in force on the requested day. ABSENT — not null — for
+            the weigher.
+
+    ActivityInput:
+      type: object
+      required: [name, payScheme, rate]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        categoryId: { type: string, format: uuid, description: One of this or `category`. }
+        category: { type: string, description: A name; created in the catalogue if new. }
+        payScheme: { $ref: "#/components/schemas/PayScheme" }
+        rateSource:
+          allOf: [{ $ref: "#/components/schemas/RateSource" }]
+          description: |
+            Defaults to `activity_dated`. `weekly_price` only for
+            `unidad_trabajo`; `explicit` is rejected — it belongs to a single
+            work record, not to an activity.
+        unitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Required for `unidad_trabajo`, forbidden otherwise.
+        rate: { $ref: "#/components/schemas/RateInput" }
+
+    ActivityPatch:
+      type: object
+      description: |
+        `payScheme` and `rateSource` are listed so the failure is explicit:
+        sending either is a 400, never a silent no-op.
+      properties:
+        name: { type: string }
+        categoryId: { type: string, format: uuid }
+        category: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        payScheme: { type: string, description: Rejected. }
+        rateSource: { type: string, description: Rejected. }
+
+    RateInput:
+      type: object
+      required: [rateCents]
+      properties:
+        rateCents: { type: integer, format: int64, minimum: 1 }
+        validFrom:
+          type: string
+          format: date
+          description: Defaults to today. A period that already starts on this day is corrected.
+        timeUnit:
+          allOf: [{ $ref: "#/components/schemas/TimeUnit" }]
+          nullable: true
+        customQty: { type: number, format: double, nullable: true }
+        customUnit: { type: string, nullable: true }
+
+    # -- work records --------------------------------------------------------
+
+    WorkRecord:
+      type: object
+      required: [id, workerId, activityId, payScheme, rateSource, quantity, dateFrom, dateTo]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        activityId: { type: string, format: uuid }
+        payScheme: { $ref: "#/components/schemas/PayScheme" }
+        rateSource: { $ref: "#/components/schemas/RateSource" }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+        dateFrom:
+          type: string
+          format: date-time
+          description: The business day, in the farm's timezone, at midnight UTC.
+        dateTo: { type: string, format: date-time }
+        weekStart: { type: string, format: date-time, description: The Monday of dateFrom's ISO week. }
+        quantity:
+          type: string
+          description: |
+            A decimal with at most three places, sent as a JSON number and
+            returned as a string. It is a string because a float64 round trip
+            is exactly where two languages start disagreeing in the third
+            decimal and nobody notices until payday.
+        unitId: { type: string, format: uuid, nullable: true }
+        rateCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: Null while the price is the week's and has not been read yet.
+        amountCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: round(quantity × rateCents). Null for the same reason.
+        note: { type: string, nullable: true }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        plotIds:
+          type: array
+          items: { type: string, format: uuid }
+        plotCropIds:
+          type: array
+          items: { type: string, format: uuid }
+        settled:
+          type: boolean
+          description: A live settlement has claimed it. It cannot be edited or removed.
+
+    WorkRecordInput:
+      type: object
+      required: [activityId, workerId, quantity, dateFrom]
+      properties:
+        id: { type: string, format: uuid }
+        activityId: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        quantity: { type: number, description: Positive; ignored and set to 1 for a contract. }
+        rateCents:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: |
+            Freezes the price here and makes a date range legal. A weigher may
+            not send one.
+        dateFrom: { type: string, format: date }
+        dateTo:
+          type: string
+          format: date
+          description: |
+            Defaults to `dateFrom`. A record with a date-derived price must be
+            a single day.
+        plotIds:
+          type: array
+          items: { type: string, format: uuid }
+        plotCropIds:
+          type: array
+          items: { type: string, format: uuid }
+        note: { type: string, nullable: true }
+        deviceId: { type: string, nullable: true }
+
+    WorkRecordPatch:
+      type: object
+      description: |
+        The rejected fields are listed so the refusal has a sentence in it
+        rather than a bare "malformed body": they are deliberate, not typos.
+      properties:
+        quantity: { type: number, description: Positive. The amount is recomputed. }
+        note: { type: string, nullable: true }
+        status: { type: string, enum: [active, inactive] }
+        rateCents: { type: integer, format: int64, description: Rejected. }
+        workerId: { type: string, format: uuid, description: Rejected. }
+        activityId: { type: string, format: uuid, description: Rejected. }
+        dateFrom: { type: string, format: date, description: Rejected. }
+        dateTo: { type: string, format: date, description: Rejected. }
+
+    PickupInput:
+      type: object
+      description: DEPRECATED. The phone's vocabulary, translated onto a work record.
+      required: [date]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        employeeId: { type: string, format: uuid, description: Synonym for `workerId`. }
+        weight: { type: number, description: Kilos. Synonym for `quantity`. }
+        quantity: { type: number }
+        date: { type: string, format: date }
+        activityId:
+          type: string
+          format: uuid
+          description: Defaults to the farm's activity priced by the week.
+        plotId: { type: string, format: uuid }
+        cropId: { type: string, format: uuid, description: A plot_crop id. }
+        note: { type: string, nullable: true }
+        deviceId: { type: string, nullable: true }
+
+    # -- money ---------------------------------------------------------------
+
+    Balance:
+      type: object
+      description: |
+        Derived from the ledger, never stored: a stored total is a total that
+        one day lies. Positive means the farm owes them.
+      required: [workerId, earnedCents, paidCents, deductedCents, balanceCents]
+      properties:
+        workerId: { type: string, format: uuid }
+        earnedCents: { type: integer, format: int64 }
+        paidCents: { type: integer, format: int64 }
+        deductedCents: { type: integer, format: int64 }
+        balanceCents: { type: integer, format: int64 }
+        lastMovementOn: { type: string, format: date-time, nullable: true }
+
+    LedgerEntry:
+      type: object
+      description: |
+        One movement. Append-only: nothing here is ever edited or deleted, and
+        the database has triggers that forbid both. Signs are part of the
+        contract — `pago`, `anticipo` and `deduccion` are negative, `devengo`
+        is positive, and a `reverso` carries the exact opposite of what it
+        cancels.
+      required: [id, workerId, kind, amountCents, date, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/LedgerKind" }
+        amountCents: { type: integer, format: int64 }
+        date: { type: string, format: date-time }
+        settlementId: { type: string, format: uuid, nullable: true }
+        method:
+          allOf: [{ $ref: "#/components/schemas/PayMethod" }]
+          nullable: true
+        note: { type: string, nullable: true }
+        reversesId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    PaymentInput:
+      type: object
+      required: [workerId, amountCents]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        amountCents:
+          type: integer
+          format: int64
+          description: Positive. The sign is applied by the server.
+        method:
+          allOf: [{ $ref: "#/components/schemas/PayMethod" }]
+          nullable: true
+        note: { type: string, nullable: true }
+        date: { type: string, format: date, description: Defaults to today in the farm's zone. }
+        allowOverpayment:
+          type: boolean
+          default: false
+          description: |
+            Pay more than the balance on purpose; the excess behaves as an
+            advance. Ignored by /v1/advances, which never checks.
+
+    DeductionInput:
+      type: object
+      required: [workerId, amountCents]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        amountCents: { type: integer, format: int64, description: Positive. }
+        note: { type: string, nullable: true }
+        date: { type: string, format: date }
+
+    AdjustmentInput:
+      type: object
+      required: [workerId, amountCents]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        amountCents:
+          type: integer
+          format: int64
+          description: Signed. Positive credits the worker, negative charges them.
+        note: { type: string, nullable: true }
+        date: { type: string, format: date }
+
+    Payable:
+      type: object
+      description: One unsettled work record, priced.
+      required: [payableId, activityId, activity, payScheme, rateSource, quantity, rateCents, amountCents]
+      properties:
+        payableId: { type: string, format: uuid, description: The work record's id. }
+        activityId: { type: string, format: uuid }
+        activity: { type: string }
+        payScheme: { $ref: "#/components/schemas/PayScheme" }
+        rateSource: { $ref: "#/components/schemas/RateSource" }
+        quantity: { type: string }
+        unitId: { type: string, format: uuid, nullable: true }
+        date: { type: string, format: date-time }
+        weekStart: { type: string, format: date-time }
+        rateCents: { type: integer, format: int64 }
+        amountCents: { type: integer, format: int64 }
+        voided: { type: boolean, description: Only meaningful inside a settlement. }
+
+    PendingResult:
+      type: object
+      required: [workerId, from, to, items, totalCents]
+      properties:
+        workerId: { type: string, format: uuid }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payable" }
+        totalCents: { type: integer, format: int64 }
+
+    SettlementInput:
+      type: object
+      required: [workerId, from, to]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        payableIds:
+          type: array
+          description: Omit to settle everything pending in the range.
+          items: { type: string, format: uuid }
+        note: { type: string, nullable: true }
+
+    SettlementPreview:
+      type: object
+      required: [workerId, from, to, items, grossCents, balance]
+      properties:
+        workerId: { type: string, format: uuid }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payable" }
+        grossCents: { type: integer, format: int64 }
+        balance: { $ref: "#/components/schemas/Balance" }
+
+    Settlement:
+      type: object
+      required: [id, workerId, periodStart, periodEnd, grossCents, status, items]
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        periodStart:
+          type: string
+          format: date-time
+          description: |
+            The period actually covered — the Monday of the earliest payable
+            taken in — not the window the caller asked over.
+        periodEnd: { type: string, format: date-time }
+        grossCents: { type: integer, format: int64 }
+        status: { type: string, enum: [open, void] }
+        note: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        voidedAt: { type: string, format: date-time, nullable: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payable" }
+
+    WeekPrice:
+      type: object
+      required: [weekStart, priceCents]
+      properties:
+        weekStart: { type: string, format: date, description: An ISO Monday. }
+        priceCents: { type: integer, format: int64 }

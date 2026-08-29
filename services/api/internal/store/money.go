@@ -157,6 +157,45 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 	return out, nil
 }
 
+// Debts lists what the worker owes the farm and what the farm has already
+// advanced: the "Lista de deudas" half of the RSP-008 screen.
+//
+// Two things it deliberately is not. It is not expenses — an expense is the
+// farm's own accounting and never touches anybody's ledger, and mixing the two
+// would take the cost of a spraying out of somebody's wage (§2 of the entrega-2
+// document says so in as many words). And it is not a second subtraction: every
+// row here is already inside the derived balance, so a caller that subtracts
+// these from the balance charges the worker twice.
+//
+// The amounts keep the ledger's own sign, negative, rather than being flipped
+// to a friendlier positive. The sign convention is load-bearing across the
+// whole module and re-signing it in one endpoint is how a convention rots.
+func Debts(ctx context.Context, tx pgx.Tx, employeeID string) ([]LedgerEntry, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT l.id::text, l.employee_id::text, l.kind, l.amount_minor, l.local_day,
+		       l.settlement_id::text, l.method::text, l.note, l.reverses_id::text, l.created_at
+		  FROM ledger l
+		 WHERE l.employee_id = $1
+		   AND l.kind IN ('deduccion', 'anticipo')
+		   AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = l.id)
+		 ORDER BY l.local_day DESC, l.created_at DESC`, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []LedgerEntry{}
+	for rows.Next() {
+		var e LedgerEntry
+		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.Kind, &e.AmountMinor, &e.LocalDay,
+			&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // WeekPrice is the port of costForWeek: the week's override if the owner set
 // one, otherwise the farm's standing price.
 func WeekPrice(ctx context.Context, tx pgx.Tx, weekStart time.Time) (int64, error) {

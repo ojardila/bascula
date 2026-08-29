@@ -87,10 +87,13 @@ func TestTwoFarmsCannotSeeEachOther(t *testing.T) {
 			t.Fatalf("farm A sees %d balances, want only its own worker: %s", len(items), res.Raw)
 		}
 
+		// Not an empty list: an empty ledger reads as "this person has no
+		// movements yet", which is a believable and false answer about
+		// somebody else's employee. 404 is the only honest one.
 		res = h.do(t, http.MethodGet, "/v1/workers/"+workerB+"/ledger", a.OwnerToken, nil)
-		entries, _ := res.Body["items"].([]any)
-		if len(entries) != 0 {
-			t.Fatalf("farm A read %d ledger rows of farm B: %s", len(entries), res.Raw)
+		if res.Status != http.StatusNotFound {
+			t.Fatalf("farm A reading farm B's ledger: got %d %s, want 404",
+				res.Status, res.Raw)
 		}
 	})
 

@@ -28,6 +28,13 @@ func (s *Server) handlePending(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// An id that matches nothing has no pending work and totals zero, which
+	// is exactly what a worker who is settled up looks like. Confirm the
+	// worker is ours before adding anything up.
+	if _, err := store.GetEmployee(r.Context(), tx, workerID); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	items, err := store.Pending(r.Context(), tx, workerID, from, to)
 	if err != nil {
 		writeError(w, r, err)
@@ -88,7 +95,17 @@ func (s *Server) handleWorkerLedger(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	entries, err := store.ListLedger(r.Context(), tx, chi.URLParam(r, "id"), limitParam(r, 100))
+	// The same trap as the balance, one step quieter: a ledger listing for an
+	// id that matches nothing comes back as an empty list, which reads as "no
+	// movements yet" rather than "no such person". Confirm the worker is ours
+	// first; a miss becomes the ordinary 404, never a plausible empty history
+	// of somebody else's employee.
+	id := chi.URLParam(r, "id")
+	if _, err := store.GetEmployee(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	entries, err := store.ListLedger(r.Context(), tx, id, limitParam(r, 100))
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -114,6 +131,10 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 		writeError(w, r, err)
 		return
 	}
+	if body.WorkerID == "" {
+		writeError(w, r, domain.BadRequest("workerId is required"))
+		return
+	}
 	from, to, err := parseRange(body.From, body.To)
 	if err != nil {
 		writeError(w, r, err)
@@ -121,6 +142,12 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// A preview that sums nothing for a worker of another farm would show a
+	// clean, believable, wrong screen. 404 instead.
+	if _, err := store.GetEmployee(r.Context(), tx, body.WorkerID); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -333,6 +360,15 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
+
+	// Confirm the worker is ours before deriving anything from their ledger.
+	// Without this, a payment against a worker of another farm reads their
+	// balance as zero and refuses with AMOUNT_EXCEEDS_BALANCE — an answer that
+	// looks like a business rule and is really a tenant leak wearing a hat.
+	if _, err := store.GetEmployee(r.Context(), tx, body.WorkerID); err != nil {
+		writeError(w, r, err)
+		return
+	}
 
 	if checkBalance && !body.AllowOverpayment {
 		balance, err := store.Balance(r.Context(), tx, body.WorkerID)

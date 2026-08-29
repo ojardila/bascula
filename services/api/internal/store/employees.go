@@ -41,11 +41,23 @@ func scanEmployee(row pgx.Row) (*Employee, error) {
 	return &e, nil
 }
 
-func ListEmployees(ctx context.Context, tx pgx.Tx, includeDeleted bool) ([]Employee, error) {
+// ListEmployees searches on the columns a person is actually looked up by:
+// the name, the document and the tag on their basket. It searches the document
+// for everybody, including the weigher, whose projection then drops it — he
+// can find a person by the number on their card without the number coming back
+// on the wire, which is the useful half of the restriction without the
+// annoying half.
+func ListEmployees(ctx context.Context, tx pgx.Tx, f Filter) ([]Employee, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT `+employeeCols+` FROM employees
 		 WHERE ($1 OR deleted_at IS NULL)
-		 ORDER BY name, coalesce(last_name, '')`, includeDeleted)
+		   AND (NOT $2 OR deleted_at IS NOT NULL)
+		   AND ($3::text IS NULL
+		        OR (name || ' ' || coalesce(last_name, '')) ILIKE '%' || $3 || '%'
+		        OR coalesce(doc_id, '') ILIKE '%' || $3 || '%'
+		        OR coalesce(tag, '')    ILIKE '%' || $3 || '%')
+		 ORDER BY name, coalesce(last_name, '')`,
+		f.includeDeleted(), f.onlyDeleted(), nilIfEmpty(f.Q))
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +123,15 @@ func SoftDeleteEmployee(ctx context.Context, tx pgx.Tx, id string) error {
 		return NoRows
 	}
 	return nil
+}
+
+// RestoreEmployee is the other half of the logical delete: "Eliminar nunca
+// borra" means the row is still there, so bringing somebody back on for the
+// next harvest is a PATCH and not a re-registration under a second id.
+func RestoreEmployee(ctx context.Context, tx pgx.Tx, id string) (*Employee, error) {
+	return scanEmployee(tx.QueryRow(ctx, `
+		UPDATE employees SET deleted_at = NULL WHERE id = $1
+		 RETURNING `+employeeCols, id))
 }
 
 func nilIfEmpty(s string) *string {

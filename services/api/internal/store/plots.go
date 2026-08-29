@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,35 +36,138 @@ type PlotCrop struct {
 // both returned, always: they disagree, and hiding one decides for the owner
 // which one lies.
 type Plot struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	AreaHa       *float64   `json:"areaHa"`
-	AreaHaGIS    *float64   `json:"computedAreaHa"`
-	Department   *string    `json:"department"`
-	Municipality *string    `json:"municipality"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	DeletedAt    *time.Time `json:"deletedAt"`
-	Crops        []PlotCrop `json:"crops"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	AreaHa       *float64 `json:"areaHa"`
+	AreaHaGIS    *float64 `json:"computedAreaHa"`
+	Department   *string  `json:"department"`
+	Municipality *string  `json:"municipality"`
+	// Boundary is GeoJSON and nothing else. PostGIS stops at this struct: the
+	// web and the phone never see a geography type, which is what keeps
+	// changing engines possible.
+	Boundary  json.RawMessage `json:"boundary"`
+	CreatedAt time.Time       `json:"createdAt"`
+	DeletedAt *time.Time      `json:"deletedAt"`
+	Crops     []PlotCrop      `json:"crops"`
 }
 
 const plotCols = `id::text, name, area_ha::float8, area_ha_gis::float8, department,
-	municipality, created_at, deleted_at`
+	municipality, ST_AsGeoJSON(boundary), created_at, deleted_at`
 
 func scanPlot(row pgx.Row) (*Plot, error) {
 	var p Plot
+	var geojson *string
 	err := row.Scan(&p.ID, &p.Name, &p.AreaHa, &p.AreaHaGIS, &p.Department,
-		&p.Municipality, &p.CreatedAt, &p.DeletedAt)
+		&p.Municipality, &geojson, &p.CreatedAt, &p.DeletedAt)
 	if err != nil {
 		return nil, err
+	}
+	if geojson != nil {
+		p.Boundary = json.RawMessage(*geojson)
 	}
 	p.Crops = []PlotCrop{}
 	return &p, nil
 }
 
-func ListPlots(ctx context.Context, tx pgx.Tx, includeDeleted bool) ([]Plot, error) {
+// SetPlotBoundary stores what the owner drew on the map, as GeoJSON in and
+// GeoJSON out.
+//
+// Three PostGIS functions are used in this whole service and two of them are
+// here. ST_IsValid rejects a polygon that crosses itself before it can be
+// stored — a self-intersecting ring has no area anybody would agree on, so
+// computedAreaHa would be a confident lie. ST_Area/10000 is the generated
+// column that produces computedAreaHa, which comes back alongside the declared
+// areaHa and never instead of it: the two always disagree and choosing which
+// one to show is the owner's decision, not the server's.
+//
+// The column is a MultiPolygon, so a plain Polygon is promoted with ST_Multi:
+// a plot in two separate pieces is ordinary, and a schema that could not hold
+// one would send the owner back to drawing a wrong single ring.
+func SetPlotBoundary(ctx context.Context, tx pgx.Tx, id string, geojson []byte) (*Plot, error) {
+	var valid bool
+	var reason, geomType string
+	err := tx.QueryRow(ctx, `
+		SELECT ST_IsValid(g), ST_IsValidReason(g), GeometryType(g)
+		  FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1::text), 4326) AS g) s`,
+		string(geojson)).Scan(&valid, &reason, &geomType)
+	if err != nil {
+		// A malformed GeoJSON makes ST_GeomFromGeoJSON raise, which aborts
+		// this transaction. That is survivable only because the answer is a
+		// 4xx and the middleware rolls back without touching the database
+		// again — so nothing may be queried after this point.
+		return nil, domain.Coded(400, domain.CodeInvalidGeometry,
+			"that is not a GeoJSON geometry this service can read").WithCause(err)
+	}
+	if !valid {
+		return nil, domain.Coded(400, domain.CodeInvalidGeometry, reason)
+	}
+	switch geomType {
+	case "POLYGON", "MULTIPOLYGON":
+	default:
+		return nil, domain.Coded(400, domain.CodeInvalidGeometry,
+			"a plot boundary must be a Polygon or a MultiPolygon, not a "+geomType)
+	}
+
+	return scanPlot(tx.QueryRow(ctx, `
+		UPDATE plots
+		   SET boundary = ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($2::text), 4326))::geography
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING `+plotCols, id, string(geojson)))
+}
+
+// OverlappingPlots names the other plots this one's boundary runs into. It is
+// the third and last PostGIS function: a warning, never a refusal. Two plots
+// that overlap on the map are usually a drawing that needs a second look, but
+// sometimes they are a terrace above a coffee lot, and the server does not get
+// to decide which.
+func OverlappingPlots(ctx context.Context, tx pgx.Tx, id string) ([]CatalogItem, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT p.id::text, p.name
+		  FROM plots p, plots self
+		 WHERE self.id = $1 AND p.id <> self.id
+		   AND p.deleted_at IS NULL AND p.boundary IS NOT NULL
+		   AND ST_Intersects(p.boundary, self.boundary)
+		 ORDER BY p.name`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []CatalogItem{}
+	for rows.Next() {
+		var c CatalogItem
+		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// Filter is the shape every list endpoint takes: a free-text needle and a
+// status. Status is "active", "inactive" or "" for both, and it is spelled
+// that way rather than as a boolean because that is the word the screens use —
+// "Eliminar nunca borra", it marks the row inactive.
+type Filter struct {
+	Q      string
+	Status string
+}
+
+// includeDeleted reports whether rows with a deleted_at should come back at
+// all. Only an explicit status says so; the default list is the live one.
+func (f Filter) includeDeleted() bool { return f.Status != "" && f.Status != "active" }
+
+func (f Filter) onlyDeleted() bool { return f.Status == "inactive" }
+
+func ListPlots(ctx context.Context, tx pgx.Tx, f Filter) ([]Plot, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT `+plotCols+` FROM plots
-		 WHERE ($1 OR deleted_at IS NULL) ORDER BY name`, includeDeleted)
+		 WHERE ($1 OR deleted_at IS NULL)
+		   AND (NOT $2 OR deleted_at IS NOT NULL)
+		   AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%'
+		        OR coalesce(department, '') ILIKE '%' || $3 || '%'
+		        OR coalesce(municipality, '') ILIKE '%' || $3 || '%')
+		 ORDER BY name`, f.includeDeleted(), f.onlyDeleted(), nilIfEmpty(f.Q))
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +187,7 @@ func ListPlots(ctx context.Context, tx pgx.Tx, includeDeleted bool) ([]Plot, err
 		return nil, err
 	}
 
-	crops, err := listCropsForFarm(ctx, tx, includeDeleted)
+	crops, err := listCropsForFarm(ctx, tx, f.includeDeleted())
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +337,12 @@ func SoftDeletePlot(ctx context.Context, tx pgx.Tx, id string) error {
 		return NoRows
 	}
 	return nil
+}
+
+// RestorePlot puts a plot back into service.
+func RestorePlot(ctx context.Context, tx pgx.Tx, id string) (*Plot, error) {
+	return scanPlot(tx.QueryRow(ctx, `
+		UPDATE plots SET deleted_at = NULL WHERE id = $1 RETURNING `+plotCols, id))
 }
 
 func SoftDeletePlotCrop(ctx context.Context, tx pgx.Tx, plotID, cropID string) error {

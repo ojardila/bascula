@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/store"
@@ -43,6 +44,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows), errors.Is(err, store.NoRows):
 			de = domain.NotFound("resource not found")
+		case isInvalidTextRepresentation(err):
+			// A path or body id that is not a UUID at all. It is not a server
+			// fault and it is not worth a distinct code: nothing with that id
+			// exists, which is precisely 404. Answering 500 here would also
+			// make a scan for malformed ids look like a way to hurt the API.
+			de = domain.NotFound("resource not found")
 		default:
 			slog.ErrorContext(r.Context(), "unhandled error",
 				"err", err, "path", r.URL.Path, "method", r.Method)
@@ -59,6 +66,13 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	body.Error.Message = de.Message
 	body.Error.Details = de.Details
 	writeJSON(w, de.Status, body)
+}
+
+// isInvalidTextRepresentation spots Postgres 22P02, which is what a string
+// that is not a UUID (or not a date, or not an enum value) produces.
+func isInvalidTextRepresentation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "22P02"
 }
 
 // decode reads a JSON body with a size cap and rejects unknown fields, so a

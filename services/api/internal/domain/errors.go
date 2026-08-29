@@ -55,6 +55,30 @@ const (
 	CodeDuplicateName         Code = "DUPLICATE_NAME"
 )
 
+// AllCodes is every code this service can put on the wire, in the order they
+// are declared above.
+//
+// It exists so openapi.yaml cannot quietly fall behind: a test asserts that
+// this list and the spec's ErrorCode enum are the same set, which makes adding
+// a code without documenting it a build failure rather than a surprise the
+// client discovers in production. The client branches on these; an
+// undocumented one is a branch nobody wrote.
+func AllCodes() []Code {
+	return []Code{
+		CodeBadRequest, CodeUnauthorized, CodeForbidden, CodeNotFound,
+		CodeConflict, CodeInternal, CodeTenantNotSet,
+
+		CodeInvalidCredentials, CodeEmailNotVerified, CodeEmailTaken,
+		CodeTokenExpired, CodeTokenReused, CodeRateLimited,
+		CodeFarmLimitReached, CodeFarmSuspended,
+
+		CodeWorkRecordSettled, CodePayableAlreadyClaimed, CodeSettlementAlreadyVoid,
+		CodeAlreadyReversed, CodeNothingToSettle, CodeAmountExceedsBalance,
+		CodeInvalidGeometry, CodePlotHasActiveCrops, CodeNoRateInForce,
+		CodeRangeNeedsFrozenRate, CodeDuplicateDocument, CodeDuplicateName,
+	}
+}
+
 // Error is an error that already knows what it looks like on the wire.
 type Error struct {
 	Status  int

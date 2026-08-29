@@ -30,7 +30,8 @@ func (s *Server) handleListActivities(w http.ResponseWriter, r *http.Request) {
 		}
 		on = parsed
 	}
-	list, err := store.ListActivities(r.Context(), tx, callerSeesPrivateData(r), on)
+	list, err := store.ListActivities(r.Context(), tx, callerSeesPrivateData(r), on,
+		listFilter(r), r.URL.Query().Get("category"))
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -155,6 +156,89 @@ func (s *Server) handleCreateActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// handleUpdateActivity renames, recategorises, archives and unarchives. What
+// it cannot do is change the pay scheme or the rate source, and neither can any
+// other route: work records already written are pinned to (activity_id,
+// pay_scheme) by a composite foreign key, and their price shape was decided by
+// that scheme on the day they were written. Turning "tala por jornal" into a
+// per-kilo activity would rewrite the meaning of money already earned. An
+// activity that pays differently is a different activity.
+func (s *Server) handleUpdateActivity(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name       string  `json:"name"`
+		CategoryID string  `json:"categoryId"`
+		Category   string  `json:"category"`
+		Status     string  `json:"status"`
+		PayScheme  *string `json:"payScheme"`
+		RateSource *string `json:"rateSource"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validStatus(body.Status); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if body.PayScheme != nil || body.RateSource != nil {
+		writeError(w, r, domain.BadRequest(
+			"payScheme and rateSource cannot be changed; an activity that pays differently is a different activity"))
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	farmID, err := tenant.FarmID(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	switch body.Status {
+	case "inactive":
+		if err := store.ArchiveActivity(r.Context(), tx, id); err != nil && err != store.NoRows {
+			writeError(w, r, err)
+			return
+		}
+	case "active":
+		if err := store.RestoreActivity(r.Context(), tx, id); err != nil && err != store.NoRows {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	if body.CategoryID == "" && body.Category != "" {
+		item, err := store.EnsureCatalogItem(r.Context(), tx,
+			store.CatalogActivityCategories, farmID, newID(), body.Category)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		body.CategoryID = item.ID
+	}
+
+	updated, err := store.UpdateActivity(r.Context(), tx, id, body.Name, body.CategoryID)
+	if err != nil {
+		if store.IsUniqueViolation(err, "ux_activities_name") {
+			writeError(w, r, domain.Conflict(domain.CodeDuplicateName,
+				"this farm already has an activity with that name"))
+			return
+		}
+		writeError(w, r, err)
+		return
+	}
+	if callerSeesPrivateData(r) {
+		if rate, err := store.RateInForce(r.Context(), tx, updated.ID, time.Now().UTC()); err == nil {
+			updated.Rate = rate
+		}
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 // handleSetActivityRate opens a new validity period. It never edits an old

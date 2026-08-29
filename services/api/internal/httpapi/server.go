@@ -135,7 +135,14 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 				writeError(w, r, domain.TenantNotSet())
 				return
 			}
-			if !auth.Allowed(p.Role, action) {
+			if !auth.AllowedFor(p.Role, p.Superadmin, action) {
+				if rule.Superadmin {
+					// A farm role, however senior, is not a platform role: an
+					// owner administering their own farm has no business
+					// listing anybody else's.
+					writeError(w, r, domain.Forbidden("that action belongs to the platform administrator"))
+					return
+				}
 				writeError(w, r, domain.Forbidden("your role may not perform this action"))
 				return
 			}

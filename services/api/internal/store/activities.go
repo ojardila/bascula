@@ -82,10 +82,17 @@ const activityFrom = ` FROM activities a JOIN activity_categories c ON c.id = a.
 
 // ListActivities returns the farm's catalogue. withRates is false for the
 // weigher, who gets the same list without a single price in it.
-func ListActivities(ctx context.Context, tx pgx.Tx, withRates bool, on time.Time) ([]Activity, error) {
+func ListActivities(ctx context.Context, tx pgx.Tx, withRates bool, on time.Time,
+	f Filter, category string) ([]Activity, error) {
+
 	rows, err := tx.Query(ctx, `
 		SELECT `+activityCols+activityFrom+`
-		 WHERE a.archived_at IS NULL ORDER BY c.name, a.name`)
+		 WHERE ($1 OR a.archived_at IS NULL)
+		   AND (NOT $2 OR a.archived_at IS NOT NULL)
+		   AND ($3::text IS NULL OR a.name ILIKE '%' || $3 || '%')
+		   AND ($4::text IS NULL OR c.name ILIKE $4 OR c.id::text = $4)
+		 ORDER BY c.name, a.name`,
+		f.includeDeleted(), f.onlyDeleted(), nilIfEmpty(f.Q), nilIfEmpty(category))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +161,31 @@ func RateInForce(ctx context.Context, tx pgx.Tx, activityID string, on time.Time
 		return nil, err
 	}
 	return &r, nil
+}
+
+// HarvestActivityID resolves the activity a bare weighing belongs to: the
+// farm's work-unit activity priced from the week, which every farm is seeded
+// with as "Recoleccion". It is looked up and never hardcoded — a farm may have
+// renamed it, and an id baked into Go would be another farm's row.
+//
+// A farm that has more than one is not a failure: the oldest is the seeded one
+// and the phone, which knows nothing about activities, means that one. A farm
+// with none gets a 409 rather than a silent guess, because the alternative is
+// filing coffee under whatever activity happened to sort first.
+func HarvestActivityID(ctx context.Context, tx pgx.Tx) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `
+		SELECT a.id::text FROM activities a
+		 WHERE a.archived_at IS NULL
+		   AND a.pay_scheme = 'unidad_trabajo'
+		   AND a.rate_source = 'weekly_price'
+		 ORDER BY a.id
+		 LIMIT 1`).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return "", domain.Conflict(domain.CodeNoRateInForce,
+			"this farm has no activity priced by the week; send activityId explicitly")
+	}
+	return id, err
 }
 
 type NewActivity struct {
@@ -276,6 +308,47 @@ func ListActivityRates(ctx context.Context, tx pgx.Tx, activityID string) ([]Act
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// UpdateActivity renames an activity or moves it between categories. It
+// deliberately cannot change pay_scheme or rate_source: work records already
+// written carry a composite foreign key onto (id, pay_scheme), and a record's
+// price shape was decided by the scheme on the day it was written. Changing it
+// afterwards would rewrite the meaning of money already earned, which is the
+// one thing this service never does. A different pay scheme is a different
+// activity.
+func UpdateActivity(ctx context.Context, tx pgx.Tx, id string, name, categoryID string) (*Activity, error) {
+	var out Activity
+	err := tx.QueryRow(ctx, `
+		WITH upd AS (
+			UPDATE activities SET
+				name        = coalesce($2, name),
+				category_id = coalesce($3::uuid, category_id)
+			 WHERE id = $1
+			 RETURNING *
+		)
+		SELECT `+activityCols+` FROM upd a JOIN activity_categories c ON c.id = a.category_id`,
+		id, nilIfEmpty(name), nilUUID(categoryID)).
+		Scan(&out.ID, &out.Name, &out.CategoryID, &out.Category, &out.PayScheme,
+			&out.RateSource, &out.UnitID, &out.ArchivedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RestoreActivity brings an archived activity back. Its rate history came back
+// with it: the periods were never deleted either.
+func RestoreActivity(ctx context.Context, tx pgx.Tx, id string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE activities SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return NoRows
+	}
+	return nil
 }
 
 func ArchiveActivity(ctx context.Context, tx pgx.Tx, id string) error {

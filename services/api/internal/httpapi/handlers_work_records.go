@@ -37,6 +37,15 @@ func (s *Server) handleCreateWorkRecord(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, err)
 		return
 	}
+	s.createWorkRecordFrom(w, r, body)
+}
+
+// createWorkRecordFrom is the body of the write, taken apart from the decoding
+// so the legacy /v1/pickups facade can reach it after translating the phone's
+// vocabulary. There is exactly one implementation of this write and both doors
+// go through it: the price rules and the weigher's restrictions cannot drift
+// between them because there is nothing to drift from.
+func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, body workRecordRequest) {
 	if body.ActivityID == "" || body.WorkerID == "" {
 		writeError(w, r, domain.BadRequest("activityId and workerId are required"))
 		return
@@ -212,26 +221,10 @@ func (s *Server) handleListWorkRecords(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	f := store.WorkRecordFilter{
-		EmployeeID: r.URL.Query().Get("workerId"),
-		ActivityID: r.URL.Query().Get("activityId"),
-		PlotID:     r.URL.Query().Get("plotId"),
-	}
-	if raw := r.URL.Query().Get("from"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
-		if err != nil {
-			writeError(w, r, domain.BadRequest("from must be YYYY-MM-DD"))
-			return
-		}
-		f.From = &d
-	}
-	if raw := r.URL.Query().Get("to"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
-		if err != nil {
-			writeError(w, r, domain.BadRequest("to must be YYYY-MM-DD"))
-			return
-		}
-		f.To = &d
+	f, err := workRecordFilter(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
 	// The weigher gets only his own rows, and that narrowing is the RLS policy
 	// on work_records, not a WHERE clause written here.
@@ -241,6 +234,119 @@ func (s *Server) handleListWorkRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": list})
+}
+
+func workRecordFilter(r *http.Request) (store.WorkRecordFilter, error) {
+	f := store.WorkRecordFilter{
+		EmployeeID: r.URL.Query().Get("workerId"),
+		ActivityID: r.URL.Query().Get("activityId"),
+		PlotID:     r.URL.Query().Get("plotId"),
+		PlotCropID: r.URL.Query().Get("plotCropId"),
+		Filter:     listFilter(r),
+	}
+	if raw := r.URL.Query().Get("payScheme"); raw != "" {
+		scheme := domain.PayScheme(raw)
+		if !scheme.Valid() {
+			return f, domain.BadRequest("payScheme must be contrato, tiempo or unidad_trabajo")
+		}
+		f.PayScheme = scheme
+	}
+	if raw := r.URL.Query().Get("from"); raw != "" {
+		d, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			return f, domain.BadRequest("from must be YYYY-MM-DD")
+		}
+		f.From = &d
+	}
+	if raw := r.URL.Query().Get("to"); raw != "" {
+		d, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			return f, domain.BadRequest("to must be YYYY-MM-DD")
+		}
+		f.To = &d
+	}
+	return f, nil
+}
+
+// handleUpdateWorkRecord corrects a record that has not been paid. See
+// store.UpdateWorkRecord for what it refuses to touch and why: the short
+// version is that everything which decides the price is out of reach, and a
+// record already inside a live settlement answers 409 WORK_RECORD_SETTLED
+// rather than being edited under the payment.
+func (s *Server) handleUpdateWorkRecord(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Quantity *json.Number `json:"quantity"`
+		Note     *string      `json:"note"`
+		Status   string       `json:"status"`
+		// Listed so the refusal has a sentence in it. Without these fields the
+		// decoder's DisallowUnknownFields still answers 400, but with
+		// "malformed request body", and a caller reading that goes looking for
+		// a typo instead of finding out that the rule is deliberate.
+		RateCents  *int64  `json:"rateCents"`
+		WorkerID   *string `json:"workerId"`
+		ActivityID *string `json:"activityId"`
+		DateFrom   *string `json:"dateFrom"`
+		DateTo     *string `json:"dateTo"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validStatus(body.Status); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if body.RateCents != nil || body.WorkerID != nil || body.ActivityID != nil ||
+		body.DateFrom != nil || body.DateTo != nil {
+		writeError(w, r, domain.BadRequest(
+			"the worker, the activity, the dates and the frozen price cannot be changed; "+
+				"delete this record and write the one you meant, in that order"))
+		return
+	}
+	if body.Quantity != nil {
+		qty, ok := new(big.Rat).SetString(body.Quantity.String())
+		if !ok || qty.Sign() <= 0 {
+			writeError(w, r, domain.BadRequest("quantity must be a positive number"))
+			return
+		}
+	}
+
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	// Order matters, in both directions. A restore has to happen before the
+	// edit, because UpdateWorkRecord only touches live rows; a removal has to
+	// happen after it, for the same reason. A body that both corrects a
+	// quantity and files the record away therefore does both, instead of
+	// silently dropping one.
+	if body.Status == "active" {
+		if err := store.RestoreWorkRecord(r.Context(), tx, id); err != nil && err != store.NoRows {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	updated, err := store.UpdateWorkRecord(r.Context(), tx, id, body.Quantity, body.Note)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	if body.Status == "inactive" {
+		if err := store.SoftDeleteWorkRecord(r.Context(), tx, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if updated, err = store.GetWorkRecord(r.Context(), tx, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (s *Server) handleGetWorkRecord(w http.ResponseWriter, r *http.Request) {
