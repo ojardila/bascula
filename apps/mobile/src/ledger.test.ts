@@ -155,3 +155,110 @@ test("a Sunday-evening pickup belongs to the week that is being paid", () => {
   assert.equal(pending.length, 1);
   assert.equal(pending[0].week, "2026-08-24", "and it is priced at that week's rate");
 });
+
+// Undoing a whole payroll run. The real bug this covers was structural: the
+// undo opened a transaction and then called helpers that opened their own, and
+// SQLite has no nested BEGIN, so the run rolled back the reversals it had just
+// written. These tests pin down what the undo has to leave behind.
+
+// The statements the undo runs, flat, exactly as db.ts does them now.
+function undoRun(paymentIds: number[], settlementIds: number[]) {
+  db.exec("BEGIN");
+  for (const id of paymentIds) {
+    const e = db.prepare("SELECT * FROM ledger WHERE id = ?").get(id) as
+      | Record<string, number>
+      | undefined;
+    if (!e) continue;
+    if (db.prepare("SELECT id FROM ledger WHERE reversesId = ?").get(id)) continue;
+    post(e.personId, "reverso", -e.amountCents, {
+      settlementId: (e.settlementId as number) ?? undefined,
+      reversesId: id,
+    });
+  }
+  for (const id of settlementIds) {
+    const s = db.prepare("SELECT * FROM settlements WHERE id = ?").get(id) as
+      | Record<string, string | number>
+      | undefined;
+    if (!s || s.status === "void") continue;
+    db.prepare("UPDATE settlement_items SET voidedAt = 'x' WHERE settlementId = ?").run(id);
+    db.prepare("UPDATE settlements SET status = 'void', voidedAt = 'x' WHERE id = ?").run(id);
+    const devengo = db
+      .prepare("SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'")
+      .get(id) as Record<string, number> | undefined;
+    if (devengo)
+      post(s.personId as number, "reverso", -devengo.amountCents, {
+        settlementId: id,
+        reversesId: devengo.id,
+      });
+  }
+  db.exec("COMMIT");
+}
+
+test("undoing a payroll run puts the worker back where they started", () => {
+  makeSettlement(7);
+  post(1, "devengo", money(100000), { settlementId: 7 });
+  post(1, "pago", -money(100000));
+  const payment = db.prepare("SELECT id FROM ledger WHERE kind = 'pago'").get() as {
+    id: number;
+  };
+  assert.equal(balanceOf(1).balanceCents, 0);
+
+  undoRun([payment.id], [7]);
+
+  const after = balanceOf(1);
+  assert.equal(after.balanceCents, 0);
+  assert.equal(after.earnedCents, 0, "the earning was reversed");
+  assert.equal(after.paidCents, 0, "the payment was reversed");
+  assert.equal(
+    (db.prepare("SELECT status FROM settlements WHERE id = 7").get() as { status: string })
+      .status,
+    "void",
+  );
+});
+
+test("running the undo twice changes nothing the second time", () => {
+  makeSettlement(7);
+  post(1, "devengo", money(100000), { settlementId: 7 });
+  post(1, "pago", -money(100000));
+  const payment = db.prepare("SELECT id FROM ledger WHERE kind = 'pago'").get() as {
+    id: number;
+  };
+
+  undoRun([payment.id], [7]);
+  const rows = db.prepare("SELECT COUNT(*) AS n FROM ledger").get() as { n: number };
+  undoRun([payment.id], [7]);
+
+  assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM ledger").get(), rows);
+  assert.equal(balanceOf(1).balanceCents, 0);
+});
+
+test("undoing a run releases the pickups so the week can be settled again", () => {
+  db.prepare(
+    "INSERT INTO pickups (id,personId,cropId,weight,date) VALUES (1,1,1,100,'2026-08-25T14:00:00Z')",
+  ).run();
+  makeSettlement(7);
+  db.prepare(
+    `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)
+     VALUES (7,1,'2026-08-24',100,1000,?)`,
+  ).run(money(1000));
+  post(1, "devengo", money(1000), { settlementId: 7 });
+  post(1, "pago", -money(1000));
+  const payment = db.prepare("SELECT id FROM ledger WHERE kind = 'pago'").get() as {
+    id: number;
+  };
+
+  undoRun([payment.id], [7]);
+
+  const live = db
+    .prepare("SELECT COUNT(*) AS n FROM settlement_items WHERE pickupId = 1 AND voidedAt IS NULL")
+    .get() as { n: number };
+  assert.equal(live.n, 0, "no live claim on the pickup");
+  assert.doesNotThrow(() =>
+    db
+      .prepare(
+        `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)
+         VALUES (7,1,'2026-08-24',100,1000,?)`,
+      )
+      .run(money(1000)),
+  );
+});

@@ -747,6 +747,68 @@ function addEntry(e: Omit<LedgerEntry, "id" | "createdAt">): number {
   return r.lastInsertRowId as number;
 }
 
+// The bodies of voidSettlement and reverse, without a transaction of their own.
+// The public methods wrap these; undoRun calls them directly. SQLite has no
+// nested BEGIN, so a run that opened a transaction inside another one rolled
+// back the reversals it had just written and left the button doing nothing.
+//
+// Unlike the public methods these are silent about work already undone: a
+// payroll run is undone as a whole, and retrying one that half-succeeded has
+// to be safe.
+function reverseHere(ledgerId: number, note: string): void {
+  const e = db.getFirstSync<LedgerEntry>("SELECT * FROM ledger WHERE id = ?", [
+    ledgerId,
+  ]);
+  if (!e) return;
+  const already = db.getFirstSync<{ id: number }>(
+    "SELECT id FROM ledger WHERE reversesId = ?",
+    [ledgerId],
+  );
+  if (already) return;
+  addEntry({
+    personId: e.personId,
+    kind: "reverso",
+    amountCents: -e.amountCents,
+    date: today(),
+    settlementId: e.settlementId,
+    method: null,
+    note,
+    reversesId: ledgerId,
+  });
+}
+
+function voidSettlementHere(settlementId: number, note?: string): void {
+  const s = db.getFirstSync<Settlement>(
+    "SELECT * FROM settlements WHERE id = ?",
+    [settlementId],
+  );
+  if (!s || s.status === "void") return;
+  db.runSync("UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?", [
+    now(),
+    settlementId,
+  ]);
+  db.runSync("UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?", [
+    now(),
+    settlementId,
+  ]);
+  const devengo = db.getFirstSync<{ id: number; amountCents: number }>(
+    "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
+    [settlementId],
+  );
+  if (devengo) {
+    addEntry({
+      personId: s.personId,
+      kind: "reverso",
+      amountCents: -devengo.amountCents,
+      date: today(),
+      settlementId,
+      method: null,
+      note: note ?? null,
+      reversesId: devengo.id,
+    });
+  }
+}
+
 export const Payments = {
   // What would be settled, without writing anything.
   preview: (
@@ -826,37 +888,7 @@ export const Payments = {
 
   // Undo a settlement: release its pickups and reverse the earning.
   voidSettlement: (settlementId: number, note?: string): void => {
-    const s = db.getFirstSync<Settlement>(
-      "SELECT * FROM settlements WHERE id = ?",
-      [settlementId],
-    );
-    if (!s || s.status === "void") return;
-    db.withTransactionSync(() => {
-      db.runSync(
-        "UPDATE settlement_items SET voidedAt = ? WHERE settlementId = ?",
-        [now(), settlementId],
-      );
-      db.runSync(
-        "UPDATE settlements SET status = 'void', voidedAt = ? WHERE id = ?",
-        [now(), settlementId],
-      );
-      const devengo = db.getFirstSync<{ id: number; amountCents: number }>(
-        "SELECT id, amountCents FROM ledger WHERE settlementId = ? AND kind = 'devengo'",
-        [settlementId],
-      );
-      if (devengo) {
-        addEntry({
-          personId: s.personId,
-          kind: "reverso",
-          amountCents: -devengo.amountCents,
-          date: today(),
-          settlementId,
-          method: null,
-          note: note ?? null,
-          reversesId: devengo.id,
-        });
-      }
-    });
+    db.withTransactionSync(() => voidSettlementHere(settlementId, note));
   },
 
   // Cash going out to the worker. Amounts come in positive; the sign is ours.
@@ -950,16 +982,14 @@ export const Payments = {
   // voiding the settlements as separate writes meant a failure halfway left
   // some workers reversed and others not, with no way to finish from the UI.
   // Tolerant of anything already undone, so retrying is safe.
+  //
+  // Both halves call the *Here helpers, never the public methods: those open
+  // their own transaction, and SQLite has no nested BEGIN. Calling them from
+  // in here rolled back the whole run and left the button doing nothing.
   undoRun: (paymentIds: number[], settlementIds: number[], note: string) => {
     db.withTransactionSync(() => {
-      for (const id of paymentIds) {
-        const already = db.getFirstSync<{ id: number }>(
-          "SELECT id FROM ledger WHERE reversesId = ?",
-          [id],
-        );
-        if (!already) Payments.reverse(id, note);
-      }
-      for (const id of settlementIds) Payments.voidSettlement(id, note);
+      for (const id of paymentIds) reverseHere(id, note);
+      for (const id of settlementIds) voidSettlementHere(id, note);
     });
   },
 
