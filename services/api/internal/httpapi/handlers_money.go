@@ -120,6 +120,14 @@ type settlementRequest struct {
 	To         string   `json:"to"`
 	PayableIDs []string `json:"payableIds"`
 	Note       *string  `json:"note"`
+
+	// ExpectedGrossCents is what /v1/settlements/preview showed the person who
+	// is about to press the button. §5.5 of docs/sincronizacion.md.
+	//
+	// A pointer and not an int64, because zero is a number a client could send
+	// and "absent" has to be distinguishable from it — the rule of this
+	// codebase is that no zero ever means "I do not know".
+	ExpectedGrossCents *int64 `json:"expectedGrossCents"`
 }
 
 // handleSettlementPreview prices the period without writing anything. It is
@@ -151,11 +159,16 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 		writeError(w, r, err)
 		return
 	}
-	items, err := store.Pending(r.Context(), tx, body.WorkerID, from, to)
+	pending, err := store.Pending(r.Context(), tx, body.WorkerID, from, to)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
+	// The same narrowing POST /v1/settlements applies. Without it a caller
+	// that deselected two lines would be shown one figure and would have to
+	// send a different one as expectedGrossCents, which is the drift this
+	// endpoint exists to prevent.
+	items := store.FilterPayables(pending, body.PayableIDs)
 	balance, err := store.Balance(r.Context(), tx, body.WorkerID)
 	if err != nil {
 		writeError(w, r, err)
@@ -171,6 +184,40 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleCreateSettlement writes the settlement, and refuses to write one for a
+// figure other than the one the caller was shown.
+//
+// # Why expectedGrossCents is REQUIRED from today, and not optional "for now"
+//
+// This is the decision §5.5 left to whoever built it, so it is written down
+// here rather than in a commit message.
+//
+// An optional money guard is a guard that is off in the moment it matters. The
+// caller that omits it is not the careful one; it is the screen written in a
+// hurry, the script somebody ran once, the client that shipped before the field
+// existed and never went back. Every one of those settles a farm's week for a
+// number nobody read. "Optional at first" has exactly one outcome, and it is
+// that the field is never sent.
+//
+// Requiring it now is a breaking change and it costs almost nothing, because of
+// WHEN this lands. §8 phase 0 puts these three server changes deliberately
+// BEFORE the phone is touched: "cambios de servidor que no afectan a nadie
+// hasta que alguien los use". Today nobody settles through this endpoint in
+// production — the phone still settles locally (decisiones.md, "El teléfono
+// todavía liquida en local") and the web is under the "pay from one side only"
+// mitigation of decision 3. The only callers are in this repository, in this
+// sprint, and the two pairs that own them are sitting here. The alternative —
+// a grace period — moves the break to a date when there IS a farm settling
+// through it, and buys nothing but the illusion of caution.
+//
+// So: 400 with a message that names the field AND the endpoint that produces
+// it, so a client author reads the fix rather than the complaint. No flag, no
+// deadline, no lenient mode; a mode that accepts the unguarded call is the
+// unguarded call.
+//
+// The one place the expectation is NOT consulted is a retry: Settle checks the
+// idempotency key first and returns the existing settlement without looking at
+// the figure, because the money in that case is already counted out.
 func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) {
 	var body settlementRequest
 	if err := decode(r, &body); err != nil {
@@ -179,6 +226,17 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.WorkerID == "" {
 		writeError(w, r, domain.BadRequest("workerId is required"))
+		return
+	}
+	if body.ExpectedGrossCents == nil {
+		writeError(w, r, domain.BadRequest(
+			"expectedGrossCents is required: send the grossCents that "+
+				"/v1/settlements/preview returned, so the server can refuse to "+
+				"settle for a figure other than the one that was read"))
+		return
+	}
+	if *body.ExpectedGrossCents <= 0 {
+		writeError(w, r, domain.BadRequest("expectedGrossCents must be positive"))
 		return
 	}
 	from, to, err := parseRange(body.From, body.To)
@@ -206,7 +264,7 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 	// locked, so a check that ran after Pending would answer NOTHING_TO_SETTLE
 	// — a business error standing in for a dropped connection.
 	settlement, created, err := store.Settle(r.Context(), tx, farmID, body.WorkerID, body.ID,
-		from, to, body.PayableIDs, body.Note, p.UserID, nil)
+		from, to, body.PayableIDs, body.ExpectedGrossCents, body.Note, p.UserID, nil)
 	if err != nil {
 		writeError(w, r, err)
 		return

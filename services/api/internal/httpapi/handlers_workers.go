@@ -95,6 +95,26 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §5.6. The unique index on the document is partial on deleted_at, so a
+	// person who was taken off the payroll leaves their cédula free and this
+	// insert would happily succeed — creating a second file for one person,
+	// splitting their balance, and telling nobody. The web is offered the
+	// restore instead: PATCH {"status":"active"} on the id in `details`.
+	if prior, err := store.FindDeletedByDocument(r.Context(), tx, body.DocumentType, body.DocID); err != nil {
+		writeError(w, r, err)
+		return
+	} else if prior != nil {
+		writeError(w, r, domain.Conflict(domain.CodeEmployeeExistsDeleted,
+			"a worker with that document is on this farm, deactivated; restore them instead of creating a second file").
+			WithDetails(map[string]any{
+				"employeeId": prior.ID,
+				"name":       prior.Name,
+				"lastName":   prior.LastName,
+				"deletedAt":  prior.DeletedAt,
+			}))
+		return
+	}
+
 	created, err := store.CreateEmployee(r.Context(), tx, farmID, body)
 	if err != nil {
 		if store.IsUniqueViolation(err, "ux_employees_doc") {

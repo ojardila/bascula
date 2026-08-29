@@ -246,8 +246,16 @@ type Settlement struct {
 // `on` is the day the farm believes it is when the settlement is made; nil
 // means today in the farm's timezone. The golden cases pin it so that a case
 // gives the same answer today and in three years.
+//
+// `expectedGross` is §5.5 of docs/sincronizacion.md: the figure the caller was
+// shown by /v1/settlements/preview. When it is set and the settlement would not
+// add up to it, NOTHING is written and the answer is 409 GROSS_CHANGED. The
+// HTTP layer requires it; the store keeps it optional so the golden cases,
+// which are a replay of a phone that never had a preview screen, still run
+// against this function unchanged. Nothing else may pass nil — see the note on
+// handleCreateSettlement.
 func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID string,
-	from, to time.Time, payableIDs []string, note *string, createdBy string,
+	from, to time.Time, payableIDs []string, expectedGross *int64, note *string, createdBy string,
 	on *time.Time) (*Settlement, bool, error) {
 
 	// The idempotency check comes FIRST, before anything is derived. It has to:
@@ -291,6 +299,22 @@ func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID str
 	if gross <= 0 {
 		return nil, false, domain.Conflict(domain.CodeNothingToSettle,
 			"the settlement adds up to nothing")
+	}
+
+	// §5.5. The last thing before the first INSERT, and after the idempotency
+	// check on purpose: a retry of a settlement that already exists returns
+	// that settlement without ever consulting the expectation, because by then
+	// the week may legitimately have been repriced and the money has already
+	// been counted out. A retry must not be refused over a figure that no
+	// longer decides anything.
+	if expectedGross != nil && *expectedGross != gross {
+		details, err := grossChangedDetails(ctx, tx, *expectedGross, gross, pending, chosen, payableIDs)
+		if err != nil {
+			return nil, false, err
+		}
+		return nil, false, domain.Conflict(domain.CodeGrossChanged,
+			"the settlement no longer adds up to the figure the caller was shown").
+			WithDetails(details)
 	}
 
 	s := Settlement{
@@ -369,6 +393,13 @@ func findSettlement(ctx context.Context, tx pgx.Tx, id string) (*Settlement, err
 	return out, nil
 }
 
+// FilterPayables narrows a pending list to the ids the caller named. Exported
+// because the preview has to apply the SAME narrowing the settlement will: a
+// preview that priced the whole period while the settlement priced a chosen
+// subset would hand the caller a grossCents that its own expectedGrossCents
+// could never match.
+func FilterPayables(all []Payable, ids []string) []Payable { return filterPayables(all, ids) }
+
 func filterPayables(all []Payable, ids []string) []Payable {
 	if len(ids) == 0 {
 		return all
@@ -384,6 +415,85 @@ func filterPayables(all []Payable, ids []string) []Payable {
 		}
 	}
 	return out
+}
+
+// grossChangedDetails says WHAT MOVED the figure, which is the whole reason
+// GROSS_CHANGED exists rather than a bare 409.
+//
+// Two things can move it between a preview and a press of the button, and the
+// screen has to be able to name which:
+//
+//   - payables came or went. A late weighing arrived, or somebody else's
+//     settlement took one. Reported exactly, as `addedPayableIds` and
+//     `removedPayableIds`, whenever the caller named the set it saw in
+//     `payableIds`. A caller that named no set is asking for "everything
+//     pending", so it cannot be told which of them are new — it is told the
+//     new total instead.
+//   - the week was repriced. `weeksInSettlement` carries every week this settlement
+//     spans WITH THE PRICE NOW IN FORCE. When nothing was added or removed the
+//     difference can only have come from one of those prices, and the client —
+//     which is holding the preview it just showed — knows which.
+//
+// Nothing here guesses. A cause the server cannot establish is not reported as
+// one: the caller gets the new figures and the sets, never an invented reason.
+func grossChangedDetails(ctx context.Context, tx pgx.Tx, expected, actual int64,
+	pending, chosen []Payable, askedFor []string) (map[string]any, error) {
+
+	added := []string{}
+	removed := []string{}
+	if len(askedFor) > 0 {
+		inPending := map[string]bool{}
+		for _, p := range pending {
+			inPending[p.PayableID] = true
+		}
+		asked := map[string]bool{}
+		for _, id := range askedFor {
+			asked[id] = true
+			if !inPending[id] {
+				// Named by the caller and no longer settleable: deleted, or
+				// claimed by a settlement that got there first.
+				removed = append(removed, id)
+			}
+		}
+		for _, p := range pending {
+			if !asked[p.PayableID] {
+				added = append(added, p.PayableID)
+			}
+		}
+	}
+
+	// Every week this settlement spans, with the price standing NOW. It is not
+	// a list of weeks that changed, and it must not be presented as one: the
+	// caller never told us what price it was shown, so we cannot know. It was
+	// called changedWeeks once and a screen built on it would have blamed a
+	// reprice for a late weighing.
+	weeks := []map[string]any{}
+	seen := map[string]bool{}
+	for _, p := range chosen {
+		key := p.WeekStart.Format("2006-01-02")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		price, err := WeekPrice(ctx, tx, p.WeekStart)
+		if err != nil {
+			return nil, err
+		}
+		weeks = append(weeks, map[string]any{"weekStart": key, "priceCents": price})
+	}
+
+	return map[string]any{
+		"expectedCents":     expected,
+		"actualCents":       actual,
+		"addedPayableIds":   added,
+		"removedPayableIds": removed,
+		"weeksInSettlement": weeks,
+		// Whether the two id lists above mean anything. Without payableIds we
+		// can only compare totals, so empty lists say "we were not told what
+		// you saw", not "nothing moved" — and a screen that cannot tell those
+		// apart will explain the difference wrongly.
+		"payableIdsProvided": len(askedFor) > 0,
+	}, nil
 }
 
 func winningSettlement(ctx context.Context, tx pgx.Tx, payableID string) (map[string]any, error) {

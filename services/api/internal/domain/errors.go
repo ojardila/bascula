@@ -54,6 +54,41 @@ const (
 	CodeDuplicateDocument     Code = "DUPLICATE_DOCUMENT"
 	CodeDuplicateName         Code = "DUPLICATE_NAME"
 
+	// GROSS_CHANGED is the answer to §5.5 of docs/sincronizacion.md: the
+	// settlement would not add up to the figure the caller was shown by
+	// /v1/settlements/preview, so nothing is written.
+	//
+	// It is not a nicety. Between reading a screen and pressing a button, the
+	// owner can reprice the week from the web and a late weighing can arrive,
+	// and the person pressing the button is about to count that number out in
+	// cash. `details` carries what moved it — added and removed payables, and
+	// the weeks whose price no longer matches — so the screen can say "entraron
+	// dos pesadas más" instead of showing a mute error.
+	CodeGrossChanged Code = "GROSS_CHANGED"
+
+	// EMPLOYEE_EXISTS_DELETED closes §5.6's real danger. ux_employees_doc is
+	// partial on deleted_at IS NULL, so after Juan is taken off the payroll the
+	// web can create a SECOND Juan with the same cédula — and then one person's
+	// balance is split across two files with nothing warning anybody. Merging
+	// them afterwards is manual surgery on the ledger.
+	CodeEmployeeExistsDeleted Code = "EMPLOYEE_EXISTS_DELETED"
+
+	// The two sync preconditions of §8 phase 0.
+	//
+	// CURSOR_TOO_OLD: the phone's cursor is older than the oldest change still
+	// retained, so the feed can no longer tell it what it missed. It re-pulls
+	// from cursor 0, which is a full bootstrap.
+	//
+	// SCHEMA_TOO_OLD: the handset is on a local schema that predates the UUID
+	// columns. It must update before it pushes a single byte.
+	CodeCursorTooOld Code = "CURSOR_TOO_OLD"
+	CodeSchemaTooOld Code = "SCHEMA_TOO_OLD"
+
+	// IMPORT_MISMATCH aborts a season import whose reconciliation did not come
+	// out to the cent (§8 phase 3). Half an imported payroll is worse than no
+	// imported payroll: the numbers look plausible and nobody goes looking.
+	CodeImportMismatch Code = "IMPORT_MISMATCH"
+
 	// IDEMPOTENCY_KEY_REUSED is the other half of the promise openapi.yaml
 	// makes at the top of the file: "every write accepts a client-generated id
 	// and is idempotent by (farm_id, id)".
@@ -98,6 +133,8 @@ func AllCodes() []Code {
 		CodeAlreadyReversed, CodeNothingToSettle, CodeAmountExceedsBalance,
 		CodeInvalidGeometry, CodePlotHasActiveCrops, CodeNoRateInForce,
 		CodeRangeNeedsFrozenRate, CodeDuplicateDocument, CodeDuplicateName,
+		CodeGrossChanged, CodeEmployeeExistsDeleted,
+		CodeCursorTooOld, CodeSchemaTooOld, CodeImportMismatch,
 		CodeIdempotencyKeyReused,
 
 		CodeInsufficientStock, CodeSaleAlreadyVoid, CodeExpenseTargetInvalid,

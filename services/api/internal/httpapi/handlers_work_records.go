@@ -114,7 +114,8 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 	record := store.WorkRecord{
 		ID: body.ID, EmployeeID: body.WorkerID, ActivityID: activity.ID,
 		PayScheme: activity.PayScheme, Quantity: quantity, Note: body.Note,
-		PlotIDs: body.PlotIDs, PlotCropIDs: body.PlotCropIDs,
+		DeviceID: body.DeviceID,
+		PlotIDs:  body.PlotIDs, PlotCropIDs: body.PlotCropIDs,
 	}
 	if principal != nil && principal.UserID != "" {
 		record.CreatedBy = &principal.UserID

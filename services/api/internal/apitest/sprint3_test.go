@@ -396,7 +396,7 @@ func TestAnExpenseIsNotADebt(t *testing.T) {
 
 	// The worker earns something, so a balance moving would be visible.
 	h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-25", 50)
-	h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 
@@ -1002,7 +1002,7 @@ func TestAWorkRecordAlwaysKnowsWhatItIsWorth(t *testing.T) {
 	}
 
 	// Settled: the same number, now final rather than an estimate.
-	h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 

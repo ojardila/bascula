@@ -297,8 +297,12 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 
 			case "settle":
 				id := newGoldenID()
+				// nil expectation: a golden case is a replay of a phone that
+				// never had a preview screen, so there is no figure it was
+				// shown. The HTTP layer requires one; this is the one caller
+				// that legitimately has none.
 				_, _, err := store.Settle(ctx, tx, farmID, r.people[ev.PersonID], id,
-					day(ev.From), day(ev.To), nil, optionalText(ev.Note),
+					day(ev.From), day(ev.To), nil, nil, optionalText(ev.Note),
 					r.farm.OwnerUserID, on)
 				if err != nil {
 					return err

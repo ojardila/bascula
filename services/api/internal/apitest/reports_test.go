@@ -1083,7 +1083,7 @@ func TestWhatWeOweNeverLooksLikeWhatWePaid(t *testing.T) {
 	}
 
 	end, _ := time.Parse("2006-01-02", monday)
-	h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": ana, "from": monday, "to": end.AddDate(0, 0, 6).Format("2006-01-02"),
 	}, http.StatusCreated)
 

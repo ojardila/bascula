@@ -126,6 +126,20 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/adjustments", auth.ActionLedgerAdjust, s.handleAdjustment},
 		{http.MethodPost, "/v1/ledger/{id}/reverse", auth.ActionLedgerReverse, s.handleReverseLedger},
 
+		// Synchronisation (docs/sincronizacion.md §3). Three routes and one
+		// integer: the handset carries `cursor` and nothing else. Every role
+		// reaches all three — the weigher's handset is the one that spends
+		// days without signal — and what a weigher gets back is narrowed by
+		// the same RLS policies that narrow everything else, not by a check
+		// written here.
+		{http.MethodPost, "/v1/sync/handshake", auth.ActionSyncHandshake, s.handleSyncHandshake},
+		{http.MethodPost, "/v1/sync/push", auth.ActionSyncPush, s.handleSyncPush},
+		{http.MethodGet, "/v1/sync/pull", auth.ActionSyncPull, s.handleSyncPull},
+
+		// The season a farm already has on a handset (§8 phases 3–4). The
+		// owner's alone, and Money: it writes a year of payroll in one act.
+		{http.MethodPost, "/v1/import/season", auth.ActionImportSeason, s.handleImportSeason},
+
 		// Productos e inventario (RSP-018 … RSP-025). The two pickers are
 		// catalogues for the same reason every other picker here is one:
 		// RSP-019 puts an "add it if it is not there" button beside both.

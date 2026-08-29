@@ -85,6 +85,16 @@ const (
 	ActionUploadsRead  Action = "uploads.read"
 	ActionUploadsWrite Action = "uploads.write"
 
+	// Synchronisation. Three actions rather than one, because they are
+	// refused for different reasons the day one of them has to be: a handset
+	// can be allowed to receive long after it is stopped from sending.
+	ActionSyncHandshake Action = "sync.handshake"
+	ActionSyncPush      Action = "sync.push"
+	ActionSyncPull      Action = "sync.pull"
+
+	// The one-off import of a season that already exists on a handset.
+	ActionImportSeason Action = "import.season"
+
 	// The harvest reports. One action for all six, because they are one
 	// module and they are refused as one — see the note in the table below.
 	ActionReportsRead Action = "reports.read"
@@ -222,6 +232,27 @@ var Matrix = map[Action]Rule{
 	// place to put five megabytes of anything.
 	ActionUploadsRead:  {Roles: admins},
 	ActionUploadsWrite: {Roles: admins},
+
+	// Sync is every role's, and that is the point: the person who works for
+	// days without signal is the weigher, and stopping his handset from
+	// synchronising stops the scale. It is NOT marked Money, and it must not
+	// be — a Money flag here would make the contract test demand a 403 for the
+	// weigher on the very endpoint his handset lives on.
+	//
+	// What keeps payroll away from him is not this table, it is the pull
+	// itself: the bodies of `settlement` and `ledgerEntry` are composed from
+	// tables p_settlements and p_ledger already close to him, and the pull
+	// skips them by role rather than pretending to send an empty one. He
+	// advances his cursor past them and sees no amount.
+	ActionSyncHandshake: {Roles: everyone},
+	ActionSyncPush:      {Roles: everyone},
+	ActionSyncPull:      {Roles: everyone},
+
+	// The import is the owner's alone and is Money. It writes a season of
+	// settlements and a season of ledger in one act; there is no version of
+	// that which an administrator does by themselves, and none at all that
+	// goes anywhere near the weigher.
+	ActionImportSeason: {Roles: owners, Money: true},
 
 	// The reports. Administrator only, and Money, which is what makes the
 	// contract test assert 403 for the weigher on all six.

@@ -226,6 +226,32 @@ func listCropsForFarm(ctx context.Context, tx pgx.Tx, includeDeleted bool) ([]Pl
 	return out, rows.Err()
 }
 
+// GetPlotCrop confirms a crop belongs to this farm before something is hung
+// off it. A weighing that named a crop of another farm would otherwise fail
+// on the composite foreign key with a message about a constraint, when the
+// answer the caller needs is the ordinary 404.
+//
+// It deliberately does not filter on deleted_at: §5.7(d) — a weighing that
+// names a crop the web retired still goes in, because the foreign key still
+// resolves and the work was still done.
+func GetPlotCrop(ctx context.Context, tx pgx.Tx, id string) (*PlotCrop, error) {
+	var c PlotCrop
+	err := tx.QueryRow(ctx, `
+		SELECT pc.id::text, pc.plot_id::text, pc.crop_type_id::text, ct.name,
+		       pc.variety_id::text, v.name, pc.area_ha::float8,
+		       pc.planted_on, pc.removed_on, pc.deleted_at
+		  FROM plot_crops pc
+		  JOIN crop_types ct ON ct.id = pc.crop_type_id
+		  LEFT JOIN varieties v ON v.id = pc.variety_id
+		 WHERE pc.id = $1`, id).
+		Scan(&c.ID, &c.PlotID, &c.CropTypeID, &c.CropType, &c.VarietyID,
+			&c.Variety, &c.AreaHa, &c.PlantedOn, &c.RemovedOn, &c.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func GetPlot(ctx context.Context, tx pgx.Tx, id string) (*Plot, error) {
 	p, err := scanPlot(tx.QueryRow(ctx, `SELECT `+plotCols+` FROM plots WHERE id = $1`, id))
 	if err != nil {

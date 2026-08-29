@@ -74,11 +74,63 @@ func (h *harness) settleSomething(t *testing.T, f *farmFixture, workerID, plotID
 	t.Helper()
 	activity := h.harvestActivityID(t, f)
 	h.createWorkRecord(t, f, f.OwnerToken, workerID, activity, "2026-08-25", 100)
-	res := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	res := h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": workerID, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 	id, _ := res.Body["id"].(string)
 	return id
+}
+
+// doSettle posts a settlement the way a client now has to: previewing first,
+// and sending back the figure the preview returned as `expectedGrossCents`.
+//
+// It fills the field IN PLACE. That is not a shortcut, it is the behaviour
+// under test: a client retrying a settlement resends the body it sent the first
+// time, expectation included. A retry that re-previewed would find its own
+// payables already claimed, read a gross of zero, and refuse a settlement that
+// has already been paid out — which is exactly the failure mode the idempotency
+// check exists to avoid.
+func (h *harness) doSettle(t *testing.T, token string, body map[string]any) response {
+	t.Helper()
+	if _, ok := body["expectedGrossCents"]; !ok {
+		body["expectedGrossCents"] = h.previewGross(t, token, body)
+	}
+	return h.do(t, http.MethodPost, "/v1/settlements", token, body)
+}
+
+func (h *harness) mustSettle(t *testing.T, token string, body map[string]any, want int) response {
+	t.Helper()
+	res := h.doSettle(t, token, body)
+	if res.Status != want {
+		t.Fatalf("POST /v1/settlements: got %d want %d: %s", res.Status, want, res.Raw)
+	}
+	return res
+}
+
+// previewGross reads the figure the screen would have shown.
+//
+// When the preview itself is refused — the caller is a weigher, the worker
+// belongs to another farm — the settlement under test is going to be refused
+// for that same reason long before the expectation is consulted, so any
+// positive placeholder does. It must be positive: a zero would be rejected as
+// a malformed expectation and would hide the refusal actually being tested.
+func (h *harness) previewGross(t *testing.T, token string, body map[string]any) int64 {
+	t.Helper()
+	preview := map[string]any{}
+	for _, k := range []string{"workerId", "from", "to", "payableIds"} {
+		if v, ok := body[k]; ok {
+			preview[k] = v
+		}
+	}
+	res := h.do(t, http.MethodPost, "/v1/settlements/preview", token, preview)
+	if res.Status != http.StatusOK {
+		return 1
+	}
+	gross, ok := res.Body["grossCents"].(float64)
+	if !ok || gross <= 0 {
+		return 1
+	}
+	return int64(gross)
 }
 
 // tokenWithoutFarm mints a valid, correctly signed access token whose farm_id

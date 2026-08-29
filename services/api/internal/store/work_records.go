@@ -32,17 +32,22 @@ type WorkRecord struct {
 	Quantity    json.Number       `json:"quantity"`
 	// settledAmount is what the live settlement line paid for this record, if
 	// any. Unexported: callers read EffectiveMinor.
-	settledAmount *int64     `json:"-"`
-	UnitID        *string    `json:"unitId"`
-	PriceMinor    *int64     `json:"rateCents"`
-	AmountMinor   *int64     `json:"amountCents"`
-	Note          *string    `json:"note"`
-	CreatedBy     *string    `json:"createdBy"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	DeletedAt     *time.Time `json:"deletedAt"`
-	PlotIDs       []string   `json:"plotIds"`
-	PlotCropIDs   []string   `json:"plotCropIds"`
-	Settled       bool       `json:"settled"`
+	settledAmount *int64  `json:"-"`
+	UnitID        *string `json:"unitId"`
+	PriceMinor    *int64  `json:"rateCents"`
+	AmountMinor   *int64  `json:"amountCents"`
+	Note          *string `json:"note"`
+	// DeviceID is the handset that recorded it. The column existed from
+	// migration 00005 and nothing wrote it, so every record looked as if it
+	// came from nowhere; the sync push needs it to say WHICH phone sent a
+	// weighing, and so does the reactivation trail of decision 8.
+	DeviceID    *string    `json:"deviceId"`
+	CreatedBy   *string    `json:"createdBy"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	DeletedAt   *time.Time `json:"deletedAt"`
+	PlotIDs     []string   `json:"plotIds"`
+	PlotCropIDs []string   `json:"plotCropIds"`
+	Settled     bool       `json:"settled"`
 
 	// What the record is worth, always a number, so a screen never has to show
 	// a zero it does not mean. AmountMinor above is the row's own truth and is
@@ -61,7 +66,7 @@ type WorkRecord struct {
 const workRecordCols = `l.id::text, l.employee_id::text, l.activity_id::text, l.pay_scheme,
 	l.rate_source, l.started_at, l.ended_at, l.local_day, l.end_local_day, l.week_start,
 	l.quantity::text, l.unit_id::text, l.price_minor, l.amount_minor, l.note,
-	l.created_by::text, l.created_at, l.deleted_at,
+	l.device_id::text, l.created_by::text, l.created_at, l.deleted_at,
 	EXISTS (SELECT 1 FROM settlement_items si
 	         WHERE si.payable_id = l.id AND si.voided_at IS NULL) AS settled,
 	(SELECT si.amount_minor FROM settlement_items si
@@ -72,7 +77,7 @@ func scanWorkRecord(row pgx.Row) (*WorkRecord, error) {
 	var qty string
 	err := row.Scan(&l.ID, &l.EmployeeID, &l.ActivityID, &l.PayScheme, &l.RateSource,
 		&l.StartedAt, &l.EndedAt, &l.LocalDay, &l.EndLocalDay, &l.WeekStart,
-		&qty, &l.UnitID, &l.PriceMinor, &l.AmountMinor, &l.Note,
+		&qty, &l.UnitID, &l.PriceMinor, &l.AmountMinor, &l.Note, &l.DeviceID,
 		&l.CreatedBy, &l.CreatedAt, &l.DeletedAt, &l.Settled, &l.settledAmount)
 	if err != nil {
 		return nil, err
@@ -280,14 +285,14 @@ func CreateWorkRecord(ctx context.Context, tx pgx.Tx, farmID string, l WorkRecor
 		WITH ins AS (
 			INSERT INTO work_records (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
 			                    started_at, ended_at, quantity, unit_id, price_minor,
-			                    amount_minor, note, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10, $11, $12, $13, $14)
+			                    amount_minor, note, device_id, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10, $11, $12, $13, $14, $15)
 			RETURNING *
 		)
 		SELECT `+workRecordCols+` FROM ins l`,
 		l.ID, farmID, l.EmployeeID, l.ActivityID, l.PayScheme, l.RateSource,
 		l.StartedAt, l.EndedAt, l.Quantity.String(), l.UnitID, l.PriceMinor,
-		l.AmountMinor, l.Note, l.CreatedBy))
+		l.AmountMinor, l.Note, nilUUID(deref(l.DeviceID)), l.CreatedBy))
 	if err != nil {
 		return nil, err
 	}
@@ -425,4 +430,11 @@ func nilUUID(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

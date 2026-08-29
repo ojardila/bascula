@@ -639,7 +639,7 @@ func TestWorkRecordPatchRefusesWhatDecidesMoney(t *testing.T) {
 	})
 
 	t.Run("a settled record is not edited under the payment", func(t *testing.T) {
-		h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		h.mustSettle(t, f.OwnerToken, map[string]any{
 			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 		}, http.StatusCreated)
 

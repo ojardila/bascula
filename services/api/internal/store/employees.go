@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -77,6 +78,38 @@ func ListEmployees(ctx context.Context, tx pgx.Tx, f Filter) ([]Employee, error)
 func GetEmployee(ctx context.Context, tx pgx.Tx, id string) (*Employee, error) {
 	return scanEmployee(tx.QueryRow(ctx,
 		`SELECT `+employeeCols+` FROM employees WHERE id = $1`, id))
+}
+
+// FindDeletedByDocument answers §5.6's real danger, which is not the weighing
+// that arrives for somebody who was taken off the payroll — that one enters,
+// the balance stays right, and nothing is lost. It is the SECOND file.
+//
+// ux_employees_doc is partial on `deleted_at IS NULL`, so once Juan is
+// deactivated the same cédula is free again and a well-meaning administrator
+// creates a second Juan. From then on the phone points at one file and the web
+// writes to the other, one person's balance is split in two, and nothing
+// anywhere says so. It is the only conflict in the whole protocol with no
+// automatic repair: merging two ledgers afterwards is manual surgery.
+//
+// One SELECT on a create is the entire price of never having to do that.
+func FindDeletedByDocument(ctx context.Context, tx pgx.Tx, documentType, docID *string) (*Employee, error) {
+	if documentType == nil || docID == nil || *docID == "" {
+		return nil, nil
+	}
+	e, err := scanEmployee(tx.QueryRow(ctx, `
+		SELECT `+employeeCols+` FROM employees
+		 WHERE deleted_at IS NOT NULL
+		   AND doc_id = $2
+		   AND document_type IS NOT DISTINCT FROM $1
+		 ORDER BY deleted_at DESC
+		 LIMIT 1`, documentType, docID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 func CreateEmployee(ctx context.Context, tx pgx.Tx, farmID string, e Employee) (*Employee, error) {

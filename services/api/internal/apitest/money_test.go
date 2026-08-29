@@ -26,7 +26,7 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 
 	recordID := h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-25", 100)
 
-	first := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	first := h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 	firstID := mustString(t, first.Body, "id")
@@ -37,7 +37,7 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 	t.Run("a second settlement over the same period finds nothing left", func(t *testing.T) {
 		// The record is claimed, so it is not pending any more; there is
 		// nothing to settle rather than something to settle twice.
-		res := h.do(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		res := h.doSettle(t, f.OwnerToken, map[string]any{
 			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 		})
 		if res.code() != string(domain.CodeNothingToSettle) {
@@ -46,7 +46,7 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 	})
 
 	t.Run("naming the payable explicitly does not get past the lock either", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		res := h.doSettle(t, f.OwnerToken, map[string]any{
 			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 			"payableIds": []string{recordID},
 		})
@@ -97,7 +97,7 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 			t.Fatalf("balance after voiding is %d, want 0", got)
 		}
 
-		second := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		second := h.mustSettle(t, f.OwnerToken, map[string]any{
 			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 		}, http.StatusCreated)
 		if got := mustInt(t, second.Body, "grossCents"); got != 8_000_000 {
@@ -105,7 +105,7 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 		}
 
 		// And now it is locked again.
-		again := h.do(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		again := h.doSettle(t, f.OwnerToken, map[string]any{
 			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 		})
 		if again.code() != string(domain.CodeNothingToSettle) {
@@ -140,7 +140,7 @@ func TestBalanceIsDerivedAndReversalsAreOnce(t *testing.T) {
 
 	h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-25", 52.5)
 	h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-27", 47.5)
-	h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 
@@ -366,7 +366,7 @@ func TestSundayEveningBelongsToTheFarmsDay(t *testing.T) {
 	// It settles in the week that is paid, at that week's rate.
 	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f.OwnerToken,
 		map[string]any{"priceCents": 95000}, http.StatusOK)
-	settled := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+	settled := h.mustSettle(t, f.OwnerToken, map[string]any{
 		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 	}, http.StatusCreated)
 	if got := mustInt(t, settled.Body, "grossCents"); got != 950_000 {

@@ -61,7 +61,7 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 		"id": settlementID, "workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
 	}
 
-	first := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken,
+	first := h.mustSettle(t, f.OwnerToken,
 		settleBody, http.StatusCreated)
 	gross := mustInt(t, first.Body, "grossCents")
 	if gross != 10_000_000 {
@@ -70,7 +70,7 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 	afterFirst := balanceOf(t)
 
 	t.Run("a resent settlement returns the same one, not a second earning", func(t *testing.T) {
-		again := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken,
+		again := h.mustSettle(t, f.OwnerToken,
 			settleBody, http.StatusOK)
 		if mustString(t, again.Body, "id") != settlementID {
 			t.Fatalf("the retry answered a different settlement: %s", again.Raw)
@@ -86,7 +86,7 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 
 	t.Run("the same settlement id for another worker is refused", func(t *testing.T) {
 		other := h.createWorker(t, f, "Otro", "9000000002")
-		res := h.do(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		res := h.doSettle(t, f.OwnerToken, map[string]any{
 			"id": settlementID, "workerId": other, "from": "2026-08-24", "to": "2026-08-30",
 		})
 		if res.code() != string(domain.CodeIdempotencyKeyReused) {
@@ -235,7 +235,7 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 		// the rest of the test is built on.
 		w2 := h.createWorker(t, f, "Anulable", "9000000003")
 		h.createWorkRecord(t, f, f.OwnerToken, w2, activity, "2026-08-26", 10)
-		s := h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		s := h.mustSettle(t, f.OwnerToken, map[string]any{
 			"id": uuid.NewString(), "workerId": w2, "from": "2026-08-24", "to": "2026-08-30",
 		}, http.StatusCreated)
 		sid := mustString(t, s.Body, "id")
@@ -281,7 +281,7 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 	t.Run("a full payment resent does not become AMOUNT_EXCEEDS_BALANCE", func(t *testing.T) {
 		w3 := h.createWorker(t, f, "Saldado", "9000000004")
 		h.createWorkRecord(t, f, f.OwnerToken, w3, activity, "2026-08-27", 5)
-		h.mustDo(t, http.MethodPost, "/v1/settlements", f.OwnerToken, map[string]any{
+		h.mustSettle(t, f.OwnerToken, map[string]any{
 			"id": uuid.NewString(), "workerId": w3, "from": "2026-08-24", "to": "2026-08-30",
 		}, http.StatusCreated)
 
