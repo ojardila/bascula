@@ -79,3 +79,28 @@ termina en un pago mal calculado.
 - **RSP-022, RSP-023 y RSP-024** faltan en el documento de casos de uso.
 - **El auto-registro no tiene caso de uso escrito.** RSP-033 es *Eliminar Gasto*;
   la sección "Registro de finca" quedó sin numerar y sin detallar.
+
+---
+
+# Decisiones del equipo
+
+Las que el equipo sí podía tomar, anotadas porque contradicen algo que ya
+estaba escrito en los diseños.
+
+## 2026-08-29 — Las categorías son catálogos, no enumeraciones
+
+`arquitectura-api.md` fijaba tres categorías de actividad y `modelo-datos.md`
+declaraba cuatro. Los dos se equivocaban: RSP-011 dice que el selector viene
+«con opción de crear una nueva». Una finca que además cultive cacao inventará
+categorías que nadie previó, y con un `ENUM` de Postgres cada una de ellas sería
+un `ALTER TYPE` en producción.
+
+Así que `activity_categories` es una tabla por finca, sembrada al crearla con
+las tres de arranque, y `SEED_ACTIVITY_CATEGORIES` en `packages/shared` es solo
+esa semilla. Lo mismo para todo lo que los casos de uso describen con «agregar
+si no existe»: tipos de cultivo, variedades, unidades de trabajo, categorías de
+producto y unidades de almacenamiento.
+
+Siguen siendo enumeraciones cerradas las que el código ramifica y que no
+significan nada si una finca inventa un valor: `ledger_kind`, `pay_method`,
+`farm_role`, `settlement_status`, `pay_scheme`, `time_unit` y `stock_reason`.
