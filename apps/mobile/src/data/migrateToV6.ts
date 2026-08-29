@@ -25,6 +25,7 @@
 import { createUuidV7 } from "../../../../packages/shared/src/uuid.ts";
 import {
   OUTBOX_SCHEMA,
+  SYNC_APPLY_SCHEMA,
   SYNCED_TABLES,
   SYNC_COLUMNS,
   outboxSeedSql,
@@ -149,6 +150,11 @@ export function migrateToV6(db: SqlDatabase, at: Date): number {
   // After the backfill, not before: building a unique index over a column that
   // is about to be written 18,000 times costs the same work twice.
   db.execSync(uuidIndexesSql());
+
+  // The flag the triggers read, before the triggers themselves. A trigger
+  // whose WHEN clause names a missing table does not fail at creation time —
+  // it fails the first time somebody weighs something.
+  db.execSync(SYNC_APPLY_SCHEMA);
 
   // Also after: the triggers would otherwise fire once per backfilled row and
   // queue them one at a time, where the seed below does the lot in one

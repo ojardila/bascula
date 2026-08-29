@@ -9,6 +9,7 @@ import {
   Chip,
   Divider,
   Snackbar,
+  ActivityIndicator,
 } from "react-native-paper";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -25,6 +26,7 @@ import {
   type SettlementPreview,
 } from "../db";
 import { useT, formatWeekRange, endOfWeek, EPOCH_START } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
 
 // Digits only, so a stray "." or "," can't turn 50000 into 50.
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
@@ -36,6 +38,13 @@ const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
 export default function PayWorker() {
   const { t, lang, money, num } = useT();
+  // §6.1. The server owns the anti double-pay lock, so the phone does not
+  // create a settlement without being level with it. `ensureFresh` is the
+  // "always before a money screen" of §3.5 and the "a pull completed in this
+  // session" of §6.1, in one call.
+  const { status, ensureFresh, syncNow } = useSync();
+  const [fresh, setFresh] = useState(false);
+  const [checking, setChecking] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId, monday } = useRoute<RouteProp<RootStackParamList, "PayWorker">>().params;
 
@@ -56,6 +65,26 @@ export default function PayWorker() {
   }, [personId, monday]);
   useFocusEffect(load);
 
+  // Runs on the way in, not on the way out. A person who walks up to this
+  // screen with signal should find the button already live; one who does not
+  // should see why before they have counted out any cash.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      setChecking(true);
+      void ensureFresh()
+        .then((ok) => {
+          if (alive) setFresh(ok);
+        })
+        .finally(() => {
+          if (alive) setChecking(false);
+        });
+      return () => {
+        alive = false;
+      };
+    }, [ensureFresh]),
+  );
+
   const unit = config?.unit ?? "";
   // What the worker takes home: this period's harvest plus their balance —
   // signed. A negative balance is an advance already handed over, so it must
@@ -69,7 +98,18 @@ export default function PayWorker() {
   // There is work to settle even when nothing is handed over: an advance larger
   // than the week's harvest must still be amortised, or the debt freezes and
   // the worker shows up as pending forever.
-  const canSettle = grossCents > 0 || dueCents > 0;
+  const hasWork = grossCents > 0 || dueCents > 0;
+
+  // Two conditions, both of them §6.1's, and neither is negotiable from here:
+  // a pull completed in this session, and nothing of this farm's still waiting
+  // in the outbox. A phone that settles without them is a phone that can take
+  // a payable the server has already paid, and re-deriving afterwards does not
+  // put the cash back in anybody's pocket.
+  //
+  // A phone that has never been registered keeps the old behaviour: it is
+  // alone with the farm's data and there is no second lock to race.
+  const settleAllowed = !status.registered || fresh;
+  const canSettle = hasWork && settleAllowed;
 
   const byCrop = useMemo(() => {
     const m = new Map<string, { kg: number; cents: number }>();
@@ -124,6 +164,39 @@ export default function PayWorker() {
       );
       setTimeout(() => navigation.goBack(), 900);
     } catch (e) {
+      busy.current = false;
+      setSnack(t("pay.error"));
+    }
+  }
+
+  /**
+   * §6.1's other half. The pesador is in a lote with cash in hand and no
+   * signal; refusing to record that would not un-hand the cash, it would only
+   * make the database lie about it.
+   *
+   * An advance claims no weighing, takes no lock, and two handsets that record
+   * one merge by union. When the settlement is finally made, the devengo and
+   * the advance meet in the same SUM and the balance comes out exact — golden
+   * case 02 pins that to the centavo.
+   */
+  function handOverAdvance() {
+    if (busy.current) return;
+    const cents = mode === "full" ? dueCents : typedCents;
+    if (cents <= 0) {
+      setSnack(t("pay.amountRequired"));
+      return;
+    }
+    busy.current = true;
+    try {
+      Payments.advance(personId, cents, t("pay.advanceAmount"));
+      setSnack(
+        t("pay.advanceDone", {
+          amount: money(fromCents(cents)),
+          name: person?.name ?? "",
+        }),
+      );
+      setTimeout(() => navigation.goBack(), 900);
+    } catch {
       busy.current = false;
       setSnack(t("pay.error"));
     }
@@ -192,7 +265,7 @@ export default function PayWorker() {
           </Card.Content>
         </Card>
 
-        {canSettle && (
+        {hasWork && (
           <Card mode="elevated" style={styles.card}>
             <Card.Content style={{ gap: 12 }}>
               <SegmentedButtons
@@ -234,6 +307,45 @@ export default function PayWorker() {
                   </Text>
                 </>
               )}
+              {/*
+                §6.1, word for word, and the advance button AT ITS SIDE rather
+                than in another menu. A disabled button with no way forward is
+                how a pesador ends up writing a number on their hand.
+              */}
+              {!settleAllowed && (
+                <View style={styles.gate}>
+                  <Text variant="titleSmall" style={styles.gateTitle}>
+                    {t("pay.needsSyncTitle")}
+                  </Text>
+                  <Text style={styles.gateBody}>{t("pay.needsSyncBody")}</Text>
+                  <View style={styles.gateActions}>
+                    <Button
+                      mode="contained"
+                      icon="cash-fast"
+                      disabled={dueCents <= 0 && typedCents <= 0}
+                      onPress={handOverAdvance}
+                      style={styles.gateButton}
+                    >
+                      {t("pay.advanceNow")}
+                    </Button>
+                    <Button
+                      mode="outlined"
+                      icon={checking ? undefined : "sync"}
+                      disabled={checking || status.busy}
+                      onPress={() => void syncNow().then(() => void ensureFresh().then(setFresh))}
+                      style={styles.gateButton}
+                    >
+                      {checking ? <ActivityIndicator size={16} /> : t("pay.syncFirst")}
+                    </Button>
+                  </View>
+                  {status.pending > 0 && (
+                    <Text style={styles.dim}>
+                      {t("sync.notSentYet", { n: status.pending })}
+                    </Text>
+                  )}
+                </View>
+              )}
+
               <Button
                 mode="contained"
                 icon="check"
@@ -279,4 +391,16 @@ const styles = StyleSheet.create({
   chip: { marginRight: 4 },
   confirm: { borderRadius: 12 },
   tall: { height: 56 },
+  gate: {
+    backgroundColor: "#fff8e6",
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+    borderLeftWidth: 4,
+    borderLeftColor: "#f6b40e",
+  },
+  gateTitle: { fontWeight: "700", color: "#7a4f00" },
+  gateBody: { color: "#7a4f00", lineHeight: 19 },
+  gateActions: { flexDirection: "row", gap: 8, marginTop: 6, flexWrap: "wrap" },
+  gateButton: { borderRadius: 10, flexGrow: 1 },
 });

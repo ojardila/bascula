@@ -59,9 +59,9 @@ export type {
  * The one connection. The whole point of the layer below is that this is the
  * only line in the app that knows it is SQLite.
  */
-export const repository: Repository = createSqliteRepository(
-  SQLite.openDatabaseSync("bascula.db"),
-);
+export const rawDb = SQLite.openDatabaseSync("bascula.db");
+
+export const repository: Repository = createSqliteRepository(rawDb);
 
 /** Local calendar day, not the UTC one. See `packages/shared/src/time.ts`. */
 export const today = () => localDayOf();

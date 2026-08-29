@@ -241,7 +241,7 @@ test("a season of 18,000 weighings migrates without losing a row", () => {
   repo.init();
   const ms = performance.now() - t0;
 
-  assert.equal(version(season.db), 6);
+  assert.equal(version(season.db), 7);
   assert.deepEqual(counts(season.db), before, "not one row lost or invented");
   assert.equal(kilos(season.db), beforeKg, "not a kilo moved");
   assert.equal(
@@ -438,13 +438,15 @@ test("a migration killed halfway leaves a version-5 database that still works", 
 
     // And the app comes up. This is the whole point: yesterday's phone,
     // working, rather than a farm that cannot open its app during a harvest.
+    // The next launch, with a working connection, also finishes the job —
+    // which is what `init` is for, and why it is called before anything is
+    // read: the rows were already proved intact above, straight off the
+    // tables, without going through the repository at all.
     const still = createSqliteRepository(nodeSqlite(season.db));
+    still.init();
     assert.equal(still.reports.totals()?.pickups, 400, `depth ${depth}`);
     assert.ok(still.payments.balances().length > 0, `depth ${depth}`);
-
-    // Then the next launch, with a working connection, finishes the job.
-    still.init();
-    assert.equal(version(season.db), 6, `depth ${depth}: the retry`);
+    assert.equal(version(season.db), 7, `depth ${depth}: the retry`);
     assert.deepEqual(counts(season.db), before, `depth ${depth}: the retry kept every row`);
     assert.equal(
       identities(season.db).filter((r) => r.uuid === null).length,
@@ -473,7 +475,7 @@ test("migrating twice does nothing the second time", () => {
   repo.init();
   repo.init();
 
-  assert.equal(version(season.db), 6);
+  assert.equal(version(season.db), 7);
   assert.deepEqual(identities(season.db), first, "an id was re-minted");
   assert.deepEqual(
     season.db.prepare("SELECT id, updatedAt FROM pickups ORDER BY id").all(),
@@ -539,15 +541,40 @@ test("a deleted weighing leaves the only trace the server will ever get", () => 
 
   repo.pickups.remove(pickup);
 
-  // The row is gone. A `WHERE updatedAt > lastSync` watermark would have
-  // nothing left to report and the server would keep charging the farm for a
-  // weighing that was cancelled.
-  assert.equal(counts(db).pickups, 0);
+  // v7 changed how this works, and the change is the point.
+  //
+  // It used to be a physical DELETE. That left the outbox's tombstone as the
+  // ONLY surviving trace — and a row physically gone is a row the next pull
+  // puts straight back, because the server still has it and this phone holds
+  // nothing that says it was cancelled (§1.5a).
+  //
+  // Now the row stays and carries `deletedAt`. §3.2: there is no delete
+  // operation on the wire — a deletion is an upsert with a tombstone on it —
+  // so the queue entry is an `upsert` and it still points at a readable row.
+  assert.equal(counts(db).pickups, 1, "the row stays, marked");
+  assert.equal(
+    (db.prepare("SELECT deletedAt FROM pickups WHERE id = ?").get(pickup) as {
+      deletedAt: string | null;
+    }).deletedAt !== null,
+    true,
+    "and it is marked",
+  );
+
+  // Invisible to every screen and every total, which is the behaviour the
+  // physical delete used to give and which nothing may lose.
+  assert.equal(repo.reports.totals()?.pickups, 0, "gone from the farm's totals");
+  assert.equal(repo.pickups.recent().length, 0, "gone from the recent list");
+  assert.equal(
+    repo.payments.preview(person, "1970-01-01", "2100-01-01", 800).pickupCount,
+    0,
+    "and it can never be settled",
+  );
+
   const q = repo.sync.pending().filter((e) => e.entity === "pickups");
   assert.equal(q.length, 1);
-  assert.equal(q[0]!.op, "delete");
+  assert.equal(q[0]!.op, "upsert");
   assert.equal(q[0]!.entityUuid, uuid);
-  assert.equal(q[0]!.localId, null, "there is nothing left to read the row from");
+  assert.equal(q[0]!.localId, pickup, "the tombstone is read off the row itself");
 });
 
 test("an ack drops what the server confirmed, and only that", () => {

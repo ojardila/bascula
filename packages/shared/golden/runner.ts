@@ -2,7 +2,7 @@
  * The golden-case walker.
  *
  * It replays a fixture against the phone's REAL SQL — `BASE_SCHEMA`,
- * `PAYMENTS_SCHEMA`, `PENDING_SQL`, `BALANCE_SQL`, `WEEK_OF`, `DAY_OF`, all
+ * `PAYMENTS_SCHEMA`, `PENDING_SQL`, `BALANCE_SQL`, and the farm's own day and week, all
  * imported from `apps/mobile/src/schema.ts` — under `node:sqlite`, exactly the
  * way the existing suites do. Nothing about the balance, the week derivation
  * or the anti double-count lock is retyped here: if it were, the fixtures
@@ -29,10 +29,9 @@ import {
   PAYMENTS_SCHEMA,
   PENDING_SQL,
   BALANCE_SQL,
-  DAY_OF,
-  WEEK_OF,
 } from "../../../apps/mobile/src/schema.ts";
 import { amountCents, toCents, fromCents } from "../src/money.ts";
+import { dayInZone, weekInZone } from "../src/time.ts";
 import type { LedgerKind, PayMethod, SettlementStatus } from "../src/enums.ts";
 
 // ---- The fixture format -------------------------------------------------
@@ -350,13 +349,24 @@ function requirePositive(cents: number) {
 
 function apply(ctx: Ctx, ev: GoldenEvent): void {
   switch (ev.op) {
-    case "pickup":
+    case "pickup": {
+      // The farm's day and week are decided HERE, at write time, exactly as
+      // `pickups.add` decides them on the phone. Before v7 both sides
+      // recomputed `date(col,'localtime')` on every read, which meant the
+      // week a weighing was paid in depended on the timezone of whatever
+      // machine asked — and case 04 is the one that catches that.
+      const at = instantOf(ev.at);
       ctx.db
         .prepare(
-          "INSERT INTO pickups (id,personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?,?)",
+          `INSERT INTO pickups (id,personId,cropId,weight,date,createdAt,localDay,week)
+           VALUES (?,?,?,?,?,?,?,?)`,
         )
-        .run(ev.id, ev.personId, ev.cropId, ev.quantity, instantOf(ev.at), instantOf(ev.at));
+        .run(
+          ev.id, ev.personId, ev.cropId, ev.quantity, at, at,
+          dayInZone(at), weekInZone(at),
+        );
       return;
+    }
     case "settle":
       return settle(ctx, ev);
     case "pay":
@@ -416,8 +426,11 @@ function apply(ctx: Ctx, ev: GoldenEvent): void {
 
 // ---- Observation --------------------------------------------------------
 
-const PICKUP_WEEKS_SQL = `SELECT id, ${DAY_OF("date")} AS localDay, ${WEEK_OF("date")} AS week
-                            FROM pickups ORDER BY id`;
+// Read back off the stored columns, not recomputed. That is now what a
+// weighing's day and week ARE — the value the farm's zone produced when the
+// row was written — and observing them any other way would let the fixture
+// pass while the column that actually decides the money said something else.
+const PICKUP_WEEKS_SQL = `SELECT id, localDay, week FROM pickups ORDER BY id`;
 
 /**
  * Replays a case and reports what the database ended up holding, in exactly the

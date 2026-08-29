@@ -17,6 +17,7 @@ import type {
   PayMethod,
   SettlementStatus,
 } from "../../../../packages/shared/src/enums.ts";
+import type { PullChange } from "../sync/protocol.ts";
 
 export type { LedgerKind, PayMethod, SettlementStatus };
 
@@ -67,6 +68,17 @@ export interface Pickup extends Synced {
   weight: number;
   date: string;
   createdAt: string;
+  /**
+   * Logical delete. A weighing removed for real would come back on the next
+   * pull, because the server still has it and nothing here would say it was
+   * cancelled (§1.5a). Every read goes through the `pickups_live` view, so a
+   * tombstoned row is invisible to every screen and every total.
+   */
+  deletedAt?: string | null;
+  /** The farm's calendar day of `date`, decided once at write time. */
+  localDay?: string;
+  /** The Monday of `localDay`. What decides the price and the settlement. */
+  week?: string;
 }
 
 export interface CropConfig {
@@ -83,7 +95,10 @@ export interface CostOverride extends Synced {
   id: number;
   /** Monday of the week, YYYY-MM-DD — the same key `byWeek()` labels rows with. */
   week: string;
+  /** Pesos, for display. Derived from the cents below, never the source. */
   costPerUnit: number;
+  /** Integer cents. What the server stores and what decides an amount. */
+  costPerUnitCents?: number;
 }
 
 export interface LedgerEntry extends Synced {
@@ -402,12 +417,75 @@ export interface SyncIdentity {
   syncedAt: string | null;
 }
 
+/** Where the phone is with the server. One row, `sync_state`. */
+export interface SyncState {
+  /**
+   * Opaque. The phone stores what the server hands back and hands it in again;
+   * it never parses it. That is what lets today's timestamp-window transport
+   * and tomorrow's `sync_log` sequence share one column.
+   */
+  cursor: string | null;
+  /** When a pull last COMPLETED — everything applied, nothing more to come. */
+  pulledAt: string | null;
+  pushedAt: string | null;
+  lastError: string | null;
+  /** When §4.3's backoff allows the next attempt. */
+  retryAt: string | null;
+  attempts: number;
+}
+
+export type SyncStatePatch = Partial<SyncState>;
+
 /**
- * What the phone knows about syncing. Deliberately no `push` and no `pull`:
- * the protocol is being specified in parallel and guessing at it here would
- * produce code written against an imagined server. What is below is true of
- * any protocol worth having — every row has a name, and the phone knows what
- * it still owes.
+ * A conflict of §5 waiting for a person.
+ *
+ * `payload` carries what the card shows, composed when the conflict was
+ * detected. §7.3 demands every card names a person, a date, and an amount or a
+ * quantity; by the time somebody reads it the rows behind it may have moved,
+ * so the card holds its own copy of the three.
+ */
+export interface Conflict {
+  id: number;
+  kind: string;
+  entity: string;
+  entityUuid: string;
+  personId: number | null;
+  payload: Record<string, unknown>;
+  detectedAt: string;
+  resolvedAt: string | null;
+  resolution: string | null;
+}
+
+export type ConflictInput = Omit<
+  Conflict,
+  "id" | "detectedAt" | "resolvedAt" | "resolution"
+>;
+
+/** What one applied pull batch actually did. Shown on the status screen. */
+export interface AppliedCounts {
+  workers: number;
+  crops: number;
+  pickups: number;
+  prices: number;
+  settlements: number;
+  ledger: number;
+  /** Rows whose parent this phone does not hold yet. Kept, not dropped. */
+  orphans: number;
+  /** Weighings inside a live settlement, which a pull never edits (§5.3). */
+  frozen: number;
+  /** Rows skipped because this phone still owes the server a change to them. */
+  skippedPending: number;
+  reactivated: number;
+}
+
+/**
+ * What the phone knows about syncing.
+ *
+ * The identity half — farm id, device id, the outbox — predates the protocol
+ * and is unchanged. What is new is everything the engine needs to be
+ * restartable: where the cursor is, when the last pull finished, what is
+ * waiting for a person, and the writers that apply what came down without
+ * queueing it straight back up.
  */
 export interface SyncRepo {
   identity(): SyncIdentity;
@@ -425,6 +503,83 @@ export interface SyncRepo {
    * a correction the server never received. Returns how many were dropped.
    */
   ack(sent: readonly Pick<OutboxEntry, "seq" | "revision">[]): number;
+
+  // ---- The protocol's own state ---------------------------------------
+
+  state(): SyncState;
+  saveState(patch: SyncStatePatch): void;
+
+  /**
+   * Record the farm's timezone, and restamp the weighings if it is not the one
+   * they were written under.
+   *
+   * Called once, right after registration. It is the only place a business
+   * date is ever rewritten, and it is safe exactly there: the phone has not
+   * yet sent or settled anything under the wrong zone. Returns how many rows
+   * moved, which is zero on a farm whose zone was right all along.
+   */
+  adoptTimezone(timezone: string): number;
+
+  // ---- What came down --------------------------------------------------
+
+  /** Apply a pull batch in one transaction, in `seq` order. */
+  applyPull(changes: readonly PullChange[]): AppliedCounts;
+
+  /**
+   * The phone's own balance per worker, for the §3.3 checksum.
+   *
+   * Compared against what the server sent and then THROWN AWAY. A total that
+   * arrives on the wire and is stored is the materialised balance this design
+   * has refused three times; if the two disagree that is a bug between two
+   * implementations of the same money, and it raises a card.
+   */
+  balanceChecksums(): { uuid: string; personId: number; name: string; balanceCents: number }[];
+
+  // ---- Conflicts, §5 and §7.3 -----------------------------------------
+
+  conflicts(includeResolved?: boolean): Conflict[];
+  openConflictCount(): number;
+  raiseConflict(c: ConflictInput): void;
+  resolveConflict(id: number, resolution: string): void;
+
+  /**
+   * Decision 8: put a worker back on the books, and record what did it.
+   *
+   * Returns false when they were already active, so a caller can tell a real
+   * reactivation from a no-op without reading the row first.
+   */
+  reactivate(opts: {
+    personId: number;
+    causeEntity: string;
+    causeUuid: string;
+  }): boolean;
+
+  /**
+   * The uuid-shaped projection of one row: every local integer pointer
+   * translated into the name the server knows it by.
+   *
+   * It exists because the wire format is not the storage format —
+   * `pickups.personId` is an integer here and a uuid there — and that
+   * translation belongs to the data layer, not to whatever is holding the
+   * socket. Returns null for a row that is gone or for a table that does not
+   * travel upwards.
+   */
+  wireRow(entity: SyncEntity, uuid: string): Record<string, unknown> | null;
+
+  /** A worker by the name the server knows them by. */
+  personByUuid(
+    uuid: string,
+  ): { id: number; name: string; deletedAt: string | null } | null;
+
+  /** The record decision 8 is conditional on. */
+  reactivations(personId?: number): {
+    id: number;
+    personId: number;
+    causeEntity: string;
+    causeUuid: string;
+    deviceId: string | null;
+    at: string;
+  }[];
 }
 
 // ---- The interface ------------------------------------------------------
@@ -487,6 +642,12 @@ export interface PrefsRepo {
 export interface OverridesRepo {
   all(): CostOverride[];
   set(week: string, costPerUnit: number): WriteResult;
+  /**
+   * The same price, in the integer cents the server speaks. This is what a
+   * pulled `week_prices.price_minor` goes through: converting it to pesos and
+   * back would put a float between the owner's decision and a farm's payroll.
+   */
+  setCents(week: string, costPerUnitCents: number): WriteResult;
   remove(id: number): WriteResult;
 }
 
@@ -611,6 +772,12 @@ export interface Repository {
 
   weekCrops(): WeekCropRow[];
   reportBy(g: Grouping, general: number): LabelledKg[] | ValuedGroup[];
+  /** The week's price in pesos, for display. Derived from the cents below. */
   costForWeek(week: string, general: number): number;
+  /**
+   * The week's price in integer cents. Every amount this farm pays is derived
+   * through here; nothing on a money path reads the REAL column any more.
+   */
+  costCentsForWeek(week: string, generalCents: number): number;
   totalPayout(general: number): number;
 }

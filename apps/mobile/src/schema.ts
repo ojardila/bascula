@@ -18,16 +18,25 @@ export const BASE_SCHEMA = `
     CREATE TABLE IF NOT EXISTS pickups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       personId INTEGER, cropId INTEGER, weight REAL NOT NULL, date TEXT,
-      createdAt TEXT
+      createdAt TEXT,
+      -- Added at v7 and declared here too, so a database created fresh is
+      -- born with them. On the phone that is already in production this whole
+      -- statement is a no-op (IF NOT EXISTS) and migrateToV7 does the work
+      -- by ALTER; the two paths have to end at the same shape.
+      deletedAt TEXT, localDay TEXT, week TEXT
     );
     CREATE TABLE IF NOT EXISTS config (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      cropType TEXT, label TEXT, unit TEXT, yieldUnit TEXT, costPerUnit REAL
+      cropType TEXT, label TEXT, unit TEXT, yieldUnit TEXT, costPerUnit REAL,
+      costPerUnitCents INTEGER, timezone TEXT
     );
     CREATE TABLE IF NOT EXISTS cost_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      week TEXT UNIQUE, costPerUnit REAL
+      week TEXT UNIQUE, costPerUnit REAL, costPerUnitCents INTEGER
     );
+    -- Every read of a weighing goes through here. See PICKUPS_LIVE_VIEW.
+    CREATE VIEW IF NOT EXISTS pickups_live AS
+      SELECT * FROM pickups WHERE deletedAt IS NULL;
 `;
 
 export const PAYMENTS_SCHEMA = `
@@ -73,6 +82,9 @@ export const PAYMENTS_SCHEMA = `
     note         TEXT,
     reversesId   INTEGER REFERENCES ledger(id),
     createdAt    TEXT NOT NULL,
+    -- The farm's business day, materialised at v7. A copy of date, which
+    -- every writer already stamps with the farm's day.
+    localDay     TEXT,
     CHECK ( (kind = 'devengo' AND amountCents > 0)
          OR (kind IN ('pago','anticipo','deduccion') AND amountCents < 0)
          OR (kind IN ('ajuste','reverso')) )
@@ -159,10 +171,10 @@ export const PAID_AGAINST_SQL = `
 
 /** Pickups in range that no live settlement has claimed. */
 export const PENDING_SQL = `
-  SELECT pk.id, pk.weight, ${WEEK_OF("pk.date")} AS week
-    FROM pickups pk
+  SELECT pk.id, pk.weight, pk.week AS week
+    FROM pickups_live pk
    WHERE pk.personId = ?
-     AND ${DAY_OF("pk.date")} BETWEEN date(?) AND date(?)
+     AND pk.localDay BETWEEN date(?) AND date(?)
      AND pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
    ORDER BY pk.date
 `;
@@ -176,9 +188,9 @@ export const PENDING_SQL = `
  */
 export const INDEX_SQL = `
   WITH dw AS (
-    SELECT pk.personId, pk.cropId, ${DAY_OF("pk.date")} AS d, SUM(pk.weight) AS kg
-      FROM pickups pk
-     WHERE ${DAY_OF("pk.date")} >= date('now','localtime',?)
+    SELECT pk.personId, pk.cropId, pk.localDay AS d, SUM(pk.weight) AS kg
+      FROM pickups_live pk
+     WHERE pk.localDay >= ?
      GROUP BY pk.personId, pk.cropId, d
   ),
   base AS (
@@ -221,24 +233,24 @@ export const INDEX_SQL = `
 export const RULE_IMPOSSIBLE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
           AND (pk.weight <= 0 OR pk.weight > ?)
         ORDER BY pk.date DESC LIMIT ?`;
 
 export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight, a.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups a
-         JOIN pickups b ON b.personId = a.personId AND b.cropId = a.cropId
+         FROM pickups_live a
+         JOIN pickups_live b ON b.personId = a.personId AND b.cropId = a.cropId
                        AND b.weight = a.weight AND b.id < a.id
                        AND (julianday(a.createdAt) - julianday(b.createdAt))
                              BETWEEN 0 AND 3.0 / 1440
          LEFT JOIN people pe ON pe.id = a.personId
          LEFT JOIN crops cr ON cr.id = a.cropId
-        WHERE a.date >= ? AND date(a.date,'localtime') >= date(?)
+        WHERE a.date >= ? AND a.localDay >= date(?)
         ORDER BY a.date DESC LIMIT ?`;
 
 // `tot` is the same arithmetic the window functions did — the person's total
@@ -247,16 +259,16 @@ export const RULE_DUPLICATE_SQL = `SELECT a.id AS pickupId, a.personId, a.weight
 // which no window on the outer query could avoid.
 export const RULE_DIGIT_SQL = `WITH tot AS (
          SELECT personId, SUM(weight) AS s, COUNT(*) AS n
-           FROM pickups GROUP BY personId
+           FROM pickups_live GROUP BY personId
        )
        SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) AS reference,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk JOIN tot ON tot.personId = pk.personId
+         FROM pickups_live pk JOIN tot ON tot.personId = pk.personId
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
           AND (tot.s - pk.weight) / NULLIF(tot.n - 1, 0) > 0
           AND pk.weight >= 4 * ((tot.s - pk.weight) / NULLIF(tot.n - 1, 0))
         ORDER BY pk.date DESC LIMIT ?`;
@@ -266,9 +278,9 @@ export const RULE_DIGIT_SQL = `WITH tot AS (
 // and headcount for that day — comes out identical for every day that is kept.
 export const RULE_OUTLIER_SQL = `WITH dayplot AS (
          SELECT pk.id, pk.personId, pk.cropId, pk.weight, pk.date,
-                date(pk.date,'localtime') AS d
-           FROM pickups pk
-          WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
+                pk.localDay AS d
+           FROM pickups_live pk
+          WHERE pk.date >= ? AND pk.localDay >= date(?)
        ),
        agg AS (
          SELECT cropId, d, SUM(weight) AS tot, COUNT(*) AS n
@@ -292,23 +304,23 @@ export const RULE_OUTLIER_SQL = `WITH dayplot AS (
 export const RULE_FUTURE_SQL = `SELECT pk.id AS pickupId, pk.personId, pk.weight, pk.date,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS person,
               COALESCE(cr.name,'?') AS crop
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE pk.date >= ? AND date(pk.date,'localtime') >= date(?)
-          AND date(pk.date,'localtime') > date('now','localtime')
+        WHERE pk.date >= ? AND pk.localDay >= date(?)
+          AND pk.localDay > ?
         ORDER BY pk.date DESC LIMIT ?`;
 
 // What leaves the phone when the season is exported.
 
 export const EXPORT_PICKUPS_SQL = `SELECT pk.id,
-              date(pk.date,'localtime') AS dia,
-              date(pk.date,'localtime','-6 days','weekday 1') AS semana,
+              pk.localDay AS dia,
+              pk.week AS semana,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS recolector,
               pe.docId AS documento,
               COALESCE(cr.name,'?') AS lote,
               pk.weight AS peso
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
         ORDER BY pk.date`;
@@ -333,18 +345,18 @@ export const EXPORT_BALANCES_SQL = `SELECT pe.id,
 
 // The week detail: day by day, who worked, and the person-by-plot grid.
 
-export const WEEK_BY_DAY_SQL = `SELECT date(date,'localtime') AS day, SUM(weight) AS kg,
+export const WEEK_BY_DAY_SQL = `SELECT localDay AS day, SUM(weight) AS kg,
               COUNT(DISTINCT personId) AS pickers, COUNT(DISTINCT cropId) AS plots
-         FROM pickups
-        WHERE date(date,'localtime','-6 days','weekday 1') = ?
+         FROM pickups_live
+        WHERE week = ?
         GROUP BY day ORDER BY day`;
 
 export const WEEK_BY_WORKER_SQL = `SELECT pk.personId,
               COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
               SUM(pk.weight) AS kg,
-              COUNT(DISTINCT date(pk.date,'localtime')) AS days
-         FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+              COUNT(DISTINCT pk.localDay) AS days
+         FROM pickups_live pk LEFT JOIN people pe ON pe.id = pk.personId
+        WHERE pk.week = ?
         GROUP BY pk.personId ORDER BY kg DESC`;
 
 export const WEEK_GRID_SQL = `SELECT pk.personId,
@@ -352,26 +364,26 @@ export const WEEK_GRID_SQL = `SELECT pk.personId,
               pk.cropId,
               COALESCE(cr.name,'?') AS crop,
               SUM(pk.weight) AS kg
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+        WHERE pk.week = ?
         GROUP BY pk.personId, pk.cropId`;
 
 export const WEEK_PLOTS_SQL = `SELECT pk.cropId, COALESCE(cr.name,'?') AS crop, SUM(pk.weight) AS kg
-         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
-        WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+         FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
+        WHERE pk.week = ?
         GROUP BY pk.cropId ORDER BY kg DESC`;
 
 /** Kilos per worker and day of the week: who came which days, and how much. */
 export const WEEK_GRID_DAY_SQL = `
   SELECT pk.personId,
          COALESCE(pe.name || ' ' || pe.lastName,'?') AS name,
-         date(pk.date,'localtime') AS day,
+         pk.localDay AS day,
          SUM(pk.weight) AS kg
-    FROM pickups pk
+    FROM pickups_live pk
     LEFT JOIN people pe ON pe.id = pk.personId
-   WHERE date(pk.date,'localtime','-6 days','weekday 1') = ?
+   WHERE pk.week = ?
    GROUP BY pk.personId, day
 `;
 
@@ -515,29 +527,54 @@ export function outboxTriggersSql(tables: SyncedTable[] = SYNCED_TABLES): string
       op = excluded.op, localId = excluded.localId,
       queuedAt = excluded.queuedAt, revision = outbox.revision + 1;`;
 
+  // A row the phone is WRITING BECAUSE THE SERVER SENT IT is not a row the
+  // phone owes the server. Without this guard every pull re-queues everything
+  // it just applied, the next push sends it all straight back, that push
+  // changes rows on the server, and the farm has a loop that never empties an
+  // outbox and never stops using data. The engine holds `sync_apply` open for
+  // exactly the length of one apply transaction.
+  const notApplying = "NOT EXISTS (SELECT 1 FROM sync_apply)";
+
   return tables
     .map(
       (t) => `
   DROP TRIGGER IF EXISTS tg_${t.name}_out_ins;
   CREATE TRIGGER tg_${t.name}_out_ins AFTER INSERT ON ${t.name}
-  FOR EACH ROW WHEN NEW.uuid IS NOT NULL
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL AND ${notApplying}
   BEGIN${enqueue(t.name, "NEW", "upsert")}
   END;
 
   DROP TRIGGER IF EXISTS tg_${t.name}_out_upd;
   CREATE TRIGGER tg_${t.name}_out_upd AFTER UPDATE ON ${t.name}
-  FOR EACH ROW WHEN NEW.uuid IS NOT NULL
+  FOR EACH ROW WHEN NEW.uuid IS NOT NULL AND ${notApplying}
   BEGIN${enqueue(t.name, "NEW", "upsert")}
   END;
 
   DROP TRIGGER IF EXISTS tg_${t.name}_out_del;
   CREATE TRIGGER tg_${t.name}_out_del AFTER DELETE ON ${t.name}
-  FOR EACH ROW WHEN OLD.uuid IS NOT NULL
+  FOR EACH ROW WHEN OLD.uuid IS NOT NULL AND ${notApplying}
   BEGIN${enqueue(t.name, "OLD", "delete")}
   END;`,
     )
     .join("\n");
 }
+
+/**
+ * The flag the triggers above read.
+ *
+ * A table rather than a PRAGMA or a connection variable because a SQLite
+ * trigger can only see the database. One row means "the write happening right
+ * now came down the wire"; no rows means it came from a person, and a person's
+ * write is owed to the server.
+ *
+ * It is emptied in the same transaction that fills it, so a crash mid-apply
+ * cannot leave the phone permanently unable to queue anything — the rollback
+ * takes the flag with it.
+ */
+export const SYNC_APPLY_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sync_apply (id INTEGER PRIMARY KEY CHECK (id = 1));
+  DELETE FROM sync_apply;
+`;
 
 /**
  * One unique index per table, so a uuid cannot be duplicated locally, plus the
@@ -584,3 +621,141 @@ export function outboxSeedSql(tables: SyncedTable[] = SYNCED_TABLES): string {
       FROM (${union})
      ORDER BY uuid`;
 }
+
+// ---- user_version = 7: the three things the architect blocked on ---------
+//
+// (a) `pickups.remove` was a physical DELETE. A row deleted after being pushed
+//     comes straight back on the next pull, because the server still has it
+//     and the phone no longer knows it killed it. `deletedAt` plus the view
+//     below is the same discipline `people` and `crops` already had.
+// (b) The day and the week came from `date(col,'localtime')` — the HANDSET's
+//     zone. The server derives them from `farms.timezone`. One notch out and a
+//     Sunday-evening weighing lands in the week after the one being paid, at a
+//     different price, in a different settlement. Golden case 04.
+// (c) The price was `REAL`. Pulling `price_minor bigint` from the server into
+//     a float puts a float in the path of money.
+
+/** Columns `user_version = 7` adds, by table. Nothing is rewritten. */
+export const V7_COLUMNS: Record<string, string[]> = {
+  // The tombstone, and the two business dates the farm's zone decides.
+  pickups: ["deletedAt TEXT", "localDay TEXT", "week TEXT"],
+  // The ledger's business day, materialised for the same reason.
+  ledger: ["localDay TEXT"],
+  // Money as integers. The REAL column stays for the screens that still read
+  // it for display; no path that decides an amount touches it any more.
+  config: ["costPerUnitCents INTEGER", "timezone TEXT"],
+  cost_overrides: ["costPerUnitCents INTEGER"],
+  // Decision 8: a worker who was off the books and turns up with new work is
+  // reactivated automatically — and the reactivation is recorded, because
+  // undoing somebody's decision in silence is the one thing that cannot happen.
+  people: ["reactivatedAt TEXT"],
+};
+
+/**
+ * Every read of `pickups` goes through this view, and every write goes to the
+ * table. That is the point: `AND deletedAt IS NULL` on forty queries is forty
+ * chances to forget, and the query somebody adds next sprint would silently
+ * pay for a cancelled weighing. Here the predicate is written once.
+ *
+ * SQLite flattens a view like this into the outer query, so the indexes below
+ * are used exactly as they were before.
+ */
+export const PICKUPS_LIVE_VIEW = `
+  CREATE VIEW IF NOT EXISTS pickups_live AS
+    SELECT * FROM pickups WHERE deletedAt IS NULL;
+`;
+
+/**
+ * The indexes the materialised columns earn. Grouping by a stored column
+ * instead of calling `date()` on every row makes the week screens sargable for
+ * the first time — they used to scan the whole table to answer "this week".
+ */
+export const V7_INDEXES_SQL = `
+  CREATE INDEX IF NOT EXISTS ix_pickups_week ON pickups(week);
+  CREATE INDEX IF NOT EXISTS ix_pickups_localday ON pickups(localDay);
+  CREATE INDEX IF NOT EXISTS ix_ledger_localday ON ledger(localDay);
+`;
+
+/**
+ * What the phone knows about syncing, as one row.
+ *
+ * `cursor` is the single number of §3: everything the server holds with a
+ * higher sequence is what this phone still has to receive. It is TEXT rather
+ * than INTEGER because the transport that exists today has no server-assigned
+ * sequence to give (see `sync/restTransport.ts`), and a cursor that is an
+ * opaque token the client never interprets is the one shape that survives both
+ * that transport and the feed it will be replaced by.
+ *
+ * `pulledAt` is when a pull last COMPLETED — `more:false`, everything applied.
+ * §6.1 makes it a precondition of settling, so it must mean "up to date", not
+ * "we tried".
+ */
+export const SYNC_STATE_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sync_state (
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    cursor    TEXT,
+    pulledAt  TEXT,
+    pushedAt  TEXT,
+    -- The last thing that went wrong, kept so the status screen can say what
+    -- is happening instead of showing a spinner that never resolves.
+    lastError TEXT,
+    -- When the backoff allows the next attempt. §4.3: 2s, 4s, 8s … 15 min.
+    retryAt   TEXT,
+    attempts  INTEGER NOT NULL DEFAULT 0
+  );
+  INSERT OR IGNORE INTO sync_state (id, attempts) VALUES (1, 0);
+`;
+
+/**
+ * The conflicts of §5 that a person has to close.
+ *
+ * Nothing here auto-resolves and nothing disappears on its own: a row leaves
+ * this table because somebody pressed something, and `resolution` records what
+ * they pressed. `payload` carries the three things §7.3 demands every card
+ * shows — a person, a date, and an amount or a quantity — composed at the
+ * moment the conflict was detected, because by the time anybody reads the card
+ * the rows behind it may have moved on.
+ *
+ * `UNIQUE(kind, entity, entityUuid)` so a push retried nine times raises one
+ * card, not nine.
+ */
+export const CONFLICTS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    entity      TEXT NOT NULL,
+    entityUuid  TEXT NOT NULL,
+    personId    INTEGER,
+    payload     TEXT NOT NULL,
+    detectedAt  TEXT NOT NULL,
+    resolvedAt  TEXT,
+    resolution  TEXT,
+    UNIQUE (kind, entity, entityUuid)
+  );
+  CREATE INDEX IF NOT EXISTS ix_conflicts_open
+    ON conflicts(detectedAt) WHERE resolvedAt IS NULL;
+`;
+
+/**
+ * Decision 8, and the condition the owner attached to it.
+ *
+ * The owner overruled the team: a worker who was taken off the books and shows
+ * up with new work is put back on automatically. The team's objection was that
+ * somebody decided that removal. So the reactivation is a row here, with the
+ * labour that caused it and the device that recorded it, and the person who
+ * signed the removal can see it was undone and by what.
+ */
+export const REACTIVATIONS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS reactivations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    personId   INTEGER NOT NULL,
+    personUuid TEXT,
+    -- The weighing whose arrival did it. This is the "qué labor la provocó".
+    causeEntity TEXT NOT NULL,
+    causeUuid   TEXT NOT NULL,
+    deviceId   TEXT,
+    deletedAt  TEXT,
+    at         TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS ix_reactivations_person ON reactivations(personId, at DESC);
+`;

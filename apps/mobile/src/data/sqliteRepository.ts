@@ -19,9 +19,16 @@ import {
   fromCents,
   amountCents,
 } from "../../../../packages/shared/src/money.ts";
-import { localDayOf } from "../../../../packages/shared/src/time.ts";
+import {
+  localDayOf,
+  dayInZone,
+  weekInZone,
+  DEFAULT_TIMEZONE,
+} from "../../../../packages/shared/src/time.ts";
 import { createUuidV7 } from "../../../../packages/shared/src/uuid.ts";
 import { migrateToV6 } from "./migrateToV6.ts";
+import { migrateToV7, restampDays } from "./migrateToV7.ts";
+import { createSyncStore, reactivateWorker } from "./syncStore.ts";
 import {
   BASE_SCHEMA,
   PAYMENTS_SCHEMA,
@@ -44,6 +51,7 @@ import {
   WEEK_PLOTS_SQL,
   WEEK_GRID_DAY_SQL,
   OUTBOX_PENDING_SQL,
+  PICKUPS_LIVE_VIEW,
 } from "../schema.ts";
 import type {
   AnomaliesRepo,
@@ -125,7 +133,7 @@ export interface SqlDatabase {
 
 // ---- Pure helpers ------------------------------------------------------
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 // Monday of the "%Y-Www" week that strftime('%W') would have produced:
 // week 01 starts on the year's first Monday, and earlier days fall in week 00.
@@ -199,6 +207,18 @@ export class ConfirmationRequired extends Error {
 
 export interface RepositoryOptions {
   /**
+   * The FARM's zone, which is the only one allowed to decide a business date.
+   *
+   * It arrives from the server (`/v1/me` today, the handshake of §3.1 when
+   * there is one) and is stored on the config row, so this option is really
+   * only for tests and for the first launch before anything has been
+   * registered. Everything a settlement depends on — which week a weighing
+   * falls in, which price applies, which day a payment is dated — is derived
+   * from this and never from the handset's own offset.
+   */
+  timezone?: string;
+
+  /**
    * Where "now" comes from. Defaults to the device clock, which is what the
    * phone passes and what every existing behaviour depends on.
    *
@@ -218,6 +238,35 @@ export function createSqliteRepository(
 ): Repository {
   const clock = opts.clock ?? (() => new Date());
 
+  /**
+   * The farm's zone. Read from the config row on every call rather than
+   * captured once, because the handshake can change it while the app is
+   * running and a stale copy would keep pricing weighings under the old zone.
+   * Cheap: one indexed read of a single-row table.
+   */
+  const timezone = (): string =>
+    opts.timezone ?? storedTimezone() ?? DEFAULT_TIMEZONE;
+
+  /** Today, on the farm's calendar. This is what `date('now','localtime')`
+   *  used to be, with the handset's opinion taken out of it. */
+  const farmToday = () => dayInZone(clock(), timezone());
+
+  /** The Monday of the farm's current week. */
+  const farmWeek = () => weekInZone(clock(), timezone());
+
+  /**
+   * The farm-calendar day `n` days back, as the lower bound of a window.
+   *
+   * Computed here instead of with SQLite's `date(...,'-28 days')` because that
+   * modifier applies to a string SQLite built from the HANDSET's clock, which
+   * is the input this whole change exists to remove. Subtracting whole days of
+   * milliseconds and then asking for the farm's day of the result is correct
+   * across a DST boundary too, which the farm does not have but a future one
+   * might.
+   */
+  const daysAgo = (n: number) =>
+    dayInZone(new Date(clock().getTime() - n * 86400000), timezone());
+
   /** The stored instant of a write. */
   const now = () => clock().toISOString();
 
@@ -234,11 +283,14 @@ export function createSqliteRepository(
   const uuid = createUuidV7();
   const newUuid = () => uuid(clock().getTime());
 
-  // The business date of a movement: the LOCAL calendar day, not the UTC one.
-  // Every query here groups by local day, and a payment made on Sunday evening
-  // in Bogota would otherwise be stamped with tomorrow's date and shown as a
-  // movement dated in the future.
-  const today = () => localDayOf(clock());
+  // The business date of a movement: the FARM's calendar day.
+  //
+  // It used to be `localDayOf(clock())` — the handset's day — which was right
+  // as long as the handset's zone was right. It is the farm's now, for the
+  // same reason the week is: the server derives `local_day` from
+  // `farms.timezone`, and two sides that disagree about which day a payment
+  // falls on disagree about which settlement it belongs to.
+  const today = () => farmToday();
 
   // ---- Schema and migrations ------------------------------------------
   //
@@ -336,8 +388,40 @@ export function createSqliteRepository(
       // launch, until someone reinstalled it.
       db.withTransactionSync(() => {
         migrateToV6(db, clock());
+        db.execSync(`PRAGMA user_version = 6`);
+      });
+    }
+
+    if (v < 7) {
+      // The three the architect blocked on, and the tables sync keeps its own
+      // state in. See `migrateToV7.ts`: soft delete on `pickups`, the day and
+      // the week materialised in the FARM's zone rather than the handset's,
+      // and the price as integer cents.
+      //
+      // Same one transaction, same reason. This one also creates a view every
+      // read in the app now goes through, so a half-applied v7 would leave
+      // screens querying a view that does not exist — which is precisely what
+      // the rollback prevents.
+      db.withTransactionSync(() => {
+        migrateToV7(db, opts.timezone ?? storedTimezone() ?? DEFAULT_TIMEZONE);
         db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       });
+    }
+  }
+
+  /** The zone already recorded on the config row, if v7 has run. */
+  function storedTimezone(): string | null {
+    try {
+      return (
+        db.getFirstSync<{ timezone: string | null }>(
+          "SELECT timezone FROM config WHERE id = 1",
+          [],
+        )?.timezone ?? null
+      );
+    } catch {
+      // The column does not exist yet, which is the normal state on the way
+      // into v7 and not worth an error.
+      return null;
     }
   }
 
@@ -362,6 +446,14 @@ export function createSqliteRepository(
       /* column already exists */
     }
     migrate();
+
+    // Rebuilt rather than left alone, because `CREATE VIEW ... SELECT *`
+    // freezes the column list at creation time: a column added to `pickups` by
+    // a later migration would exist on the table and be invisible through the
+    // view every screen reads. One statement per launch against a definition
+    // that cannot drift is worth more than the microsecond it costs.
+    db.execSync("DROP VIEW IF EXISTS pickups_live;");
+    db.execSync(PICKUPS_LIVE_VIEW);
 
     // Seed a sensible default crop config (Café) on first run. It carries its
     // own identity from birth: on a brand-new phone this row is inserted after
@@ -458,30 +550,73 @@ export function createSqliteRepository(
       if (r.changes === 0) throw new Error("NOTFOUND");
     },
 
+    /**
+     * Logical, not physical. A row deleted for real after it had been pushed
+     * comes straight back on the next pull: the server still has it and this
+     * phone no longer holds anything that says it was cancelled. The tombstone
+     * is the only thing that will ever travel (§1.5a).
+     *
+     * Every read in the app goes through `pickups_live`, so the row disappears
+     * from every screen and every total the moment this runs — the behaviour
+     * is unchanged, only its mechanism.
+     */
     remove: (id) => {
       if (pickups.isSettled(id)) throw new Error("SETTLED");
-      db.runSync("DELETE FROM pickups WHERE id = ?", [id]);
+      const r = db.runSync(
+        "UPDATE pickups SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+        [now(), now(), id],
+      );
+      // Silent on a row that was already gone: deleting twice is what a double
+      // tap on a slow phone does, and it is not an error.
+      if (r.changes === 0 && !db.getFirstSync("SELECT id FROM pickups WHERE id = ?", [id]))
+        throw new Error("NOTFOUND");
     },
 
-    add: (p) =>
-      db.runSync(
-        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
-         VALUES (?,?,?,?,?,?,?)`,
-        // The uuid is seeded from the weighing's own instant, not from the
-        // moment the row is stored, so a load entered late still sorts where
-        // it happened. That is the same rule the v6 backfill follows.
+    add: (p) => {
+      // The day and the week are decided here, once, in the FARM's zone, and
+      // stored. Every query that used to recompute `date(col,'localtime')` now
+      // reads these columns, which means a handset whose zone is wrong can no
+      // longer move a weighing into a different week — and therefore into a
+      // different price and a different settlement (§1.5b, golden case 04).
+      const instant = p.date;
+      // The uuid is seeded from the weighing's own instant, not from the
+      // moment the row is stored, so a load entered late still sorts where
+      // it happened. That is the same rule the v6 backfill follows.
+      const rowUuid = uuid(Date.parse(p.date) || clock().getTime());
+      const r = db.runSync(
+        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt,localDay,week)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
         [
           p.personId, p.cropId, p.weight, p.date, now(),
-          uuid(Date.parse(p.date) || clock().getTime()), now(),
+          rowUuid, now(),
+          dayInZone(instant, timezone()), weekInZone(instant, timezone()),
         ],
-      ),
+      );
+
+      // Decision 8. Somebody the web took off the books has just been weighed,
+      // which means they are on the farm and working. They go back on the
+      // books — and the reactivation is RECORDED, with this weighing and this
+      // device on it, because that is the condition the owner's decision came
+      // with: whoever signed the removal has to be able to see it was undone
+      // and by what. §5.6's alternative — rejecting the weighing — loses work
+      // that was really done, and that is not on the table.
+      reactivateWorker(db, {
+        personId: p.personId,
+        causeEntity: "pickups",
+        causeUuid: rowUuid,
+        deviceId: sync.identity().deviceId,
+        at: now(),
+      });
+
+      return r;
+    },
 
     recent: () =>
       db.getAllSync<RecentPickup>(
         `SELECT pk.id, pk.weight, pk.date,
                 COALESCE(pe.name || ' ' || pe.lastName, 'Unknown') AS person,
                 COALESCE(cr.name, 'Unknown') AS crop
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN crops cr ON cr.id = pk.cropId
          ORDER BY pk.date DESC LIMIT 50`,
@@ -495,8 +630,8 @@ export function createSqliteRepository(
     totals: () =>
       db.getFirstSync<FarmTotals>(
         `SELECT
-           (SELECT COUNT(*) FROM pickups) AS pickups,
-           (SELECT COALESCE(SUM(weight),0) FROM pickups) AS kg,
+           (SELECT COUNT(*) FROM pickups_live) AS pickups,
+           (SELECT COALESCE(SUM(weight),0) FROM pickups_live) AS kg,
            (SELECT COUNT(*) FROM people) AS people,
            (SELECT COUNT(*) FROM crops) AS crops`,
         [],
@@ -504,19 +639,19 @@ export function createSqliteRepository(
     today: () =>
       db.getFirstSync<PeriodTotals>(
         `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS count
-         FROM pickups WHERE date(date,'localtime') = date('now','localtime')`,
-        [],
+         FROM pickups_live WHERE localDay = ? AND deletedAt IS NULL`,
+        [farmToday()],
       ),
     thisWeek: () =>
       db.getFirstSync<PeriodTotals>(
         `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS count
-         FROM pickups WHERE date(date,'localtime','-6 days','weekday 1') = date('now','localtime','-6 days','weekday 1')`,
-        [],
+         FROM pickups_live WHERE week = ? AND deletedAt IS NULL`,
+        [farmWeek()],
       ),
     byWeek: () =>
       db.getAllSync<LabelledKg>(
-        `SELECT date(date,'localtime','-6 days','weekday 1') AS label, SUM(weight) AS kg
-         FROM pickups GROUP BY label ORDER BY label DESC LIMIT 12`,
+        `SELECT week AS label, SUM(weight) AS kg
+         FROM pickups_live GROUP BY label ORDER BY label DESC LIMIT 12`,
         [],
       ),
     byWorker: (general) =>
@@ -524,10 +659,10 @@ export function createSqliteRepository(
         `SELECT COALESCE(pe.name || ' ' || pe.lastName, 'Unknown') AS label,
                 SUM(pk.weight) AS kg, pk.personId AS id,
                 SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN cost_overrides o
-           ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
+           ON o.week = pk.week
          GROUP BY pk.personId ORDER BY kg DESC`,
         [general],
       ),
@@ -539,10 +674,10 @@ export function createSqliteRepository(
         `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg,
                 pk.cropId AS id,
                 SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
-         FROM pickups pk
+         FROM pickups_live pk
          LEFT JOIN crops cr ON cr.id = pk.cropId
          LEFT JOIN cost_overrides o
-           ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
+           ON o.week = pk.week
          WHERE cr.deletedAt IS NULL
          GROUP BY pk.cropId ORDER BY kg DESC`,
         [general],
@@ -552,9 +687,9 @@ export function createSqliteRepository(
   // Which crops (lotes) were harvested each week — powers the weekly breakdown.
   const weekCrops = () =>
     db.getAllSync<WeekCropRow>(
-      `SELECT date(pk.date,'localtime','-6 days','weekday 1') AS week,
+      `SELECT pk.week AS week,
               COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg
-       FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+       FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
        WHERE cr.deletedAt IS NULL
        GROUP BY week, pk.cropId ORDER BY week DESC, kg DESC`,
       [],
@@ -567,36 +702,36 @@ export function createSqliteRepository(
         // the span counts Sundays and whole idle weeks, and the crop screen used
         // the other definition under the very same label.
         `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS pickups,
-                COUNT(DISTINCT date(date,'localtime')) AS days,
+                COUNT(DISTINCT localDay) AS days,
                 MIN(date) AS firstDate, MAX(date) AS lastDate
-         FROM pickups WHERE personId = ?`,
+         FROM pickups_live WHERE personId = ?`,
         [personId],
       ),
     byWeek: (personId) =>
       db.getAllSync<LabelledKg>(
-        `SELECT date(date,'localtime','-6 days','weekday 1') AS label, SUM(weight) AS kg
-         FROM pickups WHERE personId = ? GROUP BY label ORDER BY label DESC LIMIT 12`,
+        `SELECT week AS label, SUM(weight) AS kg
+         FROM pickups_live WHERE personId = ? GROUP BY label ORDER BY label DESC LIMIT 12`,
         [personId],
       ),
     byCrop: (personId) =>
       db.getAllSync<LabelledKg>(
         `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg
-         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+         FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
          WHERE pk.personId = ? GROUP BY pk.cropId ORDER BY kg DESC`,
         [personId],
       ),
     recent: (personId) =>
       db.getAllSync<WorkerPickup>(
         `SELECT pk.id, pk.weight, pk.date, COALESCE(cr.name, 'Unknown') AS crop
-         FROM pickups pk LEFT JOIN crops cr ON cr.id = pk.cropId
+         FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
          WHERE pk.personId = ? ORDER BY pk.date DESC LIMIT 50`,
         [personId],
       ),
     // Payout for this worker applying weekly cost overrides.
     payout: (personId, general) => {
       const rows = db.getAllSync<{ week: string; kg: number }>(
-        `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
-         FROM pickups WHERE personId = ? GROUP BY week`,
+        `SELECT week AS week, SUM(weight) AS kg
+         FROM pickups_live WHERE personId = ? GROUP BY week`,
         [personId],
       );
       return rows.reduce((s, r) => s + r.kg * costForWeek(r.week, general), 0);
@@ -621,15 +756,17 @@ export function createSqliteRepository(
       ),
     save: (c) =>
       db.runSync(
-        `INSERT INTO config (id, cropType, label, unit, yieldUnit, costPerUnit, uuid, updatedAt)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO config (id, cropType, label, unit, yieldUnit, costPerUnit, costPerUnitCents, uuid, updatedAt)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            cropType = excluded.cropType, label = excluded.label,
            unit = excluded.unit, yieldUnit = excluded.yieldUnit,
            costPerUnit = excluded.costPerUnit,
+           costPerUnitCents = excluded.costPerUnitCents,
            uuid = COALESCE(config.uuid, excluded.uuid),
            updatedAt = excluded.updatedAt`,
-        [c.cropType, c.label, c.unit, c.yieldUnit, c.costPerUnit, newUuid(), now()],
+        [c.cropType, c.label, c.unit, c.yieldUnit, c.costPerUnit,
+         toCents(c.costPerUnit), newUuid(), now()],
       ),
   };
 
@@ -657,35 +794,84 @@ export function createSqliteRepository(
         "SELECT id, week, costPerUnit FROM cost_overrides ORDER BY week DESC",
         [],
       ),
+    // Writes both columns. `costPerUnitCents` is the one every money path
+    // reads; the REAL stays for the screens that still display it and for the
+    // day somebody reads this database with a spreadsheet (§1.5c).
     set: (week, costPerUnit) =>
       db.runSync(
-        `INSERT INTO cost_overrides (week, costPerUnit, uuid, updatedAt) VALUES (?, ?, ?, ?)
+        `INSERT INTO cost_overrides (week, costPerUnit, costPerUnitCents, uuid, updatedAt)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(week) DO UPDATE SET costPerUnit = excluded.costPerUnit,
+           costPerUnitCents = excluded.costPerUnitCents,
            uuid = COALESCE(cost_overrides.uuid, excluded.uuid),
            updatedAt = excluded.updatedAt`,
         // Seeded from the Monday it prices, so a price set for a past week
         // sorts with that week and not with today.
-        [week, costPerUnit, uuid(Date.parse(`${week}T00:00:00.000Z`) || clock().getTime()), now()],
+        [week, costPerUnit, toCents(costPerUnit),
+         uuid(Date.parse(`${week}T00:00:00.000Z`) || clock().getTime()), now()],
       ),
     remove: (id) =>
       db.runSync("DELETE FROM cost_overrides WHERE id = ?", [id]),
+
+    /**
+     * The same write, in the units the server speaks.
+     *
+     * `week_prices.price_minor` is a `bigint`. Coming in through `set` would
+     * mean dividing it to pesos and multiplying it back, which is a float in
+     * the path of a whole farm's week. This writes the integer straight and
+     * derives the display REAL from it, not the other way round.
+     */
+    setCents: (week, costPerUnitCents) =>
+      db.runSync(
+        `INSERT INTO cost_overrides (week, costPerUnit, costPerUnitCents, uuid, updatedAt)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(week) DO UPDATE SET costPerUnit = excluded.costPerUnit,
+           costPerUnitCents = excluded.costPerUnitCents,
+           uuid = COALESCE(cost_overrides.uuid, excluded.uuid),
+           updatedAt = excluded.updatedAt`,
+        [week, fromCents(costPerUnitCents), Math.round(costPerUnitCents),
+         uuid(Date.parse(`${week}T00:00:00.000Z`) || clock().getTime()), now()],
+      ),
   };
 
   // Effective cost per unit for a given week label: the weekly override if one
   // exists, otherwise the general cost from the active config.
+  //
+  // Kept in pesos because a dozen screens display it. It is NOT what decides
+  // an amount any more — `costCentsForWeek` is — and the two cannot disagree
+  // because this one is derived from that one.
   function costForWeek(week: string, general: number): number {
-    const o = db.getFirstSync<{ costPerUnit: number }>(
-      "SELECT costPerUnit FROM cost_overrides WHERE week = ?",
+    return fromCents(costCentsForWeek(week, toCents(general)));
+  }
+
+  /**
+   * The price of a week, in integer cents. Every amount the farm pays is
+   * derived through here.
+   *
+   * `costPerUnitCents` is read first and the REAL is only the fallback for a
+   * row written before v7 that the backfill somehow did not reach — which
+   * should be none, and is checked rather than assumed, because reading a
+   * float into a price is exactly what this migration removed.
+   */
+  function costCentsForWeek(week: string, generalCents: number): number {
+    const o = db.getFirstSync<{
+      costPerUnitCents: number | null;
+      costPerUnit: number | null;
+    }>(
+      "SELECT costPerUnitCents, costPerUnit FROM cost_overrides WHERE week = ?",
       [week],
     );
-    return o ? o.costPerUnit : general;
+    if (!o) return Math.round(generalCents);
+    if (o.costPerUnitCents !== null && o.costPerUnitCents !== undefined)
+      return o.costPerUnitCents;
+    return toCents(Number(o.costPerUnit ?? 0));
   }
 
   // Total payout across all pickups, applying weekly overrides where present.
   function totalPayout(general: number): number {
     const rows = db.getAllSync<{ week: string; kg: number }>(
-      `SELECT date(date,'localtime','-6 days','weekday 1') AS week, SUM(weight) AS kg
-       FROM pickups GROUP BY week`,
+      `SELECT week AS week, SUM(weight) AS kg
+       FROM pickups_live GROUP BY week`,
       [],
     );
     return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
@@ -819,9 +1005,10 @@ export function createSqliteRepository(
             );
             const when = iso(8 + k * 3, (idx * 7) % 60);
             db.runSync(
-              `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
-               VALUES (?,?,?,?,?,?,?)`,
-              [pid, cid, weight, when, when, uuid(Date.parse(when)), when],
+              `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt,localDay,week)
+               VALUES (?,?,?,?,?,?,?,?,?)`,
+              [pid, cid, weight, when, when, uuid(Date.parse(when)), when,
+               dayInZone(when, timezone()), weekInZone(when, timezone())],
             );
           }
         });
@@ -839,23 +1026,25 @@ export function createSqliteRepository(
       };
       // A typed extra zero: 520 kg where this person carries ~50.
       db.runSync(
-        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
-         VALUES (?,?,?,?,?,?,?)`,
-        [pids[2], cids[0], 520, badIso(9), badIso(9), uuid(Date.parse(badIso(9))), badIso(9)],
+        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt,localDay,week)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [pids[2], cids[0], 520, badIso(9), badIso(9), uuid(Date.parse(badIso(9))), badIso(9),
+         dayInZone(badIso(9), timezone()), weekInZone(badIso(9), timezone())],
       );
       // The same weighing saved twice by a double tap.
       const dup = badIso(11);
       for (let k = 0; k < 2; k++) {
         db.runSync(
-          `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt)
-           VALUES (?,?,?,?,?,?,?)`,
-          [pids[4], cids[1], 47, dup, dup, uuid(Date.parse(dup)), dup],
+          `INSERT INTO pickups (personId,cropId,weight,date,createdAt,uuid,updatedAt,localDay,week)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          [pids[4], cids[1], 47, dup, dup, uuid(Date.parse(dup)), dup,
+           dayInZone(dup, timezone()), weekInZone(dup, timezone())],
         );
       }
 
       // A couple of weekly cost overrides to showcase the feature.
       const weeks = db.getAllSync<{ week: string }>(
-        "SELECT DISTINCT date(date,'localtime','-6 days','weekday 1') AS week FROM pickups ORDER BY week DESC LIMIT 2",
+        "SELECT DISTINCT week AS week FROM pickups_live ORDER BY week DESC LIMIT 2",
         [],
       );
       if (weeks[0]) overrides.set(weeks[0].week, 950);
@@ -883,9 +1072,13 @@ export function createSqliteRepository(
       [personId, from, to],
     );
     const priceOf = new Map<string, number>();
+    const generalCents = toCents(general);
     return rows.map((r) => {
+      // Straight to cents. The old form was `toCents(costForWeek(...))`, which
+      // took an integer price out of the database, divided it into a float and
+      // multiplied it back before every settlement line.
       if (!priceOf.has(r.week))
-        priceOf.set(r.week, toCents(costForWeek(r.week, general)));
+        priceOf.set(r.week, costCentsForWeek(r.week, generalCents));
       const costPerUnitCents = priceOf.get(r.week)!;
       return {
         pickupId: r.id,
@@ -905,8 +1098,8 @@ export function createSqliteRepository(
 
   function addEntry(e: Omit<LedgerEntry, "id" | "createdAt">): number {
     const r = db.runSync(
-      `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt,uuid,updatedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,note,reversesId,createdAt,uuid,updatedAt,localDay)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         e.personId,
         e.kind,
@@ -921,6 +1114,11 @@ export function createSqliteRepository(
         // and a back-dated correction must still sort after what it corrects.
         newUuid(),
         now(),
+        // A copy of `date`, which every writer already stamps with the farm's
+        // day. Materialised so the money queries can group on a column instead
+        // of on a call, and so the server's `local_day` has something to line
+        // up against, one field to one field.
+        e.date.slice(0, 10),
       ],
     );
     return r.lastInsertRowId;
@@ -1266,21 +1464,19 @@ export function createSqliteRepository(
       }>(
         `SELECT pk.personId,
                 COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
-                date(pk.date,'localtime','-6 days','weekday 1') AS week,
+                pk.week AS week,
                 pk.weight AS weight, COUNT(*) AS lines
-           FROM pickups pk
+           FROM pickups_live pk
            LEFT JOIN people pe ON pe.id = pk.personId
           WHERE pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
-            AND (? IS NULL OR date(pk.date,'localtime') <= date(?))
+            AND (? IS NULL OR pk.localDay <= date(?))
           GROUP BY pk.personId, week, pk.weight`,
         [upTo ?? null, upTo ?? null],
       );
       const acc = new Map<number, PendingWorker>();
+      const generalCents = toCents(general);
       for (const r of rows) {
-        const perLine = amountCents(
-          r.weight,
-          toCents(costForWeek(r.week, general)),
-        );
+        const perLine = amountCents(r.weight, costCentsForWeek(r.week, generalCents));
         const cur = acc.get(r.personId) ?? {
           personId: r.personId,
           name: r.name,
@@ -1301,8 +1497,8 @@ export function createSqliteRepository(
   // worked the ripest plot wins. Every comparison here is against the people
   // who worked the SAME plot on the SAME day, which is the only fair baseline.
 
-  const DAY_KEY = "date(pk.date,'localtime')";
-  const WEEK_KEY = "date(pk.date,'localtime','-6 days','weekday 1')";
+  const DAY_KEY = "pk.localDay";
+  const WEEK_KEY = "pk.week";
 
   const performance: PerformanceRepo = {
     // Effective kg per day worked — not per pickup, which only measures how big
@@ -1317,11 +1513,11 @@ export function createSqliteRepository(
         `SELECT pk.personId,
                 COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
                 SUM(pk.weight) AS kg,
-                COUNT(DISTINCT ${DAY_KEY}) AS days
-           FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
-          WHERE ${DAY_KEY} >= date('now','localtime',?)
+                COUNT(DISTINCT pk.localDay) AS days
+           FROM pickups_live pk LEFT JOIN people pe ON pe.id = pk.personId
+          WHERE pk.localDay >= ?
           GROUP BY pk.personId`,
-        [`-${sinceDays} days`],
+        [daysAgo(sinceDays)],
       );
 
       // Each person's daily total on a plot, against what their MATES did that
@@ -1336,7 +1532,7 @@ export function createSqliteRepository(
         personId: number;
         irl: number;
         comparableDays: number;
-      }>(INDEX_SQL, [`-${sinceDays} days`]);
+      }>(INDEX_SQL, [daysAgo(sinceDays)]);
 
       const irlOf = new Map(irlRows.map((r) => [r.personId, r]));
 
@@ -1353,9 +1549,9 @@ export function createSqliteRepository(
         earlierDays: number;
       }>(
         `WITH dw AS (
-           SELECT pk.personId, pk.cropId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-             FROM pickups pk
-            WHERE ${DAY_KEY} >= date('now','localtime',?)
+           SELECT pk.personId, pk.cropId, pk.localDay AS d, SUM(pk.weight) AS kg
+             FROM pickups_live pk
+            WHERE pk.localDay >= ?
             GROUP BY pk.personId, pk.cropId, d
          ),
          base AS (
@@ -1368,17 +1564,17 @@ export function createSqliteRepository(
             WHERE base.n >= 3
          )
          SELECT personId,
-                AVG(CASE WHEN d >= date('now','localtime',?) THEN ratio END) AS recent,
-                AVG(CASE WHEN d <  date('now','localtime',?) THEN ratio END) AS earlier,
-                COUNT(CASE WHEN d >= date('now','localtime',?) THEN 1 END) AS recentDays,
-                COUNT(CASE WHEN d <  date('now','localtime',?) THEN 1 END) AS earlierDays
+                AVG(CASE WHEN d >= ? THEN ratio END) AS recent,
+                AVG(CASE WHEN d <  ? THEN ratio END) AS earlier,
+                COUNT(CASE WHEN d >= ? THEN 1 END) AS recentDays,
+                COUNT(CASE WHEN d <  ? THEN 1 END) AS earlierDays
            FROM j GROUP BY personId`,
         [
-          `-${sinceDays} days`,
-          `-${half} days`,
-          `-${half} days`,
-          `-${half} days`,
-          `-${half} days`,
+          daysAgo(sinceDays),
+          daysAgo(half),
+          daysAgo(half),
+          daysAgo(half),
+          daysAgo(half),
         ],
       );
       const trendOf = new Map(trendRows.map((r) => [r.personId, r]));
@@ -1415,10 +1611,10 @@ export function createSqliteRepository(
                 SUM(pk.weight) AS kg,
                 SUM(pk.weight) / NULLIF(cr.dimension,0) AS kgPerHa,
                 COUNT(DISTINCT pk.personId) AS pickers
-           FROM pickups pk JOIN crops cr ON cr.id = pk.cropId
-          WHERE ${DAY_KEY} >= date('now','localtime',?) AND cr.deletedAt IS NULL
+           FROM pickups_live pk JOIN crops cr ON cr.id = pk.cropId
+          WHERE pk.localDay >= ? AND cr.deletedAt IS NULL
           GROUP BY cr.id ORDER BY kgPerHa DESC`,
-        [`-${sinceDays} days`],
+        [daysAgo(sinceDays)],
       ),
 
     // Weekly price against what the crew actually produced that week. The price
@@ -1433,15 +1629,15 @@ export function createSqliteRepository(
         kg: number;
       }>(
         `WITH perDay AS (
-           SELECT ${WEEK_KEY} AS week, pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-             FROM pickups pk
-            WHERE ${DAY_KEY} <= date('now','localtime')
+           SELECT pk.week AS week, pk.personId, pk.localDay AS d, SUM(pk.weight) AS kg
+             FROM pickups_live pk
+            WHERE pk.localDay <= ? AND pk.deletedAt IS NULL
             GROUP BY week, pk.personId, d
          )
          SELECT week, AVG(kg) AS kgPerDay, COUNT(DISTINCT personId) AS pickers,
                 SUM(kg) AS kg
            FROM perDay GROUP BY week ORDER BY week DESC LIMIT ?`,
-        [weeks],
+        [farmToday(), weeks],
       );
       return rows
         .map((r) => ({ ...r, price: costForWeek(r.week, general) }))
@@ -1536,8 +1732,16 @@ export function createSqliteRepository(
       for (const r of db.getAllSync<Row>(RULE_OUTLIER_SQL, [raw, day, limit]))
         push(r, "outlier", Math.round(r.reference ?? 0));
 
-      // Dated after today: a wrong clock or a typo.
-      for (const r of db.getAllSync<Row>(RULE_FUTURE_SQL, [raw, day, limit]))
+      // Dated after today: a wrong clock or a typo. "Today" is the FARM's day
+      // now, so a handset one zone out no longer accuses half an afternoon of
+      // being in the future — which is the failure that made this rule shout
+      // and therefore made it ignored.
+      for (const r of db.getAllSync<Row>(RULE_FUTURE_SQL, [
+        raw,
+        day,
+        farmToday(),
+        limit,
+      ]))
         push(r, "future", 0);
 
       // One pickup can break more than one rule; report it once, worst first.
@@ -1555,20 +1759,20 @@ export function createSqliteRepository(
       db.getFirstSync<CropStats>(
         `SELECT COALESCE(SUM(weight),0) AS kg, COUNT(*) AS pickups,
                 COUNT(DISTINCT personId) AS pickers,
-                COUNT(DISTINCT date(date,'localtime')) AS days,
+                COUNT(DISTINCT localDay) AS days,
                 MIN(date) AS firstDate, MAX(date) AS lastDate
-           FROM pickups WHERE cropId = ?`,
+           FROM pickups_live WHERE cropId = ?`,
         [cropId],
       ),
 
     byWeek: (cropId) =>
       db.getAllSync<CropWeek>(
-        `SELECT date(date,'localtime','-6 days','weekday 1') AS week,
+        `SELECT week AS week,
                 SUM(weight) AS kg, COUNT(DISTINCT personId) AS pickers
-           FROM pickups
-          WHERE cropId = ? AND date(date,'localtime') <= date('now','localtime')
+           FROM pickups_live
+          WHERE cropId = ? AND localDay <= ? AND deletedAt IS NULL
           GROUP BY week ORDER BY week DESC LIMIT 12`,
-        [cropId],
+        [cropId, farmToday()],
       ),
 
     // Who worked this plot, and how they compared against the others who were
@@ -1576,9 +1780,9 @@ export function createSqliteRepository(
     byWorker: (cropId, sinceDays = 28) =>
       db.getAllSync<CropWorker>(
         `WITH dw AS (
-           SELECT pk.personId, ${DAY_KEY} AS d, SUM(pk.weight) AS kg
-             FROM pickups pk
-            WHERE pk.cropId = ? AND ${DAY_KEY} >= date('now','localtime',?)
+           SELECT pk.personId, pk.localDay AS d, SUM(pk.weight) AS kg
+             FROM pickups_live pk
+            WHERE pk.cropId = ? AND pk.localDay >= ?
             GROUP BY pk.personId, d
          ),
          base AS (SELECT d, SUM(kg) AS tot, COUNT(*) AS n FROM dw GROUP BY d)
@@ -1593,14 +1797,14 @@ export function createSqliteRepository(
            JOIN base ON base.d = dw.d
            LEFT JOIN people pe ON pe.id = dw.personId
           GROUP BY dw.personId ORDER BY kg DESC`,
-        [cropId, `-${sinceDays} days`],
+        [cropId, daysAgo(sinceDays)],
       ),
 
     recent: (cropId) =>
       db.getAllSync<CropPickup>(
         `SELECT pk.id, pk.weight, pk.date,
                 COALESCE(pe.name || ' ' || pe.lastName,'?') AS person
-           FROM pickups pk LEFT JOIN people pe ON pe.id = pk.personId
+           FROM pickups_live pk LEFT JOIN people pe ON pe.id = pk.personId
           WHERE pk.cropId = ? ORDER BY pk.date DESC LIMIT 30`,
         [cropId],
       ),
@@ -1610,9 +1814,9 @@ export function createSqliteRepository(
     value: (cropId, general) =>
       db.getFirstSync<{ value: number }>(
         `SELECT COALESCE(SUM(pk.weight * COALESCE(o.costPerUnit, ?)), 0) AS value
-           FROM pickups pk
+           FROM pickups_live pk
            LEFT JOIN cost_overrides o
-             ON o.week = date(pk.date,'localtime','-6 days','weekday 1')
+             ON o.week = pk.week
           WHERE pk.cropId = ?`,
         [general, cropId],
       )?.value ?? 0,
@@ -1664,6 +1868,13 @@ export function createSqliteRepository(
   // all this is. The queue is filled by the triggers in `schema.ts`, not from
   // here, so a writer added next sprint that nobody remembers to instrument is
   // still queued.
+
+  const syncStore = createSyncStore(db, {
+    now,
+    timezone,
+    newUuid,
+    deviceId: () => sync.identity().deviceId,
+  });
 
   const sync: SyncRepo = {
     identity: (): SyncIdentity => {
@@ -1719,6 +1930,59 @@ export function createSqliteRepository(
       });
       return dropped;
     },
+
+    // ---- The protocol's own state, and what came down ------------------
+
+    state: () => syncStore.state(),
+    saveState: (patch) => syncStore.saveState(patch),
+
+    /**
+     * The farm's zone, adopted once at registration.
+     *
+     * Writing it and restamping are one operation on purpose. A phone that
+     * recorded the zone but kept weighings stamped under the old one would
+     * price this week from the farm's calendar and last week from the
+     * handset's, and nothing would say which rows were which.
+     */
+    adoptTimezone: (tz) => {
+      let moved = 0;
+      db.withTransactionSync(() => {
+        // Held, because restamping is not a change the server is owed: the
+        // instant did not move, only this phone's reading of which day it
+        // falls on, and the server derives its own from the same instant.
+        db.runSync("INSERT OR IGNORE INTO sync_apply (id) VALUES (1)", []);
+        try {
+          db.runSync("UPDATE config SET timezone = ?, updatedAt = ? WHERE id = 1", [
+            tz,
+            now(),
+          ]);
+          moved = restampDays(db, tz);
+        } finally {
+          db.runSync("DELETE FROM sync_apply", []);
+        }
+      });
+      return moved;
+    },
+
+    applyPull: (changes) => syncStore.applyPull(changes),
+    balanceChecksums: () => syncStore.balanceChecksums(),
+    wireRow: (entity, uuid) => syncStore.wireRow(entity, uuid),
+    personByUuid: (uuid) => syncStore.personByUuid(uuid),
+
+    conflicts: (includeResolved) => syncStore.conflicts(includeResolved),
+    openConflictCount: () => syncStore.openConflictCount(),
+    raiseConflict: (c) => syncStore.raiseConflict(c),
+    resolveConflict: (id, resolution) => syncStore.resolveConflict(id, resolution),
+
+    reactivate: (o) =>
+      reactivateWorker(db, {
+        personId: o.personId,
+        causeEntity: o.causeEntity,
+        causeUuid: o.causeUuid,
+        deviceId: sync.identity().deviceId,
+        at: now(),
+      }),
+    reactivations: (personId) => syncStore.reactivations(personId),
   };
 
   return {
@@ -1742,6 +2006,7 @@ export function createSqliteRepository(
     weekCrops,
     reportBy,
     costForWeek,
+    costCentsForWeek,
     totalPayout,
   };
 }

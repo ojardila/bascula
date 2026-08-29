@@ -10,6 +10,10 @@ import {
   WEEK_PLOTS_SQL,
   WEEK_GRID_DAY_SQL,
 } from "./schema.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../packages/shared/src/time.ts";
 
 // The week detail answers "who was where, and did it show". Its numbers have
 // to add up across the table, or the grid is worse than useless.
@@ -22,8 +26,8 @@ function pickup(personId: number, cropId: number, kg: number, day: string) {
   const [y, m, d] = day.split("-").map(Number);
   const at = new Date(y, m - 1, d, 12, 0, 0).toISOString();
   db.prepare(
-    "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-  ).run(personId, cropId, kg, at, at);
+    "INSERT INTO pickups (personId,cropId,weight,date,createdAt,localDay,week) VALUES (?,?,?,?,?,?,?)",
+  ).run(personId, cropId, kg, at, at, dayInZone(at), weekInZone(at));
 }
 
 beforeEach(() => {

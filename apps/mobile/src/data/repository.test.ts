@@ -8,6 +8,10 @@ import {
 } from "./sqliteRepository.ts";
 import type { Repository } from "./repository.ts";
 import { isUuidV7, uuidV7Time } from "../../../../packages/shared/src/uuid.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../../packages/shared/src/time.ts";
 
 /**
  * The data layer, driven through the real implementation.
@@ -67,7 +71,7 @@ beforeEach(() => {
 
 test("a fresh database comes up at the current schema version", () => {
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 6);
+  assert.equal(v.user_version, 7);
   assert.deepEqual({ ...repo.config.get() }, {
     cropType: "cafe",
     label: "Café",
@@ -99,7 +103,7 @@ test("starting up twice changes nothing — every launch runs this", () => {
   repo.init();
   repo.init();
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 6);
+  assert.equal(v.user_version, 7);
   assert.equal(repo.reports.totals()?.pickups, 1);
   assert.equal(repo.config.get()?.label, "Café");
   // A re-run must not re-mint an identity the server may already know.
@@ -133,7 +137,7 @@ test("a database from the first release migrates all the way up", () => {
   upgraded.init();
 
   const v = old.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 6);
+  assert.equal(v.user_version, 7);
   assert.equal(upgraded.reports.totals()?.pickups, 1, "the season survives");
   assert.equal(upgraded.people.all().length, 1, "deletedAt was added, not reset");
   // The payments half now exists and works.
@@ -544,16 +548,19 @@ test("a double tap and a weighing dated tomorrow are both caught", () => {
   const p = aWorker();
   aPlot();
   const stamp = at(2);
-  raw
-    .prepare(
-      "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,1,47,?,?)",
-    )
-    .run(p, stamp, stamp);
-  raw
-    .prepare(
-      "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,1,47,?,?)",
-    )
-    .run(p, stamp, stamp);
+  // Raw, so both rows share a createdAt to the millisecond — which is what a
+  // double tap is. The farm's day and week are stamped by hand for the same
+  // reason `pickups.add` stamps them: a weighing with none is invisible to
+  // every query that groups by a week.
+  const stampDay = dayInZone(stamp);
+  const stampWeek = weekInZone(stamp);
+  for (let i = 0; i < 2; i++)
+    raw
+      .prepare(
+        `INSERT INTO pickups (personId,cropId,weight,date,createdAt,localDay,week)
+         VALUES (?,1,47,?,?,?,?)`,
+      )
+      .run(p, stamp, stamp, stampDay, stampWeek);
   repo.pickups.add({ personId: p, cropId: 1, weight: 40, date: at(-3) });
 
   const rules = repo.anomalies.all().map((a) => a.rule);

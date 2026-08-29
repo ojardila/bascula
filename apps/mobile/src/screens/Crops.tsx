@@ -6,8 +6,15 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
 import { Crops as CropsDb, type Crop } from "../db";
 import { useT } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
 
 export default function Crops() {
+  // Decision 6: lotes are administered on the web. Two pesadores creating
+  // "Lote 1" and "lote 1" on the same morning is a merge no script can do
+  // afterwards, and merging lotes is the owner's work with a screen, not a
+  // guess. The cost is real and it is said out loud on the sync screen: a new
+  // lote mid-harvest now needs somebody at a computer.
+  const { status: syncStatus } = useSync();
   const { t } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [items, setItems] = useState<Crop[]>([]);
@@ -40,7 +47,9 @@ export default function Crops() {
           />
         )}
       />
-      <FAB icon="plus" style={styles.fab} onPress={() => navigation.navigate("CropAdd")} />
+      {!syncStatus.registered && (
+        <FAB icon="plus" style={styles.fab} onPress={() => navigation.navigate("CropAdd")} />
+      )}
 
       <Portal>
         <Dialog visible={!!pending} onDismiss={() => setPending(null)}>

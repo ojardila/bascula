@@ -31,8 +31,15 @@ import {
 } from "../db";
 import { csvDocument } from "../csv";
 import { useT, formatWeekRange, type Lang } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
 
 export default function Settings() {
+  // Decision 6: the weekly price is the owner's, on the web. Once this phone
+  // belongs to a farm it reads the price and does not set it — because a price
+  // edited in two places with "last one wins" reprices a whole farm's week,
+  // and there is no conflict to resolve there, there is a payroll.
+  const { status: syncStatus } = useSync();
+  const priceIsReadOnly = syncStatus.registered;
   const { t, lang, setLang, money } = useT();
   // Active crop config
   const [cropType, setCropType] = useState("cafe");
@@ -286,7 +293,9 @@ export default function Settings() {
             )}
           />
           <Card.Content style={{ gap: 8 }}>
-            {weeks.length === 0 ? (
+            {priceIsReadOnly ? (
+              <Text style={styles.empty}>{t("sync.changePrices")}</Text>
+            ) : weeks.length === 0 ? (
               <Text style={styles.empty}>{t("settings.noWeeks")}</Text>
             ) : (
               <>
@@ -332,16 +341,18 @@ export default function Settings() {
                       title={formatWeekRange(o.week, lang)}
                       description={`${money(o.costPerUnit)} · ${unit || t("unit.default")}`}
                       left={(p) => <List.Icon {...p} icon="calendar-week" />}
-                      right={(p) => (
-                        <IconButton
-                          {...p}
-                          icon="delete-outline"
-                          onPress={() => {
-                            Overrides.remove(o.id);
-                            setOverrides(Overrides.all());
-                          }}
-                        />
-                      )}
+                      right={(p) =>
+                        priceIsReadOnly ? null : (
+                          <IconButton
+                            {...p}
+                            icon="delete-outline"
+                            onPress={() => {
+                              Overrides.remove(o.id);
+                              setOverrides(Overrides.all());
+                            }}
+                          />
+                        )
+                      }
                     />
                   </View>
                 ))}
@@ -374,7 +385,16 @@ export default function Settings() {
           </Card.Content>
         </Card>
 
-        {/* Demo data */}
+        {/*
+          §2: hidden once the phone belongs to a farm. `seed` begins by wiping,
+          and a wipe on a synced farm is a catastrophe with a button on it —
+          the rows go, the outbox goes with them, and the next pull brings back
+          a hollow copy of a season nobody can reconcile. The guard that
+          demands the farm's own name typed out stays underneath; this only
+          stops the button being somewhere a thumb can find it at eleven at
+          night.
+        */}
+        {!syncStatus.registered && (
         <Card style={styles.card} mode="elevated">
           <Card.Title
             title={t("settings.demoTitle")}
@@ -402,6 +422,7 @@ export default function Settings() {
             </Button>
           </Card.Content>
         </Card>
+        )}
       </ScrollView>
 
       <Portal>

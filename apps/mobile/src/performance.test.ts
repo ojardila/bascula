@@ -2,6 +2,10 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { BASE_SCHEMA, PAYMENTS_SCHEMA, INDEX_SQL } from "./schema.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../packages/shared/src/time.ts";
 
 // The comparative index shipped with three statistical defects at once, and it
 // is the number a farm would use to decide who not to hire again.
@@ -21,13 +25,14 @@ function pickup(personId: number, cropId: number, kg: number, daysAgo: number) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
   d.setHours(10, 0, 0, 0);
+  const at = d.toISOString();
   db.prepare(
-    "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-  ).run(personId, cropId, kg, d.toISOString(), d.toISOString());
+    "INSERT INTO pickups (personId,cropId,weight,date,createdAt,localDay,week) VALUES (?,?,?,?,?,?,?)",
+  ).run(personId, cropId, kg, at, at, dayInZone(at), weekInZone(at));
 }
 
 const index = () => {
-  const rows = db.prepare(INDEX_SQL).all("-28 days") as {
+  const rows = db.prepare(INDEX_SQL).all(dayInZone(Date.now() - 28 * 86400000)) as {
     personId: number;
     irl: number | null;
     comparableDays: number;

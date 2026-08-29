@@ -33,7 +33,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --test src/*.test.ts src/data/*.test.ts",
+    "test": "node --test src/*.test.ts src/data/*.test.ts src/sync/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "private": true

@@ -2,6 +2,10 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { BASE_SCHEMA, PAYMENTS_SCHEMA, BALANCE_SQL, PENDING_SQL } from "./schema.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../packages/shared/src/time.ts";
 
 // Runs the app's own schema and money SQL under node:sqlite. The point is to
 // exercise the statements the app actually executes, not a retyped copy.
@@ -107,8 +111,9 @@ test("reversals stop counting as earned and as paid", () => {
 
 test("a pickup can only be claimed by one live settlement", () => {
   db.prepare(
-    "INSERT INTO pickups (id,personId,cropId,weight,date) VALUES (1,1,1,50,'2026-08-25T14:00:00Z')",
-  ).run();
+    `INSERT INTO pickups (id,personId,cropId,weight,date,localDay,week)
+     VALUES (1,1,1,50,'2026-08-25T14:00:00Z',?,?)`,
+  ).run(dayInZone("2026-08-25T14:00:00Z"), weekInZone("2026-08-25T14:00:00Z"));
   db.prepare(
     `INSERT INTO settlements (id,personId,periodStart,periodEnd,grossCents,status,createdAt)
      VALUES (1,1,'2026-08-24','2026-08-30',4000000,'open','x')`,
@@ -123,8 +128,9 @@ test("a pickup can only be claimed by one live settlement", () => {
 
 test("voiding releases the pickup but keeps the line for the record", () => {
   db.prepare(
-    "INSERT INTO pickups (id,personId,cropId,weight,date) VALUES (1,1,1,50,'2026-08-25T14:00:00Z')",
-  ).run();
+    `INSERT INTO pickups (id,personId,cropId,weight,date,localDay,week)
+     VALUES (1,1,1,50,'2026-08-25T14:00:00Z',?,?)`,
+  ).run(dayInZone("2026-08-25T14:00:00Z"), weekInZone("2026-08-25T14:00:00Z"));
   db.prepare(
     `INSERT INTO settlements (id,personId,periodStart,periodEnd,grossCents,status,createdAt)
      VALUES (1,1,'2026-08-24','2026-08-30',4000000,'open','x')`,
@@ -146,9 +152,13 @@ test("voiding releases the pickup but keeps the line for the record", () => {
 test("a Sunday-evening pickup belongs to the week that is being paid", () => {
   // Stored in UTC, so 19:30 local in Colombia is already Monday for UTC. It
   // used to fall out of the week the panel was settling.
+  const sundayEvening = new Date(2026, 7, 30, 19, 30).toISOString();
+  // Stamped through the FARM's zone, which is the whole point of v7: it is
+  // this derivation, not the handset's offset, that decides the week.
   db.prepare(
-    "INSERT INTO pickups (id,personId,cropId,weight,date) VALUES (1,1,1,40,?)",
-  ).run(new Date(2026, 7, 30, 19, 30).toISOString());
+    `INSERT INTO pickups (id,personId,cropId,weight,date,localDay,week)
+     VALUES (1,1,1,40,?,?,?)`,
+  ).run(sundayEvening, dayInZone(sundayEvening), weekInZone(sundayEvening));
   const pending = db.prepare(PENDING_SQL).all(1, "1970-01-01", "2026-08-30") as {
     week: string;
   }[];
@@ -234,8 +244,9 @@ test("running the undo twice changes nothing the second time", () => {
 
 test("undoing a run releases the pickups so the week can be settled again", () => {
   db.prepare(
-    "INSERT INTO pickups (id,personId,cropId,weight,date) VALUES (1,1,1,100,'2026-08-25T14:00:00Z')",
-  ).run();
+    `INSERT INTO pickups (id,personId,cropId,weight,date,localDay,week)
+     VALUES (1,1,1,100,'2026-08-25T14:00:00Z',?,?)`,
+  ).run(dayInZone("2026-08-25T14:00:00Z"), weekInZone("2026-08-25T14:00:00Z"));
   makeSettlement(7);
   db.prepare(
     `INSERT INTO settlement_items (settlementId,pickupId,week,weight,costPerUnitCents,amountCents)

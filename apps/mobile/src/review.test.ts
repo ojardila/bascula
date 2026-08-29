@@ -11,6 +11,10 @@ import {
   RULE_FUTURE_SQL,
 } from "./schema.ts";
 import { windowBounds } from "./data/sqliteRepository.ts";
+import {
+  dayInZone,
+  weekInZone,
+} from "../../../packages/shared/src/time.ts";
 
 // These rules accuse people of mis-weighing, so each one has to be shown
 // actually firing. The extra-zero rule spent several versions unable to.
@@ -26,9 +30,13 @@ function pickup(personId: number, cropId: number, kg: number, daysAgo: number, m
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
   d.setHours(10, minute, 0, 0);
+  // The farm's day and week, stamped the way `pickups.add` stamps them. A
+  // raw insert that leaves them null is a weighing no week query can see —
+  // which is exactly what v7 made true, so the fixtures say it too.
+  const at = d.toISOString();
   db.prepare(
-    "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?)",
-  ).run(personId, cropId, kg, d.toISOString(), d.toISOString());
+    "INSERT INTO pickups (personId,cropId,weight,date,createdAt,localDay,week) VALUES (?,?,?,?,?,?,?)",
+  ).run(personId, cropId, kg, at, at, dayInZone(at), weekInZone(at));
 }
 
 // Wide enough to reach every weighing these cases create, so the window is not
@@ -72,8 +80,8 @@ test("the same weighing saved twice within three minutes is flagged", () => {
   const iso = d.toISOString();
   for (let i = 0; i < 2; i++) {
     db.prepare(
-      "INSERT INTO pickups (personId,cropId,weight,date,createdAt) VALUES (1,1,47,?,?)",
-    ).run(iso, iso);
+      "INSERT INTO pickups (personId,cropId,weight,date,createdAt,localDay,week) VALUES (1,1,47,?,?,?,?)",
+    ).run(iso, iso, dayInZone(iso), weekInZone(iso));
   }
   assert.equal(run(RULE_DUPLICATE_SQL).length, 1, "the second one is the suspect");
 });
@@ -119,12 +127,17 @@ test("with too few mates that day the outlier rule stays quiet", () => {
   assert.equal(run(RULE_OUTLIER_SQL).length, 0, "no crew, no comparison");
 });
 
+// "Today" is now the FARM's day, passed in, not `date('now','localtime')`.
+// That is the whole of the fix: a handset one zone out used to call an
+// afternoon's work "dated in the future" and drown the real findings.
+const FARM_TODAY = () => dayInZone(new Date());
+
 test("a pickup dated in the future is flagged", () => {
   pickup(1, 1, 50, -3); // three days ahead
-  assert.equal(run(RULE_FUTURE_SQL).length, 1);
+  assert.equal(run(RULE_FUTURE_SQL, FARM_TODAY()).length, 1);
 });
 
 test("today's work is not in the future", () => {
   pickup(1, 1, 50, 0);
-  assert.equal(run(RULE_FUTURE_SQL).length, 0);
+  assert.equal(run(RULE_FUTURE_SQL, FARM_TODAY()).length, 0);
 });

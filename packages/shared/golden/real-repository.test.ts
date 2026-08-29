@@ -16,13 +16,12 @@ import {
 } from "./runner.ts";
 import {
   BASE_SCHEMA,
-  DAY_OF,
   PAYMENTS_SCHEMA,
-  WEEK_OF,
 } from "../../../apps/mobile/src/schema.ts";
 import { nodeSqlite } from "../../../apps/mobile/src/data/nodeSqlite.ts";
 import { createSqliteRepository } from "../../../apps/mobile/src/data/sqliteRepository.ts";
 import { fromCents } from "../src/money.ts";
+import { dayInZone, weekInZone } from "../src/time.ts";
 import { isUuidV7 } from "../src/uuid.ts";
 
 /**
@@ -123,18 +122,28 @@ function replay(c: GoldenCase, from: "fresh" | "v5" = "fresh"): GoldenExpectatio
   for (const ev of c.events) {
     if ("on" in ev) clock = noonOf(ev.on);
     switch (ev.op) {
-      case "pickup":
+      case "pickup": {
+        // Raw rather than `repo.pickups.add`, because the fixtures pin the
+        // integer ids their settlement lines refer to. The farm's day and week
+        // are stamped here for the same reason `pickups.add` stamps them: from
+        // v7 those columns ARE the weighing's business date, and a row without
+        // them is invisible to `PENDING_SQL`.
+        const at = instantOf(ev.at);
         db.prepare(
-          "INSERT INTO pickups (id,personId,cropId,weight,date,createdAt) VALUES (?,?,?,?,?,?)",
+          `INSERT INTO pickups (id,personId,cropId,weight,date,createdAt,localDay,week)
+           VALUES (?,?,?,?,?,?,?,?)`,
         ).run(
           ev.id,
           ev.personId,
           ev.cropId,
           ev.quantity,
-          instantOf(ev.at),
-          instantOf(ev.at),
+          at,
+          at,
+          dayInZone(at),
+          weekInZone(at),
         );
         break;
+      }
       case "settle":
         repo.payments.settle(
           ev.personId,
@@ -177,8 +186,9 @@ function replay(c: GoldenCase, from: "fresh" | "v5" = "fresh"): GoldenExpectatio
     actual.pickups = (
       db
         .prepare(
-          `SELECT id, ${DAY_OF("date")} AS localDay, ${WEEK_OF("date")} AS week
-             FROM pickups ORDER BY id`,
+          // Off the stored columns, which is what a weighing's day and week
+          // now are — not recomputed through whatever zone this machine is on.
+          `SELECT id, localDay, week FROM pickups ORDER BY id`,
         )
         .all() as unknown as ExpectedPickup[]
     ).map((r) => ({ ...r }));

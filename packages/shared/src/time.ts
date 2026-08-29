@@ -88,3 +88,82 @@ export function localDayOf(instant: Date = new Date()): string {
  */
 export const weekOf = (instant: Date = new Date()): string =>
   mondayOf(localDayOf(instant));
+
+// ---- The farm's calendar, not the device's -----------------------------
+//
+// Everything above this line derives a day from the DEVICE's offset:
+// `localDayOf` reads `getMonth()`/`getDate()`, which is `date(col,'localtime')`
+// in SQL, which is whatever timezone the handset happens to be set to.
+//
+// That is the bug behind golden case 04. A phone whose zone was nudged one
+// notch stamps a Sunday-evening weighing with Monday, and the weighing moves
+// into the week AFTER the one being paid — at a different price, in a
+// different settlement, on a farm that has no idea it happened. The server
+// never had this problem: it derives `local_day` from `farms.timezone`.
+//
+// So the farm's zone becomes the only zone that decides a business date, and
+// the phone's own offset stops being an input to money. The handshake brings
+// the zone (`docs/sincronizacion.md` §3.1); until it does, the constant below
+// is what that farm's handset is already set to.
+
+/** The zone assumed until the server tells the phone otherwise (§1.5b). */
+export const DEFAULT_TIMEZONE = "America/Bogota";
+
+/**
+ * Cached formatters. `Intl.DateTimeFormat` is expensive to construct — a few
+ * hundred microseconds — and the v7 backfill calls this once per weighing on a
+ * database holding a season, so building one per row would have turned a
+ * migration into a visible pause on a phone in a field.
+ */
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  let f = dayFormatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    dayFormatters.set(timeZone, f);
+  }
+  return f;
+}
+
+/**
+ * The calendar day an instant falls on IN THE FARM'S ZONE, as YYYY-MM-DD.
+ *
+ * `en-CA` is not a decoration: it is the one widely-supported locale whose
+ * short date format is already ISO, so the result needs no reassembly and
+ * cannot be reordered by a locale change. A zone the platform does not know
+ * throws inside `Intl`, and rather than let that take a weighing down we fall
+ * back to the device day — wrong by at most a few hours, where the alternative
+ * is losing the row.
+ */
+export function dayInZone(
+  instant: Date | string | number,
+  timeZone: string = DEFAULT_TIMEZONE,
+): string {
+  const d =
+    instant instanceof Date
+      ? instant
+      : new Date(typeof instant === "string" ? Date.parse(instant) : instant);
+  if (!Number.isFinite(d.getTime())) return localDayOf();
+  try {
+    return formatterFor(timeZone).format(d);
+  } catch {
+    return localDayOf(d);
+  }
+}
+
+/**
+ * The Monday of the week an instant falls in, in the farm's zone. Composed as
+ * "day first, then Monday of that day" for the same reason `weekOf` is: going
+ * straight from the instant puts a Sunday evening into the following week for
+ * anyone west of UTC, which is the whole of case 04.
+ */
+export const weekInZone = (
+  instant: Date | string | number,
+  timeZone: string = DEFAULT_TIMEZONE,
+): string => mondayOf(dayInZone(instant, timeZone));
