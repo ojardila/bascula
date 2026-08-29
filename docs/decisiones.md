@@ -127,3 +127,12 @@ las pruebas de la web fallaban por eso, no por su código.
 
 El `package.json` raíz fija ahora `react` y `react-dom` con `overrides`. Cuando
 Expo suba de versión, ese es el único sitio que hay que tocar.
+
+## Pendiente antes de desplegar: CORS
+
+La API no monta CORS, así que un navegador no puede llamarla desde otro origen.
+En desarrollo lo resuelve el proxy de Vite, que reenvía `/v1` y `/health`, y eso
+está bien mientras solo haya laptops. Antes de desplegar hay que elegir: servir
+la web y la API detrás del mismo origen, o montar CORS en el servidor con una
+lista de orígenes permitidos. La primera es más simple y no abre nada; la
+segunda hace falta si la web va a vivir en otro dominio.
