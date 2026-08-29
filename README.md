@@ -18,17 +18,6 @@ and whatever else gets picked by the kilo.
 | [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint | Planned |
 | [`packages/shared`](packages/shared) | The ledger contract shared by all three | Planned |
 
-## Why one repository
-
-The three pieces share the one thing that must never drift: **the ledger**. The
-movement kinds, their signs, what may be voided and the shape of a sync payload
-have to be identical in the app, the API and the web, or syncing corrupts
-balances quietly — the worst kind of bug in something that decides what a
-person gets paid.
-
-In separate repositories that contract drifts within a week. Here, changing it
-breaks the build of whoever did not follow, which is exactly what should happen.
-
 ## Getting started
 
 ```bash
