@@ -112,6 +112,24 @@ func (s *Server) handleSyncHandshake(w http.ResponseWriter, r *http.Request) {
 			// somebody.
 			"writePlots":      false,
 			"writeWeekPrices": false,
+			// §8 phase 4 — the cut. The handset goes into money-read-only by
+			// remote control: weighings keep being recorded, because the cut
+			// cannot stop the scale, and settling, paying and voiding stop.
+			// It is off until an operator turns it on for the hour the import
+			// runs; it is a per-farm flag and not a build, which is the whole
+			// point of it living in the handshake.
+			//
+			// It is NOT authorisation and must not be read as any. The server
+			// answers 403 to a weigher's ledger push whether or not this is
+			// true — see pushLedgerEntry — and refuses a settlement whose
+			// gross has moved whether or not the button was visible. What this
+			// buys is that the person holding the phone during the cut is not
+			// looking at a live pay button.
+			// Dereferenced, never sent as null: a capability the handset
+			// cannot read as true or false is a button it does not know
+			// whether to draw, and the safe guess it would make is the wrong
+			// one half the time.
+			"moneyReadOnly": farm.MoneyReadOnly != nil && *farm.MoneyReadOnly,
 		},
 	})
 }
@@ -301,7 +319,7 @@ func applyPushEntity(ctx context.Context, tx pgx.Tx, farmID, deviceID string,
 		if op.Op != "upsert" {
 			return rejected(op.OpID, domain.BadRequest("a worker travels as an upsert"))
 		}
-		return pushWorker(ctx, tx, farmID, op)
+		return pushWorker(ctx, tx, farmID, p, op)
 
 	case "workRecord":
 		if op.Op != "upsert" {
@@ -331,7 +349,7 @@ func applyPushEntity(ctx context.Context, tx pgx.Tx, farmID, deviceID string,
 	return rejected(op.OpID, domain.BadRequest("unknown entity `"+op.Entity+"`"))
 }
 
-func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, op pushOp) store.SyncOpResult {
+func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, p *auth.Principal, op pushOp) store.SyncOpResult {
 	var payload struct {
 		ID           string  `json:"id"`
 		Name         string  `json:"name"`
@@ -360,7 +378,7 @@ func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, op pushOp) store.
 	// The status transition. A deletion is logical on both sides, so this is a
 	// flag and never a DELETE.
 	if payload.DeletedAt != nil && e.DeletedAt == nil {
-		if err := store.SoftDeleteEmployee(ctx, tx, e.ID); err != nil && err != store.NoRows {
+		if err := store.SoftDeleteEmployee(ctx, tx, e.ID, principalUserID(p)); err != nil && err != store.NoRows {
 			return rejected(op.OpID, err)
 		}
 	}
@@ -477,6 +495,22 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 		if store.IsUniqueViolation(err, "") {
 			return duplicate(op.OpID, payload.ID)
 		}
+		return rejected(op.OpID, err)
+	}
+
+	// Decision 8. The weighing is in; if it belongs to somebody who had been
+	// taken off the payroll and it happened AFTER that decision, the person
+	// comes back on, and the reactivation is recorded with this weighing and
+	// this handset against it. A weighing older than the deactivation leaves
+	// the decision standing — see store.ReactivateForWork.
+	//
+	// The failure is not swallowed: an unrecorded reactivation is exactly the
+	// silent undo the owner's condition forbids, so if the audit row cannot be
+	// written the whole envelope is rejected and nothing was reactivated.
+	if _, err := store.ReactivateForWork(ctx, tx, farmID, store.NewReactivation{
+		ID: newID(), EmployeeID: payload.WorkerID, WorkRecordID: out.ID,
+		WorkedAt: occurred, DeviceID: device, Source: "sync", By: principalUserID(p),
+	}); err != nil {
 		return rejected(op.OpID, err)
 	}
 	return applied(op.OpID, out.ID, true)

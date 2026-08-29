@@ -27,18 +27,25 @@ type Farm struct {
 	AreaHa      *float64   `json:"areaHa"`
 	SuspendedAt *time.Time `json:"suspendedAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
+	// MoneyReadOnly is the phase 4 switch of docs/sincronizacion.md: for the
+	// hour the season import runs, the handsets may record weighings and may
+	// not settle, pay or void. It is a pointer so a PUT that does not mention
+	// it leaves it alone, like every other field on this record.
+	MoneyReadOnly *bool `json:"moneyReadOnly"`
 	// PriceMinor is a pointer so the weigher's projection can omit it
 	// entirely rather than send a zero, which would read as "free".
 	PriceMinor *int64 `json:"priceCents,omitempty"`
 }
 
 const farmCols = `f.id::text, f.name, f.timezone, f.currency, f.minor_unit, f.phone,
-	f.country, f.city, f.address, f.area_ha::float8, f.suspended_at, f.created_at`
+	f.country, f.city, f.address, f.area_ha::float8, f.suspended_at, f.created_at,
+	f.money_read_only`
 
 func scanFarm(row pgx.Row) (*Farm, error) {
 	var f Farm
 	err := row.Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.MinorUnit, &f.Phone,
-		&f.Country, &f.City, &f.Address, &f.AreaHa, &f.SuspendedAt, &f.CreatedAt)
+		&f.Country, &f.City, &f.Address, &f.AreaHa, &f.SuspendedAt, &f.CreatedAt,
+		&f.MoneyReadOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +96,12 @@ func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm) (*Farm, error) {
 			country  = coalesce($5, f.country),
 			city     = coalesce($6, f.city),
 			address  = coalesce($7, f.address),
-			area_ha  = coalesce($8, f.area_ha)
+			area_ha  = coalesce($8, f.area_ha),
+			money_read_only = coalesce($9, f.money_read_only)
 		 WHERE f.id = current_farm()
 		 RETURNING `+farmCols,
 		nilIfEmpty(f.Name), nilIfEmpty(f.Timezone), nilIfEmpty(f.Currency),
-		f.Phone, f.Country, f.City, f.Address, f.AreaHa))
+		f.Phone, f.Country, f.City, f.Address, f.AreaHa, f.MoneyReadOnly))
 	if err != nil {
 		return nil, err
 	}

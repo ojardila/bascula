@@ -282,6 +282,13 @@ func guardStock(r *http.Request, productID, warehouseID string, qty float64) err
 	if err != nil {
 		return err
 	}
+	// Serialise on the product before the SUM is read, or the guard measures a
+	// number that another request is already spending. See
+	// store.LockProductForStock: without this, five concurrent sales of a
+	// hundred units against a hundred on hand all passed.
+	if err := store.LockProductForStock(r.Context(), tx, productID); err != nil {
+		return err
+	}
 	onHand, err := store.StockOnHand(r.Context(), tx, productID, warehouseID)
 	if err != nil {
 		return err

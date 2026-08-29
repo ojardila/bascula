@@ -54,6 +54,15 @@ const (
 	CodeDuplicateDocument     Code = "DUPLICATE_DOCUMENT"
 	CodeDuplicateName         Code = "DUPLICATE_NAME"
 
+	// LAST_OWNER refuses the change that would leave a farm with nobody who
+	// can administer it. A farm with no owner cannot be repaired from inside
+	// the product: nobody left may write the farm record, set a price or
+	// promote anybody, and the fix is somebody with a psql prompt. It is a
+	// code of its own rather than a plain 409 because the screen has to say
+	// something specific — name another owner first — and branching on a
+	// message is not branching.
+	CodeLastOwner Code = "LAST_OWNER"
+
 	// GROSS_CHANGED is the answer to §5.5 of docs/sincronizacion.md: the
 	// settlement would not add up to the figure the caller was shown by
 	// /v1/settlements/preview, so nothing is written.
@@ -133,6 +142,7 @@ func AllCodes() []Code {
 		CodeAlreadyReversed, CodeNothingToSettle, CodeAmountExceedsBalance,
 		CodeInvalidGeometry, CodePlotHasActiveCrops, CodeNoRateInForce,
 		CodeRangeNeedsFrozenRate, CodeDuplicateDocument, CodeDuplicateName,
+		CodeLastOwner,
 		CodeGrossChanged, CodeEmployeeExistsDeleted,
 		CodeCursorTooOld, CodeSchemaTooOld, CodeImportMismatch,
 		CodeIdempotencyKeyReused,

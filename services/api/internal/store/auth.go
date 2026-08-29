@@ -59,6 +59,18 @@ func CreateUser(ctx context.Context, tx pgx.Tx, u User) error {
 	return err
 }
 
+// VerifyUserEmail marks an address proven. It is called on the invite path
+// only: there the address is vouched for by a member of the farm with a
+// session, which is a different act from the open signup, where the token in
+// the mailbox is the ONLY thing standing between a stranger and a farm
+// registered against somebody else's address.
+func VerifyUserEmail(ctx context.Context, tx pgx.Tx, userID string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users SET email_verified_at = coalesce(email_verified_at, now())
+		 WHERE id = $1`, userID)
+	return err
+}
+
 // CountOwnedFarms is the per-email cap on the open signup: the most exposed
 // surface in the system needs a ceiling that is not just a rate limit.
 func CountOwnedFarms(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
@@ -127,6 +139,126 @@ func GetMembership(ctx context.Context, tx pgx.Tx, farmID, userID string) (*Memb
 		return nil, err
 	}
 	return &m, nil
+}
+
+// ---------------------------------------------------------------------------
+// The people who can log in to a farm (/v1/users)
+//
+// The membership is the row that matters. A `user` is global — one address, one
+// password, possibly several farms — and a `membership` is what gives that
+// account a role inside THIS farm. Every function below is scoped by the
+// membership for that reason: `users` has no farm_id and therefore no RLS
+// policy, so a query that started from users and filtered afterwards would be
+// reading across the whole platform and relying on a WHERE clause to be right.
+// ---------------------------------------------------------------------------
+
+// FarmUser is one member of the farm as the console lists them.
+type FarmUser struct {
+	ID              string      `json:"id"`
+	Email           string      `json:"email"`
+	Name            string      `json:"name"`
+	Role            domain.Role `json:"role"`
+	EmailVerifiedAt *time.Time  `json:"emailVerifiedAt"`
+	CreatedAt       time.Time   `json:"createdAt"`
+}
+
+func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at
+		  FROM memberships m JOIN users u ON u.id = m.user_id
+		 WHERE m.farm_id = current_farm()
+		 ORDER BY m.role, lower(u.email)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []FarmUser{}
+	for rows.Next() {
+		var u FarmUser
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt,
+			&u.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// GetFarmUser is one member OF THIS FARM. It answers pgx.ErrNoRows for a user
+// who exists on the platform but not here, which is the whole point: a PATCH
+// addressed at somebody else's account must be a 404 and never a role change.
+func GetFarmUser(ctx context.Context, tx pgx.Tx, userID string) (*FarmUser, error) {
+	var u FarmUser
+	err := tx.QueryRow(ctx, `
+		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at
+		  FROM memberships m JOIN users u ON u.id = m.user_id
+		 WHERE m.farm_id = current_farm() AND m.user_id = $1`, userID).
+		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// CountFarmOwners is the farm's floor: it may never reach zero.
+//
+// It is counted inside the same transaction as the change that would lower it,
+// and the row is locked, so two administrators demoting the last two owners at
+// the same moment cannot both read "there are two" and both succeed.
+func CountFarmOwners(ctx context.Context, tx pgx.Tx) (int, error) {
+	var n int
+	// The lock is inside the subquery because FOR UPDATE and an aggregate
+	// cannot share a SELECT. Counting the locked rows is the same thing and
+	// Postgres accepts it.
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM (
+			SELECT 1 FROM memberships
+			 WHERE farm_id = current_farm() AND role = 'owner'
+			 FOR UPDATE) locked`).Scan(&n)
+	return n, err
+}
+
+func SetMembershipRole(ctx context.Context, tx pgx.Tx, userID string, role domain.Role) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE memberships SET role = $2
+		 WHERE farm_id = current_farm() AND user_id = $1`, userID, role)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return NoRows
+	}
+	return nil
+}
+
+// DeleteMembership takes the account's access to this farm away. It is a real
+// DELETE and the one in this service, and that is not a contradiction of
+// "eliminar nunca borra": what is removed is a permission, not a person. The
+// user row, their other farms and everything they ever wrote here stay exactly
+// where they were — work records and ledger entries point at users(id), which
+// is untouched.
+func DeleteMembership(ctx context.Context, tx pgx.Tx, userID string) error {
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM memberships WHERE farm_id = current_farm() AND user_id = $1`, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return NoRows
+	}
+	return nil
+}
+
+// RevokeUserSessions kills every refresh token this account holds on this
+// farm. Removing somebody's access while their phone keeps a live refresh
+// token would leave them logged in for sixty days after being removed, which
+// is not "access removed", it is "access removed eventually".
+func RevokeUserSessions(ctx context.Context, tx pgx.Tx, farmID, userID string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = now()
+		 WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL`, farmID, userID)
+	return err
 }
 
 // ---------------------------------------------------------------------------

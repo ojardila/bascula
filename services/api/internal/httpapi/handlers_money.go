@@ -272,6 +272,77 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, createdStatus(created), settlement)
 }
 
+// handleListSettlements is the list the console had to compose for itself.
+//
+// Until this route existed, "las liquidaciones de la finca" was assembled by
+// walking every employee's ledger and grouping the `devengo` entries by their
+// settlementId. That is correct and it is one request per worker for one
+// screen, so it stops working on the first farm with two hundred people.
+//
+// Filters: `workerId`, `status`, and a date range over the PERIOD the
+// settlement covers (see store.SettlementFilter for why the period and not
+// created_at). Paged by `limit` and `offset`, with a real total.
+func (s *Server) handleListSettlements(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := store.SettlementFilter{
+		EmployeeID: q.Get("workerId"),
+		Status:     q.Get("status"),
+		Limit:      limitParam(r, 50),
+		Offset:     offsetParam(r),
+	}
+	// An unrecognised status is a 400 and not an empty list, for the reason
+	// validStatus gives on the worker routes: "status":"Void" quietly matching
+	// nothing is how a filter ships broken and nobody notices for a month.
+	switch f.Status {
+	case "", "open", "void":
+	case "all":
+		f.Status = ""
+	default:
+		writeError(w, r, domain.BadRequest(`status must be "open", "void" or "all"`))
+		return
+	}
+	if f.Limit > 200 {
+		f.Limit = 200
+	}
+	// The range is optional here — a console opening the screen has no dates
+	// yet — but half a range is not: a `from` with no `to` is an unbounded
+	// window somebody thought they had bounded.
+	var from, to *time.Time
+	if q.Get("from") != "" || q.Get("to") != "" {
+		a, b, err := parseRange(q.Get("from"), q.Get("to"))
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		from, to = &a, &b
+	}
+	f.From, f.To = from, to
+
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// Narrowing by a worker of another farm would answer "this person has
+	// never been settled", which is a clean, believable, wrong screen. Confirm
+	// the worker is ours first; a miss falls through to the ordinary 404.
+	if f.EmployeeID != "" {
+		if _, err := store.GetEmployee(r.Context(), tx, f.EmployeeID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	items, total, err := store.ListSettlements(r.Context(), tx, f)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items, "total": total, "limit": f.Limit, "offset": f.Offset,
+	})
+}
+
 func (s *Server) handleGetSettlement(w http.ResponseWriter, r *http.Request) {
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -471,6 +542,24 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	// balance as zero and refuses with AMOUNT_EXCEEDS_BALANCE — an answer that
 	// looks like a business rule and is really a tenant leak wearing a hat.
 	if _, err := store.GetEmployee(r.Context(), tx, body.WorkerID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	// Serialise every decision about this person's money, per person, for the
+	// rest of the transaction — see store.LockEmployeeForMoney.
+	//
+	// It is taken for EVERY movement and not only for the ones that check a
+	// balance. An `anticipo` takes no decision from the balance but it MOVES
+	// it, so a payment that read the balance before an advance landed and wrote
+	// after it would overpay by the advance. Locking only the deciders would
+	// leave that door open and look like it had closed it.
+	//
+	// The position is exact: after the idempotency check above, so a resent
+	// full payment still answers with the payment that already exists, and
+	// before the balance is derived below, because a lock taken after the read
+	// serialises nothing at all.
+	if err := store.LockEmployeeForMoney(r.Context(), tx, body.WorkerID); err != nil {
 		writeError(w, r, err)
 		return
 	}

@@ -1,8 +1,10 @@
 // Command api is the Bascula multi-tenant HTTP service.
 //
-// It has two jobs and a flag to pick between them: serve, or run the
-// migrations. Migrations are a deliberate separate step, run before the
-// rollout — five replicas booting at once and all running goose is a race.
+// It has three jobs and a flag to pick between them: serve, run the
+// migrations, or sweep the sync feed. The two out-of-band jobs are deliberate
+// separate steps — five replicas booting at once and all running goose is a
+// race, and pruning an append-only table is not something a request-serving
+// process should be able to do at all.
 package main
 
 import (
@@ -18,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/httpapi"
 	"github.com/ojardila/bascula/services/api/internal/store"
@@ -25,19 +29,21 @@ import (
 
 func main() {
 	migrateOnly := flag.Bool("migrate", false, "apply pending migrations and exit")
+	pruneOnly := flag.Bool("prune", false,
+		"sweep the superseded rows out of sync_log and the expired rows out of sync_ops, then exit")
 	flag.Parse()
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 
-	if err := run(*migrateOnly); err != nil {
+	if err := run(*migrateOnly, *pruneOnly); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(migrateOnly bool) error {
+func run(migrateOnly, pruneOnly bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -56,6 +62,33 @@ func run(migrateOnly bool) error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 		slog.Info("migrations applied")
+		return nil
+	}
+
+	// The sweep of docs/sincronizacion.md §3.4. It runs on the ADMIN url for
+	// the same reason migrations do: sync_log is append-only and DELETE is
+	// revoked from the application role, so the process that serves requests
+	// cannot prune the feed even by accident. A scheduler runs this nightly;
+	// it is idempotent and there is nothing to co-ordinate if two run at once.
+	if pruneOnly {
+		pruneCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		admin, err := pgxpool.New(pruneCtx, adminDSN)
+		if err != nil {
+			return fmt.Errorf("prune: connect: %w", err)
+		}
+		defer admin.Close()
+		rep, err := store.PruneSync(pruneCtx, admin,
+			store.SyncLogRetentionDays, store.SyncOpsRetentionDays)
+		if err != nil {
+			return fmt.Errorf("prune: %w", err)
+		}
+		slog.Info("sync feed pruned",
+			"syncLogDeleted", rep.SyncLogDeleted,
+			"syncOpsDeleted", rep.SyncOpsDeleted,
+			"syncLogRetentionDays", store.SyncLogRetentionDays,
+			"syncOpsRetentionDays", store.SyncOpsRetentionDays,
+			"took", rep.Took.String())
 		return nil
 	}
 

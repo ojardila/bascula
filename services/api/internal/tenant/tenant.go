@@ -23,6 +23,7 @@ type ctxKey int
 const (
 	txKey ctxKey = iota
 	farmKey
+	keepKey
 )
 
 // Tx returns the transaction serving this request.
@@ -52,6 +53,44 @@ func FarmID(ctx context.Context) (string, error) {
 func HasFarm(ctx context.Context) bool {
 	id, _ := ctx.Value(farmKey).(string)
 	return id != ""
+}
+
+// keepChanges is the flag KeepChanges sets and Middleware reads. It is a
+// pointer on the context because the handler runs with a derived context the
+// middleware never sees again.
+type keepChanges struct{ keep bool }
+
+// KeepChanges tells the middleware to COMMIT this request's transaction even
+// though the response is an error.
+//
+// It exists for one shape, and it is a narrow one: a handler that has to record
+// something durable AND answer 4xx. The only case today is a reused refresh
+// token, where the whole token family is revoked and the answer is 401.
+//
+// # Why this and not a second connection
+//
+// The obvious alternative — write the durable part on another pool connection,
+// so it survives the rollback — is what this replaced, and it took the platform
+// down twice over. Revoking on a second connection while the request
+// transaction held row locks on the same rows was a self-deadlock that Postgres
+// could not see as one, because the first transaction was waiting on the
+// application rather than on the database. And even with the locks removed, a
+// handler that holds one pool connection and asks for a second needs TWO of the
+// ten to make progress: a dozen concurrent requests deadlock the pool itself,
+// with no lock and no database involved at all. Both failures took out every
+// farm, and /health kept answering through both, because it touches no
+// database.
+//
+// So: one connection per request, always. This is how a handler keeps a write
+// without asking for a second.
+//
+// The obligation it puts on the caller is real and there is no way around it:
+// EVERYTHING the transaction has written up to that point is committed. Call it
+// only when the writes so far are exactly the ones that must survive.
+func KeepChanges(ctx context.Context) {
+	if k, ok := ctx.Value(keepKey).(*keepChanges); ok && k != nil {
+		k.keep = true
+	}
 }
 
 func withTx(ctx context.Context, tx pgx.Tx) context.Context {
@@ -87,6 +126,8 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			}()
 
 			ctx = withTx(ctx, tx)
+			keep := &keepChanges{}
+			ctx = context.WithValue(ctx, keepKey, keep)
 
 			if p, ok := auth.PrincipalFrom(ctx); ok && p.FarmID != "" {
 				if err := setContext(ctx, tx, p); err != nil {
@@ -99,8 +140,11 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r.WithContext(ctx))
 
-			// A write that answered 4xx or 5xx must not leave rows behind.
-			if rec.status < 400 {
+			// A write that answered 4xx or 5xx must not leave rows behind —
+			// unless the handler said otherwise with KeepChanges, which is how
+			// a deliberate side effect survives an error response without
+			// reaching for a second pool connection. See KeepChanges.
+			if rec.status < 400 || keep.keep {
 				if err := tx.Commit(ctx); err != nil {
 					// Nothing useful can be written now: the handler already
 					// sent its status line.

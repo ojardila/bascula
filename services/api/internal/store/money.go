@@ -235,6 +235,110 @@ type Settlement struct {
 	Items       []Payable  `json:"items"`
 }
 
+// SettlementSummary is one row of the list: a settlement without its lines,
+// plus the two things a list has to show that the header alone does not carry
+// — whose it is, and how many lines are under it.
+//
+// The worker's name is joined here rather than looked up by the caller for one
+// reason: the console listing thirty settlements would otherwise make thirty
+// more requests, which is the same N+1 the debt entry complains about.
+// `itemCount` counts the LIVE lines: a voided settlement's lines are still
+// there, and a list that counted them would say a cancelled document still
+// claims twelve weighings.
+type SettlementSummary struct {
+	Settlement
+	WorkerName string `json:"workerName"`
+	ItemCount  int    `json:"itemCount"`
+}
+
+// SettlementFilter is what the console narrows the list by.
+type SettlementFilter struct {
+	EmployeeID string
+	// Status is "open", "void" or "" for both. It is validated by the handler:
+	// an unrecognised value must be a 400 and not a silently empty list.
+	Status string
+	// From and To bound the PERIOD the settlement covers, by overlap: a
+	// settlement is in range if any part of its period is. The period and not
+	// created_at, because the period is what the person asking has in mind —
+	// "las liquidaciones de la quincena pasada" is about the fortnight worked,
+	// not about the hour the button was pressed — and because created_at is a
+	// timestamp in a timezone, which a date filter would silently misread at
+	// the edges.
+	From, To *time.Time
+	Limit    int
+	Offset   int
+}
+
+// ListSettlements is the route the console had to do without: until now it
+// composed the list by walking every employee's ledger looking for entries
+// with a settlementId, which works and is O(workers) requests for one screen.
+//
+// The total is a real COUNT over the filtered set, computed in the same
+// statement by a window so it cannot disagree with the page. It is not an
+// estimate and it is not the page length.
+func ListSettlements(ctx context.Context, tx pgx.Tx, f SettlementFilter) ([]SettlementSummary, int64, error) {
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT s.id::text, s.employee_id::text, e.name || coalesce(' ' || e.last_name, ''),
+		       s.period_start, s.period_end, s.gross_minor, s.status::text, s.note,
+		       s.created_at, s.voided_at,
+		       (SELECT count(*) FROM settlement_items si
+		         WHERE si.settlement_id = s.id AND si.voided_at IS NULL),
+		       count(*) OVER ()
+		  FROM settlements s
+		  JOIN employees e ON e.farm_id = s.farm_id AND e.id = s.employee_id
+		 WHERE ($1::uuid IS NULL OR s.employee_id = $1)
+		   AND ($2::text IS NULL OR s.status::text = $2)
+		   AND ($3::date IS NULL OR s.period_end   >= $3)
+		   AND ($4::date IS NULL OR s.period_start <= $4)
+		 ORDER BY s.created_at DESC, s.id DESC
+		 LIMIT $5 OFFSET $6`,
+		nilUUID(f.EmployeeID), nilIfEmpty(f.Status), f.From, f.To, f.Limit, f.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := []SettlementSummary{}
+	var total int64
+	for rows.Next() {
+		var s SettlementSummary
+		if err := rows.Scan(&s.ID, &s.EmployeeID, &s.WorkerName, &s.PeriodStart, &s.PeriodEnd,
+			&s.GrossMinor, &s.Status, &s.Note, &s.CreatedAt, &s.VoidedAt,
+			&s.ItemCount, &total); err != nil {
+			return nil, 0, err
+		}
+		// The lines are deliberately absent from a list row and the field is
+		// an empty array rather than null: a client that renders `items`
+		// without checking gets nothing, not a crash, and nobody mistakes the
+		// summary for a settlement whose lines went missing.
+		s.Items = []Payable{}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if len(out) == 0 {
+		// COUNT(*) OVER () has no row to ride on when the page is empty. The
+		// count is then genuinely unknown from this statement, and answering
+		// zero would be a guess that happens to be right only sometimes: page
+		// 4 of a 3-page result is empty and the total is not zero. So it is
+		// asked for separately rather than assumed.
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM settlements s
+			 WHERE ($1::uuid IS NULL OR s.employee_id = $1)
+			   AND ($2::text IS NULL OR s.status::text = $2)
+			   AND ($3::date IS NULL OR s.period_end   >= $3)
+			   AND ($4::date IS NULL OR s.period_start <= $4)`,
+			nilUUID(f.EmployeeID), nilIfEmpty(f.Status), f.From, f.To).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+	return out, total, nil
+}
+
 // Settle turns a set of payables into one settlement and one `devengo`.
 //
 // The anti double-pay lock is the partial unique index

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strconv"
 	"time"
@@ -160,6 +161,34 @@ func StockLevels(ctx context.Context, tx pgx.Tx, productID, warehouseID string) 
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+// LockProductForStock serialises every decision taken FROM a product's
+// existencias, per product, for the rest of the transaction.
+//
+// Exactly the same hole as the balance, in exactly the same shape and for
+// exactly the same reason: existencias are DERIVED — a SUM over stock_moves,
+// with no stored total anywhere, deliberately — so "read what is on hand,
+// decide, write the movement" is three steps that two requests interleave.
+// Five concurrent sales of a hundred units against a hundred on hand were all
+// five accepted, and the warehouse ended at minus four hundred.
+//
+// The lock is on the product row and therefore covers every warehouse of that
+// product at once. That is coarser than the (product, warehouse) pair the guard
+// actually reads, and it is the right trade: contention is per product, and one
+// lock per product cannot deadlock against itself the way two callers taking
+// two different pairs in two different orders can.
+//
+// It must be taken BEFORE the SUM is read. A lock after the read serialises
+// nothing.
+func LockProductForStock(ctx context.Context, tx pgx.Tx, productID string) error {
+	var one int
+	err := tx.QueryRow(ctx,
+		`SELECT 1 FROM products WHERE id = $1 FOR UPDATE`, productID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NoRows
+	}
+	return err
 }
 
 // StockOnHand is the single number for one product in one warehouse. Same

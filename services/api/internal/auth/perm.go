@@ -30,6 +30,16 @@ const (
 	ActionWorkerNotesAdd  Action = "workers.notes.write"
 	ActionWorkerPayables  Action = "workers.payables.read"
 
+	// The audit of decision 8. It is a read of personnel history — who took
+	// somebody off the payroll, and what put them back on — so it sits with
+	// the private file rather than with the worker list.
+	ActionReactivationsRead Action = "workers.reactivations.read"
+
+	// Who can log in to this farm. A membership, not a person: the account is
+	// global and this is the role it holds HERE.
+	ActionUsersRead  Action = "users.read"
+	ActionUsersWrite Action = "users.write"
+
 	ActionPlotsRead     Action = "plots.read"
 	ActionPlotsWrite    Action = "plots.write"
 	ActionPlotsBoundary Action = "plots.boundary.write"
@@ -159,6 +169,27 @@ var Matrix = map[Action]Rule{
 	ActionWorkerNotesRead: {Roles: admins, Money: true},
 	ActionWorkerNotesAdd:  {Roles: admins, Money: true},
 	ActionWorkerPayables:  {Roles: admins, Money: true},
+
+	// The reactivation audit. Administrator only and on the deny list, for the
+	// same reason the notes are: it is a record of decisions taken ABOUT
+	// people — who was taken off the payroll, by whom, and what undid it —
+	// which is the one kind of text decision 1 keeps nailed to the farm. The
+	// weigher's own handset is what triggers most of these rows and he still
+	// does not read them back.
+	ActionReactivationsRead: {Roles: admins, Money: true},
+
+	// User management. Administrator only, and NOT Money: a member list is
+	// names, addresses and roles, and there is not a peso in it. What keeps it
+	// safe is not this flag, it is the two rules in handlers_users.go — a farm
+	// keeps an owner, and nobody grants a role above their own — which no
+	// permission table can express because they depend on the caller's own row.
+	//
+	// Both halves are `admins` rather than `owners`. An owner-only module
+	// would mean a farm cannot add a weigher while the owner is out, which on
+	// a farm is most of the week; the escalation that would otherwise open up
+	// is closed by the grant rule instead, where it belongs.
+	ActionUsersRead:  {Roles: admins},
+	ActionUsersWrite: {Roles: admins},
 
 	ActionPlotsRead:     {Roles: everyone},
 	ActionPlotsWrite:    {Roles: admins},

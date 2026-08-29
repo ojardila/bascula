@@ -154,11 +154,13 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p, _ := auth.PrincipalFrom(r.Context())
+
 	// The status transition runs first, so a body that both reactivates and
 	// renames works: UpdateEmployee only touches rows that are not deleted.
 	switch body.Status {
 	case "inactive":
-		if err := store.SoftDeleteEmployee(r.Context(), tx, id); err != nil && err != store.NoRows {
+		if err := store.SoftDeleteEmployee(r.Context(), tx, id, principalUserID(p)); err != nil && err != store.NoRows {
 			writeError(w, r, err)
 			return
 		}
@@ -196,11 +198,22 @@ func (s *Server) handleDeleteWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if err := store.SoftDeleteEmployee(r.Context(), tx, chi.URLParam(r, "id")); err != nil {
+	p, _ := auth.PrincipalFrom(r.Context())
+	if err := store.SoftDeleteEmployee(r.Context(), tx, chi.URLParam(r, "id"), principalUserID(p)); err != nil {
 		writeError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// principalUserID is the caller's id, or "" when there is no session to name.
+// It exists so a nil principal cannot panic on a path that only wants to write
+// down who did something.
+func principalUserID(p *auth.Principal) string {
+	if p == nil {
+		return ""
+	}
+	return p.UserID
 }
 
 // handleWorkerProfile is the RSP-007 screen in one call: the person, their
@@ -238,13 +251,54 @@ func (s *Server) handleWorkerProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// Decision 8's condition, on the screen of the person it concerns. If this
+	// worker was ever brought back on by an arriving weighing, it says so here,
+	// with the labour and the handset that did it.
+	reactivations, err := store.ListReactivations(r.Context(), tx, id, limitParam(r, 50))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"worker":  worker,
-		"balance": balance,
-		"ledger":  entries,
-		"tasks":   tasks,
-		"notes":   notes,
+		"worker":        worker,
+		"balance":       balance,
+		"ledger":        entries,
+		"tasks":         tasks,
+		"notes":         notes,
+		"reactivations": reactivations,
 	})
+}
+
+// handleListReactivations is the farm-wide audit of decision 8.
+//
+// It is a route of its own and not only a field on the worker's profile,
+// because of who has to read it. The condition the owner attached to the
+// automatic reactivation is that the person who took somebody OFF the payroll
+// can see that it was undone — and that person is not browsing worker files
+// one by one looking for a change. They need one list of what the automatism
+// did, newest first.
+func (s *Server) handleListReactivations(w http.ResponseWriter, r *http.Request) {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	workerID := r.URL.Query().Get("workerId")
+	if workerID != "" {
+		// A filter by somebody else's worker must not read as "nothing was
+		// reactivated for this person". Same rule as every other endpoint that
+		// narrows by a resource: confirm it is ours first.
+		if _, err := store.GetEmployee(r.Context(), tx, workerID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	items, err := store.ListReactivations(r.Context(), tx, workerID, limitParam(r, 100))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // handleWorkerPayables is the RSP-008 screen: one list of work, one list of
@@ -429,6 +483,21 @@ func limitParam(r *http.Request, def int) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
 		return def
+	}
+	return n
+}
+
+// offsetParam reads the page offset. A negative or unparsable one is 0 rather
+// than an error: an offset is a position in a list, and there is no page
+// before the first.
+func offsetParam(r *http.Request) int {
+	raw := r.URL.Query().Get("offset")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0
 	}
 	return n
 }

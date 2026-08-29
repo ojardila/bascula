@@ -394,15 +394,38 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tok.RotatedAt != nil {
+		// Reuse: a replay, or a stolen copy. The whole family dies.
+		//
+		// The revocation has to SURVIVE this response, and this response is a
+		// 401, which the tenant middleware rolls back. It is done here, in the
+		// request's own transaction, and kept with tenant.KeepChanges — ONE
+		// connection, which is the whole point.
+		//
+		// It used to be done twice: once here and once on a second pool
+		// connection so it would outlive the rollback. That took the platform
+		// down two different ways. The second connection waited on row locks
+		// this transaction held and could not release until the handler
+		// returned — a deadlock Postgres cannot see as one, because the waiting
+		// side is the application. And a handler that holds one of the ten pool
+		// connections while asking for a second needs two to make progress, so
+		// a dozen concurrent requests exhaust the pool with no lock involved at
+		// all. Both left every farm unable to log in, and /health kept
+		// answering through both because it touches no database.
+		//
+		// The trigger is the ordinary path, not an attack: a handset on two
+		// bars of signal refreshes, loses the reply, and retries with the same
+		// token.
 		if err := store.RevokeFamily(r.Context(), tx, tok.FamilyID); err != nil {
-			writeError(w, r, err)
+			// Not swallowed. A revocation that failed leaves a token somebody
+			// may have stolen alive, and answering "the session has been
+			// closed" would be a lie about the one thing this branch is for.
+			writeError(w, r, domain.Internal(
+				"could not close the reused session").WithCause(err))
 			return
 		}
-		// The revocation has to survive the response, and this request answers
-		// 401, which rolls back. So it is committed on its own connection.
-		_, _ = s.pool.Exec(r.Context(),
-			`UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL`,
-			tok.FamilyID)
+		// Everything this transaction has written is exactly the revocation
+		// above, which is the obligation KeepChanges puts on its caller.
+		tenant.KeepChanges(r.Context())
 		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
 			"that refresh token was already used; the session has been closed"))
 		return

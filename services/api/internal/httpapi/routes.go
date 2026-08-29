@@ -42,6 +42,15 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/admin/farms", auth.ActionAdminFarmsRead, s.handleListAdminFarms},
 		{http.MethodPatch, "/v1/admin/farms/{id}", auth.ActionAdminFarmsWrite, s.handleSetFarmStatus},
 
+		// Who can log in to this farm. A membership, not a person: the account
+		// is global, the role is per farm. Two rules the permission table
+		// cannot express live in handlers_users.go — a farm always keeps at
+		// least one owner, and nobody grants a role above their own.
+		{http.MethodGet, "/v1/users", auth.ActionUsersRead, s.handleListUsers},
+		{http.MethodPost, "/v1/users", auth.ActionUsersWrite, s.handleInviteUser},
+		{http.MethodPatch, "/v1/users/{id}", auth.ActionUsersWrite, s.handleUpdateUserRole},
+		{http.MethodDelete, "/v1/users/{id}", auth.ActionUsersWrite, s.handleRemoveUser},
+
 		// Workers.
 		{http.MethodGet, "/v1/workers", auth.ActionWorkersRead, s.handleListWorkers},
 		{http.MethodPost, "/v1/workers", auth.ActionWorkersWrite, s.handleCreateWorker},
@@ -52,6 +61,14 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/workers/{id}/payables", auth.ActionWorkerPayables, s.handleWorkerPayables},
 		{http.MethodGet, "/v1/workers/{id}/notes", auth.ActionWorkerNotesRead, s.handleListWorkerNotes},
 		{http.MethodPost, "/v1/workers/{id}/notes", auth.ActionWorkerNotesAdd, s.handleAddWorkerNote},
+
+		// The audit of decision 8. The owner decided that a worker who was
+		// taken off the payroll and turns up with new work comes back on by
+		// himself, and attached one condition: that it is recorded, with the
+		// labour that provoked it and the handset it came from, so the person
+		// who took the decision can see it was undone. This route is that
+		// condition — the list, newest first, for the whole farm.
+		{http.MethodGet, "/v1/reactivations", auth.ActionReactivationsRead, s.handleListReactivations},
 
 		// Plots, with their crops nested: the form is one form.
 		{http.MethodGet, "/v1/plots", auth.ActionPlotsRead, s.handleListPlots},
@@ -117,6 +134,10 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/workers/{id}/balance", auth.ActionBalancesRead, s.handleWorkerBalance},
 		{http.MethodGet, "/v1/workers/{id}/ledger", auth.ActionLedgerRead, s.handleWorkerLedger},
 		{http.MethodPost, "/v1/settlements/preview", auth.ActionSettlementsPreview, s.handleSettlementPreview},
+		// The list. Without it the console composed "the farm's settlements"
+		// by walking every employee's ledger for entries carrying a
+		// settlementId — right, and one request per worker for one screen.
+		{http.MethodGet, "/v1/settlements", auth.ActionSettlementsRead, s.handleListSettlements},
 		{http.MethodPost, "/v1/settlements", auth.ActionSettlementsWrite, s.handleCreateSettlement},
 		{http.MethodGet, "/v1/settlements/{id}", auth.ActionSettlementsRead, s.handleGetSettlement},
 		{http.MethodPost, "/v1/settlements/{id}/void", auth.ActionSettlementsVoid, s.handleVoidSettlement},

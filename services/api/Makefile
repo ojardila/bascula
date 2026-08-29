@@ -2,6 +2,7 @@
 #
 #   make up       start Postgres+PostGIS and wait until it answers
 #   make migrate  apply the migrations (a separate step, before any rollout)
+#   make prune    sweep the sync feed (docs/sincronizacion.md 3.4) — a cron job
 #   make test     run the suite against that same Postgres
 #   make run      serve on :8080
 #   make dev      serve on :8099 with the signup cap lifted, for the e2e suite
@@ -19,7 +20,7 @@ DATABASE_URL       ?= postgres://bascula_api:bascula_api_dev@localhost:$(PGPORT)
 export ADMIN_DATABASE_URL
 export DATABASE_URL
 
-.PHONY: up down migrate test test-verbose run dev build fmt vet tidy psql logs clean
+.PHONY: up down migrate prune test test-verbose run dev build fmt vet tidy psql logs clean
 
 up:
 	docker compose up -d
@@ -35,6 +36,13 @@ down:
 
 migrate:
 	go run ./cmd/api -migrate
+
+# The retention sweep. It runs on ADMIN_DATABASE_URL, like migrations and for
+# the same reason: sync_log is append-only and DELETE is revoked from the
+# application role, so the process that serves requests cannot prune the feed.
+# Schedule it nightly. It is idempotent and safe to run twice.
+prune:
+	go run ./cmd/api -prune
 
 # TEST_ADMIN_DATABASE_URL points the suite at a live Postgres. Without it the
 # database-backed tests skip loudly instead of pretending to pass.

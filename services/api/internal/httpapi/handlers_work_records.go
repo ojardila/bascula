@@ -192,7 +192,36 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		writeError(w, r, err)
 		return
 	}
+
+	// Decision 8, on this door too. The rule and its boundary live in
+	// store.ReactivateForWork; what changes here is only where the work came
+	// from. `deviceId` is whatever the caller named, then whatever the token
+	// carries; on the web console there is neither, and `source: "web"` is
+	// what makes that null mean "a browser" rather than "unknown".
+	device := body.DeviceID
+	if device == nil && principal != nil && principal.DeviceID != "" {
+		device = &principal.DeviceID
+	}
+	if _, err := store.ReactivateForWork(r.Context(), tx, farmID, store.NewReactivation{
+		ID: newID(), EmployeeID: body.WorkerID, WorkRecordID: created.ID,
+		WorkedAt: started, DeviceID: device, Source: reactivationSource(device),
+		By: principalUserID(principal),
+	}); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// reactivationSource names the door the work came through. The legacy
+// /v1/pickups facade and /v1/work-records are both "web" unless the caller
+// named a handset, which is the honest reading: this endpoint is the console,
+// and a device id on it means a phone talking through the old facade.
+func reactivationSource(device *string) string {
+	if device != nil && *device != "" {
+		return "sync"
+	}
+	return "web"
 }
 
 func parseWorkRecordDates(body workRecordRequest) (from, to time.Time, err error) {
