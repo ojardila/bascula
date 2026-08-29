@@ -69,6 +69,21 @@ const (
 	ActionLedgerDeduction    Action = "ledger.deduction"
 	ActionLedgerAdjust       Action = "ledger.adjust"
 	ActionLedgerReverse      Action = "ledger.reverse"
+
+	// Products, inventory, sales and expenses. Every one of these is Money in
+	// the table below — see the note there.
+	ActionProductsRead  Action = "products.read"
+	ActionProductsWrite Action = "products.write"
+	ActionStockRead     Action = "stock.read"
+	ActionStockWrite    Action = "stock.write"
+	ActionSalesRead     Action = "sales.read"
+	ActionSalesWrite    Action = "sales.write"
+	ActionSalesVoid     Action = "sales.void"
+	ActionExpensesRead  Action = "expenses.read"
+	ActionExpensesWrite Action = "expenses.write"
+
+	ActionUploadsRead  Action = "uploads.read"
+	ActionUploadsWrite Action = "uploads.write"
 )
 
 // Rule is one row of the permission table.
@@ -80,9 +95,16 @@ type Rule struct {
 	// authenticated member of the farm", which is only used for /me and logout.
 	Roles []domain.Role
 	// Money marks the surface the weigher must never reach: payroll, prices,
-	// balances, settlements, a worker's private file, and (when it exists) the
-	// registry. A contract test walks this table and asserts 403 for the
-	// weigher on every one of them.
+	// balances, settlements, a worker's private file, sales, expenses,
+	// existencias, and (when it exists) the registry. A contract test walks
+	// this table and asserts 403 for the weigher on every one of them.
+	//
+	// Stock is on that list even though a sack of coffee is not a peso.
+	// docs/modelo-datos.md §9 is explicit: "ventas, gastos y stock_moves
+	// quedan fuera del pesador con la misma forma que ledger". The flag is
+	// what the contract test walks, so anything the weigher must not see
+	// carries it — the name is about payroll because that is where it
+	// started, not because that is where it stops.
 	Money bool
 	// TenantOptional marks actions that run before a farm is chosen. Every
 	// other action goes through the tenant middleware and gets a transaction
@@ -170,6 +192,32 @@ var Matrix = map[Action]Rule{
 	ActionLedgerDeduction:    {Roles: admins, Money: true},
 	ActionLedgerAdjust:       {Roles: admins, Money: true},
 	ActionLedgerReverse:      {Roles: admins, Money: true},
+
+	// Productos, inventario, ventas y gastos. All admin, all Money.
+	//
+	// The weigher is kept out of the whole surface and not only out of the
+	// prices in it, because "al entrar a cualquier modulo sin privilegios, el
+	// sistema notifica la carencia y saca al usuario del modulo" is what the
+	// use cases say about a module, and because a product list carries its
+	// existencias: RSP-018 puts "unidades existentes" on the very first
+	// screen, so there is no reduced projection of it worth the trouble.
+	ActionProductsRead:  {Roles: admins, Money: true},
+	ActionProductsWrite: {Roles: admins, Money: true},
+	ActionStockRead:     {Roles: admins, Money: true},
+	ActionStockWrite:    {Roles: admins, Money: true},
+	ActionSalesRead:     {Roles: admins, Money: true},
+	ActionSalesWrite:    {Roles: admins, Money: true},
+	ActionSalesVoid:     {Roles: admins, Money: true},
+	ActionExpensesRead:  {Roles: admins, Money: true},
+	ActionExpensesWrite: {Roles: admins, Money: true},
+
+	// Uploads are not money and not on the deny list: they are photographs.
+	// They are administrator-only all the same, because the two things that
+	// carry one — an employee's file and a sale receipt — are both
+	// administrator work, and an upload endpoint open to every role is a
+	// place to put five megabytes of anything.
+	ActionUploadsRead:  {Roles: admins},
+	ActionUploadsWrite: {Roles: admins},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

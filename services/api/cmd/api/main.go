@@ -83,6 +83,16 @@ func run(migrateOnly bool) error {
 
 	cfg := httpapi.DefaultConfig()
 	cfg.DevEcho = devEcho
+	// Where uploaded photos and receipts land. There is no object storage in
+	// this environment, so internal/blob writes to disk and this is the
+	// directory. It must be a volume that survives a restart and is shared by
+	// every replica; the default under /tmp is a development convenience and
+	// nothing else, which is why it is warned about.
+	cfg.UploadDir = os.Getenv("UPLOAD_DIR")
+	if cfg.UploadDir == "" && !devEcho {
+		return errors.New("UPLOAD_DIR is required outside development: " +
+			"uploads go to a directory, and the default one is temporary")
+	}
 	if n, err := strconv.Atoi(os.Getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
 		cfg.SignupsPerIPPerHour = n
 	}

@@ -297,7 +297,7 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 
 			case "settle":
 				id := newGoldenID()
-				_, err := store.Settle(ctx, tx, farmID, r.people[ev.PersonID], id,
+				_, _, err := store.Settle(ctx, tx, farmID, r.people[ev.PersonID], id,
 					day(ev.From), day(ev.To), nil, optionalText(ev.Note),
 					r.farm.OwnerUserID, on)
 				if err != nil {
@@ -321,14 +321,14 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 				if ev.Method != "" {
 					entry.Method = &ev.Method
 				}
-				if _, err := store.AddLedgerEntry(ctx, tx, farmID, entry); err != nil {
+				if _, _, err := store.AddLedgerEntry(ctx, tx, farmID, entry); err != nil {
 					return err
 				}
 				r.recordLedgerSince(ctx, tx)
 
 			case "adjust":
 				// An adjustment is the one kind that arrives already signed.
-				if _, err := store.AddLedgerEntry(ctx, tx, farmID, store.NewLedgerEntry{
+				if _, _, err := store.AddLedgerEntry(ctx, tx, farmID, store.NewLedgerEntry{
 					ID: newGoldenID(), EmployeeID: r.people[ev.PersonID],
 					Kind: domain.KindAdjust, AmountMinor: ev.SignedCents, LocalDay: on,
 					Note: optionalText(ev.Note), CreatedBy: r.farm.OwnerUserID,
@@ -339,7 +339,10 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 
 			case "void":
 				target := r.settlementOrder[ev.SettlementID-1]
-				if _, err := store.VoidSettlement(ctx, tx, farmID, target,
+				// The golden fixtures name no reversal id: they replay a
+				// story once, never a retry, so the idempotency key has
+				// nothing to key on and is deliberately absent.
+				if _, _, err := store.VoidSettlement(ctx, tx, farmID, target, "",
 					r.farm.OwnerUserID, on); err != nil {
 					return err
 				}
@@ -347,7 +350,7 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 
 			case "reverse":
 				target := r.ledgerOrder[ev.LedgerID-1]
-				if _, err := store.ReverseLedgerEntry(ctx, tx, farmID, target,
+				if _, _, err := store.ReverseLedgerEntry(ctx, tx, farmID, target, "",
 					r.farm.OwnerUserID, optionalText(ev.Note), on); err != nil {
 					return err
 				}

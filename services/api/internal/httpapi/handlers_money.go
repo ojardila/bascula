@@ -199,19 +199,19 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, err)
 		return
 	}
-	if existing, err := store.GetSettlement(r.Context(), tx, body.ID); err == nil {
-		writeJSON(w, http.StatusOK, existing)
-		return
-	}
 	p, _ := auth.PrincipalFrom(r.Context())
 
-	settlement, err := store.Settle(r.Context(), tx, farmID, body.WorkerID, body.ID,
+	// The idempotency check lives inside Settle, before it derives anything.
+	// It has to be there and not here: a retry finds its own payables already
+	// locked, so a check that ran after Pending would answer NOTHING_TO_SETTLE
+	// — a business error standing in for a dropped connection.
+	settlement, created, err := store.Settle(r.Context(), tx, farmID, body.WorkerID, body.ID,
 		from, to, body.PayableIDs, body.Note, p.UserID, nil)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, settlement)
+	writeJSON(w, createdStatus(created), settlement)
 }
 
 func (s *Server) handleGetSettlement(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +228,18 @@ func (s *Server) handleGetSettlement(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settlement)
 }
 
+// handleVoidSettlement takes an optional `id`, which names the reversal the
+// void writes and is therefore the key a resent void is recognised by. Without
+// it the second void is a conflict, because there is nothing to tell a retry
+// apart from a second attempt to hand the money back.
 func (s *Server) handleVoidSettlement(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := decodeOptional(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -240,7 +251,8 @@ func (s *Server) handleVoidSettlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
-	settlement, err := store.VoidSettlement(r.Context(), tx, farmID, chi.URLParam(r, "id"), p.UserID, nil)
+	settlement, _, err := store.VoidSettlement(r.Context(), tx, farmID,
+		chi.URLParam(r, "id"), body.ID, p.UserID, nil)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -316,6 +328,12 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		writeError(w, r, domain.BadRequest("amountCents cannot be zero"))
 		return
 	}
+	// Whether the CLIENT chose the id is the whole question. An id we
+	// generated here is new by construction and cannot be a retry of
+	// anything; an id the client chose is the promise openapi.yaml makes at
+	// the top of the file, and the only thing that makes resending a payment
+	// safe.
+	clientChoseID := body.ID != ""
 	if body.ID == "" {
 		body.ID = newID()
 	}
@@ -361,6 +379,35 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
 
+	want := store.NewLedgerEntry{
+		ID: body.ID, EmployeeID: body.WorkerID, Kind: kind, AmountMinor: amount,
+		LocalDay: day, Method: body.Method, Note: body.Note, CreatedBy: p.UserID,
+	}
+
+	// The idempotency check runs BEFORE the balance check, and the order is
+	// the point. Pay off a balance of 100, time out, resend: by then the
+	// balance is zero, and a balance check running first would answer 409
+	// AMOUNT_EXCEEDS_BALANCE — a business rule refusing a payment that has
+	// already been made, which is exactly the answer that tells the foreman
+	// nothing about whether the money went in.
+	if clientChoseID {
+		existing, err := store.FindLedgerEntry(r.Context(), tx, body.ID)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if existing != nil {
+			if !existing.Matches(want, kind) {
+				writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
+					"that id already names a different movement").
+					WithDetails(map[string]any{"existing": existing}))
+				return
+			}
+			writeJSON(w, http.StatusOK, existing)
+			return
+		}
+	}
+
 	// Confirm the worker is ours before deriving anything from their ledger.
 	// Without this, a payment against a worker of another farm reads their
 	// balance as zero and refuses with AMOUNT_EXCEEDS_BALANCE — an answer that
@@ -387,15 +434,12 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		}
 	}
 
-	entry, err := store.AddLedgerEntry(r.Context(), tx, farmID, store.NewLedgerEntry{
-		ID: body.ID, EmployeeID: body.WorkerID, Kind: kind, AmountMinor: amount,
-		LocalDay: day, Method: body.Method, Note: body.Note, CreatedBy: p.UserID,
-	})
+	entry, created, err := store.AddLedgerEntry(r.Context(), tx, farmID, want)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, entry)
+	writeJSON(w, createdStatus(created), entry)
 }
 
 // handleReverseLedger is how a mistake is undone. Nothing in the ledger is
@@ -403,13 +447,17 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 // way back is a movement that cancels the first one exactly, once.
 func (s *Server) handleReverseLedger(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		// ID names the reversal this call writes, and is what makes resending
+		// it safe. Sent again with the same id, the answer is 200 and the
+		// reversal that is already there; sent with a new id against a
+		// movement that is already reversed, it is 409 ALREADY_REVERSED,
+		// because that is a second attempt and not a retry.
+		ID   string  `json:"id"`
 		Note *string `json:"note"`
 	}
-	if r.ContentLength > 0 {
-		if err := decode(r, &body); err != nil {
-			writeError(w, r, err)
-			return
-		}
+	if err := decodeOptional(r, &body); err != nil {
+		writeError(w, r, err)
+		return
 	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -422,12 +470,13 @@ func (s *Server) handleReverseLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
-	entry, err := store.ReverseLedgerEntry(r.Context(), tx, farmID, chi.URLParam(r, "id"), p.UserID, body.Note, nil)
+	entry, created, err := store.ReverseLedgerEntry(r.Context(), tx, farmID,
+		chi.URLParam(r, "id"), body.ID, p.UserID, body.Note, nil)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, entry)
+	writeJSON(w, createdStatus(created), entry)
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
+	"github.com/ojardila/bascula/services/api/internal/blob"
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
@@ -23,6 +24,12 @@ type Config struct {
 	SignupsPerIPPerHour int
 	// MaxFarmsPerEmail caps how many farms one address can own.
 	MaxFarmsPerEmail int
+	// UploadDir is where internal/blob writes uploaded objects. It exists
+	// because this environment has no object storage; the design document
+	// says S3/R2 and internal/blob is the seam that makes swapping to it one
+	// file. Empty means a directory under the system temp, which is right for
+	// a test and wrong for anything else — see the note in cmd/api.
+	UploadDir string
 }
 
 // DefaultConfig is the production posture.
@@ -34,11 +41,21 @@ type Server struct {
 	pool   *pgxpool.Pool
 	signer *auth.Signer
 	cfg    Config
+	blobs  blob.Store
 	router chi.Router
 }
 
+// New builds the server. A failure to prepare the upload directory is fatal
+// rather than deferred: a service that starts and then cannot accept a single
+// receipt photo is a service that fails in front of a customer instead of in
+// front of an operator.
 func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	s := &Server{pool: pool, signer: signer, cfg: cfg}
+	disk, err := blob.NewDisk(cfg.UploadDir)
+	if err != nil {
+		panic(err)
+	}
+	s.blobs = disk
 	s.router = s.buildRouter()
 	return s
 }

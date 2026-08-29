@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -67,12 +68,32 @@ func CreateNote(ctx context.Context, tx pgx.Tx, farmID string, n NewNote) (*Note
 	if err != nil {
 		return nil, err
 	}
+	// ON CONFLICT DO NOTHING for the same reason the ledger has it: the
+	// contract promises every write is idempotent by (farm_id, id), and a
+	// note resent after a timeout must not be a primary key violation dressed
+	// up as a 500. Notes are append-only too, so there is nothing to update —
+	// the row already there is the answer.
 	var out Note
 	err = tx.QueryRow(ctx, `
 		INSERT INTO employee_notes (id, farm_id, employee_id, noted_on, body, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO NOTHING
 		RETURNING `+noteCols,
 		n.ID, farmID, n.EmployeeID, day, n.Body, n.CreatedBy).
+		Scan(&out.ID, &out.EmployeeID, &out.NotedOn, &out.Body, &out.CreatedBy, &out.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GetNote(ctx, tx, n.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNote reads one note back, which is what an idempotent retry answers with.
+func GetNote(ctx context.Context, tx pgx.Tx, id string) (*Note, error) {
+	var out Note
+	err := tx.QueryRow(ctx, `SELECT `+noteCols+` FROM employee_notes WHERE id = $1`, id).
 		Scan(&out.ID, &out.EmployeeID, &out.NotedOn, &out.Body, &out.CreatedBy, &out.CreatedAt)
 	if err != nil {
 		return nil, err

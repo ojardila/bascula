@@ -3,9 +3,11 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -82,7 +84,51 @@ func decode(r *http.Request, v any) error {
 	dec.DisallowUnknownFields()
 	dec.UseNumber()
 	if err := dec.Decode(v); err != nil {
-		return domain.BadRequest("malformed request body").WithCause(err)
+		return domain.BadRequest(decodeMessage(err)).WithCause(err)
 	}
 	return nil
+}
+
+// decodeMessage keeps the field name when the decoder knows it. A bare
+// "malformed request body" sends a client hunting through its own payload for
+// something the server could have named: the one that prompted this was a
+// plain `2026-08-25` in localDay, which the contract asks for and time.Time
+// refuses.
+func decodeMessage(err error) string {
+	var ute *json.UnmarshalTypeError
+	if errors.As(err, &ute) && ute.Field != "" {
+		return fmt.Sprintf("%s: expected %s", ute.Field, ute.Type)
+	}
+	// Errors a field's own UnmarshalJSON returned already say which field they
+	// are about, and say it better than we could from out here.
+	var se *json.SyntaxError
+	if !errors.As(err, &se) && !errors.Is(err, io.EOF) &&
+		!strings.HasPrefix(err.Error(), "json: unknown field") {
+		return err.Error()
+	}
+	if strings.HasPrefix(err.Error(), "json: unknown field") {
+		return err.Error()
+	}
+	return "malformed request body"
+}
+
+// decodeOptional is decode for a body that need not be there. A POST whose
+// every field is optional must still work with no body at all, which is what
+// several clients send today.
+func decodeOptional(r *http.Request, v any) error {
+	if r.ContentLength == 0 {
+		return nil
+	}
+	return decode(r, v)
+}
+
+// createdStatus is the one place the idempotent writes decide between "this is
+// new" and "this is the row that was already there". 201 the first time, 200
+// on the retry — so a client can tell them apart without the answer to a
+// resent payment ever being an error.
+func createdStatus(created bool) int {
+	if created {
+		return http.StatusCreated
+	}
+	return http.StatusOK
 }

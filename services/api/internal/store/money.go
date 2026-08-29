@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"time"
 
@@ -247,15 +248,30 @@ type Settlement struct {
 // gives the same answer today and in three years.
 func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID string,
 	from, to time.Time, payableIDs []string, note *string, createdBy string,
-	on *time.Time) (*Settlement, error) {
+	on *time.Time) (*Settlement, bool, error) {
+
+	// The idempotency check comes FIRST, before anything is derived. It has to:
+	// on a retry the payables are already locked by the very settlement being
+	// retried, so Pending would come back empty and the honest-looking answer
+	// would be 409 NOTHING_TO_SETTLE — a business error covering for a network
+	// one, in front of somebody waiting to be paid.
+	if existing, err := findSettlement(ctx, tx, settlementID); err != nil {
+		return nil, false, err
+	} else if existing != nil {
+		if existing.EmployeeID != employeeID {
+			return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+				"that id already names a settlement for another worker")
+		}
+		return existing, false, nil
+	}
 
 	pending, err := Pending(ctx, tx, employeeID, from, to)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	chosen := filterPayables(pending, payableIDs)
 	if len(chosen) == 0 {
-		return nil, domain.Conflict(domain.CodeNothingToSettle,
+		return nil, false, domain.Conflict(domain.CodeNothingToSettle,
 			"there is nothing to settle in that period")
 	}
 
@@ -273,7 +289,7 @@ func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID str
 		}
 	}
 	if gross <= 0 {
-		return nil, domain.Conflict(domain.CodeNothingToSettle,
+		return nil, false, domain.Conflict(domain.CodeNothingToSettle,
 			"the settlement adds up to nothing")
 	}
 
@@ -285,10 +301,24 @@ func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID str
 		INSERT INTO settlements (id, farm_id, employee_id, period_start, period_end,
 		                         gross_minor, note, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO NOTHING
 		RETURNING created_at`,
 		settlementID, farmID, employeeID, periodStart, to, gross, note, createdBy).Scan(&s.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Two identical requests raced past the check above. The loser reads
+		// back the winner's settlement instead of writing a second one.
+		existing, findErr := findSettlement(ctx, tx, settlementID)
+		if findErr != nil {
+			return nil, false, findErr
+		}
+		if existing == nil {
+			return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+				"that id is already in use")
+		}
+		return existing, false, nil
+	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	for _, p := range chosen {
@@ -301,29 +331,42 @@ func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID str
 		if err != nil {
 			if IsUniqueViolation(err, "ux_items_payable_live") {
 				winner, _ := winningSettlement(ctx, tx, p.PayableID)
-				return nil, domain.Conflict(domain.CodePayableAlreadyClaimed,
+				return nil, false, domain.Conflict(domain.CodePayableAlreadyClaimed,
 					"a payable is already part of a live settlement").
 					WithDetails(map[string]any{
 						"payableId":         p.PayableID,
 						"winningSettlement": winner,
 					}).WithCause(err)
 			}
-			return nil, err
+			return nil, false, err
 		}
 	}
 
 	day, err := dayOrToday(ctx, tx, on)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
 		                    settlement_id, note, created_by)
 		VALUES ($1, $2, $3, 'devengo', $4, $5, $6, $7, $8)`,
 		uuid.NewString(), farmID, employeeID, gross, day, settlementID, note, createdBy); err != nil {
+		return nil, false, err
+	}
+	return &s, true, nil
+}
+
+// findSettlement is GetSettlement with "not there" as a value rather than an
+// error, for the idempotency checks.
+func findSettlement(ctx context.Context, tx pgx.Tx, id string) (*Settlement, error) {
+	out, err := GetSettlement(ctx, tx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	return &s, nil
+	return out, nil
 }
 
 func filterPayables(all []Payable, ids []string) []Payable {
@@ -401,27 +444,47 @@ func GetSettlement(ctx context.Context, tx pgx.Tx, id string) (*Settlement, erro
 // VoidSettlement cancels a settlement without editing a thing. The items keep
 // their rows for the record but get a voided_at, which is what releases their
 // payables from the lock; the earning is cancelled by a reversal, never deleted.
-func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, createdBy string,
-	on *time.Time) (*Settlement, error) {
+//
+// `reversalID` is the client-generated id of the reversal this void writes,
+// and it is the idempotency key of the whole operation. A void has no row of
+// its own to key on — it is a flag and a reversal — so the reversal's id is
+// what a resent request is recognised by. Same three outcomes as
+// ReverseLedgerEntry, for the same reason: with the key it is a safe retry,
+// without one a second void is a second attempt to hand the money back, and
+// this function is not allowed to guess which.
+func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, reversalID, createdBy string,
+	on *time.Time) (*Settlement, bool, error) {
 	var status string
 	if err := tx.QueryRow(ctx,
 		`SELECT status::text FROM settlements WHERE id = $1 FOR UPDATE`, settlementID).
 		Scan(&status); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if status == "void" {
-		return nil, domain.Conflict(domain.CodeSettlementAlreadyVoid,
+		if reversalID != "" {
+			existing, err := FindLedgerEntry(ctx, tx, reversalID)
+			if err != nil {
+				return nil, false, err
+			}
+			// The reversal this very request wrote the first time round.
+			if existing != nil && existing.SettlementID != nil &&
+				*existing.SettlementID == settlementID && existing.Kind == domain.KindReversal {
+				out, err := GetSettlement(ctx, tx, settlementID)
+				return out, false, err
+			}
+		}
+		return nil, false, domain.Conflict(domain.CodeSettlementAlreadyVoid,
 			"the settlement is already void")
 	}
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE settlement_items SET voided_at = now()
 		 WHERE settlement_id = $1 AND voided_at IS NULL`, settlementID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE settlements SET status = 'void', voided_at = now() WHERE id = $1`, settlementID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -430,7 +493,7 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, create
 		 WHERE settlement_id = $1 AND kind = 'devengo'
 		   AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = ledger.id)`, settlementID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	type entry struct {
 		id, employeeID string
@@ -441,29 +504,38 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, create
 		var e entry
 		if err := rows.Scan(&e.id, &e.employeeID, &e.amount); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, false, err
 		}
 		toReverse = append(toReverse, e)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	day, err := dayOrToday(ctx, tx, on)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	for _, e := range toReverse {
+	for i, e := range toReverse {
+		// The caller's id names the first reversal, which in practice is the
+		// only one: Settle writes exactly one devengo per settlement, and
+		// ledger_devengo_has_settlement keeps it that way. Any further ones
+		// get their own ids — they are not what the retry is recognised by.
+		rowID := uuid.NewString()
+		if i == 0 && reversalID != "" {
+			rowID = reversalID
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
 			                    settlement_id, reverses_id, created_by)
 			VALUES ($1, $2, $3, 'reverso', $4, $5, $6, $7, $8)`,
-			uuid.NewString(), farmID, e.employeeID, -e.amount, day, settlementID, e.id, createdBy); err != nil {
-			return nil, err
+			rowID, farmID, e.employeeID, -e.amount, day, settlementID, e.id, createdBy); err != nil {
+			return nil, false, err
 		}
 	}
-	return GetSettlement(ctx, tx, settlementID)
+	out, err := GetSettlement(ctx, tx, settlementID)
+	return out, true, err
 }
 
 // ---------------------------------------------------------------------------
@@ -512,36 +584,160 @@ type NewLedgerEntry struct {
 	CreatedBy   string
 }
 
-// AddLedgerEntry appends one movement. Nothing here is ever edited: the sign
-// rules, the append-only rules and the reversal trigger live in the database,
-// so this function is a plain insert and the constraints do the arguing.
-func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEntry) (*LedgerEntry, error) {
-	d, err := dayOrToday(ctx, tx, e.LocalDay)
+const ledgerCols = `id::text, employee_id::text, kind, amount_minor, local_day,
+	settlement_id::text, method::text, note, reverses_id::text, created_at`
+
+func scanLedgerEntry(row pgx.Row) (*LedgerEntry, error) {
+	var e LedgerEntry
+	err := row.Scan(&e.ID, &e.EmployeeID, &e.Kind, &e.AmountMinor, &e.LocalDay,
+		&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+	return &e, nil
+}
+
+// FindLedgerEntry returns the movement with this id, or (nil, nil) when this
+// farm has none. It is the lookup the idempotent write paths do FIRST, before
+// they derive anything — see the comment on Matches.
+func FindLedgerEntry(ctx context.Context, tx pgx.Tx, id string) (*LedgerEntry, error) {
+	e, err := scanLedgerEntry(tx.QueryRow(ctx,
+		`SELECT `+ledgerCols+` FROM ledger WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// Matches reports whether a movement already in the ledger is the same write
+// the caller is now making — which is what makes resending it safe.
+//
+// It compares only what the client actually stated. A field the client left
+// out cannot disagree with anything, and `date` in particular is derived from
+// the farm's clock when it is absent: comparing a derived day would turn a
+// retry sent after midnight into a spurious conflict.
+//
+// `note` is deliberately NOT compared. It decides no money, and a client that
+// appends "(reintento)" to its note on the second attempt must not be told its
+// payment failed. Everything that decides money is compared, and a difference
+// in any of it is a 409 rather than a shrug.
+func (e *LedgerEntry) Matches(n NewLedgerEntry, kind domain.LedgerKind) bool {
+	if e.EmployeeID != n.EmployeeID || e.Kind != kind || e.AmountMinor != n.AmountMinor {
+		return false
+	}
+	if n.LocalDay != nil && !sameDay(e.LocalDay, *n.LocalDay) {
+		return false
+	}
+	if n.Method != nil && (e.Method == nil || *e.Method != *n.Method) {
+		return false
+	}
+	return true
+}
+
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// AddLedgerEntry appends one movement, idempotently by (farm_id, id).
+//
+// Nothing here is ever edited: the sign rules, the append-only rules and the
+// reversal trigger live in the database, so the insert is plain and the
+// constraints do the arguing. What the insert is NOT is bare.
+//
+// ON CONFLICT DO NOTHING is the whole fix. A bare INSERT answered a resent
+// payment with a primary key violation, which aborts the transaction and
+// surfaces as a 500 — and the foreman who has already handed over the cash has
+// no way to tell whether it landed. That is not a rare edge: a farm with two
+// bars of signal times out, and every client retries on its own.
+//
+// DO NOTHING rather than DO UPDATE, because DO UPDATE needs the UPDATE
+// privilege the app role deliberately does not have on the ledger, and because
+// there is nothing to update: the row that is already there IS the answer.
+//
+// It returns whether it wrote, so the handler can answer 201 the first time
+// and 200 on the retry.
+func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEntry) (*LedgerEntry, bool, error) {
+	d, err := dayOrToday(ctx, tx, e.LocalDay)
+	if err != nil {
+		return nil, false, err
+	}
 	day := &d
-	var out LedgerEntry
-	err = tx.QueryRow(ctx, `
+	out, err := scanLedgerEntry(tx.QueryRow(ctx, `
 		INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
 		                    method, note, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7::pay_method, $8, $9)
-		RETURNING id::text, employee_id::text, kind, amount_minor, local_day,
-		          settlement_id::text, method::text, note, reverses_id::text, created_at`,
-		e.ID, farmID, e.EmployeeID, e.Kind, e.AmountMinor, day, e.Method, e.Note, e.CreatedBy).
-		Scan(&out.ID, &out.EmployeeID, &out.Kind, &out.AmountMinor, &out.LocalDay,
-			&out.SettlementID, &out.Method, &out.Note, &out.ReversesID, &out.CreatedAt)
-	if err != nil {
-		return nil, err
+		ON CONFLICT (id) DO NOTHING
+		RETURNING `+ledgerCols,
+		e.ID, farmID, e.EmployeeID, e.Kind, e.AmountMinor, day, e.Method, e.Note, e.CreatedBy))
+	if err == nil {
+		return out, true, nil
 	}
-	return &out, nil
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, err
+	}
+
+	// The id was taken. Normally the handler has already resolved this and we
+	// only get here when two identical requests raced, but the check is
+	// repeated rather than assumed: this function is the last thing between a
+	// duplicate and the money.
+	existing, err := FindLedgerEntry(ctx, tx, e.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if existing == nil {
+		// A row with that id exists and this farm cannot see it. Saying so is
+		// not an option — that would confirm another farm's id — and 404 would
+		// be a lie about a write that genuinely cannot be performed. The id is
+		// in use; that is all the caller gets, and all it needs.
+		return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+			"that id is already in use")
+	}
+	if !existing.Matches(e, e.Kind) {
+		return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+			"that id already names a different movement").
+			WithDetails(map[string]any{"existing": existing})
+	}
+	return existing, false, nil
 }
 
 // ReverseLedgerEntry cancels a movement with its exact opposite. The unique
-// partial index on reverses_id is what makes it happen once and only once; a
-// second attempt is 409 ALREADY_REVERSED.
-func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, farmID, entryID, createdBy string,
-	note *string, on *time.Time) (*LedgerEntry, error) {
+// partial index on reverses_id is what makes it happen once and only once.
+//
+// `reversalID` is the client-generated id OF THE REVERSAL, and it is what
+// makes retrying safe. With it, the three outcomes are distinct and all three
+// are needed:
+//
+//	same id, already written  -> 200 with the reversal that is already there.
+//	                             The retry the contract promises is safe.
+//	a different id, already reversed -> 409 ALREADY_REVERSED. Not a retry: a
+//	                             second, separate attempt to undo the same
+//	                             movement, and undoing it twice would hand the
+//	                             money back twice.
+//	no id at all              -> 409 ALREADY_REVERSED, because without a key
+//	                             there is no way to tell those two apart, and
+//	                             guessing in favour of "it was a retry" is
+//	                             guessing with somebody's wages.
+func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, farmID, entryID, reversalID, createdBy string,
+	note *string, on *time.Time) (*LedgerEntry, bool, error) {
+	if reversalID != "" {
+		existing, err := FindLedgerEntry(ctx, tx, reversalID)
+		if err != nil {
+			return nil, false, err
+		}
+		if existing != nil {
+			if existing.ReversesID == nil || *existing.ReversesID != entryID {
+				return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+					"that id already names a different movement")
+			}
+			return existing, false, nil
+		}
+	}
+
 	var employeeID string
 	var amount int64
 	var kind domain.LedgerKind
@@ -554,34 +750,41 @@ func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, farmID, entryID, created
 		  FROM ledger WHERE id = $1`, entryID).
 		Scan(&employeeID, &amount, &kind, &settlementID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if kind == domain.KindReversal {
-		return nil, domain.Conflict(domain.CodeAlreadyReversed, "a reversal cannot be reversed")
+		return nil, false, domain.Conflict(domain.CodeAlreadyReversed, "a reversal cannot be reversed")
 	}
 
 	day, err := dayOrToday(ctx, tx, on)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	var out LedgerEntry
-	err = tx.QueryRow(ctx, `
+	newRowID := reversalID
+	if newRowID == "" {
+		newRowID = uuid.NewString()
+	}
+	out, err := scanLedgerEntry(tx.QueryRow(ctx, `
 		INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
 		                    settlement_id, note, reverses_id, created_by)
 		VALUES ($1, $2, $3, 'reverso', $4, $5, $6, $7, $8, $9)
-		RETURNING id::text, employee_id::text, kind, amount_minor, local_day,
-		          settlement_id::text, method::text, note, reverses_id::text, created_at`,
-		uuid.NewString(), farmID, employeeID, -amount, day, settlementID, note, entryID, createdBy).
-		Scan(&out.ID, &out.EmployeeID, &out.Kind, &out.AmountMinor, &out.LocalDay,
-			&out.SettlementID, &out.Method, &out.Note, &out.ReversesID, &out.CreatedAt)
+		ON CONFLICT (id) DO NOTHING
+		RETURNING `+ledgerCols,
+		newRowID, farmID, employeeID, -amount, day, settlementID, note, entryID, createdBy))
 	if err != nil {
 		if IsUniqueViolation(err, "ux_ledger_reverses") {
-			return nil, domain.Conflict(domain.CodeAlreadyReversed,
+			return nil, false, domain.Conflict(domain.CodeAlreadyReversed,
 				"that movement was already reversed").WithCause(err)
 		}
-		return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The id belongs to a row this farm cannot see. Same answer as
+			// AddLedgerEntry, for the same reason.
+			return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+				"that id is already in use")
+		}
+		return nil, false, err
 	}
-	return &out, nil
+	return out, true, nil
 }
 
 func ListLedger(ctx context.Context, tx pgx.Tx, employeeID string, limit int) ([]LedgerEntry, error) {

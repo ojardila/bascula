@@ -53,6 +53,28 @@ const (
 	CodeRangeNeedsFrozenRate  Code = "RANGE_NEEDS_FROZEN_RATE"
 	CodeDuplicateDocument     Code = "DUPLICATE_DOCUMENT"
 	CodeDuplicateName         Code = "DUPLICATE_NAME"
+
+	// IDEMPOTENCY_KEY_REUSED is the other half of the promise openapi.yaml
+	// makes at the top of the file: "every write accepts a client-generated id
+	// and is idempotent by (farm_id, id)".
+	//
+	// Idempotent means resending the SAME write is safe. It does not mean the
+	// id is a slot to be overwritten. If the same id arrives carrying a
+	// different worker or a different amount, that is a client bug, and
+	// answering 200 with the first row would tell the foreman his second
+	// payment went through when nothing was written at all. So it is a 409
+	// with a name of its own — never a silent success, and never a second row.
+	CodeIdempotencyKeyReused Code = "IDEMPOTENCY_KEY_REUSED"
+
+	// Products, inventory, sales and expenses.
+	CodeInsufficientStock    Code = "INSUFFICIENT_STOCK"
+	CodeSaleAlreadyVoid      Code = "SALE_ALREADY_VOID"
+	CodeExpenseTargetInvalid Code = "EXPENSE_TARGET_INVALID"
+
+	// Uploads.
+	CodeUploadTooLarge       Code = "UPLOAD_TOO_LARGE"
+	CodeUploadNotReady       Code = "UPLOAD_NOT_READY"
+	CodeUnsupportedMediaType Code = "UNSUPPORTED_MEDIA_TYPE"
 )
 
 // AllCodes is every code this service can put on the wire, in the order they
@@ -76,6 +98,10 @@ func AllCodes() []Code {
 		CodeAlreadyReversed, CodeNothingToSettle, CodeAmountExceedsBalance,
 		CodeInvalidGeometry, CodePlotHasActiveCrops, CodeNoRateInForce,
 		CodeRangeNeedsFrozenRate, CodeDuplicateDocument, CodeDuplicateName,
+		CodeIdempotencyKeyReused,
+
+		CodeInsufficientStock, CodeSaleAlreadyVoid, CodeExpenseTargetInvalid,
+		CodeUploadTooLarge, CodeUploadNotReady, CodeUnsupportedMediaType,
 	}
 }
 

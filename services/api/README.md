@@ -11,11 +11,70 @@ make run       # serve on :8080
 
 `GET /health` answers without touching the database.
 
-## What sprint 1 built
+## What is built
 
-Auth and open signup, workers, plots with their crops, activities with dated
-rates, work records, and the whole money domain: `pending`, `balance`,
+Sprints 1 and 2: auth and open signup, workers, plots with their crops,
+activities with dated rates, work records, the `/v1/pickups` facade, the
+super-admin console, and the whole money domain — `pending`, `balance`,
 `settle`, `void`, `reverse`, payments, advances, deductions and adjustments.
+
+Sprint 3 adds the three modules the owner wrote and nobody had built:
+
+- **Productos e inventario** (RSP-018 … RSP-025). Product categories and
+  storage units as per-farm catalogues, warehouses, products, and the
+  movements existencias are derived from.
+- **Ventas** (RSP-026 … RSP-029), each writing its outgoing stock movement in
+  the same transaction, and each void giving the stock back.
+- **Gastos** (RSP-030 … RSP-033), charged to an activity or to a plot/crop and
+  never to a person.
+- **File uploads**, so a receipt and an employee photo have somewhere to live.
+
+### Existencias are derived, like the balance
+
+There is no `stock` column and there will not be one. Every quantity this API
+reports is a `SUM` over `stock_moves`, computed on the way out, and
+`stock_moves` is append-only with the same trigger and the same `REVOKE` the
+ledger has. A stored total is a total that some day disagrees with the facts
+underneath it, and when it does nothing can say which of the two is lying. A
+mistake is corrected with its opposite at `/v1/stock/moves/{id}/reverse`.
+
+### A gasto is not a deuda
+
+The use case document uses one word for two things. RSP-030 calls the cost of a
+spraying a *gasto*; RSP-007 calls what an employee owes the farm a *deuda*. On
+a form they look identical. They are not the same thing, and if they were wired
+together, recording the cost of the spraying would take money out of somebody's
+wages.
+
+So `expenses` has no `employee_id` column, nothing under `/v1/expenses` reaches
+the ledger, and a debt goes through `POST /v1/deductions` and nowhere else.
+`TestAnExpenseIsNotADebt` stands between the two.
+
+### The server does not print
+
+RSP-025 says the system prints the identification stickers. It generates the
+batch and returns its id; `/v1/label-batches/{id}` hands over the labels, and
+whatever holds the paper asks for them. A request that blocked on a printer
+would fail a harvest because the paper ran out.
+
+### Uploads, and where the bytes go
+
+Two steps in the shape a presigned URL takes: `POST /v1/uploads` reserves a row
+and answers where to `PUT` the bytes. **There is no object storage in this
+environment**, so `internal/blob` writes to a directory (`UPLOAD_DIR`, required
+outside development) and the upload URL points back at this service. The seam
+is real — swapping in S3/R2 is one file in `internal/blob` and a different
+`uploadUrl`, and no handler changes — and so are its limits: a disk on one box
+does not replicate, and two API processes need a shared volume.
+
+**The 5 MB of RSP-004 is enforced on the bytes that arrive**, not on the size
+the client declared when it asked for the URL — that number is accepted, used
+for an early courtesy refusal, and never stored. The server reads one byte past
+the limit so that "exactly at the limit" is told apart from "over it", writes
+the size IT counted, sniffs the media type from the content rather than the
+header, and a `CHECK` on `attachments` refuses anything over the limit whatever
+wrote it. A pending attachment cannot be hung on a sale or an employee: a
+trigger refuses it.
 
 ## The five decisions that shaped the schema
 
@@ -43,10 +102,24 @@ rates, work records, and the whole money domain: `pending`, `balance`,
    side only.
 
 5. **Catalogues are tables, not enums.** Activity categories, crop types,
-   varieties and work units are per-farm rows reached through
-   `/v1/catalogs/*`, idempotent by `(farm_id, lower(name))`. Enums are only for
-   what the code branches on: `ledger_kind`, `pay_method`, `farm_role`,
-   `settlement_status`, `pay_scheme`, `time_unit`.
+   varieties, work units, product categories and storage units are per-farm
+   rows reached through `/v1/catalogs/*`, idempotent by
+   `(farm_id, lower(name))`. Enums are only for what the code branches on:
+   `ledger_kind`, `pay_method`, `farm_role`, `settlement_status`, `pay_scheme`,
+   `time_unit`, `stock_reason`.
+
+6. **Every write is idempotent by `(farm_id, id)`, the money included.** The
+   contract has always said so; until sprint 3 the ledger did not do it, and a
+   payment resent after a timeout hit the primary key and came back as a 500.
+   On a farm with two bars of signal that is not an edge case, and the person
+   retrying has already handed over the cash. Now every money write takes a
+   client-generated id, a resend answers 200 with the row that is already
+   there, and the same id carrying a different worker or amount is 409
+   `IDEMPOTENCY_KEY_REUSED` — never a silent success and never a second row.
+   `POST /v1/settlements/{id}/void` and `/v1/ledger/{id}/reverse` take the id
+   of the reversal they write, which is what a retry is recognised by; without
+   one, a repeat is still a conflict, because guessing "it was probably a
+   retry" is guessing with somebody's wages.
 
 ## Isolation
 
@@ -104,14 +177,29 @@ The load-bearing ones:
   work records he recorded.
 - **`money_test.go`** — the anti double-pay lock, including the case where the
   query layer is bypassed and only the partial unique index can stop it.
+- **`idempotency_test.go`** — the same money write sent twice leaves one row
+  and answers the same both times, for settle, void, reverse, payment, advance,
+  deduction and adjustment; the same id with a different amount is refused.
+  Including the case where a full payment resent would otherwise come back as
+  `AMOUNT_EXCEEDS_BALANCE`, a business rule standing in for a dropped
+  connection.
+- **`sprint3_test.go`** — existencias derived and movements append-only; a sale
+  and its stock movement written together and voided together; an expense that
+  does not move a worker's balance and an `expenses` table with no column that
+  could; the 5 MB enforced on the bytes that arrive; and the credible zero
+  closed on every new endpoint that sums or lists.
 - **`golden_test.go`** — replays `packages/shared/golden/cases/*.json` through
   the Go domain against real Postgres. Nine cases, the exact cents the phone
   produces.
 
 ## Left for the next sprint
 
-Plot boundaries over HTTP (the column, the GiST index and the `ST_IsValid`
-constraint are already there; there is no endpoint that writes one), media
-uploads, employee notes over HTTP, user management, the `/v1/pickups`
-compatibility facade, super-admin farm administration, and everything in the
-registry schema.
+User management (`/v1/users`), the public repository of activities and products
+that RSP-010 and RSP-018 assume ("trae del repositorio publico en internet"),
+everything in the registry schema, and object storage for uploads — the
+interface is here, the bucket is not.
+
+Also deliberately unbuilt: RSP-022 … RSP-024 do not exist in
+`docs/casos-de-uso.md`, which jumps from RSP-021 to RSP-025. The warehouse
+endpoints under `/v1/warehouses` are what the DDL implies they were, but nobody
+has written the use cases, so nothing was invented beyond a name and a row.

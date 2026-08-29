@@ -20,6 +20,13 @@ const (
 	CatalogActivityCategories Catalog = "activity-categories"
 	CatalogCropTypes          Catalog = "crop-types"
 	CatalogVarieties          Catalog = "varieties"
+
+	// RSP-019's two pickers, both with the "con opción de crear" button, and
+	// the warehouses, which are a name and a row and nothing else: what is in
+	// a bodega is derived from the movements that name it, never stored on it.
+	CatalogProductCategories Catalog = "product-categories"
+	CatalogStorageUnits      Catalog = "storage-units"
+	CatalogWarehouses        Catalog = "warehouses"
 )
 
 // catalogTables is the allow list. The table name is interpolated into SQL, so
@@ -28,6 +35,9 @@ var catalogTables = map[Catalog]string{
 	CatalogActivityCategories: "activity_categories",
 	CatalogCropTypes:          "crop_types",
 	CatalogVarieties:          "varieties",
+	CatalogProductCategories:  "product_categories",
+	CatalogStorageUnits:       "storage_units",
+	CatalogWarehouses:         "warehouses",
 }
 
 // SeedActivityCategories is what a brand new farm starts with. It is a seed,

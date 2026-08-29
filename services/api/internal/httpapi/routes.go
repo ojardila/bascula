@@ -125,5 +125,68 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/deductions", auth.ActionLedgerDeduction, s.handleDeduction},
 		{http.MethodPost, "/v1/adjustments", auth.ActionLedgerAdjust, s.handleAdjustment},
 		{http.MethodPost, "/v1/ledger/{id}/reverse", auth.ActionLedgerReverse, s.handleReverseLedger},
+
+		// Productos e inventario (RSP-018 … RSP-025). The two pickers are
+		// catalogues for the same reason every other picker here is one:
+		// RSP-019 puts an "add it if it is not there" button beside both.
+		{http.MethodGet, "/v1/catalogs/product-categories", auth.ActionProductsRead,
+			s.handleListCatalog(store.CatalogProductCategories)},
+		{http.MethodPost, "/v1/catalogs/product-categories", auth.ActionProductsWrite,
+			s.handleCreateCatalogItem(store.CatalogProductCategories)},
+		{http.MethodGet, "/v1/catalogs/storage-units", auth.ActionProductsRead,
+			s.handleListCatalog(store.CatalogStorageUnits)},
+		{http.MethodPost, "/v1/catalogs/storage-units", auth.ActionProductsWrite,
+			s.handleCreateCatalogItem(store.CatalogStorageUnits)},
+
+		// Bodegas. A place and a name; what is in one is derived from the
+		// movements that name it, never stored on it.
+		{http.MethodGet, "/v1/warehouses", auth.ActionProductsRead,
+			s.handleListCatalog(store.CatalogWarehouses)},
+		{http.MethodPost, "/v1/warehouses", auth.ActionProductsWrite,
+			s.handleCreateCatalogItem(store.CatalogWarehouses)},
+
+		{http.MethodGet, "/v1/products", auth.ActionProductsRead, s.handleListProducts},
+		{http.MethodPost, "/v1/products", auth.ActionProductsWrite, s.handleCreateProduct},
+		{http.MethodGet, "/v1/products/{id}", auth.ActionProductsRead, s.handleGetProduct},
+		{http.MethodPatch, "/v1/products/{id}", auth.ActionProductsWrite, s.handleUpdateProduct},
+		{http.MethodDelete, "/v1/products/{id}", auth.ActionProductsWrite, s.handleDeleteProduct},
+
+		// Existencias: every one of these is a SUM over stock_moves computed
+		// on the way out. There is no stored total anywhere behind them.
+		{http.MethodGet, "/v1/stock", auth.ActionStockRead, s.handleListStock},
+		{http.MethodGet, "/v1/products/{id}/stock", auth.ActionStockRead, s.handleProductStock},
+		{http.MethodGet, "/v1/stock/moves", auth.ActionStockRead, s.handleListStockMoves},
+		{http.MethodPost, "/v1/stock/moves", auth.ActionStockWrite, s.handleCreateStockMove},
+		{http.MethodPost, "/v1/stock/moves/{id}/reverse", auth.ActionStockWrite, s.handleReverseStockMove},
+		{http.MethodGet, "/v1/label-batches/{id}", auth.ActionStockRead, s.handleGetLabelBatch},
+
+		// Ventas (RSP-026 … RSP-029). POST writes the sale and its outgoing
+		// movement in one transaction; DELETE voids it and gives the stock
+		// back, also in one.
+		{http.MethodGet, "/v1/customers", auth.ActionSalesRead, s.handleListCustomers},
+		{http.MethodPost, "/v1/customers", auth.ActionSalesWrite, s.handleCreateCustomer},
+		{http.MethodGet, "/v1/sales", auth.ActionSalesRead, s.handleListSales},
+		{http.MethodPost, "/v1/sales", auth.ActionSalesWrite, s.handleCreateSale},
+		{http.MethodGet, "/v1/sales/{id}", auth.ActionSalesRead, s.handleGetSale},
+		{http.MethodPatch, "/v1/sales/{id}", auth.ActionSalesWrite, s.handleUpdateSale},
+		{http.MethodDelete, "/v1/sales/{id}", auth.ActionSalesVoid, s.handleVoidSale},
+
+		// Gastos (RSP-030 … RSP-033). Nothing here reaches the ledger: an
+		// expense is the farm's accounting, a debt is one person's balance,
+		// and the document calling both of them "gasto" does not make them the
+		// same thing. See handlers_expenses.go.
+		{http.MethodGet, "/v1/expenses", auth.ActionExpensesRead, s.handleListExpenses},
+		{http.MethodPost, "/v1/expenses", auth.ActionExpensesWrite, s.handleCreateExpense},
+		{http.MethodGet, "/v1/expenses/{id}", auth.ActionExpensesRead, s.handleGetExpense},
+		{http.MethodPatch, "/v1/expenses/{id}", auth.ActionExpensesWrite, s.handleUpdateExpense},
+		{http.MethodDelete, "/v1/expenses/{id}", auth.ActionExpensesWrite, s.handleDeleteExpense},
+
+		// Uploads. Two steps in the shape a presigned URL takes, because that
+		// is what this becomes the day there is a bucket. The 5 MB is checked
+		// on the bytes that arrive, not on the number the client declared.
+		{http.MethodPost, "/v1/uploads", auth.ActionUploadsWrite, s.handleCreateUpload},
+		{http.MethodPut, "/v1/uploads/{id}/content", auth.ActionUploadsWrite, s.handlePutUploadContent},
+		{http.MethodGet, "/v1/uploads/{id}", auth.ActionUploadsRead, s.handleGetUpload},
+		{http.MethodGet, "/v1/uploads/{id}/content", auth.ActionUploadsRead, s.handleGetUploadContent},
 	}
 }

@@ -79,6 +79,11 @@ tags:
   - name: work-records
   - name: pickups
   - name: money
+  - name: products
+  - name: stock
+  - name: sales
+  - name: expenses
+  - name: uploads
 
 paths:
 
@@ -1820,6 +1825,12 @@ paths:
         earliest payable taken in — and not whatever window the caller asked
         over: a caller asking from 1970 means "everything outstanding", and
         writing 1970 on the receipt would be nonsense.
+
+        Idempotent by `id`, and the check runs before anything is derived: a
+        retry finds its own payables already locked by the settlement it is
+        retrying, so a check running after that would answer 409
+        NOTHING_TO_SETTLE — a business error covering for a network one, in
+        front of somebody waiting to be paid.
       x-action: settlements.write
       x-roles: [owner, admin]
       requestBody:
@@ -1844,8 +1855,10 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: |
-            NOTHING_TO_SETTLE, or PAYABLE_ALREADY_CLAIMED with
-            `details.payableId` and `details.winningSettlement`.
+            NOTHING_TO_SETTLE, PAYABLE_ALREADY_CLAIMED with
+            `details.payableId` and `details.winningSettlement`, or
+            IDEMPOTENCY_KEY_REUSED when `id` already names a settlement for
+            another worker.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1880,8 +1893,24 @@ paths:
         Without editing a thing. The lines keep their rows for the record but
         gain a `voidedAt`, which is what releases their payables from the lock;
         the earning is cancelled by a reversal, never deleted.
+
+        A void writes no row the caller names, so the reversal's `id` is its
+        idempotency key: resent with the same `id`, it answers 200 with the
+        settlement it already voided. Resent without one, it is 409
+        SETTLEMENT_ALREADY_VOID.
       x-action: settlements.void
       x-roles: [owner, admin]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: The id of the reversal this void writes.
       responses:
         "200":
           description: The settlement, now void.
@@ -1892,7 +1921,10 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: SETTLEMENT_ALREADY_VOID.
+          description: |
+            SETTLEMENT_ALREADY_VOID — the settlement is void and this request
+            named no reversal `id`, so there is no way to tell a retry from a
+            second attempt.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1925,6 +1957,14 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/PaymentInput" }
       responses:
+        "200":
+          description: |
+            The movement that was already there. Resending a write with an id
+            already used by an IDENTICAL write is safe by contract, and this is
+            what safe looks like: 200, the existing row, nothing added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
         "201":
           description: Written to the ledger.
           content:
@@ -1935,7 +1975,17 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: AMOUNT_EXCEEDS_BALANCE, with `details.balanceCents`.
+          description: |
+            AMOUNT_EXCEEDS_BALANCE, with `details.balanceCents`, or
+            IDEMPOTENCY_KEY_REUSED when the id already names a different
+            movement.
+
+            The order matters and is part of the contract: the idempotency
+            check runs BEFORE the balance is derived. Pay a balance off in
+            full, time out, resend — by then the balance is zero, and a
+            balance check running first would answer AMOUNT_EXCEEDS_BALANCE:
+            a business rule standing in for a dropped connection, refusing a
+            payment that has already been made.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1955,6 +2005,14 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/PaymentInput" }
       responses:
+        "200":
+          description: |
+            The movement that was already there. Resending a write with an id
+            already used by an IDENTICAL write is safe by contract, and this is
+            what safe looks like: 200, the existing row, nothing added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
         "201":
           description: Written to the ledger.
           content:
@@ -1964,6 +2022,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdempotencyKeyReused" }
 
   /v1/deductions:
     post:
@@ -1983,6 +2042,14 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/DeductionInput" }
       responses:
+        "200":
+          description: |
+            The movement that was already there. Resending a write with an id
+            already used by an IDENTICAL write is safe by contract, and this is
+            what safe looks like: 200, the existing row, nothing added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
         "201":
           description: Written to the ledger.
           content:
@@ -1992,6 +2059,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdempotencyKeyReused" }
 
   /v1/adjustments:
     post:
@@ -2010,6 +2078,14 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/AdjustmentInput" }
       responses:
+        "200":
+          description: |
+            The movement that was already there. Resending a write with an id
+            already used by an IDENTICAL write is safe by contract, and this is
+            what safe looks like: 200, the existing row, nothing added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerEntry" }
         "201":
           description: Written to the ledger.
           content:
@@ -2019,6 +2095,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/IdempotencyKeyReused" }
 
   /v1/ledger/{id}/reverse:
     parameters:
@@ -2042,6 +2119,17 @@ paths:
             schema:
               type: object
               properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: |
+                    The id OF THE REVERSAL, and the key that makes resending
+                    this call safe. With it, a repeat answers 200 with the
+                    reversal already written. Without it there is nothing to
+                    tell a retry from a second, separate attempt to undo the
+                    same movement, so a repeat is 409 ALREADY_REVERSED —
+                    guessing in favour of "it was probably a retry" would be
+                    guessing with somebody's wages.
                 note: { type: string, nullable: true }
       responses:
         "201":
@@ -2054,7 +2142,1008 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
+          description: |
+            ALREADY_REVERSED when the movement has been reversed by a
+            different request, or IDEMPOTENCY_KEY_REUSED when `id` already
+            names something else.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  # ---------------------------------------------------------------------------
+  # Productos e inventario — RSP-018 … RSP-025
+  #
+  # EXISTENCIAS ARE DERIVED. There is no stored total anywhere behind these
+  # endpoints: every quantity below is a SUM over stock_moves computed on the
+  # way out, the same discipline the balance gets from the ledger and for the
+  # same reason. A stored total is a total that some day disagrees with the
+  # facts underneath it, and when it does nothing can say which one is lying.
+  #
+  # The whole module is on the weigher's deny list, alongside payroll:
+  # docs/modelo-datos.md §9 puts ventas, gastos and stock_moves outside his
+  # reach "con la misma forma que ledger", and RSP-018 puts existencias on the
+  # very first product screen, so there is no reduced projection worth having.
+  # ---------------------------------------------------------------------------
+  /v1/catalogs/product-categories:
+    get:
+      tags: [products]
+      operationId: listProductCategories
+      summary: Product categories
+      description: |
+        Materia prima, producto procesado, and whatever a farm invents. A
+        table and not an enum, because RSP-019 puts an "add it if it is not
+        there" button next to the picker.
+      x-action: products.read
+      x-roles: [owner, admin]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [products]
+      operationId: createProductCategory
+      summary: Add a product category
+      description: Idempotent by (farm_id, lower(name)); answers 200, never 201.
+      x-action: products.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/catalogs/storage-units:
+    get:
+      tags: [products]
+      operationId: listStorageUnits
+      summary: Units of storage
+      description: |
+        Bulto, kilo, litro, caja.
+
+        Not to be confused with `/v1/catalogs/work-units`, which is what a
+        picker is PAID by and carries a `kgFactor` so two farms counting in
+        baskets can be compared. A storage unit converts to nothing and is only
+        ever shown in a picker, which is why it has a name and no code.
+      x-action: products.read
+      x-roles: [owner, admin]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [products]
+      operationId: createStorageUnit
+      summary: Add a unit of storage
+      x-action: products.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/warehouses:
+    get:
+      tags: [products]
+      operationId: listWarehouses
+      summary: Bodegas
+      description: |
+        A warehouse is a name and a row. What is in one is not on it: ask
+        `/v1/stock?warehouseId=...`, which sums the movements.
+      x-action: products.read
+      x-roles: [owner, admin]
+      responses:
+        "200": { $ref: "#/components/responses/CatalogList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [products]
+      operationId: createWarehouse
+      summary: Add a bodega
+      x-action: products.write
+      x-roles: [owner, admin]
+      requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
+      responses:
+        "200": { $ref: "#/components/responses/CatalogItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/products:
+    get:
+      tags: [products]
+      operationId: listProducts
+      summary: List products with their existencias
+      description: |
+        RSP-018: grouped by category, with the units on hand. `stock` on every
+        row is a SUM over that product's movements across every warehouse,
+        computed now — never a column.
+      x-action: products.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - name: categoryId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The farm's products.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [products]
+      operationId: createProduct
+      summary: Register a product
+      description: |
+        RSP-019. `category` and `storageUnit` may be sent as names instead of
+        ids, and a name that is not in the catalogue yet is added to it rather
+        than rejected — that is the "con opción de crear" button.
+
+        Idempotent by (farm_id, id): a retry answers 200 with the product.
+      x-action: products.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: DUPLICATE_NAME.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/products/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [products]
+      operationId: getProduct
+      summary: One product
+      x-action: products.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The product, with its derived stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [products]
+      operationId: updateProduct
+      summary: Modify a product
+      description: RSP-020, plus `status` to take one out of service or bring it back.
+      x-action: products.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductPatch" }
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [products]
+      operationId: deleteProduct
+      summary: Take a product out of the catalogue
+      description: |
+        RSP-021: eliminar deja el producto inactivo. Its movements stay exactly
+        where they are — they are facts, and a product leaving the catalogue
+        does not un-harvest last week's coffee.
+      x-action: products.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked inactive. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/stock:
+    get:
+      tags: [stock]
+      operationId: listStock
+      summary: Existencias, by product and warehouse
+      description: |
+        A SUM over stock_moves. Narrowing by `productId` or `warehouseId`
+        confirms the id belongs to this farm BEFORE it sums: a sum over
+        somebody else's product returns 0, and "there are none in that
+        warehouse" is a completely credible answer and a false one.
+      x-action: stock.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: warehouseId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: One line per product and warehouse holding a non-zero quantity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockLevel" }
+                  total: { type: number, format: double }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/products/{id}/stock:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [stock]
+      operationId: getProductStock
+      summary: What there is of one product, per warehouse
+      description: |
+        The sharpest form of the credible zero in this module — one product,
+        one number — so the product is confirmed to belong to this farm before
+        anything is added up. A product of another farm is 404, never a zero.
+      x-action: stock.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The breakdown and its total.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [productId, byWarehouse, total]
+                properties:
+                  productId: { type: string, format: uuid }
+                  byWarehouse:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockLevel" }
+                  total: { type: number, format: double }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/stock/moves:
+    get:
+      tags: [stock]
+      operationId: listStockMoves
+      summary: The movements existencias are derived from
+      x-action: stock.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: warehouseId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: reason
+          in: query
+          schema: { $ref: "#/components/schemas/StockReason" }
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+        - $ref: "#/components/parameters/QueryLimit"
+      responses:
+        "200":
+          description: Movements, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockMove" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [stock]
+      operationId: createStockMove
+      summary: Record a movement, and its stickers
+      description: |
+        RSP-025. The table is append-only: a movement is never edited and never
+        deleted, and a mistake is corrected with its opposite at
+        `/v1/stock/moves/{id}/reverse`.
+
+        The sign follows from the reason and the database checks the pair, so a
+        `venta` that increased stock is a row Postgres refuses rather than a
+        validation somebody forgot. A caller may send the quantity unsigned;
+        the server applies the sign the reason implies.
+
+        `reason: venta` is refused here on purpose — a sale's movement is
+        written by `POST /v1/sales`, in the same transaction as the sale, and
+        letting one in through this door is the one way to get the sales list
+        and the warehouse to disagree.
+
+        `labels` asks for the identification stickers RSP-025 wants printed.
+        THE SERVER DOES NOT PRINT: it generates the batch and returns its id,
+        and whatever holds the paper fetches it from `/v1/label-batches/{id}`.
+        A request that blocked on a printer would fail a harvest because the
+        printer was out of paper.
+      x-action: stock.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StockMoveInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMove" }
+        "201":
+          description: The movement, and the sticker batch when one was asked for.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [move]
+                properties:
+                  move: { $ref: "#/components/schemas/StockMove" }
+                  labelBatch: { $ref: "#/components/schemas/LabelBatch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            INSUFFICIENT_STOCK — taking out more than there is, with
+            `details.onHand` and `details.requested`. Send `allowNegative` to
+            record it anyway: a warehouse whose opening balance was never
+            entered is ordinary, and a server that made it impossible to record
+            what actually left would be a server nobody could use.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/stock/moves/{id}/reverse:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    post:
+      tags: [stock]
+      operationId: reverseStockMove
+      summary: Undo a movement
+      description: |
+        The only way back through an append-only table: a second movement that
+        is its exact opposite, once. A partial unique index makes it once; a
+        second attempt is 409 ALREADY_REVERSED, and a reversal cannot itself be
+        reversed.
+      x-action: stock.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, nullable: true }
+      responses:
+        "201":
+          description: The reversing movement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMove" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
           description: ALREADY_REVERSED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/label-batches/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [stock]
+      operationId: getLabelBatch
+      summary: The stickers for a movement
+      description: |
+        RSP-025 says the system prints the identification stickers. The server
+        produces them; the paper is somebody else's job. The labels are derived
+        from the movement each time they are read rather than frozen into rows,
+        because a sticker is a rendering of a fact and not a fact of its own.
+
+        The quantity is split evenly across the batch, with the remainder on
+        the last label, so the numbers on the paper still add up to the
+        movement.
+      x-action: stock.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The batch and its labels.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelBatch" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Ventas — RSP-026 … RSP-029
+  # ---------------------------------------------------------------------------
+  /v1/customers:
+    get:
+      tags: [sales]
+      operationId: listCustomers
+      summary: Clientes
+      x-action: sales.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+      responses:
+        "200":
+          description: The farm's customers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Customer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [sales]
+      operationId: createCustomer
+      summary: Add a cliente
+      description: |
+        Idempotent by (farm_id, lower(name)) and answers 200, like every other
+        picker here: the sales screen must not be able to produce two
+        "Cooperativa" that are different rows.
+      x-action: sales.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerInput" }
+      responses:
+        "200":
+          description: The row that name means on this farm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Customer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/sales:
+    get:
+      tags: [sales]
+      operationId: listSales
+      summary: List sales
+      description: |
+        RSP-026. The totals count the live sales only; a voided one keeps its
+        row and is excluded from the arithmetic.
+      x-action: sales.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+        - name: productId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: customerId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Sales, newest first, with the totals of the live ones.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, totalCents, totalQty]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sale" }
+                  totalCents: { type: integer, format: int64 }
+                  totalQty: { type: number, format: double }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [sales]
+      operationId: createSale
+      summary: Register a sale, and the stock that left with it
+      description: |
+        RSP-027. THE SALE AND ITS OUTGOING MOVEMENT ARE WRITTEN IN ONE
+        TRANSACTION, and that is the whole reason this is one endpoint. Two
+        would mean two chances to write half of it, and the first time anybody
+        voided anything the sales list and the warehouse would disagree with no
+        third record to say which was right. The database backs it up: a
+        'venta' movement without a sale is a row it refuses.
+
+        `warehouseId` is required because a sale takes the product out of
+        somewhere, and `venta` movements are the shadow of that.
+
+        `customer` may be a name instead of an id, and a name that is not there
+        yet is created — the same picker behaviour as everywhere else.
+
+        The value is `amountCents`, an integer in the currency's minor unit.
+        RSP-027 says "double"; a float peso is a peso that rounds differently
+        on two machines, and no amount in this schema is a float.
+      x-action: sales.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaleInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "201":
+          description: The sale, with the id of the movement it wrote.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            INSUFFICIENT_STOCK, overridable with `allowNegativeStock`, or
+            UPLOAD_NOT_READY when the receipt has not finished uploading.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/sales/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [sales]
+      operationId: getSale
+      summary: One sale
+      x-action: sales.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The sale.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [sales]
+      operationId: updateSale
+      summary: Modify a sale
+      description: |
+        RSP-028, minus the quantity. `qty` is one half of a stock movement that
+        is already written and append-only, so moving it here would leave the
+        warehouse claiming one number and the sales list another. Sending it is
+        a 400 that says to void the sale and record it again — rather than a
+        silently ignored field, which is the worst of both answers.
+
+        `status` is refused too: a sale is voided with DELETE, because voiding
+        gives the stock back as well as flagging the row, and a voided sale is
+        never restored.
+      x-action: sales.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalePatch" }
+      responses:
+        "200":
+          description: The sale.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: UPLOAD_NOT_READY.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [sales]
+      operationId: voidSale
+      summary: Void a sale, and put the stock back
+      description: |
+        RSP-029's "eliminar deja la venta inactiva", done honestly: the row is
+        flagged AND the product comes back into the warehouse as a reversing
+        movement, in the same transaction. Flagging alone would leave the
+        coffee sold in one list and gone from the other forever.
+
+        A voided sale is not restored. There is no way back: the movement it
+        reversed can be reversed only once, so undoing the undo is not a thing
+        the database can express. Record a new sale instead.
+      x-action: sales.void
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The sale, now void, with the reversing movement's id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sale" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: SALE_ALREADY_VOID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  # ---------------------------------------------------------------------------
+  # Gastos — RSP-030 … RSP-033
+  #
+  # A GASTO IS NOT A DEUDA, and this is the place the distinction is made
+  # visible to every client at once.
+  #
+  # RSP-030 calls the cost of a spraying a gasto. RSP-007 calls what an
+  # employee owes the farm a deuda. The document uses one word for both. They
+  # are not the same thing: an expense is the farm's own accounting, a debt is
+  # a line in one person's balance. Nothing under /v1/expenses touches anybody's
+  # ledger, `expenses` has no employee_id column, and a debt goes through
+  # POST /v1/deductions and nowhere else. Wire them together and recording the
+  # cost of the spraying takes money out of somebody's wages.
+  # ---------------------------------------------------------------------------
+  /v1/expenses:
+    get:
+      tags: [expenses]
+      operationId: listExpenses
+      summary: List expenses
+      x-action: expenses.read
+      x-roles: [owner, admin]
+      parameters:
+        - $ref: "#/components/parameters/QueryQ"
+        - $ref: "#/components/parameters/QueryStatus"
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+        - name: activityId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: plotId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: |
+            Expenses, newest first, with the total of the live ones. Filtering
+            by an activity or plot of another farm is 404 and not an empty
+            list with a zero total.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, totalCents, count]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Expense" }
+                  totalCents: { type: integer, format: int64 }
+                  count: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [expenses]
+      operationId: createExpense
+      summary: Register an expense
+      description: |
+        RSP-031. Charged to an activity, OR to a plot/crop. Not both, and not
+        neither — the database says so as well (`expense_target`), and the
+        refusal has a code of its own so the form knows which half to
+        highlight.
+
+        "Neither" is the case worth refusing loudly: an expense charged to
+        nothing appears in the total and in no breakdown, and the gap between
+        the two is what nobody can account for at the end of the year.
+      x-action: expenses.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpenseInput" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400":
+          description: |
+            BAD_REQUEST, or EXPENSE_TARGET_INVALID when the expense is charged
+            to both an activity and a plot, or to neither.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/expenses/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [expenses]
+      operationId: getExpense
+      summary: One expense
+      x-action: expenses.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The expense.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [expenses]
+      operationId: updateExpense
+      summary: Modify an expense
+      description: |
+        RSP-032. The imputation moves as a unit: sending any of `activityId`,
+        `plotId` or `plotCropId` replaces all three. Field by field it would be
+        impossible to say "charge this to the plot instead" — the old
+        `activityId` would survive the patch and `expense_target` would refuse
+        the result, correctly and unhelpfully.
+
+        `status` takes an expense out of service or brings it back. Unlike a
+        voided sale this is reversible, because an expense carries no stock
+        movement: there is nothing to give back.
+      x-action: expenses.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExpensePatch" }
+      responses:
+        "200":
+          description: The expense.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400":
+          description: BAD_REQUEST or EXPENSE_TARGET_INVALID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [expenses]
+      operationId: deleteExpense
+      summary: Take an expense out of service
+      description: RSP-033; the row is marked inactive, never removed.
+      x-action: expenses.write
+      x-roles: [owner, admin]
+      responses:
+        "204": { description: Marked inactive. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------------------------------------------------------------------------
+  # Uploads
+  #
+  # Two steps, in the shape a presigned URL takes, because that is what this
+  # becomes the day there is a bucket. There is no object storage in this
+  # environment, so `uploadUrl` points back at this service and the bytes go to
+  # a directory on disk. The seam is real: swapping in S3 is one file in
+  # internal/blob and a different `uploadUrl`, and no endpoint below changes.
+  #
+  # THE 5 MB LIMIT IS ENFORCED ON THE BYTES THAT ARRIVE, not on the number the
+  # client declared when it asked where to send them. A limit checked at step
+  # one is a limit checked against a number the client typed.
+  # ---------------------------------------------------------------------------
+  /v1/uploads:
+    post:
+      tags: [uploads]
+      operationId: createUpload
+      summary: Reserve an attachment and get somewhere to put it
+      description: |
+        Answers with a pending attachment and the URL to PUT the bytes to.
+
+        `contentType` and `bytes` in the request are accepted and deliberately
+        NOT stored. They exist so a client can draw a progress bar. They decide
+        nothing: the server measures the size and sniffs the media type from
+        the bytes themselves when they land, because taking the client's word
+        for the type is how a .exe becomes a "photo".
+
+        A pending attachment cannot be hung on anything. A trigger refuses it
+        on an employee's photo and on a sale or expense receipt, so nothing can
+        point at a file whose bytes never arrived.
+      x-action: uploads.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadRequest" }
+      responses:
+        "200":
+          description: That id already existed here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTicket" }
+        "201":
+          description: Reserved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTicket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413":
+          description: UPLOAD_TOO_LARGE, from the declared size. A courtesy, not the check.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/uploads/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [uploads]
+      operationId: getUpload
+      summary: An attachment's metadata
+      x-action: uploads.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The attachment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attachment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/uploads/{id}/content:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    put:
+      tags: [uploads]
+      operationId: putUploadContent
+      summary: Send the bytes
+      description: |
+        The raw file, as the request body. The only endpoint in this service
+        whose body is not JSON.
+
+        What happens here, in order: the attachment is confirmed to belong to
+        this farm BEFORE a byte reaches the disk; the body is read to the limit
+        plus one, so a file exactly at the limit is told apart from one over
+        it, and an oversized upload is refused rather than silently truncated;
+        the media type is sniffed from the first bytes and checked against the
+        accepted list; and the row is confirmed with the size THE SERVER
+        COUNTED. Anything refused is deleted from storage on the way out.
+
+        Resending the bytes after a timeout answers 200 with the attachment
+        that is already there, like every other write in this API.
+      x-action: uploads.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Stored, with the size and type the server measured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attachment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: |
+            UPLOAD_TOO_LARGE, with `details.maxBytes`. This is the check that
+            counts: it is applied to the bytes that actually arrived.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "415":
+          description: |
+            UNSUPPORTED_MEDIA_TYPE, with `details.detected` and
+            `details.accepted`. The type is what the bytes say it is, not what
+            the header claimed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [uploads]
+      operationId: getUploadContent
+      summary: Fetch the bytes
+      description: |
+        Streams the file. It goes through the same tenant transaction as
+        everything else, so an attachment of another farm is 404 before the
+        filesystem is touched: the object key is never what grants access.
+      x-action: uploads.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The file.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: UPLOAD_NOT_READY — the bytes have not arrived.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2147,6 +3236,18 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    IdempotencyKeyReused:
+      description: |
+        IDEMPOTENCY_KEY_REUSED — the id is already in use by a different write.
+
+        Idempotent by (farm_id, id) means resending the SAME write is safe. It
+        does not mean the id is a slot to overwrite: an id arriving with a
+        different worker or a different amount is a client bug, and answering
+        200 would tell the caller a payment went through that was never
+        written. `details.existing` carries the row that is actually there.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     CatalogList:
       description: The farm's entries, by name.
       content:
@@ -2203,6 +3304,13 @@ components:
         - RANGE_NEEDS_FROZEN_RATE
         - DUPLICATE_DOCUMENT
         - DUPLICATE_NAME
+        - IDEMPOTENCY_KEY_REUSED
+        - INSUFFICIENT_STOCK
+        - SALE_ALREADY_VOID
+        - EXPENSE_TARGET_INVALID
+        - UPLOAD_TOO_LARGE
+        - UPLOAD_NOT_READY
+        - UNSUPPORTED_MEDIA_TYPE
 
     Error:
       type: object
@@ -3071,3 +4179,418 @@ components:
       properties:
         weekStart: { type: string, format: date, description: An ISO Monday. }
         priceCents: { type: integer, format: int64 }
+
+    StockReason:
+      type: string
+      description: |
+        What a movement is FOR, and the sign that follows from it. An enum and
+        not a catalogue because the server branches on it: `stock_sign` in the
+        database reads it, the sales module writes `venta` and nothing else,
+        and a farm inventing one would be a value no code knows what to do
+        with.
+
+        `cosecha` and `compra` come in. `venta`, `consumo` and `merma` go out.
+        `traslado` and `ajuste` may go either way — `ajuste` is what a reversal
+        carries, which is why its sign is free.
+      enum: [cosecha, compra, venta, consumo, merma, traslado, ajuste]
+
+    Product:
+      type: object
+      required: [id, name, storageUnitId, storageUnit, stock]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        categoryId: { type: string, format: uuid, nullable: true }
+        category: { type: string, nullable: true }
+        storageUnitId: { type: string, format: uuid }
+        storageUnit: { type: string }
+        note: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        stock:
+          type: number
+          format: double
+          description: |
+            Units on hand across every warehouse. A SUM over stock_moves
+            computed for this response — there is no such column.
+
+    ProductInput:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        categoryId: { type: string, format: uuid, nullable: true }
+        category:
+          type: string
+          description: A name instead of an id; created if the catalogue has not got it.
+        storageUnitId: { type: string, format: uuid, nullable: true }
+        storageUnit:
+          type: string
+          description: |
+            A name instead of an id. One of storageUnitId or storageUnit is
+            required: a product with no unit is a quantity nobody can read.
+        note: { type: string, nullable: true }
+
+    ProductPatch:
+      allOf:
+        - $ref: "#/components/schemas/ProductInput"
+        - type: object
+          properties:
+            status: { type: string, enum: [active, inactive] }
+
+    StockLevel:
+      type: object
+      description: One derived line of the existencias screen.
+      required: [productId, product, storageUnit, warehouseId, warehouse, qty]
+      properties:
+        productId: { type: string, format: uuid }
+        product: { type: string }
+        storageUnit: { type: string }
+        warehouseId: { type: string, format: uuid }
+        warehouse: { type: string }
+        qty: { type: number, format: double }
+
+    StockMove:
+      type: object
+      description: |
+        One fact about the warehouse. Append-only: the database has a trigger
+        and a REVOKE that forbid editing and deleting one, exactly as it does
+        for the ledger.
+      required: [id, productId, product, warehouseId, warehouse, qty, reason, localDay]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        product: { type: string }
+        warehouseId: { type: string, format: uuid }
+        warehouse: { type: string }
+        plotId: { type: string, format: uuid, nullable: true }
+        plot: { type: string, nullable: true }
+        plotCropId: { type: string, format: uuid, nullable: true }
+        qty:
+          type: number
+          format: double
+          description: Signed. Positive comes in, negative goes out.
+        reason: { $ref: "#/components/schemas/StockReason" }
+        note: { type: string, nullable: true }
+        workRecordId: { type: string, format: uuid, nullable: true }
+        saleId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set on every `venta` movement, and on no other kind.
+        reversesId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The movement this one cancels, when it is a correction.
+        reversedById:
+          type: string
+          format: uuid
+          nullable: true
+          description: The movement that cancelled this one, if any. Once, at most.
+        localDay: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        labelBatchId: { type: string, format: uuid, nullable: true }
+
+    StockMoveInput:
+      type: object
+      required: [productId, warehouseId, qty, reason]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        plotId: { type: string, format: uuid, nullable: true }
+        plotCropId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Needs the plotId it is planted in, and the database checks that it
+            really is planted there. Without that, a movement could say "lote
+            3, café del lote 7" and every per-plot report would be quietly
+            wrong.
+        qty:
+          type: number
+          format: double
+          description: |
+            May be sent unsigned; the server applies the sign the reason
+            implies, and the database refuses the pair if they disagree.
+        reason: { $ref: "#/components/schemas/StockReason" }
+        note: { type: string, nullable: true }
+        workRecordId: { type: string, format: uuid, nullable: true }
+        localDay:
+          type: string
+          format: date
+          description: Defaults to today in the farm's timezone, computed by the database.
+        labels:
+          type: integer
+          minimum: 0
+          maximum: 500
+          description: How many identification stickers to generate. The server does not print.
+        allowNegative:
+          type: boolean
+          default: false
+          description: |
+            Record an outgoing movement that takes the level below zero. Same
+            escape hatch `allowOverpayment` gives a payment: the guard exists
+            because a keyboard makes typos, the override because a warehouse
+            whose opening balance was never entered is ordinary.
+
+    LabelBatch:
+      type: object
+      description: |
+        The stickers for one movement. `labels` are derived from the movement
+        each time they are read rather than frozen into rows: a sticker is a
+        rendering of a fact, not a fact of its own.
+      required: [id, stockMoveId, count, labels]
+      properties:
+        id: { type: string, format: uuid }
+        stockMoveId: { type: string, format: uuid }
+        count: { type: integer }
+        printedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        labels:
+          type: array
+          items:
+            type: object
+            required: [code, product, storageUnit, qty, warehouse, localDay]
+            properties:
+              code: { type: string }
+              product: { type: string }
+              storageUnit: { type: string }
+              qty: { type: number, format: double }
+              warehouse: { type: string }
+              plot: { type: string, nullable: true }
+              localDay: { type: string, format: date }
+
+    Customer:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        documentType: { type: string, nullable: true }
+        docId: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+
+    CustomerInput:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        documentType: { type: string, nullable: true }
+        docId: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+
+    Sale:
+      type: object
+      required: [id, productId, product, warehouseId, qty, amountCents, localDay]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        product: { type: string }
+        storageUnit: { type: string }
+        customerId: { type: string, format: uuid, nullable: true }
+        customer: { type: string, nullable: true }
+        warehouseId: { type: string, format: uuid }
+        warehouse: { type: string }
+        qty: { type: number, format: double }
+        amountCents:
+          type: integer
+          format: int64
+          description: The value, in the currency's minor unit. Never a float.
+        receiptId: { type: string, format: uuid, nullable: true }
+        note: { type: string, nullable: true }
+        localDay: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        voidedAt: { type: string, format: date-time, nullable: true }
+        stockMoveId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The outgoing movement written with this sale, in the same transaction.
+        reversalMoveId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The movement that put the stock back when the sale was voided.
+
+    SaleInput:
+      type: object
+      required: [productId, warehouseId, qty, amountCents]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        warehouseId:
+          type: string
+          format: uuid
+          description: A sale takes the product out of somewhere, and the movement needs it.
+        customerId: { type: string, format: uuid, nullable: true }
+        customer:
+          type: string
+          description: A name instead of an id; created if it is not there yet.
+        qty: { type: number, format: double, minimum: 0, exclusiveMinimum: true }
+        amountCents: { type: integer, format: int64, minimum: 1 }
+        receiptId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            An attachment from /v1/uploads whose bytes have arrived. A pending
+            one is refused: a sale pointing at a photo that never uploaded
+            renders as a broken image with no way to tell which it was.
+        note: { type: string, nullable: true }
+        localDay: { type: string, format: date }
+        allowNegativeStock: { type: boolean, default: false }
+
+    SalePatch:
+      type: object
+      description: |
+        Everything RSP-028 can change. `qty` and `status` are accepted only to
+        be refused with an explanation — see the operation description.
+      properties:
+        customerId: { type: string, format: uuid, nullable: true }
+        customer: { type: string }
+        amountCents: { type: integer, format: int64, minimum: 1 }
+        receiptId: { type: string, format: uuid, nullable: true }
+        note: { type: string, nullable: true }
+        localDay: { type: string, format: date }
+        qty:
+          type: number
+          format: double
+          description: Always 400. The quantity is fixed by the stock movement.
+        status:
+          type: string
+          description: Always 400. Use DELETE to void; a voided sale is not restored.
+
+    Expense:
+      type: object
+      description: |
+        The farm's own accounting. It has no worker and it never touches
+        anybody's ledger — see the note on the /v1/expenses section.
+      required: [id, concept, amountCents, localDay, target]
+      properties:
+        id: { type: string, format: uuid }
+        concept: { type: string }
+        amountCents: { type: integer, format: int64 }
+        localDay: { type: string, format: date-time }
+        target:
+          type: string
+          enum: [activity, plot]
+          description: |
+            RSP-031's "tipo de gasto", derived from which column is set, so a
+            form can round-trip the select without working it out.
+        activityId: { type: string, format: uuid, nullable: true }
+        activity: { type: string, nullable: true }
+        plotId: { type: string, format: uuid, nullable: true }
+        plot: { type: string, nullable: true }
+        plotCropId: { type: string, format: uuid, nullable: true }
+        crop: { type: string, nullable: true }
+        receiptId: { type: string, format: uuid, nullable: true }
+        note: { type: string, nullable: true }
+        createdBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+
+    ExpenseInput:
+      type: object
+      required: [concept, amountCents]
+      properties:
+        id: { type: string, format: uuid }
+        concept: { type: string, minLength: 1 }
+        amountCents: { type: integer, format: int64, minimum: 1 }
+        localDay: { type: string, format: date }
+        activityId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Exactly one of activityId or plotId. Both, or neither, is EXPENSE_TARGET_INVALID.
+        plotId: { type: string, format: uuid, nullable: true }
+        plotCropId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Needs its plotId, and must really be planted in it.
+        receiptId: { type: string, format: uuid, nullable: true }
+        note: { type: string, nullable: true }
+
+    ExpensePatch:
+      allOf:
+        - $ref: "#/components/schemas/ExpenseInput"
+        - type: object
+          properties:
+            status: { type: string, enum: [active, inactive] }
+
+    Attachment:
+      type: object
+      description: |
+        A pointer into storage — never bytes in Postgres. Two states, and the
+        second is reached by the server counting, not by the client claiming.
+      required: [id, status]
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, ready]
+          description: |
+            `pending` — the row exists, the bytes have not arrived, and nothing
+            may point at it. `ready` — the bytes are stored and were measured.
+        purpose: { type: string, nullable: true }
+        originalName: { type: string, nullable: true }
+        contentType:
+          type: string
+          nullable: true
+          description: Sniffed from the bytes. Not what the upload declared.
+        bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: What the server counted. Null while pending.
+        sha256: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        confirmedAt: { type: string, format: date-time, nullable: true }
+
+    UploadRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        purpose:
+          type: string
+          description: |
+            A label for an operator ("worker-photo", "sale-receipt"). It
+            constrains nothing: what an attachment may be hung on is decided by
+            the foreign keys, not by a string.
+        filename: { type: string }
+        contentType:
+          type: string
+          description: Advisory. The server sniffs the real one from the bytes.
+        bytes:
+          type: integer
+          format: int64
+          description: |
+            Advisory, and not stored. Over 5 MB it saves the client an upload
+            it was about to be refused; it is not the check.
+
+    UploadTicket:
+      type: object
+      required: [attachment, uploadUrl, uploadMethod, maxBytes]
+      properties:
+        attachment: { $ref: "#/components/schemas/Attachment" }
+        uploadUrl:
+          type: string
+          description: |
+            Where to PUT the bytes. Relative: the client already knows the host
+            it is talking to, and a server guessing its own public URL guesses
+            wrong behind the first proxy it meets. It points back at this
+            service today and at a bucket the day there is one.
+        uploadMethod: { type: string, example: PUT }
+        maxBytes: { type: integer, format: int64, example: 5242880 }
+        acceptedTypes:
+          type: array
+          items: { type: string }

@@ -126,6 +126,14 @@ func setupAndRun(m *testing.M) (int, error) {
 	auth.UseFastHashingForTests()
 	cfg := httpapi.DefaultConfig()
 	cfg.DevEcho = true
+	// Uploads go to a scratch directory that dies with the run, like the
+	// scratch database. Nothing here touches a developer's own files.
+	uploadDir, err := os.MkdirTemp("", "bascula-uploads-")
+	if err != nil {
+		return 0, fmt.Errorf("upload dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(uploadDir) }()
+	cfg.UploadDir = uploadDir
 	cfg.SignupsPerIPPerHour = 1000
 	cfg.MaxFarmsPerEmail = 3
 
