@@ -226,3 +226,26 @@ sincronizado, que es la mitad de la garantía.
 pide que el cliente mande el bruto que vio (`expectedGrossCents`) y que el
 servidor rechace la liquidación si ha cambiado. Ese campo no existe todavía. Sin
 él, alguien puede liquidar mirando una cifra y firmar otra.
+
+## Deuda declarada al cerrar el sprint 5
+
+Cosas que se rodearon con honestidad y hay que cerrar. Ninguna está escondida:
+en la pantalla se ve que falta.
+
+1. **`GET /v1/settlements` no existe.** Solo hay `POST`. La consola compone la
+   lista recorriendo el libro de cada empleado por el `settlementId` del
+   devengo, lo cual funciona y no escala. Falta la ruta.
+2. **`/v1/users` no existe.** La pantalla de invitar a alguien a la finca está
+   construida y dice qué rutas espera; hoy la única forma de crear un usuario es
+   registrando una finca nueva.
+3. **La reactivación automática de un trabajador de baja con trabajo nuevo**
+   —decisión 8 del dueño— no está implementada en el servidor. Hoy la pesada
+   entra y la persona sigue de baja, que es lo contrario de lo que se decidió.
+   Y falta el registro de auditoría que era la condición para que fuera segura.
+4. **El tiempo de espera de la importación son 25 segundos**, y una temporada
+   son 11,7 MB. En el enlace de una finca eso se puede quedar corto. Un fallo
+   ahí no pierde datos —es una respuesta que nadie leyó, y el reintento es
+   seguro— pero conviene subirlo antes de la mudanza real.
+5. **La poda de `sync_log` y `sync_ops`** no está programada. El lado que la
+   detecta (`CURSOR_TOO_OLD`) sí existe, así que el día que se pode, un teléfono
+   muy atrasado se entera en vez de recibir historia incompleta.
