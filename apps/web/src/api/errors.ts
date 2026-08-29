@@ -35,9 +35,27 @@ export class ApiError extends Error {
     return ERROR_MESSAGES[this.code] ?? this.message;
   }
 
-  /** True when the module must be exited, per the casos-de-uso convention. */
+  /**
+   * True when the module must be exited, per the casos-de-uso convention.
+   *
+   * Not every 403 qualifies, and getting this wrong is user-visible. The
+   * server answers 403 for three quite different situations:
+   *
+   *   FORBIDDEN           your role may not do this      -> leave the module
+   *   FARM_SUSPENDED      the farm is frozen, read-only  -> banner, stay
+   *   EMAIL_NOT_VERIFIED  you have not confirmed yet     -> login screen, stay
+   *
+   * Treating the last two as "you may not be here" would throw somebody out of
+   * the login screen for the crime of not having opened their mail yet.
+   */
   get isPermissionDenied(): boolean {
-    return this.status === 403 && this.code !== "FARM_SUSPENDED";
+    if (this.status !== 403) return false;
+    return this.code !== "FARM_SUSPENDED" && this.code !== "EMAIL_NOT_VERIFIED";
+  }
+
+  /** A local refusal that never left the browser: a route we know is absent. */
+  get isUnsupported(): boolean {
+    return this.status === 0 && this.code.startsWith("NOT_IMPLEMENTED");
   }
 }
 
@@ -63,53 +81,83 @@ export const FIELD_REASONS = {
  * a sentence each. Anything not in this table falls back to the server text.
  */
 export const ERROR_MESSAGES: Record<string, string> = {
-  // Auth
-  UNAUTHENTICATED: "Correo o contraseña incorrectos.",
+  /* -- auth ---------------------------------------------------------- */
+  // The server's code is INVALID_CREDENTIALS. Sprint 1 wrote UNAUTHENTICATED,
+  // which nothing has ever sent, so a wrong password fell through to the
+  // English server text — the first thing the integration got wrong and the
+  // reason this table is now checked against domain/errors.go.
+  INVALID_CREDENTIALS: "Correo o contraseña incorrectos.",
+  UNAUTHORIZED: "Su sesión no es válida. Vuelva a entrar.",
   TOKEN_EXPIRED: "Su sesión venció. Vuelva a entrar.",
+  // Presenting a refresh token twice means a replay or a stolen copy, and the
+  // server kills the whole device family rather than just failing. Saying so
+  // matters: the person was not logged out at random.
+  TOKEN_REUSED:
+    "Se cerró la sesión por seguridad: ese acceso se usó dos veces. Vuelva a entrar.",
   EMAIL_NOT_VERIFIED:
     "Falta confirmar el correo. Busque el mensaje de Báscula y abra el enlace.",
-  EMAIL_ALREADY_REGISTERED:
-    "Ya existe una cuenta con ese correo. Entre con ella o use otro correo.",
-  RATE_LIMITED: "Demasiados intentos. Espere un minuto y vuelva a probar.",
+  EMAIL_TAKEN: "Ya existe una cuenta con ese correo. Entre con ella o use otro correo.",
+  FARM_LIMIT_REACHED: "Ese correo ya tiene el máximo de fincas permitidas.",
+  RATE_LIMITED: "Demasiados intentos. Espere un rato y vuelva a probar.",
 
-  // Tenant
+  /* -- tenant -------------------------------------------------------- */
   FARM_SUSPENDED:
     "La finca está suspendida: puede consultar, pero no registrar ni modificar nada. Escríbanos para reactivarla.",
   FORBIDDEN: "Su usuario no tiene permiso para esta parte del sistema.",
-  PERMISSION_DENIED: "Su usuario no tiene permiso para esta parte del sistema.",
+  // The server's loud failure when the tenant was never established. It is a
+  // 500 and it is a bug on our side of the wire, not something the user did.
+  TENANT_NOT_SET:
+    "Hubo un problema con la sesión y no se pudo identificar la finca. Vuelva a entrar; si sigue pasando, avísenos.",
 
-  // Plots
+  /* -- shape --------------------------------------------------------- */
+  BAD_REQUEST: "Faltan datos o hay un dato mal escrito. Revise el formulario.",
+  NOT_FOUND: "No encontramos ese registro. Puede que alguien lo haya dado de baja.",
+  CONFLICT: "Ese cambio choca con algo que ya existe.",
+  INTERNAL: "El servidor tuvo un problema. Intente de nuevo en un momento.",
+
+  /* -- plots --------------------------------------------------------- */
   INVALID_GEOMETRY: "El polígono se cruza a sí mismo. Vuelva a dibujarlo.",
   PLOT_HAS_ACTIVE_CROPS:
     "La parcela todavía tiene cultivos activos. Dé de baja los cultivos primero.",
 
-  // Work records and settlements
+  /* -- work records and settlements ---------------------------------- */
   WORK_RECORD_SETTLED:
-    "Esta labor ya está incluida en una liquidación viva. Para cambiarla hay que anular esa liquidación primero.",
-  TASK_SETTLED:
     "Esta labor ya está incluida en una liquidación viva. Para cambiarla hay que anular esa liquidación primero.",
   PAYABLE_ALREADY_CLAIMED:
     "Otra persona liquidó estas labores mientras usted trabajaba en esta pantalla. Se recargó el saldo con la liquidación que ganó.",
   SETTLEMENT_ALREADY_VOID: "Esa liquidación ya estaba anulada.",
   ALREADY_REVERSED: "Ese movimiento ya tenía un reverso. No se puede reversar dos veces.",
   NOTHING_TO_SETTLE:
-    "No hay nada que liquidar: no hay labores pendientes ni saldo a favor.",
+    "No hay nada que liquidar: no hay labores pendientes en ese periodo.",
   AMOUNT_EXCEEDS_BALANCE:
     "El valor es mayor que el saldo pendiente. Corrija el valor o registre el excedente como anticipo.",
-  WEEKLY_PRICE_NEEDS_SINGLE_DAY:
-    "Esta actividad usa precio semanal, así que la labor tiene que ser de un solo día.",
-  DUPLICATE_DOCUMENT:
-    "Ya hay un empleado con esa identificación en esta finca.",
+  // Raised when an activity has no price in force on the day of the work.
+  NO_RATE_IN_FORCE:
+    "Esa actividad no tenía precio definido en esa fecha. Fije un precio con esa fecha de inicio y vuelva a intentar.",
+  // A record whose price comes from a date has to be a single day: a wage from
+  // Tuesday to Tuesday has no single validity period and no single week.
+  RANGE_NEEDS_FROZEN_RATE:
+    "Para varios días hay que fijar el valor de la labor. Escriba el valor o registre un día a la vez.",
+  DUPLICATE_DOCUMENT: "Ya hay un empleado con esa identificación en esta finca.",
+  DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
 
-  // Registry (out of Sprint 1, but the codes exist)
+  /* -- routes this build knows the server does not have --------------- */
+  // Local refusals (status 0). They never reach the network: saying "todavía
+  // no" is better than a 404 the user reads as a bug.
+  NOT_IMPLEMENTED_ADMIN:
+    "La consola de administración todavía no está disponible en el servidor.",
+  NOT_IMPLEMENTED_NOTES: "Las notas de empleado todavía no están disponibles.",
+  NOT_IMPLEMENTED_UNDELETE: "Reactivar todavía no está disponible en el servidor.",
+
+  /* -- media --------------------------------------------------------- */
+  FILE_TOO_LARGE: "La foto pesa más de 5 MB. Use una más liviana.",
+
+  /* -- registry (later sprints, but the codes exist) ------------------ */
   NO_CONSENT:
     "No hay autorización registrada de esta persona para consultar su historial.",
   REGISTRY_OPT_OUT: "Esta finca no participa en el registro de historial laboral.",
 
-  // Media
-  FILE_TOO_LARGE: "La foto pesa más de 5 MB. Use una más liviana.",
-
-  // Transport
+  /* -- transport ----------------------------------------------------- */
   NETWORK: "No se pudo contactar el servidor. Revise la conexión e intente otra vez.",
   UNKNOWN: "Ocurrió un error inesperado. Intente de nuevo.",
 };

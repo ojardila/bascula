@@ -5,6 +5,7 @@ import { CssBaseline, ThemeProvider } from "@mui/material";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import { theme } from "./theme";
+import { USE_MOCKS, announceApiMode } from "./api/mode";
 
 /**
  * The mock is started before React renders, not alongside it. Starting the
@@ -13,7 +14,9 @@ import { theme } from "./theme";
  * race, and only on a slow machine.
  */
 async function boot() {
-  if (import.meta.env.VITE_USE_MOCKS === "true") {
+  announceApiMode();
+
+  if (USE_MOCKS) {
     const { startMocks } = await import("./mocks/browser");
     await startMocks();
   }

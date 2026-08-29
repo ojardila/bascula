@@ -26,7 +26,12 @@ interface AuthContextValue extends AuthState {
   readOnly: boolean;
   modules: ReturnType<typeof visibleModules>;
   landing: string;
-  login: (email: string, password: string) => Promise<Session | LoginChoice>;
+  /**
+   * `farmId` is how the second half of a multi-farm login works. There is no
+   * token that is valid for two farms — the farm is baked into the access
+   * token's claims — so choosing one means authenticating again, naming it.
+   */
+  login: (email: string, password: string, farmId?: string) => Promise<Session | LoginChoice>;
   logout: () => Promise<void>;
 }
 
@@ -70,9 +75,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => authEvents.removeEventListener("logout", onLogout);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await api.login({ email, password });
+  const login = useCallback(async (email: string, password: string, farmId?: string) => {
+    const res = await api.login({ email, password, farmId });
+    // A user who belongs to several farms gets the list back instead of a
+    // session, and the screen asks which one before trying again.
     if ("choose" in res) return res;
+    // `api.login` has already installed these — it has to, because it fetches
+    // /v1/me before it can build the user. Setting them again is harmless and
+    // keeps this function honest about what it leaves behind.
     setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
     setState({ status: "authenticated", user: res.user });
     return res;

@@ -27,6 +27,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import { useAuth } from "../auth/AuthContext";
 import { MODULES, can } from "../auth/permissions";
 import { SyncWarningBanner } from "./SyncWarningBanner";
+import { ApiModeBanner } from "./ApiModeBanner";
 import { GREEN_DARK } from "../theme";
 
 const WIDTH = 232;
@@ -211,6 +212,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <Box component="main" sx={{ flexGrow: 1, width: 0 }}>
         <Toolbar />
+        <ApiModeBanner />
         <SyncWarningBanner />
         <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1280, mx: "auto" }}>{children}</Box>
       </Box>

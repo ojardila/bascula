@@ -11,25 +11,18 @@
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Grid, Link, MenuItem, Stack, TextField, Typography,
+  Alert, Box, Button, Link, Stack, TextField, Typography,
 } from "@mui/material";
 import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
-
-/** Coffee-growing departments first: it is who this is for. */
-const DEPARTMENTS = [
-  "Caldas", "Quindío", "Risaralda", "Antioquia", "Huila", "Tolima",
-  "Nariño", "Cauca", "Santander", "Norte de Santander", "Cundinamarca",
-  "Valle del Cauca", "Cesar", "Magdalena", "Boyacá", "Otro",
-];
+import { parseMoneyInput } from "../../lib/money";
 
 export function SignupPage() {
   const navigate = useNavigate();
   const [farmName, setFarmName] = useState("");
-  const [department, setDepartment] = useState("Caldas");
-  const [municipality, setMunicipality] = useState("");
+  const [price, setPrice] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,19 +30,34 @@ export function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  /**
+   * Only ever set in development, where the server has no mail sender and
+   * echoes the verification token in the signup response instead. Holding it
+   * is what lets the screen offer "confirmar y entrar" honestly, rather than
+   * telling somebody to check a mailbox nothing was sent to.
+   */
+  const [devToken, setDevToken] = useState<string | null>(null);
+
+  const priceCents = parseMoneyInput(price) ?? 0;
 
   function localErrors(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!farmName.trim()) e["farm.name"] = "Escriba el nombre de la finca.";
-    if (!municipality.trim()) e["farm.municipality"] = "Escriba el municipio.";
+    // The server refuses a farm without a price: it seeds every new farm with
+    // a "Recolección" activity priced from this, so there is no such thing as
+    // a farm that has not decided what a kilo is worth.
+    if (priceCents <= 0) e["farm.priceCents"] = "Escriba cuánto paga por kilo.";
     if (!ownerName.trim()) e["owner.name"] = "Escriba su nombre.";
     if (!email.trim()) e["owner.email"] = "Escriba su correo.";
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       e["owner.email"] = "Ese correo no parece válido.";
     }
+    // Ten, because that is what the server enforces. Sprint 1 asked for eight
+    // here and let the server reject the ninth character's absence with an
+    // English sentence — the form has to agree with the rule it is fronting.
     // Length, not a character-class rule: a farm owner typing on a phone is
     // better served by a long phrase than by a symbol they will write down.
-    if (password.length < 8) e["owner.password"] = "Use al menos 8 caracteres.";
+    if (password.length < 10) e["owner.password"] = "Use al menos 10 caracteres.";
     return e;
   }
 
@@ -66,11 +74,12 @@ export function SignupPage() {
         farm: {
           name: farmName.trim(),
           timezone: "America/Bogota",
-          department,
-          municipality: municipality.trim(),
+          currency: "COP",
+          priceCents,
         },
         owner: { email: email.trim(), name: ownerName.trim(), password },
       });
+      setDevToken(res.verificationToken);
       setSentTo(res.verificationEmailSentTo);
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.fieldErrors).length) {
@@ -94,15 +103,20 @@ export function SignupPage() {
           <Typography color="text.secondary" variant="body2">
             Si no llega en unos minutos, revise la carpeta de correo no deseado.
           </Typography>
-          {import.meta.env.VITE_USE_MOCKS === "true" && (
+          {devToken && (
             <Alert severity="info" sx={{ width: "100%" }}>
-              Datos simulados: no sale ningún correo de verdad.{" "}
+              El servidor está en modo desarrollo y no envía correos: devolvió el
+              enlace de confirmación en la respuesta.{" "}
               <Link
                 component="button"
                 type="button"
                 onClick={async () => {
-                  await api.verifyEmail("mock");
-                  navigate("/entrar");
+                  try {
+                    await api.verifyEmail(devToken);
+                    navigate("/entrar");
+                  } catch (err) {
+                    setError(messageFor(err));
+                  }
                 }}
               >
                 Confirmar y entrar
@@ -141,36 +155,34 @@ export function SignupPage() {
             autoFocus
             required
           />
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                select
-                label="Departamento"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                size="medium"
-                fullWidth
-              >
-                {DEPARTMENTS.map((d) => (
-                  <MenuItem key={d} value={d}>
-                    {d}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                label="Municipio"
-                value={municipality}
-                onChange={(e) => setMunicipality(e.target.value)}
-                error={!!fields["farm.municipality"]}
-                helperText={fields["farm.municipality"]}
-                size="medium"
-                fullWidth
-                required
-              />
-            </Grid>
-          </Grid>
+          {/*
+            The price of a kilo, and not the farm's address.
+
+            Sprint 1 asked here for departamento and municipio, which the API
+            has nowhere to put: a department and a municipality describe a
+            PARCELA, and the farm's own location is set later in Configuración.
+            What the server does require is this, because it seeds the new farm
+            with a "Recolección" activity priced from it — so this field is the
+            difference between a farm that can weigh coffee on day one and one
+            that cannot.
+          */}
+          <TextField
+            label="Precio por kilo de café"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            error={!!fields["farm.priceCents"]}
+            helperText={
+              fields["farm.priceCents"] ??
+              "Lo que paga hoy por kilo recogido. Lo puede cambiar cada semana."
+            }
+            size="medium"
+            fullWidth
+            required
+            inputMode="numeric"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            El municipio y el departamento se piden después, en cada parcela.
+          </Typography>
 
           <Typography variant="overline" color="text.secondary">
             Su usuario
@@ -203,7 +215,7 @@ export function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             error={!!fields["owner.password"]}
-            helperText={fields["owner.password"] ?? "Mínimo 8 caracteres."}
+            helperText={fields["owner.password"] ?? "Mínimo 10 caracteres."}
             autoComplete="new-password"
             size="medium"
             fullWidth

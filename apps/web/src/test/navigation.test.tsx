@@ -140,12 +140,18 @@ describe("the server enforces it too, not just the UI", () => {
         Authorization: `Bearer mock-access.${users.find((u) => u.role === "weigher")!.id}.test`,
       },
     });
-    const rows = (await res.json()) as Array<Record<string, unknown>>;
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row.documentNumber).toBeUndefined();
+    // Every list route answers `{items: [...]}`. There is no bare array and no
+    // `total` anywhere in routes.go.
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const row of body.items) {
+      // `docId` is the server's name for the document number, and the
+      // weigher's projection is exactly {id, name, lastName, tag} — a
+      // different response, not the same one with fields hidden in CSS.
+      expect(row.docId).toBeUndefined();
+      expect(row.documentType).toBeUndefined();
       expect(row.phone).toBeUndefined();
-      expect(row.balanceCents).toBeUndefined();
+      expect(row.photoId).toBeUndefined();
     }
   });
 
@@ -157,6 +163,9 @@ describe("the server enforces it too, not just the UI", () => {
     });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe("PERMISSION_DENIED");
+    // FORBIDDEN, from internal/domain/errors.go. Sprint 1 asserted
+    // PERMISSION_DENIED, which the server has never sent — the mock invented
+    // it, and the assertion confirmed the invention.
+    expect(body.error.code).toBe("FORBIDDEN");
   });
 });

@@ -17,9 +17,15 @@
  *    error paths.
  */
 import { ApiError } from "./errors";
+import { API_BASE_URL } from "./mode";
 import type { ApiErrorBody } from "./types";
 
-const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "";
+/**
+ * Empty by default, and it should stay empty: the Vite dev server proxies
+ * `/v1` and `/health` to the API, which is what spares the browser a CORS
+ * preflight the server has no middleware to answer. See `vite.config.ts`.
+ */
+const BASE_URL: string = API_BASE_URL;
 
 export interface Tokens {
   accessToken: string;

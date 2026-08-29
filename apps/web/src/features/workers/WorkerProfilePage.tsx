@@ -151,9 +151,9 @@ export function WorkerProfilePage() {
                 Trabajo hecho que todavía no es un devengo. Se suma al saldo cuando se
                 liquida.
               </Typography>
-              {balance.lastMovementAt && (
+              {balance.lastMovementOn && (
                 <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
-                  Último movimiento: {formatDate(balance.lastMovementAt)}
+                  Último movimiento: {formatDate(balance.lastMovementOn)}
                 </Typography>
               )}
             </CardContent>

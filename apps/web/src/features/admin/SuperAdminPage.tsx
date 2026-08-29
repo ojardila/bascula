@@ -55,11 +55,16 @@ export function SuperAdminPage() {
     {
       key: "name",
       header: "Finca",
+      // The owner's address used to sit under the name. It cannot: the console
+      // may not read a farm's users at all — every column the API returns here
+      // is a column of `farms`, and that projection IS the enforcement of what
+      // a platform administrator is allowed to know. Where the farm is, it may
+      // know; who runs it, it may not.
       render: (f) => (
         <Stack>
           <Typography sx={{ fontWeight: 600 }}>{f.name}</Typography>
           <Typography variant="caption" color="text.secondary">
-            {f.ownerEmail}
+            {[f.city, f.country].filter(Boolean).join(", ") || "—"}
           </Typography>
         </Stack>
       ),
@@ -76,17 +81,13 @@ export function SuperAdminPage() {
         />
       ),
     },
-    { key: "workers", header: "Empleados", align: "right", render: (f) => f.workerCount, secondary: true },
+    // Two columns went the same way as the owner's address: counting a farm's
+    // employees would mean reading them, and nothing records a last access.
+    // Both now come back null, and a column of dashes is worse than no column.
     {
       key: "created",
       header: "Creada",
       render: (f) => formatDate(f.createdAt.slice(0, 10)),
-      secondary: true,
-    },
-    {
-      key: "last",
-      header: "Último acceso",
-      render: (f) => (f.lastAccessAt ? formatDate(f.lastAccessAt.slice(0, 10)) : "—"),
       secondary: true,
     },
   ];

@@ -1,542 +1,1297 @@
 /**
- * A whole coffee farm, in memory.
+ * A whole coffee farm, in memory, in the SERVER's own shapes.
  *
- * This exists because the API is being written in parallel and the web cannot
- * wait for it (plan-sprint-1.md §6, "La web bloqueada por la API"). It is not
- * a stub: the figures agree with the wireframes in `docs/diagramas/web.md` §8
- * to the peso, so that what the owner sees in the demo is what the document
- * promised. 38,5 kg x $800 = $30.800; the pending total is $153.600; the
- * derived balance is $184.500. If you change a seed number and those stop
- * matching, the seed is wrong, not the wireframe.
+ * Sprint 1 seeded this file from `docs/arquitectura-api.md`. Sprint 2 re-seeded
+ * it from `services/api` itself: every row below is now a value of a type in
+ * `src/api/wire.ts`, which was hand-transcribed from the Go structs. The point
+ * is not tidiness. If the mock keeps emitting the old invented shapes, then
+ * every mocked test exercises a translation that never runs in production, and
+ * the adapter the real API needs is the one nothing tests.
+ *
+ * The figures are unchanged and they are load-bearing. They agree with the
+ * wireframes in `docs/diagramas/web.md` §8 to the peso: 38,5 kg x $800 =
+ * $30.800; María's pending total is $153.600; her derived balance is $184.500.
+ * If you change a seed number and those stop matching, the seed is wrong, not
+ * the wireframe.
  *
  * Money is in integer cents throughout: $800 is 80000.
  *
- * The balance is never stored here either. It is summed from the ledger on
- * every read, the same discipline the server has, so a mock cannot teach the
- * UI a habit the real API will punish.
+ * Three disciplines are copied from the server rather than approximated:
+ *
+ *   1. **Nothing derived is stored.** A balance is summed from the ledger on
+ *      every read (`balanceOf`, the port of `balanceSQL` in
+ *      `internal/store/money.go`); `settled` on a work record is an EXISTS
+ *      against live settlement items, not a boolean anybody sets. A mock that
+ *      returns a stored total teaches the UI to trust one.
+ *
+ *   2. **Rows are per-farm.** Everything a farm owns lives in a `Tenant`, and
+ *      a request only ever reads the tenant its token names. That is what RLS
+ *      does on the real server, and it is why signing up here produces an
+ *      empty farm rather than somebody else's workers.
+ *
+ *   3. **There is no `status` column anywhere.** A worker who left has a
+ *      `deletedAt`, an activity taken out of service has an `archivedAt`, and
+ *      a plot out of use has a `deletedAt`. The old mock's `status: "active"`
+ *      does not exist on the wire.
  */
+import { mondayOf } from "../lib/dates";
 import type {
-  Activity,
-  AdminFarm,
-  CatalogItem,
-  FarmSummary,
-  LedgerEntry,
-  MeUser,
-  Plot,
-  Role,
-  WeekPrice,
-  Worker,
-  WorkRecord,
-  WorkerNote,
-} from "../api/types";
+  WireActivity,
+  WireActivityRate,
+  WireBalance,
+  WireCatalogItem,
+  WireEmployee,
+  WireLedgerEntry,
+  WireNote,
+  WirePayable,
+  WirePlot,
+  WireRole,
+  WireSettlement,
+  WireWeekPrice,
+  WireWorkRecord,
+  WireWorkUnit,
+} from "../api/wire";
+
+/* -- dates ----------------------------------------------------------- */
+
+/**
+ * Postgres `date` columns arrive in Go as a `time.Time` and leave as a full
+ * RFC 3339 instant at midnight UTC. `wire.ts` says so explicitly ("the server
+ * sends these for dates that are really `date` columns too, so adapters slice,
+ * never parse"), so the mock must send the same thing — otherwise every
+ * adapter that slices would be tested against a string that never needs it.
+ */
+export const dayInstant = (day: string): string => `${day.slice(0, 10)}T00:00:00Z`;
+
+/**
+ * `InstantForLocalDay` deliberately puts a work record's `startedAt` at MIDDAY
+ * in the farm's timezone, never midnight: midnight plus a daylight-saving
+ * shift is exactly how a day's work ends up filed on the day before. Bogotá is
+ * UTC-5 all year, so midday there is 17:00 UTC.
+ */
+export const noonInstant = (day: string): string => `${day.slice(0, 10)}T17:00:00Z`;
+
+/** The other direction: an instant back to the business day it belongs to. */
+export const dayOf = (instant: string): string => instant.slice(0, 10);
+
+/* -- money ----------------------------------------------------------- */
+
+/**
+ * The one money rule, in all three pay schemes: `amount = round(quantity *
+ * rate)`. The Go twin is `domain.AmountMinor`, which does it over `big.Rat`
+ * and rounds half away from zero to match `round(numeric)` in Postgres.
+ *
+ * This does it in BigInt over the decimal DIGITS rather than in floating
+ * point. The quantity crosses the wire as a bare JSON number, so it arrives
+ * here as a `number` — but the column is `numeric(12,3)`, so its shortest
+ * decimal form round-trips exactly, and multiplying those digits by an integer
+ * rate keeps 38,5 kg out of a float on the way to money.
+ */
+export function amountCents(quantity: number | string, rateCents: number): number {
+  const trimmed = String(quantity).trim();
+  const negative = trimmed.startsWith("-");
+  const [whole, fraction = ""] = trimmed.replace(/^[+-]/, "").split(".");
+  const scale = 10n ** BigInt(fraction.length);
+  const product = BigInt(`${whole || "0"}${fraction}`) * BigInt(Math.trunc(rateCents));
+  const quotient = product / scale;
+  const remainder = product % scale;
+  const rounded = remainder * 2n >= scale ? quotient + 1n : quotient;
+  return Number(negative ? -rounded : rounded);
+}
+
+/** `quantity must be a positive number` — the check in handlers_work_records.go. */
+export function isPositiveQuantity(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0;
+}
+
+/* -- the platform, outside any farm ---------------------------------- */
 
 export const FARM_ID = "0192f3a0-0000-7000-8000-000000000001";
 
-export const farm: FarmSummary = {
-  id: FARM_ID,
-  name: "La Esperanza",
-  timezone: "America/Bogota",
-  currency: "COP",
-  status: "trial",
-  trialDaysLeft: 12,
-};
-
-/* -- users ----------------------------------------------------------- */
+/**
+ * The `farms` row plus `farm_config.price_minor`. `priceCents` is `omitempty`
+ * on the Go side and is DROPPED ENTIRELY from the weigher's projection — that
+ * is the standing price of a kilo. A missing key means "you may not see this",
+ * not "it is free", which is why the server sends nothing rather than 0.
+ */
+export interface MockFarm {
+  id: string;
+  name: string;
+  timezone: string;
+  currency: string;
+  minorUnit: number;
+  phone: string | null;
+  country: string | null;
+  city: string | null;
+  address: string | null;
+  areaHa: number | null;
+  suspendedAt: string | null;
+  createdAt: string;
+  /** The farm's standing price per kilo. `WeekPrice` falls back to it. */
+  priceCents: number;
+}
 
 export interface MockUser {
   id: string;
   email: string;
+  /** Plain text on purpose: an argon2 hash in a mock proves nothing. */
   password: string;
   name: string;
-  role: Role;
-  isSuperAdmin: boolean;
+  superadmin: boolean;
   emailVerified: boolean;
+  /**
+   * The role of the membership this user was seeded with. `memberships` below
+   * is the authority — a user may own a second farm with a different role —
+   * but tests that just want "the weigher" read this.
+   */
+  role: WireRole;
 }
 
-export const users: MockUser[] = [
-  {
-    id: "0192f3a0-0001-7000-8000-000000000001",
-    email: "oscar@laesperanza.co",
-    password: "esperanza",
-    name: "Oscar Jaramillo",
-    role: "owner",
-    isSuperAdmin: false,
-    emailVerified: true,
-  },
-  {
-    id: "0192f3a0-0001-7000-8000-000000000002",
-    email: "admin@laesperanza.co",
-    password: "esperanza",
-    name: "Gloria Betancur",
-    role: "administrator",
-    isSuperAdmin: false,
-    emailVerified: true,
-  },
-  {
-    id: "0192f3a0-0001-7000-8000-000000000003",
-    email: "pesador@laesperanza.co",
-    password: "esperanza",
-    name: "Wilmar Grisales",
-    role: "weigher",
-    isSuperAdmin: false,
-    emailVerified: true,
-  },
-  {
-    id: "0192f3a0-0001-7000-8000-000000000009",
-    email: "super@bascula.co",
-    password: "bascula",
-    name: "Soporte Báscula",
-    role: "owner",
-    isSuperAdmin: true,
-    emailVerified: true,
-  },
-];
+export interface MockMembership {
+  farmId: string;
+  userId: string;
+  role: WireRole;
+}
 
-export function meFor(user: MockUser): MeUser {
+/**
+ * Refresh tokens rotate, exactly as `handleRefresh` does. Presenting one that
+ * already has a `rotatedAt` kills the whole family, because a replayed refresh
+ * token is either a bug or a theft and neither deserves a working session.
+ */
+export interface MockRefreshToken {
+  token: string;
+  familyId: string;
+  userId: string;
+  farmId: string;
+  expiresAt: number;
+  rotatedAt: number | null;
+  revokedAt: number | null;
+}
+
+export interface MockEmailVerification {
+  token: string;
+  userId: string;
+  farmId: string;
+  consumedAt: number | null;
+}
+
+/* -- what a farm owns ------------------------------------------------ */
+
+/**
+ * An activity keeps its whole rate history, and the wire projection picks the
+ * one in force on the requested day (`RateInForce`). `WireActivity.rate` is a
+ * single rate or no key at all, so it cannot be the storage shape.
+ */
+export type MockActivity = Omit<WireActivity, "rate"> & { rates: WireActivityRate[] };
+
+/**
+ * `settled` is `EXISTS (SELECT 1 FROM settlement_items ... voided_at IS NULL)`
+ * on the server, so it is not stored here either: `projectWorkRecord` derives
+ * it from the tenant's settlements.
+ */
+export type MockWorkRecord = Omit<WireWorkRecord, "settled" | "quantity"> & { quantity: number };
+
+/** One claimed payable. The `voidedAt` is what releases it again. */
+export interface MockSettlementItem {
+  payableId: string;
+  weekStart: string;
+  quantity: number;
+  rateCents: number;
+  amountCents: number;
+  voidedAt: string | null;
+}
+
+export type MockSettlement = Omit<WireSettlement, "items"> & { items: MockSettlementItem[] };
+
+export interface Tenant {
+  farmId: string;
+  workUnits: WireWorkUnit[];
+  activityCategories: WireCatalogItem[];
+  cropTypes: WireCatalogItem[];
+  varieties: WireCatalogItem[];
+  workers: WireEmployee[];
+  plots: WirePlot[];
+  activities: MockActivity[];
+  workRecords: MockWorkRecord[];
+  weekPrices: WireWeekPrice[];
+  ledger: WireLedgerEntry[];
+  settlements: MockSettlement[];
+  notes: WireNote[];
+}
+
+/* -- the store ------------------------------------------------------- */
+
+export const farms: MockFarm[] = [];
+export const users: MockUser[] = [];
+export const memberships: MockMembership[] = [];
+export const refreshTokens: MockRefreshToken[] = [];
+export const verifications: MockEmailVerification[] = [];
+export const tenants = new Map<string, Tenant>();
+
+/**
+ * Every access token this mock has minted is valid until its own expiry. This
+ * moves the whole set into the past in one call, so a test can drive the
+ * client's transparent-refresh path without waiting fifteen minutes for it.
+ */
+let accessTokenEpoch = 0;
+
+export function expireAccessTokens(): void {
+  // One millisecond ahead, so a token minted in this very millisecond is
+  // caught too. Anything issued afterwards is fresh again, which is what makes
+  // the client's replay-after-refresh actually succeed.
+  accessTokenEpoch = Date.now() + 1;
+}
+
+export function accessTokenEpochMs(): number {
+  return accessTokenEpoch;
+}
+
+export function tenantOf(farmId: string): Tenant | undefined {
+  return tenants.get(farmId);
+}
+
+export function farmOf(farmId: string): MockFarm | undefined {
+  return farms.find((f) => f.id === farmId);
+}
+
+export function membershipsOf(userId: string): MockMembership[] {
+  return memberships.filter((m) => m.userId === userId);
+}
+
+export function membershipFor(farmId: string, userId: string): MockMembership | undefined {
+  return memberships.find((m) => m.farmId === farmId && m.userId === userId);
+}
+
+/**
+ * `seedFarm` in handlers_auth.go: the minimum a farm needs to weigh coffee on
+ * day one. The three seeded categories, a kilo, and a "Recoleccion" activity
+ * priced from the weekly price table — which is exactly what the phone has.
+ */
+export function emptyTenant(farmId: string, priceCents: number, id: () => string): Tenant {
+  const categories: WireCatalogItem[] = ["siembra", "mantenimiento", "cosecha"].map((name) => ({
+    id: id(),
+    name,
+  }));
+  const kg: WireWorkUnit = { id: id(), code: "kg", label: "Kilo", kgFactor: 1 };
+  const harvest = categories[2];
+  const lastYear = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    isSuperAdmin: user.isSuperAdmin,
-    farm,
-    memberships: user.isSuperAdmin
-      ? []
-      : [{ farmId: FARM_ID, farmName: farm.name, role: user.role }],
+    farmId,
+    workUnits: [kg],
+    activityCategories: categories,
+    cropTypes: [],
+    varieties: [],
+    workers: [],
+    plots: [],
+    activities: [
+      {
+        id: id(),
+        name: "Recoleccion",
+        categoryId: harvest.id,
+        category: harvest.name,
+        payScheme: "unidad_trabajo",
+        rateSource: "weekly_price",
+        unitId: kg.id,
+        archivedAt: null,
+        rates: [
+          {
+            validFrom: dayInstant(lastYear),
+            rateCents: priceCents,
+            timeUnit: null,
+            customQty: null,
+            customUnit: null,
+          },
+        ],
+      },
+    ],
+    workRecords: [],
+    weekPrices: [],
+    ledger: [],
+    settlements: [],
+    notes: [],
   };
 }
 
-/* -- catalogs -------------------------------------------------------- */
-
-export const cropTypes: CatalogItem[] = [
-  { id: "0192f3a0-0002-7000-8000-000000000001", name: "Café" },
-  { id: "0192f3a0-0002-7000-8000-000000000002", name: "Aguacate" },
-  { id: "0192f3a0-0002-7000-8000-000000000003", name: "Plátano" },
-  { id: "0192f3a0-0002-7000-8000-000000000004", name: "Yuca" },
-];
-
-export const varieties: CatalogItem[] = [
-  { id: "0192f3a0-0003-7000-8000-000000000001", name: "Castillo", cropTypeId: cropTypes[0].id },
-  { id: "0192f3a0-0003-7000-8000-000000000002", name: "Colombia", cropTypeId: cropTypes[0].id },
-  { id: "0192f3a0-0003-7000-8000-000000000003", name: "Caturra", cropTypeId: cropTypes[0].id },
-  { id: "0192f3a0-0003-7000-8000-000000000004", name: "Cenicafé 1", cropTypeId: cropTypes[0].id },
-  { id: "0192f3a0-0003-7000-8000-000000000005", name: "Hass", cropTypeId: cropTypes[1].id },
-  { id: "0192f3a0-0003-7000-8000-000000000006", name: "Lorena", cropTypeId: cropTypes[1].id },
-  { id: "0192f3a0-0003-7000-8000-000000000007", name: "Dominico hartón", cropTypeId: cropTypes[2].id },
-];
-
-/* -- plots ----------------------------------------------------------- */
-
-export const plots: Plot[] = [
-  {
-    id: "0192f3a0-0004-7000-8000-000000000001",
-    name: "El Alto",
-    department: "Caldas",
-    municipality: "Manizales",
-    areaHa: 4.2,
-    computedAreaHa: null,
-    boundary: null,
-    status: "active",
-    crops: [
-      {
-        id: "0192f3a0-0005-7000-8000-000000000001",
-        cropTypeId: cropTypes[0].id, cropTypeName: "Café",
-        varietyId: varieties[0].id, varietyName: "Castillo",
-        areaHa: 2.6, plantedAt: "2022-04-15",
-      },
-      {
-        id: "0192f3a0-0005-7000-8000-000000000002",
-        cropTypeId: cropTypes[0].id, cropTypeName: "Café",
-        varietyId: varieties[1].id, varietyName: "Colombia",
-        areaHa: 1.6, plantedAt: "2023-09-02",
-      },
-    ],
-  },
-  {
-    id: "0192f3a0-0004-7000-8000-000000000002",
-    name: "La Cuchilla",
-    department: "Caldas",
-    municipality: "Manizales",
-    areaHa: 2.75,
-    computedAreaHa: null,
-    boundary: null,
-    status: "active",
-    crops: [
-      {
-        id: "0192f3a0-0005-7000-8000-000000000003",
-        cropTypeId: cropTypes[0].id, cropTypeName: "Café",
-        varietyId: varieties[2].id, varietyName: "Caturra",
-        areaHa: 2.75, plantedAt: "2019-03-10",
-      },
-    ],
-  },
-  {
-    id: "0192f3a0-0004-7000-8000-000000000003",
-    name: "Bajo del Río",
-    department: "Caldas",
-    municipality: "Chinchiná",
-    areaHa: 6,
-    // The only plot with a drawn polygon in the seed, so the "declared vs
-    // computed" row of the wireframe has something to show before Sprint 2.
-    computedAreaHa: 5.71,
-    boundary: null,
-    status: "active",
-    crops: [
-      {
-        id: "0192f3a0-0005-7000-8000-000000000004",
-        cropTypeId: cropTypes[1].id, cropTypeName: "Aguacate",
-        varietyId: varieties[4].id, varietyName: "Hass",
-        areaHa: 6, plantedAt: "2021-11-20",
-      },
-    ],
-  },
-  {
-    id: "0192f3a0-0004-7000-8000-000000000004",
-    name: "San José",
-    department: "Caldas",
-    municipality: "Chinchiná",
-    areaHa: 1.5,
-    computedAreaHa: null,
-    boundary: null,
-    status: "inactive",
-    crops: [
-      {
-        id: "0192f3a0-0005-7000-8000-000000000005",
-        cropTypeId: cropTypes[3].id, cropTypeName: "Yuca",
-        varietyId: null, varietyName: null,
-        areaHa: 1.5, plantedAt: null,
-      },
-    ],
-  },
-];
-
-/* -- workers --------------------------------------------------------- */
-
-export const workers: Worker[] = [
-  {
-    id: "0192f3a0-0006-7000-8000-000000000001",
-    name: "María", lastName: "Restrepo Ospina",
-    documentType: "CC", documentNumber: "1045882331",
-    phone: "3205551212", address: "Vereda La Floresta", city: "Chinchiná",
-    country: "Colombia", photoUrl: null, startedAt: "2025-03-12", status: "active",
-  },
-  {
-    id: "0192f3a0-0006-7000-8000-000000000002",
-    name: "Jhon Fredy", lastName: "Cardona Loaiza",
-    documentType: "CC", documentNumber: "15322109",
-    phone: "3117778899", address: "Barrio El Carmen", city: "Manizales",
-    country: "Colombia", photoUrl: null, startedAt: "2024-08-01", status: "active",
-  },
-  {
-    id: "0192f3a0-0006-7000-8000-000000000003",
-    name: "Luz Dary", lastName: "Ospina Giraldo",
-    documentType: "CC", documentNumber: "24556887",
-    phone: "3009991010", address: "Vereda El Trébol", city: "Chinchiná",
-    country: "Colombia", photoUrl: null, startedAt: "2026-01-15", status: "active",
-  },
-  {
-    id: "0192f3a0-0006-7000-8000-000000000004",
-    name: "Édinson", lastName: "Marín Ríos",
-    documentType: "CE", documentNumber: "AV884219",
-    phone: "3145557766", address: "Vereda La Floresta", city: "Chinchiná",
-    country: "Colombia", photoUrl: null, startedAt: "2025-11-03", status: "active",
-  },
-  {
-    id: "0192f3a0-0006-7000-8000-000000000005",
-    name: "Nubia", lastName: "Ceballos Arango",
-    documentType: "CC", documentNumber: "30112443",
-    phone: "3186664545", address: "Corregimiento La Trinidad", city: "Chinchiná",
-    country: "Colombia", photoUrl: null, startedAt: "2023-02-20", status: "inactive",
-  },
-];
-
-/* -- activities ------------------------------------------------------ */
-
-export const activities: Activity[] = [
-  {
-    id: "0192f3a0-0007-7000-8000-000000000001",
-    name: "Recolección de café",
-    category: "cosecha",
-    payMode: "work_unit",
-    workUnit: "kg",
-    timeUnit: null, customQty: null, customPeriod: null,
-    // The one activity whose price is not frozen on write: it takes the
-    // Monday price of its week, at settlement time, like the phone does.
-    rateSource: "weekly_price",
-    defaultRateCents: 80000,
-    status: "active",
-  },
-  {
-    id: "0192f3a0-0007-7000-8000-000000000002",
-    name: "Guadañada",
-    category: "mantenimiento",
-    payMode: "time_unit",
-    workUnit: null,
-    timeUnit: "jornal", customQty: null, customPeriod: null,
-    rateSource: "fixed",
-    defaultRateCents: 4500000, // $45.000 el jornal
-    rates: [
-      { validFrom: "2025-01-01", rateCents: 4000000 },
-      { validFrom: "2026-01-01", rateCents: 4500000 },
-    ],
-    status: "active",
-  },
-  {
-    id: "0192f3a0-0007-7000-8000-000000000003",
-    name: "Fertilización",
-    category: "mantenimiento",
-    payMode: "time_unit",
-    workUnit: null,
-    timeUnit: "jornal", customQty: null, customPeriod: null,
-    rateSource: "fixed",
-    defaultRateCents: 5000000,
-    rates: [{ validFrom: "2026-01-01", rateCents: 5000000 }],
-    status: "active",
-  },
-  {
-    id: "0192f3a0-0007-7000-8000-000000000004",
-    name: "Siembra de colinos",
-    category: "siembra",
-    payMode: "contract",
-    workUnit: null, timeUnit: null, customQty: null, customPeriod: null,
-    rateSource: "fixed",
-    defaultRateCents: 120000000, // $1.200.000 el contrato completo
-    rates: [{ validFrom: "2026-02-01", rateCents: 120000000 }],
-    status: "active",
-  },
-  {
-    id: "0192f3a0-0007-7000-8000-000000000005",
-    name: "Zoqueo",
-    category: "mantenimiento",
-    payMode: "contract",
-    workUnit: null, timeUnit: null, customQty: null, customPeriod: null,
-    rateSource: "fixed",
-    defaultRateCents: 65000000,
-    status: "inactive",
-  },
-  {
-    id: "0192f3a0-0007-7000-8000-000000000006",
-    name: "Recolección de aguacate",
-    category: "cosecha",
-    payMode: "work_unit",
-    workUnit: "canasta",
-    timeUnit: null, customQty: null, customPeriod: null,
-    rateSource: "fixed",
-    defaultRateCents: 350000, // $3.500 la canasta
-    rates: [{ validFrom: "2026-01-01", rateCents: 350000 }],
-    status: "active",
-  },
-];
-
-/* -- weekly prices --------------------------------------------------- */
-
-export const weekPrices: WeekPrice[] = [
-  { monday: "2026-08-10", costPerUnitCents: 75000 },
-  { monday: "2026-08-17", costPerUnitCents: 78000 },
-  { monday: "2026-08-24", costPerUnitCents: 80000 },
-];
-
-/* -- work records ---------------------------------------------------- */
-
-const A = activities;
-const P = plots;
-
-export const workRecords: WorkRecord[] = [
-  {
-    id: "0192f3a0-0008-7000-8000-000000000001",
-    workerId: workers[0].id, workerName: "María Restrepo Ospina",
-    activityId: A[0].id, activityName: A[0].name, category: "cosecha",
-    payMode: "work_unit", unitLabel: "kg",
-    plotIds: [P[0].id], plotNames: ["El Alto"],
-    plotCropIds: [P[0].crops[0].id], plotCropNames: ["Café Castillo"],
-    dateFrom: "2026-08-27", dateTo: "2026-08-27",
-    quantity: 38.5, rateCents: null, estimatedAmountCents: 3080000,
-    note: null, settled: false, status: "active",
-  },
-  {
-    id: "0192f3a0-0008-7000-8000-000000000002",
-    workerId: workers[0].id, workerName: "María Restrepo Ospina",
-    activityId: A[0].id, activityName: A[0].name, category: "cosecha",
-    payMode: "work_unit", unitLabel: "kg",
-    plotIds: [P[0].id], plotNames: ["El Alto"],
-    plotCropIds: [P[0].crops[0].id], plotCropNames: ["Café Castillo"],
-    dateFrom: "2026-08-26", dateTo: "2026-08-26",
-    quantity: 41, rateCents: null, estimatedAmountCents: 3280000,
-    note: null, settled: false, status: "active",
-  },
-  {
-    id: "0192f3a0-0008-7000-8000-000000000003",
-    workerId: workers[0].id, workerName: "María Restrepo Ospina",
-    activityId: A[1].id, activityName: A[1].name, category: "mantenimiento",
-    payMode: "time_unit", unitLabel: "jornal",
-    plotIds: [P[1].id], plotNames: ["La Cuchilla"],
-    plotCropIds: [P[1].crops[0].id], plotCropNames: ["Café Caturra"],
-    dateFrom: "2026-08-24", dateTo: "2026-08-25",
-    quantity: 2, rateCents: 4500000, estimatedAmountCents: 9000000,
-    note: "Guadañada del lote completo.", settled: false, status: "active",
-  },
-  {
-    id: "0192f3a0-0008-7000-8000-000000000004",
-    workerId: workers[1].id, workerName: "Jhon Fredy Cardona Loaiza",
-    activityId: A[0].id, activityName: A[0].name, category: "cosecha",
-    payMode: "work_unit", unitLabel: "kg",
-    plotIds: [P[0].id], plotNames: ["El Alto"],
-    plotCropIds: [P[0].crops[1].id], plotCropNames: ["Café Colombia"],
-    dateFrom: "2026-08-27", dateTo: "2026-08-27",
-    quantity: 52.3, rateCents: null, estimatedAmountCents: 4184000,
-    note: null, settled: false, status: "active",
-  },
-  {
-    id: "0192f3a0-0008-7000-8000-000000000005",
-    workerId: workers[2].id, workerName: "Luz Dary Ospina Giraldo",
-    activityId: A[5].id, activityName: A[5].name, category: "cosecha",
-    payMode: "work_unit", unitLabel: "canasta",
-    plotIds: [P[2].id], plotNames: ["Bajo del Río"],
-    plotCropIds: [P[2].crops[0].id], plotCropNames: ["Aguacate Hass"],
-    dateFrom: "2026-08-26", dateTo: "2026-08-26",
-    quantity: 14, rateCents: 350000, estimatedAmountCents: 4900000,
-    note: null, settled: false, status: "active",
-  },
-  {
-    id: "0192f3a0-0008-7000-8000-000000000006",
-    workerId: workers[3].id, workerName: "Édinson Marín Ríos",
-    activityId: A[2].id, activityName: A[2].name, category: "mantenimiento",
-    payMode: "time_unit", unitLabel: "jornal",
-    plotIds: [P[1].id, P[2].id], plotNames: ["La Cuchilla", "Bajo del Río"],
-    plotCropIds: [P[1].crops[0].id, P[2].crops[0].id],
-    plotCropNames: ["Café Caturra", "Aguacate Hass"],
-    dateFrom: "2026-08-20", dateTo: "2026-08-22",
-    quantity: 3, rateCents: 5000000, estimatedAmountCents: 15000000,
-    note: null, settled: true, status: "active",
-  },
-];
-
-/* -- ledger ---------------------------------------------------------- */
+/* -- derived reads, ported from the server --------------------------- */
 
 /**
- * Signs follow BALANCE_SQL in the mobile schema: devengo positive; pago,
- * anticipo and deduccion negative; reverso carries the opposite sign of what
- * it cancels. The balance is SUM(amountCents) and nothing else.
- *
- * These six rows add up to $184.500, which is the figure in the wireframe.
+ * `balanceSQL`, line for line. Positive means the farm owes the worker.
+ * Reversals are told apart by sign: reversing an earning is negative, reversing
+ * a payment positive. There is no stored total to read instead.
  */
-export const ledger: LedgerEntry[] = [
-  {
-    id: "0192f3a0-0009-7000-8000-000000000001", workerId: workers[0].id,
-    kind: "devengo", concept: "Liquidación 11–16 ago", amountCents: 25300000,
-    date: "2026-08-11", method: null, receiptNumber: null, reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000002", workerId: workers[0].id,
-    kind: "reverso", concept: "Corrige pago #0038", amountCents: 1200000,
-    date: "2026-08-18", method: null, receiptNumber: null,
-    reversesId: "0192f3a0-0009-7000-8000-0000000000ff",
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000003", workerId: workers[0].id,
-    kind: "anticipo", concept: "Anticipo para transporte", amountCents: -5000000,
-    date: "2026-08-19", method: "efectivo", receiptNumber: null, reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000004", workerId: workers[0].id,
-    kind: "deduccion", concept: "Mercado adelantado", amountCents: -4500000,
-    date: "2026-08-20", method: null, receiptNumber: null, reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000005", workerId: workers[0].id,
-    kind: "devengo", concept: "Liquidación 18–23 ago", amountCents: 21450000,
-    date: "2026-08-23", method: null, receiptNumber: null, reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000006", workerId: workers[0].id,
-    kind: "pago", concept: "Efectivo · recibo #0041", amountCents: -20000000,
-    date: "2026-08-23", method: "efectivo", receiptNumber: "0041", reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000007", workerId: workers[1].id,
-    kind: "devengo", concept: "Liquidación 18–23 ago", amountCents: 18700000,
-    date: "2026-08-23", method: null, receiptNumber: null, reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000008", workerId: workers[1].id,
-    kind: "pago", concept: "Transferencia · recibo #0042", amountCents: -18700000,
-    date: "2026-08-23", method: "transferencia", receiptNumber: "0042", reversesId: null,
-  },
-  {
-    id: "0192f3a0-0009-7000-8000-000000000009", workerId: workers[3].id,
-    kind: "devengo", concept: "Liquidación fertilización 20–22 ago",
-    amountCents: 15000000,
-    date: "2026-08-22", method: null, receiptNumber: null, reversesId: null,
-  },
-];
-
-export const notes: Record<string, WorkerNote[]> = {
-  [workers[0].id]: [
-    {
-      id: "0192f3a0-000a-7000-8000-000000000001",
-      text: "Pidió adelanto para transporte. Autorizado.",
-      date: "2026-08-21", authorName: "Gloria Betancur",
-    },
-    {
-      id: "0192f3a0-000a-7000-8000-000000000002",
-      text: "Excelente rendimiento en el lote El Alto.",
-      date: "2026-07-03", authorName: "Oscar Jaramillo",
-    },
-  ],
-};
-
-/* -- super-admin ----------------------------------------------------- */
-
-export const adminFarms: AdminFarm[] = [
-  {
-    id: FARM_ID, name: "La Esperanza", ownerEmail: "oscar@laesperanza.co",
-    status: "trial", createdAt: "2026-08-17T14:02:00-05:00",
-    lastAccessAt: "2026-08-29T07:41:00-05:00", workerCount: 5,
-  },
-  {
-    id: "0192f3a0-0000-7000-8000-000000000002", name: "El Mirador",
-    ownerEmail: "hcastano@elmirador.co", status: "active",
-    createdAt: "2026-05-02T09:20:00-05:00",
-    lastAccessAt: "2026-08-28T18:05:00-05:00", workerCount: 12,
-  },
-  {
-    id: "0192f3a0-0000-7000-8000-000000000003", name: "Villa Nueva",
-    ownerEmail: "adriana@villanueva.com.co", status: "active",
-    createdAt: "2026-03-11T11:45:00-05:00",
-    lastAccessAt: "2026-08-27T06:12:00-05:00", workerCount: 31,
-  },
-  {
-    id: "0192f3a0-0000-7000-8000-000000000004", name: "La Palma",
-    ownerEmail: "jm@lapalma.co", status: "suspended",
-    createdAt: "2025-12-01T08:00:00-05:00",
-    lastAccessAt: "2026-06-30T16:22:00-05:00", workerCount: 8,
-  },
-];
-
-/** Sum the ledger. Never read a stored total; there isn't one on purpose. */
-export function balanceOf(workerId: string) {
-  const rows = ledger.filter((l) => l.workerId === workerId);
-  const sum = (pred: (l: LedgerEntry) => boolean) =>
+export function balanceOf(t: Tenant, workerId: string): WireBalance {
+  const rows = t.ledger.filter((l) => l.workerId === workerId);
+  const sum = (pred: (l: WireLedgerEntry) => boolean) =>
     rows.filter(pred).reduce((a, l) => a + l.amountCents, 0);
+  const days = rows.map((l) => l.date).sort();
   return {
     workerId,
     earnedCents: sum((l) => l.kind === "devengo" || (l.kind === "reverso" && l.amountCents < 0)),
     paidCents: -sum(
-      (l) => l.kind === "pago" || l.kind === "anticipo" || (l.kind === "reverso" && l.amountCents > 0),
+      (l) =>
+        l.kind === "pago" || l.kind === "anticipo" || (l.kind === "reverso" && l.amountCents > 0),
     ),
     deductedCents: -sum((l) => l.kind === "deduccion"),
     balanceCents: rows.reduce((a, l) => a + l.amountCents, 0),
-    lastMovementAt: rows.length ? rows[rows.length - 1].date : null,
+    lastMovementOn: days.length ? days[days.length - 1] : null,
   };
 }
 
-/** Work records nobody has settled yet: what the pay screen offers. */
-export function pendingFor(workerId: string): WorkRecord[] {
-  return workRecords.filter(
-    (w) => w.workerId === workerId && !w.settled && w.status === "active",
-  );
+/**
+ * `Debts`: what the worker owes the farm and what the farm has already
+ * advanced — the "Lista de deudas" half of the RSP-008 screen.
+ *
+ * Two things it deliberately is not. It is not expenses: an expense is the
+ * farm's own accounting and never touches anybody's ledger. And it is not a
+ * second subtraction — every row here is ALREADY inside the derived balance,
+ * so a caller that subtracts these from the balance charges the worker twice.
+ *
+ * The amounts keep the ledger's own sign, negative, rather than being flipped
+ * to a friendlier positive: the sign convention is load-bearing across the
+ * whole module and re-signing it in one endpoint is how a convention rots.
+ */
+export function debtsOf(t: Tenant, workerId: string): WireLedgerEntry[] {
+  return t.ledger
+    .filter(
+      (l) =>
+        l.workerId === workerId &&
+        (l.kind === "deduccion" || l.kind === "anticipo") &&
+        !t.ledger.some((r) => r.reversesId === l.id),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 
-export function pendingCents(workerId: string): number {
-  return pendingFor(workerId).reduce((a, w) => a + w.estimatedAmountCents, 0);
+/** Live claims on a payable: what makes `settled` true and re-settling a 409. */
+export function liveClaim(
+  t: Tenant,
+  payableId: string,
+): { settlement: MockSettlement; item: MockSettlementItem } | null {
+  for (const s of t.settlements) {
+    for (const item of s.items) {
+      if (item.payableId === payableId && item.voidedAt === null) return { settlement: s, item };
+    }
+  }
+  return null;
 }
+
+export function isSettled(t: Tenant, payableId: string): boolean {
+  return liveClaim(t, payableId) !== null;
+}
+
+/** The wire projection of a work record: `settled` is derived, never stored. */
+export function projectWorkRecord(t: Tenant, r: MockWorkRecord): WireWorkRecord {
+  return { ...r, settled: isSettled(t, r.id) };
+}
+
+/**
+ * `WeekPrice`: the owner's override for that week if there is one, otherwise
+ * the farm's standing price. Note what it is NOT — the old mock fell back to
+ * "the last price we happen to know", which quietly invents money for a week
+ * nobody priced.
+ */
+export function weekPriceOf(t: Tenant, weekStart: string): number {
+  const override = t.weekPrices.find((p) => p.weekStart === weekStart);
+  if (override) return override.priceCents;
+  return farmOf(t.farmId)?.priceCents ?? 0;
+}
+
+/**
+ * `pendingSQL` plus the price resolution that follows it. Payables in range
+ * that no live settlement has claimed, each already priced. Two freezing
+ * moments meet here: a `weekly_price` record takes the week's price NOW, and
+ * everything else reads back the price frozen when it was written.
+ *
+ * Deliberately scheme-agnostic: a picker who also cleared brush the same week
+ * must receive ONE settlement, so pending is never filtered by pay scheme.
+ */
+export function pending(
+  t: Tenant,
+  workerId: string,
+  from: string,
+  to: string,
+  // `WirePayable.quantity` is typed loosely because the server echoes whatever
+  // text the column held; what the mock produces is always the number.
+): (WirePayable & { quantity: number })[] {
+  return t.workRecords
+    .filter(
+      (r) =>
+        r.workerId === workerId &&
+        r.deletedAt === null &&
+        dayOf(r.dateFrom) >= from &&
+        dayOf(r.dateFrom) <= to &&
+        !isSettled(t, r.id),
+    )
+    .sort((a, b) => dayOf(a.dateFrom).localeCompare(dayOf(b.dateFrom)) || a.id.localeCompare(b.id))
+    .map((r) => {
+      const activity = t.activities.find((a) => a.id === r.activityId);
+      const weekStart = dayOf(r.weekStart);
+      const rateCents =
+        r.rateSource === "weekly_price" ? weekPriceOf(t, weekStart) : (r.rateCents ?? 0);
+      return {
+        payableId: r.id,
+        activityId: r.activityId,
+        activity: activity?.name ?? "",
+        payScheme: r.payScheme,
+        rateSource: r.rateSource,
+        quantity: r.quantity,
+        unitId: r.unitId,
+        date: r.dateFrom,
+        weekStart: r.weekStart,
+        rateCents,
+        amountCents:
+          r.rateSource === "weekly_price"
+            ? amountCents(r.quantity, rateCents)
+            : (r.amountCents ?? 0),
+        voided: false,
+      };
+    });
+}
+
+/** `RateInForce`: the newest rate whose validFrom is on or before that day. */
+export function rateInForce(a: MockActivity, on: string): WireActivityRate | null {
+  const eligible = a.rates
+    .filter((r) => dayOf(r.validFrom) <= on)
+    .sort((x, y) => x.validFrom.localeCompare(y.validFrom));
+  return eligible.length ? eligible[eligible.length - 1] : null;
+}
+
+/* -- the seed -------------------------------------------------------- */
+
+/**
+ * Rebuilds La Esperanza from nothing. It runs once at import and again from
+ * `resetDb()`, so a test that pays somebody does not leave the next test with
+ * a different balance. Ids are stable across resets on purpose: the wireframes,
+ * the demo and several tests navigate straight to them by URL.
+ */
+export function resetDb(): void {
+  farms.length = 0;
+  users.length = 0;
+  memberships.length = 0;
+  refreshTokens.length = 0;
+  verifications.length = 0;
+  tenants.clear();
+  accessTokenEpoch = 0;
+
+  farms.push(
+    {
+      id: FARM_ID,
+      name: "La Esperanza",
+      timezone: "America/Bogota",
+      currency: "COP",
+      minorUnit: 2,
+      phone: "3205550101",
+      country: "CO",
+      city: "Chinchiná",
+      address: "Vereda La Floresta, km 4",
+      areaHa: 14.45,
+      suspendedAt: null,
+      createdAt: "2026-01-12T13:00:00Z",
+      priceCents: 80000,
+    },
+    // Three more farms with nobody's membership on them. They exist so the
+    // super-admin console has a list; the console reads columns of `farms` and
+    // nothing else, and that projection IS the enforcement — it cannot reach
+    // an employee, a work record or a peso of anybody's money.
+    {
+      id: "0192f3a0-0000-7000-8000-000000000002",
+      name: "El Mirador",
+      timezone: "America/Bogota",
+      currency: "COP",
+      minorUnit: 2,
+      phone: null,
+      country: "CO",
+      city: "Salamina",
+      address: null,
+      areaHa: 22,
+      suspendedAt: null,
+      createdAt: "2026-05-02T14:20:00Z",
+      priceCents: 82000,
+    },
+    {
+      id: "0192f3a0-0000-7000-8000-000000000003",
+      name: "Villa Nueva",
+      timezone: "America/Bogota",
+      currency: "COP",
+      minorUnit: 2,
+      phone: null,
+      country: "CO",
+      city: "Pereira",
+      address: null,
+      areaHa: 48,
+      suspendedAt: null,
+      createdAt: "2026-03-11T16:45:00Z",
+      priceCents: 79000,
+    },
+    {
+      id: "0192f3a0-0000-7000-8000-000000000004",
+      name: "La Palma",
+      timezone: "America/Bogota",
+      currency: "COP",
+      minorUnit: 2,
+      phone: null,
+      country: "CO",
+      city: "Anserma",
+      address: null,
+      areaHa: 9,
+      // Suspension is not a delete: login and refresh both refuse it, and a
+      // token already issued keeps working until it expires.
+      suspendedAt: "2026-06-30T21:22:00Z",
+      createdAt: "2025-12-01T13:00:00Z",
+      priceCents: 75000,
+    },
+  );
+
+  users.push(
+    {
+      id: "0192f3a0-0001-7000-8000-000000000001",
+      email: "oscar@laesperanza.co",
+      password: "esperanza",
+      name: "Oscar Jaramillo",
+      superadmin: false,
+      emailVerified: true,
+      role: "owner",
+    },
+    {
+      // `administrator` in the old mock. The server's enum value is `admin`.
+      id: "0192f3a0-0001-7000-8000-000000000002",
+      email: "admin@laesperanza.co",
+      password: "esperanza",
+      name: "Gloria Betancur",
+      superadmin: false,
+      emailVerified: true,
+      role: "admin",
+    },
+    {
+      id: "0192f3a0-0001-7000-8000-000000000003",
+      email: "pesador@laesperanza.co",
+      password: "esperanza",
+      name: "Wilmar Grisales",
+      superadmin: false,
+      emailVerified: true,
+      role: "weigher",
+    },
+    {
+      // A super-admin administers farms from the outside. `perm.go` gives the
+      // flag two actions and neither of them reads inside a farm.
+      id: "0192f3a0-0001-7000-8000-000000000009",
+      email: "super@bascula.co",
+      password: "bascula",
+      name: "Soporte Báscula",
+      superadmin: true,
+      emailVerified: true,
+      role: "owner",
+    },
+  );
+  // Only La Esperanza has members. The other three are somebody else's farms
+  // as far as this mock is concerned, which is exactly what the console sees.
+  for (const u of users) memberships.push({ farmId: FARM_ID, userId: u.id, role: u.role });
+
+  /* -- catalogues -- */
+
+  const categories: WireCatalogItem[] = [
+    { id: "0192f3a0-000c-7000-8000-000000000001", name: "siembra" },
+    { id: "0192f3a0-000c-7000-8000-000000000002", name: "mantenimiento" },
+    { id: "0192f3a0-000c-7000-8000-000000000003", name: "cosecha" },
+  ];
+
+  const workUnits: WireWorkUnit[] = [
+    { id: "0192f3a0-000d-7000-8000-000000000001", code: "kg", label: "Kilo", kgFactor: 1 },
+    { id: "0192f3a0-000d-7000-8000-000000000002", code: "canasta", label: "Canasta", kgFactor: null },
+  ];
+
+  const cropTypes: WireCatalogItem[] = [
+    { id: "0192f3a0-0002-7000-8000-000000000001", name: "Café" },
+    { id: "0192f3a0-0002-7000-8000-000000000002", name: "Aguacate" },
+    { id: "0192f3a0-0002-7000-8000-000000000003", name: "Plátano" },
+    { id: "0192f3a0-0002-7000-8000-000000000004", name: "Yuca" },
+  ];
+
+  /**
+   * Varieties are a FLAT name catalogue on the server: `WireCatalogItem` is
+   * `{id, name}` and `catalogs.go` has no crop-type column. The old mock hung
+   * a `cropTypeId` on each one and let the UI filter by it; that field does
+   * not exist, so the picker has to offer them all.
+   */
+  const varieties: WireCatalogItem[] = [
+    { id: "0192f3a0-0003-7000-8000-000000000001", name: "Castillo" },
+    { id: "0192f3a0-0003-7000-8000-000000000002", name: "Colombia" },
+    { id: "0192f3a0-0003-7000-8000-000000000003", name: "Caturra" },
+    { id: "0192f3a0-0003-7000-8000-000000000004", name: "Cenicafé 1" },
+    { id: "0192f3a0-0003-7000-8000-000000000005", name: "Hass" },
+    { id: "0192f3a0-0003-7000-8000-000000000006", name: "Lorena" },
+    { id: "0192f3a0-0003-7000-8000-000000000007", name: "Dominico hartón" },
+  ];
+
+  /* -- plots -- */
+
+  const plots: WirePlot[] = [
+    {
+      id: "0192f3a0-0004-7000-8000-000000000001",
+      name: "El Alto",
+      areaHa: 4.2,
+      computedAreaHa: null,
+      department: "Caldas",
+      municipality: "Manizales",
+      boundary: null,
+      createdAt: "2026-01-12T14:00:00Z",
+      deletedAt: null,
+      crops: [
+        {
+          id: "0192f3a0-0005-7000-8000-000000000001",
+          plotId: "0192f3a0-0004-7000-8000-000000000001",
+          cropTypeId: cropTypes[0].id,
+          cropType: "Café",
+          varietyId: varieties[0].id,
+          variety: "Castillo",
+          areaHa: 2.6,
+          plantedOn: dayInstant("2022-04-15"),
+          removedOn: null,
+          deletedAt: null,
+        },
+        {
+          id: "0192f3a0-0005-7000-8000-000000000002",
+          plotId: "0192f3a0-0004-7000-8000-000000000001",
+          cropTypeId: cropTypes[0].id,
+          cropType: "Café",
+          varietyId: varieties[1].id,
+          variety: "Colombia",
+          areaHa: 1.6,
+          plantedOn: dayInstant("2023-09-02"),
+          removedOn: null,
+          deletedAt: null,
+        },
+      ],
+    },
+    {
+      id: "0192f3a0-0004-7000-8000-000000000002",
+      name: "La Cuchilla",
+      areaHa: 2.75,
+      computedAreaHa: null,
+      department: "Caldas",
+      municipality: "Manizales",
+      boundary: null,
+      createdAt: "2026-01-12T14:05:00Z",
+      deletedAt: null,
+      crops: [
+        {
+          id: "0192f3a0-0005-7000-8000-000000000003",
+          plotId: "0192f3a0-0004-7000-8000-000000000002",
+          cropTypeId: cropTypes[0].id,
+          cropType: "Café",
+          varietyId: varieties[2].id,
+          variety: "Caturra",
+          areaHa: 2.75,
+          plantedOn: dayInstant("2019-03-10"),
+          removedOn: null,
+          deletedAt: null,
+        },
+      ],
+    },
+    {
+      id: "0192f3a0-0004-7000-8000-000000000003",
+      name: "Bajo del Río",
+      areaHa: 6,
+      // The only plot with a drawn polygon in the seed, so the "declared vs
+      // computed" row of the wireframe has something to show.
+      computedAreaHa: 5.71,
+      department: "Caldas",
+      municipality: "Chinchiná",
+      // The one plot in the seed with a polygon on it, so the map has
+      // something to draw and the "declared vs computed" row has both figures.
+      // GeoJSON, because that is what crosses the wire in both directions —
+      // no PostGIS type ever does.
+      boundary: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-75.6072, 4.9821],
+            [-75.6039, 4.9824],
+            [-75.6036, 4.9791],
+            [-75.6070, 4.9788],
+            [-75.6072, 4.9821],
+          ],
+        ],
+      },
+      createdAt: "2026-01-12T14:10:00Z",
+      deletedAt: null,
+      crops: [
+        {
+          id: "0192f3a0-0005-7000-8000-000000000004",
+          plotId: "0192f3a0-0004-7000-8000-000000000003",
+          cropTypeId: cropTypes[1].id,
+          cropType: "Aguacate",
+          varietyId: varieties[4].id,
+          variety: "Hass",
+          areaHa: 6,
+          plantedOn: dayInstant("2021-11-20"),
+          removedOn: null,
+          deletedAt: null,
+        },
+      ],
+    },
+    {
+      // Out of service. `handleDeletePlot` refuses while anything is still
+      // planted, so its yuca was removed first — which is the order the real
+      // server forces and therefore the only order the seed may show.
+      id: "0192f3a0-0004-7000-8000-000000000004",
+      name: "San José",
+      areaHa: 1.5,
+      computedAreaHa: null,
+      department: "Caldas",
+      municipality: "Chinchiná",
+      boundary: null,
+      createdAt: "2026-01-12T14:15:00Z",
+      deletedAt: "2026-06-30T15:00:00Z",
+      crops: [
+        {
+          id: "0192f3a0-0005-7000-8000-000000000005",
+          plotId: "0192f3a0-0004-7000-8000-000000000004",
+          cropTypeId: cropTypes[3].id,
+          cropType: "Yuca",
+          varietyId: null,
+          variety: null,
+          areaHa: 1.5,
+          plantedOn: null,
+          removedOn: dayInstant("2026-06-29"),
+          deletedAt: "2026-06-29T15:00:00Z",
+        },
+      ],
+    },
+  ];
+
+  /* -- workers -- */
+
+  /**
+   * `documentNumber` is `docId` on the wire, and `tag` is new: the number
+   * painted on the basket, which is how the weigher finds a person at the
+   * scale. His projection is {id, name, lastName, tag} and nothing else, so
+   * without a tag his list would be four fields of which one is useful.
+   */
+  const workers: WireEmployee[] = [
+    {
+      id: "0192f3a0-0006-7000-8000-000000000001",
+      name: "María",
+      lastName: "Restrepo Ospina",
+      documentType: "CC",
+      docId: "1045882331",
+      tag: "12",
+      phone: "3205551212",
+      address: "Vereda La Floresta",
+      city: "Chinchiná",
+      municipality: "Chinchiná",
+      country: "CO",
+      photoId: null,
+      createdAt: "2025-03-12T13:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0006-7000-8000-000000000002",
+      name: "Jhon Fredy",
+      lastName: "Cardona Loaiza",
+      documentType: "CC",
+      docId: "15322109",
+      tag: "07",
+      phone: "3117778899",
+      address: "Barrio El Carmen",
+      city: "Manizales",
+      municipality: "Manizales",
+      country: "CO",
+      photoId: null,
+      createdAt: "2024-08-01T13:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0006-7000-8000-000000000003",
+      name: "Luz Dary",
+      lastName: "Ospina Giraldo",
+      documentType: "CC",
+      docId: "24556887",
+      tag: "23",
+      phone: "3009991010",
+      address: "Vereda El Trébol",
+      city: "Chinchiná",
+      municipality: "Chinchiná",
+      country: "CO",
+      photoId: null,
+      createdAt: "2026-01-15T13:00:00Z",
+      deletedAt: null,
+    },
+    {
+      id: "0192f3a0-0006-7000-8000-000000000004",
+      name: "Édinson",
+      lastName: "Marín Ríos",
+      documentType: "CE",
+      docId: "AV884219",
+      tag: "31",
+      phone: "3145557766",
+      address: "Vereda La Floresta",
+      city: "Chinchiná",
+      municipality: "Chinchiná",
+      country: "CO",
+      photoId: null,
+      createdAt: "2025-11-03T13:00:00Z",
+      deletedAt: null,
+    },
+    {
+      // Left the farm. `status: "inactive"` in the old mock; the financial
+      // history has to survive her, so it is a deletedAt and not a delete.
+      id: "0192f3a0-0006-7000-8000-000000000005",
+      name: "Nubia",
+      lastName: "Ceballos Arango",
+      documentType: "CC",
+      docId: "30112443",
+      tag: "05",
+      phone: "3186664545",
+      address: "Corregimiento La Trinidad",
+      city: "Chinchiná",
+      municipality: "Chinchiná",
+      country: "CO",
+      photoId: null,
+      createdAt: "2023-02-20T13:00:00Z",
+      deletedAt: "2026-05-04T16:00:00Z",
+    },
+  ];
+
+  /* -- activities -- */
+
+  const rate = (
+    validFrom: string,
+    rateCents: number,
+    timeUnit: string | null = null,
+  ): WireActivityRate => ({
+    validFrom: dayInstant(validFrom),
+    rateCents,
+    timeUnit,
+    customQty: null,
+    customUnit: null,
+  });
+
+  const activities: MockActivity[] = [
+    {
+      id: "0192f3a0-0007-7000-8000-000000000001",
+      name: "Recolección de café",
+      categoryId: categories[2].id,
+      category: "cosecha",
+      payScheme: "unidad_trabajo",
+      // The one activity whose price is not frozen on write: it takes the
+      // Monday price of its week, at settlement time, like the phone does.
+      rateSource: "weekly_price",
+      unitId: workUnits[0].id,
+      archivedAt: null,
+      rates: [rate("2026-01-01", 80000)],
+    },
+    {
+      id: "0192f3a0-0007-7000-8000-000000000002",
+      name: "Guadañada",
+      categoryId: categories[1].id,
+      category: "mantenimiento",
+      payScheme: "tiempo",
+      rateSource: "activity_dated",
+      unitId: null,
+      archivedAt: null,
+      // Two periods, because a rate is a row with a date on it (decision 4)
+      // and "why was I paid this" has to have an answer.
+      rates: [rate("2025-01-01", 4000000, "jornal"), rate("2026-01-01", 4500000, "jornal")],
+    },
+    {
+      id: "0192f3a0-0007-7000-8000-000000000003",
+      name: "Fertilización",
+      categoryId: categories[1].id,
+      category: "mantenimiento",
+      payScheme: "tiempo",
+      rateSource: "activity_dated",
+      unitId: null,
+      archivedAt: null,
+      rates: [rate("2026-01-01", 5000000, "jornal")],
+    },
+    {
+      id: "0192f3a0-0007-7000-8000-000000000004",
+      name: "Siembra de colinos",
+      categoryId: categories[0].id,
+      category: "siembra",
+      payScheme: "contrato",
+      rateSource: "activity_dated",
+      unitId: null,
+      archivedAt: null,
+      rates: [rate("2026-02-01", 120000000)], // $1.200.000 el contrato completo
+    },
+    {
+      id: "0192f3a0-0007-7000-8000-000000000005",
+      name: "Zoqueo",
+      categoryId: categories[1].id,
+      category: "mantenimiento",
+      payScheme: "contrato",
+      rateSource: "activity_dated",
+      unitId: null,
+      // Taken out of service: an `archivedAt`, not a status.
+      archivedAt: "2026-04-02T15:00:00Z",
+      rates: [rate("2026-01-01", 65000000)],
+    },
+    {
+      id: "0192f3a0-0007-7000-8000-000000000006",
+      name: "Recolección de aguacate",
+      categoryId: categories[2].id,
+      category: "cosecha",
+      payScheme: "unidad_trabajo",
+      rateSource: "activity_dated",
+      unitId: workUnits[1].id,
+      archivedAt: null,
+      rates: [rate("2026-01-01", 350000)], // $3.500 la canasta
+    },
+  ];
+
+  /* -- weekly prices -- */
+
+  const weekPrices: WireWeekPrice[] = [
+    { weekStart: "2026-08-10", priceCents: 75000 },
+    { weekStart: "2026-08-17", priceCents: 78000 },
+    { weekStart: "2026-08-24", priceCents: 80000 },
+  ];
+
+  /* -- work records -- */
+
+  const OWNER = users[0].id;
+  const ADMIN = users[1].id;
+  const WEIGHER = users[2].id;
+
+  /**
+   * `quantity` is a decimal STRING and the amount is null while the price is
+   * still open. A `weekly_price` record therefore carries no rate and no
+   * amount at all until a settlement resolves it — the $30.800 the wireframe
+   * shows is 38,5 x the week's $800, computed by `pending`, not stored here.
+   *
+   * The two multi-day records carry `rateSource: "explicit"`, because a record
+   * priced by date has to be a single day: a wage from Tuesday to Tuesday has
+   * no single validity period and no single week. Naming the rate is what buys
+   * the range.
+   */
+  const record = (
+    r: Omit<MockWorkRecord, "startedAt" | "endedAt" | "weekStart" | "createdAt"> & {
+      createdAt: string;
+    },
+  ): MockWorkRecord => ({
+    ...r,
+    startedAt: noonInstant(dayOf(r.dateFrom)),
+    endedAt: r.dateTo === r.dateFrom ? null : noonInstant(dayOf(r.dateTo)),
+    weekStart: dayInstant(mondayOf(dayOf(r.dateFrom))),
+  });
+
+  const workRecords: MockWorkRecord[] = [
+    record({
+      id: "0192f3a0-0008-7000-8000-000000000001",
+      workerId: workers[0].id,
+      activityId: activities[0].id,
+      payScheme: "unidad_trabajo",
+      rateSource: "weekly_price",
+      dateFrom: dayInstant("2026-08-27"),
+      dateTo: dayInstant("2026-08-27"),
+      quantity: 38.5,
+      unitId: workUnits[0].id,
+      rateCents: null,
+      amountCents: null,
+      note: null,
+      createdBy: WEIGHER,
+      createdAt: "2026-08-27T22:15:00Z",
+      deletedAt: null,
+      plotIds: [plots[0].id],
+      plotCropIds: [plots[0].crops[0].id],
+    }),
+    record({
+      id: "0192f3a0-0008-7000-8000-000000000002",
+      workerId: workers[0].id,
+      activityId: activities[0].id,
+      payScheme: "unidad_trabajo",
+      rateSource: "weekly_price",
+      dateFrom: dayInstant("2026-08-26"),
+      dateTo: dayInstant("2026-08-26"),
+      quantity: 41,
+      unitId: workUnits[0].id,
+      rateCents: null,
+      amountCents: null,
+      note: null,
+      createdBy: WEIGHER,
+      createdAt: "2026-08-26T22:20:00Z",
+      deletedAt: null,
+      plotIds: [plots[0].id],
+      plotCropIds: [plots[0].crops[0].id],
+    }),
+    record({
+      id: "0192f3a0-0008-7000-8000-000000000003",
+      workerId: workers[0].id,
+      activityId: activities[1].id,
+      payScheme: "tiempo",
+      rateSource: "explicit",
+      dateFrom: dayInstant("2026-08-24"),
+      dateTo: dayInstant("2026-08-25"),
+      quantity: 2,
+      unitId: null,
+      rateCents: 4500000,
+      amountCents: 9000000,
+      note: "Guadañada del lote completo.",
+      createdBy: ADMIN,
+      createdAt: "2026-08-25T23:00:00Z",
+      deletedAt: null,
+      plotIds: [plots[1].id],
+      plotCropIds: [plots[1].crops[0].id],
+    }),
+    record({
+      id: "0192f3a0-0008-7000-8000-000000000004",
+      workerId: workers[1].id,
+      activityId: activities[0].id,
+      payScheme: "unidad_trabajo",
+      rateSource: "weekly_price",
+      dateFrom: dayInstant("2026-08-27"),
+      dateTo: dayInstant("2026-08-27"),
+      quantity: 52.3,
+      unitId: workUnits[0].id,
+      rateCents: null,
+      amountCents: null,
+      note: null,
+      createdBy: WEIGHER,
+      createdAt: "2026-08-27T22:18:00Z",
+      deletedAt: null,
+      plotIds: [plots[0].id],
+      plotCropIds: [plots[0].crops[1].id],
+    }),
+    record({
+      id: "0192f3a0-0008-7000-8000-000000000005",
+      workerId: workers[2].id,
+      activityId: activities[5].id,
+      payScheme: "unidad_trabajo",
+      rateSource: "activity_dated",
+      dateFrom: dayInstant("2026-08-26"),
+      dateTo: dayInstant("2026-08-26"),
+      quantity: 14,
+      unitId: workUnits[1].id,
+      rateCents: 350000,
+      amountCents: 4900000,
+      note: null,
+      createdBy: ADMIN,
+      createdAt: "2026-08-26T23:05:00Z",
+      deletedAt: null,
+      plotIds: [plots[2].id],
+      plotCropIds: [plots[2].crops[0].id],
+    }),
+    record({
+      // Already inside a live settlement, so `settled` derives true and both
+      // deleting it and settling it again are 409s.
+      id: "0192f3a0-0008-7000-8000-000000000006",
+      workerId: workers[3].id,
+      activityId: activities[2].id,
+      payScheme: "tiempo",
+      rateSource: "explicit",
+      dateFrom: dayInstant("2026-08-20"),
+      dateTo: dayInstant("2026-08-22"),
+      quantity: 3,
+      unitId: null,
+      rateCents: 5000000,
+      amountCents: 15000000,
+      note: null,
+      createdBy: OWNER,
+      createdAt: "2026-08-22T23:30:00Z",
+      deletedAt: null,
+      plotIds: [plots[1].id, plots[2].id],
+      plotCropIds: [plots[1].crops[0].id, plots[2].crops[0].id],
+    }),
+  ];
+
+  /* -- settlements -- */
+
+  const SETTLEMENT_ID = "0192f3a0-000b-7000-8000-000000000001";
+  const settlements: MockSettlement[] = [
+    {
+      id: SETTLEMENT_ID,
+      workerId: workers[3].id,
+      // The period starts at the Monday of the earliest payable taken in, not
+      // at whatever window the caller asked over.
+      periodStart: dayInstant("2026-08-17"),
+      periodEnd: dayInstant("2026-08-22"),
+      grossCents: 15000000,
+      status: "open",
+      note: null,
+      createdAt: "2026-08-22T23:45:00Z",
+      voidedAt: null,
+      items: [
+        {
+          payableId: workRecords[5].id,
+          weekStart: dayInstant("2026-08-17"),
+          quantity: 3,
+          rateCents: 5000000,
+          amountCents: 15000000,
+          voidedAt: null,
+        },
+      ],
+    },
+  ];
+
+  /* -- ledger -- */
+
+  /**
+   * Signs follow `balanceSQL`: devengo positive; pago, anticipo and deduccion
+   * negative; reverso carries the opposite sign of what it cancels. The
+   * balance is SUM(amountCents) and nothing else.
+   *
+   * María's six rows add up to $184.500, which is the figure in the wireframe.
+   *
+   * There is no `concept` column and no receipt number on the wire: what a
+   * movement means is `kind` plus `note`, and the adapter composes the
+   * sentence. The old mock's "Efectivo · recibo #0041" was a field the server
+   * has never had.
+   */
+  const ledger: WireLedgerEntry[] = [
+    {
+      id: "0192f3a0-0009-7000-8000-000000000001",
+      workerId: workers[0].id,
+      kind: "devengo",
+      amountCents: 25300000,
+      date: dayInstant("2026-08-11"),
+      // The settlements these two devengos came from are older than the seed
+      // window, so there is no row here to point at.
+      settlementId: null,
+      method: null,
+      note: "Liquidación 11–16 ago",
+      reversesId: null,
+      createdAt: "2026-08-11T23:00:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000002",
+      workerId: workers[0].id,
+      kind: "reverso",
+      amountCents: 1200000,
+      date: dayInstant("2026-08-18"),
+      settlementId: null,
+      method: null,
+      note: "Corrige pago #0038",
+      reversesId: "0192f3a0-0009-7000-8000-0000000000ff",
+      createdAt: "2026-08-18T15:00:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000003",
+      workerId: workers[0].id,
+      kind: "anticipo",
+      amountCents: -5000000,
+      date: dayInstant("2026-08-19"),
+      settlementId: null,
+      method: "efectivo",
+      note: "Anticipo para transporte",
+      reversesId: null,
+      createdAt: "2026-08-19T15:30:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000004",
+      workerId: workers[0].id,
+      kind: "deduccion",
+      amountCents: -4500000,
+      date: dayInstant("2026-08-20"),
+      settlementId: null,
+      method: null,
+      note: "Mercado adelantado",
+      reversesId: null,
+      createdAt: "2026-08-20T15:30:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000005",
+      workerId: workers[0].id,
+      kind: "devengo",
+      amountCents: 21450000,
+      date: dayInstant("2026-08-23"),
+      settlementId: null,
+      method: null,
+      note: "Liquidación 18–23 ago",
+      reversesId: null,
+      createdAt: "2026-08-23T23:00:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000006",
+      workerId: workers[0].id,
+      kind: "pago",
+      amountCents: -20000000,
+      date: dayInstant("2026-08-23"),
+      settlementId: null,
+      method: "efectivo",
+      note: null,
+      reversesId: null,
+      createdAt: "2026-08-23T23:10:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000007",
+      workerId: workers[1].id,
+      kind: "devengo",
+      amountCents: 18700000,
+      date: dayInstant("2026-08-23"),
+      settlementId: null,
+      method: null,
+      note: "Liquidación 18–23 ago",
+      reversesId: null,
+      createdAt: "2026-08-23T23:00:00Z",
+    },
+    {
+      id: "0192f3a0-0009-7000-8000-000000000008",
+      workerId: workers[1].id,
+      kind: "pago",
+      amountCents: -18700000,
+      date: dayInstant("2026-08-23"),
+      settlementId: null,
+      method: "transferencia",
+      note: null,
+      reversesId: null,
+      createdAt: "2026-08-23T23:12:00Z",
+    },
+    {
+      // The one devengo with a settlement behind it in the seed.
+      id: "0192f3a0-0009-7000-8000-000000000009",
+      workerId: workers[3].id,
+      kind: "devengo",
+      amountCents: 15000000,
+      date: dayInstant("2026-08-22"),
+      settlementId: SETTLEMENT_ID,
+      method: null,
+      note: null,
+      reversesId: null,
+      createdAt: "2026-08-22T23:45:00Z",
+    },
+  ];
+
+  /**
+   * A person's private file. Append-only by design: there is no PATCH and no
+   * DELETE on a note, because one that can be rewritten afterwards is not a
+   * record of anything. `text` on the wire, and `date` is the day the note is
+   * ABOUT, which is not necessarily when it was written.
+   */
+  const notes: WireNote[] = [
+    {
+      id: "0192f3a0-000a-7000-8000-000000000001",
+      workerId: workers[0].id,
+      date: dayInstant("2026-08-21"),
+      text: "Pidió adelanto para transporte. Autorizado.",
+      createdBy: ADMIN,
+      createdAt: "2026-08-21T16:00:00Z",
+    },
+    {
+      id: "0192f3a0-000a-7000-8000-000000000002",
+      workerId: workers[0].id,
+      date: dayInstant("2026-07-03"),
+      text: "Excelente rendimiento en el lote El Alto.",
+      createdBy: OWNER,
+      createdAt: "2026-07-03T16:00:00Z",
+    },
+  ];
+
+  tenants.set(FARM_ID, {
+    farmId: FARM_ID,
+    workUnits,
+    activityCategories: categories,
+    cropTypes,
+    varieties,
+    workers,
+    plots,
+    activities,
+    workRecords,
+    weekPrices,
+    ledger,
+    settlements,
+    notes,
+  });
+}
+
+resetDb();

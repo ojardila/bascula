@@ -6,6 +6,13 @@ import {
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
+import type { Membership, Role } from "../../api/types";
+
+const ROLE_LABEL: Record<Role, string> = {
+  owner: "Dueño",
+  administrator: "Administrador",
+  weigher: "Pesador",
+};
 
 export function LoginPage() {
   const { status, login, landing } = useAuth();
@@ -15,19 +22,23 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Set when the address belongs to more than one farm. The server answers
+   * that case with a 400 carrying the list, because there is no access token
+   * valid for two farms — the farm is a claim inside it. So choosing one is a
+   * second login that names the farm, not a switch inside this session.
+   */
+  const [choices, setChoices] = useState<Membership[] | null>(null);
 
   if (status === "authenticated") return <Navigate to={landing} replace />;
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function attempt(farmId?: string) {
     setError(null);
     setBusy(true);
     try {
-      const res = await login(email, password);
+      const res = await login(email, password, farmId);
       if ("choose" in res) {
-        // A user with more than one farm re-authenticates against the other
-        // membership; there is no token that is valid for two farms.
-        setError("Su usuario pertenece a varias fincas. Elija una para continuar.");
+        setChoices(res.memberships);
         return;
       }
       navigate(location.state?.from ?? "/", { replace: true });
@@ -36,6 +47,39 @@ export function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await attempt();
+  }
+
+  if (choices) {
+    return (
+      <AuthLayout title="¿A cuál finca entra?" subtitle="Su correo trabaja en varias.">
+        <Stack spacing={1.5}>
+          {error && <Alert severity="error">{error}</Alert>}
+          {choices.map((m) => (
+            <Button
+              key={m.farmId}
+              variant="outlined"
+              size="large"
+              disabled={busy}
+              onClick={() => attempt(m.farmId)}
+              sx={{ justifyContent: "space-between" }}
+            >
+              {m.farmName}
+              <Typography variant="caption" color="text.secondary">
+                {ROLE_LABEL[m.role]}
+              </Typography>
+            </Button>
+          ))}
+          <Button color="inherit" onClick={() => setChoices(null)} disabled={busy}>
+            Volver
+          </Button>
+        </Stack>
+      </AuthLayout>
+    );
   }
 
   return (
