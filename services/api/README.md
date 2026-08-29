@@ -29,6 +29,49 @@ Sprint 3 adds the three modules the owner wrote and nobody had built:
   never to a person.
 - **File uploads**, so a receipt and an employee photo have somewhere to live.
 
+Sprint 4 closes the hole the owner pointed at: the console knew how to
+administer a farm and had no way to say how the harvest was going. Every bit of
+that analysis lived in the phone and none of it on the server. Six endpoints
+under `/v1/reports` are the port — the weekly list, the week's worker-by-day
+and worker-by-crop grids, the per-crop statistics, the comparative performance
+index, the five review rules, and the harvest curve. The SQL is
+`internal/store/reports.go`; the reading of the curve is `internal/domain`,
+the Go twin of `packages/shared/src/harvest.ts`.
+
+### A report never returns a zero that means "I do not know"
+
+This one is in capitals in the sprint brief because it had just cost a week:
+every harvest record read as $0 in the console, because a null amount was
+rendered as a figure. In a report the mistake is worse, not better — a week
+where nobody picked really is 0 kg, so an unknown printed as a zero is
+indistinguishable from the truth.
+
+So `kg`, `valueCents`, `index`, `kgPerDay`, `kgPerHa`, `trend` and `peak` are
+all nullable on the wire, and every null arrives with a count or a reason
+beside it: `recordsNotInKg` says how many weighings were left out of a kilo
+figure because their work unit has no `kgFactor`, `reason` says why a picker
+has no index, and the crop grid's null column carries `unattributed` saying
+whether the work named no crop or named several. `valueIsEstimate` keeps what
+the farm OWES from looking like what it has paid.
+
+### The two traps the phone found first, and what Postgres needed
+
+The extra-zero rule was algebraically unable to fire, because its reference
+included the very weighing it was judging: `w >= 10*avg` reduces to
+`n+1 >= n+10`. The crew rule was a self-join, quadratic inside each plot-day,
+that took 10.8 seconds on 18,000 weighings. Both fixes are carried over rather
+than re-derived, and `reports_perf_test.go` runs the old shape beside the new
+one over a real season and fails if they disagree — 27 ms against 17.5 s here.
+
+Four things Postgres needed that SQLite did not: `local_day` is a stored column
+and not a `date(col,'localtime')` call, so the redundant second bound every
+mobile rule carries to become sargable is gone; `'localtime'` is the farm's
+zone on a phone and UTC on a server, so every window is computed from
+`farms.timezone`; the duplicate rule's `b.id < a.id` tie-break is chronological
+on AUTOINCREMENT integers and meaningless on our UUIDs, so it is
+`(created_at, id)`; and a weighing here is a quantity in a work unit rather
+than one `weight` column, so a unit with no `kgFactor` has no kilos at all.
+
 ### Existencias are derived, like the balance
 
 There is no `stock` column and there will not be one. Every quantity this API
@@ -188,6 +231,19 @@ The load-bearing ones:
   does not move a worker's balance and an `expenses` table with no column that
   could; the 5 MB enforced on the bytes that arrive; and the credible zero
   closed on every new endpoint that sums or lists.
+- **`reports_test.go`** — `performance.test.ts` and `review.test.ts` from the
+  phone, case for case, through HTTP: the index scores 1 for somebody matching
+  their mates and 2 for somebody doubling them (1.5 was the bug where the
+  picker sat inside their own benchmark), the average of daily ratios comes out
+  at 1.35 where a ratio of sums would not, and each of the five review rules is
+  shown firing on exactly the weighings it used to. Plus the two properties the
+  phone never needed: both week grids reconcile by rows and by columns and
+  against each other and against the weekly list, and no figure is ever a zero
+  standing in for an unknown.
+- **`reports_perf_test.go`** — a season of 18,000 weighings over 40 pickers, 6
+  crops and 150 days, with every report timed against a two-second ceiling, and
+  the retired quadratic crew rule run beside its replacement to show they still
+  answer the same thing.
 - **`golden_test.go`** — replays `packages/shared/golden/cases/*.json` through
   the Go domain against real Postgres. Nine cases, the exact cents the phone
   produces.

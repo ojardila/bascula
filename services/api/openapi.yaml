@@ -84,6 +84,7 @@ tags:
   - name: sales
   - name: expenses
   - name: uploads
+  - name: reports
 
 paths:
 
@@ -3148,6 +3149,261 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  # ---------------------------------------------------------------------------
+  # Reports
+  #
+  # The console could administer a farm and had no way to say how the harvest
+  # was going: all of this analysis existed on the phone and none of it on the
+  # server. Every operation below is a port of SQL that already runs on a
+  # season of weighings — see internal/store/reports.go for what Postgres
+  # needed that SQLite did not.
+  #
+  # TWO PROPERTIES HOLD ACROSS ALL SIX AND ARE PART OF THE CONTRACT:
+  #
+  #   * NO ZERO EVER MEANS "I DO NOT KNOW". `kg`, `valueCents`, `index`,
+  #     `kgPerDay`, `kgPerHa`, `trend` and `peak` are all nullable, and every
+  #     null arrives with a count or a reason beside it. A report is where a
+  #     zero is most credible and therefore most dangerous: a farm read $0
+  #     against every harvest record in the console because a null amount was
+  #     rendered as a figure.
+  #
+  #   * `scope: "harvest"` on every response. These figures cover work paid by
+  #     the unit of work — the same filter /v1/pickups applies. A day's wage
+  #     has no kilos and is not counted, so a week's `valueCents` is what the
+  #     PICKING was worth and never the week's whole payroll.
+  # ---------------------------------------------------------------------------
+  /v1/reports/weeks:
+    get:
+      tags: [reports]
+      operationId: reportWeeks
+      summary: The weeks, with their kilos and their value
+      description: |
+        Newest first. `finished` marks a week that is over: a running week's
+        total is not comparable with a finished one, and a list that did not
+        say so would invite the comparison by eye.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      parameters:
+        - { $ref: "#/components/parameters/QueryFrom" }
+        - { $ref: "#/components/parameters/QueryTo" }
+        - { $ref: "#/components/parameters/QueryLimit" }
+      responses:
+        "200":
+          description: One row per week.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportWeeksResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/reports/weeks/{monday}:
+    parameters:
+      - name: monday
+        in: path
+        required: true
+        description: The week is named by its Monday's ISO date. Any other day is a 400.
+        schema: { type: string, format: date, example: "2026-08-24" }
+    get:
+      tags: [reports]
+      operationId: reportWeekDetail
+      summary: One week, worker by day and worker by crop
+      description: |
+        The question a foreman actually asks — not "how much did the week
+        give" but "who was where, and did it show".
+
+        Two grids over the same weighings, so `byDay.total` and `byCrop.total`
+        are equal, and inside each grid the row totals, the column totals and
+        the grand total all agree. They are folded from the same cells rather
+        than computed by a second query, because the one property this screen
+        must have is that it adds up.
+
+        `byCrop` can carry a column with a null key: work that could not be
+        attributed to exactly one crop, either because the record names none or
+        because it names several. Splitting it would be a guess and attributing
+        it twice would make the columns exceed the grid, so it gets a column of
+        its own and `unattributed` says which of the two it was.
+
+        A week nobody worked is a 200 with two empty grids. A Monday is not a
+        resource anybody owns, and "nobody picked that week" is a true answer.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: Both grids for that week.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportWeekDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/reports/crops/{plotCropId}:
+    parameters:
+      - name: plotCropId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [reports]
+      operationId: reportCrop
+      summary: One crop — kilos, value, people, days, and the weeks
+      description: |
+        The crop is confirmed to belong to this farm BEFORE anything is summed:
+        every figure here is a SUM, and a sum over another farm's id comes back
+        as a perfectly plausible "this crop produced nothing". A miss is a 404.
+
+        `sharedRecords` counts weighings on this crop that also name another
+        one. Their kilos are counted here in full, so the same kilos may appear
+        again under the other crop — which is why the count is sent rather than
+        silently halved between them.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: weeks
+          in: query
+          description: How many weeks of history to return. Default 12.
+          schema: { type: integer, minimum: 1, maximum: 520 }
+      responses:
+        "200":
+          description: The crop's statistics and its weekly evolution.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportCrop" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/reports/performance:
+    get:
+      tags: [reports]
+      operationId: reportPerformance
+      summary: The comparative index — each picker against the mates beside them
+      description: |
+        Ranking pickers by total kilos is unfair and actively misleading:
+        whoever worked the ripest plot wins. Every comparison here is against
+        the people who worked the SAME crop on the SAME day, which is the only
+        fair baseline. Three properties make it that, and the phone shipped
+        without all three:
+
+          * the window is the same one the kg/day figure uses, or the screen
+            shows a lifetime index next to a 30-day rate;
+          * the picker is EXCLUDED from their own benchmark, otherwise everyone
+            is dragged toward 1.0 by an amount that depends on how big the crew
+            was, which reorders people across groups;
+          * it averages DAILY RATIOS rather than dividing sums, so one day on a
+            heavy plot does not outweigh nine on a light one.
+
+        `index` is null — never a low number — for anybody with fewer than
+        `minComparableDays` days of comparison, and `reason` says why. Printing
+        a zero there would be an accusation the data does not support.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: days
+          in: query
+          description: Length of the window, in the farm's own calendar. Default 30.
+          schema: { type: integer, minimum: 1, maximum: 3650 }
+      responses:
+        "200":
+          description: One row per picker who worked in the window.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportPerformanceResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/reports/anomalies:
+    get:
+      tags: [reports]
+      operationId: reportAnomalies
+      summary: Weighings worth a second look
+      description: |
+        Five deliberately simple, explainable rules. Accusing a worker with a
+        number nobody can justify out loud destroys the trust the whole system
+        runs on, so there is no model here — just thresholds anyone can check.
+
+          * `impossible` — more kilos than one person can carry.
+          * `duplicate`  — the same person, crop and quantity within three
+                           minutes: a double tap.
+          * `digit`      — far above what this person usually carries, judged
+                           against their whole history with this weighing taken
+                           out of it. Including it made the rule algebraically
+                           unable to fire.
+          * `outlier`    — far above what the rest of the crew did on that crop
+                           that day. Derived from the group's total minus this
+                           row, not from a self-join, which took 10.8 seconds on
+                           a season of data.
+          * `future`     — dated after today in the FARM's timezone.
+
+        One weighing can break more than one rule; it is reported once, worst
+        first. `reference` is what the quantity was judged against and is null
+        for `future`, where there is nothing to compare against — the phone put
+        a 0 there and a 0 in this field would read as "compared against
+        nothing".
+      x-action: reports.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: days
+          in: query
+          description: How far back to look for findings. Default 120 — one harvest season.
+          schema: { type: integer, minimum: 1, maximum: 3650 }
+        - name: maxKg
+          in: query
+          description: The ceiling the `impossible` rule uses, in kilos. Default 120.
+          schema: { type: number, minimum: 0.001 }
+        - { $ref: "#/components/parameters/QueryLimit" }
+      responses:
+        "200":
+          description: The findings, worst first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportAnomaliesResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/reports/harvest-curve:
+    get:
+      tags: [reports]
+      operationId: reportHarvestCurve
+      summary: Where the peak was, and whether the season is ending
+      description: |
+        The weekly series and the reading of it. The reading is the Go twin of
+        `packages/shared/src/harvest.ts` and is tested against the same cases.
+
+        The running week is excluded: it is still going, so its total will
+        always look like a fall next to a finished one. A week whose kilos
+        could not be established is excluded too, and for the stronger reason —
+        treating an unknown as a zero would manufacture a 100% drop and tell a
+        farm its season was over. `weeksWithoutKilos` counts them.
+
+        Two steep falls alone could be rain; `windingDown` also requires the
+        peak to be behind us, which is when moving people to another plot pays.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: plotCropId
+          in: query
+          description: |
+            One crop's curve. Omitted, it is the whole farm's. A crop of
+            another farm is a 404, not a flat season with no peak.
+          schema: { type: string, format: uuid }
+        - name: weeks
+          in: query
+          description: How many weeks of series to read. Default 26.
+          schema: { type: integer, minimum: 1, maximum: 520 }
+      responses:
+        "200":
+          description: The series and the reading.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HarvestCurve" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
 
   securitySchemes:
@@ -4611,3 +4867,386 @@ components:
         acceptedTypes:
           type: array
           items: { type: string }
+
+    # -------------------------------------------------------------------------
+    # Reports
+    #
+    # Read ReportTotals first: it is the shape every figure in this section
+    # takes, and it is where the "no zero ever means I do not know" rule is
+    # actually enforced.
+    # -------------------------------------------------------------------------
+
+    ReportTotals:
+      type: object
+      description: |
+        What a report row adds up to, plus the two admissions it is not allowed
+        to leave out. `kg` and `valueCents` are NULLABLE and a null is "this
+        could not be established", which is a different fact from 0. The counts
+        beside them say how much of the figure is missing, so a partial sum can
+        never be read as a whole one.
+      required:
+        [records, kg, recordsNotInKg, valueCents, recordsWithoutValue, valueIsEstimate]
+      properties:
+        records:
+          type: integer
+          description: Weighings behind this row. A real count; zero means zero.
+        kg:
+          type: number
+          nullable: true
+          description: |
+            Kilos, summed over the weighings that could be expressed in kilos,
+            and null when not one of them could. A quantity is stored in a work
+            unit, and a farm may invent one — "canasta" — with no `kgFactor`.
+            Multiplying by a factor that is not there is how a report invents
+            harvest, so those weighings are left out and counted below.
+        recordsNotInKg:
+          type: integer
+          description: Weighings left out of `kg` because their unit does not convert.
+        valueCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: |
+            What those weighings are worth: the settled amount where a
+            settlement paid one, otherwise the record's frozen amount,
+            otherwise the quantity at the price in force for its week — the
+            number a settlement would post today. Null when not one of them
+            could be priced.
+        recordsWithoutValue:
+          type: integer
+          description: Weighings left out of `valueCents`.
+        valueIsEstimate:
+          type: boolean
+          description: |
+            True when any weighing in this row is priced by its week rather
+            than by a settlement or a frozen amount: what the farm OWES rather
+            than what it has paid. The two must never look alike.
+
+    ReportWeek:
+      allOf:
+        - $ref: "#/components/schemas/ReportTotals"
+        - type: object
+          required: [weekStart, pickers, days, priceCents, finished]
+          properties:
+            weekStart: { type: string, format: date }
+            pickers: { type: integer, description: Distinct people who worked that week. }
+            days: { type: integer, description: Distinct calendar days worked. }
+            priceCents:
+              type: integer
+              format: int64
+              nullable: true
+              description: |
+                What a unit was worth that week: the owner's override if there
+                is one, otherwise the farm's standing price. Null only if the
+                farm has no standing price at all, which the schema forbids —
+                so a null here is a broken farm saying so, not a free week.
+            finished:
+              type: boolean
+              description: |
+                The week is over. A running week's total is not comparable with
+                a finished one; a list that did not mark it would invite the
+                comparison by eye.
+
+    ReportWeeksResult:
+      type: object
+      required: [scope, items]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReportWeek" }
+
+    ReportScope:
+      type: string
+      enum: [harvest]
+      description: |
+        What these figures cover: work paid by the unit of work — the same
+        filter /v1/pickups applies. A day's wage has no kilos and is not
+        counted, so a week's `valueCents` is what the PICKING was worth and
+        never the week's whole payroll.
+
+    ReportGridCell:
+      allOf:
+        - $ref: "#/components/schemas/ReportTotals"
+        - type: object
+          required: [column]
+          properties:
+            column:
+              type: string
+              nullable: true
+              description: |
+                The day (`YYYY-MM-DD`) in the day grid, or the plot crop id in
+                the crop grid. Null in the crop grid is the unattributed
+                column — see `unattributed` on the grid.
+
+    ReportGridRow:
+      type: object
+      required: [workerId, name, cells, total]
+      properties:
+        workerId: { type: string, format: uuid }
+        name: { type: string }
+        cells:
+          type: array
+          items: { $ref: "#/components/schemas/ReportGridCell" }
+        total: { $ref: "#/components/schemas/ReportTotals" }
+
+    ReportGridColumn:
+      type: object
+      required: [key, label, total]
+      properties:
+        key:
+          type: string
+          nullable: true
+          description: The day or the plot crop id. Null is the unattributed column.
+        label: { type: string }
+        total: { $ref: "#/components/schemas/ReportTotals" }
+
+    ReportUnattributed:
+      type: object
+      description: |
+        Present only when the crop grid has a null column, and the only way to
+        tell its two causes apart. Without it that column would be a silent
+        bucket.
+      required: [noCropLink, sharedAcrossCrops]
+      properties:
+        noCropLink:
+          type: integer
+          description: Weighings that name no crop at all.
+        sharedAcrossCrops:
+          type: integer
+          description: |
+            Weighings that name more than one, so attributing them to either
+            would double-count the grid or halve somebody's work on a guess.
+
+    ReportGrid:
+      type: object
+      description: |
+        A whole table. The row totals, the column totals and `total` are folded
+        from the same cells, so they agree — and the suite asserts the
+        agreement in both directions anyway, because deriving them together is
+        a promise and not a proof.
+      required: [columns, rows, total]
+      properties:
+        columns:
+          type: array
+          items: { $ref: "#/components/schemas/ReportGridColumn" }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ReportGridRow" }
+        total: { $ref: "#/components/schemas/ReportTotals" }
+        unattributed: { $ref: "#/components/schemas/ReportUnattributed" }
+
+    ReportWeekDetail:
+      type: object
+      required: [scope, weekStart, finished, byDay, byCrop, total]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        weekStart: { type: string, format: date }
+        finished: { type: boolean }
+        byDay: { $ref: "#/components/schemas/ReportGrid" }
+        byCrop: { $ref: "#/components/schemas/ReportGrid" }
+        total: { $ref: "#/components/schemas/ReportTotals" }
+
+    ReportCropWeek:
+      allOf:
+        - $ref: "#/components/schemas/ReportTotals"
+        - type: object
+          required: [weekStart, pickers, days, finished]
+          properties:
+            weekStart: { type: string, format: date }
+            pickers: { type: integer }
+            days: { type: integer }
+            finished: { type: boolean }
+
+    ReportCrop:
+      allOf:
+        - $ref: "#/components/schemas/ReportTotals"
+        - type: object
+          required:
+            [scope, plotCropId, label, pickers, days, firstOn, lastOn, areaHa,
+             kgPerHa, sharedRecords, byWeek]
+          properties:
+            scope: { $ref: "#/components/schemas/ReportScope" }
+            plotCropId: { type: string, format: uuid }
+            label: { type: string, description: "Crop, variety and plot, as a person would say it." }
+            pickers: { type: integer }
+            days: { type: integer }
+            firstOn: { type: string, format: date, nullable: true }
+            lastOn: { type: string, format: date, nullable: true }
+            areaHa:
+              type: number
+              nullable: true
+              description: |
+                The crop's OWN declared hectares. Deliberately not the plot's
+                as a fallback: a plot with two crops would hand the whole area
+                to each, and half of a real number is worse than a null.
+            kgPerHa:
+              type: number
+              nullable: true
+              description: Null when the area was never declared or the kilos are not known.
+            sharedRecords:
+              type: integer
+              description: |
+                Weighings on this crop that also name another one. Counted here
+                in full, so the same kilos may appear again under the other
+                crop — which is why the count is sent rather than a silent split.
+            byWeek:
+              type: array
+              description: The evolution, newest first.
+              items: { $ref: "#/components/schemas/ReportCropWeek" }
+
+    WorkerPerformance:
+      allOf:
+        - $ref: "#/components/schemas/ReportTotals"
+        - type: object
+          required: [workerId, name, days, kgPerDay, index, comparableDays, trend]
+          properties:
+            workerId: { type: string, format: uuid }
+            name: { type: string }
+            days: { type: integer }
+            kgPerDay:
+              type: number
+              nullable: true
+              description: |
+                Effective output — not per weighing, which only says how big a
+                sack somebody carries, and not total kilos, which rewards
+                attendance. Null when the kilos are not known.
+            index:
+              type: number
+              nullable: true
+              description: |
+                This picker against the mates who worked the same crop the same
+                day, with this picker taken out of the benchmark, averaged over
+                daily ratios. 1.0 is "exactly what the people beside them did".
+
+                NULL, never a low number, for anybody with fewer than
+                `minComparableDays` days of comparison. `reason` says which.
+            comparableDays:
+              type: integer
+              description: Days on which at least three people worked the same crop.
+            reason:
+              type: string
+              enum: [not_enough_comparable_days, no_records_in_kilos]
+              description: Why there is no index. Absent when there is one.
+            trend:
+              type: number
+              nullable: true
+              description: |
+                The same index over the recent half of the window divided by
+                the earlier half: above 1 improving, below 1 slipping. Null
+                unless both halves carry at least four days, or the arrow would
+                be decided against a single outlying day.
+
+    ReportPerformanceResult:
+      type: object
+      required: [scope, days, since, minComparableDays, items]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        days: { type: integer }
+        since:
+          type: string
+          format: date
+          description: |
+            The first day of the window, in the FARM's calendar. The phone says
+            `date('now','localtime')`, which on a server is UTC — an
+            unconverted port shifts the window by up to a day at each end and
+            silently changes who is inside a comparison.
+        minComparableDays: { type: integer }
+        items:
+          type: array
+          description: Best index first, everybody without one after them — never interleaved.
+          items: { $ref: "#/components/schemas/WorkerPerformance" }
+
+    Anomaly:
+      type: object
+      required: [recordId, workerId, worker, crop, quantity, kg, date, rule, reference]
+      properties:
+        recordId: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        worker: { type: string }
+        crop: { type: string, nullable: true }
+        quantity: { type: number }
+        kg: { type: number, nullable: true }
+        date: { type: string, format: date }
+        rule:
+          type: string
+          enum: [impossible, duplicate, digit, outlier, future]
+        reference:
+          type: number
+          nullable: true
+          description: |
+            What the quantity was judged against: the ceiling for `impossible`,
+            the twin's own weight for `duplicate`, this person's other loads for
+            `digit`, the mates' average for `outlier`. NULL for `future`, where
+            there is nothing to compare against — the phone put a 0 there, and a
+            0 in this field reads as "compared against nothing".
+
+    ReportAnomaliesResult:
+      type: object
+      required: [scope, days, maxKg, limit, since, items]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        days: { type: integer }
+        maxKg: { type: number }
+        limit: { type: integer }
+        since: { type: string, format: date }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Anomaly" }
+
+    HarvestWeekTotal:
+      type: object
+      required: [weekStart, kg]
+      properties:
+        weekStart: { type: string, format: date }
+        kg:
+          type: number
+          nullable: true
+          description: Null is a week whose kilos could not be established, never a week of nothing.
+
+    HarvestShape:
+      type: object
+      required: [peak, fallingWeeks, windingDown]
+      properties:
+        peak:
+          allOf: [{ $ref: "#/components/schemas/HarvestWeekTotal" }]
+          nullable: true
+          description: |
+            The finished week with the highest yield so far, or null when there
+            is not one finished week to look at. Never a zero-valued week: "no
+            peak yet" and "a peak of nothing" are different answers.
+        fallingWeeks:
+          type: integer
+          description: Consecutive finished weeks that fell by more than 25%.
+        windingDown:
+          type: boolean
+          description: |
+            Two falling weeks AND the peak already behind us. Two alone could
+            be rain; both together is the season ending, which is when moving
+            people to another plot pays off.
+        reason:
+          type: string
+          enum: [no_finished_weeks]
+          description: |
+            Why there is no reading. Absent when there is one. Without it a
+            season that has barely started is indistinguishable from a healthy
+            one with no decline in it.
+
+    HarvestCurve:
+      type: object
+      required: [scope, plotCropId, currentWeek, weeks, shape, weeksWithoutKilos]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        plotCropId: { type: string, format: uuid, nullable: true }
+        currentWeek: { type: string, format: date }
+        weeks:
+          type: array
+          description: Newest first, as the query returns them.
+          items: { $ref: "#/components/schemas/HarvestWeekTotal" }
+        shape: { $ref: "#/components/schemas/HarvestShape" }
+        weeksWithoutKilos:
+          type: integer
+          description: |
+            Weeks in the series left out of the reading because their kilos
+            could not be established. A reading taken over a series with holes
+            in it is not the same reading, and this is the only way to know.

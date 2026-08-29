@@ -188,5 +188,16 @@ func (s *Server) Routes() []Route {
 		{http.MethodPut, "/v1/uploads/{id}/content", auth.ActionUploadsWrite, s.handlePutUploadContent},
 		{http.MethodGet, "/v1/uploads/{id}", auth.ActionUploadsRead, s.handleGetUpload},
 		{http.MethodGet, "/v1/uploads/{id}/content", auth.ActionUploadsRead, s.handleGetUploadContent},
+
+		// Reports. The console could administer a farm and had no way to say
+		// how the harvest was going: every one of these is a port of analysis
+		// that already ran on the phone and nowhere else. All six are
+		// administrator-only and Money — see the note on ActionReportsRead.
+		{http.MethodGet, "/v1/reports/weeks", auth.ActionReportsRead, s.handleReportWeeks},
+		{http.MethodGet, "/v1/reports/weeks/{monday}", auth.ActionReportsRead, s.handleReportWeek},
+		{http.MethodGet, "/v1/reports/crops/{plotCropId}", auth.ActionReportsRead, s.handleReportCrop},
+		{http.MethodGet, "/v1/reports/performance", auth.ActionReportsRead, s.handleReportPerformance},
+		{http.MethodGet, "/v1/reports/anomalies", auth.ActionReportsRead, s.handleReportAnomalies},
+		{http.MethodGet, "/v1/reports/harvest-curve", auth.ActionReportsRead, s.handleReportHarvestCurve},
 	}
 }

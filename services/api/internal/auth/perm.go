@@ -84,6 +84,10 @@ const (
 
 	ActionUploadsRead  Action = "uploads.read"
 	ActionUploadsWrite Action = "uploads.write"
+
+	// The harvest reports. One action for all six, because they are one
+	// module and they are refused as one — see the note in the table below.
+	ActionReportsRead Action = "reports.read"
 )
 
 // Rule is one row of the permission table.
@@ -218,6 +222,22 @@ var Matrix = map[Action]Rule{
 	// place to put five megabytes of anything.
 	ActionUploadsRead:  {Roles: admins},
 	ActionUploadsWrite: {Roles: admins},
+
+	// The reports. Administrator only, and Money, which is what makes the
+	// contract test assert 403 for the weigher on all six.
+	//
+	// One action rather than a money half and a kilos half, for two reasons.
+	// The first is what the endpoints actually carry: the weekly list and the
+	// crop detail put kilos AND value on the first screen, so there is no
+	// reduced projection of them worth the trouble — the same argument
+	// ActionProductsRead makes about existencias on RSP-018.
+	//
+	// The second matters more. The two reports with no peso in them are the
+	// two that judge people: the comparative index is the number a farm would
+	// use to decide who not to hire again, and the review rules accuse
+	// somebody of mis-weighing — usually the weigher himself. "El pesador no
+	// ve reportes de dinero" is the floor here, not the ceiling.
+	ActionReportsRead: {Roles: admins, Money: true},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

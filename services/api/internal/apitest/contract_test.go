@@ -96,9 +96,10 @@ func TestWeigherIsRefusedEveryMoneyRoute(t *testing.T) {
 		moneyRoutes++
 
 		path := fillParams(rt.Pattern, map[string]string{
-			"id":     pickIDFor(rt.Pattern, worker, settlement),
-			"cropId": worker,
-			"monday": "2026-08-24",
+			"id":         pickIDFor(rt.Pattern, worker, settlement),
+			"cropId":     worker,
+			"plotCropId": worker,
+			"monday":     "2026-08-24",
 		})
 		if rt.Method == http.MethodGet {
 			path += "?workerId=" + worker + "&from=2026-08-24&to=2026-08-30"
