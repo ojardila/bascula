@@ -759,3 +759,42 @@ export const REACTIVATIONS_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS ix_reactivations_person ON reactivations(personId, at DESC);
 `;
+
+/**
+ * Every attempt at handing the season over, and what came back (§8 fase 3/4).
+ *
+ * A separate table and NOT a synced one, deliberately on both counts.
+ *
+ * Separate, because §8 fase 8 says the copy previous to the migration is kept
+ * the whole season — «un descuadre se descubre cuando alguien reclama, y eso
+ * pasa a las tres semanas» — and the same argument applies to the record of
+ * what was offered and what was answered. A screen that only remembers the
+ * import while it is open remembers nothing three weeks later.
+ *
+ * Not synced, because a row here must never be pushed. It is not in
+ * `SYNCED_TABLES`, it has no `uuid`, and no outbox trigger names it: an import
+ * that failed to reach the server must not leave behind a row that the next
+ * push tries to send to the server it failed to reach.
+ *
+ * `totals` and `report` are JSON because they are a screen's material, not
+ * something anything queries by. The columns that ARE queried — the id, the
+ * status, when — are columns.
+ */
+export const IMPORT_RUNS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS import_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    importId    TEXT NOT NULL,
+    startedAt   TEXT NOT NULL,
+    finishedAt  TEXT NOT NULL,
+    -- imported | already-imported | rejected | refused | failed
+    status      TEXT NOT NULL,
+    -- How many rows the request carried. A season goes up as ONE request, so
+    -- this is the whole size of what was offered. Named rowsSent rather than
+    -- rows because ROWS is a keyword in SQLite's window syntax.
+    rowsSent    INTEGER NOT NULL DEFAULT 0,
+    totals      TEXT,
+    report      TEXT,
+    error       TEXT
+  );
+  CREATE INDEX IF NOT EXISTS ix_import_runs_at ON import_runs(startedAt DESC, id DESC);
+`;

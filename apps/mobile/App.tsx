@@ -27,6 +27,7 @@ import CropDetail from "./src/screens/CropDetail";
 import WeekDetail from "./src/screens/WeekDetail";
 import SyncStatus from "./src/screens/SyncStatus";
 import SyncSetup from "./src/screens/SyncSetup";
+import SeasonImport from "./src/screens/SeasonImport";
 import SyncChip from "./src/components/SyncChip";
 import { SyncProvider } from "./src/sync/SyncProvider";
 
@@ -172,6 +173,11 @@ function AppInner() {
           name="SyncSetup"
           component={SyncSetup}
           options={{ title: t("stack.syncSetup"), presentation: "card" }}
+        />
+        <Stack.Screen
+          name="SeasonImport"
+          component={SeasonImport}
+          options={{ title: t("stack.seasonImport"), presentation: "card" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

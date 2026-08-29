@@ -33,9 +33,21 @@ export default function SyncStatus() {
   const { status, syncNow, refresh } = useSync();
   const [cards, setCards] = useState<Conflict[]>([]);
   const [snack, setSnack] = useState("");
+  /**
+   * Whether §8's mudanza already happened, from the record rather than from a
+   * flag somebody could forget to clear. `already-imported` counts: the farm's
+   * season IS on the server, and the only honest thing to do with a second
+   * offer to upload it is to stop offering.
+   */
+  const [seasonUploaded, setSeasonUploaded] = useState(false);
 
   const load = useCallback(() => {
     setCards(repository.sync.conflicts());
+    setSeasonUploaded(
+      repository.sync
+        .importRuns(50)
+        .some((r) => r.status === "imported" || r.status === "already-imported"),
+    );
   }, []);
   useFocusEffect(load);
 
@@ -91,6 +103,42 @@ export default function SyncStatus() {
             )}
           </Card.Actions>
         </Card>
+
+        {/*
+          §8 fase 3 and 4. Only for a token that may move money, and only
+          until the farm's season is up there: once it is, this is a button
+          that can do nothing but tell somebody so, and a button like that on
+          the money screen of a farm mid-harvest is an invitation.
+        */}
+        {status.registered &&
+          (status.role === "owner" || status.role === "admin") &&
+          !seasonUploaded && (
+            <Card mode="outlined" style={styles.card}>
+              <Card.Title
+                title={t("import.openTitle")}
+                left={(p) => (
+                  <MaterialCommunityIcons
+                    {...p}
+                    name="database-arrow-up"
+                    size={24}
+                    color="#2e7d32"
+                  />
+                )}
+              />
+              <Card.Content>
+                <Text style={styles.dim}>{t("import.openBody")}</Text>
+              </Card.Content>
+              <Card.Actions>
+                <Button
+                  mode="contained-tonal"
+                  icon="cloud-upload"
+                  onPress={() => navigation.navigate("SeasonImport")}
+                >
+                  {t("import.open")}
+                </Button>
+              </Card.Actions>
+            </Card>
+          )}
 
         {/* Why it is not sent, when there is a reason worth naming. "Sin
             señal" is a different thing from "algo salió mal", and the person

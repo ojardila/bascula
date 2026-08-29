@@ -18,6 +18,8 @@ import type {
   SettlementStatus,
 } from "../../../../packages/shared/src/enums.ts";
 import type { PullChange } from "../sync/protocol.ts";
+import type { SeasonExport } from "../sync/seasonExport.ts";
+import type { ImportRun, ImportRunInput } from "../sync/seasonImport.ts";
 
 export type { LedgerKind, PayMethod, SettlementStatus };
 
@@ -570,6 +572,31 @@ export interface SyncRepo {
   personByUuid(
     uuid: string,
   ): { id: number; name: string; deletedAt: string | null } | null;
+
+  // ---- The mudanza, §8 fase 3 and 4 -----------------------------------
+
+  /**
+   * The whole season this phone is holding, packed for the server.
+   *
+   * A READ, and the interface says so by returning a value and taking no
+   * callback: §8's safety argument is that nothing the migration does to the
+   * phone is destructive, and an operation that cannot write cannot break it.
+   * Everything travels under the uuid the v6 migration minted, so the same
+   * export offered twice is the same rows offered twice.
+   */
+  seasonExport(importId: string, generatedAt: string): SeasonExport;
+
+  /**
+   * Record an attempt at the import, successful or not.
+   *
+   * `import_runs` is not a synced table and this write does not queue
+   * anything: an import that never reached the server must not leave behind a
+   * row the next push tries to send to it.
+   */
+  recordImportRun(run: ImportRunInput): void;
+
+  /** The attempts, newest first. What the screen shows when it opens. */
+  importRuns(limit?: number): ImportRun[];
 
   /** The record decision 8 is conditional on. */
   reactivations(personId?: number): {

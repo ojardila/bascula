@@ -1,20 +1,24 @@
 /**
  * The §3 protocol, spoken to the API that exists today.
  *
- * ## Read this before anything else in the sync folder
+ * ## This is no longer the transport the app runs
  *
- * `docs/sincronizacion.md` §3 specifies a change feed: `POST /v1/sync/handshake`,
- * `POST /v1/sync/push`, `GET /v1/sync/pull`, a `sync_log` table with a
- * per-farm sequence and an `xmin` horizon, and `sync_ops` for replaying an
- * answer to a repeated envelope. **None of it is built.** The API has 99
- * routes and not one of them mentions sync; `internal/httpapi/routes.go` is
- * the whole surface and it is plain per-resource REST. The three server-side
- * preconditions §8 lists for phase 0 — `expectedGrossCents`/`GROSS_CHANGED`,
- * `EMPLOYEE_EXISTS_DELETED`, and `CURSOR_TOO_OLD`/`SCHEMA_TOO_OLD` — do not
- * exist either.
+ * When it was written the API had 99 routes and not one of them was a change
+ * feed, so this file assembled §3's three verbs out of ordinary REST. The feed
+ * exists now — `feedTransport.ts` speaks `/v1/sync/handshake`, `/v1/sync/push`
+ * and `/v1/sync/pull`, and `SyncProvider` builds the engine on that. The swap
+ * was one new file, which is the property `protocol.ts` was split out to have.
  *
- * So this file assembles the protocol out of what is there. That choice, and
- * not a different one:
+ * It stays here for two reasons and neither is sentiment. A deployment that
+ * has not caught up is still a deployment and this is what it can talk to; and
+ * `RestTransport` also carries `POST /v1/import/season`, which is a plain REST
+ * route and not part of the feed — the whole of §8 fase 4 goes through this
+ * class.
+ *
+ * What follows is the original reasoning, kept because it is an honest account
+ * of what a shim can and cannot promise.
+ *
+ * The choice it made, and not a different one:
  *
  *  - **The phone is not held back until the feed is written.** It registers,
  *    it pushes, it receives, and the farm gets the thing it is waiting for.
@@ -51,6 +55,11 @@
 
 import { mondayOf, parseDay, addDays } from "../../../../packages/shared/src/time.ts";
 import { ApiError, type HttpClient } from "./http.ts";
+import type {
+  SeasonImportInput,
+  SeasonImportReport,
+  SeasonImportTransport,
+} from "./seasonImport.ts";
 import type {
   Handshake,
   PullChange,
@@ -193,7 +202,7 @@ export interface RestTransportOptions {
   firstPullDays?: number;
 }
 
-export class RestTransport implements SyncTransport {
+export class RestTransport implements SyncTransport, SeasonImportTransport {
   private readonly http: HttpClient;
   private readonly now: () => Date;
   private readonly firstPullDays: number;
@@ -242,6 +251,10 @@ export class RestTransport implements SyncTransport {
         money,
       },
       cursor: input.cursor,
+      // No feed, nothing to be behind. The honest answer, and the reason
+      // `behind` is a number rather than an optional: a transport that cannot
+      // know says zero out loud instead of leaving the chip guessing.
+      behind: 0,
       serverTime: this.now().toISOString(),
     };
   }
@@ -685,6 +698,31 @@ export class RestTransport implements SyncTransport {
       })),
       skipped,
     };
+  }
+
+  // ---- §8 fase 3 and 4: the season that is already on the phone --------
+
+  /**
+   * `POST /v1/import/season`. One request, one transaction, one answer.
+   *
+   * This is the whole of the import from the phone's side, and it is short
+   * because the contract put the hard parts on the server: the reconciliation
+   * runs inside the transaction, and a 4xx never commits. What arrives here is
+   * either a report saying what was written and what was already there, or an
+   * `ApiError` — 409 `IMPORT_MISMATCH` carrying `details.balances`, which
+   * `SeasonImporter` turns into named cards.
+   *
+   * `HttpClient`'s 25-second deadline is the one thing worth knowing about:
+   * a season is a few megabytes in a single body, and on a farm's uplink that
+   * request can outlive it. A timeout here is not a lost import — it is an
+   * answer nobody read — and the retry is free precisely because every row is
+   * keyed by the uuid the phone already gave it.
+   */
+  async importSeason(input: SeasonImportInput): Promise<SeasonImportReport> {
+    return this.http.request<SeasonImportReport>("/v1/import/season", {
+      method: "POST",
+      body: input,
+    });
   }
 }
 

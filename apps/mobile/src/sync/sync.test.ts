@@ -69,6 +69,7 @@ class FakeServer {
           money: true,
         },
         cursor: null,
+        behind: 0,
         serverTime: "2026-08-29T12:00:00.000Z",
       }),
 

@@ -52,7 +52,10 @@ import {
   WEEK_GRID_DAY_SQL,
   OUTBOX_PENDING_SQL,
   PICKUPS_LIVE_VIEW,
+  IMPORT_RUNS_SCHEMA,
 } from "../schema.ts";
+import { buildSeasonExport } from "../sync/seasonExport.ts";
+import type { ImportRun, ImportRunInput } from "../sync/seasonImport.ts";
 import type {
   AnomaliesRepo,
   Anomaly,
@@ -454,6 +457,13 @@ export function createSqliteRepository(
     // that cannot drift is worth more than the microsecond it costs.
     db.execSync("DROP VIEW IF EXISTS pickups_live;");
     db.execSync(PICKUPS_LIVE_VIEW);
+
+    // The record of every attempt at §8's import. Additive, idempotent, and
+    // outside the migration ladder on purpose: it holds no farm data, nothing
+    // reads it to decide money, and a `user_version` bump would have made a
+    // phone in the field re-run a migration to gain a log table. Same shape of
+    // decision as `SECRETS_SCHEMA` in `sync/session.ts`.
+    db.execSync(IMPORT_RUNS_SCHEMA);
 
     // Seed a sensible default crop config (Café) on first run. It carries its
     // own identity from birth: on a brand-new phone this row is inserted after
@@ -1973,6 +1983,65 @@ export function createSqliteRepository(
     openConflictCount: () => syncStore.openConflictCount(),
     raiseConflict: (c) => syncStore.raiseConflict(c),
     resolveConflict: (id, resolution) => syncStore.resolveConflict(id, resolution),
+
+    // ---- The mudanza, §8 fase 3 and 4 --------------------------------
+
+    /**
+     * The season, packed. Read-only from top to bottom — see
+     * `sync/seasonExport.ts`, which has not one statement that writes.
+     *
+     * The zone and the schema version come from here rather than from the
+     * caller because they are facts about this database, and a screen that had
+     * to supply them would be a screen that could supply the wrong ones.
+     */
+    seasonExport: (importId, generatedAt) => {
+      const identity = sync.identity();
+      return buildSeasonExport(db, {
+        importId,
+        farmId: identity.farmId,
+        deviceId: identity.deviceId,
+        schemaVersion: SCHEMA_VERSION,
+        timezone: timezone(),
+        generatedAt,
+      });
+    },
+
+    recordImportRun: (run) => {
+      db.runSync(
+        `INSERT INTO import_runs
+           (importId, startedAt, finishedAt, status, rowsSent, totals, report, error)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [
+          run.importId,
+          run.startedAt,
+          run.finishedAt,
+          run.status,
+          run.rows,
+          run.totals ? JSON.stringify(run.totals) : null,
+          run.report ? JSON.stringify(run.report) : null,
+          run.error,
+        ],
+      );
+    },
+
+    importRuns: (limit = 20): ImportRun[] =>
+      db
+        .getAllSync<
+          Omit<ImportRun, "totals" | "report"> & {
+            totals: string | null;
+            report: string | null;
+          }
+        >(
+          `SELECT id, importId, startedAt, finishedAt, status, rowsSent AS rows,
+                  totals, report, error
+             FROM import_runs ORDER BY startedAt DESC, id DESC LIMIT ?`,
+          [limit],
+        )
+        .map((r) => ({
+          ...r,
+          totals: r.totals ? (JSON.parse(r.totals) as ImportRun["totals"]) : null,
+          report: r.report ? (JSON.parse(r.report) as ImportRun["report"]) : null,
+        })),
 
     reactivate: (o) =>
       reactivateWorker(db, {

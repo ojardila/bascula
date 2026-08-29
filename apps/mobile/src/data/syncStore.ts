@@ -564,10 +564,17 @@ export function createSyncStore(db: SqlDatabase, deps: SyncStoreDeps): SyncStore
           [uuid],
         );
 
+      // Two dates, and both are needed. `date` is the FARM's day, which is
+      // what the `/v1/pickups` facade takes; `occurredAt` is the instant,
+      // which is what `/v1/sync/push` requires and refuses a bare day for —
+      // the server's own trigger derives the day from the farm's timezone, and
+      // that agreement is what makes golden case 04 come out the same at both
+      // ends. Each transport picks the one its route speaks.
       case "pickups":
         return db.getFirstSync<Record<string, unknown>>(
           `SELECT pe.uuid AS workerId, cr.uuid AS cropId, pk.weight AS quantity,
-                  pk.localDay AS date, pk.deletedAt AS deletedAt
+                  pk.localDay AS date, pk.date AS occurredAt,
+                  pk.deletedAt AS deletedAt
              FROM pickups pk
              LEFT JOIN people pe ON pe.id = pk.personId
              LEFT JOIN crops  cr ON cr.id = pk.cropId

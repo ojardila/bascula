@@ -25,4 +25,6 @@ export type RootStackParamList = {
   SyncStatus: undefined;
   /** Registering the phone against a farm. §3.1. */
   SyncSetup: undefined;
+  /** §8 fase 3 and 4: handing the season on this phone to the server. */
+  SeasonImport: undefined;
 };

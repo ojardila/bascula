@@ -6,20 +6,18 @@
  * batch of envelopes going up, a batch of changes coming down, and a table
  * saying what the client does with each answer.
  *
- * It is separate from `restTransport.ts` on purpose, and the reason is
- * specific rather than architectural taste. **The server does not implement
- * §3.** There is no `/v1/sync/handshake`, no `/v1/sync/push`, no
- * `/v1/sync/pull` and no `sync_log`; the API has 99 routes and not one of them
- * is a change feed. So the phone speaks this protocol to a `SyncTransport`,
- * and the transport that exists today assembles it out of the ordinary REST
- * routes. When the feed is built, a second transport implements the same
- * interface and the engine, the outbox, the conflicts and every screen stay
- * exactly as they are.
+ * It is separate from any particular transport on purpose, and the separation
+ * has now paid for itself twice over. When this was written the server had no
+ * feed at all, and `restTransport.ts` assembled the three verbs out of ordinary
+ * REST routes so the farm did not have to wait for one. `/v1/sync/handshake`,
+ * `/v1/sync/push` and `/v1/sync/pull` exist today, `feedTransport.ts` speaks
+ * them, and the swap cost exactly what this split was supposed to make it
+ * cost: one new file. The engine, the outbox, the conflicts, the balance
+ * checksum and every screen did not change by a line.
  *
- * What is NOT faked: idempotency. Every write on that API already accepts a
- * client-generated `id` and is idempotent by `(farm_id, id)` — §4.1, capa 1,
- * the layer that actually protects the money — so a retried push cannot create
- * a second weighing or a second payment. That is real today.
+ * `restTransport.ts` stays in the tree because a deployment that has not caught
+ * up is still a deployment, and because its own header is an honest account of
+ * what a shim can and cannot promise.
  */
 
 import type { LedgerKind, PayMethod } from "../../../../packages/shared/src/enums.ts";
@@ -46,7 +44,12 @@ export type FarmRole = "owner" | "admin" | "weigher";
 
 export interface Handshake {
   farmId: string;
-  farmName: string;
+  /**
+   * Null on the feed, which does not carry it: the name the screens show comes
+   * from the session (`session.ts`), which learned it at login. Kept on the
+   * type because the REST shim does have one and the report shows it.
+   */
+  farmName: string | null;
   /** The zone that decides every business date. §1.5b. */
   timezone: string;
   currency: string;
@@ -54,6 +57,14 @@ export interface Handshake {
   capabilities: Capabilities;
   /** Where the server is now. Opaque: the phone stores it and hands it back. */
   cursor: string | null;
+  /**
+   * How many changes this phone has still to receive.
+   *
+   * §3.1: «lo que convierte el chip de estado de un spinner en un número». A
+   * transport that cannot know it says zero, which reads as "nothing pending"
+   * — the honest answer for a server with no feed to be behind.
+   */
+  behind: number;
   serverTime: string;
 }
 

@@ -24,7 +24,9 @@ import { repository, rawDb } from "../db";
 import { HttpClient } from "./http.ts";
 import { FarmSession, sqliteSecretStore, type StoredSession } from "./session.ts";
 import { RestTransport } from "./restTransport.ts";
+import { FeedTransport } from "./feedTransport.ts";
 import { SyncEngine, type SyncReport } from "./engine.ts";
+import { SeasonImporter } from "./seasonImport.ts";
 
 /** Every fifteen minutes, per §3.5. */
 const POLL_MS = 15 * 60 * 1000;
@@ -69,6 +71,14 @@ interface SyncContextValue {
    * Returns whether it is — §6.1 reads this to decide if settling is allowed.
    */
   ensureFresh(): Promise<boolean>;
+  /**
+   * §8 fase 3 and 4: hand the season this phone is holding to the server.
+   *
+   * Null until the phone is registered, because the import needs a farm to
+   * import into, and a button that is there before there is one is a button
+   * that fails for a reason nobody can act on.
+   */
+  seasonImporter: SeasonImporter | null;
   refresh(): void;
   signOut(): void;
 }
@@ -93,6 +103,7 @@ const SyncContext = createContext<SyncContextValue>({
   },
   syncNow: noop,
   ensureFresh: async () => false,
+  seasonImporter: null,
   refresh: () => {},
   signOut: () => {},
 });
@@ -117,6 +128,9 @@ export function canSettle(status: SyncStatus, startedAt: number): boolean {
 export function SyncProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<FarmSession | null>(null);
   const engineRef = useRef<SyncEngine | null>(null);
+  const httpRef = useRef<HttpClient | null>(null);
+  const transportRef = useRef<RestTransport | null>(null);
+  const importerRef = useRef<SeasonImporter | null>(null);
   /** When this launch happened, for §6.1's "in the current session". */
   const startedAt = useRef(Date.now()).current;
 
@@ -136,16 +150,44 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     return sessionRef.current;
   }, []);
 
+  // One HTTP client for every conversation. Two would mean two refreshes
+  // racing on one refresh token — the reuse the server treats as a stolen
+  // credential and answers by killing the whole family (`session.ts`).
+  const httpFor = useCallback(() => {
+    if (!httpRef.current)
+      httpRef.current = new HttpClient({ baseUrl: API_BASE_URL, session });
+    return httpRef.current;
+  }, [session]);
+
+  /**
+   * The season import, which is a REST route and not part of the feed.
+   * `RestTransport` implements both interfaces; only this half of it is used.
+   */
+  const transportFor = useCallback(() => {
+    if (!transportRef.current)
+      transportRef.current = new RestTransport({ http: httpFor() });
+    return transportRef.current;
+  }, [httpFor]);
+
+  /**
+   * §3, over the real feed.
+   *
+   * `restTransport.ts` was the shim for a server that had no `/v1/sync/*`, and
+   * it stays in the tree because that is still true of any deployment that has
+   * not caught up. What the app runs is the feed: a real per-farm sequence
+   * with a commit horizon, `sync_ops` behind `opId`, and one request per batch
+   * instead of one per envelope. The engine, the outbox, the conflicts and
+   * every screen did not change by a line — which is the property `protocol.ts`
+   * was split out to have.
+   */
   const engineFor = useCallback(() => {
-    if (!engineRef.current) {
-      const http = new HttpClient({ baseUrl: API_BASE_URL, session });
+    if (!engineRef.current)
       engineRef.current = new SyncEngine({
         repo: repository,
-        transport: new RestTransport({ http }),
+        transport: new FeedTransport({ http: httpFor() }),
       });
-    }
     return engineRef.current;
-  }, [session]);
+  }, [httpFor]);
 
   const status: SyncStatus = useMemo(() => {
     void tick;
@@ -248,8 +290,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     session.clear();
     engineRef.current = null;
+    httpRef.current = null;
+    transportRef.current = null;
+    importerRef.current = null;
     refresh();
   }, [refresh, session]);
+
+  // Kept across renders so the "one import at a time" guard inside it means
+  // something: a new importer on every render would let two taps start two.
+  const seasonImporter = useMemo(() => {
+    if (!status.registered) return null;
+    if (!importerRef.current)
+      importerRef.current = new SeasonImporter({
+        repo: repository,
+        transport: transportFor(),
+      });
+    return importerRef.current;
+  }, [status.registered, transportFor]);
 
   const value = useMemo(
     () => ({
@@ -257,10 +314,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       register,
       syncNow: () => run(true),
       ensureFresh,
+      seasonImporter,
       refresh,
       signOut,
     }),
-    [ensureFresh, refresh, register, run, signOut, status],
+    [ensureFresh, refresh, register, run, seasonImporter, signOut, status],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
