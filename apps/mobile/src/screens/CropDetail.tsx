@@ -12,7 +12,7 @@ import {
   type Crop,
   type CropConfig,
 } from "../db";
-import { readHarvest } from "../harvest";
+import { readHarvest } from "../../../../packages/shared/src/harvest.ts";
 import {
   useT,
   formatDay,

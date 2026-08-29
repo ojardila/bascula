@@ -1,8 +1,8 @@
 // The dictionaries and the lookup, free of React and of the database so the
 // printable documents can be built and tested outside the app.
 
-import type { Lang } from "./format.ts";
-import { mondayOf, parseDay, addDays } from "./format.ts";
+import type { Lang } from "../../../packages/shared/src/format.ts";
+import { mondayOf, parseDay, addDays } from "../../../packages/shared/src/format.ts";
 
 type Dict = Record<string, string>;
 

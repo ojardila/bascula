@@ -1,0 +1,47 @@
+{
+  "id": "redondeo-medio-centavo",
+  "title": "Cantidades cuyo producto cae exactamente en medio centavo",
+  "why": "Dos reglas juntas, y las dos se pierden al reescribir. (1) round(cantidad × tarifa) redondea MEDIO HACIA ARRIBA, no al par: 2,5 × 8333 = 20832,5 exacto, y la respuesta es 20833, no 20832. El redondeo bancario de Python round(), de Java HALF_EVEN o de un fmt.Sprintf(\"%.0f\") descuidado da 20832 en tres de las cuatro líneas. (2) Se redondea POR LÍNEA y luego se suman enteros. Sumar los productos exactos y redondear el total da 74997; por línea da 74999. Son dos centavos en cuatro pesadas, y el recibo que el trabajador revisa tiene que cuadrar línea a línea.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 8333,
+  "people": [{ "id": 1, "name": "Pedro", "lastName": "Ramírez" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 2.5, "at": "2026-08-25T09:00" },
+    { "op": "pickup", "id": 2, "personId": 1, "cropId": 1, "quantity": 4.5, "at": "2026-08-26T09:00" },
+    { "op": "pickup", "id": 3, "personId": 1, "cropId": 1, "quantity": 1.5, "at": "2026-08-27T09:00" },
+    { "op": "pickup", "id": 4, "personId": 1, "cropId": 1, "quantity": 0.5, "at": "2026-08-28T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" }
+  ],
+  "expect": {
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2026-08-24",
+        "periodEnd": "2026-08-30",
+        "grossCents": 74999,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2026-08-24", "quantity": 2.5, "costPerUnitCents": 8333, "amountCents": 20833, "voided": false },
+          { "pickupId": 2, "week": "2026-08-24", "quantity": 4.5, "costPerUnitCents": 8333, "amountCents": 37499, "voided": false },
+          { "pickupId": 3, "week": "2026-08-24", "quantity": 1.5, "costPerUnitCents": 8333, "amountCents": 12500, "voided": false },
+          { "pickupId": 4, "week": "2026-08-24", "quantity": 0.5, "costPerUnitCents": 8333, "amountCents": 4167, "voided": false }
+        ]
+      }
+    ],
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 74999, "date": "2026-08-30", "settlementId": 1, "reversesId": null }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 74999,
+        "paidCents": 0,
+        "deductedCents": 0,
+        "balanceCents": 74999,
+        "lastMovementAt": "2026-08-30"
+      }
+    ]
+  }
+}

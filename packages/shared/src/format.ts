@@ -1,6 +1,10 @@
 // Pure formatting, kept free of React and of the database so it can be
 // exercised by tests directly. Node runs TypeScript natively, so the suite
 // needs no build step and no test dependency.
+//
+// Shared with the API and the web because a receipt printed from the server
+// and one printed from the phone have to read identically — the worker
+// compares them.
 
 export type Lang = "es" | "en" | "pt";
 
@@ -61,35 +65,11 @@ export function formatNumber(value: number, lang: Lang = "es"): string {
   return `${sign}${group(String(whole), g)}${frac ? decimal + frac : ""}`;
 }
 
-// Parse a YYYY-MM-DD key without going through the local timezone, which would
-// shift the day backwards for anyone west of UTC.
-export function parseDay(iso: string): Date {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
-}
-
-export const addDays = (d: Date, n: number) => {
-  const r = new Date(d);
-  r.setUTCDate(d.getUTCDate() + n);
-  return r;
-};
-
-/** Monday of the week a date falls in, as YYYY-MM-DD. Mirrors the SQL key. */
-export function mondayOf(date: Date | string): string {
-  const d = typeof date === "string" ? parseDay(date) : new Date(Date.UTC(
-    date.getFullYear(), date.getMonth(), date.getDate(),
-  ));
-  const dow = d.getUTCDay(); // 0 = Sunday
-  return addDays(d, dow === 0 ? -6 : 1 - dow).toISOString().slice(0, 10);
-}
-
-/** ISO week number, shown as a secondary hint only. */
-export function weekNumber(mondayISO: string): number {
-  const d = parseDay(mondayISO);
-  const thursday = addDays(d, 3); // ISO weeks are named after their Thursday
-  const jan1 = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
-  return Math.floor((thursday.getTime() - jan1.getTime()) / 86400000 / 7) + 1;
-}
+// The week and day rules moved to ./time.ts — the server derives them too, and
+// they are not formatting. They are re-exported here so every existing caller
+// (and the test below) keeps importing them from the same place.
+import { parseDay, addDays } from "./time.ts";
+export { parseDay, addDays, mondayOf, weekNumber, localDayOf, weekOf } from "./time.ts";
 
 /**
  * The date range a week covers: "24–30 ago", "31 ago – 6 sep",

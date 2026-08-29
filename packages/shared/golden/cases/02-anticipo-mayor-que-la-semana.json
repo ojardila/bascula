@@ -1,0 +1,93 @@
+{
+  "id": "anticipo-mayor-que-la-semana",
+  "title": "Un anticipo mayor que la semana se amortiza contra varias",
+  "why": "El anticipo no es un pago de una semana concreta: es una posición negativa en el diario que se come lo devengado hasta agotarse. Una implementación que descuente el anticipo 'de la semana' y lo dé por cerrado le regala al trabajador la diferencia en la primera semana y se la cobra dos veces en la segunda.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 80000,
+  "people": [{ "id": 1, "name": "Juan", "lastName": "Pérez" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "advance", "personId": 1, "amountCents": 15000000, "on": "2026-08-19", "note": "adelanto para el mercado" },
+
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 50, "at": "2026-08-19T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-23", "on": "2026-08-23" },
+    { "op": "checkpoint", "label": "semana 1 liquidada: el anticipo no se agota" },
+
+    { "op": "pickup", "id": 2, "personId": 1, "cropId": 1, "quantity": 60, "at": "2026-08-26T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" },
+    { "op": "checkpoint", "label": "semana 2 liquidada: todavía debe" },
+
+    { "op": "pickup", "id": 3, "personId": 1, "cropId": 1, "quantity": 90, "at": "2026-09-02T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-09-06", "on": "2026-09-06" },
+    { "op": "checkpoint", "label": "semana 3 liquidada: por primera vez le sobra" },
+
+    { "op": "pay", "personId": 1, "amountCents": 1000000, "on": "2026-09-06", "method": "efectivo" }
+  ],
+  "expect": {
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2026-08-17",
+        "periodEnd": "2026-08-23",
+        "grossCents": 4000000,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2026-08-17", "quantity": 50, "costPerUnitCents": 80000, "amountCents": 4000000, "voided": false }
+        ]
+      },
+      {
+        "id": 2,
+        "personId": 1,
+        "periodStart": "2026-08-24",
+        "periodEnd": "2026-08-30",
+        "grossCents": 4800000,
+        "status": "open",
+        "items": [
+          { "pickupId": 2, "week": "2026-08-24", "quantity": 60, "costPerUnitCents": 80000, "amountCents": 4800000, "voided": false }
+        ]
+      },
+      {
+        "id": 3,
+        "personId": 1,
+        "periodStart": "2026-08-31",
+        "periodEnd": "2026-09-06",
+        "grossCents": 7200000,
+        "status": "open",
+        "items": [
+          { "pickupId": 3, "week": "2026-08-31", "quantity": 90, "costPerUnitCents": 80000, "amountCents": 7200000, "voided": false }
+        ]
+      }
+    ],
+    "checkpoints": [
+      {
+        "label": "semana 1 liquidada: el anticipo no se agota",
+        "balances": [
+          { "personId": 1, "earnedCents": 4000000, "paidCents": 15000000, "deductedCents": 0, "balanceCents": -11000000, "lastMovementAt": "2026-08-23" }
+        ]
+      },
+      {
+        "label": "semana 2 liquidada: todavía debe",
+        "balances": [
+          { "personId": 1, "earnedCents": 8800000, "paidCents": 15000000, "deductedCents": 0, "balanceCents": -6200000, "lastMovementAt": "2026-08-30" }
+        ]
+      },
+      {
+        "label": "semana 3 liquidada: por primera vez le sobra",
+        "balances": [
+          { "personId": 1, "earnedCents": 16000000, "paidCents": 15000000, "deductedCents": 0, "balanceCents": 1000000, "lastMovementAt": "2026-09-06" }
+        ]
+      }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 16000000,
+        "paidCents": 16000000,
+        "deductedCents": 0,
+        "balanceCents": 0,
+        "lastMovementAt": "2026-09-06"
+      }
+    ]
+  }
+}

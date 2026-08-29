@@ -9,7 +9,7 @@
     "mobile": "npm --workspace apps/mobile run start",
     "android": "npm --workspace apps/mobile run android",
     "ios": "npm --workspace apps/mobile run ios",
-    "test": "npm --workspace apps/mobile test",
-    "typecheck": "npm --workspace apps/mobile exec tsc -- --noEmit"
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

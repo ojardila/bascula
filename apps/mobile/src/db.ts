@@ -1,4 +1,24 @@
 import * as SQLite from "expo-sqlite";
+// The domain rules the server has to agree with, character for character.
+// They live in packages/shared so a divergence is impossible rather than
+// merely unlikely; everything below is still SQLite and still the phone's.
+import {
+  toCents,
+  fromCents,
+  amountCents,
+} from "../../../packages/shared/src/money.ts";
+import { localDayOf } from "../../../packages/shared/src/time.ts";
+export type {
+  LedgerKind,
+  PayMethod,
+  SettlementStatus,
+} from "../../../packages/shared/src/enums.ts";
+import type {
+  LedgerKind,
+  PayMethod,
+  SettlementStatus,
+} from "../../../packages/shared/src/enums.ts";
+export { toCents, fromCents };
 import {
   BASE_SCHEMA,
   PAYMENTS_SCHEMA,
@@ -173,11 +193,7 @@ const now = () => new Date().toISOString();
 // Local calendar day, not the UTC one: every query now groups by local day,
 // and a payment made on Sunday evening in Bogota would otherwise be stamped
 // with tomorrow's date and shown as a movement dated in the future.
-export const today = () => {
-  const d = new Date();
-  const p2 = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-};
+export const today = () => localDayOf();
 
 export const People = {
   // Active workers only (soft-deleted ones stay in the table for history).
@@ -630,9 +646,9 @@ export function totalPayout(general: number): number {
 // over for months. Sign convention on the ledger: a positive amount means the
 // farm owes the worker, so a positive balance is the worker's savings.
 
-export type LedgerKind =
-  "devengo" | "pago" | "anticipo" | "deduccion" | "ajuste" | "reverso";
-export type PayMethod = "efectivo" | "transferencia" | "otro";
+// LedgerKind, PayMethod and SettlementStatus are re-exported from
+// @bascula/shared at the top of this file: the six kinds and their sign table
+// are the one thing the phone and the API cannot spell differently.
 
 export interface LedgerEntry {
   id: number;
@@ -653,7 +669,7 @@ export interface Settlement {
   periodStart: string;
   periodEnd: string;
   grossCents: number;
-  status: "open" | "void";
+  status: SettlementStatus;
   note: string | null;
   createdAt: string;
   voidedAt: string | null;
@@ -691,9 +707,6 @@ export interface SettlementPreview {
   kg: number;
 }
 
-export const toCents = (amount: number) => Math.round(amount * 100);
-export const fromCents = (cents: number) => cents / 100;
-
 // Pickups in range that no settlement has claimed yet. Selecting by pickupId
 // (not by date) is what makes a late pickup on an already-settled week roll
 // into the next settlement instead of being counted twice or lost.
@@ -718,7 +731,7 @@ function pendingItems(
       weight: r.weight,
       costPerUnitCents,
       // Round per line so the printed receipt adds up exactly.
-      amountCents: Math.round(r.weight * costPerUnitCents),
+      amountCents: amountCents(r.weight, costPerUnitCents),
     };
   });
 }
@@ -1082,9 +1095,7 @@ export const Payments = {
       { personId: number; name: string; kg: number; amountCents: number }
     >();
     for (const r of rows) {
-      const cents = Math.round(
-        r.weight * toCents(costForWeek(r.week, general)),
-      );
+      const cents = amountCents(r.weight, toCents(costForWeek(r.week, general)));
       const cur = acc.get(r.personId) ?? {
         personId: r.personId,
         name: r.name,

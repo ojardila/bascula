@@ -1,0 +1,54 @@
+{
+  "id": "deduccion-reverso-y-ajuste",
+  "title": "La tabla de signos: deducción, reverso por signo y ajuste fuera del desglose",
+  "why": "El saldo es SUM(amountCents) a secas; earned/paid/deducted son sólo desglose para la pantalla, y ahí es donde se diverge. Tres reglas se prueban juntas: (1) una deducción baja el saldo y se reporta aparte, no como pago; (2) un reverso se clasifica POR SIGNO y no por tipo — reversar un pago es positivo y deja de contar como pagado, reversar un devengo es negativo y deja de contar como ganado; (3) un ajuste NO aparece en ningún desglose pero sí en el saldo, porque no es ni trabajo ni efectivo. Clasificar el reverso por el tipo del movimiento original, que es lo natural al reescribir, da un desglose distinto con el mismo saldo: cuadra el total y miente el recibo.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 80000,
+  "people": [{ "id": 1, "name": "Beto", "lastName": "Salazar" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 50, "at": "2026-08-25T09:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-08-30", "on": "2026-08-30" },
+    { "op": "deduct", "personId": 1, "amountCents": 500000, "on": "2026-08-30", "note": "comida de la semana" },
+    { "op": "pay", "personId": 1, "amountCents": 3500000, "on": "2026-08-30", "method": "efectivo" },
+    { "op": "checkpoint", "label": "pagado neto de la deducción" },
+
+    { "op": "reverse", "ledgerId": 3, "on": "2026-08-31", "note": "el billete estaba falso" },
+    { "op": "checkpoint", "label": "pago reversado: ya no cuenta como pagado" },
+
+    { "op": "adjust", "personId": 1, "signedCents": -100000, "on": "2026-08-31", "note": "corrección de báscula" }
+  ],
+  "expect": {
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 4000000, "date": "2026-08-30", "settlementId": 1, "reversesId": null },
+      { "id": 2, "personId": 1, "kind": "deduccion", "amountCents": -500000, "date": "2026-08-30", "settlementId": null, "reversesId": null },
+      { "id": 3, "personId": 1, "kind": "pago", "amountCents": -3500000, "date": "2026-08-30", "settlementId": null, "reversesId": null },
+      { "id": 4, "personId": 1, "kind": "reverso", "amountCents": 3500000, "date": "2026-08-31", "settlementId": null, "reversesId": 3 },
+      { "id": 5, "personId": 1, "kind": "ajuste", "amountCents": -100000, "date": "2026-08-31", "settlementId": null, "reversesId": null }
+    ],
+    "checkpoints": [
+      {
+        "label": "pagado neto de la deducción",
+        "balances": [
+          { "personId": 1, "earnedCents": 4000000, "paidCents": 3500000, "deductedCents": 500000, "balanceCents": 0, "lastMovementAt": "2026-08-30" }
+        ]
+      },
+      {
+        "label": "pago reversado: ya no cuenta como pagado",
+        "balances": [
+          { "personId": 1, "earnedCents": 4000000, "paidCents": 0, "deductedCents": 500000, "balanceCents": 3500000, "lastMovementAt": "2026-08-31" }
+        ]
+      }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 4000000,
+        "paidCents": 0,
+        "deductedCents": 500000,
+        "balanceCents": 3400000,
+        "lastMovementAt": "2026-08-31"
+      }
+    ]
+  }
+}

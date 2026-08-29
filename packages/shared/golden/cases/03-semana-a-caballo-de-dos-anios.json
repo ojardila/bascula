@@ -1,0 +1,48 @@
+{
+  "id": "semana-a-caballo-de-dos-anios",
+  "title": "La semana del 29 de diciembre es una sola, con un solo precio",
+  "why": "La clave de semana es la FECHA DEL LUNES, nunca una etiqueta '%Y-W%W'. Con esa etiqueta esta semana se parte en 2025-W52 y 2026-W00: dos semanas, dos precios y dos liquidaciones para siete días de trabajo seguidos. Ya pasó una vez en el móvil. En Go, strftime('%Y-W%W'), ISOWeek() y un año calendario reproducen el mismo corte.",
+  "timezone": "America/Bogota",
+  "generalRateCents": 80000,
+  "weeklyRateCents": { "2025-12-29": 90000 },
+  "people": [{ "id": 1, "name": "Luisa", "lastName": "Torres" }],
+  "crops": [{ "id": 1, "name": "Lote 1" }],
+  "events": [
+    { "op": "pickup", "id": 1, "personId": 1, "cropId": 1, "quantity": 40, "at": "2025-12-31T10:00" },
+    { "op": "pickup", "id": 2, "personId": 1, "cropId": 1, "quantity": 35, "at": "2026-01-02T10:00" },
+    { "op": "settle", "personId": 1, "from": "1970-01-01", "to": "2026-01-04", "on": "2026-01-04" }
+  ],
+  "expect": {
+    "pickups": [
+      { "id": 1, "localDay": "2025-12-31", "week": "2025-12-29" },
+      { "id": 2, "localDay": "2026-01-02", "week": "2025-12-29" }
+    ],
+    "settlements": [
+      {
+        "id": 1,
+        "personId": 1,
+        "periodStart": "2025-12-29",
+        "periodEnd": "2026-01-04",
+        "grossCents": 6750000,
+        "status": "open",
+        "items": [
+          { "pickupId": 1, "week": "2025-12-29", "quantity": 40, "costPerUnitCents": 90000, "amountCents": 3600000, "voided": false },
+          { "pickupId": 2, "week": "2025-12-29", "quantity": 35, "costPerUnitCents": 90000, "amountCents": 3150000, "voided": false }
+        ]
+      }
+    ],
+    "ledger": [
+      { "id": 1, "personId": 1, "kind": "devengo", "amountCents": 6750000, "date": "2026-01-04", "settlementId": 1, "reversesId": null }
+    ],
+    "balances": [
+      {
+        "personId": 1,
+        "earnedCents": 6750000,
+        "paidCents": 0,
+        "deductedCents": 0,
+        "balanceCents": 6750000,
+        "lastMovementAt": "2026-01-04"
+      }
+    ]
+  }
+}

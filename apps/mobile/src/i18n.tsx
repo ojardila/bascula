@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { Prefs } from "./db";
 
-export type { Lang } from "./format";
-import type { Lang } from "./format";
+export type { Lang } from "../../../packages/shared/src/format.ts";
+import type { Lang } from "../../../packages/shared/src/format.ts";
 export { translate, weekTag } from "./strings";
 import { translate } from "./strings";
 export {
@@ -12,8 +12,8 @@ export {
   formatDay,
   mondayOf,
   weekNumber,
-} from "./format";
-import { formatMoney, formatNumber, mondayOf, parseDay, addDays } from "./format";
+} from "../../../packages/shared/src/format.ts";
+import { formatMoney, formatNumber, mondayOf, parseDay, addDays } from "../../../packages/shared/src/format.ts";
 
 type TFn = (key: string, vars?: Record<string, string | number>) => string;
 
