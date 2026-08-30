@@ -160,11 +160,19 @@ type FarmUser struct {
 	Role            domain.Role `json:"role"`
 	EmailVerifiedAt *time.Time  `json:"emailVerifiedAt"`
 	CreatedAt       time.Time   `json:"createdAt"`
+
+	// The platform flag, read but never published: it is a fact about the
+	// account and not about this farm's membership, and the console has no
+	// column for it. handleRemoveUser is the one caller that needs it — see
+	// the note there about the farm that could end the platform
+	// administrator.
+	IsSuperadmin bool `json:"-"`
 }
 
 func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at
+		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at,
+		       u.is_superadmin
 		  FROM memberships m JOIN users u ON u.id = m.user_id
 		 WHERE m.farm_id = current_farm()
 		 ORDER BY m.role, lower(u.email)`)
@@ -177,7 +185,7 @@ func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
 	for rows.Next() {
 		var u FarmUser
 		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt,
-			&u.CreatedAt); err != nil {
+			&u.CreatedAt, &u.IsSuperadmin); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
@@ -191,10 +199,12 @@ func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
 func GetFarmUser(ctx context.Context, tx pgx.Tx, userID string) (*FarmUser, error) {
 	var u FarmUser
 	err := tx.QueryRow(ctx, `
-		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at
+		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at,
+		       u.is_superadmin
 		  FROM memberships m JOIN users u ON u.id = m.user_id
 		 WHERE m.farm_id = current_farm() AND m.user_id = $1`, userID).
-		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt)
+		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt,
+			&u.IsSuperadmin)
 	if err != nil {
 		return nil, err
 	}
