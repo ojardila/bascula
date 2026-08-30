@@ -278,6 +278,23 @@ export interface PlotCrop {
   plantedAt: DayISO | null;
 }
 
+/**
+ * A unit the farm counts work in: kilo, arroba, canasta, or whatever it
+ * invents. `kgFactor` is what one of them weighs, and is null for a unit that
+ * does not convert -- a jornal is a day, not a weight.
+ */
+export interface WorkUnit {
+  id: Uuid;
+  code: string;
+  label: string;
+  kgFactor: number | null;
+  /**
+   * Whether any activity or work record points at it. It decides what deleting
+   * does -- remove, or retire -- and lets the screen say which before asking.
+   */
+  inUse: boolean;
+}
+
 /** A GeoJSON Point, longitude first, exactly as it goes on the wire. */
 export type PlotPoint = { type: "Point"; coordinates: number[] };
 

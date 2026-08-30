@@ -30,6 +30,7 @@ import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SalesPage } from "./features/sales/SalesPage";
 import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ConfigPage } from "./features/config/ConfigPage";
+import { WorkUnitsPage } from "./features/units/WorkUnitsPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 
 /**
@@ -275,6 +276,18 @@ function Shell() {
           }
         />
 
+        {/* Units of collection. `activities.read` rather than a catalogs action:
+            the server gates the route on `catalogs.read`, which is granted to
+            exactly the roles `activities.read` is, and a work unit lives in the
+            activity catalogue there. */}
+        <Route
+          path="unidades"
+          element={
+            <RequirePermission action="activities.read" moduleName="ver las unidades">
+              <WorkUnitsPage />
+            </RequirePermission>
+          }
+        />
         <Route
           path="configuracion"
           element={

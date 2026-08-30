@@ -1062,6 +1062,42 @@ export const handlers = [
     return HttpResponse.json(created);
   }),
 
+  // Editing a unit. `kgFactor` distinguishes absent from null exactly as the
+  // server does: absent keeps the stored factor, null clears it. A mock that
+  // was looser here would hide the bug the server's own test caught -- a
+  // rename that wiped what converts the unit into kilos.
+  http.patch("*/v1/catalogs/work-units/:id", async ({ params, request }) => {
+    const g = guard(request, "catalogs.write");
+    if (g.deny) return g.deny;
+    const u = g.p.tenant.workUnits.find((x) => x.id === params.id);
+    if (!u) return notFound();
+    const body = (await request.json()) as WorkUnitRequestBody;
+    if (body.code) {
+      const clash = g.p.tenant.workUnits.find(
+        (x) => x.id !== u.id && sameName(x.code, body.code!),
+      );
+      if (clash) return badRequest("this farm already has a unit with that code");
+      u.code = body.code;
+    }
+    if (body.label) u.label = body.label;
+    if ("kgFactor" in body) u.kgFactor = body.kgFactor ?? null;
+    return HttpResponse.json(u);
+  }),
+
+  // Removing a unit does one of two things and the server decides which: a unit
+  // nothing references is deleted, one that history references is retired. The
+  // mock makes the same distinction, or the screen's warning would only ever be
+  // tested against a world where deleting always succeeds.
+  http.delete("*/v1/catalogs/work-units/:id", ({ params, request }) => {
+    const g = guard(request, "catalogs.write");
+    if (g.deny) return g.deny;
+    const u = g.p.tenant.workUnits.find((x) => x.id === params.id);
+    if (!u) return notFound();
+    const archived = u.inUse;
+    g.p.tenant.workUnits = g.p.tenant.workUnits.filter((x) => x.id !== u.id);
+    return HttpResponse.json({ id: u.id, archived });
+  }),
+
   /* ---- workers ---- */
 
   http.get("*/v1/workers", ({ request }) => {

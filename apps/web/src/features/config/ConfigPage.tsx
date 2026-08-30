@@ -4,6 +4,7 @@ import {
 } from "@mui/material";
 import PeopleIcon from "@mui/icons-material/People";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
+import StraightenIcon from "@mui/icons-material/Straighten";
 import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
@@ -153,6 +154,30 @@ export function ConfigPage() {
                   startIcon={<PriceChangeIcon />}
                 >
                   Fijar el precio de la semana
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {can("activities.write") && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  Unidades de recolección
+                </Typography>
+                <Typography color="text.secondary" sx={{ mb: 2 }}>
+                  Cómo cuenta la finca lo que se recoge. El kilo es una, pero no la
+                  única: hay fincas que cuentan por arroba, por canasta o por bulto.
+                </Typography>
+                <Button
+                  component={RouterLink}
+                  to="/unidades"
+                  variant="outlined"
+                  startIcon={<StraightenIcon />}
+                >
+                  Ver y editar las unidades
                 </Button>
               </CardContent>
             </Card>

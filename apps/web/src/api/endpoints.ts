@@ -134,6 +134,7 @@ import type {
   WorkerInput,
   WorkerNote,
   WorkerProfile,
+  WorkUnit,
 } from "./types";
 import type {
   WireActivity,
@@ -631,12 +632,50 @@ export const api = {
       await http.get<WireList<WireCatalogItem>>("/v1/catalogs/activity-categories"),
     ).map(toCatalogItem),
 
-  workUnits: async (): Promise<Array<{ id: Uuid; code: string; label: string }>> =>
+  workUnits: async (): Promise<WorkUnit[]> =>
     items(await http.get<WireList<WireWorkUnit>>("/v1/catalogs/work-units")).map((u) => ({
       id: u.id,
       code: u.code,
       label: u.label,
+      kgFactor: u.kgFactor,
+      inUse: u.inUse,
     })),
+
+  createWorkUnit: async (body: {
+    code: string;
+    label: string;
+    kgFactor: number | null;
+  }): Promise<WorkUnit> => {
+    const u = await http.post<WireWorkUnit>("/v1/catalogs/work-units", body);
+    return { id: u.id, code: u.code, label: u.label, kgFactor: u.kgFactor, inUse: u.inUse };
+  },
+
+  /**
+   * `kgFactor` is sent only when it is meant to change. The server tells absent
+   * from null on purpose: absent keeps the stored factor, null clears it. A
+   * rename that carried an implicit null would wipe what converts the unit into
+   * kilos, which is what somebody is paid by.
+   */
+  updateWorkUnit: async (
+    id: Uuid,
+    body: { code?: string; label?: string; kgFactor?: number | null },
+  ): Promise<WorkUnit> => {
+    const u = await http.patch<WireWorkUnit>(`/v1/catalogs/work-units/${id}`, body);
+    return { id: u.id, code: u.code, label: u.label, kgFactor: u.kgFactor, inUse: u.inUse };
+  },
+
+  /**
+   * Removes the unit, or retires it when history points at it. Which of the two
+   * happened comes back in `archived`, and the caller must say so rather than
+   * report a deletion: a unit any work record references is never destroyed,
+   * because the record would be left saying "40" of something nobody can name.
+   */
+  deleteWorkUnit: async (id: Uuid): Promise<{ archived: boolean }> => {
+    const r = await http.del<{ id: Uuid; archived: boolean }>(
+      `/v1/catalogs/work-units/${id}`,
+    );
+    return { archived: r.archived };
+  },
 
   /* -- plots --------------------------------------------------------- */
 
