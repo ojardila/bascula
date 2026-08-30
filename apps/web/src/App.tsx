@@ -8,7 +8,6 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { PlotsPage } from "./features/plots/PlotsPage";
 import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
-import { PlotMapPage } from "./features/plots/PlotMapPage";
 import { WorkersPage } from "./features/workers/WorkersPage";
 import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
@@ -94,18 +93,6 @@ function Shell() {
           element={
             <RequirePermission action="plots.read" moduleName="ver este lote">
               <PlotDetailPage />
-            </RequirePermission>
-          }
-        />
-        {/* The map is `plots.read`, not `plots.write`: a weigher may look at
-            the boundary of the lot he is standing in. The editor itself goes
-            read-only without `plots.write`, and the server refuses the PUT
-            with its own action, `plots.boundary.write`. */}
-        <Route
-          path="lotes/:id/mapa"
-          element={
-            <RequirePermission action="plots.read" moduleName="ver el mapa del lote">
-              <PlotMapPage />
             </RequirePermission>
           }
         />

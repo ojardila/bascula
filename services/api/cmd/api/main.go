@@ -15,9 +15,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -312,6 +314,48 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	}
 	if d, err := time.ParseDuration(getenv("LOGIN_FAILURE_WINDOW")); err == nil && d > 0 {
 		rc.http.LoginFailureWindow = d
+	}
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_EMAIL_PER_HOUR")); err == nil && n > 0 {
+		rc.http.SignupsPerEmailPerHour = n
+	}
+
+	// TRUSTED_PROXY_CIDRS names the reverse proxies this service will believe
+	// an X-Forwarded-For from, comma separated, e.g.
+	//
+	//	TRUSTED_PROXY_CIDRS=10.0.0.0/8,2001:db8::/32
+	//
+	// Unset — the default — means no header moves the client address and the
+	// signup limit counts the peer of the socket. That is right for a service
+	// reachable directly and WRONG behind nginx or a CDN, where every request
+	// would then count against the proxy and a per-IP limit would silently
+	// become a global one. Whoever puts a proxy in front owns this variable,
+	// and there is no way to get it by accident.
+	//
+	// It has to be the ranges the CONNECTIONS arrive from, not the ranges the
+	// clients are in: httpapi checks r.RemoteAddr against this list before it
+	// will read the header at all, so a range that does not contain the
+	// proxy's own address buys nothing except a header that is still ignored.
+	//
+	// A malformed entry is fatal on purpose. The two ways to be wrong are not
+	// symmetric: refusing to start is an outage an operator sees in the first
+	// second, and silently dropping a range is a rate limit that looks fine
+	// and bounds nothing.
+	for _, part := range strings.Split(getenv("TRUSTED_PROXY_CIDRS"), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := netip.ParsePrefix(part); err != nil {
+			return resolved{}, fmt.Errorf(
+				"TRUSTED_PROXY_CIDRS: %q is not a CIDR prefix "+
+					"(want a form like 10.0.0.0/8): %w", part, err)
+		}
+		rc.http.TrustedProxyCIDRs = append(rc.http.TrustedProxyCIDRs, part)
+	}
+	if len(rc.http.TrustedProxyCIDRs) > 0 {
+		rc.warnings = append(rc.warnings, fmt.Sprintf(
+			"trusting X-Forwarded-For from %v, and from nothing else",
+			rc.http.TrustedProxyCIDRs))
 	}
 	return rc, nil
 }

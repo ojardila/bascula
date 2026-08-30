@@ -25,13 +25,11 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
+import { PlotLocationField, pointOf, type PlotPoint } from "./PlotLocationField";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { areaHaOfRing, asGeometry, openRing, outerRings, type PolygonGeometry } from "../../lib/geo";
-import { formatArea } from "../../lib/money";
 import { departmentMismatch } from "./municipalities";
 import { PLOT } from "../../lib/vocab";
 import type { CatalogItem, PlotInput } from "../../api/types";
@@ -92,18 +90,16 @@ export function PlotFormPage() {
   const [error, setError] = useState<string | null>(null);
   const { busy, run: runOnce } = useWriteOnce();
   /**
-   * The polygon, held here rather than inside the map, because the form saves
-   * it: `POST /v1/plots` and `PATCH /v1/plots/{id}` both accept a `boundary`
+   * The point, held here rather than inside the field, because the form saves
+   * it: `POST /v1/plots` and `PATCH /v1/plots/{id}` both accept a `location`
    * and store it in the same transaction as the name and the crops. One write
-   * instead of two means a new lot cannot end up existing with its shape lost
+   * instead of two means a new lot cannot end up existing with its point lost
    * to a second call that failed on its own.
+   *
+   * `undefined` means untouched, which is not the same as `null`. Untouched
+   * sends nothing and the stored point stays; null is sent and erases it.
    */
-  const [boundary, setBoundary] = useState<PolygonGeometry | null>(null);
-  /** Only so the map can draw the rest of the farm behind this lot. */
-  const [neighbours, setNeighbours] = useState<MapNeighbour[]>([]);
-  /** The map is mounted from the loaded shape, so it waits for the GET. */
-  const [mapReady, setMapReady] = useState(!id);
-  const [loadedBoundary, setLoadedBoundary] = useState<unknown>(null);
+  const [location, setLocation] = useState<PlotPoint | null | undefined>(undefined);
 
   useEffect(() => {
     Promise.all([api.cropTypes(), api.varieties()])
@@ -138,9 +134,7 @@ export function PlotFormPage() {
         setAreaHa(String(p.areaHa).replace(".", ","));
         setDepartment(p.department);
         setMunicipality(p.municipality);
-        setLoadedBoundary(p.boundary);
-        setBoundary(null);
-        setMapReady(true);
+        setLocation(pointOf(p.location));
         setRows(
           p.crops.map((c) => ({
             key: c.id,
@@ -153,39 +147,9 @@ export function PlotFormPage() {
         );
       })
       .catch((e) => {
-        setMapReady(true);
         setError(messageFor(e));
       });
   }, [id]);
-
-  // The other lots, for the map's context layer only. A failure here costs
-  // nothing that matters, so it is swallowed rather than shown as an error on
-  // a form about something else.
-  useEffect(() => {
-    api
-      .listPlots({ status: "active" })
-      .then((all) =>
-        setNeighbours(
-          all.flatMap((p) => {
-            if (p.id === plotId) return [];
-            const g = asGeometry(p.boundary);
-            return g ? [{ id: p.id, name: p.name, boundary: g }] : [];
-          }),
-        ),
-      )
-      .catch(() => setNeighbours([]));
-  }, [plotId]);
-
-  /**
-   * What the drawing measures right now — the browser's arithmetic, replaced
-   * by the server's the moment the form is saved.
-   */
-  const drawnAreaHa = useMemo(() => {
-    const g = boundary ?? asGeometry(loadedBoundary);
-    if (!g) return null;
-    const ring = openRing(outerRings(g)[0] ?? []);
-    return ring.length >= 3 ? areaHaOfRing(ring) : null;
-  }, [boundary, loadedBoundary]);
 
   const parsedArea = useMemo(() => {
     const n = Number(areaHa.replace(/\./g, "").replace(",", "."));
@@ -262,10 +226,10 @@ export function PlotFormPage() {
         department,
         municipality: municipality.trim(),
         areaHa: parsedArea,
-        // Absent when the map was never touched: on this route an absent
-        // boundary keeps whatever is stored, and sending a null would be
-        // indistinguishable from it anyway.
-        ...(boundary ? { boundary } : {}),
+        // Absent when the field was never touched, so the stored point stays.
+        // A null IS sent when the owner removed it, because on this route the
+        // two are deliberately different.
+        ...(location === undefined ? {} : { location }),
         crops,
       };
       return editing ? api.updatePlot(plotId, body) : api.createPlot(body);
@@ -392,30 +356,12 @@ export function PlotFormPage() {
             <Card>
               <CardContent>
                 <Typography variant="h3" gutterBottom>
-                  Mapa del lote
+                  Dónde queda el lote
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Opcional. Marque las esquinas y el sistema calcula las hectáreas del
-                  polígono, que quedan junto a las que usted declara arriba.
-                </Typography>
-                {mapReady && (
-                  <PlotBoundaryEditor
-                    plotId={plotId}
-                    initialBoundary={loadedBoundary}
-                    neighbours={neighbours}
-                    declaredAreaHa={Number.isFinite(parsedArea) ? parsedArea : null}
-                    height={300}
-                    onChange={setBoundary}
-                  />
-                )}
-                {drawnAreaHa !== null && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    El polígono mide {formatArea(drawnAreaHa)} ha
-                    {Number.isFinite(parsedArea) && parsedArea > 0
-                      ? ` y usted declaró ${formatArea(parsedArea)} ha. Las dos se guardan.`
-                      : "."}
-                  </Alert>
-                )}
+                <PlotLocationField
+                  value={location ?? null}
+                  onChange={(p) => setLocation(p)}
+                />
               </CardContent>
             </Card>
           </Grid>

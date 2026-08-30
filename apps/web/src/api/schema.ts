@@ -3072,6 +3072,29 @@ export interface components {
             totalCents: number;
         };
         /**
+         * @description A GeoJSON Point in WGS 84 -- longitude first, as the format says.
+         *
+         *     This is where a plot IS, captured by standing in it. It is not the
+         *     boundary and is not derived from one: a farm that drew a polygon keeps
+         *     both. The drawing surface has no basemap on purpose (no tile source is
+         *     same-origin, and none of them work on a farm with no signal), so a
+         *     point is what an owner can actually give, and it answers the question a
+         *     map is asked -- where is it, how do I get back -- by handing the
+         *     coordinates to whatever maps app the phone already has.
+         * @example {
+         *       "type": "Point",
+         *       "coordinates": [
+         *         -75.88,
+         *         5.66
+         *       ]
+         *     }
+         */
+        GeoJsonPoint: {
+            /** @enum {string} */
+            type: "Point";
+            coordinates: number[];
+        };
+        /**
          * @description A GeoJSON Polygon or MultiPolygon in WGS 84. PostGIS never crosses this
          *     boundary: the wire format is GeoJSON so the clients never see a
          *     geography type and changing engines stays possible.
@@ -3127,6 +3150,8 @@ export interface components {
             department?: string | null;
             municipality?: string | null;
             boundary?: components["schemas"]["GeoJsonGeometry"] | null;
+            /** @description Where the plot is: one point. Null when nobody has stood in it yet. */
+            location?: components["schemas"]["GeoJsonPoint"] | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -3183,6 +3208,12 @@ export interface components {
             department?: string | null;
             municipality?: string | null;
             boundary?: components["schemas"]["GeoJsonGeometry"] | null;
+            /**
+             * @description Omit to leave whatever is stored; send null to erase it. The two are
+             *     deliberately different: if an absent field erased, renaming a plot
+             *     would silently drop its point.
+             */
+            location?: components["schemas"]["GeoJsonPoint"] | null;
             crops?: components["schemas"]["PlotCropInput"][];
         };
         PlotPatch: components["schemas"]["PlotInput"] & {
@@ -3324,6 +3355,24 @@ export interface components {
             customQty?: number | null;
             customUnit?: string | null;
         };
+        /**
+         * @description Two shapes behind one name, as with `Worker`. An owner or administrator
+         *     receives every field; the weigher receives it with `rateCents`,
+         *     `amountCents`, `estimatedAmountCents` and `amountIsEstimate` ABSENT
+         *     rather than null.
+         *
+         *     `estimatedAmountCents` is why. It is the quantity at the price in force
+         *     for the record's week, and every weighing is priced by the week by
+         *     construction — a weigher may record nothing else. So a weighing of one
+         *     kilo IS the price of a kilo, and any other weighing is one division
+         *     away from it. That price is the number `prices.read` keeps behind an
+         *     administrator, that `GET /v1/farm` drops from the weigher's farm, and
+         *     that the sync feed refuses to send him a `weekPrice` row for.
+         *
+         *     The database says it a second time: the RLS policy on `week_prices` is
+         *     owner and administrator only (migration 00022), so a route that forgot
+         *     to project could still not reach an override.
+         */
         WorkRecord: {
             /** Format: uuid */
             id: string;
@@ -3374,12 +3423,14 @@ export interface components {
             unitId?: string | null;
             /**
              * Format: int64
-             * @description Null while the price is the week's and has not been read yet.
+             * @description Null while the price is the week's and has not been read yet, and
+             *     absent entirely for the weigher.
              */
             rateCents?: number | null;
             /**
              * Format: int64
-             * @description round(quantity × rateCents). Null for the same reason.
+             * @description round(quantity × rateCents). Null for the same reason, and absent
+             *     for the weigher for the same reason as `rateCents`.
              */
             amountCents?: number | null;
             note?: string | null;
@@ -3402,12 +3453,20 @@ export interface components {
              *     included. This is the settled amount when there is one, and
              *     otherwise the quantity at the price in force for its week: the
              *     number a settlement would post today.
+             *
+             *     ABSENT for the weigher. Quantity times the week's price is the
+             *     week's price the moment the quantity is one, so this field is the
+             *     price of a kilo wearing another name.
              */
             estimatedAmountCents?: number;
             /**
              * @description False once the amount is frozen by a settlement, true while it is
              *     still derived from the week's price and could move if that price
              *     changes. What we owe and what we paid must never look alike.
+             *
+             *     Absent for the weigher, with the amount it describes: a flag about
+             *     a number that is not there says only that a number is being kept
+             *     from you.
              */
             amountIsEstimate?: boolean;
         };

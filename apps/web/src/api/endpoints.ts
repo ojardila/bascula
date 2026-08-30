@@ -682,6 +682,9 @@ export const api = {
       // as "not sent", so an edit that never opened the map cannot wipe a
       // polygon somebody spent ten minutes on.
       ...(body.boundary ? { boundary: body.boundary } : {}),
+    // `location` is forwarded even when null: absent and null mean different
+    // things here. Absent keeps the stored point, null erases it.
+    ...("location" in body ? { location: body.location ?? null } : {}),
     });
     invalidateRefs();
     return toPlot(updated);
@@ -1920,6 +1923,9 @@ function plotToWire(body: PlotInput): Record<string, unknown> {
     department: body.department || null,
     municipality: body.municipality || null,
     ...(body.boundary ? { boundary: body.boundary } : {}),
+    // `location` is forwarded even when null: absent and null mean different
+    // things here. Absent keeps the stored point, null erases it.
+    ...("location" in body ? { location: body.location ?? null } : {}),
     crops: (body.crops ?? []).map((c) => ({
       id: c.id,
       cropTypeId: c.cropTypeId,

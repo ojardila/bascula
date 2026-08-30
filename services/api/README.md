@@ -29,6 +29,39 @@ which `make run` and `make dev` do), and everything else is production:
 In development both are optional: the signing key is generated at random on
 every boot, so a token from one process is worth nothing to the next.
 
+## What the server needs when something is in front of it
+
+`TRUSTED_PROXY_CIDRS` — **unset is safe and wrong for the deployment this
+repository describes.** It is the list of networks whose `X-Forwarded-For` this
+service will believe, and it decides who the rate limits count.
+
+`docs/diagramas/sistema.md` §6 puts a reverse proxy in front of this process,
+terminating TLS. With the variable unset, every request arrives from that
+proxy's address and the per-IP signup cap collapses into **one global bucket of
+five signups an hour for the whole platform** — one clumsy afternoon and nobody
+in the country can register a farm. With it set, the forwarded address is read
+and counted, but *only* for a connection whose own peer is inside one of the
+listed ranges: a caller who reaches the origin directly is counted by its
+socket, whatever it writes in the header.
+
+    TRUSTED_PROXY_CIDRS=10.0.0.0/8,2001:db8::/32
+
+Networks, not addresses: a single proxy is `10.1.2.3/32`. A malformed entry is
+fatal at boot rather than dropped, because a prefix that quietly stops being
+parsed is a proxy that quietly stops being trusted.
+
+**Setting it is a promise about the network.** The list says "these hops are
+ours"; the peer check says "and this connection came through one of them". Both
+have to be true, which is why listing a range wider than the proxies you
+actually run is the one way to be wrong here that costs anything — anybody
+inside that range can then write their own address. If the origin is reachable
+from outside the proxy, close that at the firewall or the security group as
+well; the peer check bounds the damage, it does not remove the reason for the
+rule.
+
+Leave it unset for a process that is reached directly, and for `make run` /
+`make dev`, which are.
+
 ## What is built
 
 Sprints 1 and 2: auth and open signup, workers, plots with their crops,

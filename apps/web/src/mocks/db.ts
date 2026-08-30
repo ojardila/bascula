@@ -196,7 +196,23 @@ export type MockActivity = Omit<WireActivity, "rate"> & { rates: WireActivityRat
  * on the server, so it is not stored here either: `projectWorkRecord` derives
  * it from the tenant's settlements.
  */
-export type MockWorkRecord = Omit<WireWorkRecord, "settled" | "quantity"> & { quantity: number };
+/**
+ * A stored row, which is not the same thing as a wire row.
+ *
+ * The four money keys are OPTIONAL on `WireWorkRecord` because the server drops
+ * them for the weigher, and a stored row that could be missing them would be a
+ * seed with a hole in it. They are required back here: the projection is what
+ * takes them off, in `projectWorkRecordFor`, and a projection cannot take off
+ * what the row never had.
+ */
+export type MockWorkRecord = Omit<WireWorkRecord, "settled" | "quantity"> & {
+  quantity: number;
+} & Required<
+    Pick<
+      WireWorkRecord,
+      "rateCents" | "amountCents" | "estimatedAmountCents" | "amountIsEstimate"
+    >
+  >;
 
 /** One claimed payable. The `voidedAt` is what releases it again. */
 export interface MockSettlementItem {
@@ -828,6 +844,7 @@ export function resetDb(): void {
       computedAreaHa: 4.04,
       department: "Caldas",
       municipality: "Manizales",
+      location: { type: "Point" as const, coordinates: [-75.88, 5.66] },
       boundary: {
         type: "MultiPolygon",
         coordinates: [
@@ -878,6 +895,7 @@ export function resetDb(): void {
       computedAreaHa: null,
       department: "Caldas",
       municipality: "Manizales",
+      location: null,
       boundary: null,
       createdAt: "2026-01-12T14:05:00Z",
       deletedAt: null,
@@ -913,6 +931,7 @@ export function resetDb(): void {
       // MultiPolygon geography and `ST_Multi` promotes whatever is sent, so a
       // client that stores a Polygon reads a MultiPolygon on the next load —
       // verified against the running server, not assumed.
+      location: null,
       boundary: {
         type: "MultiPolygon",
         coordinates: [
@@ -954,6 +973,7 @@ export function resetDb(): void {
       computedAreaHa: null,
       department: "Caldas",
       municipality: "Chinchiná",
+      location: null,
       boundary: null,
       createdAt: "2026-01-12T14:15:00Z",
       deletedAt: "2026-06-30T15:00:00Z",

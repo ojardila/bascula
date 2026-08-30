@@ -38,3 +38,10 @@ services:
 
 volumes:
   bascula-pgdata:
+
+# The API itself is not in this file: it runs from the Makefile (`make run`),
+# reached directly on localhost, which is why nothing here sets
+# TRUSTED_PROXY_CIDRS. A deployment with a reverse proxy in front MUST set it,
+# or every request arrives from the proxy and the per-IP signup cap becomes one
+# global bucket of five an hour for the whole platform. services/api/README.md
+# has the value and the promise it makes.

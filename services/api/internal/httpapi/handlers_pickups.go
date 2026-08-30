@@ -137,7 +137,9 @@ func (s *Server) handleListPickups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": list})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": projectWorkRecords(list, callerSeesPrivateData(r)),
+	})
 }
 
 // handleGetPickup answers 404 for a work record that is not a weighing. The
@@ -159,7 +161,7 @@ func (s *Server) handleGetPickup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.NotFound("resource not found"))
 		return
 	}
-	writeJSON(w, http.StatusOK, record)
+	writeJSON(w, http.StatusOK, projectWorkRecord(*record, callerSeesPrivateData(r)))
 }
 
 // handleDeletePickup is the same logical delete, with the same refusal on a

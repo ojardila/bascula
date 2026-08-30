@@ -135,12 +135,22 @@ export function foldTotals(rows: Totals[]): Totals {
 export interface RecordLike {
   quantity: number;
   unitLabel: string | null;
-  estimatedAmountCents: number;
-  amountIsEstimate: boolean;
+  /** Null when the session may not read money. See `WorkRecord`. */
+  estimatedAmountCents: number | null;
+  amountIsEstimate: boolean | null;
 }
 
 export function totalsOfRecords(records: RecordLike[]): Totals {
   const inKg = records.filter((r) => r.unitLabel === "kg");
+  // A record whose amount is WITHHELD — the server projected the money out
+  // because this session may not read it — is a hole in the sum, exactly like
+  // a report row the server could not price. It is declared as one rather
+  // than added as a zero: `recordsWithoutValue` is the count the contract
+  // already carries beside a partial figure, and `valueState` turns it into
+  // "al menos $X, N sin valor", or a dash when there is nothing at all. A farm
+  // shown "$0" for a week it picked would believe the week was worthless; a
+  // farm shown a dash knows to ask somebody who can see the price.
+  const priced = records.filter((r) => r.estimatedAmountCents !== null);
   return {
     records: records.length,
     // Null rather than 0 when not one row is weighed in kilos: "0 kg" is a
@@ -149,15 +159,16 @@ export function totalsOfRecords(records: RecordLike[]): Totals {
     recordsNotInKg: records.length - inKg.length,
     // Records here are already one week's worth, so none of them straddles.
     recordsSpanningWeeks: 0,
-    // Null rather than 0 for an empty list, for the same reason. With rows,
-    // `estimatedAmountCents` is always a number on the wire — the server
-    // computes it — so there is no per-row hole to declare here.
-    valueCents: records.length > 0 ? records.reduce((a, r) => a + r.estimatedAmountCents, 0) : null,
-    recordsWithoutValue: 0,
+    // Null rather than 0 for an empty list, for the same reason, and null
+    // again when every row's amount was withheld.
+    valueCents:
+      priced.length > 0 ? priced.reduce((a, r) => a + (r.estimatedAmountCents ?? 0), 0) : null,
+    recordsWithoutValue: records.length - priced.length,
     // ONE estimated row makes the whole sum an estimate. It is the same rule
     // `foldTotals` uses, and the conservative direction: a total that contains
-    // something provisional is provisional.
-    valueIsEstimate: records.some((r) => r.amountIsEstimate),
+    // something provisional is provisional. A withheld row says nothing either
+    // way — it is counted above, not here.
+    valueIsEstimate: records.some((r) => r.amountIsEstimate === true),
   };
 }
 

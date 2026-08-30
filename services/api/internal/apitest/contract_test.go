@@ -3,6 +3,7 @@ package apitest
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -188,6 +189,64 @@ func TestWeigherKeepsWhatHeNeeds(t *testing.T) {
 		ownerItems, _ := ownerRes.Body["items"].([]any)
 		if len(ownerItems) != 2 {
 			t.Fatalf("owner sees %d work records, want both: %s", len(ownerItems), ownerRes.Raw)
+		}
+	})
+
+	t.Run("reads work records without a figure of money in them", func(t *testing.T) {
+		// The leak this closes was one division wide. Every weighing is
+		// rate_source = weekly_price by construction, so every one of them took
+		// the estimating branch of store.priceWorkRecords, and the row that came
+		// back carried `estimatedAmountCents` = quantity x the week's price.
+		// Record one kilo and the field IS the price of a kilo; record any
+		// other quantity and it is a division away.
+		//
+		// The routes are checked on the raw body rather than on a decoded map
+		// because "absent" is the assertion: a projection that sent the field
+		// as null would still be telling the scale that a price exists and is
+		// being withheld, and a later refactor could just as easily fill it in.
+		money := []string{"estimatedAmountCents", "amountIsEstimate", "rateCents", "amountCents"}
+		created := h.mustDo(t, http.MethodPost, "/v1/work-records", f.WeigherToken, map[string]any{
+			"activityId": activity, "workerId": worker,
+			"quantity": 1, "dateFrom": "2026-08-27",
+		}, http.StatusCreated)
+		id := mustString(t, created.Body, "id")
+
+		pickup := h.mustDo(t, http.MethodPost, "/v1/pickups", f.WeigherToken, map[string]any{
+			"workerId": worker, "weight": 1, "date": "2026-08-28",
+		}, http.StatusCreated)
+
+		bodies := map[string]string{
+			"POST /v1/work-records":     created.Raw,
+			"POST /v1/pickups":          pickup.Raw,
+			"GET /v1/work-records":      h.mustDo(t, http.MethodGet, "/v1/work-records", f.WeigherToken, nil, http.StatusOK).Raw,
+			"GET /v1/work-records/{id}": h.mustDo(t, http.MethodGet, "/v1/work-records/"+id, f.WeigherToken, nil, http.StatusOK).Raw,
+			"GET /v1/pickups":           h.mustDo(t, http.MethodGet, "/v1/pickups", f.WeigherToken, nil, http.StatusOK).Raw,
+			"GET /v1/pickups/{id}":      h.mustDo(t, http.MethodGet, "/v1/pickups/"+id, f.WeigherToken, nil, http.StatusOK).Raw,
+		}
+		for route, raw := range bodies {
+			for _, field := range money {
+				if strings.Contains(raw, field) {
+					t.Errorf("%s as the weigher carries %q, which is the price of a kilo "+
+						"the moment the quantity is 1: %s", route, field, raw)
+				}
+			}
+			if strings.Contains(raw, strconv.FormatInt(f.PriceCents, 10)) {
+				t.Errorf("%s as the weigher carries the farm's price %d: %s",
+					route, f.PriceCents, raw)
+			}
+		}
+
+		// And the administrator still gets the figures, so the assertions above
+		// are not passing because the amounts stopped being computed.
+		owner := h.mustDo(t, http.MethodGet, "/v1/work-records/"+id, f.OwnerToken, nil, http.StatusOK)
+		for _, field := range money {
+			if _, present := owner.Body[field]; !present {
+				t.Errorf("the owner's work record lost %q: %s", field, owner.Raw)
+			}
+		}
+		if got := mustInt(t, owner.Body, "estimatedAmountCents"); got != f.PriceCents {
+			t.Errorf("one kilo is worth %d to the owner, want the farm's price %d",
+				got, f.PriceCents)
 		}
 	})
 }

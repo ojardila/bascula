@@ -180,6 +180,53 @@ describe("the mock is the server", () => {
     expect((await get("/v1/balances", OWNER)).status).toBe(200);
   });
 
+  it("keeps every figure of money out of the weigher's work records", async () => {
+    // The double projects work records by role now, and nothing asserted that
+    // it does — which is how a double stops being the server. The four keys
+    // must be ABSENT rather than null: a null still tells the scale that a
+    // price exists and is being withheld, and the raw body is the only place
+    // that difference is visible.
+    const MONEY = ["rateCents", "amountCents", "estimatedAmountCents", "amountIsEstimate"];
+    const price = (await get("/v1/farm", OWNER)).body.priceCents as number;
+    expect(typeof price).toBe("number");
+
+    const created = await post("/v1/work-records", WEIGHER, {
+      workerId: MARIA,
+      // Recolección de café: priced by the week, which is the only kind of
+      // work a weigher may record — and the reason the leak was total.
+      activityId: "0192f3a0-0007-7000-8000-000000000001",
+      quantity: 1,
+      dateFrom: "2026-08-27",
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id as string;
+
+    const bodies: Record<string, unknown> = {
+      "POST /v1/work-records": created.body,
+      "GET /v1/work-records": (await get("/v1/work-records", WEIGHER)).body,
+      "GET /v1/work-records/{id}": (await get(`/v1/work-records/${id}`, WEIGHER)).body,
+      // The two /v1/pickups facades are not in the double at all — they are
+      // the handset's door and the console never calls them. They are covered
+      // on the server side, in contract_test.go, where they exist.
+      "PATCH /v1/work-records/{id}": (
+        await patchJson(`/v1/work-records/${id}`, WEIGHER, { note: "x" })
+      ).body,
+    };
+    for (const [route, body] of Object.entries(bodies)) {
+      const raw = JSON.stringify(body);
+      for (const key of MONEY) expect([route, key, raw.includes(key)]).toEqual([route, key, false]);
+      // One kilo at the week's price IS the price of a kilo, so the digits
+      // themselves must not be in the payload either.
+      expect([route, raw.includes(String(price))]).toEqual([route, false]);
+    }
+
+    // And the owner still gets them, so the assertions above are not passing
+    // because the amounts stopped being computed.
+    const mine = await get(`/v1/work-records/${id}`, OWNER);
+    for (const key of MONEY) expect([key, key in mine.body]).toEqual([key, true]);
+    expect(mine.body.estimatedAmountCents).toBe(price);
+  });
+
   it("keeps the wireframe figures to the peso", async () => {
     const bal = await get(`/v1/workers/${MARIA}/balance`, OWNER);
     expect(bal.body.balanceCents).toBe(18450000); // $184.500

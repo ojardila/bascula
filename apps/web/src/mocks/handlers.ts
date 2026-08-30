@@ -88,6 +88,7 @@ import type {
   WireStockReason,
   WireSession,
   WireSettlementRequest,
+  WireWorkRecord,
   WireWorkRecordRequest,
   WireWorkerPublic,
   WorkerRequestBody,
@@ -489,6 +490,35 @@ function ensureCatalogItem(list: WireCatalogItem[], name: string, id?: string): 
 function projectWorker(e: WireEmployee, full: boolean): WireEmployee | WireWorkerPublic {
   if (full) return e;
   return { id: e.id, name: e.name, lastName: e.lastName, tag: e.tag };
+}
+
+/**
+ * The weigher's work record with every figure of money taken out of it, which
+ * is `publicWorkRecord` in handlers_work_records.go.
+ *
+ * The four keys are ABSENT, not null. `estimatedAmountCents` is the one that
+ * matters: it is the quantity at the price in force for the week, so a weighing
+ * of one kilo IS the price of a kilo — the number `money.read` keeps from him
+ * everywhere else in this file, and the number `/v1/farm` and `/v1/activities`
+ * already drop from his projections.
+ *
+ * `settled` stays. It is not a figure; it is why a row is not editable.
+ */
+function projectWorkRecordFor(
+  p: Principal,
+  t: db.Tenant,
+  r: db.MockWorkRecord,
+): WireWorkRecord {
+  const full = db.projectWorkRecord(t, r);
+  if (seesPrivateData(p)) return full;
+  const {
+    rateCents: _rateCents,
+    amountCents: _amountCents,
+    estimatedAmountCents: _estimated,
+    amountIsEstimate: _isEstimate,
+    ...rest
+  } = full;
+  return rest;
 }
 
 /**
@@ -1358,6 +1388,7 @@ export const handlers = [
       municipality: body.municipality ?? null,
       // GeoJSON in and GeoJSON out; there is no polygon until somebody draws
       // one, and no PostGIS type ever crosses the wire.
+      location: null,
       boundary: null,
       createdAt: nowInstant(),
       deletedAt: null,
@@ -1707,7 +1738,7 @@ export const handlers = [
       .filter((r) => g.p.role !== "weigher" || r.createdBy === g.p.user.id)
       .sort((a, b) => b.dateFrom.localeCompare(a.dateFrom) || b.createdAt.localeCompare(a.createdAt));
 
-    return HttpResponse.json({ items: rows.map((r) => db.projectWorkRecord(t, r)) });
+    return HttpResponse.json({ items: rows.map((r) => projectWorkRecordFor(g.p, t, r)) });
   }),
 
   /**
@@ -1733,7 +1764,7 @@ export const handlers = [
 
     const id = body.id ?? crypto.randomUUID();
     const already = t.workRecords.find((r) => r.id === id);
-    if (already) return HttpResponse.json(db.projectWorkRecord(t, already));
+    if (already) return HttpResponse.json(projectWorkRecordFor(g.p, t, already));
 
     const activity = t.activities.find((a) => a.id === body.activityId);
     if (!activity) return notFound();
@@ -1822,7 +1853,7 @@ export const handlers = [
       plotCropIds: body.plotCropIds ?? [],
     };
     t.workRecords.unshift(created);
-    return HttpResponse.json(db.projectWorkRecord(t, created), { status: 201 });
+    return HttpResponse.json(projectWorkRecordFor(g.p, t, created), { status: 201 });
   }),
 
   http.get("*/v1/work-records/:id", ({ request, params }) => {
@@ -1830,7 +1861,7 @@ export const handlers = [
     if (g.deny) return g.deny;
     const record = g.p.tenant.workRecords.find((r) => r.id === params.id);
     if (!record) return notFound();
-    return HttpResponse.json(db.projectWorkRecord(g.p.tenant, record));
+    return HttpResponse.json(projectWorkRecordFor(g.p, g.p.tenant, record));
   }),
 
   /**
@@ -1864,7 +1895,7 @@ export const handlers = [
     }
     if (body.status === "inactive") {
       if (record.deletedAt === null) record.deletedAt = nowInstant();
-      return HttpResponse.json(db.projectWorkRecord(t, record));
+      return HttpResponse.json(projectWorkRecordFor(g.p, t, record));
     }
     if (body.status === "active") record.deletedAt = null;
     if (record.deletedAt !== null) return notFound();
@@ -1877,7 +1908,11 @@ export const handlers = [
         record.rateCents === null ? null : db.amountCents(body.quantity, record.rateCents);
     }
     patch(record, body.note, "note");
-    return HttpResponse.json(db.projectWorkRecord(t, record));
+    // By role, like every other door onto a work record. `work_records.admin`
+    // keeps the weigher out of this one today, so it is not a leak in the
+    // double — it is a divergence between the double and the thing, which is
+    // the failure a double exists to prevent. The server projects here too.
+    return HttpResponse.json(projectWorkRecordFor(g.p, t, record));
   }),
 
   /**

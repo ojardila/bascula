@@ -227,6 +227,7 @@ const plot: WirePlot = {
   computedAreaHa: 5.71,
   department: "Caldas",
   municipality: "Chinchiná",
+  location: null,
   boundary: { type: "Polygon", coordinates: [] },
   createdAt: "2026-01-01T00:00:00Z",
   deletedAt: null,
@@ -373,6 +374,32 @@ describe("work records are joined client-side", () => {
       refs,
     );
     expect(settled.amountIsEstimate).toBe(false);
+  });
+
+  it("carries a withheld amount as null, and never as zero or final", () => {
+    // What the weigher's record looks like on the wire: the four money keys
+    // are absent, not null. The old adapter read them through `?? 0` and
+    // `?? r.rateCents === null`, which turned "you may not see this" into
+    // "$0, and that is final" — a number the farm would read as a weighing
+    // worth nothing. There is no render site that can reach it today, because
+    // every one of them sits behind `can("money.read")`; this is the assertion
+    // that keeps that from being the only thing between the console and it.
+    const {
+      rateCents: _rate,
+      amountCents: _amount,
+      estimatedAmountCents: _estimated,
+      amountIsEstimate: _isEstimate,
+      ...withheld
+    } = { ...record, rateSource: "weekly_price" as const };
+
+    const r = toWorkRecord(withheld, refs);
+    expect(r.estimatedAmountCents).toBeNull();
+    expect(r.amountIsEstimate).toBeNull();
+    expect(r.rateCents).toBeNull();
+    // The rest of the row survives: he still sees whom he weighed and how much.
+    expect(r.quantity).toBe(38.5);
+    expect(r.workerName).toBe("María Restrepo");
+    expect(r.settled).toBe(false);
   });
 });
 

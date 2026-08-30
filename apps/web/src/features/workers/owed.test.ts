@@ -139,6 +139,24 @@ describe("building the accounts out of the two list reads", () => {
     expect(owedState(noRecords.get(W1)!).kind).toBe("partial");
   });
 
+  it("a withheld amount makes the account unknown, not smaller", () => {
+    // The server projects every figure of money out of a work record for a
+    // session that may not read prices. Adding those rows as zero would show
+    // an account that is CONFIDENTLY too small — the direction that costs
+    // somebody their pay — so one unreadable row makes the pending half null,
+    // which `owedState` reports as unknown rather than as a figure.
+    const map = owedByWorker(
+      [{ workerId: W1, balanceCents: 100_00 }],
+      [
+        { workerId: W1, settled: false, estimatedAmountCents: 50_00, amountIsEstimate: true },
+        { workerId: W1, settled: false, estimatedAmountCents: null, amountIsEstimate: null },
+      ],
+    );
+    expect(map.get(W1)!.pendingCents).toBeNull();
+    expect(owedState(map.get(W1)!).kind).toBe("partial");
+    expect(totalOwedCents(map.get(W1)!)).toBeNull();
+  });
+
   it("asserts nothing about somebody who shows up in neither read", () => {
     const map = owedByWorker(null, null);
     expect(owedState(owedOf(map, "nobody", false, false)).kind).toBe("unknown");

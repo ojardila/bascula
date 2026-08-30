@@ -5178,6 +5178,30 @@ components:
 
     # -- plots ---------------------------------------------------------------
 
+    GeoJsonPoint:
+      type: object
+      description: |
+        A GeoJSON Point in WGS 84 -- longitude first, as the format says.
+
+        This is where a plot IS, captured by standing in it. It is not the
+        boundary and is not derived from one: a farm that drew a polygon keeps
+        both. The drawing surface has no basemap on purpose (no tile source is
+        same-origin, and none of them work on a farm with no signal), so a
+        point is what an owner can actually give, and it answers the question a
+        map is asked -- where is it, how do I get back -- by handing the
+        coordinates to whatever maps app the phone already has.
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: [Point] }
+        coordinates:
+          type: array
+          items: { type: number, format: double }
+          minItems: 2
+          maxItems: 2
+      example:
+        type: Point
+        coordinates: [-75.88, 5.66]
+
     GeoJsonGeometry:
       type: object
       description: |
@@ -5218,6 +5242,11 @@ components:
         boundary:
           allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
           nullable: true
+        location:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonPoint" }]
+          nullable: true
+          description: |
+            Where the plot is: one point. Null when nobody has stood in it yet.
         createdAt: { type: string, format: date-time }
         deletedAt: { type: string, format: date-time, nullable: true }
         crops:
@@ -5267,6 +5296,13 @@ components:
         boundary:
           allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
           nullable: true
+        location:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonPoint" }]
+          nullable: true
+          description: |
+            Omit to leave whatever is stored; send null to erase it. The two are
+            deliberately different: if an absent field erased, renaming a plot
+            would silently drop its point.
         crops:
           type: array
           items: { $ref: "#/components/schemas/PlotCropInput" }
@@ -5429,6 +5465,23 @@ components:
 
     WorkRecord:
       type: object
+      description: |
+        Two shapes behind one name, as with `Worker`. An owner or administrator
+        receives every field; the weigher receives it with `rateCents`,
+        `amountCents`, `estimatedAmountCents` and `amountIsEstimate` ABSENT
+        rather than null.
+
+        `estimatedAmountCents` is why. It is the quantity at the price in force
+        for the record's week, and every weighing is priced by the week by
+        construction — a weigher may record nothing else. So a weighing of one
+        kilo IS the price of a kilo, and any other weighing is one division
+        away from it. That price is the number `prices.read` keeps behind an
+        administrator, that `GET /v1/farm` drops from the weigher's farm, and
+        that the sync feed refuses to send him a `weekPrice` row for.
+
+        The database says it a second time: the RLS policy on `week_prices` is
+        owner and administrator only (migration 00022), so a route that forgot
+        to project could still not reach an override.
       required: [id, workerId, activityId, payScheme, rateSource, quantity, dateFrom, dateTo]
       properties:
         id: { type: string, format: uuid }
@@ -5470,12 +5523,16 @@ components:
           type: integer
           format: int64
           nullable: true
-          description: Null while the price is the week's and has not been read yet.
+          description: |
+            Null while the price is the week's and has not been read yet, and
+            absent entirely for the weigher.
         amountCents:
           type: integer
           format: int64
           nullable: true
-          description: round(quantity × rateCents). Null for the same reason.
+          description: |
+            round(quantity × rateCents). Null for the same reason, and absent
+            for the weigher for the same reason as `rateCents`.
         note: { type: string, nullable: true }
         createdBy: { type: string, format: uuid, nullable: true }
         createdAt: { type: string, format: date-time }
@@ -5500,12 +5557,20 @@ components:
             included. This is the settled amount when there is one, and
             otherwise the quantity at the price in force for its week: the
             number a settlement would post today.
+
+            ABSENT for the weigher. Quantity times the week's price is the
+            week's price the moment the quantity is one, so this field is the
+            price of a kilo wearing another name.
         amountIsEstimate:
           type: boolean
           description: |
             False once the amount is frozen by a settlement, true while it is
             still derived from the week's price and could move if that price
             changes. What we owe and what we paid must never look alike.
+
+            Absent for the weigher, with the amount it describes: a flag about
+            a number that is not there says only that a number is being kept
+            from you.
 
     WorkRecordInput:
       type: object

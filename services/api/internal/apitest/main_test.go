@@ -141,6 +141,7 @@ func setupAndRun(m *testing.M) (int, error) {
 	defer func() { _ = os.RemoveAll(uploadDir) }()
 	cfg.UploadDir = uploadDir
 	cfg.SignupsPerIPPerHour = 1000
+	cfg.SignupsPerEmailPerHour = 1000
 	cfg.MaxFarmsPerEmail = 3
 	// The login limiter, small enough that a test can reach it without paying
 	// for a hundred hashes, and with the two axes far enough apart that a test
@@ -275,6 +276,7 @@ type farmFixture struct {
 	// See relogin.
 	OwnerEmail   string
 	OwnerToken   string
+	AdminUserID  string
 	AdminToken   string
 	WeigherToken string
 	WeigherID    string
@@ -338,7 +340,7 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 		FarmID: farmID, OwnerUserID: userID, OwnerEmail: email,
 		OwnerToken: access, PriceCents: priceCents,
 	}
-	f.AdminToken = h.addUser(t, farmID, domain.RoleAdmin, "")
+	f.AdminUserID, f.AdminToken = h.addUserWithID(t, farmID, domain.RoleAdmin)
 	f.WeigherID, f.WeigherToken = h.addUserWithID(t, farmID, domain.RoleWeigher)
 	return f
 }
