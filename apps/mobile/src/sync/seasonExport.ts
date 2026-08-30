@@ -268,6 +268,7 @@ export function buildSeasonExport(
 ): SeasonExport {
   requireNamedRows(db);
   requirePositiveWeekPrices(db);
+  requireImportableRows(db);
 
   const workers = db.getAllSync<ExportWorker>(
     `SELECT uuid AS id, name, lastName, documentType, docId, tag, createdAt, deletedAt
@@ -411,6 +412,75 @@ function requireNamedRows(db: SqlDatabase): void {
  * repairs the ones v7's backfill invented. What is left is old or corrupted
  * data, and it needs a person, not a default.
  */
+/**
+ * The three other things the server refuses, checked here where they can be
+ * named in terms somebody recognises.
+ *
+ * The season import is all-or-nothing, so any one row takes the whole farm's
+ * migration down. Measured against the real API, each of these answers 400:
+ *
+ *   weighing 7777…777 is dated 2029-08-30, outside the window an import may
+ *     cover (2015-01-01 to 2027-08-30)
+ *   every imported worker needs an id and a name
+ *   a week price is named by its Monday: 2026-08-26
+ *
+ * All three passed this export untouched. And look at what the first one says
+ * to the person holding the phone: a uuid they have never seen and will never
+ * find. The failure is real either way; the difference is whether it arrives
+ * as «Ana Rodríguez, weighing of 30 Aug 2029 — check the phone's date» on the
+ * handset, or as a hex string from a server after the farm has committed to
+ * migrating.
+ *
+ * A handset with a wrong clock is ordinary -- the server's own comment says
+ * so, and it is why the ceiling is a year and not a day. It is also already
+ * named in the console as a common cause of a bad weighing. So this is not a
+ * hypothetical row: it is the one this check exists for.
+ */
+function requireImportableRows(db: SqlDatabase): void {
+  const problems: string[] = [];
+
+  // The same window the server enforces: a floor that predates the app, and a
+  // ceiling a year out, because a phone a year fast is not ordinary.
+  const horizon = new Date();
+  horizon.setFullYear(horizon.getFullYear() + 1);
+  const ceiling = horizon.toISOString().slice(0, 10);
+
+  const outOfWindow = db.getAllSync<{ who: string; day: string; n: number }>(
+    `SELECT COALESCE(pe.name || ' ' || pe.lastName, '?') AS who,
+            pk.localDay AS day, COUNT(*) AS n
+       FROM pickups_live pk
+       LEFT JOIN people pe ON pe.id = pk.personId
+      WHERE pk.localDay < '2015-01-01' OR pk.localDay > ?
+      GROUP BY who, day ORDER BY day`,
+    [ceiling],
+  );
+  for (const r of outOfWindow)
+    problems.push(
+      `${r.who}: ${r.n} pesada(s) fechadas el ${r.day} — revisa la fecha del teléfono`,
+    );
+
+  const unnamed =
+    db.getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM people
+        WHERE uuid IS NOT NULL AND (name IS NULL OR TRIM(name) = '')`,
+      [],
+    )?.n ?? 0;
+  if (unnamed > 0) problems.push(`${unnamed} recolector(es) sin nombre`);
+
+  // The server names a week by its Monday. `weekInZone` always produces one,
+  // so a row that is not is a row that came from somewhere else.
+  const notMonday = db.getAllSync<{ week: string }>(
+    `SELECT week FROM cost_overrides
+      WHERE uuid IS NOT NULL AND CAST(strftime('%w', week) AS INTEGER) != 1
+      ORDER BY week`,
+    [],
+  );
+  for (const r of notMonday)
+    problems.push(`semana ${r.week}: una semana se nombra por su lunes`);
+
+  if (problems.length) throw new SeasonExportError("NOT_IMPORTABLE", problems);
+}
+
 function requirePositiveWeekPrices(db: SqlDatabase): void {
   const rows = db.getAllSync<{ week: string }>(
     `SELECT week FROM cost_overrides
