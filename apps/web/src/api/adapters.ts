@@ -555,9 +555,15 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
     // week. `amountCents` stays null for weekly-price work — that is the row's
     // own truth — and reading it here printed $0 against every harvest record,
     // settled ones included, because that price is not chosen until settlement.
-    estimatedAmountCents: r.estimatedAmountCents ?? r.amountCents ?? 0,
+    // No `?? 0` and no `?? false`. Both are required by the contract, so a
+    // fallback can only fire when the contract is broken — and what it would
+    // do then is hand a screen a confident zero and the word "final", which is
+    // the failure this whole module was rewritten to stop. Let a broken
+    // contract be visible instead; the generated types are checked in CI so it
+    // cannot break quietly.
+    estimatedAmountCents: r.estimatedAmountCents,
     /** False once a settlement froze it. See WorkRecordsPage for the badge. */
-    amountIsEstimate: r.amountIsEstimate ?? r.rateCents === null,
+    amountIsEstimate: r.amountIsEstimate,
     note: r.note,
     settled: r.settled,
     status: statusOf(r.deletedAt),
@@ -714,8 +720,11 @@ export function toProduct(p: WireProduct): Product {
     storageUnit: p.storageUnit,
     note: p.note,
     // A SUM over the movements, computed by the server on every read. Passed
-    // through and never cached, for the same reason it is not a column.
-    stock: p.stock ?? 0,
+    // through and never cached, for the same reason it is not a column — and
+    // without a fallback, because "we could not read the warehouse" and "the
+    // warehouse is empty" are not the same sentence and only one of them is
+    // safe to act on.
+    stock: p.stock,
     status: p.deletedAt ? "inactive" : "active",
   };
 }
