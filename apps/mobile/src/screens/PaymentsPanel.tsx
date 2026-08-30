@@ -194,13 +194,32 @@ export default function PaymentsPanel() {
     if (!payrollAllowed) return;
     busy.current = true;
     setRunning(true);
-    const run = Payments.runPayroll(
-      selected.map((r) => r.personId),
-      EPOCH_START,
-      endOfWeek(monday),
-      config.costPerUnit,
-      { method: "efectivo" },
-    );
+    // try/finally, not a bare call. The guard above is what stops a second tap
+    // from paying the week twice, and the only thing that lifts it is the
+    // timer at the end of the happy path. If runPayroll throws, that timer is
+    // never reached: busy stays true for the life of the screen, the payroll
+    // button is dead, and nothing on it says why. A guard against paying twice
+    // must not become a guard against paying at all.
+    let run;
+    try {
+      run = Payments.runPayroll(
+        selected.map((r) => r.personId),
+        EPOCH_START,
+        endOfWeek(monday),
+        config.costPerUnit,
+        { method: "efectivo" },
+      );
+    } catch {
+      // runPayroll settles and pays inside one transaction, so nothing is half
+      // done. Release immediately -- no 400ms wait, because there is no
+      // just-rendered result a second tap could duplicate.
+      busy.current = false;
+      setRunning(false);
+      setBulk(null);
+      load();
+      setSnack(t("pay.error"));
+      return;
+    }
 
     setBulk(null);
     // Every settlement the run created, not only the ones a payment followed.
