@@ -26,7 +26,20 @@ const (
 	farmKey
 	keepKey
 	afterKey
+	platformOnlyKey
 )
+
+// platformRole is what app.role says for a caller who holds no membership of
+// the farm their token names.
+//
+// It is not a fourth farm role and no policy mentions it, which is the point:
+// current_role_name() is compared against 'owner', 'admin' and 'weigher' by
+// every policy that guards money, so a value outside that set is refused by all
+// of them at once. Leaving the token's `role` claim in place instead would hand
+// a platform administrator who was removed from a farm the ledger, the
+// settlements, the prices and the private notes of that farm — as the owner it
+// says he is — which is the opposite of what the flag means.
+const platformRole = "platform"
 
 // Tx returns the transaction serving this request.
 //
@@ -55,6 +68,25 @@ func FarmID(ctx context.Context) (string, error) {
 func HasFarm(ctx context.Context) bool {
 	id, _ := ctx.Value(farmKey).(string)
 	return id != ""
+}
+
+// PlatformOnly reports that this request comes from a platform administrator
+// who is NOT a member of the farm the token names, so the only thing they may
+// reach is the console.
+//
+// The two are separate on purpose. auth.Rule says it in one line — "a
+// super-admin administers farms from the outside and cannot read inside one" —
+// and until this existed, only the first half was true. The membership check
+// exempts the platform administrator, because a farm that removed them must not
+// be able to lock the lever holder out of the room the lever is in; but the
+// exemption was letting them keep the farm as well as the console, with the
+// token's `role` claim in front of row level security and nothing left to
+// contradict it. The exemption stays; what it exempts them from is now only the
+// door, not the farm behind it. See requireAction, which is the layer that
+// knows which action was asked for.
+func PlatformOnly(ctx context.Context) bool {
+	only, _ := ctx.Value(platformOnlyKey).(bool)
+	return only
 }
 
 // keepChanges is the flag KeepChanges sets and Middleware reads. It is a
@@ -156,6 +188,10 @@ func withFarm(ctx context.Context, farmID string) context.Context {
 	return context.WithValue(ctx, farmKey, farmID)
 }
 
+func withPlatformOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, platformOnlyKey, true)
+}
+
 // Middleware is the second link of the chain: Auth -> Tenant -> Require.
 //
 // It opens the request transaction and, when the caller carries a farm, pins
@@ -205,11 +241,15 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			}()
 
 			if p, ok := auth.PrincipalFrom(ctx); ok && p.FarmID != "" {
-				if err := setContext(ctx, tx, p, enforceMembership); err != nil {
+				outside, err := setContext(ctx, tx, p, enforceMembership)
+				if err != nil {
 					onError(w, r, err)
 					return
 				}
 				ctx = withFarm(ctx, p.FarmID)
+				if outside {
+					ctx = withPlatformOnly(ctx)
+				}
 			}
 
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -248,19 +288,39 @@ const (
 
 // setContext issues the SET LOCALs and reads current_farm() back in the same
 // round trip, so a broken GUC name fails loudly instead of returning zero rows.
-func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check membershipCheck) error {
-	superadmin := ""
-	if p.Superadmin {
-		superadmin = "on"
-	}
+//
+// It reports whether the caller is a platform administrator standing OUTSIDE
+// the farm their token names — see PlatformOnly.
+func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check membershipCheck) (bool, error) {
+	// app.superadmin is read from the users row here, and never taken from the
+	// token.
+	//
+	// It was the fourth claim and the only one nothing contradicted. It is also
+	// the one with the most in it: it exempts its holder from the three checks
+	// below, it opens p_farms to every farm on the platform, and it is the
+	// whole of what auth.Matrix asks for the console. And is_superadmin was
+	// read from the database at login and at refresh and nowhere else, so
+	// taking the flag off somebody — a platform administrator who left, an
+	// account that turned out to be in the wrong hands — did nothing at all for
+	// fifteen minutes: they went on listing and suspending other people's
+	// farms, and went on being exempt from suspension and from removal, until
+	// the token expired of its own accord. The same sentence the role check
+	// below is written under applies here and costs more: the token is a
+	// photograph of a moment that has passed.
+	//
+	// The row costs nothing to read: the CASE runs inside a statement the
+	// request already makes, keyed by the user id the token was signed for.
 	_, err := tx.Exec(ctx, `
 		SELECT set_config('app.farm_id',    $1, true),
 		       set_config('app.role',       $2, true),
 		       set_config('app.user_id',    $3, true),
-		       set_config('app.superadmin', $4, true)`,
-		p.FarmID, string(p.Role), p.UserID, superadmin)
+		       set_config('app.superadmin',
+		                  CASE WHEN (SELECT u.is_superadmin FROM users u
+		                              WHERE u.id = nullif($3, '')::uuid)
+		                       THEN 'on' ELSE '' END, true)`,
+		p.FarmID, string(p.Role), p.UserID)
 	if err != nil {
-		return domain.Internal("could not establish the tenant context").WithCause(err)
+		return false, domain.Internal("could not establish the tenant context").WithCause(err)
 	}
 
 	// Read it back through the very function the policies call. A misspelled
@@ -277,18 +337,47 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// revocation case below; a non-NULL value that disagrees with the token is
 	// the role-drift case after it.
 	var liveRole *string
+	// platform is the platform flag as the DATABASE has it, read back through
+	// the very setting the p_farms policy consults, for the same reason
+	// current_farm() is read back rather than assumed.
+	var platform bool
 	if err := tx.QueryRow(ctx, `
 		SELECT current_farm()::text,
 		       (SELECT f.suspended_at FROM farms f WHERE f.id = current_farm()),
 		       (SELECT m.role::text FROM memberships m
 		         WHERE m.farm_id = current_farm()
-		           AND m.user_id = current_user_id())`).
-		Scan(&got, &suspendedAt, &liveRole); err != nil {
-		return domain.Internal("could not read back the tenant context").WithCause(err)
+		           AND m.user_id = current_user_id()),
+		       coalesce(current_setting('app.superadmin', true), '') = 'on'`).
+		Scan(&got, &suspendedAt, &liveRole, &platform); err != nil {
+		return false, domain.Internal("could not read back the tenant context").WithCause(err)
 	}
 	member := liveRole != nil
 	if got == nil || *got != p.FarmID {
-		return domain.TenantNotSet().WithCause(fmt.Errorf("app.farm_id did not take"))
+		return false, domain.TenantNotSet().WithCause(fmt.Errorf("app.farm_id did not take"))
+	}
+
+	// The token claims the platform flag and the row does not have it. That
+	// claim is the one that would waive all three checks that follow, so it is
+	// answered before any of them.
+	//
+	// It is a 401 and not a 403, and it is the ROLE_CHANGED argument exactly:
+	// suspension and revocation refuse a caller who cannot mend anything by
+	// asking again — a new token would be refused too — while this caller is
+	// welcome, is an ordinary member of this farm, and holds a token that has
+	// merely gone out of date. handleRefresh re-reads is_superadmin and mints
+	// one without the flag, both clients retry a 401 exactly once after
+	// refreshing, and the console then answers the ordinary 403 that
+	// auth.Matrix gives anybody who is not a platform administrator. A 403 here
+	// would leave the console in the person's menu, failing, instead of taking
+	// it out of their hands.
+	//
+	// The other direction — the row has the flag and the token does not — is
+	// not a refusal and must not become one: nothing stale is being used, the
+	// claim simply arrives with the next refresh, and until then the row is
+	// what the exemptions below and app.superadmin follow.
+	if p.Superadmin && !platform {
+		return false, domain.Coded(http.StatusUnauthorized, domain.CodePlatformRoleChanged,
+			"this account is no longer a platform administrator; get a new access token")
 	}
 
 	// A suspended farm stops HERE, on every request, and not at the next login.
@@ -310,8 +399,8 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// administrator: the console's token is pinned to a farm like everybody
 	// else's, and suspending that farm would lock the person holding the lever
 	// out of the room it is in. A farm role, however senior, is not exempt.
-	if suspendedAt != nil && !p.Superadmin {
-		return domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
+	if suspendedAt != nil && !platform {
+		return false, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
 			"that farm is suspended")
 	}
 
@@ -337,8 +426,8 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// check gives: their token is pinned to a farm like everybody else's, and
 	// an owner of that farm removing them would lock the lever holder out of
 	// the room the lever is in.
-	if check == enforceMembership && !member && !p.Superadmin {
-		return domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
+	if check == enforceMembership && !member && !platform {
+		return false, domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
 			"that account no longer has access to this farm")
 	}
 
@@ -369,10 +458,36 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// suspended or revoked lever-holder could not get a working token back, and
 	// here they always can.
 	if check == enforceMembership && member && *liveRole != string(p.Role) {
-		return domain.Coded(http.StatusUnauthorized, domain.CodeRoleChanged,
+		return false, domain.Coded(http.StatusUnauthorized, domain.CodeRoleChanged,
 			"your role on this farm has changed; get a new access token")
 	}
-	return nil
+
+	// And the case the three checks leave standing: a platform administrator
+	// with no membership row on the farm their token names.
+	//
+	// The revocation check above lets them through by design, and the role
+	// check is written to stand aside when there is no membership row, so the
+	// `role` claim was reaching app.role with nothing on the other side of it
+	// to compare against. A platform administrator taken off farm X went on
+	// being its `owner` for the rest of the token: app.farm_id = X, app.role =
+	// owner, and every policy on that farm open — the payroll, the ledger, the
+	// private notes. The exemption exists so that a farm cannot lock the lever
+	// holder out of the console, and it is not a way into the farm.
+	//
+	// So the claim is dropped and app.role becomes a value no policy knows.
+	// This is the second half of PlatformOnly and not a substitute for it: the
+	// middleware shuts the door on the farm's routes, and this makes the row
+	// level security behind that door refuse as well, which is the same
+	// belt-and-braces the money policies are written under — "denying it in
+	// the middleware is the message; denying it here is the guarantee".
+	if check == enforceMembership && !member {
+		if _, err := tx.Exec(ctx,
+			`SELECT set_config('app.role', $1, true)`, platformRole); err != nil {
+			return false, domain.Internal("could not narrow the tenant role").WithCause(err)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // SetForSignup pins the session to a farm that is being created in this very
@@ -384,7 +499,7 @@ func SetForSignup(ctx context.Context, tx pgx.Tx, farmID, userID string) (contex
 	// membershipPending: the membership row is written a few statements from
 	// now, by this transaction. Demanding it here would make it impossible to
 	// create a farm at all.
-	if err := setContext(ctx, tx, p, membershipPending); err != nil {
+	if _, err := setContext(ctx, tx, p, membershipPending); err != nil {
 		return ctx, err
 	}
 	return withFarm(ctx, farmID), nil

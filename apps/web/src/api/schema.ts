@@ -2647,7 +2647,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "PLATFORM_ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -5147,6 +5147,15 @@ export interface components {
          *       retry-once-after-refresh makes the change invisible to the person
          *       holding the phone. What they meet afterwards, if they were demoted, is
          *       an ordinary 403 from the permission table, in the role they have.
+         *     * PLATFORM_ROLE_CHANGED — the account is no longer a platform
+         *       administrator, and the token still says it is. Same check, same round
+         *       trip, and the same 401 for the same reason. It is the claim with the
+         *       most in it: it opens the console over every farm on the platform and
+         *       it exempts its holder from FARM_SUSPENDED, MEMBERSHIP_REVOKED and
+         *       ROLE_CHANGED, and it used to be read from the database only at login
+         *       and at refresh — so taking the flag off an account left a quarter of
+         *       an hour in which it went on listing and suspending other people's
+         *       farms.
          */
         Unauthorized: {
             headers: {
@@ -5172,6 +5181,12 @@ export interface components {
          *       quarter of an hour. The screen should say so and send the person
          *       back to the farm picker; the refresh token was revoked at the same
          *       time, so there is no session to recover here.
+         *
+         *       A platform administrator meets it too, on every route except the
+         *       console. They are exempt from the check above so that a farm cannot
+         *       lock them out of the lever they hold over it — but that exemption is
+         *       about the console, not about the farm, and from outside a farm they
+         *       administer it without reading inside it.
          */
         Forbidden: {
             headers: {
