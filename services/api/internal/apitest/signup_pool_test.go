@@ -21,6 +21,14 @@ import (
 func TestConcurrentSignupsDoNotExhaustThePool(t *testing.T) {
 	h := requireDB(t)
 
+	// The neighbour farm is created BEFORE the storm, not after. signupFarm
+	// goes through ServeHTTP with no deadline of its own, so in the exact state
+	// this test exists to report — the thirteen leaking their connections
+	// instead of returning them — a signup issued afterwards blocks forever,
+	// the go-test timeout kills the run, and the assertion below is never
+	// reached. Created first, it costs nothing and it always reports.
+	other := h.signupFarm(t, "Finca vecina del pool", 90000)
+
 	// Not a literal. The claim this test makes is EXACT — that the pool's whole
 	// capacity is what thirteen unauthenticated requests take — so it has to
 	// keep being the capacity when somebody changes the capacity. A comment
@@ -48,18 +56,21 @@ func TestConcurrentSignupsDoNotExhaustThePool(t *testing.T) {
 	// do with any of this, which is the part that makes this a platform outage
 	// rather than thirteen strangers' problem.
 	//
-	// Without it the test proves only that thirteen requests finished. A fix
-	// that moved the second connection somewhere else in the same request —
-	// out of the defer and into the handler body, say — would keep them
-	// finishing while a fourteenth caller still found no connection left, and
-	// this test would pass through it. The sentence below is the one that does
-	// not.
-	other := h.signupFarm(t, "Finca vecina del pool", 90000)
+	// Without it the test proves only that thirteen requests finished, and
+	// there is a real state where all thirteen finish and the platform is
+	// still gone: a LEAKED connection. If the attempt-row write acquires off
+	// the request goroutine and never releases — the callback returning while
+	// its connection stays out — every signup answers 201 in milliseconds and
+	// the pool is empty behind them. Measured: the loop above passes in 0.05s
+	// with nothing left to serve anybody. (A connection merely MOVED within
+	// the request — out of the defer into the handler body — deadlocks all
+	// thirteen and the loop above already catches it. That is not the gap.)
+	// The sentence below is the one that closes the real one.
 	after := h.fireConcurrently(1, 10*time.Second, func(int) (string, string, string, any) {
 		return http.MethodGet, "/v1/workers", other.OwnerToken, nil
 	})
 	if after[0].Status != http.StatusOK {
-		t.Fatalf("another farm's worker list answered %d while thirteen signups "+
-			"were in flight: %s", after[0].Status, after[0].Raw)
+		t.Fatalf("another farm's worker list answered %d after %d concurrent "+
+			"signups: %s", after[0].Status, n, after[0].Raw)
 	}
 }
