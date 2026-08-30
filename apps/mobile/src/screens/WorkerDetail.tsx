@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, Avatar, List, Divider, Chip, Button, Snackbar } from "react-native-paper";
+import { Text, Card, Avatar, List, Divider, Chip, Button, Snackbar, Portal, Dialog } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -62,6 +62,7 @@ export default function WorkerDetail({
   const [config, setConfig] = useState<CropConfig | null>(null);
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
   const [snack, setSnack] = useState("");
+  const [askingDelete, setAskingDelete] = useState(false);
 
   const load = useCallback(() => {
     const found = People.byId(personId) ?? null;
@@ -264,6 +265,45 @@ export default function WorkerDetail({
           )}
         </Card.Content>
       </Card>
+
+      <Button
+        mode="text"
+        textColor="#b3261e"
+        onPress={() => setAskingDelete(true)}
+        style={{ marginTop: 8 }}
+      >
+        {t("confirm.delete")}
+      </Button>
+
+      <Portal>
+        <Dialog visible={askingDelete} onDismiss={() => setAskingDelete(false)}>
+          <Dialog.Icon icon="account-off" />
+          <Dialog.Title style={{ textAlign: "center" }}>
+            {t("confirm.deleteWorkerTitle")}
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={{ textAlign: "center" }}>
+              {person ? `${person.name} ${person.lastName}`.trim() : ""}
+            </Text>
+            <Text variant="bodySmall" style={{ textAlign: "center", opacity: 0.78, marginTop: 8 }}>
+              {t("confirm.deleteWorkerBody")}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAskingDelete(false)}>{t("confirm.cancel")}</Button>
+            <Button
+              textColor="#b3261e"
+              onPress={() => {
+                People.remove(personId);
+                setAskingDelete(false);
+                navigation.goBack();
+              }}
+            >
+              {t("confirm.delete")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <FixPickup
         pickup={fixing}

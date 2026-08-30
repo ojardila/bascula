@@ -110,13 +110,13 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={Home} />
-      <Tab.Screen name="People" component={People} />
-      <Tab.Screen name="Crops" component={Crops} />
       <Tab.Screen
         name="Pickup"
         component={RegisterPickup}
         options={{ title: t("stack.registerPickup") }}
       />
+      <Tab.Screen name="People" component={People} />
+      <Tab.Screen name="Crops" component={Crops} />
       <Tab.Screen name="Reports" component={Reports} />
       <Tab.Screen name="Settings" component={Settings} />
     </Tab.Navigator>
