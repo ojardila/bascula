@@ -89,7 +89,24 @@ export interface paths {
          *     not a failure.
          *
          *     An unknown address and a wrong password produce the same
-         *     INVALID_CREDENTIALS.
+         *     INVALID_CREDENTIALS, and take the same time to say it: the branch
+         *     with no account still runs the password verification, against a hash
+         *     nobody holds, so the reply cannot be used to test whether an address
+         *     has an account here.
+         *
+         *     Refusals are counted on two axes over a sliding window — per
+         *     (address, source IP) pair, and per source IP at anybody — and either
+         *     count reaching its limit answers 429 RATE_LIMITED until the window
+         *     drains. The correct password gets the 429 too while the limit is
+         *     tripped; a lockout that stepped aside for the right guess would
+         *     announce it.
+         *
+         *     Both axes are bounded by the CALLER'S own address, deliberately. A
+         *     count kept per address alone would let a stranger hold somebody out
+         *     of their own farm with a handful of guesses an hour, and an owner's
+         *     address is not a secret. The cost of the pair is that a search spread
+         *     across many sources is slowed by the per-IP axis rather than stopped;
+         *     that trade is the one NIST SP 800-63B §5.2.2 recommends.
          */
         post: operations["login"];
         delete?: never;
@@ -5388,6 +5405,19 @@ export interface operations {
             };
             /** @description EMAIL_NOT_VERIFIED, FARM_SUSPENDED, or no membership at all. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description RATE_LIMITED: too many recent failures for this address from
+             *     this IP, or from this IP at any address. Retry after the window,
+             *     not immediately.
+             */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

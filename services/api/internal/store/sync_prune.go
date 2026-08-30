@@ -76,18 +76,37 @@ const (
 	// ever would keep a table that grows with every write for no benefit
 	// anybody can name.
 	SyncOpsRetentionDays = 30
+
+	// LoginFailureRetentionDays is how long a refused sign-in is kept after
+	// the limiter has stopped caring about it.
+	//
+	// The limiter's own horizon is LoginFailureWindow — fifteen minutes — and
+	// everything past that is kept for a person, not for a counter: the only
+	// automatic answer to "somebody is working on this address from
+	// everywhere" would be to shut the address, which is the weapon
+	// store.CountLoginFailures refuses to build, so the answer has to be an
+	// operator looking. Thirty days is sync_ops' number and its argument
+	// transfers: an incident nobody looked at within a month is not going to
+	// be looked at, and a table that grows for ever with every mistyped
+	// password is a table that grows for ever for nobody.
+	//
+	// Without this the table only ever grew. It is bounded per window by the
+	// limit itself, but the windows keep coming.
+	LoginFailureRetentionDays = 30
 )
 
 // PruneReport is what one sweep did, in rows.
 type PruneReport struct {
-	SyncLogDeleted int64
-	SyncOpsDeleted int64
-	Took           time.Duration
+	SyncLogDeleted       int64
+	SyncOpsDeleted       int64
+	LoginFailuresDeleted int64
+	Took                 time.Duration
 }
 
 func (p PruneReport) String() string {
-	return fmt.Sprintf("sync_log -%d, sync_ops -%d, in %s",
-		p.SyncLogDeleted, p.SyncOpsDeleted, p.Took.Round(time.Millisecond))
+	return fmt.Sprintf("sync_log -%d, sync_ops -%d, login_failures -%d, in %s",
+		p.SyncLogDeleted, p.SyncOpsDeleted, p.LoginFailuresDeleted,
+		p.Took.Round(time.Millisecond))
 }
 
 // PruneSync runs one sweep. It takes the ADMIN pool, not the application pool,
@@ -104,7 +123,7 @@ func (p PruneReport) String() string {
 //
 // So it runs the way migrations run: a separate invocation, with the admin
 // URL, from a scheduler. `api -prune`.
-func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays int) (PruneReport, error) {
+func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays, loginDays int) (PruneReport, error) {
 	var rep PruneReport
 	started := time.Now()
 
@@ -113,6 +132,9 @@ func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays int) (
 	}
 	if opsDays <= 0 {
 		opsDays = SyncOpsRetentionDays
+	}
+	if loginDays <= 0 {
+		loginDays = LoginFailureRetentionDays
 	}
 
 	tx, err := admin.Begin(ctx)
@@ -146,6 +168,20 @@ func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays int) (
 		return rep, err
 	}
 	rep.SyncOpsDeleted = tag.RowsAffected()
+
+	// login_failures rides along in the same nightly sweep rather than
+	// becoming a second job, because it is the same fact: a table that exists
+	// to be counted over a window and has nothing to say outside it. It is not
+	// append-only and no trigger guards it, so there is no session flag to set
+	// here — it runs on the admin pool for the other reason PruneSync does,
+	// which is that a sweep is not about a farm and every request-serving
+	// statement in this service is narrowed to one.
+	tag, err = tx.Exec(ctx, `
+		DELETE FROM login_failures WHERE at < now() - make_interval(days => $1)`, loginDays)
+	if err != nil {
+		return rep, err
+	}
+	rep.LoginFailuresDeleted = tag.RowsAffected()
 
 	if err := tx.Commit(ctx); err != nil {
 		return rep, err

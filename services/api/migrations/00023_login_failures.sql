@@ -31,11 +31,12 @@
 -- # Why it does not grow without bound
 --
 -- The handler does NOT record an attempt it has already refused for being over
--- the limit — see handleLogin, where that is what keeps a locked-out address
--- from being held locked for ever by the very traffic that locked it. The
+-- the limit — see handleLogin, where that is what keeps a refused caller from
+-- being held refused for ever by the very traffic that refused them. The
 -- consequence here is that one IP can write at most `LoginFailuresPerIP` rows
 -- per window, whatever it does, so the write rate is bounded by the limit
--- itself and not by how hard anybody pushes.
+-- itself and not by how hard anybody pushes. The nightly sweep takes the rest:
+-- see store.PruneSync and LoginFailureRetentionDays.
 --
 -- # No farm_id, and therefore no RLS
 --
@@ -55,13 +56,21 @@ CREATE TABLE login_failures (
   at    timestamptz NOT NULL DEFAULT now()
 );
 
--- Two indexes because there are two axes and they are counted separately: an
--- address under attack from a thousand IPs and a single IP working through a
--- thousand addresses are different attacks, and a limiter that only had one of
--- these would miss one of them. Both are (key, at DESC) so the window scan
--- reads the recent end and stops.
-CREATE INDEX ix_login_failures_email ON login_failures (lower(email), at DESC);
+-- The limiter reads one of these. Both axes it counts — this address from this
+-- IP, and this IP at anybody — come out of a single (ip, at DESC) range, which
+-- is why the count is one round trip on the hot path of the most-called
+-- endpoint in the service.
 CREATE INDEX ix_login_failures_ip ON login_failures (ip, at DESC);
+
+-- The email index answers the question the limiter deliberately does not:
+-- "is somebody working on THIS address, from everywhere". That is a real
+-- question and it has an operator's answer — look, and decide — not an
+-- automatic one, because the only automatic answer available is to shut the
+-- address, and shutting an address on the strength of traffic aimed AT it is
+-- how a limiter becomes the weapon. See store.CountLoginFailures. The nightly
+-- sweep uses it too, and the table is small by construction, so the write cost
+-- of carrying it is a rounding error.
+CREATE INDEX ix_login_failures_email ON login_failures (lower(email), at DESC);
 
 -- +goose StatementEnd
 

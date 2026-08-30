@@ -395,23 +395,50 @@ func RecordLoginFailure(ctx context.Context, tx pgx.Tx, id, ip, email string) er
 }
 
 // CountLoginFailures counts the recent refusals on both axes at once: the ones
-// aimed at this address, from anywhere, and the ones coming from this IP, at
-// anybody.
+// aimed at THIS address FROM THIS IP, and the ones from this IP at anybody.
+//
+// # Why the account axis is (email, IP) and not email alone
+//
+// Counting by address alone is a registration-lockout weapon pointed at the
+// people this service exists for. Ten guesses at an address anybody can read
+// off a cooperative roster, from ten addresses, and its owner is refused at the
+// door for the length of the window — including with the correct password,
+// including from their own office. Around forty requests an hour holds an owner
+// out of their own payroll indefinitely, and an owner is the only role that can
+// set a price or settle a week. The attacker needs no credentials and no
+// account, and pays nothing, because being throttled is not what they were
+// trying to avoid.
+//
+// NIST SP 800-63B §5.2.2 is explicit about this shape: throttle rather than
+// lock, and count the pair, so the budget an attacker can spend is their own
+// and not the victim's. That is what this does. A stranger's guesses fill the
+// bucket for (victim's address, stranger's IP) and the victim's own
+// (address, office IP) bucket is untouched, so the correct password from the
+// right place always opens a session.
+//
+// What that gives up, stated plainly: a botnet spread thinly enough — under
+// LoginFailuresPerEmailPerIP guesses per source — is bounded only by the per-IP
+// axis, so a distributed search against one known address is slowed rather than
+// stopped. That is the residual NIST accepts, and it is the right way round:
+// the alternative made a farm's own owner the easier target of the two.
+//
+// The email index on login_failures is not consulted here. It is kept for the
+// question this function deliberately does not answer — "is somebody spraying
+// THIS address from everywhere" — which is an operator's query and a monitor's,
+// not a limiter's, because the answer must never be to shut the address.
 //
 // One round trip and not two, for the reason tenant.setContext gives about the
 // membership check: a limit that costs an extra query on the hot path of the
-// most-called endpoint in the service is a limit somebody optimises away. The
-// OR in the WHERE clause is there so the planner can take both partial index
-// ranges and stop, rather than counting the whole window and filtering.
+// most-called endpoint in the service is a limit somebody optimises away. Both
+// counts come out of one index range on (ip, at DESC).
 func CountLoginFailures(ctx context.Context, tx pgx.Tx, email, ip string,
-	window time.Duration) (byEmail, byIP int, err error) {
+	window time.Duration) (byEmailFromThisIP, byIP int, err error) {
 
 	err = tx.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE lower(email) = $1),
-		       count(*) FILTER (WHERE ip = $2::inet)
+		SELECT count(*) FILTER (WHERE lower(email) = $1), count(*)
 		  FROM login_failures
-		 WHERE at > now() - $3::interval
-		   AND (lower(email) = $1 OR ip = $2::inet)`,
-		email, ip, window.String()).Scan(&byEmail, &byIP)
-	return byEmail, byIP, err
+		 WHERE ip = $2::inet
+		   AND at > now() - $3::interval`,
+		email, ip, window.String()).Scan(&byEmailFromThisIP, &byIP)
+	return byEmailFromThisIP, byIP, err
 }

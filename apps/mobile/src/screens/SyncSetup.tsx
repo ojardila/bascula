@@ -189,6 +189,15 @@ function messageFor(e: unknown, t: (k: string, v?: Record<string, string>) => st
   switch (e.code) {
     case "INVALID_CREDENTIALS":
       return t("sync.errBadCredentials");
+    // The login door counts refusals now, and a picker who mistyped five times
+    // gets a 429 rather than a 401. Without this case it falls through to
+    // "algo salió mal (RATE_LIMITED)", which reads as a broken app and sends
+    // somebody to look for signal they already have. It is also NOT
+    // `sync.errRateLimited` — that one says "se reintenta solo", which is true
+    // of the sync engine's backoff and false here: nothing retries a sign-in
+    // but the person.
+    case "RATE_LIMITED":
+      return t("sync.errTooManyAttempts");
     case "EMAIL_NOT_VERIFIED":
       return t("sync.errNotVerified");
     case "FARM_SUSPENDED":

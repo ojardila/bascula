@@ -567,13 +567,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// keeps it from becoming the oracle the decoy hash below exists to close:
 	// a 429 that only ever arrived for real addresses would say exactly what a
 	// fast 401 used to say.
-	failedForEmail, failedForIP, err := store.CountLoginFailures(
+	failedForThisPair, failedForIP, err := store.CountLoginFailures(
 		r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	if failedForEmail >= s.cfg.LoginFailuresPerEmail || failedForIP >= s.cfg.LoginFailuresPerIP {
+	if failedForThisPair >= s.cfg.LoginFailuresPerEmailPerIP || failedForIP >= s.cfg.LoginFailuresPerIP {
 		// Nothing is recorded here, and that is the difference between a
 		// lockout that ends and one that does not. If a refused attempt also
 		// counted, an attacker could hold somebody's address locked for ever by
@@ -585,6 +585,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// limit is a property of the door, not of the guess, and a lockout that
 		// stepped aside for the right password would tell whoever tripped it
 		// that they had just found the right password.
+		//
+		// It is only safe to say that because BOTH axes are bounded by the
+		// caller's own address. A stranger who fills the (victim's address,
+		// stranger's IP) bucket has refused themselves and nobody else; the
+		// victim's own pair, from their own office, is at zero. See
+		// store.CountLoginFailures for why counting an address alone made this
+		// same line a way to hold a farm's owner out of their own payroll.
 		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
 			"too many failed sign-in attempts; try again later"))
 		return

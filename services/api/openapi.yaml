@@ -194,11 +194,19 @@ paths:
         nobody holds, so the reply cannot be used to test whether an address
         has an account here.
 
-        Refusals are counted on two axes over a sliding window — per address
-        and per source IP — and either count reaching its limit answers 429
-        RATE_LIMITED until the window drains. The correct password gets the
-        429 too while the limit is tripped; a lockout that stepped aside for
-        the right guess would announce it.
+        Refusals are counted on two axes over a sliding window — per
+        (address, source IP) pair, and per source IP at anybody — and either
+        count reaching its limit answers 429 RATE_LIMITED until the window
+        drains. The correct password gets the 429 too while the limit is
+        tripped; a lockout that stepped aside for the right guess would
+        announce it.
+
+        Both axes are bounded by the CALLER'S own address, deliberately. A
+        count kept per address alone would let a stranger hold somebody out
+        of their own farm with a handful of guesses an hour, and an owner's
+        address is not a secret. The cost of the pair is that a search spread
+        across many sources is slowed by the per-IP axis rather than stopped;
+        that trade is the one NIST SP 800-63B §5.2.2 recommends.
       x-action: auth.login
       x-roles: [public]
       security: []
@@ -232,8 +240,9 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "429":
           description: |
-            RATE_LIMITED: too many recent failures for this address or from
-            this IP. Retry after the window, not immediately.
+            RATE_LIMITED: too many recent failures for this address from
+            this IP, or from this IP at any address. Retry after the window,
+            not immediately.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

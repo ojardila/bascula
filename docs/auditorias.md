@@ -266,3 +266,44 @@ Git shows no conflict either: the two branches touch different filenames.
 master's high-water mark, gaps included. It is the class of fault where the
 cost of the check is three seconds and the cost of the miss is every deployed
 site refusing to boot.
+
+### The door with no counter was the one everybody knocks on
+
+`POST /v1/signup` got a Postgres-backed limiter in migration 00002, on the
+grounds that it was "the most exposed surface in the system". It is not.
+Signup costs an attacker a mailbox they control and gives them a farm they
+could have had anyway. `POST /v1/auth/login` is where somebody else's payroll
+is, and it counted nothing at all: no lockout, no delay, and no row anywhere
+afterwards saying it had been tried. Measured on master, single-threaded: **200
+wrong passwords at one address from one IP, 200 × 401, in 4.5 s.** A spray
+could run all night and leave the database looking exactly as it did the night
+before.
+
+The same handler answered by the clock. An address with no account returned
+before the Argon2id verification and one with an account returned after it:
+**p50 19.20 ms against 0.65 ms, 29.5×, with zero overlap across 120 samples.**
+The bodies were identical — the comment in the code said so, and it was true
+about the bytes and false about the reply. A single request classified an
+address, which is the same disclosure `handleSignup` builds `DiscardChanges`
+to avoid giving, on the stated grounds that "a list of addresses that are
+coffee farm owners in Huila is a phishing list".
+
+Two rules came out of it, and the second is the one that keeps being relearned:
+
+- **A limiter belongs on the door that is knocked on, not on the door that was
+  designed first.** Which surface is "most exposed" is a claim about traffic
+  and value, and it was written down once, in 00002, and never revisited.
+- **Two branches that return the same bytes are not the same answer.** Equal
+  cost is a property of the whole path, so the decoy hash is only worth
+  anything because everything before it happens for both addresses — and
+  `user == nil` is deliberately the LAST condition in the check that follows,
+  because moving it first would short-circuit the work back out of existence
+  and put the millisecond gap straight back.
+
+The counter it shipped with also had to be shaped around the class above:
+counting refusals per address alone would have made the fix a way to hold a
+farm's owner out of their own payroll. It counts the (address, source IP) pair
+instead, which is NIST SP 800-63B §5.2.2's own recommendation for this shape,
+and concedes what that concedes: a search spread thinly across many sources is
+slowed by the per-IP axis rather than stopped. The pair keeps the budget an
+attacker spends their own.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
 // The login door, from the outside.
@@ -50,7 +51,7 @@ func TestLoginLocksOutAfterRepeatedFailures(t *testing.T) {
 	f := h.signupFarm(t, "Finca del candado", 100000)
 	const ip = "10.20.0.1"
 
-	for i := 0; i < h.loginFailuresPerEmail; i++ {
+	for i := 0; i < h.loginFailuresPerPair; i++ {
 		res := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
 			"email": f.OwnerEmail, "password": wrongPassword(),
 		})
@@ -66,7 +67,7 @@ func TestLoginLocksOutAfterRepeatedFailures(t *testing.T) {
 	if over.Status != http.StatusTooManyRequests || over.code() != string(domain.CodeRateLimited) {
 		t.Fatalf("attempt %d was still answered %d %s: the door counts nothing, "+
 			"so a password spray runs until somebody notices the electricity bill",
-			h.loginFailuresPerEmail+1, over.Status, over.Raw)
+			h.loginFailuresPerPair+1, over.Status, over.Raw)
 	}
 
 	// And the right password gets the same answer, which is the half that is
@@ -115,7 +116,7 @@ func TestLoginLimitAxesAreIndependent(t *testing.T) {
 		neighbour := h.signupFarm(t, "Finca del vecino", 100000)
 		const ip = "10.21.0.1"
 
-		for i := 0; i < h.loginFailuresPerEmail; i++ {
+		for i := 0; i < h.loginFailuresPerPair; i++ {
 			h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
 				"email": victim.OwnerEmail, "password": wrongPassword(),
 			})
@@ -139,14 +140,51 @@ func TestLoginLimitAxesAreIndependent(t *testing.T) {
 				other.Status, other.Raw)
 		}
 
-		// And the lock on the address follows the address, not the attacker:
-		// moving to another IP is one line of shell, so a per-IP-only lock is
-		// no lock at all.
-		elsewhere := h.doFrom(t, "10.21.0.2", http.MethodPost, "/v1/auth/login", "",
+		// And the owner is not locked out of their own farm by it. This is the
+		// assertion that inverts: counting the address alone made the lock
+		// follow the VICTIM, so a stranger's guesses shut a door the stranger
+		// does not own. The pair is what is counted, so the budget the attacker
+		// spent was their own.
+		fromHome := h.doFrom(t, "10.21.0.2", http.MethodPost, "/v1/auth/login", "",
 			map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
-		if elsewhere.Status != http.StatusTooManyRequests {
-			t.Fatalf("the lock on the address did not follow it to another IP: %d %s",
-				elsewhere.Status, elsewhere.Raw)
+		if fromHome.Status != http.StatusOK {
+			t.Fatalf("the owner was held out of their own payroll from a clean "+
+				"address by somebody else's guesses: %d %s", fromHome.Status, fromHome.Raw)
+		}
+	})
+
+	// TestLoginLimitAxesAreIndependent's third case, and the one the design
+	// exists for. An owner's address is not a secret — it is on cooperative
+	// rosters, invoices and WhatsApp — and an owner is the only role that can
+	// set a price or settle a week. If a handful of guesses an hour could hold
+	// one out, the limiter would be a better weapon than the attack it stops.
+	t.Run("a stranger cannot lock an owner out of their own farm", func(t *testing.T) {
+		victim := h.signupFarm(t, "Finca del secuestro", 100000)
+
+		// Well past the per-account budget in total, from addresses the
+		// attacker rotates through — which costs them one line of shell, and
+		// is exactly what a spoofable X-Forwarded-For hands them for free
+		// until #5 lands.
+		for i := 0; i < h.loginFailuresPerPair*3; i++ {
+			res := h.doFrom(t, fmt.Sprintf("10.22.%d.%d", i/250, i%250+1),
+				http.MethodPost, "/v1/auth/login", "", map[string]any{
+					"email": victim.OwnerEmail, "password": wrongPassword(),
+				})
+			if res.Status != http.StatusUnauthorized {
+				t.Fatalf("guess %d from a fresh address: got %d %s, want 401 — "+
+					"each source has its own budget and has spent one of it",
+					i+1, res.Status, res.Raw)
+			}
+		}
+
+		owner := h.doFrom(t, "10.22.200.1", http.MethodPost, "/v1/auth/login", "",
+			map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
+		if owner.Status != http.StatusOK {
+			t.Fatalf("%d guesses from rotating addresses locked the owner out of "+
+				"their own farm: %d %s. Counting an address alone is a "+
+				"denial-of-registration primitive: the victim sees a generic "+
+				"refusal, has no way to tell they are being held out, and no way "+
+				"to clear it", h.loginFailuresPerPair*3, owner.Status, owner.Raw)
 		}
 	})
 
@@ -261,15 +299,19 @@ func TestLoginSpendsTheSameWorkWhetherTheAddressExists(t *testing.T) {
 // TestConcurrentSignupsDoNotExhaustThePool is the same test for the same
 // mistake on the route next door.
 //
-// Thirteen is exactly the size of the pool. If the failure row were written on
-// a connection of its own — with a defer, which is how signup got it wrong —
-// every one of these would be holding one connection and waiting for another,
-// and the deadline in fireConcurrently is what turns that hang into a failure
-// instead of a test run that never ends.
+// n is exactly the size of the pool, written as the expression that defines it
+// rather than as the number it happens to come to. A literal 13 stops
+// exhausting the pool the day either constant moves, silently, and a comment
+// pointing at the expression is what rots — the expression does not.
+//
+// If the failure row were written on a connection of its own — with a defer,
+// which is how signup got it wrong — every one of these would be holding one
+// connection and waiting for another, and the deadline in fireConcurrently is
+// what turns that hang into a failure instead of a test run that never ends.
 func TestConcurrentFailedLoginsAllAnswer(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca de la avalancha", 100000)
-	const n = 13
+	n := store.OrdinaryConns + store.MaxImportsAtOnce
 
 	results := h.fireConcurrentlyFrom("10.23.0.1", n, 30*time.Second,
 		func(i int) (string, string, string, any) {
@@ -301,6 +343,27 @@ func TestConcurrentFailedLoginsAllAnswer(t *testing.T) {
 	if kept == 0 {
 		t.Fatal("not one of the failed logins was recorded: the rows went back " +
 			"with the transaction, so the counter can never reach its limit")
+	}
+
+	// And the platform is still there, which is the sentence that makes this a
+	// proof rather than an observation. Everything above says the thirteen
+	// requests finished and some rows survived rollback; neither of those is
+	// incompatible with the failure. A write that moved onto a SECOND
+	// connection after the 401 had already been sent would keep them all
+	// finishing and keep the rows, while a fourteenth caller — another farm,
+	// asking for something that has nothing to do with logging in — found no
+	// connection left. Thirteen 401s and a pool that cannot serve La Esperanza
+	// is the harvest-Saturday failure, and it is invisible from inside this
+	// farm's own results. Same ending as
+	// TestManyReusedRefreshTokensDoNotExhaustThePool, for the same bug class.
+	other := h.signupFarm(t, "Finca vecina de la avalancha", 90000)
+	after := h.fireConcurrently(1, 10*time.Second, func(int) (string, string, string, any) {
+		return http.MethodGet, "/v1/workers", other.OwnerToken, nil
+	})
+	if after[0].Status != http.StatusOK {
+		t.Fatalf("another farm's worker list answered %d after %d concurrent failed "+
+			"logins: the pool is gone and with it every farm's day: %s",
+			after[0].Status, n, after[0].Raw)
 	}
 }
 
@@ -360,4 +423,51 @@ func TestPasswordsHaveACeiling(t *testing.T) {
 				len(huge), res.Status, res.Raw)
 		}
 	})
+}
+
+// TestPruneSweepsOldLoginFailures. The table was written to and never read
+// past a fifteen-minute window, and nothing deleted from it — so it grew for
+// ever, one row per mistyped password, for a counter that stopped caring about
+// each of them within the quarter hour. The nightly sweep that already expires
+// sync_ops takes these too.
+//
+// What must NOT happen is the sweep reaching inside the limiter's own window:
+// a lockout that is cleared by a cron job is not a lockout, and a sweep run at
+// the wrong moment would hand an attacker a reset.
+func TestPruneSweepsOldLoginFailures(t *testing.T) {
+	h := requireDB(t)
+	ctx := context.Background()
+	f := h.signupFarm(t, "Finca de la escoba", 100000)
+
+	stale, fresh := uuid.NewString(), uuid.NewString()
+	for id, at := range map[string]time.Time{
+		stale: time.Now().Add(-60 * 24 * time.Hour),
+		fresh: time.Now(),
+	} {
+		if _, err := h.admin.Exec(ctx, `
+			INSERT INTO login_failures (id, ip, email, at) VALUES ($1, '10.99.0.1'::inet, $2, $3)`,
+			id, f.OwnerEmail, at); err != nil {
+			t.Fatalf("seed failure: %v", err)
+		}
+	}
+
+	rep, err := store.PruneSync(ctx, h.admin,
+		store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+		store.LoginFailureRetentionDays)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if rep.LoginFailuresDeleted == 0 {
+		t.Fatalf("the sweep took no failed logins at all, so the table still only "+
+			"grows: %s", rep)
+	}
+
+	if h.loginFailureExists(t, stale) {
+		t.Error("a sixty-day-old failed sign-in is still on file")
+	}
+	if !h.loginFailureExists(t, fresh) {
+		t.Error("today's failed sign-in was swept: the sweep reached inside the " +
+			"limiter's own window, which turns a cron job into a way to clear " +
+			"somebody else's lockout")
+	}
 }

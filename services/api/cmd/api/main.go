@@ -80,15 +80,18 @@ func run(migrateOnly, pruneOnly bool) error {
 		}
 		defer admin.Close()
 		rep, err := store.PruneSync(pruneCtx, admin,
-			store.SyncLogRetentionDays, store.SyncOpsRetentionDays)
+			store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+			store.LoginFailureRetentionDays)
 		if err != nil {
 			return fmt.Errorf("prune: %w", err)
 		}
 		slog.Info("sync feed pruned",
 			"syncLogDeleted", rep.SyncLogDeleted,
 			"syncOpsDeleted", rep.SyncOpsDeleted,
+			"loginFailuresDeleted", rep.LoginFailuresDeleted,
 			"syncLogRetentionDays", store.SyncLogRetentionDays,
 			"syncOpsRetentionDays", store.SyncOpsRetentionDays,
+			"loginFailureRetentionDays", store.LoginFailureRetentionDays,
 			"took", rep.Took.String())
 		return nil
 	}
@@ -301,8 +304,8 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// it. A zero or a negative value keeps the default rather than disabling
 	// the limit: "0" in an environment file is far more often a mistake than a
 	// decision to turn the front door's lock off.
-	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_EMAIL")); err == nil && n > 0 {
-		rc.http.LoginFailuresPerEmail = n
+	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_EMAIL_PER_IP")); err == nil && n > 0 {
+		rc.http.LoginFailuresPerEmailPerIP = n
 	}
 	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_IP")); err == nil && n > 0 {
 		rc.http.LoginFailuresPerIP = n

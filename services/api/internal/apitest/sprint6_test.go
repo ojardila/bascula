@@ -561,7 +561,8 @@ func TestPruneRemovesOnlySupersededFeedRows(t *testing.T) {
 		t.Fatalf("read the trigger's row: %v", err)
 	}
 
-	rep, err := store.PruneSync(ctx, h.admin, store.SyncLogRetentionDays, store.SyncOpsRetentionDays)
+	rep, err := store.PruneSync(ctx, h.admin, store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+		store.LoginFailureRetentionDays)
 	if err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -616,7 +617,8 @@ func TestPruneKeepsEveryLedgerRowInTheFeed(t *testing.T) {
 	}
 
 	if _, err := store.PruneSync(ctx, h.admin,
-		store.SyncLogRetentionDays, store.SyncOpsRetentionDays); err != nil {
+		store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+		store.LoginFailureRetentionDays); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 
@@ -663,7 +665,8 @@ func TestPruneExpiresTheOperationRegistry(t *testing.T) {
 	}
 
 	if _, err := store.PruneSync(ctx, h.admin,
-		store.SyncLogRetentionDays, store.SyncOpsRetentionDays); err != nil {
+		store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+		store.LoginFailureRetentionDays); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 

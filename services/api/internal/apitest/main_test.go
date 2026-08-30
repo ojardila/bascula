@@ -59,8 +59,8 @@ type harness struct {
 	// with so a test can reach the threshold without writing it down twice. A
 	// test that hardcoded "5" would keep passing after the limit moved, while
 	// asserting something about a limit that no longer exists.
-	loginFailuresPerEmail int
-	loginFailuresPerIP    int
+	loginFailuresPerPair int
+	loginFailuresPerIP   int
 }
 
 var shared *harness
@@ -149,7 +149,7 @@ func setupAndRun(m *testing.M) (int, error) {
 	// window ages the rows instead. Tests that provoke failures give themselves
 	// a client address of their own, so these buckets never leak into the rest
 	// of the suite. See doFrom.
-	cfg.LoginFailuresPerEmail = 5
+	cfg.LoginFailuresPerEmailPerIP = 5
 	cfg.LoginFailuresPerIP = 12
 	cfg.LoginFailureWindow = 15 * time.Minute
 
@@ -160,8 +160,8 @@ func setupAndRun(m *testing.M) (int, error) {
 		admin:    adminPool,
 		server:   httpapi.New(pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg),
 
-		loginFailuresPerEmail: cfg.LoginFailuresPerEmail,
-		loginFailuresPerIP:    cfg.LoginFailuresPerIP,
+		loginFailuresPerPair: cfg.LoginFailuresPerEmailPerIP,
+		loginFailuresPerIP:   cfg.LoginFailuresPerIP,
 	}
 	return m.Run(), nil
 }
@@ -511,4 +511,16 @@ func (h *harness) pruneSyncLog(t *testing.T, farmID string) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("prune commit: %v", err)
 	}
+}
+
+// loginFailureExists asks the admin pool directly: login_failures has no
+// farm_id and therefore no RLS, on purpose — see migration 00023.
+func (h *harness) loginFailureExists(t *testing.T, id string) bool {
+	t.Helper()
+	var n int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM login_failures WHERE id = $1`, id).Scan(&n); err != nil {
+		t.Fatalf("count login_failures: %v", err)
+	}
+	return n > 0
 }
