@@ -984,7 +984,14 @@ export function createSqliteRepository(
     if (!o) return Math.round(generalCents);
     if (o.costPerUnitCents !== null && o.costPerUnitCents !== undefined)
       return o.costPerUnitCents;
-    return toCents(Number(o.costPerUnit ?? 0));
+    // An override row that names no price at all is not an override of zero.
+    // The schema allows both columns NULL and `Number(null ?? 0)` turned that
+    // into a week priced at nothing: measured, 3_200_000 cents became 0 with a
+    // general price of 800 sitting right there unused. A row that says nothing
+    // must fall back to what the farm charges, exactly as no row does.
+    if (o.costPerUnit === null || o.costPerUnit === undefined)
+      return Math.round(generalCents);
+    return toCents(Number(o.costPerUnit));
   }
 
   // What the whole farm's harvest is worth, at the price in force each week.

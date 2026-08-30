@@ -284,10 +284,20 @@ export function buildSeasonExport(
   // COALESCE because a database that reached v7 has the cents column filled by
   // `backfillPriceCents`, and one that somehow did not must still export a
   // price rather than a null the server would read as "free".
+  //
+  // And rows that name NO price are left out entirely rather than exported as
+  // a null. `backfillPriceCents` no longer turns those into a zero -- an
+  // override with nothing in it is not an override of nothing -- so the null
+  // reaches here now, and a null the server reads as "free" is the very claim
+  // this whole rule exists to stop. A week with no price is a week the farm
+  // has not overridden; sending nothing says exactly that.
   const weekPrices = db.getAllSync<ExportWeekPrice>(
     `SELECT uuid AS id, week AS weekStart,
             COALESCE(costPerUnitCents, CAST(ROUND(costPerUnit * 100) AS INTEGER)) AS priceCents
-       FROM cost_overrides WHERE uuid IS NOT NULL ORDER BY weekStart`,
+       FROM cost_overrides
+      WHERE uuid IS NOT NULL
+        AND (costPerUnitCents IS NOT NULL OR costPerUnit IS NOT NULL)
+      ORDER BY weekStart`,
     [],
   );
 

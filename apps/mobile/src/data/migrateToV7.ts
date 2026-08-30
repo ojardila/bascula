@@ -117,17 +117,25 @@ export function backfillLedgerDays(db: SqlDatabase): number {
  * server and the web do. A price of 0 is written as 0 rather than skipped: the
  * NULL would otherwise be read as "no override" and quietly restore the
  * general price on a week somebody deliberately set to nothing.
+ *
+ * A row with NO price is a different row, and it used to share that fate.
+ * `Number(null ?? 0)` made an override that names nothing into a permanent,
+ * deliberate-looking zero -- and unlike the read path, a migration writes it
+ * down once and there is nothing left to fall back from. Deliberately zero and
+ * never priced are not the same week, so only the first is backfilled; the
+ * second keeps its NULL and goes on reading as "no override".
  */
 export function backfillPriceCents(db: SqlDatabase): number {
   let n = 0;
   for (const t of ["config", "cost_overrides"]) {
-    const rows = db.getAllSync<{ id: number; costPerUnit: number | null }>(
-      `SELECT id, costPerUnit FROM ${t} WHERE costPerUnitCents IS NULL`,
+    const rows = db.getAllSync<{ id: number; costPerUnit: number }>(
+      `SELECT id, costPerUnit FROM ${t}
+        WHERE costPerUnitCents IS NULL AND costPerUnit IS NOT NULL`,
       [],
     );
     for (const r of rows) {
       db.runSync(`UPDATE ${t} SET costPerUnitCents = ? WHERE id = ?`, [
-        toCents(Number(r.costPerUnit ?? 0)),
+        toCents(Number(r.costPerUnit)),
         r.id,
       ]);
       n++;
