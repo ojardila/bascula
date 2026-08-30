@@ -1,91 +1,192 @@
-# Sprint 1 — Báscula: el esqueleto multitenant y el ciclo del trabajo pagado
+# Sprint 1 — Báscula: the multi-tenant skeleton and the cycle of paid work
 
-## 1. Objetivo y demo
+## 1. Goal and demo
 
-**Objetivo:** dejar corriendo el módulo transversal (finca, usuarios, permisos, baja lógica) y **una sola cadena de valor completa: parcela → empleado → actividad → labor → saldo → pago**, construida con el patrón que después replican los otros seis módulos.
+**Goal:** get the cross-cutting module running (farm, users, permissions, soft
+delete) and **one complete chain of value: plot → employee → activity → work
+record → balance → payment**, built with the pattern the other six modules then
+copy.
 
-**Demo (20 min, un hilo):** se da de alta la finca "La Esperanza" y su dueño → login → se crea una parcela (departamento/municipio, área, dos cultivos) → tres empleados con foto y documento → dos actividades: *Recolección de café* (pago por unidad de trabajo, $800/kg) y *Guadañada* (pago por unidad de tiempo) → se registran labores de dos días sobre esa parcela → se abre el perfil de un empleado: saldo e historial financiero → se le paga → saldo en cero, el pago queda en el historial → se intenta entrar con un usuario sin permiso al módulo de empleados y la API lo rechaza → un segundo dueño de otra finca no ve nada de la primera. Cierre: `npm test`, los 75 tests del móvil verdes.
+**Demo (20 min, one thread):** register the farm "La Esperanza" and its owner →
+log in → create a plot (department/municipality, area, two crops) → three
+employees with photo and ID document → two activities: *Recolección de café*
+(paid by unit of work, $800/kg) and *Guadañada* (paid by unit of time) → record
+two days of work on that plot → open an employee's profile: balance and
+financial history → pay them → balance at zero, the payment sits in the history
+→ try to enter the employees module with a user who lacks the permission and the
+API refuses → a second owner from another farm sees nothing of the first. Close
+with `npm test`, the mobile app's 75 tests green.
 
-## 2. El recorte, y por qué
+## 2. The cut, and why
 
-**Entra:** AUTENTICACIÓN + ALTA DE FINCA, CONFIGURACIÓN (solo datos de finca, precios y usuarios), PARCELAS **sin polígono**, EMPLEADOS, ACTIVIDADES, LABORES.
-**Espera:** PRODUCTOS/INVENTARIOS y stickers, VENTAS, GASTOS, polígono en mapa, anotaciones, RSP-009 (cross-tenant).
+**In:** AUTHENTICATION + FARM SIGNUP, CONFIGURATION (farm details, prices and
+users only), PLOTS **without the polygon**, EMPLOYEES, ACTIVITIES, WORK RECORDS.
+**Waiting:** PRODUCTS/INVENTORY and stickers, SALES, EXPENSES, the map polygon,
+notes, RSP-009 (cross-tenant).
 
-El corte no es por facilidad:
+The line is not drawn by what is easy:
 
-- **Auth/permisos/baja lógica es prerrequisito de los 33 casos**: cada uno empieza verificando permiso y ninguno borra en duro. Se construye una vez como patrón y los demás módulos lo consumen.
-- **LABORES es el corazón del negocio y el nudo de dependencias**: necesita empleado, actividad y lote/cultivo. Entregarla obliga a modelar bien los tres. Si en su lugar hiciéramos VENTAS o INVENTARIOS —que son CRUD más simples— tendríamos más casos cerrados y ningún riesgo resuelto.
-- **GASTOS y VENTAS son dinero que no depende de nadie**: se pueden hacer en cualquier sprint, en paralelo, sin bloquear nada. Por eso esperan.
-- **El polígono en mapa se saca de PARCELAS, no la parcela entera**: es la parte cara (librería, dibujo, geometría en Postgres) y no bloquea a LABORES, que solo necesita el id del lote. La parcela nace con nombre, ubicación, área y cultivos; el mapa se le añade encima en Sprint 2.
-- **La foto y el comprobante empujan almacenamiento de archivos**: entra solo la foto del empleado (una ruta de subida), y esa misma ruta sirve luego para comprobantes de venta y stickers.
+- **Auth, permissions and soft delete are a prerequisite for all 33 cases**:
+  every one of them starts by checking a permission and none of them hard
+  deletes. It gets built once as a pattern and the other modules consume it.
+- **WORK RECORDS is the heart of the business and the knot of dependencies**: it
+  needs an employee, an activity and a plot/crop. Delivering it forces all three
+  to be modelled properly. If we did SALES or INVENTORY instead — simpler CRUD —
+  we would have more cases closed and no risk resolved.
+- **EXPENSES and SALES are money that depends on nobody**: they can be done in
+  any sprint, in parallel, blocking nothing. That is why they wait.
+- **The map polygon comes out of PLOTS, not the plot itself**: it is the
+  expensive part (library, drawing, geometry in Postgres) and it does not block
+  WORK RECORDS, which only needs the plot id. A plot is born with a name, a
+  location, an area and crops; the map is added on top in Sprint 2.
+- **The photo and the receipt push file storage in**: only the employee photo
+  goes in (one upload route), and that same route later serves sale receipts and
+  stickers.
 
-## 3. La tensión del modelo: se asume el modelo general, ya
+## 3. The tension in the model: take the general model, now
 
-**Decisión del equipo (no del dueño): el Sprint 1 modela recolección como una ACTIVIDAD de pago por unidad de trabajo (kg), no como entidad propia.** El móvil no se toca.
+**Team decision (not the owner's): Sprint 1 models picking as an ACTIVITY paid
+by unit of work (kg), not as an entity of its own.** The mobile app is not
+touched.
 
-- *Asumir el general (elegido):* un esquema que sostiene los 33 casos desde el primer commit. Cuesta que la nómina del servidor y la del teléfono dejan de ser el mismo código durante unas semanas. Se mitiga con los casos de oro (H10): una labor de recolección tiene que producir **exactamente los mismos centavos** que `BALANCE_SQL` del móvil, caso por caso, o el sprint no cierra.
-- *Diferirlo:* Sprint 1 sale una semana antes y luego hay que rehacer esquema, API y web, y migrar datos de producción — justo en el Sprint 3, encima del sync, que es la parte que puede perder plata. Es la peor combinación posible.
+- *Take the general model (chosen):* a schema that holds all 33 cases from the
+  first commit. The cost is that the server's payroll and the phone's stop being
+  the same code for a few weeks. Mitigated by the golden cases (H10): a picking
+  work record has to produce **exactly the same cents** as the mobile app's
+  `BALANCE_SQL`, case by case, or the sprint does not close.
+- *Defer it:* Sprint 1 ships a week earlier and then the schema, the API and the
+  web all have to be redone, and production data migrated — right in Sprint 3,
+  on top of sync, which is the part that can lose money. That is the worst
+  possible combination.
 
-Consecuencia práctica: `pickups` no existe en Postgres. Existe `labores` con `modalidad_pago ∈ {contrato, tiempo, trabajo}` y `cantidad + unidad`; recolección es `trabajo/kg`.
+Practical consequence: `pickups` does not exist in Postgres. What exists is
+`labores` with `modalidad_pago ∈ {contrato, tiempo, trabajo}` and
+`cantidad + unidad`; picking is `trabajo/kg`.
 
-## 4. Historias, en orden de dependencia
+## 4. Stories, in dependency order
 
-**H1 · Contrato y patrón de módulo** (M · Arquitecto + BE1) — *Como equipo quiero un contrato y un molde de módulo para que diez módulos no se escriban de diez formas.* AC: OpenAPI 3.1 en `packages/shared`; generador de tipos TS y structs Go, CI falla si hay diff; molde documentado con listar/crear/modificar/eliminar-lógico, chequeo de permiso a la entrada, validación de obligatorios y respuesta de error uniforme; dinero en centavos, ids UUID.
+**H1 · Contract and module pattern** (M · Architect + BE1) — *As a team I want a
+contract and a module template so that ten modules are not written ten different
+ways.* AC: OpenAPI 3.1 in `packages/shared`; generator for TS types and Go
+structs, CI fails on a diff; documented template covering list/create/modify/
+soft-delete, permission check at the door, required-field validation and a
+uniform error response; money in cents, UUID ids.
 
-**H2 · Alta de finca, auth y permisos** (L · BE2) — AC: alta de finca con su primer usuario dueño; login/refresh con `farm_id` y rol; matriz dueño/administrador/pesador aplicada **en servidor** con test por rol y por módulo; `403` documentado; argon2id y rate limit.
+**H2 · Farm signup, auth and permissions** (L · BE2) — AC: farm signup with its
+first owner user; login/refresh carrying `farm_id` and role; the
+owner/administrator/weigher matrix enforced **on the server** with a test per
+role and per module; `403` documented; argon2id and rate limiting.
 
-**H3 · Esquema multitenant con RLS y baja lógica** (M · DBA + BE1) — AC: `farm_id` y `deleted_at` en toda tabla; RLS con `app.farm_id`, rol de aplicación sin `BYPASSRLS`; test de dos fincas sembradas que prueba el aislamiento; ninguna ruta hace `DELETE`.
+**H3 · Multi-tenant schema with RLS and soft delete** (M · DBA + BE1) — AC:
+`farm_id` and `deleted_at` on every table; RLS keyed on `app.farm_id`, an
+application role without `BYPASSRLS`; a two-seeded-farms test that proves the
+isolation; no route runs a `DELETE`.
 
-**H4 · Parcelas, lotes y cultivos** (M · BE1) — AC: parcela con nombre, departamento, municipio, área y **varios cultivos**; lotes dentro de la parcela; campo `poligono` en el esquema, sin endpoint aún; baja lógica que no huérfana labores.
+**H4 · Plots and crops** (M · BE1) — AC: a plot with name, department,
+municipality, area and **several crops**; plots within the plot; a `poligono`
+column in the schema, no endpoint yet; a soft delete that does not orphan work
+records.
 
-**H5 · Empleados** (M · BE2) — AC: identificación única por finca, foto subida a almacenamiento, perfil que devuelve saldo derivado del ledger e historial financiero paginado; baja lógica conserva el historial.
+**H5 · Employees** (M · BE2) — AC: identification unique per farm, photo
+uploaded to storage, a profile that returns the balance derived from the ledger
+and a paginated financial history; soft delete keeps the history.
 
-**H6 · Actividades** (S · BE1) — AC: categoría, unidad y las tres modalidades de pago con su tarifa; validación de que la tarifa corresponde a la modalidad.
+**H6 · Activities** (S · BE1) — AC: category, unit and the three forms of
+payment with their rate; validation that the rate matches the form of payment.
 
-**H7 · Labores** (L · BE1 + BE2) — AC: empleado ejecuta una actividad sobre lote y cultivo con fecha y cantidad; genera un `devengo` en el ledger calculado según la modalidad; una labor ya liquidada no se modifica ni se anula sin reverso; los casos de oro pasan.
+**H7 · Work records** (L · BE1 + BE2) — AC: an employee performs an activity on
+a plot and crop with a date and a quantity; it produces a `devengo` in the
+ledger calculated according to the form of payment; a work record that has been
+settled is not modified or cancelled without a `reverso`; the golden cases pass.
 
-**H8 · Pagar y registrar deuda** (M · BE2) — AC: pago, anticipo y deducción como filas de ledger; saldo a favor sale correcto; nada se edita, se reversa.
+**H8 · Pay and register a debt** (M · BE2) — AC: `pago`, `anticipo` and
+`deduccion` as ledger rows; the credit balance comes out right; nothing is
+edited, it is reversed.
 
-**H9 · Web: cascarón, alta de finca y login** (M · FE1) — AC: Vite+React+TS, cliente generado del OpenAPI (cero tipos a mano), MSW con los mismos mocks; navegación por módulos que oculta lo que el rol no puede.
+**H9 · Web: shell, farm signup and login** (M · FE1) — AC: Vite+React+TS, client
+generated from the OpenAPI (zero hand-written types), MSW with those same mocks;
+module navigation that hides what the role cannot reach.
 
-**H10 · Web: lista/formulario reutilizable + parcelas y empleados** (L · FE2 + FE1) — AC: un componente de módulo (tabla, buscador, alta, edición, baja con confirmación) usado por los dos; el alta de parcela sigue el patrón de cropti/farmlogs: paso 1 identidad y ubicación por departamento/municipio, paso 2 cultivos, **con el espacio del mapa maquetado y deshabilitado** para que el Sprint 2 solo lo rellene; foto del empleado con recorte.
+**H10 · Web: reusable list/form + plots and employees** (L · FE2 + FE1) — AC: one
+module component (table, search, create, edit, soft delete with confirmation)
+used by both; plot creation follows the cropti/farmlogs pattern: step 1 identity
+and location by department/municipality, step 2 crops, **with the map's space
+laid out and disabled** so that Sprint 2 only has to fill it in; employee photo
+with cropping.
 
-**H11 · Web: actividades, labores y perfil del empleado** (L · FE2) — AC: registro de labor en pocos toques (empleado → actividad → lote → cantidad); perfil con saldo, historial y botones de pagar/registrar deuda.
+**H11 · Web: activities, work records and employee profile** (L · FE2) — AC:
+recording a work record in a few taps (employee → activity → plot → quantity);
+profile with balance, history and pay/register-debt buttons.
 
-**H12 · Dominio del dinero compartido + casos de oro** (L · MOB1 + MOB2) — AC: `ledger/harvest/week/format` movidos a `packages/shared` con sus tests, sin cambio de comportamiento en el móvil; `golden/*.json` con recolección-como-labor, saldo a favor, anticipo y anulación, corriendo en el CI de TS **y** de Go.
+**H12 · Shared money domain + golden cases** (L · MOB1 + MOB2) — AC:
+`ledger/harvest/week/format` moved into `packages/shared` with their tests, with
+no behaviour change on the phone; `golden/*.json` covering picking-as-work-record,
+credit balance, `anticipo` and voiding, running in both the TS **and** the Go CI.
 
-## 5. Reparto
+## 5. Who does what
 
-| Quién | Sprint 1 |
+| Who | Sprint 1 |
 |---|---|
-| **BE1** | H1 con arquitecto → H3 con DBA → H4 → H6 → H7 |
+| **BE1** | H1 with the architect → H3 with the DBA → H4 → H6 → H7 |
 | **BE2** | H2 → H5 → H8 → H7 |
-| **FE1** | H9 → H10 parcelas → H8 en web |
-| **FE2** | H10 componente de módulo + empleados → H11 |
-| **MOB1/MOB2** | H12; después, capa `Repository` en el móvil para poder cambiar SQLite por API en Sprint 3 sin tocar pantallas |
-| **Arquitecto** | H1 días 1-2, luego árbitro del contrato y revisor de PRs |
-| **DBA** | RLS, índices, almacenamiento de archivos, backup probado |
+| **FE1** | H9 → H10 plots → H8 on the web |
+| **FE2** | H10 module component + employees → H11 |
+| **MOB1/MOB2** | H12; afterwards, a `Repository` layer on the phone so SQLite can be swapped for the API in Sprint 3 without touching screens |
+| **Architect** | H1 days 1–2, then referee of the contract and reviewer of PRs |
+| **DBA** | RLS, indexes, file storage, a backup that has been restored |
 
-El móvil no escribe cliente HTTP ni sync: trabaja sobre lo único ya cierto (la lógica de dinero, con tests) y produce la especificación ejecutable que Go tiene que igualar.
+The mobile team writes no HTTP client and no sync: it works on the one thing
+that is already certain (the money logic, with tests) and produces the
+executable specification that Go has to match.
 
-## 6. Riesgos
+## 6. Risks
 
-- **El modelo general resulta mal calibrado con 33 casos escritos y no leídos por nosotros.** Mitigación: el documento RSP entra al repo el día 1 y el arquitecto mapea cada caso a una tabla antes de la primera migración.
-- **TS y Go derivan.** OpenAPI única fuente, generación en CI, nadie escribe tipos a mano.
-- **La web bloqueada por la API.** Día 3 todos los endpoints existen con contrato correcto y datos sembrados; el front va con MSW y cambia por variable de entorno.
-- **Go calcula distinto que el móvil.** Los goldens son test bloqueante.
-- **Diez módulos con diez estilos.** El molde de H1 y el componente de H10 son requisito de aceptación de cualquier PR de módulo.
-- **Romper el móvil en producción.** Solo refactor cubierto por los 75 tests, sin release.
-- **RSP-009 se cuela.** Fuera del sprint por decisión explícita; ver abajo.
+- **The general model turns out badly calibrated against 33 cases written by
+  someone else and not read by us.** Mitigation: the RSP document lands in the
+  repo on day 1 and the architect maps every case to a table before the first
+  migration.
+- **TS and Go drift.** OpenAPI is the single source, generation in CI, nobody
+  writes types by hand.
+- **The web blocked on the API.** By day 3 every endpoint exists with the right
+  contract and seeded data; the front end runs on MSW and switches over with an
+  environment variable.
+- **Go calculates differently from the phone.** The goldens are a blocking test.
+- **Ten modules in ten styles.** The H1 template and the H10 component are an
+  acceptance requirement of any module PR.
+- **Breaking the mobile app in production.** Only refactoring covered by the 75
+  tests, no release.
+- **RSP-009 creeps in.** Out of the sprint by explicit decision; see below.
 
-## 7. Tres decisiones del dueño
+## 7. Three decisions for the owner
 
-1. **RSP-009 (historial del empleado en otras fincas).** Es dato personal de un tercero y rompe el aislamiento por diseño; no lo decide el equipo. ¿(a) lo retiramos del producto; (b) versión mínima: solo señales —"este documento existe en N fincas" o "tiene una alerta activa"—, nunca kilos, pagos ni nombres de finca, con registro de quién consultó y autorización firmada del empleado en el alta; o (c) historial completo compartido, lo que exige asesoría legal de habeas data antes de escribir una línea?
-2. **Alta de fincas.** Tu doc trae REGISTRO DE FINCA (autoservicio) y tú pediste un super-admin que las cree. ¿(a) autoservicio abierto con verificación por correo; (b) solo el super-admin las crea y entrega credenciales; o (c) autoservicio pero la finca nace en prueba y el super-admin la activa?
-3. **Tu finca durante la transición.** Hasta que exista sync (Sprint 3), ¿(a) la web registra labores desde ya, aceptando que el teléfono y el servidor lleven cuentas separadas unas semanas; o (b) la web solo administra —parcelas, empleados, actividades, precios, usuarios— y el registro de trabajo sigue siendo exclusivo del móvil?
+1. **RSP-009 (an employee's history at other farms).** It is a third party's
+   personal data and it breaks isolation by design; the team does not get to
+   decide it. Do we (a) drop it from the product; (b) build the minimal version
+   — signals only: "this document exists at N farms" or "has an active alert",
+   never kilos, payments or farm names, with a record of who looked and the
+   employee's signed authorisation at signup; or (c) share the full history,
+   which requires legal advice on habeas data before a line is written?
+2. **Farm signup.** Your document has FARM REGISTRATION (self-service) and you
+   asked for a super-admin who creates them. Do we (a) open self-service with
+   email verification; (b) have only the super-admin create them and hand over
+   credentials; or (c) allow self-service but the farm is born on trial and the
+   super-admin activates it?
+3. **Your farm during the transition.** Until sync exists (Sprint 3), does (a)
+   the web record work records from now on, accepting that the phone and the
+   server keep separate books for a few weeks; or (b) the web only administers —
+   plots, employees, activities, prices, users — and recording work stays
+   exclusive to the mobile app?
 
-## 8. Backlog siguiente
+## 8. Next backlog
 
-**Sprint 2 — Cerrar el dinero y el mapa.** GASTOS por actividad y por lote · VENTAS con foto de comprobante · polígono de parcela en mapa al estilo cropti/farmlogs, con área calculada · CONFIGURACIÓN completa (precios históricos, usuarios e invitaciones) · anotaciones de empleado · liquidación y comprobantes PDF desde la web · audit log consultable.
+**Sprint 2 — Close money and the map.** EXPENSES by activity and by plot · SALES
+with a photo of the receipt · plot polygon on a map in the cropti/farmlogs
+style, with calculated area · full CONFIGURATION (historical prices, users and
+invitations) · employee notes · settlement and PDF receipts from the web · a
+queryable audit log.
 
-**Sprint 3 — Inventarios y sync.** PRODUCTOS e INVENTARIOS con stickers y movimientos · sync del móvil (UUIDs, push/pull idempotente, servidor dueño del bloqueo de liquidación, pantalla de conflictos) · el móvil leyendo su finca de la API · recolección del teléfono migrada a labor · reportes y rendimiento en la web · suspender finca · observabilidad y backups.
+**Sprint 3 — Inventory and sync.** PRODUCTS and INVENTORY with stickers and
+movements · mobile sync (UUIDs, idempotent push/pull, server owns the settlement
+lock, conflicts screen) · the mobile app reading its farm from the API · phone
+picking migrated to a work record · reports and performance on the web · suspend
+a farm · observability and backups.

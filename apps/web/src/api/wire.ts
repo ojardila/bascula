@@ -916,6 +916,16 @@ export interface WireReportWeek extends WireReportTotals {
   priceCents: number | null;
   /** The week is over. A running week's total is not comparable with a finished one. */
   finished: boolean;
+  /**
+   * The days this figure actually covers. A request that starts mid-week gets a
+   * week row whose kilos are a fraction of the week's, and without these it
+   * looked identical to a whole one — same weekStart, same `finished: true`, a
+   * tenth of the kilos, and nothing to say so.
+   */
+  coveredFrom: DayISO;
+  coveredTo: DayISO;
+  /** True when covered is narrower than the week. Do not compare it with a full one. */
+  partialWindow: boolean;
 }
 
 export interface WireReportWeeksResult {
@@ -1066,6 +1076,8 @@ export interface WireHarvestWeekTotal {
   weekStart: DayISO;
   /** Null is a week whose kilos could not be established, never a week of nothing. */
   kg: number | null;
+  /** How many work records the week holds. Zero is a week nobody picked in. */
+  records?: number;
 }
 
 export interface WireHarvestShape {
@@ -1085,4 +1097,10 @@ export interface WireHarvestCurve {
   shape: WireHarvestShape;
   /** Weeks left out of the reading because their kilos are unknown. */
   weeksWithoutKilos: number;
+  /**
+   * Weeks inside the range with no work at all. They used to vanish from the
+   * list, so the curve joined across the hole and read the peak and the
+   * end-of-season warning off weeks that are not neighbours.
+   */
+  weeksWithoutRecords: number;
 }

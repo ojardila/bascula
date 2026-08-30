@@ -1,107 +1,109 @@
-# Auditorías adversarias
+# Adversarial audits
 
-Dos auditores externos al equipo atacaron el sistema con el encargo de romperlo:
-uno la API, otro la consola web. No leyeron código buscando teorías — ejecutaron
-ataques y dejaron los guiones que los reproducen.
+Two auditors from outside the team attacked the system with a brief to break it:
+one the API, the other the web console. They did not read code looking for
+theories — they ran attacks and left behind the scripts that reproduce them.
 
-Este documento es el marcador. Cada hallazgo se da por cerrado solo cuando **el
-guion que lo encontró falla**, no cuando alguien dice que lo arregló.
+This document is the scoreboard. A finding counts as closed only when **the
+script that found it fails**, not when somebody says it is fixed.
 
-## Lo que aguantó, que es lo que más tranquiliza
+## What held, which is the part that reassures most
 
-Vale la pena leerlo antes que la lista de fallos, porque es la parte del sistema
-en la que se puede confiar.
+Worth reading before the list of failures, because it is the part of the system
+you can trust.
 
-**El aislamiento entre fincas.** 67 combinaciones de ruta y verbo cruzando
-identificadores de una finca contra otra: ni un solo acceso. Y —esto importa
-tanto como lo anterior— **cero rutas donde «no es tuyo» se distinga de «no
-existe»**: mismos códigos, mismos mensajes. Las 32 tablas con `farm_id` tienen
-seguridad a nivel de fila habilitada, forzada y con política; ninguna de las
-migraciones nuevas se quedó fuera.
+**Isolation between farms.** 67 combinations of route and verb, crossing
+identifiers from one farm against another: not a single access got through. And
+— this matters as much as that does — **zero routes where "not yours" reads
+differently from "does not exist"**: same codes, same messages. All 32 tables
+carrying `farm_id` have row level security enabled, forced, and with a policy;
+none of the new migrations was left out.
 
-**El candado anti doble pago.** 16 liquidaciones simultáneas del mismo trabajador
-y periodo, diez veces seguidas: siempre una sola aceptada. Liquidar contra anular
-en paralelo: las cuentas cuadran en las diez.
+**The double-payment lock.** 16 simultaneous settlements of the same worker and
+period, ten times over: always exactly one accepted. Settling against voiding in
+parallel: the books balance in all ten.
 
-**La idempotencia del dinero.** El mismo identificador con otro importe, otro
-trabajador u otro tipo: rechazado. Ocho reintentos simultáneos del mismo pago:
-un solo movimiento.
+**Idempotency of money.** The same identifier with a different amount, a
+different worker or a different kind: rejected. Eight simultaneous retries of
+the same payment: one movement.
 
-**Los roles, en la API y en la consola.** El pesador recibe 403 en todas las
-puertas de dinero y datos personales. Ocho vías de ataque desde el navegador
-—URL directa, historial, sesión guardada, falsificar el rol dentro del token—:
-ninguna cedió. En las rutas denegadas no se dispara ni una petición, así que no
-llega al navegador un dato que luego se esconda.
+**Roles, in the API and in the console.** The weigher gets 403 at every door to
+money and personal data. Eight lines of attack from the browser — direct URL,
+history, saved session, forging the role inside the token — none gave way. On
+denied routes not one request fires, so no data reaches the browser to be hidden
+afterwards.
 
-**Inyección SQL.** Ninguna.
+**SQL injection.** None.
 
-## API — 14 hallazgos
+## API — 14 findings
 
-| # | Qué | Estado |
+| # | What | State |
 |---|---|---|
-| 1 | Un refresh token reenviado bloquea la petición; diez apagan la API para todas las fincas | **Cerrado** |
-| 2 | La guarda de sobrepago no existe bajo concurrencia; también en existencias y ventas | **Cerrado** |
-| 3 | La importación no reconcilia: crédito inventado, pesadas de una persona pagadas a otra, pesadas atrapadas sin salida, fechas de 1900 | **Cerrado** |
-| 4 | El décimo caso de oro: el redondeo en coma flotante hace discrepar teléfono y servidor en el 31 % de las liquidaciones | **Cerrado** |
-| 5 | El pesador escribe trabajadores por sincronización, y enumera cédulas | **Cerrado** |
-| 6 | Borrar un trabajador esconde su deuda de la lista de saldos | **Cerrado** |
-| 7 | El pull del pesador lleva el precio del kilo y todos los precios semanales | **Cerrado** |
-| 8 | El tope de fincas por correo nunca se aplica | **Cerrado** |
-| 10 | El push rompe su contrato: identificador reusado devuelve el id ajeno y el teléfono pierde la pesada | **Cerrado** |
-| 13 | Cantidades con más decimales de los que caben se redondean en silencio | **Cerrado** |
-| 9 | Lo saltado por rol no vuelve nunca: un teléfono que cambia de manos se queda con el libro incompleto | Abierto — necesita diseño, no parche |
-| 12 | El registro público es un oráculo de cuentas y contraseñas | Abierto — el arreglo honesto exige mover la creación de una segunda finca detrás de sesión |
-| 14 | Suspender una finca no corta las sesiones vivas (hasta 15 minutos) | Abierto |
-| 11 | Informes: una semana sin cosecha desaparece y la curva se lee empalmada sobre el hueco; una ventana truncada se presenta como semana completa | Abierto |
+| 1 | A replayed refresh token blocks the request; ten of them switch the API off for every farm | **Closed** |
+| 2 | The overpayment guard does not exist under concurrency; same for stock and sales | **Closed** |
+| 3 | The import does not reconcile: invented credit, one person's weighings paid to another, weighings trapped with no way out, dates from 1900 | **Closed** |
+| 4 | The tenth golden case: floating-point rounding makes phone and server disagree on 31 % of settlements | **Closed** |
+| 5 | The weigher writes workers through sync, and enumerates ID numbers | **Closed** |
+| 6 | Deleting a worker hides their debt from the balances list | **Closed** |
+| 7 | The weigher's pull carries the price per kilo and every weekly price | **Closed** |
+| 8 | The cap on farms per email address is never enforced | **Closed** |
+| 10 | Push breaks its own contract: a reused identifier returns somebody else's id and the phone loses the weighing | **Closed** |
+| 13 | Quantities with more decimals than fit are rounded silently | **Closed** |
+| 9 | What a role skipped never comes back: a phone that changes hands is left with an incomplete ledger | Open — needs design, not a patch |
+| 12 | Public signup is an oracle for accounts and passwords | Open — the honest fix means moving the creation of a second farm behind a session |
+| 14 | Suspending a farm does not cut live sessions (up to 15 minutes) | Open |
+| 11 | Reports: a week with no harvest disappears and the curve reads as joined across the gap; a truncated window is presented as a full week | Open |
 
-Deuda que abrió el propio arreglo de la 3: la importación ya no **crea**
-liquidaciones anuladas con línea viva, pero **no hay ruta que libere las que ya
-existan**.
+Debt that the fix for #3 opened itself: the import no longer **creates** voided
+settlements holding a live line, but **there is no route that frees the ones
+that already exist**.
 
-## Consola web — 12 hallazgos
+## Web console — 12 findings
 
-| # | Qué | Estado |
+| # | What | State |
 |---|---|---|
-| A1 | **Un doble clic paga dos veces.** Verificado: $20.000 entregados donde se aprobaron $10.000 | **Cerrado** |
-| A2 | Al pesador se le escapa el valor por la única ruta sin guarda, y con él el precio por kilo que el servidor le oculta | **Cerrado** |
-| A3 | La planilla firmada imprime el resultado de una búsqueda: una nómina de $2.220.080 sale como $335.280 | **Cerrado** |
-| A4 | Las cifras de cabecera de liquidaciones son sumas del filtro, sin decirlo | **Cerrado** |
-| A5 | El perfil del empleado dice «$0» cuando la petición falló | **Cerrado** |
-| A6 | El tablero: dos casillas honestas y dos que mienten con la misma petición fallida | **Cerrado** |
-| A7 | Estimaciones sumadas y presentadas como firmes; `amountIsEstimate` no se pinta en ningún sitio | **Cerrado** |
-| A8 | «Nunca ha entrado», mostrado al dueño que estaba usando la aplicación | **Cerrado** |
-| A9 | La invitación promete un correo que nadie envía y tira la contraseña: el invitado no puede entrar nunca | **Cerrado** |
-| A10 | «Líneas: 0» en todas las liquidaciones: el servidor manda el conteo y la web cuenta un array vacío | **Cerrado** |
-| A11 | La columna «Periodo» siempre muestra una semana; el papel lo imprime bien y la pantalla no | **Cerrado** |
-| A12 | Menores: un pie que dice «0 ventas» bajo una alerta de error, un estado inventado en inglés | **Cerrado** salvo el formulario que se pierde al recargar, que es una función nueva y no una mentira |
+| A1 | **A double click pays twice.** Verified: $20,000 handed over where $10,000 was approved | **Closed** |
+| A2 | The value leaks to the weigher through the one route with no guard, and with it the price per kilo the server hides from him | **Closed** |
+| A3 | The signed payroll sheet prints the result of a search: a $2,220,080 payroll comes out as $335,280 | **Closed** |
+| A4 | The settlement header figures are sums over the filter, without saying so | **Closed** |
+| A5 | The employee profile says «$0» when the request failed | **Closed** |
+| A6 | The dashboard: two honest tiles and two that lie, off the same failed request | **Closed** |
+| A7 | Estimates summed and presented as firm; `amountIsEstimate` is not painted anywhere | **Closed** |
+| A8 | «Nunca ha entrado» (*never signed in*), shown to the owner who was using the application at the time | **Closed** |
+| A9 | The invitation promises an email nobody sends and throws the password away: the invitee can never sign in | **Closed** |
+| A10 | «Líneas: 0» (*lines: 0*) on every settlement: the server sends the count and the web counts an empty array | **Closed** |
+| A11 | The «Periodo» (*period*) column always shows one week; the paper prints it right and the screen does not | **Closed** |
+| A12 | Minor ones: a footer saying «0 ventas» (*0 sales*) underneath an error alert, an invented status in English | **Closed** except the form that is lost on reload, which is a missing feature and not a lie |
 
-Cuatro de las siete sospechas del auditor resultaron ciertas y están cerradas:
-un área desconocida que se convertía en «0,00 ha» y se sumaba al total de la
-finca; un total que sumaba bultos con kilos y lo rotulaba con la primera unidad
-que encontraba; unas existencias caídas que se pintaban como bodega vacía y
-**empujaban a desactivar la guarda del servidor**; y un reparto de peticiones que
-convertía un fallo en «todavía no se ha liquidado nada en esta finca».
+Four of the auditor's seven suspicions turned out to be true and are closed: an
+unknown area that turned into «0,00 ha» and was added to the farm's total; a
+total that added sacks to kilos and labelled the result with the first unit it
+came across; a failed stock read painted as an empty warehouse, which
+**pushed people towards disabling the server's guard**; and a request fan-out
+that turned a failure into «todavía no se ha liquidado nada en esta finca»
+(*nothing has been settled at this farm yet*).
 
-## Lo que estas dos auditorías enseñan
+## What these two audits teach
 
-Casi todos los hallazgos de la consola son **la misma familia**: una cifra que se
-muestra cuando en realidad no se sabe. El equipo la resolvió bien —muy bien— en
-el módulo de cosecha, con una unión de cuatro estados que no tiene miembro
-numérico para el caso desconocido. Y no volvió a las pantallas viejas.
+Almost every console finding is **the same family**: a figure shown when in fact
+the value is not known. The team solved it well — very well — in the harvest
+module, with a four-state union that has no numeric member for the unknown case.
+And never went back to the older screens.
 
-La lección no es «cuidado con los ceros». Es que **un patrón resuelto en un sitio
-no se propaga solo**, y que la única forma de saber dónde falta es que alguien
-ajeno lo busque.
+The lesson is not "watch out for zeros". It is that **a pattern solved in one
+place does not spread on its own**, and that the only way to find out where it
+is missing is to have an outsider go looking.
 
-### Y una lección sobre las propias pruebas
+### And a lesson about the tests themselves
 
-El doble pago no salía en la suite por dos razones que conviene recordar:
+The double payment did not show up in the suite, for two reasons worth
+remembering:
 
-`fireEvent` y `userEvent` envuelven en `act()`, y con eso le regalan a React el
-re-renderizado que un doble clic de verdad **no** le da. La prueba era más
-amable que el mundo.
+`fireEvent` and `userEvent` wrap in `act()`, and in doing so they hand React the
+re-render that a real double click **does not**. The test was kinder than the
+world.
 
-Y el simulacro del servidor **no era idempotente por identificador**, aunque su
-propia cabecera prometía que sí. Era más permisivo que producción, así que el
-fallo no podía reproducirse contra él. Un simulacro que se aparta del servidor
-en la dirección de dejar pasar más cosas no es una red: es una venda.
+And the server mock **was not idempotent by identifier**, even though its own
+header promised it was. It was more permissive than production, so the failure
+could not be reproduced against it. A mock that departs from the server in the
+direction of letting more through is not a safety net: it is a blindfold.

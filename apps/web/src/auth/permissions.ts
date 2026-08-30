@@ -156,7 +156,7 @@ export function isReadOnly(principal: Principal): boolean {
 /* Navigation                                                          */
 /* ------------------------------------------------------------------ */
 
-export type Sprint = 1 | 2 | 3 | 4;
+export type Sprint = 1 | 2 | 3 | 4 | 5;
 
 export interface ModuleDef {
   key: string;
@@ -203,6 +203,12 @@ export const MODULES: ModuleDef[] = [
   // settlements themselves are records now: which ones exist, whose, for which
   // week, and which are void. The action is `money.read` and not `money.pay`,
   // because looking at what was settled is a read.
+  // La nómina de cuadrilla. `money.pay` and not `money.read`: this entry is a
+  // door to a write, and `money.pay` is in WRITE_ACTIONS, so a suspended farm
+  // does not get offered a payroll it would be refused. It sits above
+  // Liquidaciones because it is the Saturday screen and the settlements list
+  // is what you read afterwards.
+  { key: "payroll", label: "Nómina", path: "/nomina", action: "money.pay", sprint: 5, available: true, icon: "payments" },
   { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt" },
   { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" },
   { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" },

@@ -129,12 +129,13 @@ export function SettlementsPage() {
         },
         rows: rows.map((s) => ({
           name: s.workerName,
-          // The list carries no document number and no weighed quantity: both
-          // live on rows this screen does not load. Null prints as "—", which
-          // is the truth; a zero would read as "weighed nothing".
+          // The list carries no document number, no weighed quantity and no
+          // balance: all three live on rows this screen does not load. Null
+          // prints as "—", which is the truth; a zero would read as "weighed
+          // nothing" and "queda a paz y salvo", neither of which was asked.
           quantity: null,
           grossCents: s.grossCents,
-          balanceCents: 0,
+          balanceCents: null,
           status: s.status,
         })),
       }),

@@ -257,8 +257,22 @@ export interface PayrollRow {
   /** Weighed quantity, when there is one to show. Null is printed as "—". */
   quantity: number | null;
   grossCents: number;
-  /** Positive: the farm still owes. Negative: an advance the worker carries. */
-  balanceCents: number;
+  /**
+   * Positive: the farm still owes. Negative: an advance the worker carries.
+   *
+   * NULL WHEN NOBODY ASKED, and that is not the same as zero. The settlements
+   * list does not load balances at all, and a payroll printed straight after
+   * settling has no "after" balance yet — both print "—". A known zero prints
+   * "$0", because that one IS a figure: the person is paz y salvo.
+   */
+  balanceCents: number | null;
+  /**
+   * What was actually handed over. Present only on the sheet of a payment run;
+   * omitted — and the column disappears — on a sheet of settlements, where
+   * nothing has been paid yet and a "Pagado" column of dashes would read as
+   * thirty people who were left unpaid.
+   */
+  paidCents?: number | null;
   status: "open" | "void";
 }
 
@@ -323,6 +337,14 @@ export function payrollHtml(input: PayrollInput): string {
     : "";
   const totalQty = live.reduce((a, r) => a + (r.quantity ?? 0), 0);
   const anyQty = live.some((r) => r.quantity !== null);
+  /**
+   * The column only exists when a payment run produced it. A sheet of
+   * settlements has nothing paid yet, and a "Pagado" column full of dashes on
+   * a document with a signature line reads as a list of people who were not
+   * paid — which is a different, and alarming, claim.
+   */
+  const anyPaid = input.rows.some((r) => r.paidCents != null);
+  const totalPaid = live.reduce((a, r) => a + (r.paidCents ?? 0), 0);
 
   const body = input.rows
     .map((r, i) => {
@@ -335,7 +357,8 @@ export function payrollHtml(input: PayrollInput): string {
         }</td>
         <td class="n">${r.quantity === null ? "—" : esc(formatQuantity(r.quantity))}</td>
         <td class="n amt">${esc(money(r.grossCents))}</td>
-        <td class="n cred">${r.balanceCents ? esc(money(r.balanceCents)) : "—"}</td>
+        ${anyPaid ? `<td class="n amt">${r.paidCents == null ? "—" : esc(money(r.paidCents))}</td>` : ""}
+        <td class="n cred">${r.balanceCents == null ? "—" : esc(money(r.balanceCents))}</td>
         <td class="sig">${isVoid ? "anulada" : ""}</td>
       </tr>`;
     })
@@ -356,6 +379,12 @@ export function payrollHtml(input: PayrollInput): string {
                 <div class="v">${esc(formatQuantity(totalQty))}</div></div>`
            : ""
        }
+       ${
+         anyPaid
+           ? `<div class="card"><div class="k">Entregado</div>
+                <div class="v">${esc(money(totalPaid))}</div></div>`
+           : ""
+       }
        <div class="card muted"><div class="k">Liquidaciones</div>
          <div class="v">${live.length}</div></div>
      </div>
@@ -363,7 +392,8 @@ export function payrollHtml(input: PayrollInput): string {
        <thead>
          <tr><th></th><th>Empleado</th>
              <th class="n">${esc(input.unit ?? "Cantidad")}</th>
-             <th class="n">Bruto</th><th class="n">Saldo</th>
+             <th class="n">Bruto</th>${anyPaid ? '<th class="n">Pagado</th>' : ""}
+             <th class="n">Saldo</th>
              <th>Firma</th></tr>
        </thead>
        <tbody>${body}</tbody>
@@ -372,6 +402,7 @@ export function payrollHtml(input: PayrollInput): string {
            <td></td><td>Total</td>
            <td class="n">${anyQty ? esc(formatQuantity(totalQty)) : "—"}</td>
            <td class="n amt">${esc(money(totalGross))}</td>
+           ${anyPaid ? `<td class="n amt">${esc(money(totalPaid))}</td>` : ""}
            <td class="n"></td><td></td>
          </tr>
        </tfoot>

@@ -97,6 +97,7 @@ function serveCurve(over: Partial<WireHarvestCurve> = {}) {
         weeks: [],
         shape: { peak: null, fallingWeeks: 0, windingDown: false, reason: "no_finished_weeks" },
         weeksWithoutKilos: 0,
+        weeksWithoutRecords: 0,
         ...over,
       } satisfies WireHarvestCurve),
     ),
@@ -144,6 +145,12 @@ const week = (weekStart: string, over: Partial<WireReportWeeksResult["items"][nu
   days: 2,
   priceCents: 80_000,
   finished: true,
+  // A whole week by default: covered spans it end to end and nothing is partial.
+  // A test that wants a truncated window says so, because the difference is the
+  // point — a tenth of the kilos under the same weekStart used to look identical.
+  coveredFrom: weekStart,
+  coveredTo: addDays(parseDay(weekStart), 6).toISOString().slice(0, 10),
+  partialWindow: false,
   ...over,
 });
 

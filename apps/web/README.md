@@ -1,50 +1,50 @@
-# `bascula-web` — consola de administración de la finca
+# `bascula-web` — the farm administration console
 
-Vite + React + TypeScript + React Router + MUI. Español en la interfaz,
-comentarios del código en inglés, **dinero siempre en centavos enteros**.
+Vite + React + TypeScript + React Router + MUI. Spanish in the interface, code
+comments in English, **money always in whole cents**.
 
-Desde el sprint 2 esta app habla con la API de verdad (`services/api`). Los
-datos simulados siguen ahí, pero como herramienta, no como la única realidad.
+Since sprint 2 this app talks to the real API (`services/api`). The mock data is
+still there, but as a tool, not as the only reality.
 
-## Arrancar
+## Getting it up
 
 ```sh
-npm install --prefix apps/web --no-workspaces   # instala aquí, no en la raíz
+npm install --prefix apps/web --no-workspaces   # install here, not at the root
 npm --prefix apps/web run dev                   # http://localhost:5173
 ```
 
-Por defecto arranca con **datos simulados** y lo dice en pantalla: una franja
-azul arriba avisa de que nada de lo que registre llega al servidor. Entre con
-`oscar@laesperanza.co` / `esperanza` (dueño); la pantalla de login lista también
-el administrador, el pesador y el super-admin.
+By default it starts on **mock data** and says so on screen: a blue banner at
+the top warns that nothing you record reaches the server. Log in with
+`oscar@laesperanza.co` / `esperanza` (owner); the login screen also lists the
+administrator, the weigher and the super-admin.
 
-| Comando | Qué hace |
+| Command | What it does |
 |---|---|
-| `npm run dev` | servidor de desarrollo |
-| `npm run build` | comprueba los tipos generados, `tsc -b` y bundle en `dist/` |
-| `npm run types:api` | regenera `src/api/schema.ts` desde `services/api/openapi.yaml` |
-| `npm run types:check` | falla si esos tipos están desactualizados (lo corre `build`) |
-| `npm test` | Vitest contra MSW: hermético, sin red |
-| `npm run test:e2e` | Vitest contra la API viva (ver abajo) |
+| `npm run dev` | development server |
+| `npm run build` | checks the generated types, `tsc -b` and bundles into `dist/` |
+| `npm run types:api` | regenerates `src/api/schema.ts` from `services/api/openapi.yaml` |
+| `npm run types:check` | fails if those types are out of date (`build` runs it) |
+| `npm test` | Vitest against MSW: hermetic, no network |
+| `npm run test:e2e` | Vitest against the live API (see below) |
 | `npm run typecheck` | `tsc -b` |
 | `npm run lint` | ESLint |
 
-## Simulado o de verdad
+## Mocks or the real thing
 
-Una variable decide, y **no hay respaldo automático**: un modo que puede
-cambiar solo es un modo que nadie puede razonar a las cuatro de la tarde.
+One variable decides, and there is **no automatic fallback**: a mode that can
+change on its own is a mode nobody can reason about at four in the afternoon.
 
 ```sh
-VITE_USE_MOCKS=true      # MSW responde dentro del navegador
-VITE_USE_MOCKS=false     # las peticiones salen a VITE_API_URL
+VITE_USE_MOCKS=true      # MSW answers inside the browser
+VITE_USE_MOCKS=false     # requests go out to VITE_API_URL
 VITE_API_URL=http://localhost:8099
-VITE_API_BASE_URL=       # déjelo vacío: las rutas son relativas y pasan por el proxy
+VITE_API_BASE_URL=       # leave it empty: the routes are relative and go through the proxy
 ```
 
-La elección se ve en tres sitios: la variable, una línea en la consola al
-arrancar, y la franja en pantalla cuando está simulado.
+The choice is visible in three places: the variable, a line in the console at
+startup, and the banner on screen when it is mocked.
 
-### Contra la API real
+### Against the real API
 
 ```sh
 cd services/api
@@ -55,207 +55,203 @@ PORT=8099 SIGNUPS_PER_IP_PER_HOUR=100 \
   go run ./cmd/api
 ```
 
-y en `apps/web/.env.development` ponga `VITE_USE_MOCKS=false`.
+and in `apps/web/.env.development` set `VITE_USE_MOCKS=false`.
 
-En desarrollo el servidor **no envía correos**: devuelve el token de
-verificación dentro de la respuesta del registro, así que la pantalla de
-«Revise su correo» ofrece un enlace para confirmar y entrar sin buzón.
+In development the server **does not send email**: it returns the verification
+token inside the signup response, so the «Revise su correo» (*check your email*)
+screen offers a link to confirm and log in without a mailbox.
 
-**El proxy de Vite no es una comodidad.** La API no monta ningún middleware de
-CORS, así que una página servida en `:5173` no puede llamar a `:8099`
-directamente: el preflight vuelve sin cabeceras y el navegador descarta la
-respuesta antes de que nuestro código la vea, lo cual parece un fallo de red y
-manda a buscar en la mitad equivocada del sistema. `vite.config.ts` reenvía
-`/v1` y `/health` a `VITE_API_URL`, con lo cual pasa a ser el mismo origen y no
-hay preflight que falle. En producción la misma propiedad tiene que darse por
-despliegue: sirva el bundle detrás del mismo origen que la API, o ponga un
-proxy inverso delante de los dos.
+**The Vite proxy is not a convenience.** The API mounts no CORS middleware, so a
+page served on `:5173` cannot call `:8099` directly: the preflight comes back
+without headers and the browser throws the response away before our code ever
+sees it, which looks like a network fault and sends you hunting in the wrong
+half of the system. `vite.config.ts` forwards `/v1` and `/health` to
+`VITE_API_URL`, which makes it the same origin and leaves no preflight to fail.
+In production the same property has to hold per deployment: serve the bundle
+behind the same origin as the API, or put a reverse proxy in front of both.
 
-## La prueba de extremo a extremo
+## The end-to-end test
 
-`npm run test:e2e` corre el cliente real de la app (`src/api/endpoints.ts`, el
-mismo código que ejecuta el navegador) contra un servidor real con una base de
-datos real, y recorre el camino que importa: registrar finca, confirmar, entrar,
-contratar, abrir lote, poner precio, registrar dos labores, **liquidar**, pagar
-una parte y comprobar el saldo.
+`npm run test:e2e` runs the app's real client (`src/api/endpoints.ts`, the same
+code the browser executes) against a real server with a real database, and walks
+the path that matters: register a farm, confirm, log in, hire, open a plot, set
+a price, record two work records, **settle**, pay part of it and check the
+balance.
 
-Es la única prueba del repositorio que puede detectar que las dos mitades no
-encajan. `npm test` corre contra MSW, así que solo confirma que la web está de
-acuerdo con la idea que la web tiene de la API; la suite de Go corre contra
-Postgres, así que solo confirma que la API está de acuerdo consigo misma. Las
-dos estuvieron en verde todo el sprint 1 mientras `POST /v1/signup` desde esta
-app era un 400.
+It is the only test in the repository that can detect that the two halves do not
+fit together. `npm test` runs against MSW, so it only confirms that the web
+agrees with the web's idea of the API; the Go suite runs against Postgres, so it
+only confirms that the API agrees with itself. Both were green all through
+sprint 1 while `POST /v1/signup` from this app was a 400.
 
-Si el servidor no está levantado, **se salta con un cartel que dice qué comando
-correr**, y no pasa. Una prueba de integración que reporta éxito sin haberse
-conectado nunca es peor que no tenerla.
+If the server is not up, **it skips with a notice saying which command to run**,
+and it does not pass. An integration test that reports success without ever
+having connected is worse than not having one.
 
-## Cómo está organizado
+## How it is laid out
 
 ```
 src/
   api/
-    wire.ts       lo que el servidor manda de verdad (transcrito de los structs Go)
-    adapters.ts   la traducción wire -> vista, en un solo sitio y con los porqués
-    types.ts      los modelos de vista: lo que una pantalla puede saber
-    endpoints.ts  una función por llamada; las pantallas nunca usan `http`
-    refs.ts       las tablas de nombres para los joins del cliente
-    client.ts     fetch, refresh transparente, errores como `ApiError`
-    errors.ts     traducción de `code` -> frase en español
-    mode.ts       simulado o real, explícito y visible
-    schema.ts     GENERADO de openapi.yaml; no se edita
-    contract.assert.ts  comprueba wire.ts contra schema.ts al compilar
-  auth/           sesión y la matriz de roles (una tabla, no ifs)
-  components/     AppShell, ModuleList (el molde de módulo), Money, guards
-  features/       una carpeta por módulo (plots, workers, activities,
+    wire.ts       what the server actually sends (transcribed from the Go structs)
+    adapters.ts   the wire -> view translation, in one place and with the whys
+    types.ts      the view models: what a screen is allowed to know
+    endpoints.ts  one function per call; screens never use `http`
+    refs.ts       the name tables for the client-side joins
+    client.ts     fetch, transparent refresh, errors as `ApiError`
+    errors.ts     translation of `code` -> a sentence in Spanish
+    mode.ts       mocked or real, explicit and visible
+    schema.ts     GENERATED from openapi.yaml; never edited
+    contract.assert.ts  checks wire.ts against schema.ts at compile time
+  auth/           session and the role matrix (a table, not ifs)
+  components/     AppShell, ModuleList (the module mould), Money, guards
+  features/       one folder per module (plots, workers, activities,
                   workrecords, inventory, sales, expenses, config, admin)
-  lib/            dinero, fechas, uuidv7, geometría del mapa (geo.ts), stock.ts
-  mocks/          MSW, emulando la API real ruta por ruta
-e2e/              la prueba contra el servidor vivo
+  lib/            money, dates, uuidv7, map geometry (geo.ts), stock.ts
+  mocks/          MSW, emulating the real API route by route
+e2e/              the test against the live server
 ```
 
-Cinco cosas que conviene saber antes de tocar nada:
+Five things worth knowing before touching anything:
 
-1. **Hay dos vocabularios y una traducción.** El servidor dice `docId`,
-   `unidad_trabajo`, `admin`; la interfaz dice `documentNumber`, `work_unit`,
-   `administrator`. `adapters.ts` es el único sitio donde se cruzan. Eso fue lo
-   que permitió que la API creciera ocho rutas y cambiara tres formas a mitad
-   del sprint sin tocar una sola pantalla.
-2. **El servidor manda ids, no nombres.** Una labor trae `workerId`,
-   `activityId`, `unitId` y `plotIds`, y ni una cadena legible. El join lo hace
-   el cliente (`refs.ts`), contra los datos que igual tenía que cargar para sus
-   propios selectores. Un id que no resuelve se muestra como «—», nunca en
-   blanco: una celda vacía en la columna Lotes se lee como «sin lote», que es
-   un hecho distinto y cómodo.
-3. **Pagar son dos escrituras.** Liquidar (`POST /v1/settlements`) es lo que
-   convierte el trabajo en plata debida; solo entonces hay saldo contra el cual
-   pagar. Saltarse el primer paso da un 409 `AMOUNT_EXCEEDS_BALANCE` que no se
-   entiende hasta que uno sabe esto.
-4. **`components/ModuleList.tsx` es el molde.** Toda pantalla de lista lo usa.
-   Con diez módulos por delante, un módulo nuevo que no lo use es un módulo que
-   diverge.
-5. **`lib/money.ts` es la única aritmética de dinero.** Port deliberado de
-   `apps/mobile/src/format.ts`; se irá a `packages/shared` cuando ese paquete
-   exista, y ese es el único sitio donde habrá que tocar.
+1. **There are two vocabularies and one translation.** The server says `docId`,
+   `unidad_trabajo`, `admin`; the interface says `documentNumber`, `work_unit`,
+   `administrator`. `adapters.ts` is the only place they cross. That is what let
+   the API grow eight routes and change three shapes halfway through the sprint
+   without touching a single screen.
+2. **The server sends ids, not names.** A work record (*Labor*) brings
+   `workerId`, `activityId`, `unitId` and `plotIds`, and not one readable
+   string. The join is done by the client (`refs.ts`), against the data it had
+   to load anyway for its own pickers. An id that does not resolve is shown as
+   «—», never blank: an empty cell in the Lotes (*plots*) column reads as «sin
+   lote» (*no plot*), which is a different and convenient fact.
+3. **Paying is two writes.** Settling (`POST /v1/settlements`) is what turns
+   work into money owed; only then is there a balance to pay against. Skipping
+   the first step gives a 409 `AMOUNT_EXCEEDS_BALANCE` that makes no sense until
+   you know this.
+4. **`components/ModuleList.tsx` is the mould.** Every list screen uses it. With
+   ten modules ahead, a new module that does not use it is a module that
+   diverges.
+5. **`lib/money.ts` is the only money arithmetic.** A deliberate port of
+   `apps/mobile/src/format.ts`; it will move to `packages/shared` when that
+   package exists, and that is the only place that will have to be touched.
 
-### El contrato, y quién manda sobre los tipos
+### The contract, and who rules over the types
 
-`services/api/openapi.yaml` ya existe, así que la deuda declarada en el sprint 2
-—«`wire.ts` está transcrito a mano»— se cerró, pero **no** reemplazando
-`wire.ts` por lo generado. Los tres archivos conviven y cada uno tiene un
-trabajo:
+`services/api/openapi.yaml` now exists, so the debt declared in sprint 2 —
+"`wire.ts` is transcribed by hand" — was closed, but **not** by replacing
+`wire.ts` with the generated code. The three files live together and each has a
+job:
 
 ```
-src/api/schema.ts           generado, nunca se edita a mano (npm run types:api)
-src/api/wire.ts             escrito a mano, comentado, lo que importa la app
-src/api/contract.assert.ts  sin runtime: comprueba que los dos dicen lo mismo
+src/api/schema.ts           generated, never edited by hand (npm run types:api)
+src/api/wire.ts             hand-written, commented, what the app imports
+src/api/contract.assert.ts  no runtime: checks that the two say the same thing
 ```
 
-Lo generado son 6.500 líneas de `components["schemas"]["Sale"]["properties"]`.
-Leer el flujo de datos de una pantalla a través de eso es peor que leerlo en
-`wire.ts`, y cada comentario de «por qué esto llega en null» —los que costaron
-una tarde cada uno— no tiene dónde vivir en un archivo generado. Así que lo
-generado es el **juez**, no la fuente:
+The generated file is 6,500 lines of
+`components["schemas"]["Sale"]["properties"]`. Reading a screen's data flow
+through that is worse than reading it in `wire.ts`, and every comment about "why
+this arrives null" — the ones that cost an afternoon each — has nowhere to live
+in a generated file. So the generated one is the **judge**, not the source:
 
-- `contract.assert.ts` compara, en tiempo de compilación, el conjunto de campos
-  y los tipos de cada `Wire*` contra su esquema. Si el servidor renombra un
-  campo, `tsc` falla **diciendo cuál**: `["sobra en wire.ts:", "warehouse"]`.
-- `scripts/check-openapi-types.mjs` corre en cada `npm run build` y falla si
-  `schema.ts` se quedó atrás del `openapi.yaml`. Regenerar es un acto
-  deliberado con un diff revisable, y **ese diff es el aviso de que el contrato
-  se movió**. Regenerar en silencio dentro del build es justamente cómo el
-  sprint 1 pasó una semana con las dos mitades en desacuerdo y verde en las dos.
+- `contract.assert.ts` compares, at compile time, the set of fields and the
+  types of each `Wire*` against its schema. If the server renames a field, `tsc`
+  fails **saying which one**: `["sobra en wire.ts:", "warehouse"]` (*surplus in
+  wire.ts*).
+- `scripts/check-openapi-types.mjs` runs on every `npm run build` and fails if
+  `schema.ts` has fallen behind `openapi.yaml`. Regenerating is a deliberate act
+  with a reviewable diff, and **that diff is the notice that the contract
+  moved**. Regenerating silently inside the build is exactly how sprint 1 spent
+  a week with the two halves in disagreement and green on both.
 
-Ya encontró cosas: `WireActivityRate.timeUnit` estaba como `string` cuando el
-contrato tiene una enumeración de cinco valores (y el servidor dice
-`personalizado` donde la interfaz dice `custom`).
+It has already found things: `WireActivityRate.timeUnit` was typed as `string`
+when the contract has an enumeration of five values (and the server says
+`personalizado` where the interface says `custom`).
 
-## Lo que la API todavía no tiene
+## What the API does not have yet
 
-Estas cosas están en la interfaz y el adaptador devuelve un vacío honesto en vez
-de inventar un valor plausible, que es como una pantalla termina siendo de fiar
-para una cifra que nadie calcula:
+These things are in the interface and the adapter returns an honest emptiness
+instead of inventing a plausible value, which is how a screen ends up being
+trusted for a figure nobody computes:
 
-- **Foto del empleado.** `photoId` apunta a un almacén de medios que no existe;
-  no hay URL que construir, así que el avatar cae a la inicial.
-- **Fecha de ingreso.** No hay columna. `createdAt` es cuándo se creó la fila,
-  que no es cuándo entró la persona.
-- **Número de recibo.** La API no emite ninguno; la pantalla de pago imprime el
-  id del movimiento, que al menos es algo que se puede citar.
-- **Correo del dueño y conteo de empleados en la consola de plataforma.** El
-  super-admin no puede leer usuarios ni empleados de una finca: la proyección
-  *es* la restricción.
-- **Periodo de prueba de la finca.** No existe en la API. Lo inventó el mock.
+- **Employee photo.** `photoId` points at a media store that does not exist;
+  there is no URL to build, so the avatar falls back to the initial.
+- **Start date.** There is no column. `createdAt` is when the row was created,
+  which is not when the person joined.
+- **Receipt number.** The API issues none; the payment screen prints the id of
+  the ledger movement, which is at least something you can quote.
+- **Owner's email and employee count in the platform console.** The super-admin
+  cannot read a farm's users or employees: the projection *is* the restriction.
+- **The farm's trial period.** It does not exist in the API. The mock invented
+  it.
 
-## El mapa
+## The map
 
-El polígono del lote se dibuja, se edita y se guarda contra
-`PUT /v1/plots/{id}/boundary` (GeoJSON de ida y de vuelta). Vive en
-`features/plots/PlotBoundaryEditor.tsx` y en `lib/geo.ts`.
+The plot's polygon is drawn, edited and saved against
+`PUT /v1/plots/{id}/boundary` (GeoJSON both ways). It lives in
+`features/plots/PlotBoundaryEditor.tsx` and in `lib/geo.ts`.
 
-**No hay teselas, y eso no es una versión degradada.** Esta consola se publica
-bajo una política que rechaza peticiones a servidores que no sean su propio
-origen —la misma regla que permite servirla junto a la API sin CORS—. Todo mapa
-en teselas (OSM, Mapbox, Esri, Google) es un `fetch` por cuadro de 256 píxeles
-contra el dominio de otro, así que Leaflet o MapLibre aquí no serían «un mapa
-con teselas lentas»: serían un rectángulo gris con gestos, 140 kB de caché de
-teselas, y un dueño que concluye, con razón, que la pantalla está rota. Se
-comprobó antes de escribir nada: ninguna fuente de teselas es del mismo origen,
-el repositorio no trae un paquete de teselas fuera de línea, y la API no sirve
-`/tiles`.
+**There are no tiles, and that is not a degraded version.** This console is
+published under a policy that rejects requests to servers other than its own
+origin — the same rule that lets it be served next to the API without CORS. Any
+tiled map (OSM, Mapbox, Esri, Google) is a `fetch` per 256-pixel square against
+somebody else's domain, so Leaflet or MapLibre here would not be "a map with
+slow tiles": they would be a grey rectangle with gestures, 140 kB of tile cache,
+and an owner who concludes, rightly, that the screen is broken. It was checked
+before a line was written: no tile source is same-origin, the repository does
+not ship an offline tile pack, and the API does not serve `/tiles`.
 
-Lo que hay en su lugar es un **lienzo de coordenadas**: un plano equirectangular
-local en metros, centrado en el lote, con cuadrícula métrica, barra de escala,
-la latitud y la longitud reales de cada esquina, y **los demás lotes de la finca
-dibujados detrás en gris**. Eso último es lo que hace el trabajo que haría una
-foto aérea: a partir del segundo lote, el linde que importa es el del vecino.
-Además, opcionalmente: una **imagen de fondo que aporta el dueño** (un dron, un
-plano catastral, una captura hecha en otra parte), anclada al encuadre sobre el
-que se soltó, que se queda en ese navegador y no se sube a ningún sitio; y la
-**ubicación del propio equipo** por `navigator.geolocation`, que es un permiso
-del navegador y no un servidor externo.
+What there is instead is a **coordinate canvas**: a local equirectangular
+projection in metres, centred on the plot, with a metric grid, a scale bar, the
+real latitude and longitude of each corner, and **the farm's other plots drawn
+behind it in grey**. That last one is what does the job an aerial photo would
+do: from the second plot onwards, the boundary that matters is the neighbour's.
+And, optionally: a **background image supplied by the owner** (a drone shot, a
+cadastral plan, a screenshot taken somewhere else), anchored to the frame it was
+dropped on, which stays in that browser and is not uploaded anywhere; and the
+**device's own location** through `navigator.geolocation`, which is a browser
+permission and not an external server.
 
-Las dos superficies —la declarada y la del polígono— se muestran siempre juntas
-y del mismo tamaño (`AreaComparison`), con la diferencia dicha en hectáreas y en
-porcentaje, en tono neutro y sin regañar: la declarada viene de la escritura y
-el polígono de trazar una ladera con el ratón, y quién de las dos sirve lo
-decide el dueño. Un `INVALID_GEOMETRY` se dice en español y **sobre el dibujo**:
-`lib/geo.ts` detecta el cruce antes de la red y pinta de rojo los dos lados que
-se pisan.
+The two areas — the declared one and the polygon's — are always shown together
+and at the same size (`AreaComparison`), with the difference stated in hectares
+and as a percentage, in a neutral tone and without scolding: the declared one
+comes from the deed and the polygon from tracing a hillside with the mouse, and
+which of the two is useful is the owner's call. An `INVALID_GEOMETRY` is said in
+Spanish and **on top of the drawing**: `lib/geo.ts` detects the crossing before
+the network and paints the two sides that overlap in red.
 
-El área que se ve mientras se dibuja usa la suma de exceso esférico sobre la
-**esfera autálica** (latitud autálica incluida), que es lo que hace `ST_Area`
-sobre `geography` por dentro: para el cuadrado de ejemplo de `openapi.yaml`,
-PostGIS responde 122,506 ha y este código calcula 122,5055. La versión ingenua
-del mismo cálculo da 123,04, y media hectárea de salto al pulsar Guardar es
-exactamente lo que hace que nadie se fíe de ninguna de las dos cifras.
+The area shown while drawing uses the spherical-excess sum over the **authalic
+sphere** (authalic latitude included), which is what `ST_Area` over `geography`
+does internally: for the example square in `openapi.yaml`, PostGIS answers
+122.506 ha and this code computes 122.5055. The naive version of the same
+calculation gives 123.04, and half a hectare jumping when you press Save is
+exactly what makes nobody trust either figure.
 
-## Inventario, ventas y gastos
+## Inventory, sales and expenses
 
-RSP-018 … RSP-033, sobre el mismo `ModuleList`. Dos reglas del diseño están
-metidas en los tipos, no en un comentario dentro de un formulario:
+RSP-018 … RSP-033, on top of the same `ModuleList`. Two design rules are baked
+into the types, not into a comment inside a form:
 
-- **Las existencias se derivan de los movimientos.** No hay ningún campo en
-  ninguna pantalla que acepte escribir una cantidad en stock, y no hay
-  `updateStock` en `endpoints.ts`. La única forma de que un número se mueva es
-  `createStockMove`, que añade un hecho. El diálogo enseña el resultado antes de
-  guardar —«hoy hay 28, después quedan 38»— para que el número que uno iba a
-  teclear siga estando a la vista, pero se llegue a él diciendo qué pasó. El
-  signo lo pone el motivo (`stock_sign`), no la persona.
-- **Un gasto se imputa a una actividad o a un lote/cultivo, nunca a las dos ni a
-  ninguna.** `ExpenseInput` es una unión discriminada, así que «a las dos» y «a
-  ninguna» no son formas que el formulario pueda construir; y en pantalla, los
-  campos del tipo que no se eligió no están deshabilitados, **no existen**.
+- **Stock is derived from the movements.** There is no field on any screen that
+  accepts typing a stock quantity, and there is no `updateStock` in
+  `endpoints.ts`. The only way for a number to move is `createStockMove`, which
+  adds a fact. The dialog shows the result before saving — «hoy hay 28, después
+  quedan 38» (*there are 28 today, 38 left afterwards*) — so the number you were
+  going to type stays in sight, but you reach it by saying what happened. The
+  sign is set by the reason (`stock_sign`), not by the person.
+- **An expense is charged to an activity or to a plot/crop, never to both and
+  never to neither.** `ExpenseInput` is a discriminated union, so "both" and
+  "neither" are not shapes the form can build; and on screen, the fields of the
+  type that was not chosen are not disabled, they **do not exist**.
 
-## Lo que aún no está
+## What is still missing
 
-Liquidaciones como pantalla propia, usuarios, RSP-009 y el adjunto del
-comprobante de venta (`/v1/uploads` existe en el servidor; la pantalla todavía
-no sube archivos, y prefiere no poner una casilla que se traga la foto). La
-barra lateral muestra los módulos que faltan desactivados con el sprint en que
-llegan.
+Settlements as their own screen, users, RSP-009 and the sale receipt attachment
+(`/v1/uploads` exists on the server; the screen does not upload files yet, and
+would rather not put up a box that swallows the photo). The sidebar shows the
+missing modules greyed out with the sprint they arrive in.
 
-**El aviso de sincronización sigue puesto y sigue siendo cierto**: hasta que
-exista la sincronización, una labor registrada aquí no existe para el teléfono
-y viceversa, y el candado anti-doble-pago vive en cada base por separado. Pague
-desde un solo lado.
+**The sync warning is still up and still true**: until sync exists, a work
+record entered here does not exist for the phone and vice versa, and the
+double-payment lock lives in each database separately. Pay from one side only.

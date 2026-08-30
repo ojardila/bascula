@@ -14,6 +14,7 @@ import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
 import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
+import { CrewPayrollPage } from "./features/payroll/CrewPayrollPage";
 import { SettlementsPage } from "./features/settlements/SettlementsPage";
 import { SettlementDetailPage } from "./features/settlements/SettlementDetailPage";
 import { FarmUsersPage } from "./features/users/FarmUsersPage";
@@ -134,6 +135,21 @@ function Shell() {
           element={
             <RequirePermission action="money.pay" moduleName="pagar a un empleado">
               <PayWorkerPage />
+            </RequirePermission>
+          }
+        />
+
+        {/* La nómina de cuadrilla: liquidar y pagar a los treinta. It is
+            `money.pay` and not `money.read`, which also means a suspended farm
+            does not see it at all — `money.pay` is a write action. Until this
+            screen existed the console could only pay one worker per page, and
+            `docs/simplificacion.md` §2.1 makes it the prerequisite for taking
+            the payroll off the phone. */}
+        <Route
+          path="nomina"
+          element={
+            <RequirePermission action="money.pay" moduleName="correr la nómina">
+              <CrewPayrollPage />
             </RequirePermission>
           }
         />

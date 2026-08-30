@@ -1,144 +1,218 @@
-# Báscula — Diseño de API y autenticación (revisión 2, alcance RSP-001…033)
+# Báscula — API and auth design (revision 2, scope RSP-001…033)
 
-## 0. Invariantes heredadas del móvil (siguen intactas)
+## 0. Invariants inherited from the mobile app (still intact)
 
-Centavos `int64`; ledger append-only (se cancela con `reverse`, no se edita); semana = **fecha ISO del lunes** (`2026-08-24`) — el comentario `"2026-W33"` en `db.ts:447` está obsoleto, `WEEK_OF` ya produce el lunes; fechas de negocio en la zona de la finca (`farms.timezone`, obligatoria); IDs `UUIDv7` generados en el cliente.
+`int64` cents; append-only ledger (cancelled with a `reverso`, never edited);
+week = **the ISO Monday's date** (`2026-08-24`) — the `"2026-W33"` comment at
+`db.ts:447` is obsolete, `WEEK_OF` already yields the Monday; business dates in
+the farm's zone (`farms.timezone`, required); `UUIDv7` ids generated on the
+client.
 
-**El hallazgo que ordena toda la revisión: el ledger ya es lo bastante general y no cambia.** `devengo / pago / anticipo / deduccion / ajuste / reverso` cubre por igual una recolección de café, un jornal y un contrato de poda. Lo que se generaliza es **lo que alimenta** al ledger.
+**The finding that orders the whole revision: the ledger is already general
+enough and does not change.** `devengo / pago / anticipo / deduccion / ajuste /
+reverso` covers a coffee picking, a day's work and a pruning contract equally
+well. What gets generalised is **what feeds** the ledger.
 
 ---
 
-## 1. Tensión A — ¿pickups o labores? **Se generaliza. Un solo camino.**
+## 1. Tension A — pickups or work records? **Generalise. One path.**
 
-Mantener dos caminos duplica lo único que no puede duplicarse: el candado anti doble pago. Hoy `ux_items_pickup_live` garantiza que una pesada pertenezca a una sola liquidación viva. Con dos tablas pagables harían falta dos candados y ninguna forma de que una liquidación los tome juntos en una transacción — un empleado que recoge café **y** hace un jornal la misma semana necesita **una** liquidación, no dos.
+Keeping two paths duplicates the one thing that cannot be duplicated: the
+double-payment lock. Today `ux_items_pickup_live` guarantees that a weighing
+belongs to exactly one live settlement. With two payable tables you would need
+two locks, and no way for one settlement to take them both in a single
+transaction — an employee who picks coffee **and** does a day's work in the same
+week needs **one** settlement, not two.
 
-**Modelo:**
+**Model:**
 
 ```
-activities   (catálogo por finca)
+activities   (per-farm catalogue)
   id, name, category(siembra|mantenimiento|cosecha),
   pay_mode(contract|time_unit|work_unit),
   time_unit(jornal|semanal|quincenal|mensual|custom) | work_unit(kg|arroba|canasta|…),
   default_rate_cents, rate_source(weekly_price|fixed), status
 
-work_records (labores — RSP: el registro de que alguien ejecutó una actividad)
+work_records (labores — RSP: the record that somebody performed an activity)
   id, worker_id, activity_id, plot_ids[], crop_ids[],
   date_from, date_to, quantity, rate_cents NULL, note, created_by
 ```
 
-Una pesada es un `work_record` con `pay_mode='work_unit'`, `unit='kg'`, `date_from = date_to`, `quantity = weight`. **Nada más.**
+A weighing is a `work_record` with `pay_mode='work_unit'`, `unit='kg'`,
+`date_from = date_to`, `quantity = weight`. **Nothing more.**
 
-`settlement_items.pickupId` pasa a `payable_id` (+ `payable_kind`, hoy siempre `'work_record'`, reservado para futuros pagables como bonificaciones). El índice parcial se conserva idéntico: `UNIQUE(payable_id) WHERE voided_at IS NULL`.
+`settlement_items.pickupId` becomes `payable_id` (+ `payable_kind`, today always
+`'work_record'`, reserved for future payables such as bonuses). The partial
+index is kept identical: `UNIQUE(payable_id) WHERE voided_at IS NULL`.
 
-**El punto fino que hay que decidir hoy, no después:** cuándo se congela el precio.
+**The fine point that has to be decided today, not later:** when the price is
+frozen.
 
-| `pay_mode` | Precio | Momento |
+| `pay_mode` | Price | Moment |
 |---|---|---|
-| `work_unit` + `rate_source='weekly_price'` | `costForWeek(lunes)` | **al liquidar** (comportamiento actual, se preserva) |
-| `work_unit` + `fixed`, `contract`, `time_unit` | `rate_cents` del propio registro | **al escribir**, congelado |
+| `work_unit` + `rate_source='weekly_price'` | `costForWeek(monday)` | **at settlement** (current behaviour, preserved) |
+| `work_unit` + `fixed`, `contract`, `time_unit` | the record's own `rate_cents` | **at write time**, frozen |
 
-Corolario obligatorio: un `work_record` con `rate_source='weekly_price'` **debe ser de un solo día** (`date_from = date_to`). Un jornal de martes a martes no tiene "una" semana, y derivar precio semanal sobre un rango es la clase de ambigüedad que termina en un pago mal calculado. Los rangos son legítimos solo con precio congelado.
+A mandatory corollary: a `work_record` with `rate_source='weekly_price'` **must
+be single-day** (`date_from = date_to`). A day's work running Tuesday to Tuesday
+does not have "a" week, and deriving a weekly price over a range is the class of
+ambiguity that ends in a miscalculated payment. Ranges are legitimate only with
+a frozen price.
 
-**Coste de migración, concreto:**
-- **Móvil: cero en la entrega 1.** `/v1/pickups` sobrevive como fachada delgada sobre `work_records` (POST crea con la actividad semilla "Recolección"; GET filtra `pay_mode='work_unit'`). El móvil no se toca.
-- **Servidor: 3–5 días de un dev.** El SQL portado (`PENDING_SQL`, `INDEX_SQL`, `WEEK_*_SQL`, las reglas de anomalías) no se reescribe: se le añade `WHERE a.pay_mode = 'work_unit'`. El índice comparativo y las reglas de anomalías **solo tienen sentido por unidad de trabajo** — comparar jornales por productividad no significa nada —, así que ese filtro es correcto, no un apaño.
-- **Móvil, entrega 2:** ~2 semanas para pasar a `/v1/work-records` y ganar labores. `/v1/pickups` se deprecia pero no se elimina mientras haya un teléfono viejo en una finca, y siempre lo hay.
+**Migration cost, concretely:**
+- **Mobile: zero in delivery 1.** `/v1/pickups` survives as a thin facade over
+  `work_records` (POST creates against the seed activity "Recolección"; GET
+  filters `pay_mode='work_unit'`). The phone is not touched.
+- **Server: 3–5 days of one dev.** The ported SQL (`PENDING_SQL`, `INDEX_SQL`,
+  `WEEK_*_SQL`, the anomaly rules) is not rewritten: it gains
+  `WHERE a.pay_mode = 'work_unit'`. The comparative index and the anomaly rules
+  **only make sense per unit of work** — comparing day-rate jobs by productivity
+  means nothing — so that filter is correct, not a bodge.
+- **Mobile, delivery 2:** ~2 weeks to move to `/v1/work-records` and gain work
+  records. `/v1/pickups` is deprecated but not removed while there is still an
+  old phone on a farm, and there always is.
 
 ---
 
-## 2. Tensión C — SIG: **PostGIS desde el inicio.**
+## 2. Tension C — GIS: **PostGIS from the start.**
 
-Un polígono en `jsonb` es un adorno: no valida, no calcula y no responde nada. En cuanto alguien pregunte "¿cuántas ha tiene este lote realmente?" o "¿esta parcela se solapa con la vecina?", hay que reescribir cada consulta *y* rellenar los datos hacia atrás. PostGIS es una extensión disponible en RDS, Cloud SQL y Supabase; el coste de adoptarla es una línea de migración.
+A polygon in `jsonb` is decoration: it does not validate, does not calculate and
+does not answer anything. The moment somebody asks "how many hectares does this
+plot really have?" or "does this plot overlap the neighbour's?", every query has
+to be rewritten *and* the data backfilled. PostGIS is an extension available on
+RDS, Cloud SQL and Supabase; adopting it costs one line of migration.
 
 ```sql
 plots (
   id uuid, farm_id uuid, name text, department text, municipality text,
-  area_ha numeric(10,4),                    -- lo que declara el dueño
-  boundary geography(Polygon, 4326),        -- lo que dibujó en el mapa
+  area_ha numeric(10,4),                    -- what the owner declares
+  boundary geography(Polygon, 4326),        -- what he drew on the map
   status text CHECK (status IN ('active','inactive'))
 )
 ```
 
-Se usan **tres** funciones y ninguna más: `ST_IsValid` (rechazar polígonos que se cruzan a sí mismos, `400 INVALID_GEOMETRY`), `ST_Area(boundary)/10000` (hectáreas calculadas) y `ST_Intersects` (avisar de solapes entre lotes). `area_ha` declarada y `computedAreaHa` se devuelven **las dos**: discrepan siempre, y ocultar una de ellas es decidir por el dueño cuál miente. En la frontera HTTP todo viaja como **GeoJSON**, así que la web y el móvil nunca ven PostGIS. No se construye un producto SIG.
+**Three** functions get used and no more: `ST_IsValid` (reject self-intersecting
+polygons, `400 INVALID_GEOMETRY`), `ST_Area(boundary)/10000` (calculated
+hectares) and `ST_Intersects` (warn about overlaps between plots). Both the
+declared `area_ha` and `computedAreaHa` are returned: they always disagree, and
+hiding one of them decides for the owner which one is lying. At the HTTP
+boundary everything travels as **GeoJSON**, so the web and the mobile app never
+see PostGIS. We are not building a GIS product.
 
 ---
 
-## 3. Tensión B — Historial cross-tenant (RSP-004, RSP-009)
+## 3. Tension B — Cross-tenant history (RSP-004, RSP-009)
 
-**Esto no es un endpoint más. Es un producto distinto, con riesgo legal propio, y hay que decirlo antes de codearlo.**
+**This is not one more endpoint. It is a different product, with legal risk of
+its own, and that has to be said before anyone writes the code.**
 
-Búsqueda por cédula + "alertas de seguridad" + varias fincas consultando = una **lista negra laboral de facto**. En Colombia eso cae bajo la Ley 1581 de 2012 (habeas data): tratamiento de datos personales sin autorización, sin finalidad declarada, sin derecho de rectificación. Un texto libre que diga "este señor es problemático" es difamación distribuida, no verificable y no contestable, y hunde a una persona en toda una región sin que se entere.
+Search by *cédula* + "safety alerts" + several farms querying = a **de facto
+labour blacklist**. In Colombia that falls under Law 1581 of 2012 (habeas data):
+processing personal data without authorisation, without a declared purpose,
+without a right of rectification. Free text saying "this man is trouble" is
+distributed defamation — unverifiable, uncontestable — and it sinks a person
+across a whole region without their ever knowing.
 
-**Diseño: servicio aparte, `registry`, esquema propio, credenciales propias, sin acceso al schema de las fincas. Nunca una tabla más dentro del tenant.**
+**Design: a separate service, `registry`, its own schema, its own credentials,
+no access to the farm schema. Never one more table inside the tenant.**
 
 ```
 POST /registry/v1/lookups
   {documentType, documentNumber, purpose:"hiring"}
   -> { verified: true,
        farmsWorked: 3,
-       employmentSpans:[{from:"2024-01",to:"2024-06"}],   -- meses, no días
+       employmentSpans:[{from:"2024-01",to:"2024-06"}],   -- months, not days
        disputes: 0,
        consentOnFile: true }
-GET  /registry/v1/workers/{docHash}/lookups     -- quién me consultó (para el trabajador)
-POST /registry/v1/consents                      -- alta explícita, revocable
-POST /registry/v1/disputes                      -- derecho de réplica
+GET  /registry/v1/workers/{docHash}/lookups     -- who looked me up (for the worker)
+POST /registry/v1/consents                      -- explicit opt-in, revocable
+POST /registry/v1/disputes                      -- right of reply
 ```
 
-**Se comparte:** que la cédula existe y está verificada; **cuántas** fincas y en qué meses; si hay disputas abiertas. **Jamás se comparte:** nombres de las fincas, saldos, deudas, anticipos, montos, kilos, productividad, anotaciones libres, fotos, teléfono, dirección. Ni siquiera al super-admin.
+**What is shared:** that the *cédula* exists and is verified; **how many** farms
+and in which months; whether there are open disputes. **What is never shared:**
+farm names, balances, debts, advances, amounts, kilos, productivity, free-text
+notes, photos, phone, address. Not even to the super-admin.
 
-Reglas duras: (1) **sin consentimiento registrado del trabajador, `lookup` devuelve `403 NO_CONSENT`** y nada más; (2) toda consulta deja rastro con `farm_id`, usuario y `purpose`, y **el trabajador puede leer ese rastro** — esa es la mitad de RSP-009 que sí vale la pena construir; (3) participación **opt-in por finca**, y el opt-out no borra el historial ajeno pero corta el aporte.
+Hard rules: (1) **with no recorded consent from the worker, `lookup` returns
+`403 NO_CONSENT`** and nothing else; (2) every lookup leaves a trace with
+`farm_id`, user and `purpose`, and **the worker can read that trace** — that is
+the half of RSP-009 genuinely worth building; (3) participation is **opt-in per
+farm**, and opting out does not erase other farms' history but does cut off the
+contribution.
 
-**Recomendación explícita al dueño: las "alertas de seguridad" de texto libre no se construyen en la entrega 1, y probablemente nunca en esa forma.** Si insiste, la única versión defendible es: hecho estructurado de un catálogo cerrado, atribuido a una finca identificable, notificado al trabajador, disputable, y con caducidad automática a 24 meses. Sin esas cinco propiedades es un arma. La entrega 1 construye el **log de consultas** (barato, útil, sin riesgo) y deja el resto detrás de un flag apagado.
+**Explicit recommendation to the owner: the free-text "safety alerts" are not
+built in delivery 1, and probably never in that form.** If he insists, the only
+defensible version is: a structured fact from a closed catalogue, attributed to
+an identifiable farm, notified to the worker, disputable, and expiring
+automatically at 24 months. Without those five properties it is a weapon.
+Delivery 1 builds the **lookup log** (cheap, useful, no risk) and leaves the
+rest behind a flag that is off.
 
 ---
 
-## 4. Estructura Go (sin cambios de fondo, dos paquetes más)
+## 4. Go structure (no substantive changes, two more packages)
 
-`chi` + `pgx/v5` + `sqlc` + `goose`, por lo mismo de antes: el dominio es contable y hay que portar `BALANCE_SQL`/`PENDING_SQL` *literalmente*; GORM sobre un libro contable queda descartado. Layout plano en `internal/`: `httpapi`, `domain`, `store`, `auth`, `tenant`, **`+ media`** (subidas), **`+ registry`** (el servicio cross-tenant, compilable como binario aparte desde el día 1 aunque de momento se despliegue junto). Tests con `testcontainers` y Postgres+PostGIS reales.
+`chi` + `pgx/v5` + `sqlc` + `goose`, for the same reason as before: the domain
+is accounting and `BALANCE_SQL`/`PENDING_SQL` have to be ported *literally*;
+GORM over a ledger is ruled out. Flat layout under `internal/`: `httpapi`,
+`domain`, `store`, `auth`, `tenant`, **`+ media`** (uploads), **`+ registry`**
+(the cross-tenant service, compilable as a separate binary from day 1 even
+though for now it deploys alongside). Tests with `testcontainers` and real
+Postgres + PostGIS.
 
-**Fotos (empleado 5 MB, comprobante de venta): nunca en Postgres.** Object storage con subida por URL prefirmada.
+**Photos (employee 5 MB, sale receipt): never in Postgres.** Object storage with
+upload via a pre-signed URL.
 ```
 POST /v1/media/uploads {kind:"worker_photo"|"sale_receipt", contentType, sizeBytes}
-  -> {mediaId, uploadUrl, expiresIn}   ; el cliente sube directo y luego referencia mediaId
+  -> {mediaId, uploadUrl, expiresIn}   ; the client uploads directly, then references mediaId
 ```
-Límite 5 MB validado en el servidor al confirmar, no solo en el prefirmado.
+The 5 MB limit is validated on the server at confirmation time, not only in the
+pre-sign.
 
 ---
 
-## 5. Contrato REST. Base `/v1`, tenant en el token. `M`=móvil, `W`=web.
+## 5. REST contract. Base `/v1`, tenant in the token. `M`=mobile, `W`=web.
 
-**Auth y alta de finca** — aquí hay un choque con la revisión anterior: el documento pide **auto-registro** en su sección sin numerar y el diseño previo daba el alta solo al super-admin. Se resuelve con las dos puertas, y la finca nueva queda activa tras verificar el correo (ver `docs/decisiones.md`):
+**Auth and farm signup** — there is a clash with the previous revision here: the
+document asks for **self-registration** in its unnumbered section and the
+earlier design gave signup to the super-admin alone. It is settled with both
+doors, and a new farm becomes active once its email is verified (see
+`docs/decisiones.md`):
 ```
-POST /v1/signup {farm:{name,timezone}, owner:{email,name,password}}   público, rate-limited
+POST /v1/signup {farm:{name,timezone}, owner:{email,name,password}}   public, rate-limited
 POST /v1/auth/login · /auth/refresh · /auth/logout · GET /v1/me        M W
 GET|POST /v1/admin/farms · PATCH /v1/admin/farms/{id} {status}         W  (super-admin)
 ```
 
-**Parcelas y cultivos** (M lee, W escribe)
+**Plots and crops** (M reads, W writes)
 ```
-GET|POST /v1/plots · GET|PATCH /v1/plots/{id}            baja lógica: PATCH {status:"inactive"}
+GET|POST /v1/plots · GET|PATCH /v1/plots/{id}            soft delete: PATCH {status:"inactive"}
 PUT      /v1/plots/{id}/boundary   {geojson}             400 INVALID_GEOMETRY
 GET|POST /v1/plots/{id}/crops      {cropTypeId,varietyId,plantedAt,areaHa}
 GET|POST /v1/catalogs/crop-types · /v1/catalogs/varieties · /v1/catalogs/units
 ```
-Los catálogos resuelven el "si no existe, botón para agregarlo": `POST` con `{name}` es idempotente por `(farm_id, lower(name))` y devuelve `200` con el existente. El autocompletar nunca duplica.
+The catalogues answer the "if it does not exist, a button to add it": `POST`
+with `{name}` is idempotent on `(farm_id, lower(name))` and returns `200` with
+the existing row. Autocomplete never duplicates.
 
-**Empleados** (M W)
+**Employees** (M W)
 ```
-GET|POST /v1/workers · GET|PATCH /v1/workers/{id} · DELETE (baja lógica)
-GET /v1/workers/{id}/profile   -> saldo + últimos movimientos + labores + anotaciones
-GET|POST /v1/workers/{id}/notes                       anotaciones, append-only
+GET|POST /v1/workers · GET|PATCH /v1/workers/{id} · DELETE (soft delete)
+GET /v1/workers/{id}/profile   -> balance + latest movements + work records + notes
+GET|POST /v1/workers/{id}/notes                       notes, append-only
 ```
 
-**Actividades y labores** (M W)
+**Activities and work records** (M W)
 ```
-GET|POST|PATCH /v1/activities?category=            precios: solo owner
+GET|POST|PATCH /v1/activities?category=            prices: owner only
 GET|POST /v1/work-records?workerId&plotId&from&to
 PATCH|DELETE /v1/work-records/{id}                 409 WORK_RECORD_SETTLED
-GET|POST|PATCH|DELETE /v1/pickups                  fachada legacy sobre work_records   M
+GET|POST|PATCH|DELETE /v1/pickups                  legacy facade over work_records   M
 ```
 
-**Liquidaciones y dinero** — sin cambios salvo que `pickupIds` pasa a `payableIds`:
+**Settlements and money** — unchanged except that `pickupIds` becomes
+`payableIds`:
 ```
 POST /v1/settlements/preview · POST /v1/settlements {payableIds[]} · GET /v1/settlements/{id}
 POST /v1/settlements/{id}/void
@@ -146,79 +220,147 @@ POST /v1/payments · /advances · /deductions · /adjustments · /ledger/{id}/re
 GET  /v1/balances · /v1/workers/{id}/balance · /v1/workers/{id}/ledger · /v1/pending · /v1/farm/totals
 ```
 
-**Inventario, ventas, gastos** (W; el móvil solo lee existencias)
+**Inventory, sales, expenses** (W; the mobile app only reads stock)
 ```
 GET|POST /v1/products · /v1/warehouses · /v1/product-categories
-GET      /v1/stock?warehouseId&cropId&plotId          existencias derivadas, nunca escritas
+GET      /v1/stock?warehouseId&cropId&plotId          derived stock, never written
 POST     /v1/stock-movements {productId,warehouseId,qty,unit,reason,plotId,cropId}
-POST     /v1/labels/print     {productId,qty}  -> PDF/ZPL de stickers
+POST     /v1/labels/print     {productId,qty}  -> PDF/ZPL of stickers
 GET|POST /v1/sales    {productId,qty,customer,amountCents,receiptMediaId}
 GET|POST /v1/expenses {amountCents,scope:"activity"|"plot_crop",activityId|plotId,cropId,note}
 ```
-**Las existencias se derivan de los movimientos**, igual que el saldo se deriva del ledger. Misma disciplina, mismo motivo: un total almacenado es un total que algún día miente.
+**Stock is derived from movements**, the same way the balance is derived from
+the ledger. Same discipline, same reason: a stored total is a total that will
+lie one day.
 
-**Configuración y usuarios**: `GET|PUT /v1/config`, `GET|PUT /v1/prices/weeks/{monday}`, `GET|POST|PATCH /v1/users` (owner).
-
----
-
-## 6. Autorización — el weigher, ahora con más superficie que negar
-
-JWT de acceso 15 min (claims `sub, farm_id, role, device_id, jti`) + refresh opaco de 60 días en Postgres, con rotación y detección de reuso: el móvil está días sin señal y un teléfono prestado tiene que poder matarse desde la web. **El tenant viaja en el token, nunca en la ruta** — un `farmId` en el path invita a que alguien confíe en él. Middleware: `Auth → Tenant (SET LOCAL app.farm_id, RLS activa en toda tabla) → Require(action)`, con los permisos en **una tabla Go**, no en `if`s por handler.
-
-El alcance nuevo multiplica lo que el weigher no debe ver. Su lista blanca completa es: `POST /v1/work-records` (solo actividades `work_unit`), `GET` de sus propios registros (RLS por `created_by = sub`), y lectura mínima de workers (`id,name,lastName,tag` — sin documento, sin teléfono, sin foto), plots y crops. **403 en middleware** para todo lo demás, incluidos los módulos nuevos: `/activities` con precios, `/sales`, `/expenses`, `/stock*`, `/workers/{id}/profile`, `/workers/{id}/notes`, `/registry/*` y `/users`. `GET /v1/config` le llega sin `costPerUnitCents`; `GET /v1/activities` sin `default_rate_cents`.
-
-Un test de contrato recorre la tabla de rutas y afirma 403 para weigher en toda ruta de dinero, personas o registry; **una ruta nueva sin entrada en la tabla hace fallar el build**. Con nueve módulos, eso deja de ser higiene y pasa a ser la única defensa que escala.
+**Configuration and users**: `GET|PUT /v1/config`,
+`GET|PUT /v1/prices/weeks/{monday}`, `GET|POST|PATCH /v1/users` (owner).
 
 ---
 
-## 7. `packages/shared` y errores
+## 6. Authorisation — the weigher, now with more surface to deny
 
-En `shared` solo lo que si diverge cuesta dinero: enums (`LedgerKind`, `PayMethod`, `Role`, **`PayMode`**, **`ActivityCategory`**, **`StockReason`**), los DTO de dinero, y cuatro reglas puras (`mondayOf`, `toCents/fromCents`, signos por `kind`, `amountCents(qty, rate)`). **`openapi.yaml` es la fuente de verdad**: `oapi-codegen` para Go, `openapi-typescript` para web y móvil, regenerado en CI con build rojo si el diff no está commiteado. Las reglas puras se escriben dos veces (~40 líneas) y se atan con un fixture JSON compartido que ambas suites recorren — redondeo y semanas ISO es justo donde dos lenguajes divergen en silencio.
+15-minute access JWT (claims `sub, farm_id, role, device_id, jti`) + an opaque
+60-day refresh token in Postgres, with rotation and reuse detection: the phone
+goes days without a signal and a borrowed phone has to be killable from the web.
+**The tenant travels in the token, never in the path** — a `farmId` in the path
+invites somebody to trust it. Middleware:
+`Auth → Tenant (SET LOCAL app.farm_id, RLS active on every table) → Require(action)`,
+with the permissions in **a Go table**, not in per-handler `if`s.
 
-Errores: `{"error":{"code","message","details"}}`; el cliente ramifica por `code`, la traducción vive en el cliente. Los conflictos de negocio son **409 con código propio y son parte del contrato**: `WORK_RECORD_SETTLED`, `PAYABLE_ALREADY_CLAIMED` (con `details.winningSettlement` completo para que el móvil re-derive), `SETTLEMENT_ALREADY_VOID`, `ALREADY_REVERSED`, `NOTHING_TO_SETTLE`, `FARM_SUSPENDED`, y nuevos: `INSUFFICIENT_STOCK`, `INVALID_GEOMETRY`, `PLOT_HAS_ACTIVE_CROPS` (baja lógica bloqueada), `NO_CONSENT` (registry). Toda escritura acepta `id` del cliente y es idempotente por `(farm_id, id)`: reintentar tras un timeout devuelve `200` con el recurso existente, no `409`.
+The new scope multiplies what the weigher must not see. His complete allowlist
+is: `POST /v1/work-records` (only `work_unit` activities), `GET` of his own
+records (RLS on `created_by = sub`), and a minimal read of workers
+(`id,name,lastName,tag` — no document, no phone, no photo), plots and crops.
+**403 in middleware** for everything else, the new modules included:
+`/activities` with prices, `/sales`, `/expenses`, `/stock*`,
+`/workers/{id}/profile`, `/workers/{id}/notes`, `/registry/*` and `/users`.
+`GET /v1/config` reaches him without `costPerUnitCents`; `GET /v1/activities`
+without `default_rate_cents`.
+
+A contract test walks the route table and asserts 403 for the weigher on every
+money, people or registry route; **a new route with no entry in the table breaks
+the build**. With nine modules, that stops being hygiene and becomes the only
+defence that scales.
 
 ---
 
-## 8. Lo que NO haría ahora
+## 7. `packages/shared` and errors
 
-- **Sync offline.** Igual que antes: se construye contra reglas ya cerradas. Entrega 1 = móvil online.
-- **Reescribir el móvil a labores.** La fachada `/v1/pickups` existe justo para no bloquearlo.
-- **Las "alertas de seguridad" cross-tenant.** Ver §3. Se construye el log de consultas; el resto queda tras un flag apagado y una conversación con el dueño.
-- **Inventario con costeo (PEPS/promedio), trazabilidad de lotes, conciliación de ventas.** Entrega 1: existencias y movimientos. El costeo es un proyecto propio.
-- **Impresión de stickers desde el servidor con plantillas configurables.** Un PDF de tamaño fijo. La plantilla configurable llega cuando alguien se queje del tamaño.
-- **Reportes de rendimiento y anomalías en el servidor.** Ya funcionan y están probados en el móvil; portar ese SQL delicado ahora duplica riesgo por una web que aún no existe.
-- **GraphQL, gRPC, microservicios, CQRS, permisos configurables, 2FA, SSO.** Un binario (dos con `registry`), un Postgres, cuatro roles hardcodeados.
-- **UI de super-admin.** El auto-registro la vuelve casi innecesaria.
+`shared` holds only what costs money if it diverges: enums (`LedgerKind`,
+`PayMethod`, `Role`, **`PayMode`**, **`ActivityCategory`**, **`StockReason`**),
+the money DTOs, and four pure rules (`mondayOf`, `toCents/fromCents`, signs by
+`kind`, `amountCents(qty, rate)`). **`openapi.yaml` is the source of truth**:
+`oapi-codegen` for Go, `openapi-typescript` for web and mobile, regenerated in
+CI with a red build if the diff is not committed. The pure rules are written
+twice (~40 lines) and tied together by a shared JSON fixture that both suites
+run — rounding and ISO weeks is exactly where two languages diverge in silence.
 
-**Primer sprint:** dev A → migraciones + PostGIS + RLS + auth/signup + workers + plots/crops + catálogos. Dev B → `domain`: generalizar `payable`, portar `PENDING_SQL`/`BALANCE_SQL`, `settle/void/reverse`, actividades y labores, con tests contra Postgres real. Se encuentran en `openapi.yaml`, que se escribe el primer día antes que cualquier handler. `registry`, ventas, gastos e inventario entran en el sprint 2.
+Errors: `{"error":{"code","message","details"}}`; the client branches on `code`,
+the translation lives in the client. Business conflicts are **409 with a code of
+their own, and they are part of the contract**: `WORK_RECORD_SETTLED`,
+`PAYABLE_ALREADY_CLAIMED` (with the full `details.winningSettlement` so the
+phone can re-derive), `SETTLEMENT_ALREADY_VOID`, `ALREADY_REVERSED`,
+`NOTHING_TO_SETTLE`, `FARM_SUSPENDED`, and new ones: `INSUFFICIENT_STOCK`,
+`INVALID_GEOMETRY`, `PLOT_HAS_ACTIVE_CROPS` (soft delete blocked), `NO_CONSENT`
+(registry). Every write accepts a client-supplied `id` and is idempotent on
+`(farm_id, id)`: retrying after a timeout returns `200` with the existing
+resource, not `409`.
+
+---
+
+## 8. What I would NOT build now
+
+- **Offline sync.** Same as before: it gets built against rules that are already
+  settled. Delivery 1 = mobile online.
+- **Rewriting the mobile app onto work records.** The `/v1/pickups` facade
+  exists precisely so that does not block anything.
+- **The cross-tenant "safety alerts".** See §3. The lookup log gets built; the
+  rest stays behind a flag that is off, and a conversation with the owner.
+- **Inventory with costing (FIFO/average), batch traceability, sales
+  reconciliation.** Delivery 1: stock and movements. Costing is a project of its
+  own.
+- **Printing stickers from the server with configurable templates.** A
+  fixed-size PDF. The configurable template arrives when somebody complains
+  about the size.
+- **Performance and anomaly reports on the server.** They already work and are
+  tested on the phone; porting that delicate SQL now doubles the risk for a web
+  app that does not exist yet.
+- **GraphQL, gRPC, microservices, CQRS, configurable permissions, 2FA, SSO.**
+  One binary (two with `registry`), one Postgres, four hard-coded roles.
+- **A super-admin UI.** Self-registration makes it nearly unnecessary.
+
+**First sprint:** dev A → migrations + PostGIS + RLS + auth/signup + workers +
+plots/crops + catalogues. Dev B → `domain`: generalise `payable`, port
+`PENDING_SQL`/`BALANCE_SQL`, `settle/void/reverse`, activities and work records,
+with tests against real Postgres. They meet at `openapi.yaml`, which is written
+on day one before any handler. `registry`, sales, expenses and inventory land in
+sprint 2.
 
 
 ---
 
-# Báscula — Entrega 2: generalización, módulos nuevos y servicios cruzados
+# Báscula — Delivery 2: generalisation, new modules and cross services
 
-## 0. La migración que nadie ha costeado todavía
+## 0. The migration nobody has costed yet
 
-Antes de la generalización de labores hay una anterior y más barata de hacer ahora que dentro de seis meses: **la tensión 2 del documento**. Hoy `crops` mezcla parcela y cultivo (`name, type, variety, dimension`) y `pickups.cropId` apunta ahí — es decir, la pesada de café hoy cuelga de algo que es *el lote*, no *el cultivo*. RSP-001 los separa: una parcela tiene superficie, ubicación y polígono, y **varios** cultivos con tipo y variedad.
+Before generalising work records there is an earlier one, cheaper to do now than
+in six months: **tension 2 of the document**. Today `crops` mixes plot and crop
+(`name, type, variety, dimension`) and `pickups.cropId` points there — that is,
+a coffee weighing today hangs off something that is *the plot*, not *the crop*.
+RSP-001 separates them: a plot has an area, a location and a polygon, and
+**several** crops with a type and a variety.
 
-La partición es 1:1 y sin pérdida, y por eso hay que hacerla ya:
+The split is 1:1 and lossless, and that is exactly why it has to happen now:
 
 ```
 crops(id, name, type, variety, dimension)
   → plots(id, name, area_ha := dimension, department, municipality, boundary NULL)
-  + plot_crops(id, plot_id, crop_type_id := catálogo(type), variety_id := catálogo(variety))
-  ; pickups.cropId → tasks.plot_crop_id   (mapeo determinista, una fila por una)
+  + plot_crops(id, plot_id, crop_type_id := catalogue(type), variety_id := catalogue(variety))
+  ; pickups.cropId → tasks.plot_crop_id   (deterministic mapping, one row for one)
 ```
 
-Mientras sea 1:1, la fachada de compatibilidad del móvil puede mentir perfectamente: `POST /v1/pickups {cropId}` resuelve al `plot_crop` generado. En cuanto una finca registre el segundo cultivo en un lote, deja de ser 1:1 y la fachada ya no puede inventar cuál era. **Ventana: hasta que la web permita añadir cultivos.** Esa es la fecha límite real de la migración del móvil, no una preferencia.
+While it stays 1:1, the mobile compatibility facade can lie perfectly:
+`POST /v1/pickups {cropId}` resolves to the generated `plot_crop`. The moment a
+farm registers a second crop on a plot, it stops being 1:1 and the facade can no
+longer invent which one it was. **Window: until the web allows adding crops.**
+That is the real deadline for the mobile migration, not a preference.
 
 ---
 
-## 1. Generalización: `/v1/tasks` manda, `/v1/pickups` sobrevive como atajo
+## 1. Generalisation: `/v1/tasks` rules, `/v1/pickups` survives as a shortcut
 
-**Recomendación: un solo camino. `tasks` (labores) es la entidad pagable; la recolección por kilos es una `task` de una actividad con `pay_mode='work_unit'`, `unit='kg'`, `date_from = date_to`.**
+**Recommendation: one path. `tasks` (labores) is the payable entity; picking by
+the kilo is a `task` on an activity with `pay_mode='work_unit'`, `unit='kg'`,
+`date_from = date_to`.**
 
-El argumento decisivo no es la elegancia, es **RSP-008**: la pantalla de pago que el dueño describe muestra *una* lista de labores, *una* de deudas y *un* "Total a pagar". Dos tablas pagables conviviendo obligan a dos candados anti doble pago (`ux_items_pickup_live` duplicado) y hacen imposible que un empleado que recolectó café **y** hizo tala por jornal la misma semana reciba **una** liquidación. El propio documento del dueño exige un único flujo de pagables.
+The decisive argument is not elegance, it is **RSP-008**: the payment screen the
+owner describes shows *one* list of work records, *one* of debts and *one*
+"Total a pagar". Two payable tables living side by side force two
+double-payment locks (`ux_items_pickup_live` duplicated) and make it impossible
+for an employee who picked coffee **and** felled by the day in the same week to
+receive **one** settlement. The owner's own document demands a single payable
+flow.
 
 ```
 activities   id, farm_id, name, category_id, pay_mode(contract|time_unit|work_unit),
@@ -227,151 +369,258 @@ activities   id, farm_id, name, category_id, pay_mode(contract|time_unit|work_un
              default_rate_cents, rate_source(fixed|weekly_price), status
 tasks        id, farm_id, activity_id, worker_id, date_from, date_to,
              quantity numeric, rate_cents NULL, rate_source, note, status, created_by
-task_plots   (task_id, plot_id)          -- RSP-015: lotes en plural, obligatorio
-task_crops   (task_id, plot_crop_id)     -- RSP-015: cultivos en plural, obligatorio
+task_plots   (task_id, plot_id)          -- RSP-015: plots, plural, required
+task_crops   (task_id, plot_crop_id)     -- RSP-015: crops, plural, required
 ```
 
-`settlement_items.pickup_id` pasa a `payable_id` → `tasks.id`, con el índice parcial idéntico. **El ledger no cambia ni una línea:** `devengo` describe igual de bien una recolección, un jornal y un contrato. Ese es el hallazgo tranquilizador de toda la entrega.
+`settlement_items.pickup_id` becomes `payable_id` → `tasks.id`, with an
+identical partial index. **The ledger does not change by a single line:**
+`devengo` describes a picking, a day's work and a contract equally well. That is
+the reassuring finding of the whole delivery.
 
-**Precio, y la regla que hay que cerrar hoy.** `amount_cents = round(quantity × rate_cents)` — la misma regla que ya usa el móvil (`Math.round(weight * costPerUnitCents)`), ahora válida para los tres modos: `contract` (quantity=1), `time_unit` (quantity = nº de jornales), `work_unit` (quantity = kg/arrobas/canastas). Pero conviven dos momentos de congelación:
+**Price, and the rule that has to be closed today.**
+`amount_cents = round(quantity × rate_cents)` — the same rule the mobile app
+already uses (`Math.round(weight * costPerUnitCents)`), now valid for all three
+modes: `contract` (quantity=1), `time_unit` (quantity = number of days),
+`work_unit` (quantity = kg/arrobas/baskets). But two freezing moments coexist:
 
-| | precio | congelado |
+| | price | frozen |
 |---|---|---|
-| `work_unit` + `weekly_price` | `costForWeek(lunes)` | **al liquidar** (comportamiento actual, intacto) |
-| todo lo demás | `rate_cents` de la propia labor, por defecto el de la actividad (RSP-015) | **al escribir** |
+| `work_unit` + `weekly_price` | `costForWeek(monday)` | **at settlement** (current behaviour, untouched) |
+| everything else | the work record's own `rate_cents`, defaulting to the activity's (RSP-015) | **at write time** |
 
-Y de ahí una restricción obligatoria: **`rate_source='weekly_price'` exige `date_from = date_to`**. RSP-015 admite rangos de fechas; un jornal de martes a martes no tiene un único lunes y derivar precio semanal sobre un rango es exactamente la ambigüedad que termina en un pago mal calculado. Rangos sí, pero con precio congelado. Un `CHECK` en la tabla, no una convención.
+And from that, a mandatory constraint: **`rate_source='weekly_price'` requires
+`date_from = date_to`**. RSP-015 allows date ranges; a day's work running
+Tuesday to Tuesday has no single Monday and deriving a weekly price over a range
+is exactly the ambiguity that ends in a miscalculated payment. Ranges yes, but
+with a frozen price. A `CHECK` on the table, not a convention.
 
-**Coste de migración:**
-- **Móvil en producción: cero en esta entrega.** `/v1/pickups` se mantiene como fachada delgada (POST crea una `task` de la actividad semilla "Recolección por kilos" con un `plot_crop`; GET filtra `pay_mode='work_unit'`). No se toca el teléfono de nadie a mitad de cosecha.
-- **Servidor: ~1 semana de un dev**, de las cuales la mitad es el split `crops → plots + plot_crops`. El SQL portado (`PENDING_SQL`, `BALANCE_SQL`, `INDEX_SQL`, `WEEK_*`, reglas de anomalías) **no se reescribe**: se le añade `JOIN activities a ... WHERE a.pay_mode='work_unit'`. Índice comparativo y detección de anomalías solo tienen sentido por unidad de trabajo — comparar productividad entre jornales no significa nada —, así que ese filtro es la semántica correcta, no un apaño.
-- **Móvil, entrega siguiente: ~2 semanas** para pasar a `/v1/tasks` y ganar labores en el campo. `/v1/pickups` se deprecia y no se elimina mientras haya un teléfono viejo en una finca; siempre lo hay.
+**Migration cost:**
+- **Mobile in production: zero in this delivery.** `/v1/pickups` stays as a thin
+  facade (POST creates a `task` on the seed activity "Recolección por kilos"
+  with a `plot_crop`; GET filters `pay_mode='work_unit'`). Nobody's phone gets
+  touched mid-harvest.
+- **Server: ~1 week of one dev**, half of which is the `crops → plots +
+  plot_crops` split. The ported SQL (`PENDING_SQL`, `BALANCE_SQL`, `INDEX_SQL`,
+  `WEEK_*`, the anomaly rules) **is not rewritten**: it gains
+  `JOIN activities a ... WHERE a.pay_mode='work_unit'`. The comparative index
+  and anomaly detection only make sense per unit of work — comparing
+  productivity between day-rate jobs means nothing — so that filter is the right
+  semantics, not a bodge.
+- **Mobile, next delivery: ~2 weeks** to move to `/v1/tasks` and gain work
+  records in the field. `/v1/pickups` is deprecated and not removed while there
+  is still an old phone on a farm; there always is.
 
 ---
 
-## 2. Endpoints nuevos
+## 2. New endpoints
 
-Rol mínimo: `wei` (weigher o superior) · `adm` (administrator o superior) · `own` (solo owner). `M`=móvil, `W`=web, `R`=lectura.
+Minimum role: `wei` (weigher or above) · `adm` (administrator or above) · `own`
+(owner only). `M`=mobile, `W`=web, `R`=read.
 
-**Catálogos** — resuelven el "con opción de agregar si no existe" de RSP-001/011/019. `POST` idempotente por `(farm_id, lower(name))`: devuelve `200` con el existente, nunca duplica.
+**Catalogues** — these answer the "with the option to add it if it does not
+exist" of RSP-001/011/019. `POST` idempotent on `(farm_id, lower(name))`:
+returns `200` with the existing row, never duplicates.
 ```
 GET|POST /v1/catalogs/{crop-types|varieties|activity-categories|work-units|
                        time-units|product-categories|storage-units|customers}   W adm
 ```
 
-**Parcelas** (RSP-001…003) — cultivos anidados, porque el formulario es uno solo
+**Plots** (RSP-001…003) — crops nested, because the form is a single one
 ```
 GET  /v1/plots?status=active                                            M W R  wei
 POST /v1/plots  {id,name,areaHa,department,municipality,
                  boundary:GeoJSON|null,
                  crops:[{id,cropTypeId,varietyId}]}                     W      adm
-GET  /v1/plots/{id}                        -> incluye crops[] y computedAreaHa  wei
-PATCH /v1/plots/{id}                       body idéntico, sustituye crops[]     adm
-DELETE /v1/plots/{id}                      -> status='inactive'                 adm
+GET  /v1/plots/{id}                        -> includes crops[] and computedAreaHa  wei
+PATCH /v1/plots/{id}                       identical body, replaces crops[]        adm
+DELETE /v1/plots/{id}                      -> status='inactive'                    adm
 POST|DELETE /v1/plots/{id}/crops[/{cropId}]                             W      adm
 ```
-`areaHa` (declarada) y `computedAreaHa` (`ST_Area` del polígono) se devuelven **las dos**. Discrepan siempre; elegir cuál mostrar es decisión del dueño, no del servidor.
+`areaHa` (declared) and `computedAreaHa` (`ST_Area` of the polygon) are **both**
+returned. They always disagree; choosing which to show is the owner's decision,
+not the server's.
 
-**Empleados** (RSP-004…008) — el perfil de RSP-007 en una llamada
+**Employees** (RSP-004…008) — the RSP-007 profile in one call
 ```
 GET  /v1/workers/{id}/profile   -> worker + balance + tasks[] + ledger[] + notes[]   W adm
-GET|POST /v1/workers/{id}/notes  {text}      append-only, visibilidad por defecto private   adm
+GET|POST /v1/workers/{id}/notes  {text}      append-only, visibility defaults to private   adm
 GET  /v1/workers/{id}/payables  -> {tasks:[{activity,date,plots,amountCents}],
-                                    debts:[...], totalCents}    ← la pantalla de RSP-008   adm
-GET  /v1/payments/{id}/receipt  -> PDF                          ← "recibo de pago"         adm
+                                    debts:[...], totalCents}    ← the RSP-008 screen    adm
+GET  /v1/payments/{id}/receipt  -> PDF                          ← the "recibo de pago"  adm
 POST /v1/media/uploads {kind:"worker_photo"|"sale_receipt",contentType,sizeBytes}
-                                 -> {mediaId,uploadUrl}   5 MB validado al confirmar       adm
+                                 -> {mediaId,uploadUrl}   5 MB validated on confirm     adm
 ```
-Pago parcial y total de RSP-008 **no necesitan endpoints nuevos**: son `POST /v1/payments` con `amountCents < balance` o `= balance`. La validación "menor al saldo actual" se hace en servidor contra el balance derivado, con `409 AMOUNT_EXCEEDS_BALANCE`. Nada de un flag `isFullPayment` que se desincronice.
+Partial and full payment in RSP-008 **need no new endpoints**: they are
+`POST /v1/payments` with `amountCents < balance` or `= balance`. The "less than
+the current balance" validation happens on the server against the derived
+balance, with `409 AMOUNT_EXCEEDS_BALANCE`. No `isFullPayment` flag that can
+fall out of sync.
 
-**Actividades** (RSP-010…013)
+**Activities** (RSP-010…013)
 ```
-GET  /v1/activities?category=&q=        agrupadas por categoría                  M W R  wei*
+GET  /v1/activities?category=&q=        grouped by category                      M W R  wei*
 POST|PATCH /v1/activities                                                        W      adm
 PATCH /v1/activities/{id} {status:"inactive"}                                    W      adm
 PUT  /v1/activities/{id}/rate {rateCents}                                        W      own
 ```
-`wei*`: el weigher recibe la lista **sin** `defaultRateCents` ni `rateSource`. Proyección distinta, misma ruta.
+`wei*`: the weigher gets the list **without** `defaultRateCents` or
+`rateSource`. A different projection, the same route.
 
-**Labores** (RSP-014…017)
+**Work records** (RSP-014…017)
 ```
-GET  /v1/tasks?workerId&plotId&activityId&from&to&status                M W R  wei (solo propias)
+GET  /v1/tasks?workerId&plotId&activityId&from&to&status                M W R  wei (own only)
 POST /v1/tasks {id,activityId,workerId,quantity,rateCents?,
-                dateFrom,dateTo,plotIds[],plotCropIds[],note}           M W    wei (solo work_unit)
+                dateFrom,dateTo,plotIds[],plotCropIds[],note}           M W    wei (work_unit only)
 PATCH|DELETE /v1/tasks/{id}      409 TASK_SETTLED   ·  DELETE = inactive        adm
-GET|POST|PATCH|DELETE /v1/pickups[...]      fachada legacy sobre tasks   M      wei
+GET|POST|PATCH|DELETE /v1/pickups[...]      legacy facade over tasks     M      wei
 ```
 
-**Productos e inventario** (RSP-018…025)
+**Products and inventory** (RSP-018…025)
 ```
 GET|POST /v1/products {id,name,categoryId,storageUnitId}                W      adm
 PATCH /v1/products/{id} {status:"inactive"}                             W      adm
-GET  /v1/inventory?productId&plotId&warehouse   -> existencias derivadas  M W R wei
+GET  /v1/inventory?productId&plotId&warehouse   -> derived stock          M W R wei
 POST /v1/inventory/entries {id,productId,quantity,plotId,
                             plotCropId,warehouse?}  -> {entry, labelBatchId}     adm
-GET  /v1/labels/{labelBatchId}  -> PDF de stickers                       W      adm
+GET  /v1/labels/{labelBatchId}  -> sticker PDF                           W      adm
 ```
-**Las existencias se derivan de los movimientos, nunca se almacenan ni se escriben**, exactamente por el mismo motivo que el saldo se deriva del ledger: un total guardado es un total que algún día miente. RSP-025 dice "al guardar imprime los stickers"; el servidor **no imprime**, genera el lote de etiquetas y devuelve su id — imprimir es del cliente.
+**Stock is derived from movements, never stored and never written**, for exactly
+the same reason the balance is derived from the ledger: a saved total is a total
+that will lie one day. RSP-025 says "on save it prints the stickers"; the server
+**does not print** — it generates the label batch and returns its id. Printing
+belongs to the client.
 
-**Ventas y gastos** (RSP-026…032)
+**Sales and expenses** (RSP-026…032)
 ```
 GET|POST /v1/sales    {id,productId,quantity,amountCents,customerId,receiptMediaId}  W adm
 GET|POST /v1/expenses {id,amountCents,scope:"activity"|"plot_crop",
                        activityId?|plotId+plotCropIds[],note}                        W adm
 PATCH /v1/{sales|expenses}/{id} {status:"inactive"}                                  W adm
 ```
-**Ambigüedad que hay que devolverle al dueño:** RSP-030 llama "gasto" al coste de una actividad, y RSP-008 llama "deuda" a lo que un empleado le debe a la finca. **No son lo mismo y no pueden compartir tabla.** Un `expense` es contabilidad de la finca y **jamás toca el ledger del trabajador**; una "deuda" de RSP-007/008 es un `deduccion` en el ledger. Si se mezclan, registrar el gasto de una fumigación descontaría plata del sueldo de alguien. Aquí van separados, a propósito.
+**An ambiguity to hand back to the owner:** RSP-030 calls the cost of an
+activity a "gasto" (expense), and RSP-008 calls what an employee owes the farm a
+"deuda" (debt). **They are not the same thing and they cannot share a table.**
+An `expense` is the farm's accounting and **never touches the worker's ledger**;
+a "debt" in RSP-007/008 is a `deduccion` in the ledger. Mix them and recording
+the cost of a spraying would dock money from somebody's wages. Here they are
+kept apart, on purpose.
 
-**Configuración**
+**Configuration**
 ```
 GET|PUT /v1/farm {name,phone,areaHa,country,city,address,timezone,currency}   W  own
 GET|POST|PATCH /v1/users                                                       W  own
 ```
-"Definir precios de trabajo" y "Gestión de usuarios" están marcados *pendiente de especificar* en el documento. Se entrega el mínimo que desbloquea (`PUT /v1/activities/{id}/rate` y alta de usuario con rol) y se deja escrita la pregunta al dueño: **¿el precio de una actividad tiene historial con vigencia por fechas, como ya lo tiene el precio semanal de la recolección?** Si la respuesta es sí, es una tabla más y hay que saberlo antes de codear, no después.
+"Setting work prices" and "User management" are marked *still to be specified*
+in the document. We ship the minimum that unblocks (`PUT /v1/activities/{id}/rate`
+and creating a user with a role) and leave the question written down for the
+owner: **does an activity's price have a dated validity history, the way the
+weekly picking price already does?** If the answer is yes, that is one more
+table and we need to know before writing the code, not after.
 
 ---
 
-## 3. Servicio cross-tenant (RSP-004, RSP-009)
+## 3. Cross-tenant service (RSP-004, RSP-009)
 
-**No rompe la regla del tenant en el token: la elude por diseño.** El registro es un **servicio aparte**, esquema propio, credenciales propias, sin acceso al schema de las fincas y sin ninguna ruta que devuelva una fila de un tenant. El token de finca se intercambia por uno con `aud: "registry"`; ahí el `farm_id` **no autoriza a leer nada** — es el sujeto del log de auditoría y la clave de la cuota. La clave de búsqueda es la cédula, un espacio de nombres global, no un tenant.
+**It does not break the tenant-in-the-token rule: it sidesteps it by design.**
+The registry is a **separate service**, its own schema, its own credentials, no
+access to the farm schema and no route that returns a row from a tenant. The
+farm token is exchanged for one with `aud: "registry"`; there, `farm_id`
+**authorises reading nothing** — it is the subject of the audit log and the key
+for the quota. The search key is the *cédula*, a global namespace, not a tenant.
 
 ```
 POST /registry/v1/lookups
   {documentType, documentNumber, purpose:"hiring", authorizationRef}
   -> {found, farmsWorked:3,
-      employmentSpans:[{from:"2024-01", to:"2024-06"}],   -- meses, nunca días
-      openDisputes:0, claims:[]}                          -- vacío mientras el flag esté apagado
-GET  /registry/v1/lookups/{id}            -- resultado asíncrono, para el caso sin internet
-GET  /registry/v1/subjects/{docHash}/access-log    -- quién me consultó (lo lee el trabajador)
+      employmentSpans:[{from:"2024-01", to:"2024-06"}],   -- months, never days
+      openDisputes:0, claims:[]}                          -- empty while the flag is off
+GET  /registry/v1/lookups/{id}            -- async result, for the no-internet case
+GET  /registry/v1/subjects/{docHash}/access-log    -- who looked me up (the worker reads it)
 POST /registry/v1/disputes {recordId, reason}
 ```
 
-**Público:** que la cédula existe y está verificada, **cuántas** fincas, en qué **meses**, y si hay disputas abiertas. **Nunca, ni al super-admin:** nombre de las fincas, saldos, deudas, anticipos, montos, kilos, productividad, labores concretas, teléfono, dirección, foto. La proyección es fija en código, no configurable — un campo configurable acaba encendido.
+**Public:** that the *cédula* exists and is verified, **how many** farms, in
+which **months**, and whether there are open disputes. **Never, not even to the
+super-admin:** the names of the farms, balances, debts, advances, amounts,
+kilos, productivity, specific work records, phone, address, photo. The
+projection is fixed in code, not configurable — a configurable field ends up
+switched on.
 
-**Quién llama:** solo `owner`/`administrator` de una finca activa que haya hecho opt-in explícito, con cuota (p. ej. 50/día) y `authorizationRef`: la finca **declara** que tiene la autorización escrita del candidato. Sin ese campo, `403 NO_AUTHORIZATION`. Es lo que la Ley 1581 de 2012 exige de todos modos, y convierte una consulta silenciosa en un acto atribuible.
+**Who may call:** only an `owner`/`administrator` of an active farm that has
+explicitly opted in, with a quota (say 50/day) and an `authorizationRef`: the
+farm **declares** that it holds the candidate's written authorisation. Without
+that field, `403 NO_AUTHORIZATION`. It is what Law 1581 of 2012 requires anyway,
+and it turns a silent lookup into an attributable act.
 
-**Se registra siempre** (RSP-009 lo pide como postcondición): `farm_id`, usuario, `purpose`, timestamp, resultado sí/no. Y —esta es la mitad que de verdad protege— **el trabajador puede leerlo**. Cuando alguien queda registrado como empleado, se le notifica quién lo consultó antes de contratarlo.
+**It is always logged** (RSP-009 asks for it as a postcondition): `farm_id`,
+user, `purpose`, timestamp, yes/no outcome. And — this is the half that actually
+protects anyone — **the worker can read it**. When somebody is registered as an
+employee, they are told who looked them up before hiring them.
 
-**Sin internet** (RSP-004): `POST /v1/workers` acepta el alta y encola la consulta; `GET /v1/workers/{id}/background-check` devuelve `pending|ready`. **La consulta nunca bloquea el alta del empleado.** Un servicio caído no puede impedir que alguien empiece a trabajar.
+**With no internet** (RSP-004): `POST /v1/workers` accepts the creation and
+queues the lookup; `GET /v1/workers/{id}/background-check` returns
+`pending|ready`. **The lookup never blocks creating the employee.** A service
+that is down cannot stop somebody from starting work.
 
-### La advertencia, para que el dueño decida con los ojos abiertos
+### The warning, so the owner decides with his eyes open
 
-RSP-009 incluye entre los "datos públicos" **las anotaciones realizadas**. Ahí está la lista negra, literal. Las anotaciones de RSP-007 son texto libre que una finca escribe sobre una persona; publicarlas por cédula a cualquier otra finca produce un expediente difamatorio, distribuido, no verificable y que la persona no sabe que existe. Con eso, un capataz enfadado deja a alguien sin trabajo en toda la región, y la plataforma es la responsable solidaria.
+RSP-009 includes **the notes written about the person** among the "public data".
+That is the blacklist, literally. The RSP-007 notes are free text one farm
+writes about a person; publishing them by *cédula* to any other farm produces a
+defamatory file — distributed, unverifiable, and unknown to the person it
+describes. With that, an angry foreman leaves somebody out of work across a
+whole region, and the platform is jointly liable.
 
-**Recomendación operativa:** las anotaciones nacen con `visibility='private'` y **no salen de la finca, nunca**. Compartir un hecho es un tipo distinto de registro (`shared_claim`) que solo se construye si el dueño lo pide, y solo con las cinco propiedades juntas: **(1)** hecho de un catálogo cerrado y verificable, no texto libre; **(2)** atribuido a una finca identificable ante el trabajador; **(3)** notificado a la persona al publicarse; **(4)** disputable, y una disputa lo **oculta de las consultas mientras se resuelve** —falla cerrado: una acusación en duda no circula—, con 15 días para sustanciarla o se retira; **(5)** caducidad automática a 24 meses.
+**Operational recommendation:** notes are born with `visibility='private'` and
+**never leave the farm, ever**. Sharing a fact is a different kind of record
+(`shared_claim`) that only gets built if the owner asks for it, and only with
+all five properties together: **(1)** a fact from a closed, verifiable
+catalogue, not free text; **(2)** attributed to a farm identifiable to the
+worker; **(3)** notified to the person when published; **(4)** disputable, and a
+dispute **hides it from lookups while it is being resolved** — it fails closed:
+an accusation in doubt does not circulate — with 15 days to substantiate it or
+it is withdrawn; **(5)** automatic expiry at 24 months.
 
-Sin las cinco, es un arma. **Entrega 2 construye solo los períodos de empleo y el log de consultas** —baratos, útiles, defendibles— y deja `claims` devolviendo `[]` detrás de un flag apagado. Encenderlo es una decisión del dueño, tomada por escrito, no un `if` que alguien activa un martes.
+Without all five, it is a weapon. **Delivery 2 builds only the employment
+periods and the lookup log** — cheap, useful, defensible — and leaves `claims`
+returning `[]` behind a flag that is off. Switching it on is the owner's
+decision, taken in writing, not an `if` somebody flips on a Tuesday.
 
 ---
 
-## 4. Polígonos: **PostGIS desde el inicio**
+## 4. Polygons: **PostGIS from the start**
 
-Un polígono en `jsonb` es un adorno: no valida, no calcula y no responde preguntas. El día que alguien pregunte "¿cuántas hectáreas tiene de verdad este lote?" o "¿este lote se solapa con el vecino?", hay que reescribir cada consulta *y* rellenar los datos hacia atrás con polígonos que quizá ya no sean válidos. PostGIS es una extensión disponible en RDS, Cloud SQL y Supabase; adoptarla cuesta una línea de migración (`geography(Polygon,4326)`) y se usan **tres** funciones y ninguna más: `ST_IsValid` (rechazar polígonos que se cruzan solos, `400 INVALID_GEOMETRY`), `ST_Area/10000` (las hectáreas calculadas que RSP-001 acabará necesitando junto a las declaradas) y `ST_Intersects` (avisar de solapes). En la frontera HTTP todo entra y sale como **GeoJSON**, así que la web y el móvil nunca ven PostGIS y cambiar de motor sigue siendo posible. No se construye un producto SIG; se construye la capacidad de responder tres preguntas.
+A polygon in `jsonb` is decoration: it does not validate, does not calculate and
+does not answer questions. The day somebody asks "how many hectares does this
+plot really have?" or "does this plot overlap the neighbour's?", every query has
+to be rewritten *and* the data backfilled with polygons that may no longer be
+valid. PostGIS is an extension available on RDS, Cloud SQL and Supabase;
+adopting it costs one line of migration (`geography(Polygon,4326)`) and uses
+**three** functions and no more: `ST_IsValid` (reject self-intersecting
+polygons, `400 INVALID_GEOMETRY`), `ST_Area/10000` (the calculated hectares
+RSP-001 will end up needing alongside the declared ones) and `ST_Intersects`
+(warn about overlaps). At the HTTP boundary everything goes in and out as
+**GeoJSON**, so the web and the mobile app never see PostGIS and changing engine
+stays possible. We are not building a GIS product; we are building the ability
+to answer three questions.
 
 ---
 
-## 5. Catálogo público (RSP-010, RSP-018): **servicio aparte, y se importa por copia, no por referencia**
+## 5. Public catalogue (RSP-010, RSP-018): **a separate service, and it is imported by copy, not by reference**
 
-Es un servicio global de solo lectura —`GET /catalog/v1/activities?since=` y `/catalog/v1/products?since=`, versionado por snapshot, cacheable, sin auth— y **no** un esquema compartido dentro de la API multi-tenant: mezclar una tabla global sin `farm_id` con RLS activa es justo la excepción que un día alguien copia mal.
+It is a global read-only service — `GET /catalog/v1/activities?since=` and
+`/catalog/v1/products?since=`, versioned by snapshot, cacheable, no auth — and
+**not** a shared schema inside the multi-tenant API: mixing a global table with
+no `farm_id` into a database with RLS active is precisely the exception somebody
+copies wrongly one day.
 
-La decisión importante no es dónde vive, sino **cómo entra**: `POST /v1/activities/import {catalogIds[]}` **copia** las filas a las tablas de la finca y guarda `source_catalog_id` solo como procedencia. Nunca una clave foránea que cruce la frontera. Motivo: si una actividad de la finca *referencia* el catálogo global, el día que alguien renombre "Recolección por kilos" o cambie su unidad, cambia bajo labores ya liquidadas — un dato que decide dinero mutando desde fuera y sin auditoría. Copiar también hace que la finca siga funcionando cuando el catálogo esté caído, que es siempre la mitad de la temporada.
+The important decision is not where it lives but **how it comes in**:
+`POST /v1/activities/import {catalogIds[]}` **copies** the rows into the farm's
+tables and keeps `source_catalog_id` only as provenance. Never a foreign key
+crossing the boundary. Reason: if a farm's activity *references* the global
+catalogue, then the day somebody renames "Recolección por kilos" or changes its
+unit, it changes underneath work records that have already been settled — data
+that decides money, mutating from outside and with no audit trail. Copying also
+means the farm keeps working when the catalogue is down, which is always half
+the season.

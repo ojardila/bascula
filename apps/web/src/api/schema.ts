@@ -42,8 +42,13 @@ export interface paths {
          *     because it lives in Postgres, a cap on farms per email address, and
          *     mandatory email verification before the first session.
          *
-         *     An address that already has an account may open a second farm, but only
-         *     by presenting that account's password.
+         *     An address that already has an account is refused on the address alone,
+         *     with 409 EMAIL_TAKEN, and the password in the body is never looked at.
+         *     It used to be: a wrong password answered 409 and the right one answered
+         *     201, which made this form a place to test guesses without
+         *     authenticating. Adding a farm to an account that exists is now
+         *     `POST /v1/farms`, behind that account's own session, and the
+         *     farms-per-account cap went with it.
          */
         post: operations["signup"];
         delete?: never;
@@ -193,6 +198,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/farms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add another farm to the account that is signed in
+         * @description **Contract change for the console.** The screen that used to add a
+         *     second farm by POSTing `/v1/signup` with an existing owner's email and
+         *     password must now POST here with that owner's access token, and drop
+         *     the password field from the form. `/v1/signup` no longer accepts the
+         *     credentials of an account that exists: it answers 409 EMAIL_TAKEN on
+         *     the address alone, whatever password is sent.
+         *
+         *     The reason is that the old shape was a password oracle. An
+         *     unauthenticated caller could send an address with a guessed password
+         *     and read the answer: 409 meant wrong, 201 meant right. A session is the
+         *     proof of ownership this route needs, and it is one the account can see
+         *     and revoke.
+         *
+         *     The farms-per-account cap moved here with it, and answers 409
+         *     FARM_LIMIT_REACHED with `details.owned` and `details.limit`.
+         *
+         *     No token comes back. The tenant travels in the access token and this
+         *     route mints none: the caller's current session still points at the farm
+         *     it was opened for. To work in the new farm, log in again with its
+         *     `farmId` — the same call an account belonging to several farms already
+         *     makes.
+         *
+         *     Any role may call it. Owning a farm is a property of the account and
+         *     not of the role it holds on somebody else's farm.
+         */
+        post: operations["createFarm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/farms": {
         parameters: {
             query?: never;
@@ -237,12 +285,25 @@ export interface paths {
         head?: never;
         /**
          * Suspend a farm, or bring it back
-         * @description Suspension is not a delete and it is not instant. Login and refresh
-         *     both refuse a suspended farm, so a phone already holding an access
-         *     token keeps working until that token expires — at most fifteen minutes.
-         *     That is the intended trade: a shorter token to make suspension
-         *     immediate would mean refreshing every few minutes on a handset that
-         *     spends the day without signal.
+         * @description Suspension is not a delete, and it takes effect on the NEXT REQUEST.
+         *
+         *     It used to take up to fifteen minutes. Login and refresh refused a
+         *     suspended farm and nothing else did, so an access token issued a minute
+         *     before the suspension kept working until it expired: the farm went on
+         *     settling, paying and voiding for a quarter of an hour after somebody
+         *     decided it must not — longer than a payroll run. The check now runs in
+         *     the tenant middleware, in the round trip that pins the transaction to
+         *     the farm, and every authenticated route answers 403 FARM_SUSPENDED at
+         *     once. The access token stays long, because the handset that spends the
+         *     day without signal is the one that would pay for a short one.
+         *
+         *     The platform administrator is exempt, and only the platform
+         *     administrator: the console's own token is pinned to a farm like anybody
+         *     else's, and suspending that farm would lock the person holding the lever
+         *     out of the room it is in. A farm role, however senior, is not exempt.
+         *
+         *     Rows stay. Bringing the farm back is the same call with
+         *     `status: active`, and everything works again on the next request.
          */
         patch: operations["adminSetFarmStatus"];
         trace?: never;
@@ -1348,6 +1409,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/settlements/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Free the weighings a void settlement is still holding
+         * @description The way out of a settlement that is `void` and whose lines never got a
+         *     `voidedAt`. The season import used to create that shape, and nothing
+         *     could undo it: `POST /v1/settlements/{id}/void` answers 409
+         *     SETTLEMENT_ALREADY_VOID before it looks at a line, the partial unique
+         *     index holds each payable while its line lives, and DELETE is revoked
+         *     from the application role on both tables. The pesada was worked, cannot
+         *     be paid, and appears in no pending list — because the lock says it is
+         *     already claimed.
+         *
+         *     It does the two things a void does and this settlement never had done to
+         *     it: the live lines get their `voidedAt`, which releases the payables, and
+         *     any `devengo` with no reversal against it is reversed. It is the second
+         *     half of a void that stopped early, which is why it is a route and not a
+         *     script somebody runs with psql.
+         *
+         *     **The settlement must already be void.** A live settlement's lines are
+         *     the lock that stops the same weighing being paid twice, so releasing
+         *     them would be a second door to double payment; the way to undo a live
+         *     settlement is to void it. That refusal is 409 SETTLEMENT_NOT_VOID.
+         *
+         *     **`reason` is required** and cannot be blank. This puts money back into
+         *     circulation — the weighing becomes payable again and the next settlement
+         *     pays it — and the row it writes is append-only. `id` names the release
+         *     and is the key a resend is recognised by: sent again with the same `id`
+         *     it answers 200 with the record that already exists and writes nothing.
+         *
+         *     The owner's alone, one notch stricter than the void beside it: it is a
+         *     repair of the farm's books rather than a day's administration.
+         */
+        post: operations["releaseSettlement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/payments": {
         parameters: {
             query?: never;
@@ -2011,9 +2121,29 @@ export interface paths {
         };
         /**
          * The weeks, with their kilos and their value
-         * @description Newest first. `finished` marks a week that is over: a running week's
-         *     total is not comparable with a finished one, and a list that did not
-         *     say so would invite the comparison by eye.
+         * @description Newest first, and **every week between the first and the last, including
+         *     the ones nobody worked.** A week with no weighings comes back with
+         *     `records: 0` and `kg: null`, not as an absence: skipped, it made the two
+         *     weeks either side of it look adjacent, so a chart drew a straight line
+         *     over a fortnight of rain and the season reading compared two weeks that
+         *     are not consecutive.
+         *
+         *     Zero records is a fact — nothing was written down. Null kilos is the
+         *     honest consequence: whether nobody picked or nobody recorded it is not
+         *     something this database can tell, and a 0.0 there would be the reading
+         *     silently choosing one of the two.
+         *
+         *     Weeks are never invented outside the span of what was recorded: `from`
+         *     and `to` narrow the calendar, they do not extend it, so asking
+         *     `from=1900-01-01` does not push a season off the end of the list.
+         *
+         *     `finished` marks a week that is over. `partialWindow` is a different
+         *     fact, and both can be true: it marks a row whose `from`/`to` cut the week
+         *     short, with `coveredFrom` and `coveredTo` saying exactly which days were
+         *     summed. Three days of a week used to come back looking exactly like a
+         *     seven-day answer — same `weekStart`, same `finished: true`, a tenth of
+         *     the kilos — which next to full weeks reads as a collapse rather than as
+         *     a shorter question.
          */
         get: operations["reportWeeks"];
         put?: never;
@@ -2082,6 +2212,14 @@ export interface paths {
          *     one. Their kilos are counted here in full, so the same kilos may appear
          *     again under the other crop — which is why the count is sent rather than
          *     silently halved between them.
+         *
+         *     `byWeek` is drawn on the same calendar the weekly list uses: every week
+         *     from this crop's first to its last, with the empty ones in it, each with
+         *     `records: 0` and `kg: null`. A lot that yielded nothing for a fortnight
+         *     has to look like a lot that yielded nothing for a fortnight, not like a
+         *     lot that was picked every week. The span is this crop's own, so a plot
+         *     picked for three weeks of a six-month season does not come back as
+         *     twenty empty rows.
          */
         get: operations["reportCrop"];
         put?: never;
@@ -2384,6 +2522,39 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SettlementReleaseResult: {
+            release: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                settlementId: string;
+                /** @description How many lines were freed. A real count; zero means zero. */
+                itemsReleased: number;
+                /**
+                 * @description WHICH weighings came back — what to go and look at, which is what
+                 *     an audit is for.
+                 */
+                payableIds: string[];
+                /**
+                 * Format: int64
+                 * @description The earning this release had to cancel because the original void
+                 *     never did. Zero is a real answer: most void settlements did
+                 *     reverse their devengo.
+                 */
+                reversedCents: number;
+                reason: string;
+                /** Format: uuid */
+                releasedBy?: string | null;
+                /** Format: date-time */
+                at: string;
+                /**
+                 * Format: date-time
+                 * @description When the settlement was voided, so the record carries the distance between the void and its repair.
+                 */
+                settlementVoidedAt?: string | null;
+            };
+            settlement: components["schemas"]["Settlement"];
+        };
         /**
          * @description The machine-readable half of every failure. The client branches on
          *     this; the translation lives in the client, which is why `message` is
@@ -2393,7 +2564,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -3980,6 +4151,24 @@ export interface components {
              *     comparison by eye.
              */
             finished: boolean;
+            /**
+             * Format: date
+             * @description The first day this row summed — the week, narrowed by `from`.
+             */
+            coveredFrom: string;
+            /**
+             * Format: date
+             * @description The last day this row summed — the week, narrowed by `to`.
+             */
+            coveredTo: string;
+            /**
+             * @description The days summed are not the whole Monday-to-Sunday week, because
+             *     the window asked for cut it short. A different fact from
+             *     `finished`, which is about the week still running: a row can be
+             *     either, both or neither, and a client that conflated them would
+             *     badge the wrong ones.
+             */
+            partialWindow: boolean;
         };
         ReportWeeksResult: {
             scope: components["schemas"]["ReportScope"];
@@ -4171,6 +4360,13 @@ export interface components {
             weekStart: string;
             /** @description Null is a week whose kilos could not be established, never a week of nothing. */
             kg: number | null;
+            /**
+             * @description Weighings behind this week. Zero is a real zero and the reason `kg`
+             *     is null beside it: the week is IN the series, empty, rather than
+             *     missing from it — which is what decides whether the weeks either
+             *     side of it are consecutive.
+             */
+            records?: number;
         };
         HarvestShape: {
             /**
@@ -4179,7 +4375,14 @@ export interface components {
              *     peak yet" and "a peak of nothing" are different answers.
              */
             peak: components["schemas"]["HarvestWeekTotal"] | null;
-            /** @description Consecutive finished weeks that fell by more than 25%. */
+            /**
+             * @description Consecutive finished weeks that fell by more than 25% — and
+             *     consecutive means on the CALENDAR, not in this array. The run stops
+             *     at the first week that is not the calendar week before the one being
+             *     compared, and at the first week whose kilos are unknown. Not knowing
+             *     whether last week fell is not the same as knowing it did not, and
+             *     this number's job is to justify moving people off a plot.
+             */
             fallingWeeks: number;
             /**
              * @description Two falling weeks AND the peak already behind us. Two alone could
@@ -4201,15 +4404,34 @@ export interface components {
             plotCropId: string | null;
             /** Format: date */
             currentWeek: string;
-            /** @description Newest first, as the query returns them. */
+            /**
+             * @description Newest first, and CONTIGUOUS: every Monday from the first week with
+             *     work to the last, with the empty ones in it. Draw it as it comes; do
+             *     not join `weeks[i]` to `weeks[i+1]` on the assumption that they are
+             *     neighbours in time — here they always are, and that is the point.
+             */
             weeks: components["schemas"]["HarvestWeekTotal"][];
             shape: components["schemas"]["HarvestShape"];
             /**
-             * @description Weeks in the series left out of the reading because their kilos
-             *     could not be established. A reading taken over a series with holes
-             *     in it is not the same reading, and this is the only way to know.
+             * @description Weeks that HAD work and whose kilos could not be established — every
+             *     weighing in them was taken in a unit with no conversion. They are in
+             *     the series and out of the reading.
              */
             weeksWithoutKilos: number;
+            /**
+             * @description Weeks in which nothing was recorded at all. A separate number and
+             *     not a refinement of the one above, because the two are different
+             *     facts: "we could not price what you weighed" is a unit that needs a
+             *     kg_factor, and "there is nothing here" is a fortnight nobody picked,
+             *     or nobody wrote down.
+             *
+             *     It used to be neither, because the week was not in the series at
+             *     all: the list skipped it, `weeksWithoutKilos` counted 0, and the
+             *     curve joined the weeks either side of it into a straight line. A
+             *     hole that reports itself as no holes is the shape of error these
+             *     reports are written against.
+             */
+            weeksWithoutRecords: number;
         };
         /**
          * @description The wire name of a table, which is the handset's name and not the
@@ -4240,6 +4462,55 @@ export interface components {
              */
             cursor?: number;
         };
+        /**
+         * @description What the server says about the cursor this reader is holding.
+         *
+         *     The pull skips a change the caller's role may not see and consumes its
+         *     seq anyway — it must, or a weigher's cursor would stop at the first
+         *     payroll of the season. That skip is permanent: the feed gets one row per
+         *     write and no second event about a row is ever produced. So a cursor is
+         *     only resumable by the reader it was served to, under the role it was
+         *     served under, and this object is where that is said.
+         */
+        ReplayOrder: {
+            /**
+             * @description True when this reader has to start again from `fromCursor`. On the
+             *     handshake it is a warning; on the pull it is a 409 REPLAY_REQUIRED,
+             *     unless the pull is already at cursor 0, in which case the pull IS
+             *     the replay and this object arrives on the 200 instead.
+             */
+            required: boolean;
+            /**
+             * Format: int64
+             * @description Where to start again — 0, which the feed's backfill makes a complete
+             *     bootstrap rather than an empty farm. Null when nothing is required:
+             *     a 0 there would read as "replay from the beginning", which is the
+             *     opposite instruction.
+             */
+            fromCursor?: number | null;
+            /**
+             * @description `role_changed`: the same account, a different role — the promoted
+             *     weigher, or the demoted administrator. `device_reassigned`: this
+             *     handset has consumed this farm's feed for somebody else — the phone
+             *     that changed hands. `device_unknown`: this account has never been
+             *     seen consuming this farm's feed and is presenting a cursor, so what
+             *     it was served under cannot be known.
+             * @enum {string}
+             */
+            reason?: "device_unknown" | "role_changed" | "device_reassigned";
+            /**
+             * @description Drop the `settlement` and `ledgerEntry` rows this handset is holding
+             *     before applying the replay. Set when the reader may hold rows its
+             *     current role would not be sent today: a demotion, or a change of
+             *     holder. A promotion never sets it.
+             *
+             *     It names the money entities and nothing else. It is NOT a wipe: the
+             *     outbox is work that has reached no other machine, and dropping it
+             *     would lose weighings that exist nowhere else.
+             */
+            purgeMoney: boolean;
+            previousRole?: components["schemas"]["Role"];
+        };
         SyncHandshake: {
             /** Format: uuid */
             farmId: string;
@@ -4267,6 +4538,18 @@ export interface components {
              */
             behind: number;
             role: components["schemas"]["Role"];
+            /**
+             * @description Never absent and never null. `required: false` is the ordinary
+             *     answer; a handset that could not tell "no replay owed" from "the
+             *     server did not say" would have to guess, and the safe guess is the
+             *     expensive one.
+             *
+             *     When it is required, `behind` above is counted from 0 and not from
+             *     the cursor that was sent — measuring the distance from a cursor the
+             *     handset is about to abandon is how the status chip came to read "up
+             *     to date" to a phone with a hole in its book.
+             */
+            replay: components["schemas"]["ReplayOrder"];
             capabilities: {
                 settleOffline: boolean;
                 writePlots: boolean;
@@ -4379,6 +4662,15 @@ export interface components {
              */
             cursor: number;
             more: boolean;
+            /**
+             * @description Present ONLY when this pull is itself a replay that was owed: cursor
+             *     0, after a role change or a change of holder. `purgeMoney` says
+             *     whether to drop the money rows already held before applying what
+             *     follows — this is the one moment at which that is both safe and
+             *     meaningful, because what it drops is about to arrive again, minus
+             *     whatever this role may not see.
+             */
+            replay?: components["schemas"]["ReplayOrder"];
             /**
              * @description Present ONLY in the last batch, and only for owner and admin. A
              *     checksum: the handset recomputes and compares, and a difference is
@@ -4729,8 +5021,9 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /**
-             * @description EMAIL_TAKEN when the address exists and the password did not match,
-             *     FARM_LIMIT_REACHED when it already owns as many farms as it may.
+             * @description EMAIL_TAKEN — the address already has an account. Open a session and
+             *     use POST /v1/farms to add another farm to it. This answer does not
+             *     depend on the password and says nothing about it.
              */
             409: {
                 headers: {
@@ -4981,6 +5274,103 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    createFarm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description Names the farm, and makes this write idempotent by
+                     *     (farm_id, id) like every other write here. Sent again it
+                     *     answers 200 with the farm it already made, so a double click
+                     *     cannot leave an empty second farm counted against the cap.
+                     *     An id that belongs to a farm this account is not in is 409
+                     *     IDEMPOTENCY_KEY_REUSED, never somebody else's farm.
+                     */
+                    id?: string;
+                    name: string;
+                    /**
+                     * @description An IANA name Postgres recognises, or 400.
+                     * @default America/Bogota
+                     */
+                    timezone?: string;
+                    /** @default COP */
+                    currency?: string;
+                    /**
+                     * Format: int64
+                     * @description The farm's standing price per unit. Must be positive.
+                     */
+                    priceCents: number;
+                };
+            };
+        };
+        responses: {
+            /**
+             * @description The farm this `id` already named. Nothing was written — this is the
+             *     answer to a resend, and to a double click.
+             */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        farmId: string;
+                        name: string;
+                        timezone?: string;
+                        currency?: string;
+                        role: components["schemas"]["Role"];
+                        owned: number;
+                        limit: number;
+                    };
+                };
+            };
+            /** @description The farm exists, seeded, with the caller as its owner. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        farmId: string;
+                        name: string;
+                        timezone?: string;
+                        currency?: string;
+                        role: components["schemas"]["Role"];
+                        /** @description Farms this account owns, including this one. */
+                        owned: number;
+                        /** @description The cap that applies to this account. */
+                        limit: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description FARM_LIMIT_REACHED — the account owns as many farms as it may.
+             *
+             *     IDEMPOTENCY_KEY_REUSED — that `id` already names a farm this account
+             *     is not a member of.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     adminListFarms: {
@@ -6903,6 +7293,72 @@ export interface operations {
             };
         };
     };
+    releaseSettlement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description Names this release; the key a resend is recognised by.
+                     */
+                    id?: string;
+                    /** @description What the operator was looking at. Recorded, and not blank. */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The release this `id` already performed. Nothing was written. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementReleaseResult"];
+                };
+            };
+            /** @description The payables are free. 200 instead on a resend of the same `id`. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementReleaseResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description SETTLEMENT_NOT_VOID — the settlement is live, and its lines are the
+             *     lock that stops a weighing being paid twice. Void it instead.
+             *
+             *     NOTHING_TO_RELEASE — it holds no payable and owes no reversal, so
+             *     there is nothing trapped behind it. A repair that repaired nothing
+             *     is not a success: somebody is looking at the wrong document.
+             *
+             *     IDEMPOTENCY_KEY_REUSED — that `id` already names the release of a
+             *     different settlement.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     createPayment: {
         parameters: {
             query?: never;
@@ -8454,6 +8910,23 @@ export interface operations {
                 cursor?: number;
                 /** @description At most 500, which is also the default. */
                 limit?: number;
+                /**
+                 * @description **Send it.** The same uuid the handshake sends, and the same one the
+                 *     session was opened with.
+                 *
+                 *     It is half the key of the reader registry, which is what decides
+                 *     whether this cursor may be resumed at all (see the 409 below). A
+                 *     client that names no device is filed under its account's unnamed
+                 *     reader, and two unnamed clients of one account then share a cursor:
+                 *     whichever pulls first clears a replay order for both, and the other
+                 *     keeps an incomplete book. Naming the device is what gives a handset
+                 *     a reader of its own.
+                 *
+                 *     Optional, and a value that is not a uuid is a 400 rather than a
+                 *     silent fall back to the unnamed reader — falling back would produce
+                 *     exactly the sharing this parameter exists to avoid.
+                 */
+                deviceId?: string;
             };
             header?: never;
             path?: never;
@@ -8461,7 +8934,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The changes after that cursor. */
+            /**
+             * @description The changes after that cursor. When the pull is itself a replay that
+             *     was owed — cursor 0, after a role change or a change of holder — the
+             *     body also carries `replay`, whose `purgeMoney` says whether the
+             *     handset must drop the settlements and ledger movements it holds
+             *     before applying what follows.
+             */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -8479,6 +8958,18 @@ export interface operations {
              *     `details.oldestRetainedSeq` says where the feed starts. The handset
              *     pulls again from cursor 0. Skipping the gap in silence would lose
              *     changes for ever, which is why this is an error and not a shrug.
+             *
+             *     REPLAY_REQUIRED — that cursor was served to a different role, or to
+             *     a different session on this handset, and the pull cannot answer it
+             *     incrementally. The changes it skipped by role were skipped for ever:
+             *     the feed gets one row per write and no second event about a row is
+             *     ever produced, so an administrator resuming a weigher's cursor would
+             *     be told `changes: []` about a book with holes in it.
+             *     `details.replayFrom` is 0, `details.reason` is one of
+             *     `device_unknown`, `role_changed` or `device_reassigned`, and
+             *     `details.purgeMoney` says whether the handset must also drop the
+             *     settlements and ledger movements it is already holding. It never
+             *     asks the handset to drop its outbox.
              */
             409: {
                 headers: {

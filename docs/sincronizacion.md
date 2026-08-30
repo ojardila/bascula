@@ -1,89 +1,91 @@
-# Báscula — Sincronización móvil ↔ servidor
+# Báscula — Mobile ↔ server sync
 
-Especificación de entrega. Está escrita para que dos parejas la implementen sin
-volver a preguntar: cada sección dice **qué se hace**, no **qué opciones hay**.
-Donde hay una opción abierta, está en §10 y es del dueño.
+A delivery specification. It is written so that two pairs can implement it
+without having to ask again: every section says **what gets done**, not **what
+the options are**. Where an option is genuinely open, it is in §10 and it is the
+owner's.
 
-El sistema del que habla ya existe y está en producción:
+The system it talks about already exists and is in production:
 
-- El móvil corre en una finca, en plena cosecha, sobre SQLite `user_version = 5`,
-  con claves primarias `INTEGER PRIMARY KEY AUTOINCREMENT`.
-- El servidor tiene 66 rutas, Postgres con RLS, UUIDv7 en todas las tablas, y el
-  candado anti doble pago en `ux_items_payable_live`.
-- La decisión 3 del dueño puso a la web a registrar labores **ya**. Las dos
-  verdades existen desde hoy, y hoy pagar desde los dos lados paga dos veces.
+- The mobile app runs on one farm, mid-harvest, on SQLite `user_version = 5`,
+  with `INTEGER PRIMARY KEY AUTOINCREMENT` primary keys.
+- The server has 66 routes, Postgres with RLS, UUIDv7 on every table, and the
+  double-payment lock in `ux_items_payable_live`.
+- The owner's decision 3 put the web to work recording work records **now**. Two
+  truths exist as of today, and today paying from both sides pays twice.
 
-Nada de lo que sigue puede perder ni duplicar una pesada, una liquidación o un
-pago que ya existe en el teléfono de esa finca.
+Nothing that follows may lose or duplicate a weighing, a settlement or a payment
+that already exists on that farm's phone.
 
 ---
 
-## 0. Lo que este documento cierra, y con qué choca
+## 0. What this document closes, and what it clashes with
 
-### 0.1 Las cinco decisiones
+### 0.1 The five decisions
 
-1. **El servidor es dueño del candado. El teléfono no liquida sin haber
-   sincronizado.** El efectivo en campo sin señal se registra como `anticipo`,
-   que no necesita candado porque no reclama ninguna pesada. §6.
-2. **El teléfono no cambia sus claves primarias.** Añade una columna `uuid` a
-   cada tabla, la rellena hacia atrás, y sincroniza por UUID. Los enteros se
-   quedan para los joins locales. §1.
-3. **El mecanismo es un feed de cambios con secuencia por finca**, no un
-   push/pull con marca de agua por tabla. El teléfono lleva un solo número. §3.
-4. **La dirección se decide tabla por tabla y no es simétrica.** Precios y
-   parcelas son de lectura en el teléfono; pesadas y movimientos de dinero son
-   de escritura; saldos y reportes no viajan jamás. §2.
-5. **Ningún conflicto se resuelve en silencio.** O lo resuelve una regla
-   escrita aquí, o termina delante de una persona con nombre, fecha e importe. §5, §7.
+1. **The server owns the lock. The phone does not settle without having
+   synced.** Cash handed over in the field with no signal is recorded as an
+   `anticipo`, which needs no lock because it claims no weighing. §6.
+2. **The phone does not change its primary keys.** It adds a `uuid` column to
+   each table, backfills it, and syncs by UUID. The integers stay for local
+   joins. §1.
+3. **The mechanism is a change feed with a per-farm sequence**, not push/pull
+   with a per-table watermark. The phone carries a single number. §3.
+4. **Direction is decided table by table and is not symmetric.** Prices and
+   plots are read-only on the phone; weighings and money movements are
+   writeable; balances and reports never travel. §2.
+5. **No conflict is resolved in silence.** Either a rule written here resolves
+   it, or it ends up in front of a person with a name, a date and an amount.
+   §5, §7.
 
-### 0.2 Dónde choca con lo ya escrito
+### 0.2 Where it clashes with what is already written
 
-| Documento | Lo que dice | Lo que este documento decide |
+| Document | What it says | What this document decides |
 |---|---|---|
-| `sync-and-roles.md` | «una liquidación lleva el conjunto de pesadas que reclama, y el servidor rechaza la que ya está tomada; el dispositivo rechazado re-deriva» | **Se rechaza.** Re-derivar no devuelve el efectivo que ya salió del bolsillo. El teléfono no liquida sin sincronizar. §6 |
-| `sync-and-roles.md` | ordenación por «contador por dispositivo + orden de llegada al servidor» | **Se sustituye** por la secuencia de commit del servidor con horizonte `xmin`. Hay un solo servidor: no hacen falta relojes distribuidos. §3.4 |
-| `modelo-datos.md` §3 | «el móvil añade una columna `uuid` a cada tabla y hace backfill, mantiene su PK entera» | **Se confirma y se detalla.** §1 |
-| `modelo-datos.md` rev. 2 | la tabla pagable se llama `labors`; existe una vista `pickups` | **Obsoleto.** Las migraciones crearon `work_records` y no hay vista `pickups`. La compatibilidad la da la fachada HTTP `/v1/pickups`. |
-| `openapi.yaml`, convenciones | «toda escritura acepta `id` del cliente y es idempotente por `(farm_id, id)`» | **Hoy es falso para el ledger.** `store.AddLedgerEntry` hace un `INSERT` pelado; reenviar un pago tras un timeout choca contra la PK. Es un bug y hay que arreglarlo antes de encender el push. §4.2 |
-| `arquitectura-api.md` §8 | «sync offline: no ahora» | Este documento **es** ese después. Su fecha límite ya no la fija una preferencia sino la fachada: `/v1/pickups` sólo puede traducir `cropId → plot_crop` mientras la relación sea 1:1. §8 |
-| `decisiones.md` §3 | «durante la transición se paga desde un solo lado» | Esa mitigación **no termina cuando se despliega el sync**, sino en la fase 6 de §8. Antes de eso siguen siendo dos bases. |
+| `sync-and-roles.md` | "a settlement carries the set of pickup ids it claims, and the server rejects a settlement claiming a pickup that another settlement already holds; the rejected device re-derives" | **Rejected.** Re-deriving does not give back cash that already left somebody's pocket. The phone does not settle without syncing. §6 |
+| `sync-and-roles.md` | ordering by "a per-device counter plus arrival order at the server" | **Replaced** by the server's commit sequence with an `xmin` horizon. There is one server: distributed clocks are not needed. §3.4 |
+| `modelo-datos.md` §3 | "the mobile app adds a `uuid` column to each table and backfills it, keeping its integer PK" | **Confirmed and detailed.** §1 |
+| `modelo-datos.md` rev. 2 | the payable table is called `labors`; a `pickups` view exists | **Obsolete.** The migrations created `work_records` and there is no `pickups` view. Compatibility comes from the HTTP facade `/v1/pickups`. |
+| `openapi.yaml`, conventions | "every write accepts a client-supplied `id` and is idempotent on `(farm_id, id)`" | **Today this is false for the ledger.** `store.AddLedgerEntry` does a bare `INSERT`; re-sending a payment after a timeout collides with the PK. It is a bug and it has to be fixed before push is switched on. §4.2 |
+| `arquitectura-api.md` §8 | "offline sync: not now" | This document **is** that later. Its deadline is no longer set by a preference but by the facade: `/v1/pickups` can only translate `cropId → plot_crop` while the relation is 1:1. §8 |
+| `decisiones.md` §3 | "during the transition, pay from one side only" | That mitigation **does not end when sync is deployed**, but at phase 6 of §8. Before that they are still two databases. |
 
 ---
 
-## 1. Identidad: de `INTEGER AUTOINCREMENT` a UUIDv7
+## 1. Identity: from `INTEGER AUTOINCREMENT` to UUIDv7
 
-### 1.1 La regla
+### 1.1 The rule
 
-El teléfono **no** reescribe sus claves primarias. Añade `uuid TEXT` a cada
-tabla sincronizable, lo rellena hacia atrás, y a partir de ahí lo genera en el
-momento de insertar. El entero sigue siendo la PK y sigue siendo el destino de
-todos los joins locales, de `settlement_items.pickupId`, de `ledger.settlementId`
-y de `ledger.reversesId`.
+The phone does **not** rewrite its primary keys. It adds `uuid TEXT` to each
+syncable table, backfills it, and from then on generates it at insert time. The
+integer stays the PK and stays the target of every local join, of
+`settlement_items.pickupId`, of `ledger.settlementId` and of
+`ledger.reversesId`.
 
-El motivo es de riesgo, no de gusto. Reescribir la PK de `pickups` obliga a
-reescribir `settlement_items.pickupId` **bajo el índice parcial único que decide
-quién ya cobró**, en la base de datos que hoy tiene el único ejemplar de la
-cosecha de una finca. Añadir una columna no puede perder una fila; reescribir
-una PK sí. El coste es ~36 bytes por fila y un `JOIN` extra en la capa de sync,
-y ninguno de los dos se nota en las ~55 000 filas al año de esta finca.
+The reason is risk, not taste. Rewriting the PK of `pickups` forces a rewrite of
+`settlement_items.pickupId` **underneath the unique partial index that decides
+who has already been paid**, in the database that today holds the only copy of a
+farm's harvest. Adding a column cannot lose a row; rewriting a PK can. The cost
+is ~36 bytes per row and one extra `JOIN` in the sync layer, and neither shows
+up in this farm's ~55,000 rows a year.
 
-### 1.2 La migración local, `user_version = 6`
+### 1.2 The local migration, `user_version = 6`
 
 ```sql
--- apps/mobile/src/schema.ts, SYNC_SCHEMA, aplicada en migrate() bajo v < 6.
--- Ninguna sentencia de este bloque borra, reescribe ni reordena una fila
--- existente. Es la propiedad que la hace segura a mitad de cosecha.
+-- apps/mobile/src/schema.ts, SYNC_SCHEMA, applied in migrate() under v < 6.
+-- No statement in this block deletes, rewrites or reorders an existing row.
+-- That is the property that makes it safe mid-harvest.
 
 ALTER TABLE people           ADD COLUMN uuid TEXT;
 ALTER TABLE crops            ADD COLUMN uuid TEXT;
 ALTER TABLE pickups          ADD COLUMN uuid TEXT;
-ALTER TABLE cost_overrides   ADD COLUMN uuid TEXT;   -- (farm, monday) en el servidor
+ALTER TABLE cost_overrides   ADD COLUMN uuid TEXT;   -- (farm, monday) on the server
 ALTER TABLE settlements      ADD COLUMN uuid TEXT;
 ALTER TABLE settlement_items ADD COLUMN uuid TEXT;
 ALTER TABLE ledger           ADD COLUMN uuid TEXT;
 
--- Los punteros, duplicados en su forma UUID. El entero manda localmente; el
--- UUID es lo único que sale del teléfono.
+-- The pointers, duplicated in their UUID form. The integer rules locally; the
+-- UUID is the only thing that leaves the phone.
 ALTER TABLE pickups          ADD COLUMN personUuid   TEXT;
 ALTER TABLE pickups          ADD COLUMN cropUuid     TEXT;
 ALTER TABLE settlement_items ADD COLUMN payableUuid  TEXT;   -- ex pickupId
@@ -99,10 +101,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_items_uuid     ON settlement_items(uuid);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ledger_uuid    ON ledger(uuid);
 ```
 
-### 1.3 El relleno hacia atrás
+### 1.3 The backfill
 
-Sí, se rellenan. Y se rellenan con **UUIDv7 sembrado con el `createdAt` de la
-fila**, no con v4 ni con `randomUUID()`:
+Yes, they get backfilled. And they get backfilled with a **UUIDv7 seeded from
+the row's own `createdAt`**, not with v4 and not with `randomUUID()`:
 
 ```ts
 /**
@@ -120,10 +122,10 @@ fila**, no con v4 ni con `randomUUID()`:
 export function uuidv7At(createdAt: string): string { /* … */ }
 ```
 
-El relleno recorre las tablas en orden de dependencia
-(`people, crops → pickups → settlements → settlement_items → ledger`) y va
-`WHERE uuid IS NULL`, por lotes de 500 dentro de una transacción cada uno. Al
-final, la migración **verifica y falla ruidosamente** si algo quedó fuera:
+The backfill walks the tables in dependency order
+(`people, crops → pickups → settlements → settlement_items → ledger`) going
+`WHERE uuid IS NULL`, in batches of 500, each inside a transaction. At the end,
+the migration **verifies and fails loudly** if anything was left out:
 
 ```sql
 SELECT (SELECT COUNT(*) FROM people           WHERE uuid IS NULL)
@@ -132,221 +134,223 @@ SELECT (SELECT COUNT(*) FROM people           WHERE uuid IS NULL)
      + (SELECT COUNT(*) FROM settlements      WHERE uuid IS NULL)
      + (SELECT COUNT(*) FROM settlement_items WHERE uuid IS NULL OR payableUuid IS NULL)
      + (SELECT COUNT(*) FROM ledger           WHERE uuid IS NULL) AS missing;
--- missing > 0  =>  no se avanza user_version. Se prefiere una app que no arranca
--- a una app que sincroniza la mitad de una cosecha.
+-- missing > 0  =>  user_version is not advanced. An app that will not start is
+-- preferable to an app that syncs half a harvest.
 ```
 
-### 1.4 `settlement_items.pickupId`: qué pasa exactamente
+### 1.4 `settlement_items.pickupId`: exactly what happens to it
 
-**Se queda.** Es `INTEGER`, sigue apuntando a `pickups.id`, y sigue siendo la
-columna sobre la que vive `ux_items_pickup_live`. El candado local no se toca,
-porque es el único mecanismo que hoy impide que esa finca pague dos veces y
-tocarlo es exactamente la operación que no se puede permitir.
+**It stays.** It is `INTEGER`, it still points at `pickups.id`, and it is still
+the column `ux_items_pickup_live` lives on. The local lock is not touched,
+because it is the only mechanism that today stops that farm paying twice, and
+touching it is exactly the operation we cannot allow ourselves.
 
-Lo que se añade es `payableUuid`, rellenado desde `pickups.uuid`, y es lo único
-que viaja. En el servidor esa columna ya se llama `payable_id` y su índice
-`ux_items_payable_live`. La correspondencia es literal:
+What gets added is `payableUuid`, filled from `pickups.uuid`, and it is the only
+thing that travels. On the server that column is already called `payable_id` and
+its index `ux_items_payable_live`. The correspondence is literal:
 
-| Teléfono | Servidor |
+| Phone | Server |
 |---|---|
-| `settlement_items.pickupId` (INTEGER, join local) | — no viaja |
+| `settlement_items.pickupId` (INTEGER, local join) | — does not travel |
 | `settlement_items.payableUuid` (TEXT) | `settlement_items.payable_id` (uuid) |
 | `ux_items_pickup_live ON (pickupId) WHERE voidedAt IS NULL` | `ux_items_payable_live ON (payable_id) WHERE voided_at IS NULL` |
 
-Los dos candados siguen existiendo. §6 explica por qué eso no es un problema
-una vez que sólo uno de los dos puede crear una liquidación.
+Both locks go on existing. §6 explains why that is not a problem once only one
+of the two can create a settlement.
 
-### 1.5 Dos cosas más que hay que arreglar en el teléfono para que esto funcione
+### 1.5 Two more things that have to be fixed on the phone for this to work
 
-**(a) `pickups.remove` es un `DELETE` de verdad.** Hoy:
+**(a) `pickups.remove` is a real `DELETE`.** Today:
 
 ```ts
 remove: (id) => {
   if (pickups.isSettled(id)) throw new Error("SETTLED");
-  db.runSync("DELETE FROM pickups WHERE id = ?", [id]);   // ← borrado físico
+  db.runSync("DELETE FROM pickups WHERE id = ?", [id]);   // ← physical delete
 },
 ```
 
-Una fila borrada físicamente después de haberse empujado **resucita en el
-siguiente pull**, porque el servidor la sigue teniendo y el teléfono ya no sabe
-que la mató. En `user_version = 6`, `pickups` gana `deletedAt TEXT`, `remove`
-pasa a ser un `UPDATE`, y todas las consultas de `schema.ts` que leen `pickups`
-ganan `AND pk.deletedAt IS NULL`. Es la misma disciplina que ya tienen `people`
-y `crops`, y la misma que tiene el servidor, donde nada ejecuta un `DELETE`.
+A row deleted physically after having been pushed **resurrects on the next
+pull**, because the server still has it and the phone no longer knows it killed
+it. In `user_version = 6`, `pickups` gains `deletedAt TEXT`, `remove` becomes an
+`UPDATE`, and every `schema.ts` query that reads `pickups` gains
+`AND pk.deletedAt IS NULL`. It is the same discipline `people` and `crops`
+already have, and the same the server has, where nothing runs a `DELETE`.
 
-**(b) El día local del teléfono es el del dispositivo, no el de la finca.**
-`DAY_OF` y `WEEK_OF` son `date(col,'localtime')`: usan la zona del teléfono.
-El servidor calcula `local_day` con un trigger a partir de `farms.timezone`. Un
-teléfono con la zona mal puesta manda una pesada del domingo por la tarde y el
-servidor la coloca en otra semana — que es el caso de oro 04, el bug que ya
-ocurrió una vez.
+**(b) The phone's local day is the device's, not the farm's.** `DAY_OF` and
+`WEEK_OF` are `date(col,'localtime')`: they use the phone's zone. The server
+computes `local_day` with a trigger from `farms.timezone`. A phone with the
+wrong zone sends a Sunday-afternoon weighing and the server files it in a
+different week — which is golden case 04, the bug that has already happened
+once.
 
-Solución, en `user_version = 6`: la semana y el día se **materializan al
-escribir**, con la zona de la finca, usando `Intl.DateTimeFormat` (que sí tiene
-la base de datos de zonas):
+The fix, in `user_version = 6`: the week and the day are **materialised at write
+time**, in the farm's zone, using `Intl.DateTimeFormat` (which does carry the
+timezone database):
 
 ```sql
-ALTER TABLE pickups ADD COLUMN localDay TEXT;   -- YYYY-MM-DD en la zona de la finca
-ALTER TABLE pickups ADD COLUMN week     TEXT;   -- lunes de localDay
+ALTER TABLE pickups ADD COLUMN localDay TEXT;   -- YYYY-MM-DD in the farm's zone
+ALTER TABLE pickups ADD COLUMN week     TEXT;   -- the Monday of localDay
 ALTER TABLE ledger  ADD COLUMN localDay TEXT;
 CREATE INDEX IF NOT EXISTS ix_pickups_week ON pickups(week);
 CREATE INDEX IF NOT EXISTS ix_pickups_localday ON pickups(localDay);
 ```
 
-y `WEEK_BY_DAY_SQL`, `WEEK_BY_WORKER_SQL`, `WEEK_GRID_SQL`, `WEEK_PLOTS_SQL`,
-`WEEK_GRID_DAY_SQL`, `PENDING_SQL` y las cinco reglas de revisión pasan a
-agrupar por esas columnas en vez de recalcular `date(x,'localtime')` en cada
-consulta. Es el mismo movimiento que ya hizo el servidor y por el mismo motivo,
-con el efecto lateral de volver sargables consultas que hoy escanean la tabla.
+and `WEEK_BY_DAY_SQL`, `WEEK_BY_WORKER_SQL`, `WEEK_GRID_SQL`, `WEEK_PLOTS_SQL`,
+`WEEK_GRID_DAY_SQL`, `PENDING_SQL` and the five review rules move to grouping by
+those columns instead of recomputing `date(x,'localtime')` on every query. It is
+the same move the server already made and for the same reason, with the side
+effect of making sargable a set of queries that today scan the table.
 
-Antes de que la finca reciba esa versión, la zona de la finca la trae el
-handshake (§3.1) y hasta entonces se asume `America/Bogota`, que es la que ese
-teléfono tiene puesta.
+Until the farm receives that version, the farm's zone comes from the handshake
+(§3.1) and until then `America/Bogota` is assumed, which is what that phone has
+set.
 
-**(c) El precio se guarda como `REAL`.** `config.costPerUnit` y
-`cost_overrides.costPerUnit` son `REAL` en pesos; el servidor tiene
-`price_minor bigint`. Traer un precio del servidor y guardarlo como `REAL` mete
-un `float` en el camino del dinero. En `user_version = 6` las dos tablas ganan
-`costPerUnitCents INTEGER`, se rellena con `toCents(costPerUnit)`, y
-`costForWeek` devuelve centavos. La columna `REAL` se queda para las pantallas
-viejas hasta que se reescriban, pero **ninguna ruta de dinero la lee**.
+**(c) The price is stored as `REAL`.** `config.costPerUnit` and
+`cost_overrides.costPerUnit` are `REAL` in pesos; the server has
+`price_minor bigint`. Pulling a price from the server and storing it as `REAL`
+puts a `float` in the path of money. In `user_version = 6` both tables gain
+`costPerUnitCents INTEGER`, filled with `toCents(costPerUnit)`, and
+`costForWeek` returns cents. The `REAL` column stays for the old screens until
+they are rewritten, but **no money path reads it**.
 
 ---
 
-## 2. Qué se sincroniza y en qué dirección
+## 2. What syncs and in which direction
 
-`↑` empuja el teléfono · `↓` lo recibe el teléfono · `↕` los dos · `—` no viaja.
+`↑` the phone pushes · `↓` the phone receives · `↕` both · `—` does not travel.
 
-| Tabla del teléfono | Tabla del servidor | Dir. | Regla |
+| Phone table | Server table | Dir. | Rule |
 |---|---|---|---|
-| `people` | `employees` | ↕ | El teléfono da de alta gente en el campo. Los campos que sólo existen en la web (foto, teléfono, dirección) llegan por `↓` y el teléfono no los pisa: el push manda **sólo los campos que la pantalla del teléfono edita**. |
-| `crops` | `plot_crops` (+ su `plots`) | ↓ | **Sólo lectura en el teléfono.** §2.1 |
-| `pickups` | `work_records` (`pay_scheme='unidad_trabajo'`) | ↕ | El teléfono empuja pesadas; recibe las labores por unidad de trabajo que registró la web. Las labores por contrato y por tiempo **no bajan al teléfono** en la primera versión. §2.2 |
-| `config` | `farm_config`, `farms` | ↓ | Nombre, cultivo, unidad, zona horaria, moneda, precio general. El teléfono no los edita más. |
-| `config.language` | — | — | Preferencia del dispositivo. Nunca viaja. |
-| `cost_overrides` | `week_prices` | ↓ | **Sólo lectura en el teléfono.** §2.1 |
-| `settlements` | `settlements` | ↓ | Las crea el servidor y sólo el servidor. §6 |
-| `settlement_items` | `settlement_items` | ↓ | Ídem. Llegan siempre con su liquidación, en el mismo lote. |
-| `ledger` `pago`/`anticipo`/`deduccion`/`ajuste`/`reverso` | `ledger` | ↕ | Un movimiento es un hecho: se empuja y se acepta. §2.3 |
-| `ledger` `devengo` | `ledger` | ↓ | Lo produce `POST /v1/settlements`. El teléfono no puede escribir uno. |
-| saldos, `BALANCE_SQL` | — | — | Derivado. Se recalcula a los dos lados. Nunca viaja un total. |
-| IRL, anomalías, rendimiento, reportes de semana/lote/trabajador | — | — | Derivados de lo anterior. Nunca viajan. |
-| `demo`, `seed`, `clear` | — | — | Nunca. Un `seed` sobre una finca sincronizada es una catástrofe con un botón. La pantalla se esconde cuando el teléfono está emparejado. |
+| `people` | `employees` | ↕ | The phone registers people in the field. Fields that only exist on the web (photo, phone, address) arrive via `↓` and the phone does not stamp on them: push sends **only the fields the phone's screen edits**. |
+| `crops` | `plot_crops` (+ their `plots`) | ↓ | **Read-only on the phone.** §2.1 |
+| `pickups` | `work_records` (`pay_scheme='unidad_trabajo'`) | ↕ | The phone pushes weighings; it receives the work-unit work records the web recorded. Contract and time work records **do not come down to the phone** in the first version. §2.2 |
+| `config` | `farm_config`, `farms` | ↓ | Name, crop, unit, timezone, currency, general price. The phone no longer edits them. |
+| `config.language` | — | — | A device preference. Never travels. |
+| `cost_overrides` | `week_prices` | ↓ | **Read-only on the phone.** §2.1 |
+| `settlements` | `settlements` | ↓ | Created by the server and only by the server. §6 |
+| `settlement_items` | `settlement_items` | ↓ | Same. They always arrive with their settlement, in the same batch. |
+| `ledger` `pago`/`anticipo`/`deduccion`/`ajuste`/`reverso` | `ledger` | ↕ | A movement is a fact: it is pushed and it is accepted. §2.3 |
+| `ledger` `devengo` | `ledger` | ↓ | Produced by `POST /v1/settlements`. The phone cannot write one. |
+| balances, `BALANCE_SQL` | — | — | Derived. Recomputed on both sides. A total never travels. |
+| IRL, anomalies, performance, week/plot/worker reports | — | — | Derived from the above. They never travel. |
+| `demo`, `seed`, `clear` | — | — | Never. A `seed` over a synced farm is a catastrophe with a button on it. The screen hides itself once the phone is paired. |
 
-### 2.1 Por qué precios y parcelas son de sólo lectura
+### 2.1 Why prices and plots are read-only
 
-Son las dos entradas cuya edición cambia dinero **hacia atrás y para todo el
-mundo a la vez**.
+They are the two inputs whose editing changes money **backwards and for
+everybody at once**.
 
-Un precio semanal editado en dos sitios con "gana el último" reprecia la semana
-entera de la finca; no hay conflicto que resolver porque no hay una fila en
-disputa, hay una nómina. Un solo escritor —el dueño, en la web, donde
-`p_week_prices_write` ya exige rol `owner`— elimina la clase entera de errores.
+A weekly price edited in two places with "last write wins" reprices the farm's
+entire week; there is no conflict to resolve because there is no disputed row,
+there is a payroll. A single writer — the owner, on the web, where
+`p_week_prices_write` already requires the `owner` role — removes the whole
+class of error.
 
-Las parcelas son peor. `POST /v1/pickups` traduce `cropId → plot_crop` y esa
-traducción es 1:1 y determinista **sólo mientras un lote tenga un cultivo**. Si
-el teléfono puede inventar lotes sin señal, dos pesadores crean "Lote 1" y
-"lote 1" el mismo día, y ninguna fusión automática puede saber después si eran
-el mismo. Fusionar lotes es trabajo manual del dueño con una pantalla, no una
-adivinanza de un script.
+Plots are worse. `POST /v1/pickups` translates `cropId → plot_crop` and that
+translation is 1:1 and deterministic **only while a plot has one crop**. If the
+phone can invent plots with no signal, two weighers create "Lote 1" and "lote 1"
+on the same day, and no automatic merge can know afterwards whether they were
+the same one. Merging plots is the owner's manual work with a screen, not a
+script's guess.
 
-**Lo que se pierde, dicho claro:** hoy el teléfono puede crear un lote y cambiar
-el precio de la semana sin señal, y después de esto no. Es una pérdida de
-producto real y está en §10 para que el dueño la firme.
+**What is lost, said plainly:** today the phone can create a plot and change the
+week's price with no signal, and after this it cannot. It is a real product loss
+and it is in §10 for the owner to sign off.
 
-### 2.2 Las labores que el teléfono no entiende
+### 2.2 The work records the phone does not understand
 
-Por decisión 3 la web ya registra labores por contrato y por tiempo. El teléfono
-no tiene pantalla para eso y no la va a tener en esta entrega.
+By decision 3 the web already records contract and time work records. The phone
+has no screen for that and is not getting one in this delivery.
 
-**No se le mandan.** El pull filtra `pay_scheme = 'unidad_trabajo'`, igual que
-la fachada `/v1/pickups`. Un jornal en una pantalla que sólo sabe enseñar kilos
-es peor que nada — que es exactamente lo que ya decidió `GET /v1/pickups/{id}`
-al devolver 404 para una labor que no es por unidad de trabajo.
+**They are not sent to it.** The pull filters `pay_scheme = 'unidad_trabajo'`,
+just like the `/v1/pickups` facade. A day's work on a screen that only knows how
+to show kilos is worse than nothing — which is exactly what
+`GET /v1/pickups/{id}` already decided by returning 404 for a work record that
+is not by unit of work.
 
-Consecuencia que hay que decir: **el teléfono no puede mostrar el saldo completo
-de un trabajador que además hizo jornales.** Su `BALANCE_SQL` local sumará sólo
-los movimientos que él conoce. Y por eso el saldo del teléfono deja de ser la
-verdad: la pantalla de saldo pasa a mostrar el saldo que vino del servidor
-(§3.3, `balances` en el feed) con la marca de cuándo llegó, y el saldo local
-derivado sólo se usa mientras hay cosas sin empujar, etiquetado como
-«provisional».
+A consequence that has to be stated: **the phone cannot show the full balance of
+a worker who also did day work.** Its local `BALANCE_SQL` will sum only the
+movements it knows about. And that is why the phone's balance stops being the
+truth: the balance screen moves to showing the balance that came from the server
+(§3.3, `balances` in the feed) with the mark of when it arrived, and the locally
+derived balance is used only while there are unpushed things, labelled
+«provisional» (*provisional*).
 
-### 2.3 Por qué el dinero saliente sí se empuja, y sin condiciones
+### 2.3 Why outgoing money is pushed, and unconditionally
 
-Un `pago`, un `anticipo` o una `deduccion` es un hecho: alguien entregó
-efectivo. Rechazar su llegada no deshace el hecho, sólo hace que la base mienta.
+A `pago`, an `anticipo` or a `deduccion` is a fact: somebody handed over cash.
+Refusing its arrival does not undo the fact, it only makes the database lie.
 
-Por eso el canal de sync empuja movimientos de ledger **y el servidor los acepta
-sin comprobar el saldo**. En concreto: la validación
-`AMOUNT_EXCEEDS_BALANCE` de `POST /v1/payments` es una defensa contra un dedazo
-en la pantalla de pago de la web, y es correcta ahí. En el canal de sync se
-comporta como `allowOverpayment: true`, que es exactamente lo que ya hace el
-teléfono hoy y lo que fija el caso de oro 07 (`pago-mayor-al-saldo`): el saldo
-se va a negativo y el exceso se comporta como anticipo. El saldo no se recorta.
+So the sync channel pushes ledger movements **and the server accepts them
+without checking the balance**. Concretely: the `AMOUNT_EXCEEDS_BALANCE`
+validation on `POST /v1/payments` is a defence against a fat-fingered entry on
+the web's payment screen, and it is correct there. On the sync channel it
+behaves as `allowOverpayment: true`, which is exactly what the phone does today
+and what golden case 07 (`pago-mayor-al-saldo`) fixes: the balance goes negative
+and the excess behaves as an `anticipo`. The balance is not clipped.
 
-Esto no abre la puerta al doble pago. Un pago no reclama ninguna pesada, no toma
-ningún candado, y dos pagos duplicados por error humano se ven a simple vista en
-el historial del trabajador — que es un problema de personas, no de merge.
+This does not open the door to double payment. A payment claims no weighing,
+takes no lock, and two payments duplicated by human error are visible at a
+glance in the worker's history — which is a people problem, not a merge problem.
 
 ---
 
-## 3. El mecanismo
+## 3. The mechanism
 
-Un feed de cambios con secuencia por finca. El teléfono lleva **un solo número**:
-`sync_state.cursor`. Lo que le falta es «todo lo que tenga `seq` mayor que ese
-número».
+A change feed with a per-farm sequence. The phone carries **a single number**:
+`sync_state.cursor`. What it is missing is "everything with a `seq` greater than
+that number".
 
-No es push/pull con marca de agua por tabla. Una marca de agua por tabla obliga
-a `updated_at` en todas partes, no distingue un borrado de una fila que nunca
-existió, y se rompe con relojes: dos filas escritas en el mismo milisegundo, una
-antes y otra después del corte, y una de las dos no se ve nunca más. Una
-secuencia es un entero que sólo sube y que asigna un único servidor.
+It is not push/pull with a per-table watermark. A per-table watermark forces
+`updated_at` everywhere, cannot tell a delete from a row that never existed, and
+breaks on clocks: two rows written in the same millisecond, one before and one
+after the cut, and one of the two is never seen again. A sequence is an integer
+that only goes up and that a single server hands out.
 
 ### 3.1 `POST /v1/sync/handshake`
 
-Lo primero que hace el teléfono al emparejarse, y en cada arranque de la app.
+The first thing the phone does when pairing, and on every app start.
 
 ```jsonc
 // →
-{ "deviceId": "0192f0…",          // uuid del dispositivo, estable, generado una vez
+{ "deviceId": "0192f0…",          // device uuid, stable, generated once
   "appVersion": "1.7.0",
   "schemaVersion": 6,
-  "cursor": 148213 }              // 0 la primera vez
+  "cursor": 148213 }              // 0 the first time
 
 // ← 200
 { "farmId": "0192e1…",
-  "timezone": "America/Bogota",   // con esto el teléfono calcula localDay y week
+  "timezone": "America/Bogota",   // with this the phone computes localDay and week
   "currency": "COP", "minorUnit": 2,
   "serverTime": "2026-08-29T14:02:11Z",
-  "cursor": 149004,               // dónde está el servidor ahora
-  "behind": 791,                  // cuántos cambios le faltan al teléfono
-  "role": "weigher",              // lo que este token puede hacer
-  "capabilities": {               // lo que la app debe habilitar o esconder
+  "cursor": 149004,               // where the server is now
+  "behind": 791,                  // how many changes the phone is missing
+  "role": "weigher",              // what this token can do
+  "capabilities": {               // what the app should enable or hide
     "settleOffline": false,
     "writePlots": false,
     "writeWeekPrices": false
   } }
 ```
 
-`capabilities` no es cortesía: es lo que apaga botones en la app sin que haya
-que desplegar una versión nueva cuando §10 cambie de opinión. Y no sustituye a
-la autorización: el servidor sigue devolviendo 403 aunque el botón esté visible,
-porque esconder un botón no es un permiso.
+`capabilities` is not a courtesy: it is what switches buttons off in the app
+without having to ship a version when §10 changes its mind. And it does not
+replace authorisation: the server still returns 403 even if the button is
+visible, because hiding a button is not a permission.
 
-**409 `SCHEMA_TOO_OLD`** si `schemaVersion < 6`: el teléfono sabe que tiene que
-actualizarse antes de tocar nada y no empuja ni un byte.
+**409 `SCHEMA_TOO_OLD`** if `schemaVersion < 6`: the phone knows it has to update
+before touching anything and does not push a single byte.
 
 ### 3.2 `POST /v1/sync/push`
 
-Un lote ordenado de sobres. El orden es el de inserción local (`rowid`), que es
-el orden causal: un padre siempre se insertó antes que su hijo.
+An ordered batch of envelopes. The order is local insertion order (`rowid`),
+which is causal order: a parent was always inserted before its child.
 
 ```jsonc
 // →
 { "deviceId": "0192f0…",
   "ops": [
-    { "opId": "0192f1a0-…",       // uuid del sobre. LA CLAVE DE IDEMPOTENCIA.
+    { "opId": "0192f1a0-…",       // envelope uuid. THE IDEMPOTENCY KEY.
       "entity": "worker",
       "op": "upsert",
       "payload": { "id": "0192e5…", "name": "Ana", "lastName": "Rodríguez",
@@ -359,7 +363,7 @@ el orden causal: un padre siempre se insertó antes que su hijo.
       "payload": { "id": "0192e6…", "workerId": "0192e5…",
                    "cropId": "0192e2…",          // plot_crop
                    "quantity": 12.5,
-                   "occurredAt": "2026-08-24T19:30:00-05:00",   // INSTANTE con desfase
+                   "occurredAt": "2026-08-24T19:30:00-05:00",   // INSTANT with offset
                    "note": null, "deviceId": "0192f0…", "deletedAt": null } },
 
     { "opId": "0192f1a2-…",
@@ -372,8 +376,8 @@ el orden causal: un padre siempre se insertó antes que su hijo.
 ```
 
 ```jsonc
-// ← 200  (siempre 200: el estado de cada op está en su fila)
-{ "cursor": 149006,               // el teléfono puede seguir pulling desde aquí
+// ← 200  (always 200: each op's status is on its own row)
+{ "cursor": 149006,               // the phone can carry on pulling from here
   "results": [
     { "opId": "0192f1a0-…", "status": "applied",   "id": "0192e5…" },
     { "opId": "0192f1a1-…", "status": "duplicate", "id": "0192e6…" },
@@ -384,22 +388,22 @@ el orden causal: un padre siempre se insertó antes que su hijo.
   ] }
 ```
 
-Reglas del push, todas obligatorias:
+Push rules, all mandatory:
 
-- **Cada op corre en su propio `SAVEPOINT`.** Un rechazo no tumba el lote. Un
-  lote de 200 pesadas donde una apunta a un trabajador que la web borró tiene
-  que meter las otras 199.
-- **Tamaño máximo 200 ops o 1 MB.** El teléfono trocea. En una red de finca, un
-  lote grande es un lote que nunca termina.
-- **El instante viaja con desfase (`occurredAt`), nunca un día suelto.** El
-  `local_day` lo escribe el trigger del servidor con la zona de la finca y Go
-  no lo escribe nunca. Es el mismo acuerdo que hace que el caso 04 salga bien
-  de los dos lados.
-- **`op: "append"` para el ledger, `op: "upsert"` para el resto.** No existe
-  `op: "delete"`: un borrado es un `upsert` con `deletedAt`. No hay borrado
-  físico en ninguna dirección.
-- El teléfono **no borra su fila del outbox por optimismo**: sólo cuando el
-  `result` de ese `opId` llega con `applied`, `duplicate` o `rejected`.
+- **Every op runs in its own `SAVEPOINT`.** One rejection does not bring the
+  batch down. A batch of 200 weighings where one points at a worker the web
+  deleted has to get the other 199 in.
+- **Maximum size 200 ops or 1 MB.** The phone chunks. On a farm's network, a big
+  batch is a batch that never finishes.
+- **The instant travels with its offset (`occurredAt`), never a bare day.**
+  `local_day` is written by the server's trigger with the farm's zone, and Go
+  never writes it. It is the same agreement that makes case 04 come out right on
+  both sides.
+- **`op: "append"` for the ledger, `op: "upsert"` for everything else.** There is
+  no `op: "delete"`: a delete is an `upsert` with `deletedAt`. There is no
+  physical delete in either direction.
+- The phone **does not delete its outbox row out of optimism**: only when that
+  `opId`'s `result` comes back as `applied`, `duplicate` or `rejected`.
 
 ### 3.3 `GET /v1/sync/pull?cursor=149006&limit=500`
 
@@ -427,21 +431,20 @@ Reglas del push, todas obligatorias:
   "balances": [ { "workerId": "0192e5…", "balanceCents": 1187500 } ] }
 ```
 
-- **Una liquidación viaja entera, con sus líneas.** Nunca una cabecera sin sus
-  renglones: un documento de $1.187.500 con nada debajo es exactamente lo que la
-  migración `user_version = 4` del teléfono existió para arreglar.
-- `balances` es un **checksum, no un dato**. El teléfono recalcula el saldo con
-  su propio `BALANCE_SQL` y compara. Si difieren, no copia el número del
-  servidor: marca al trabajador y lo saca en la pantalla de §7. Un saldo que
-  llega por el cable y se guarda es el total materializado que todo este diseño
-  lleva tres documentos rechazando. Sólo llega en el último lote (`more:false`),
-  cuando el teléfono ya está al día.
-- El teléfono aplica los cambios **en orden de `seq`, en una transacción por
-  lote**, y sólo entonces avanza su cursor. Un corte a mitad deja el cursor
-  donde estaba y el lote se repite: aplicar dos veces un `upsert` por UUID es
-  un no-op.
+- **A settlement travels whole, with its lines.** Never a header without its
+  rows: a $1,187,500 document with nothing underneath it is exactly what the
+  phone's `user_version = 4` migration existed to fix.
+- `balances` is a **checksum, not data**. The phone recomputes the balance with
+  its own `BALANCE_SQL` and compares. If they differ, it does not copy the
+  server's number: it flags the worker and surfaces them on the §7 screen. A
+  balance that arrives down the wire and gets stored is the materialised total
+  this design has spent three documents rejecting. It only arrives in the last
+  batch (`more:false`), once the phone is up to date.
+- The phone applies changes **in `seq` order, in one transaction per batch**, and
+  only then advances its cursor. A cut halfway leaves the cursor where it was
+  and the batch repeats: applying an upsert twice by UUID is a no-op.
 
-### 3.4 El feed, por dentro
+### 3.4 The feed, from the inside
 
 ```sql
 -- +goose Up
@@ -462,13 +465,13 @@ CREATE INDEX ix_sync_log_farm ON sync_log (farm_id, seq);
 CREATE UNIQUE INDEX ux_sync_log_row ON sync_log (farm_id, entity, row_id, seq);
 ```
 
-Lo escriben triggers `AFTER INSERT OR UPDATE` en `employees`, `plots`,
+It is written by `AFTER INSERT OR UPDATE` triggers on `employees`, `plots`,
 `plot_crops`, `work_records`, `week_prices`, `farm_config`, `settlements`,
-`settlement_items` y `ledger`. Triggers y no código Go, por lo mismo que el
-`local_day`: la fila que se escriba por una ruta que nadie previó también tiene
-que aparecer en el feed.
+`settlement_items` and `ledger`. Triggers and not Go code, for the same reason
+as `local_day`: a row written through a route nobody foresaw also has to appear
+in the feed.
 
-La consulta del pull, con el horizonte:
+The pull query, with the horizon:
 
 ```sql
 -- The horizon: the lowest seq still owned by a transaction that may not have
@@ -491,56 +494,55 @@ SELECT s.seq, s.entity, s.row_id, s.op
  LIMIT $2;
 ```
 
-Una fila retenida por el horizonte no se pierde: aparece en el siguiente sondeo,
-en su sitio. Lo que el horizonte garantiza es que **el cursor nunca salta por
-encima de un cambio**, que es la única propiedad que hace que "un solo número"
-sea suficiente.
+A row held back by the horizon is not lost: it appears in the next poll, in its
+place. What the horizon guarantees is that **the cursor never jumps over a
+change**, which is the one property that makes "a single number" sufficient.
 
-La fila del feed lleva sólo la identidad; el cuerpo se compone en el momento del
-pull leyendo la tabla real. Así una fila corregida cinco veces se manda una vez,
-en su estado actual, y el feed no es una segunda copia del dinero que pueda
-divergir de la primera.
+The feed row carries only the identity; the body is composed at pull time by
+reading the real table. That way a row corrected five times is sent once, in its
+current state, and the feed is not a second copy of the money that could diverge
+from the first.
 
-**Retención:** `sync_log` se poda a 180 días. Un teléfono cuyo cursor sea
-anterior al mínimo retenido recibe `409 CURSOR_TOO_OLD` y hace un **bootstrap**:
-`GET /v1/sync/bootstrap`, que devuelve el estado completo de la finca paginado y
-un cursor nuevo. Es lento y no pasa nunca, y por eso existe.
+**Retention:** `sync_log` is pruned to 180 days. A phone whose cursor is older
+than the lowest retained one gets `409 CURSOR_TOO_OLD` and does a **bootstrap**:
+`GET /v1/sync/bootstrap`, which returns the farm's full state, paginated, and a
+new cursor. It is slow and it never happens, and that is why it exists.
 
-### 3.5 Cuándo sincroniza
+### 3.5 When it syncs
 
-Al abrir la app, al volver a primer plano, cada 15 minutos con red, al pulsar el
-chip de §7, y **siempre antes de abrir cualquier pantalla de dinero**. Nada de
-websockets ni de notificaciones push: la finca tiene señal en la casa por la
-noche, el pesador no la tiene en el lote, y una conexión persistente sobre esa
-red es una batería gastada a cambio de nada.
+On opening the app, on returning to the foreground, every 15 minutes when there
+is a network, on tapping the §7 chip, and **always before opening any money
+screen**. No websockets and no push notifications: the farm has a signal at the
+house in the evening, the weigher does not have one out at the plot, and a
+persistent connection over that network is battery spent for nothing.
 
 ---
 
-## 4. Idempotencia y reintentos
+## 4. Idempotency and retries
 
-La red se cae a la mitad. Es el caso normal, no el excepcional. Reenviar tiene
-que ser seguro, y lo es por **tres capas independientes**, cada una suficiente
-para un tipo distinto de fallo.
+The network drops halfway. That is the normal case, not the exceptional one.
+Re-sending has to be safe, and it is, through **three independent layers**, each
+sufficient for a different kind of failure.
 
-### 4.1 Capa 1 — la identidad es del cliente
+### 4.1 Layer 1 — identity belongs to the client
 
-Toda fila lleva un UUIDv7 generado en el teléfono antes de tocar la red. La
-escritura del servidor es, sin excepción:
+Every row carries a UUIDv7 generated on the phone before it touches the network.
+The server's write is, without exception:
 
 ```sql
 INSERT INTO work_records (id, farm_id, …) VALUES ($1, $2, …)
 ON CONFLICT (id) DO NOTHING
 RETURNING …;
--- Cero filas devueltas => ya estaba => status "duplicate" y el mismo recurso.
+-- Zero rows returned => it was already there => status "duplicate" and the same resource.
 ```
 
-Esto cubre el fallo más común: la petición llegó, el servidor escribió, la
-respuesta se perdió. El teléfono reenvía, el `ON CONFLICT` no hace nada, y el
-teléfono recibe la fila que ya existía. **Un reintento no puede crear una
-segunda pesada porque no puede inventar un segundo UUID: el UUID se generó al
-pulsar el botón, no al mandar.**
+This covers the most common failure: the request arrived, the server wrote, the
+response was lost. The phone re-sends, the `ON CONFLICT` does nothing, and the
+phone gets back the row that already existed. **A retry cannot create a second
+weighing because it cannot invent a second UUID: the UUID was generated when the
+button was pressed, not when the request was sent.**
 
-### 4.2 Capa 2 — el registro de operaciones
+### 4.2 Layer 2 — the operation log
 
 ```sql
 CREATE TABLE sync_ops (
@@ -548,55 +550,55 @@ CREATE TABLE sync_ops (
   farm_id   uuid NOT NULL REFERENCES farms(id),
   device_id uuid NOT NULL,
   status    text NOT NULL CHECK (status IN ('applied','duplicate','rejected')),
-  result    jsonb NOT NULL,      -- la respuesta exacta que se devolvió
+  result    jsonb NOT NULL,      -- the exact response that was returned
   at        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_sync_ops_device ON sync_ops (farm_id, device_id, at DESC);
 ```
 
-El servidor, antes de aplicar un sobre, mira `sync_ops`. Si el `opId` está,
-devuelve `result` **literalmente**, sin volver a ejecutar nada. Esto cubre el
-fallo que la capa 1 no cubre: operaciones que no son un insert de una fila con
-UUID propio —anular, reversar— y cuyo segundo intento tendría un resultado
-distinto del primero.
+Before applying an envelope, the server looks in `sync_ops`. If the `opId` is
+there, it returns `result` **literally**, without executing anything again. This
+covers the failure layer 1 does not: operations that are not the insert of a row
+with its own UUID — voiding, reversing — and whose second attempt would have a
+different outcome from the first.
 
-Retención de `sync_ops`: 30 días. Un reintento a los 30 días no es un reintento.
+`sync_ops` retention: 30 days. A retry after 30 days is not a retry.
 
-### 4.3 Capa 3 — la semántica ya es idempotente, y esa es la buena
+### 4.3 Layer 3 — the semantics are already idempotent, and that is the good one
 
-Aquí es donde el ledger append-only paga lo que costó. Las operaciones del
-sistema son de tres clases y ninguna necesita "resolverse":
+This is where the append-only ledger pays back what it cost. The system's
+operations come in three classes and none of them needs "resolving":
 
-- **Añadir un hecho** (pesada, pago, anticipo, deducción, ajuste). Añadir
-  conmuta. Dos dispositivos que añadieron se funden tomando la unión. No hay
-  merge, hay `UNION`.
-- **Tomar un candado que sólo se puede tomar una vez.** El segundo intento choca
-  con un índice único y devuelve un 409 **que significa "ya está hecho"**:
-  `PAYABLE_ALREADY_CLAIMED` con la liquidación ganadora, `ALREADY_REVERSED`,
-  `SETTLEMENT_ALREADY_VOID`. El cliente los trata como éxito, no como error.
-- **Derivar un total.** Nunca se transmite. Se recalcula.
+- **Appending a fact** (weighing, `pago`, `anticipo`, `deduccion`, `ajuste`).
+  Appending commutes. Two devices that both appended merge by taking the union.
+  There is no merge, there is a `UNION`.
+- **Taking a lock that can only be taken once.** The second attempt collides
+  with a unique index and returns a 409 **that means "already done"**:
+  `PAYABLE_ALREADY_CLAIMED` with the winning settlement, `ALREADY_REVERSED`,
+  `SETTLEMENT_ALREADY_VOID`. The client treats them as success, not as errors.
+- **Deriving a total.** Never transmitted. Recomputed.
 
-Por eso la tabla de comportamiento del cliente ante cada código es corta y no
-tiene casilla ambigua:
+That is why the table of client behaviour per code is short and has no ambiguous
+cell:
 
-| Respuesta | Qué hace el teléfono |
+| Response | What the phone does |
 |---|---|
-| `applied` / `duplicate` | Marca la op como enviada. Borra la fila del outbox. |
-| `PAYABLE_ALREADY_CLAIMED` | Éxito. Guarda `details.winningSettlement` y espera a que baje por el feed. |
-| `ALREADY_REVERSED`, `SETTLEMENT_ALREADY_VOID` | Éxito. Borra del outbox. |
-| `WORK_RECORD_SETTLED` | **Conflicto.** A la pantalla de §7. No se reintenta. |
-| `NOT_FOUND` (padre ausente) | Reintenta una vez en el lote siguiente; si vuelve, conflicto. |
-| `BAD_REQUEST` | Bug del cliente. No se reintenta jamás — un reintento en bucle contra un 400 es cómo una app se come una batería y un plan de datos. Se registra y se sube al log. |
-| `401`, `403` | Renueva el token; si vuelve, para el sync y avisa. |
-| `429`, `5xx`, timeout, sin red | Reintento con retroceso exponencial: 2s, 4s, 8s… hasta 15 min, con *jitter*. Sin límite de intentos: el teléfono tiene todo el tiempo del mundo y los datos no caducan. |
+| `applied` / `duplicate` | Mark the op sent. Delete the outbox row. |
+| `PAYABLE_ALREADY_CLAIMED` | Success. Store `details.winningSettlement` and wait for it to come down the feed. |
+| `ALREADY_REVERSED`, `SETTLEMENT_ALREADY_VOID` | Success. Delete from the outbox. |
+| `WORK_RECORD_SETTLED` | **Conflict.** To the §7 screen. Not retried. |
+| `NOT_FOUND` (absent parent) | Retry once in the next batch; if it comes back, conflict. |
+| `BAD_REQUEST` | Client bug. Never retried — a retry loop against a 400 is how an app eats a battery and a data plan. It is recorded and sent up to the log. |
+| `401`, `403` | Refresh the token; if it comes back, stop syncing and warn. |
+| `429`, `5xx`, timeout, no network | Retry with exponential backoff: 2s, 4s, 8s… up to 15 min, with jitter. No attempt limit: the phone has all the time in the world and the data does not expire. |
 
-### 4.4 El bug que hay que arreglar antes de encender nada
+### 4.4 The bug that has to be fixed before switching anything on
 
-`store.AddLedgerEntry` hace un `INSERT` pelado sin `ON CONFLICT`. Reenviar un
-pago con el mismo `id` tras un timeout no devuelve 200 con el movimiento
-existente: choca contra la PK y sale como error de servidor. Eso contradice la
-convención que el propio `openapi.yaml` declara en su cabecera y **rompe la capa
-1 justo en la tabla del dinero**.
+`store.AddLedgerEntry` does a bare `INSERT` with no `ON CONFLICT`. Re-sending a
+payment with the same `id` after a timeout does not return 200 with the existing
+movement: it collides with the PK and comes out as a server error. That
+contradicts the convention `openapi.yaml` itself declares in its header and
+**breaks layer 1 in exactly the money table**.
 
 ```go
 // store/money.go — AddLedgerEntry
@@ -608,48 +610,49 @@ INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
 VALUES ($1, …)
 ON CONFLICT (id) DO NOTHING
 RETURNING …
--- 0 filas => SELECT la existente y devolver 200 en vez de 201.
+-- 0 rows => SELECT the existing one and return 200 instead of 201.
 ```
 
-Lo mismo en `POST /v1/payments|advances|deductions|adjustments`: si el `id` ya
-existe, `200` con la fila existente. Es un cambio de tres líneas por handler y
-un test de contrato que lo fije. **Sin esto no se enciende el push.**
+The same in `POST /v1/payments|advances|deductions|adjustments`: if the `id`
+already exists, `200` with the existing row. It is a three-line change per
+handler plus a contract test that pins it. **Without this, push is not switched
+on.**
 
 ---
 
-## 5. Los conflictos, uno por uno
+## 5. The conflicts, one by one
 
-No en abstracto. Cada uno con su ganador y su motivo.
+Not in the abstract. Each with its winner and its reason.
 
-### 5.1 Dos dispositivos registran la misma pesada
+### 5.1 Two devices record the same weighing
 
-**No es un conflicto. Son dos pesadas.**
+**It is not a conflict. They are two weighings.**
 
-Cada teléfono generó un UUID distinto, los dos entran, los dos se pagan. La
-identidad de una fila es su UUID y **nada más**: no se deduplica jamás por
-`(persona, lote, peso, minuto)`, porque dos recolectores pesan de verdad 12,5 kg
-en el mismo lote en el mismo minuto, y un merge que decida que eran la misma
-roba un jornal a alguien sin dejar rastro.
+Each phone generated a different UUID, both go in, both get paid. A row's
+identity is its UUID and **nothing else**: it is never deduplicated by
+`(person, plot, weight, minute)`, because two pickers really do weigh 12.5 kg on
+the same plot in the same minute, and a merge that decides they were the same
+steals a day's pay from somebody without leaving a trace.
 
-Lo que sí ocurre es que si de verdad fue un error humano —el pesador anotó dos
-veces— eso es un duplicado, y para eso ya existe `RULE_DUPLICATE_SQL`, que se
-porta al servidor y ahora corre sobre el conjunto **fundido**, que es donde por
-primera vez puede verlo. Sale en la pantalla de revisión como sospecha, con dos
-botones, y lo decide una persona.
+What does happen is that if it really was human error — the weigher wrote it
+down twice — that is a duplicate, and `RULE_DUPLICATE_SQL` already exists for
+it. It is ported to the server and now runs over the **merged** set, which is
+where it can see it for the first time. It shows up on the review screen as a
+suspicion, with two buttons, and a person decides.
 
-El único caso que sí se deduplica es el mismo dispositivo reenviando: mismo
+The only case that does get deduplicated is the same device re-sending: same
 UUID, `ON CONFLICT DO NOTHING`.
 
-### 5.2 El teléfono liquida una semana que el servidor ya liquidó
+### 5.2 The phone settles a week the server has already settled
 
-**Bajo §6 esto no puede ocurrir**, porque el teléfono no crea liquidaciones sin
-haber sincronizado y las crea llamando al servidor. Queda por completitud el
-caso de dos usuarios de la web liquidando a la vez, y el caso del periodo de
-transición antes de la fase 6 de §8.
+**Under §6 this cannot happen**, because the phone does not create settlements
+without having synced and it creates them by calling the server. What remains,
+for completeness, is two web users settling at the same time, and the transition
+period before phase 6 of §8.
 
-**Gana el que confirmó primero en Postgres.** No el que lo pidió primero, no el
-que tiene el reloj más rápido: el que ganó la carrera en `ux_items_payable_live`.
-El perdedor recibe:
+**The winner is whoever committed first in Postgres.** Not whoever asked first,
+not whoever has the faster clock: whoever won the race on
+`ux_items_payable_live`. The loser gets:
 
 ```jsonc
 409 { "error": { "code": "PAYABLE_ALREADY_CLAIMED",
@@ -659,61 +662,60 @@ El perdedor recibe:
                                                      "createdAt": "…" } } } }
 ```
 
-y el motivo por el que el ganador es el candado y no una regla nuestra es que el
-candado es lo único que no puede equivocarse: es la misma transacción que
-escribe. Cualquier arbitraje en Go es un `SELECT` seguido de un `INSERT`, y entre
-los dos cabe la otra liquidación.
+and the reason the winner is the lock and not a rule of ours is that the lock is
+the only thing that cannot get it wrong: it is the same transaction that writes.
+Any arbitration in Go is a `SELECT` followed by an `INSERT`, and the other
+settlement fits between them.
 
-### 5.3 Una pesada llega tarde, de una semana ya liquidada
+### 5.3 A weighing arrives late, from a week already settled
 
-**No es un conflicto y no hace falta hacer nada. Ya está resuelto y hay un caso
-de oro que lo fija** (09, `pesada-tardia-de-semana-ya-liquidada`).
+**It is not a conflict and nothing needs doing. It is already solved and there is
+a golden case that pins it** (09, `pesada-tardia-de-semana-ya-liquidada`).
 
-`PENDING_SQL` selecciona **por id de pagable, no por fecha**:
+`PENDING_SQL` selects **by payable id, not by date**:
 
 ```sql
 AND pk.id NOT IN (SELECT pickupId FROM settlement_items WHERE voidedAt IS NULL)
 ```
 
-Una pesada que llega tarde simplemente no está reclamada, así que entra en la
-liquidación siguiente, **al precio de su propia semana** (`week_prices` de su
-lunes, no del lunes de la liquidación). La liquidación ya emitida no se reabre,
-no se recalcula y no se corrige: el recibo que el trabajador tiene en la mano
-sigue siendo verdad.
+A weighing that arrives late is simply unclaimed, so it goes into the next
+settlement, **at its own week's price** (the `week_prices` of its Monday, not the
+settlement's Monday). The settlement already issued is not reopened, not
+recalculated and not corrected: the receipt the worker is holding is still true.
 
-**Ninguna liquidación cerrada se reabre nunca, por ningún motivo.** Si hay que
-cambiar una, se anula y se rehace, que es lo que hace el caso 05.
+**No closed settlement is ever reopened, for any reason.** If one has to change,
+it is voided and redone, which is what case 05 does.
 
-### 5.4 Alguien anula en la web una liquidación que el teléfono aún cree viva
+### 5.4 Somebody voids on the web a settlement the phone still believes is live
 
-**Gana el servidor, siempre, y no hay nada que preguntar.**
+**The server wins, always, and there is nothing to ask.**
 
-Anular no borra: marca `settlement_items.voided_at` —que es lo que suelta el
-candado—, pone `settlements.status = 'void'`, y asienta un `reverso` del
-`devengo`. Las tres cosas bajan por el feed en el mismo lote, el teléfono las
-aplica, y su saldo se re-deriva solo.
+Voiding does not delete: it marks `settlement_items.voided_at` — which is what
+releases the lock — sets `settlements.status = 'void'`, and posts a `reverso` of
+the `devengo`. All three come down the feed in the same batch, the phone applies
+them, and its balance re-derives on its own.
 
-Lo importante es lo que **no** pasa: el `pago` que el pesador ya hizo contra esa
-liquidación **no se toca**. Sigue en el ledger, con su signo negativo. El
-resultado es que el trabajador queda debiendo lo que cobró, que es exactamente
-el caso de oro 05 y exactamente lo correcto: la finca le dio un dinero y la
-liquidación que lo justificaba ya no existe.
+What matters is what **does not** happen: the `pago` the weigher already made
+against that settlement **is not touched**. It stays in the ledger, with its
+negative sign. The result is that the worker ends up owing what they collected,
+which is exactly golden case 05 and exactly right: the farm gave them money and
+the settlement that justified it no longer exists.
 
-No hace falta pantalla de conflicto. Hace falta un aviso en la ficha del
-trabajador con las tres cifras: lo anulado, lo pagado, lo que queda debiendo.
+No conflict screen is needed. What is needed is a notice on the worker's page
+with the three figures: what was voided, what was paid, what is now owed.
 
-### 5.5 El precio de la semana cambió entre que el teléfono liquidó y sincronizó
+### 5.5 The week's price changed between the phone settling and syncing
 
-**Bajo §6, el teléfono no liquida sin señal, así que el precio se aplica una sola
-vez, en el servidor, en el momento de liquidar.** El caso se reduce a otro: la
-pantalla mostró una previsualización y el importe real salió distinto.
+**Under §6 the phone does not settle without a signal, so the price is applied
+once, on the server, at settlement time.** The case reduces to another one: the
+screen showed a preview and the real amount came out different.
 
-Eso sí puede pasar, en segundos, si el dueño cambia el precio desde la web
-mientras el administrador mira la pantalla de liquidar. Y una liquidación que
-sale por un importe distinto del que la persona leyó antes de pulsar es
-inaceptable, porque esa persona va a contar ese efectivo.
+That can happen, in seconds, if the owner changes the price from the web while
+the administrator is looking at the settle screen. And a settlement that comes
+out at a different amount from the one the person read before pressing the
+button is unacceptable, because that person is about to count out that cash.
 
-**Cambio obligatorio en el contrato:** `SettlementInput` gana un campo opcional.
+**Mandatory contract change:** `SettlementInput` gains an optional field.
 
 ```yaml
     SettlementInput:
@@ -729,171 +731,181 @@ inaceptable, porque esa persona va a contar ese efectivo.
             pressing the button is a number they are about to count out in cash.
 ```
 
-y un código nuevo, `GROSS_CHANGED`, con
+and a new code, `GROSS_CHANGED`, with
 `details: { expectedCents, actualCents, changedWeeks: ["2026-08-24"] }`.
 
-La app **siempre** lo manda. La pantalla enseña las dos cifras y la semana que
-cambió, y el operador confirma o cancela. No se elige un precio
-automáticamente: el precio nuevo puede ser una corrección o un dedazo, y el
-servidor no puede saber cuál.
+The app **always** sends it. The screen shows both figures and the week that
+changed, and the operator confirms or cancels. A price is not chosen
+automatically: the new price may be a correction or a fat-fingered entry, and
+the server cannot know which.
 
-### 5.6 Un empleado borrado en la web tiene pesadas nuevas del teléfono
+### 5.6 An employee deleted on the web has new weighings from the phone
 
-**La pesada entra. El empleado sigue de baja. Ni se rechaza ni se resucita.**
+**The weighing goes in. The employee stays deleted. Neither rejected nor
+resurrected.**
 
-La baja es lógica (`employees.deleted_at`), así que la FK compuesta sigue
-resolviendo y el `INSERT` del `work_record` funciona sin tocar nada. Las dos
-alternativas son peores: rechazar pierde trabajo que se hizo de verdad, y
-resucitar sobrescribe en silencio una decisión que tomó el dueño.
+The delete is soft (`employees.deleted_at`), so the composite FK still resolves
+and the `work_record` `INSERT` works without touching anything. Both alternatives
+are worse: rejecting loses work that really happened, and resurrecting silently
+overwrites a decision the owner made.
 
-El dinero sigue funcionando: `BALANCE_SQL` no mira `deleted_at`, y `BalanceRow`
-ya trae `inactive` precisamente para esto — *«Money is never hidden, only
-marked»*. El trabajador cobra.
+The money keeps working: `BALANCE_SQL` does not look at `deleted_at`, and
+`BalanceRow` already carries `inactive` precisely for this — *"Money is never
+hidden, only marked"*. The worker gets paid.
 
-El par (pesada nueva, empleado de baja) sale en la pantalla de §7 como
-«Registraste trabajo de alguien que fue dado de baja», con dos botones: **Volver
-a darlo de alta** y **Era otra persona**.
+The pair (new weighing, deleted employee) shows up on the §7 screen as
+«Registraste trabajo de alguien que fue dado de baja» (*you recorded work for
+somebody who was deleted*), with two buttons: **Volver a darlo de alta**
+(*reinstate them*) and **Era otra persona** (*it was somebody else*).
 
-**El peligro de verdad está en otro sitio**, y hay que taparlo: `ux_employees_doc`
-es parcial `WHERE deleted_at IS NULL`. Después de dar de baja a Juan, la web
-puede crear un segundo Juan con la misma cédula. Entonces hay dos empleados, el
-teléfono apunta al viejo, y el saldo de una persona queda partido en dos fichas
-sin que nada avise. Fusionarlas después es cirugía manual sobre el ledger.
+**The real danger is somewhere else**, and it has to be plugged:
+`ux_employees_doc` is partial, `WHERE deleted_at IS NULL`. After deleting Juan,
+the web can create a second Juan with the same *cédula*. Then there are two
+employees, the phone points at the old one, and one person's balance ends up
+split across two records with nothing warning anybody. Merging them afterwards
+is manual surgery on the ledger.
 
-**Cambio obligatorio:** `POST /v1/workers` con un `(documentType, docId)` que
-coincida con un empleado dado de baja responde
-`409 EMPLOYEE_EXISTS_DELETED` con `details.employeeId`, y la web ofrece
-restaurarlo en vez de crear otro. Es un `SELECT` extra en un alta y evita el
-único conflicto de este documento que no tiene arreglo automático.
+**Mandatory change:** `POST /v1/workers` with a `(documentType, docId)` matching
+a deleted employee answers `409 EMPLOYEE_EXISTS_DELETED` with
+`details.employeeId`, and the web offers to restore them instead of creating
+another. It is one extra `SELECT` on a create, and it avoids the only conflict in
+this document that has no automatic fix.
 
-### 5.7 Los cuatro que no estaban en la lista y muerden igual
+### 5.7 The four that were not on the list and bite just as hard
 
-**(a) Una pesada editada sin señal que el servidor ya liquidó.** El teléfono
-tiene `pickups.setWeight` con su `isSettled`; el servidor devuelve
-`409 WORK_RECORD_SETTLED`. Gana el servidor. El teléfono **guarda el cambio como
-corrección pendiente y lo enseña** —no lo descarta y no lo aplica—, con la frase
-de §7. Anular la liquidación no es un botón de esa pantalla: es una decisión del
-dueño en una pantalla que enseña lo que anular cuesta.
+**(a) A weighing edited with no signal that the server has already settled.** The
+phone has `pickups.setWeight` with its `isSettled`; the server returns
+`409 WORK_RECORD_SETTLED`. The server wins. The phone **keeps the change as a
+pending correction and shows it** — it does not discard it and does not apply it
+— with the wording in §7. Voiding the settlement is not a button on that screen:
+it is an owner's decision, on a screen that shows what voiding costs.
 
-**(b) Una pesada borrada sin señal que el servidor ya liquidó.** Idéntico. El
-borrado local se revierte al aplicar el pull, y el intento queda como conflicto.
+**(b) A weighing deleted with no signal that the server has already settled.**
+Identical. The local delete is reverted when the pull is applied, and the attempt
+stays as a conflict.
 
-**(c) Dos teléfonos con relojes descuadrados días enteros.** El orden de merge es
-el `seq` del servidor y nada más. Lo que la app enseña como fecha es el instante
-que grabó el dispositivo, y el día de negocio lo calcula el trigger con la zona
-de la finca. Una pesada con `occurredAt` en el futuro **se acepta** y la marca
-`RULE_FUTURE_SQL`: rechazarla en la frontera pierde trabajo real por culpa de un
-reloj mal puesto, que es el problema equivocado.
+**(c) Two phones with clocks days out.** The merge order is the server's `seq`
+and nothing else. What the app shows as the date is the instant the device
+recorded, and the business day is computed by the trigger with the farm's zone.
+A weighing with `occurredAt` in the future **is accepted** and flagged by
+`RULE_FUTURE_SQL`: rejecting it at the boundary loses real work because of a
+badly set clock, which is the wrong problem.
 
-**(d) Una pesada apunta a un cultivo que la web dio de baja.** `plot_crops` tiene
-`deleted_at` y la FK sigue resolviendo. Entra. No es conflicto. El día que un
-lote tenga dos cultivos, la fachada `/v1/pickups` deja de poder traducir
-`cropId` y el teléfono **tiene** que estar ya en `/v1/work-records`; eso no es un
-conflicto de sincronización, es la fecha límite de §8.
+**(d) A weighing points at a crop the web deleted.** `plot_crops` has
+`deleted_at` and the FK still resolves. It goes in. Not a conflict. The day a
+plot has two crops, the `/v1/pickups` facade can no longer translate `cropId` and
+the phone **has** to already be on `/v1/work-records`; that is not a sync
+conflict, it is the deadline in §8.
 
 ---
 
-## 6. El candado
+## 6. The lock
 
-### 6.1 La decisión
+### 6.1 The decision
 
-> **El servidor es el dueño del candado. El teléfono no crea liquidaciones. Una
-> liquidación se pide con `POST /v1/settlements`, en línea, con el cursor al día.
-> El efectivo entregado en el lote sin señal se registra como `anticipo`.**
+> **The server owns the lock. The phone does not create settlements. A
+> settlement is requested with `POST /v1/settlements`, online, with the cursor
+> up to date. Cash handed over out at the plot with no signal is recorded as an
+> `anticipo`.**
 
-`ux_items_payable_live` en Postgres es el único candado que decide. El candado
-local del teléfono, `ux_items_pickup_live`, se queda —protege las liquidaciones
-importadas y las que bajan por el feed de que una segunda las reclame— pero deja
-de ser quien las crea.
+`ux_items_payable_live` in Postgres is the only lock that decides. The phone's
+local lock, `ux_items_pickup_live`, stays — it protects imported settlements and
+the ones that come down the feed from being claimed by a second one — but it
+stops being what creates them.
 
-La pantalla de liquidar exige dos cosas antes de habilitar el botón: un `pull`
-completado en la sesión actual (`more:false`) y el outbox vacío para ese
-trabajador. Si falta cualquiera de las dos, el botón está apagado con esta
-frase, y con el botón de anticipo **al lado, no en otro menú**:
+The settle screen requires two things before enabling the button: a `pull`
+completed in the current session (`more:false`) and an empty outbox for that
+worker. If either is missing, the button is off with this sentence, and with the
+`anticipo` button **next to it, not in another menu**:
 
 > Para liquidar hay que sincronizar. Sin señal puedes entregar un anticipo: se
 > descuenta solo cuando se liquide.
 
-### 6.2 Por qué el anticipo resuelve de verdad el trabajo sin señal
+(*To settle you have to sync. With no signal you can hand over an `anticipo`: it
+is deducted automatically when the settlement happens.*)
 
-Esto no es un consuelo, es la respuesta técnica correcta.
+### 6.2 Why the `anticipo` genuinely solves working without a signal
 
-Un `anticipo` **no reclama ninguna pesada**. No toca `settlement_items`, no toma
-ningún candado, y por eso dos dispositivos que registran anticipos sin señal se
-funden por unión sin ninguna posibilidad de conflicto. Y no es un apaño
-contable: cuando llega la liquidación, el `devengo` positivo se suma al
-`anticipo` negativo en el mismo `SUM(amount_minor)` y el saldo sale exacto. Es
-lo que fija el caso de oro 02, `anticipo-mayor-que-la-semana`: un anticipo mayor
-que la semana se amortiza contra varias, con el saldo comprobado semana a
-semana.
+This is not a consolation prize, it is the technically correct answer.
 
-El pesador entrega efectivo en el lote, imprime un recibo de anticipo, y el
-trabajador ve su saldo bajar. Lo único que no puede hacer sin señal es **cerrar**
-la semana y emitir el documento definitivo — y cerrar una semana es un acto de
-oficina, no de lote.
+An `anticipo` **claims no weighing**. It does not touch `settlement_items`, takes
+no lock, and so two devices recording advances with no signal merge by union
+with no possibility of conflict. And it is not an accounting bodge: when the
+settlement arrives, the positive `devengo` adds to the negative `anticipo` in the
+same `SUM(amount_minor)` and the balance comes out exact. That is what golden
+case 02, `anticipo-mayor-que-la-semana`, pins: an advance larger than the week
+amortises across several, with the balance checked week by week.
 
-### 6.3 Lo que se pierde con cada opción, incluida la elegida
+The weigher hands over cash at the plot, prints an `anticipo` receipt, and the
+worker sees their balance go down. The only thing they cannot do without a
+signal is **close** the week and issue the definitive document — and closing a
+week is an office act, not a plot act.
 
-| | Qué hace | Qué se pierde |
+### 6.3 What each option loses, the chosen one included
+
+| | What it does | What is lost |
 |---|---|---|
-| **A. Servidor dueño (elegida)** | El teléfono no liquida sin sincronizar; anticipo como salida en campo | Cerrar una semana y emitir el recibo definitivo sin señal. **Hoy la app lo hace y dejará de hacerlo.** Mitigado: el anticipo también imprime recibo, y la liquidación posterior lo amortiza al centavo. |
-| **B. Liquidar offline y arbitrar al llegar** (lo que propone `sync-and-roles.md`) | El teléfono liquida; el servidor rechaza al perdedor y le manda la ganadora para re-derivar | **El efectivo del perdedor ya está en el bolsillo del recolector.** Hay que deshacer una liquidación después de que el dinero se movió — que es literalmente el fallo que todo este sistema existe para evitar. Y el perdedor es el que estuvo sin señal, o sea el pesador, o sea el que menos puede arreglarlo. |
-| **C. Reserva con arriendo** | Estando en línea el teléfono reserva un conjunto de pagables y puede liquidarlos offline hasta que caduque | Complejidad real (caducidad, renovación, liberación tras un teléfono perdido) a cambio de algo que **sólo funciona si el teléfono estuvo en línea hace poco** — que es exactamente cuando A también funciona. Y un teléfono que se cae al río deja pesadas bloqueadas hasta que expire el arriendo. |
-| **D. Candado partido por dispositivo** | Cada dispositivo sólo puede liquidar lo que él registró | Rompe la garantía de **una** liquidación por trabajador: quien recolectó con dos pesadores recibe dos documentos y dos recibos. Es exactamente el problema de las dos tablas pagables que `arquitectura-api.md` §1 rechazó, reintroducido por la puerta de atrás. |
+| **A. Server owns it (chosen)** | The phone does not settle without syncing; the `anticipo` is the way out in the field | Closing a week and issuing the definitive receipt with no signal. **The app does it today and will stop.** Mitigated: the `anticipo` also prints a receipt, and the later settlement amortises it to the cent. |
+| **B. Settle offline and arbitrate on arrival** (what `sync-and-roles.md` proposes) | The phone settles; the server rejects the loser and sends them the winner to re-derive | **The loser's cash is already in the picker's pocket.** A settlement has to be undone after the money moved — which is literally the failure this whole system exists to avoid. And the loser is the one who had no signal, i.e. the weigher, i.e. the one least able to fix it. |
+| **C. Reservation with a lease** | While online the phone reserves a set of payables and can settle them offline until the lease expires | Real complexity (expiry, renewal, releasing after a lost phone) in exchange for something that **only works if the phone was online recently** — which is exactly when A works too. And a phone that falls in the river leaves weighings locked until the lease expires. |
+| **D. Lock split per device** | Each device can only settle what it recorded | Breaks the guarantee of **one** settlement per worker: somebody who picked with two weighers gets two documents and two receipts. It is exactly the two-payable-tables problem `arquitectura-api.md` §1 rejected, reintroduced through the back door. |
 
-El argumento que decide entre A y B no es técnico, es de quién hace qué. **El
-que trabaja días sin señal es el pesador, y el pesador no liquida:** las RLS
-`p_ledger`, `p_settlements` y `p_settlement_items` ya le niegan el dinero
-entero. El que liquida es el dueño o el administrador, y ese sí baja a la casa,
-a la cooperativa o al pueblo. Estamos pidiendo señal exactamente a quien la
-tiene.
+The argument that decides between A and B is not technical, it is about who does
+what. **The one who spends days without a signal is the weigher, and the weigher
+does not settle:** the RLS policies `p_ledger`, `p_settlements` and
+`p_settlement_items` already deny him money entirely. The one who settles is the
+owner or the administrator, and they do come down to the house, the cooperative
+or the town. We are asking for a signal from precisely the person who has one.
 
-### 6.4 Y si el dueño no acepta perder la liquidación offline
+### 6.4 And if the owner will not give up offline settlement
 
-Entonces la respuesta **no** es B. Es: la liquidación offline se mantiene, se
-marca `provisional`, imprime un recibo que dice «provisional» en letra grande,
-y **no puede pagarse contra ella hasta que sincronice**. Un `pago` con
-`settlementId` de una liquidación provisional queda bloqueado en el teléfono.
-Eso conserva el flujo de trabajo y mueve la restricción del sitio donde no duele
-—registrar— al sitio donde sí importa —entregar el efectivo—. Es más código y
-una pantalla más, y es la única variante de B que no puede pagar dos veces.
+Then the answer is **not** B. It is: offline settlement stays, is marked
+`provisional`, prints a receipt that says «provisional» in large letters, and
+**cannot be paid against until it syncs**. A `pago` with the `settlementId` of a
+provisional settlement is blocked on the phone. That keeps the workflow and
+moves the restriction from where it does not hurt — recording — to where it does
+matter — handing over the cash. It is more code and one more screen, and it is
+the only variant of B that cannot pay twice.
 
 ---
 
-## 7. Qué ve el usuario
+## 7. What the user sees
 
-El principio: **la pantalla de pesar no se bloquea nunca, y ningún conflicto se
-cierra sin una decisión.** Una pantalla de conflictos que nadie entiende no
-sirve, y una que nadie puede cerrar es peor.
+The principle: **the weighing screen never blocks, and no conflict closes
+without a decision.** A conflicts screen nobody understands is useless, and one
+nobody can close is worse.
 
-### 7.1 El chip de estado
+### 7.1 The status chip
 
-Uno, en la cabecera, siempre visible, tocable. Cuatro estados y ninguno es un
-*spinner* solo:
+One, in the header, always visible, tappable. Four states and none of them is a
+bare spinner:
 
-| Estado | Texto | Color |
+| State | Text | Colour |
 |---|---|---|
-| Al día | «Sincronizado · hace 3 min» | neutro |
-| Pendiente | «12 sin enviar» | neutro |
-| Sin red | «Sin señal · 12 pendientes» | ámbar |
-| Conflicto | «3 necesitan tu decisión» | rojo, y sólo este es rojo |
+| Up to date | «Sincronizado · hace 3 min» (*synced · 3 min ago*) | neutral |
+| Pending | «12 sin enviar» (*12 unsent*) | neutral |
+| No network | «Sin señal · 12 pendientes» (*no signal · 12 pending*) | amber |
+| Conflict | «3 necesitan tu decisión» (*3 need your decision*) | red, and only this one is red |
 
-Tocarlo abre el detalle: cuántas pesadas, cuántos pagos, desde cuándo, y un
-botón «Sincronizar ahora». **El número de pendientes no es un adorno**: es lo que
-un dueño mira antes de irse del lote.
+Tapping it opens the detail: how many weighings, how many payments, since when,
+and a «Sincronizar ahora» (*sync now*) button. **The pending count is not
+decoration**: it is what an owner looks at before leaving the plot.
 
-### 7.2 Lo que no está enviado
+### 7.2 What has not been sent
 
-Un punto pequeño en la fila, en las listas donde ya hay filas: pesadas
-recientes, movimientos del trabajador. Sin modales, sin banners, sin bloquear.
-Al lado del punto, en la ficha, una línea: «Pendiente de enviar». Y nada más:
-una pesada sin enviar es una pesada perfectamente buena.
+A small dot on the row, in the lists that already have rows: recent weighings,
+a worker's movements. No modals, no banners, no blocking. Next to the dot, on
+the detail, one line: «Pendiente de enviar» (*pending send*). And nothing more:
+an unsent weighing is a perfectly good weighing.
 
-### 7.3 La pantalla de conflictos
+### 7.3 The conflicts screen
 
-Una tarjeta por problema. Cada tarjeta **tiene que traer una persona, una fecha
-y un importe o una cantidad** — una tarjeta sin nombre y sin cifra no es una
-tarjeta, es ruido y se quita del diseño.
+One card per problem. Every card **has to carry a person, a date and an amount
+or a quantity** — a card with no name and no figure is not a card, it is noise,
+and it comes out of the design.
+
+The cards below are the Spanish interface, as the picker's supervisor reads
+them; the English gloss follows each one.
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -928,236 +940,245 @@ tarjeta, es ruido y se quita del diseño.
 └──────────────────────────────────────────────┘
 ```
 
-Reglas de esa pantalla, no negociables:
+In English: (1) *you changed this weighing from 12.5 kg to 13.0 kg, but it was
+already paid in the settlement of 26 August, for $1,187,500* — buttons *see the
+settlement* / *discard my change*. (2) *you recorded work for him, but he was
+deleted on the web on 20 August. The work was saved and his balance is correct*
+— buttons *reinstate them* / *it was somebody else*. (3) *this settlement was
+voided from the web on 29 August. The $1,187,500 payment you made is still in
+the history, so Ana now owes $1,187,500* — buttons *understood* / *see Ana's
+history*.
 
-- **Como máximo dos botones.** Si hacen falta tres, es que uno de ellos es una
-  decisión del dueño y va en otro sitio (anular una liquidación es el ejemplo).
-- **Nunca un diff de dos JSON.** Nunca «versión local / versión remota». La
-  finca no piensa en versiones, piensa en Ana y en el martes.
-- **Nada se auto-resuelve ni desaparece solo.** Una tarjeta se cierra porque
-  alguien pulsó, y queda registrada en el historial de conflictos con quién
-  pulsó qué.
-- **Los conflictos de dinero no se le enseñan al pesador.** El rol ya se lo
-  niega en el servidor; la pantalla filtra por rol y al pesador sólo le llegan
-  los suyos: pesadas rechazadas y empleados de baja.
+Rules for that screen, non-negotiable:
 
-### 7.4 Los saldos, mientras haya cosas sin enviar
+- **At most two buttons.** If three are needed, one of them is an owner's
+  decision and belongs somewhere else (voiding a settlement is the example).
+- **Never a diff of two JSON blobs.** Never "local version / remote version".
+  The farm does not think in versions, it thinks about Ana and about Tuesday.
+- **Nothing auto-resolves or disappears on its own.** A card closes because
+  somebody tapped, and it is recorded in the conflict history with who tapped
+  what.
+- **Money conflicts are not shown to the weigher.** The role already denies him
+  them on the server; the screen filters by role and the weigher only gets his
+  own: rejected weighings and deleted employees.
 
-La ficha del trabajador enseña el saldo con una etiqueta cuando el teléfono no
-está al día:
+### 7.4 Balances, while there are unsent things
+
+The worker's page shows the balance with a label when the phone is not up to
+date:
 
 > Saldo $340.000 · **provisional**, faltan 4 movimientos por enviar
 
-y si el `balances` del pull (§3.3) no cuadra con el `BALANCE_SQL` local
-estando todo enviado y todo recibido, eso **no** se arregla copiando el número:
-sale una tarjeta roja con las dos cifras y un botón «Enviar informe». Es un bug
-de cálculo entre dos implementaciones del mismo dinero, y para eso están los
-nueve casos de oro; hay que enterarse, no taparlo.
+(*Balance $340,000 · provisional, 4 movements still to send*)
+
+and if the pull's `balances` (§3.3) does not match the local `BALANCE_SQL` with
+everything sent and everything received, that is **not** fixed by copying the
+number: a red card comes up with both figures and an «Enviar informe» (*send
+report*) button. It is a calculation bug between two implementations of the same
+money, and that is what the nine golden cases are for; it has to be found out,
+not papered over.
 
 ---
 
-## 8. El plan de migración de la finca que ya está usando la app
+## 8. The migration plan for the farm already using the app
 
-Nueve fases. **En ninguna de ellas existe un momento en el que un pago pueda
-perderse o duplicarse**, y la razón estructural es una sola: hasta la fase 7 el
-teléfono conserva su SQLite completo y correcto, y nada de lo que se hace lo
-modifica de forma destructiva.
+Nine phases. **In none of them is there a moment where a payment could be lost
+or duplicated**, and the structural reason is one: until phase 7 the phone keeps
+its SQLite complete and correct, and nothing that is done modifies it
+destructively.
 
-Precondición: sigue vigente la mitigación de la decisión 3 —**se paga desde un
-solo lado**— hasta la fase 7. No hasta que se despliegue el sync.
+Precondition: decision 3's mitigation still stands — **pay from one side only** —
+until phase 7. Not until sync is deployed.
 
-**Fase 0 · Antes de tocar el teléfono.**
-Arreglar §4.4 (idempotencia del ledger) y desplegarlo. Añadir `expectedGrossCents`
-y `GROSS_CHANGED` (§5.5), y `EMPLOYEE_EXISTS_DELETED` (§5.6). Los tres son
-cambios de servidor que no afectan a nadie hasta que alguien los use.
+**Phase 0 · Before touching the phone.**
+Fix §4.4 (ledger idempotency) and deploy it. Add `expectedGrossCents` and
+`GROSS_CHANGED` (§5.5), and `EMPLOYEE_EXISTS_DELETED` (§5.6). All three are
+server changes that affect nobody until somebody uses them.
 
-**Fase 1 · Una versión del teléfono que sólo añade columnas.**
-`user_version = 6`: los UUID, el relleno hacia atrás, `deletedAt` en `pickups`,
-`localDay`/`week` materializados, `costPerUnitCents`, `outbox`, `sync_state`.
-**Sin una sola llamada de red.** La app se comporta exactamente igual.
-Criterio de salida: los 75 tests del móvil y los 9 casos de oro verdes
-**ejecutados sobre una copia de la base real de la finca**, no sobre una
-sembrada. `missing = 0` en la consulta de §1.3.
+**Phase 1 · A phone version that only adds columns.**
+`user_version = 6`: the UUIDs, the backfill, `deletedAt` on `pickups`,
+materialised `localDay`/`week`, `costPerUnitCents`, `outbox`, `sync_state`.
+**Not one network call.** The app behaves exactly the same.
+Exit criterion: the mobile app's 75 tests and the 9 golden cases green,
+**run against a copy of the farm's real database**, not a seeded one.
+`missing = 0` on the §1.3 query.
 
-**Fase 2 · La copia.**
-Se saca una copia del `.db` del teléfono a dos sitios distintos, y se **prueba
-restaurarla** en un teléfono de repuesto: se abre la app y se comparan tres
-cifras contra la pantalla del original (kilos de la temporada, número de
-liquidaciones vivas, saldo del trabajador con más movimientos). Nada continúa
-hasta que esa restauración funciona. Una copia que nadie ha restaurado no es
-una copia.
+**Phase 2 · The backup.**
+A copy of the phone's `.db` is taken to two separate places, and **restoring it
+is tested** on a spare phone: the app is opened and three figures are compared
+against the original's screen (season kilos, number of live settlements, balance
+of the worker with the most movements). Nothing continues until that restore
+works. A backup nobody has restored is not a backup.
 
-**Fase 3 · La importación, en seco.**
-Contra una base de datos de prueba con las migraciones puestas, en **una sola
-transacción**, conservando los UUID del teléfono:
+**Phase 3 · The import, dry.**
+Against a test database with the migrations applied, in **a single
+transaction**, keeping the phone's UUIDs:
 
 ```sql
 -- Order matters: parents first, and every id is the phone's own uuid.
 --  people          -> employees
---  crops           -> plots (uuid nuevo) + plot_crops (HEREDA el uuid del crop)
+--  crops           -> plots (new uuid) + plot_crops (INHERITS the crop's uuid)
 --  cost_overrides  -> week_prices
---  pickups         -> work_records, actividad semilla "Recolección",
+--  pickups         -> work_records, seed activity "Recolección",
 --                     rate_source = 'weekly_price', unit = kg,
 --                     started_at = pickups.date, quantity = weight
 --  settlements     -> settlements
 --  settlement_items-> settlement_items (payable_id = pickups.uuid)
---  ledger          -> ledger, en orden de id, con settlement_id y reverses_id
---                     resueltos por uuid
+--  ledger          -> ledger, in id order, with settlement_id and reverses_id
+--                     resolved by uuid
 ```
 
-`plot_crops` hereda el uuid del `crop` porque es a donde apuntaban las pesadas;
-la parcela es nueva y se llama igual que el lote que el usuario tenía en la
-cabeza. Es la migración que ya describe `modelo-datos.md` §B, y su propiedad
-importante es que **el dinero no se remapea**: `settlement_items.payable_id`
-apunta al mismo uuid que apuntaba en el teléfono.
+`plot_crops` inherits the `crop`'s uuid because that is where the weighings
+pointed; the plot is new and takes the name of the plot the user had in his
+head. It is the migration `modelo-datos.md` §B already describes, and its
+important property is that **the money is not remapped**:
+`settlement_items.payable_id` points at the same uuid it pointed at on the phone.
 
-Y antes del `COMMIT`, tres consultas de reconciliación que **tienen que devolver
-cero filas**:
+And before the `COMMIT`, three reconciliation queries that **must return zero
+rows**:
 
 ```sql
--- 1. Saldo por trabajador: el del teléfono contra el del servidor.
---    Cualquier fila aquí aborta la transacción.
+-- 1. Balance per worker: the phone's against the server's.
+--    Any row here aborts the transaction.
 SELECT e.id, p.balance_cents, s.balance_minor
   FROM phone_balances p JOIN employees e ON e.id = p.uuid
   JOIN LATERAL (SELECT COALESCE(SUM(amount_minor),0) AS balance_minor
                   FROM ledger WHERE employee_id = e.id) s ON true
  WHERE p.balance_cents <> s.balance_minor;
 
--- 2. Kilos por semana.
+-- 2. Kilos per week.
 SELECT week_start, SUM(quantity) FROM work_records GROUP BY 1
 EXCEPT SELECT week, kg FROM phone_weeks;
 
--- 3. El candado: tantas líneas vivas como tenía el teléfono, ni una más.
+-- 3. The lock: as many live lines as the phone had, not one more.
 SELECT COUNT(*) FROM settlement_items WHERE voided_at IS NULL;  -- = phone count
 ```
 
-Se repite hasta que salga limpio. Todo esto ocurre sobre una copia: el teléfono
-no se ha enterado de nada.
+Repeated until it comes out clean. All of this happens on a copy: the phone
+knows nothing about it.
 
-**Fase 4 · El corte, y es la única hora que importa.**
-Un martes por la mañana, un día en que la finca no paga, con alguien presente:
+**Phase 4 · The cutover, and it is the only hour that matters.**
+A Tuesday morning, a day the farm does not pay, with somebody present:
 
-1. La app del teléfono entra en **modo lectura de dinero** por control remoto
-   (`capabilities.settleOffline = false` más un `moneyReadOnly = true` en el
-   handshake, o una bandera local si aún no hay red): se pueden registrar
-   pesadas, no se puede liquidar, pagar ni anular. Registrar sigue abierto
-   porque el corte no puede parar la báscula.
-2. Se saca una segunda copia, la de verdad, la del momento del corte.
-3. Se corre la importación de la fase 3 contra producción, con las mismas tres
-   consultas de reconciliación **dentro de la transacción**.
-4. Si algo falla: `ROLLBACK`, se quita el modo lectura, y la finca sigue como
-   estaba. **El teléfono no se ha modificado, así que no hay nada que
-   deshacer.** Esa es toda la seguridad de este plan.
+1. The phone's app goes into **money read-only mode** by remote control
+   (`capabilities.settleOffline = false` plus a `moneyReadOnly = true` in the
+   handshake, or a local flag if there is still no network): weighings can be
+   recorded, settling, paying and voiding cannot. Recording stays open because
+   the cutover cannot stop the scale.
+2. A second backup is taken, the real one, the one from the moment of the cut.
+3. The phase 3 import is run against production, with the same three
+   reconciliation queries **inside the transaction**.
+4. If anything fails: `ROLLBACK`, read-only mode is lifted, and the farm carries
+   on as it was. **The phone has not been modified, so there is nothing to
+   undo.** That is the entirety of this plan's safety.
 
-Duración esperada: menos de una hora para una temporada.
+Expected duration: under an hour for one season.
 
-**Fase 5 · Sólo pull, 24 horas.**
-Se enciende el `pull` y nada más. El teléfono recibe, aplica y no manda nada.
-Durante esas 24 horas, el teléfono y la web están mirando lo mismo desde dos
-sitios, y las pesadas nuevas del teléfono **siguen sin salir de él**, en el
-outbox, esperando.
+**Phase 5 · Pull only, 24 hours.**
+`pull` is switched on and nothing else. The phone receives, applies and sends
+nothing. During those 24 hours the phone and the web are looking at the same
+thing from two places, and the phone's new weighings **still do not leave it** —
+they sit in the outbox, waiting.
 
-Se comparan a mano: el saldo de cinco trabajadores, los kilos de la semana, el
-número de liquidaciones vivas. Aquí es donde un error se encuentra gratis,
-porque todavía no se ha escrito nada en el servidor desde el teléfono.
+Compared by hand: five workers' balances, the week's kilos, the number of live
+settlements. This is where a mistake is found for free, because nothing has yet
+been written to the server from the phone.
 
-**Fase 6 · Push.**
-Se enciende el push. El outbox se vacía en orden. Se vuelve a reconciliar.
-El servidor ya tiene todo lo que ocurrió durante la fase 5.
+**Phase 6 · Push.**
+Push is switched on. The outbox drains in order. Reconciled again. The server
+now has everything that happened during phase 5.
 
-**Fase 7 · Se levanta el modo lectura y se retira el aviso.**
-El teléfono vuelve a poder pagar y anular, con el botón de liquidar exigiendo
-sincronización previa (§6.1). **Aquí, y sólo aquí, se retira el aviso permanente
-de la web** y termina la mitigación «se paga desde un solo lado» de la
-decisión 3.
+**Phase 7 · Read-only mode is lifted and the warning removed.**
+The phone can pay and void again, with the settle button requiring a prior sync
+(§6.1). **Here, and only here, the web's permanent warning is removed** and
+decision 3's "pay from one side only" mitigation ends.
 
-**Fase 8 · Conservar.**
-La copia previa a la migración se guarda toda la temporada. No se borra al día
-siguiente porque un descuadre se descubre cuando alguien reclama, y eso pasa a
-las tres semanas.
+**Phase 8 · Keep.**
+The pre-migration backup is kept for the whole season. It is not deleted the
+next day, because a discrepancy is discovered when somebody complains, and that
+happens three weeks later.
 
-**Fase 9 · La fecha límite que no fijamos nosotros.**
-El teléfono sigue hablando por `/v1/pickups`, que traduce `cropId → plot_crop`.
-**El día que la finca registre un segundo cultivo en un lote, la fachada deja de
-poder traducir.** Antes de ese día el teléfono tiene que estar en
-`/v1/work-records`. No es una preferencia de calendario: es una propiedad del
-modelo, y la web tiene que impedir crear el segundo cultivo en un lote mientras
-haya un teléfono en `schemaVersion < 7`.
-
----
-
-## 9. Lo que NO haría
-
-- **CRDTs, automerge, o cualquier librería de merge.** El ledger ya conmuta:
-  añadir es conmutativo y el saldo es un `SUM`. Una librería de CRDT no añade
-  nada a eso y mete un algoritmo que nadie del equipo puede depurar entre un
-  recolector y su pago.
-- **Last-write-wins en cualquier fila de dinero.** No hay ni un campo del rastro
-  de dinero cuya sobrescritura sea segura. Donde hace falta corregir, se anula y
-  se rehace, que es la única operación que deja rastro.
-- **Un replicador bidireccional genérico de tablas.** La dirección por tabla de
-  §2 *es* el diseño. Un motor genérico la borra y convierte la primera
-  configuración mal puesta en una fuga de nómina.
-- **Relojes vectoriales, HLC, o cualquier orden distribuido.** Hay un servidor.
-  Su orden de commit es un orden total. `sync-and-roles.md` proponía «contador
-  por dispositivo + orden de llegada»; el `seq` con horizonte hace lo mismo con
-  un entero.
-- **Websockets, SSE o notificaciones push.** Sondear al abrir, al volver a
-  primer plano, cada 15 minutos y al pulsar. Una conexión persistente sobre la
-  red de una finca es batería y datos a cambio de una latencia que a nadie le
-  importa.
-- **Sincronizar nada derivado.** Saldos, IRL, anomalías, totales, ni una vez.
-  Se recalculan a los dos lados desde los mismos hechos, y si difieren eso es un
-  bug que los casos de oro tienen que cazar, no una fila que copiar. El único
-  total que viaja es el `balances` del §3.3, y viaja **como checksum**, se
-  compara y se tira.
-- **Sincronizar en dos direcciones los precios y las parcelas.** §2.1.
-- **Borrar físicamente algo, en cualquier dirección.** Un `DELETE` no deja
-  lápida y resucita en el siguiente pull. Por eso `pickups.remove` pasa a ser
-  lógico en §1.5.
-- **Una pantalla de conflictos con un diff.** §7.3.
-- **Sincronizar fotos en la primera versión.** Una foto de empleado son
-  megabytes en el plan de datos del pesador. Sube sólo con wifi, en segundo
-  plano, y **no bloquea nada**: un empleado sin foto es un empleado.
-- **Cifrar la base local, un proceso de sync aparte, o un servicio nativo en
-  segundo plano.** Ninguno de los tres resuelve un problema que esta finca
-  tenga hoy, y los tres son código que hay que mantener sin poder probarlo.
-- **Resolver automáticamente un conflicto que toque dinero.** Si la regla no
-  está escrita en §5, termina delante de una persona.
-- **Un modo «forzar subida» o «reiniciar sincronización» en la interfaz.** Es el
-  botón que un día alguien pulsa a las once de la noche. Si hace falta un
-  bootstrap, lo dispara el servidor con `CURSOR_TOO_OLD`.
+**Phase 9 · The deadline we did not set.**
+The phone still talks over `/v1/pickups`, which translates `cropId → plot_crop`.
+**The day the farm registers a second crop on a plot, the facade can no longer
+translate.** Before that day the phone has to be on `/v1/work-records`. It is
+not a calendar preference: it is a property of the model, and the web has to
+prevent creating a second crop on a plot while there is a phone on
+`schemaVersion < 7`.
 
 ---
 
-## 10. Lo que sólo puede decidir el dueño
+## 9. What I would NOT do
 
-Cada uno de estos cambia lo que su gente puede hacer en el lote. Ninguno lo
-puede firmar el equipo.
+- **CRDTs, automerge, or any merge library.** The ledger already commutes:
+  appending is commutative and the balance is a `SUM`. A CRDT library adds
+  nothing to that and inserts an algorithm nobody on the team can debug between
+  a picker and his pay.
+- **Last-write-wins on any money row.** There is not a single field on the money
+  trail whose overwrite is safe. Where a correction is needed, it is voided and
+  redone, which is the only operation that leaves a trace.
+- **A generic bidirectional table replicator.** The per-table direction in §2
+  *is* the design. A generic engine erases it and turns the first misconfigured
+  setting into a payroll leak.
+- **Vector clocks, HLC, or any distributed ordering.** There is one server. Its
+  commit order is a total order. `sync-and-roles.md` proposed "a per-device
+  counter plus arrival order"; the `seq` with a horizon does the same thing with
+  one integer.
+- **Websockets, SSE or push notifications.** Poll on open, on foreground, every
+  15 minutes and on tap. A persistent connection over a farm's network is
+  battery and data in exchange for latency nobody cares about.
+- **Syncing anything derived.** Balances, IRL, anomalies, totals — not once.
+  They are recomputed on both sides from the same facts, and if they differ that
+  is a bug the golden cases have to catch, not a row to copy. The only total
+  that travels is the `balances` of §3.3, and it travels **as a checksum**, gets
+  compared and gets thrown away.
+- **Syncing prices and plots in both directions.** §2.1.
+- **Physically deleting anything, in any direction.** A `DELETE` leaves no
+  tombstone and resurrects on the next pull. That is why `pickups.remove`
+  becomes soft in §1.5.
+- **A conflicts screen with a diff.** §7.3.
+- **Syncing photos in the first version.** An employee photo is megabytes out of
+  the weigher's data plan. It uploads on wifi only, in the background, and
+  **blocks nothing**: an employee with no photo is an employee.
+- **Encrypting the local database, a separate sync process, or a native
+  background service.** None of the three solves a problem this farm has today,
+  and all three are code that has to be maintained without being able to test
+  it.
+- **Automatically resolving a conflict that touches money.** If the rule is not
+  written in §5, it ends up in front of a person.
+- **A "force upload" or "reset sync" mode in the interface.** It is the button
+  somebody presses one day at eleven at night. If a bootstrap is needed, the
+  server triggers it with `CURSOR_TOO_OLD`.
 
-1. **El teléfono deja de liquidar sin señal** (§6). En campo se entrega
-   `anticipo`, que se amortiza exacto. ¿Se acepta perder el cierre de semana en
-   el lote? Si no, hay que construir la variante «provisional» de §6.4, que es
-   una pantalla más y dos semanas más.
-2. **Las parcelas y los cultivos pasan a ser de sólo lectura en el teléfono**
-   (§2.1). ¿Quién abre un lote nuevo a mitad de cosecha, y puede esperar a que
-   alguien lo cree en la web?
-3. **El precio semanal pasa a ser de sólo lectura en el teléfono** (§2.1). El
-   dueño lo pone en la web. ¿Le sirve?
-4. **El teléfono no verá jornales ni contratos** (§2.2), así que su saldo deja
-   de ser el saldo completo de quien haga las dos cosas. ¿Se acepta, o hay que
-   costear la pantalla de labores en el móvil antes del sync?
-5. **Un teléfono que lleva muchos días sin sincronizar: ¿se le sigue dejando
-   pesar?** Recomendación: **sí, siempre**, sin límite. Pero eso significa un
-   atraso sin techo y una reconciliación grande el día que baje. La alternativa
-   —bloquear a los N días— para la báscula, y parar la báscula es peor.
-6. **Un trabajador dado de baja con trabajo nuevo** (§5.6): ¿el
-   comportamiento por defecto es volver a darlo de alta, o dejarlo de baja y
-   avisar? Recomendación: dejarlo de baja y avisar, porque la baja la decidió
-   alguien.
-7. **Quién lee la pantalla de conflictos.** Recomendación: los de dinero, sólo
-   el dueño y el administrador; al pesador sólo los suyos. Si el dueño quiere
-   que el pesador los vea todos, hay que abrirle lecturas que hoy la RLS le
-   niega, y eso es una decisión de privacidad de la nómina, no de sincronización.
-8. **Cuándo es el corte de la fase 4** y quién está presente. Un martes por la
-   mañana, menos de una hora, y no un día de pago.
+---
+
+## 10. What only the owner can decide
+
+Each of these changes what his people can do out at the plot. None of them can
+be signed off by the team.
+
+1. **The phone stops settling without a signal** (§6). In the field an
+   `anticipo` is handed over, and it amortises exactly. Is losing the week's
+   close out at the plot acceptable? If not, the "provisional" variant of §6.4
+   has to be built, which is one more screen and two more weeks.
+2. **Plots and crops become read-only on the phone** (§2.1). Who opens a new
+   plot mid-harvest, and can they wait for somebody to create it on the web?
+3. **The weekly price becomes read-only on the phone** (§2.1). The owner sets it
+   on the web. Does that work for him?
+4. **The phone will not see day work or contracts** (§2.2), so its balance stops
+   being the full balance for anyone who does both. Accepted, or does the mobile
+   work-records screen have to be costed before sync?
+5. **A phone that has gone many days without syncing: does it still get to
+   weigh?** Recommendation: **yes, always**, no limit. But that means an
+   unbounded backlog and a large reconciliation the day it comes down. The
+   alternative — blocking after N days — stops the scale, and stopping the scale
+   is worse.
+6. **A deleted worker with new work** (§5.6): is the default behaviour to
+   reinstate them, or to leave them deleted and raise it? Recommendation: leave
+   them deleted and raise it, because somebody decided that deletion.
+7. **Who reads the conflicts screen.** Recommendation: the money ones, owner and
+   administrator only; the weigher sees only his own. If the owner wants the
+   weigher to see them all, reads have to be opened up that RLS denies him
+   today, and that is a payroll privacy decision, not a sync decision.
+8. **When the phase 4 cutover happens** and who is present. A Tuesday morning,
+   under an hour, and not a pay day.

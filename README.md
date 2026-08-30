@@ -34,7 +34,7 @@ needed to use it.
 ## Design notes
 
 - [Use cases](docs/casos-de-uso.md) — the owner's own specification of the
-  full scope: plots, employees, activities, tasks, inventory, sales and
+  full scope: plots, employees, activities, work records, inventory, sales and
   expenses. The mobile app covers a small part of it today.
 - [API and auth design](docs/arquitectura-api.md) — Go layout, REST contract,
   roles and the cross-tenant worker registry.
@@ -51,6 +51,10 @@ needed to use it.
 - [Sync and roles](docs/sync-and-roles.md) — how records travel from a phone
   with no signal to the server, what happens when two phones settle the same
   week, and what each role can do.
+- [Adversarial audits](docs/auditorias.md) — the scoreboard for both audits:
+  what held, what broke, and what is still open.
+- [The simplification the owner proposed](docs/simplificacion.md) — what it
+  would cost to take the money off the phone, counted rather than guessed.
 
 ## 📄 License
 

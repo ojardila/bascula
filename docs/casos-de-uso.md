@@ -1,249 +1,258 @@
-# Casos de uso
+# Use cases
 
-Escritos por el dueño antes de este trabajo. Son la fuente de verdad del
-alcance: la app movil de hoy cubre solo una parte pequena de esto.
+Written by the owner before this work started. They are the source of truth for
+scope: today's mobile app covers only a small part of this.
 
-Referencias de interfaz que el dueno senalo para el modulo de parcelas:
-cropti.com y farmlogs.com.
+Interface references the owner pointed at for the plot module (*Parcelas*):
+cropti.com and farmlogs.com.
 
-## Convenciones comunes a todos los casos
+> A note on vocabulary. This is the owner's document and his words are the
+> product's words. Where a Spanish term is also what the interface says, it is
+> kept in parentheses: **Parcela** (plot) and **Labor** (work record) are the
+> two that matter most.
 
-- El actor es el **Administrador de Finca**, autenticado y con el privilegio
-  correspondiente al modulo.
-- Al entrar a cualquier modulo sin privilegios, el sistema notifica la carencia
-  y saca al usuario del modulo.
-- Al guardar, el sistema valida los campos obligatorios y, si faltan, indica
-  **cuales** y **por que**, y deja volver al formulario.
-- **Eliminar nunca borra**: marca el registro como inactivo.
+## Conventions common to every case
 
----
-
-## 1. Gestion de Parcelas
-
-### RSP-001 Registrar Parcela
-
-Campos:
-
-*Informacion de la parcela*
-- Nombre del lote — string(80), obligatorio
-- Superficie total en hectareas — double, obligatorio
-
-*Ubicacion*
-- Departamento — string(80), obligatorio
-- Municipio — string(80), obligatorio
-- Mapa — poligono (dato SIG)
-
-*Informacion de los cultivos*
-- Tipo de cultivo — string(80), obligatorio (cafe, aguacate, yuca...), con opcion
-  de agregar si no existe
-- Variedad — string(80), autocompletar con opcion de agregar si no existe
-- Boton para agregar otro cultivo
-
-Excepcion: el sistema muestra por defecto un cultivo de cafe disponible para
-seleccionar variedad.
-
-### RSP-002 Modificar Parcela
-Los mismos campos, precargados con los valores almacenados.
-
-### RSP-003 Eliminar Parcela
-Pide confirmacion. Al aceptar, la parcela queda **inactiva**, no borrada.
+- The actor is the **Farm Administrator**, authenticated and holding the
+  privilege for that module.
+- On entering any module without the privilege, the system says what is missing
+  and takes the user out of the module.
+- On save, the system validates the required fields and, if any are missing,
+  says **which** and **why**, and lets the user back into the form.
+- **Delete never deletes**: it marks the record inactive.
 
 ---
 
-## 2. Gestion de Empleados
+## 1. Plot management (*Gestión de Parcelas*)
 
-### RSP-004 Registrar Empleado
+### RSP-001 Register a Parcela
 
-*Datos del empleado*
-- Nombre completo — string(80), obligatorio
-- Tipo de identificacion — string(80), obligatorio
-- Identificacion — string(80), obligatorio
-- Foto — archivo, hasta 5 MB
+Fields:
 
-*Datos de contacto*
-- Telefono — numerico(30), obligatorio
-- Direccion, ciudad — string(80)
+*Plot information*
+- Plot name (*nombre del lote*) — string(80), required
+- Total area in hectares — double, required
 
-**Requiere internet**: antes de guardar, el sistema consulta con la
-identificacion el **historial de trabajo en otras fincas** y las **alertas de
-seguridad**, y los muestra para que el usuario continue o cancele. Sin internet,
-crea una solicitud de analisis que se sincroniza despues.
+*Location*
+- Department — string(80), required
+- Municipality — string(80), required
+- Map — polygon (GIS data)
 
-### RSP-005 Modificar Empleado
-Los mismos campos, precargados. Direccion incluye ciudad, municipio y pais.
+*Crop information*
+- Crop type — string(80), required (coffee, avocado, cassava…), with the option
+  to add one if it does not exist
+- Variety — string(80), autocomplete with the option to add one if it does not
+  exist
+- Button to add another crop
 
-### RSP-006 Eliminar Empleado
-Confirmacion; queda **inactivo**.
+Exception: the system offers a coffee crop by default, ready to have a variety
+selected against it.
 
-### RSP-007 Visualizar perfil de Empleado
-Muestra datos del empleado, **saldo pendiente por pagar**, y botones de accion:
-pagar empleado, registrar deuda, agregar anotacion. Ademas:
-- **Labores**: nombre de actividad, fecha, lotes
-- **Historial financiero**: tipo (deuda o pago), concepto, monto, fecha
-- **Anotaciones**: texto y fecha
+### RSP-002 Modify a Parcela
+The same fields, pre-filled with the stored values.
 
-### RSP-008 Pagar Empleado
-Redirige al modulo de pagos, que muestra:
-- Lista de labores: nombre, fecha, lotes, valor
-- Lista de deudas: descripcion del gasto, fecha, valor
-- Total a pagar
-- Botones: registrar deuda, registrar labor, pago parcial, pago total
-
-En **pago parcial** pide el valor, valida que sea menor al saldo actual y
-actualiza el saldo. En **pago total** deja el saldo en cero. El sistema genera
-el **recibo de pago**.
-
-### RSP-009 Consultar Historial de Empleado
-Busca por tipo y numero de identificacion y muestra los **datos publicos**: las
-fincas donde ha trabajado con sus periodos, y las anotaciones realizadas. Si no
-hay informacion, lo indica. **Postcondicion: queda registrado que esa finca lo
-consulto.**
+### RSP-003 Delete a Parcela
+Asks for confirmation. On accept, the plot becomes **inactive**, not deleted.
 
 ---
 
-## 3. Gestion de Actividades
+## 2. Employee management (*Gestión de Empleados*)
 
-### RSP-010 Listar Actividades
-Trae del repositorio publico en internet las ultimas categorias y actividades.
-Lista agrupando por categoria, mostrando nombre, forma de pago y los datos de
-sus unidades. Ejemplo:
+### RSP-004 Register an Employee
 
-- Cosecha → recoleccion por kilos
-- Mantenimiento → tala por jornal, fertilizar por jornal
+*Employee details*
+- Full name — string(80), required
+- Identification type — string(80), required
+- Identification number — string(80), required
+- Photo — file, up to 5 MB
 
-Ofrece buscador y los botones "Agregar Actividad" y "Definir Precios".
+*Contact details*
+- Phone — numeric(30), required
+- Address, city — string(80)
 
-### RSP-011 Registrar Actividad
-- Nombre — obligatorio
-- Categoria — select, obligatorio (siembra, mantenimiento, cosecha...), con
-  opcion de crear una nueva
-- Pago — select, obligatorio: **contrato**, **tiempo** o **unidad de trabajo**
+**Requires internet**: before saving, the system uses the identification number
+to look up the person's **work history at other farms** and any **safety
+alerts**, and shows them so the user can continue or cancel. With no internet,
+it creates a background-check request that syncs later.
 
-Segun el pago:
-- *Unidad de trabajo*: unidad (kilos, arrobas, canastas) y precio por unidad
-- *Unidad de tiempo*: diario (jornal), semanal, quincenal, mensual o
-  personalizado (cantidad + unidad: dia, mes, ano), y precio
+### RSP-005 Modify an Employee
+The same fields, pre-filled. Address includes city, municipality and country.
 
-### RSP-012 Modificar Actividad · RSP-013 Eliminar Actividad
-Mismos campos; eliminar deja la actividad **inactiva**.
+### RSP-006 Delete an Employee
+Confirmation; the employee becomes **inactive**.
 
-### Definir precio de actividades
-Pendiente de especificar por el dueno.
+### RSP-007 View an Employee's profile
+Shows the employee's details, the **balance owed to them**, and action buttons:
+pay employee, register a debt, add a note. Plus:
+- **Work records** (*Labores*): activity name, date, plots
+- **Financial history**: type (debt or payment), concept, amount, date
+- **Notes**: text and date
 
----
+### RSP-008 Pay an Employee
+Redirects to the payments module, which shows:
+- List of work records: name, date, plots, value
+- List of debts: description of the expense, date, value
+- Total to pay
+- Buttons: register debt, register work record, partial payment, full payment
 
-## 4. Gestion de Labores
+On a **partial payment** it asks for the amount, validates that it is less than
+the current balance, and updates the balance. On a **full payment** it leaves
+the balance at zero. The system generates the **payment receipt**.
 
-### RSP-014 Listar Labores
-Muestra actividad, forma de pago, fecha de realizacion, lotes y cultivos, con
-buscador y boton "Registrar labor".
-
-### RSP-015 Registrar Labor
-El usuario elige categoria y luego actividad; el sistema muestra:
-- Nombre de la actividad y forma de pago (solo lectura)
-- Empleado — obligatorio
-- Unidades de tiempo o de trabajo — obligatorio
-- Precio — por defecto el de la actividad
-- Rango de fechas — por defecto el dia actual, obligatorio
-- Lotes — obligatorio
-- Cultivos — obligatorio
-
-### RSP-016 Modificar Labor · RSP-017 Eliminar Labor
-Eliminar deja la labor **inactiva**.
-
----
-
-## 5. Gestion de Productos e Inventarios
-
-### RSP-018 Listar Productos
-Trae categorias y productos del repositorio publico. Agrupa por categoria
-mostrando nombre y unidades existentes, con opciones de modificar, eliminar y
-actualizar inventario.
-
-### RSP-019 Registrar Producto
-- Nombre — obligatorio
-- Categoria — select (materia prima, producto procesado...), con opcion de crear
-- Unidades de almacenamiento — select, con opcion de crear
-
-### RSP-020 Modificar Producto · RSP-021 Eliminar Producto
-Eliminar deja el producto **inactivo**.
-
-### RSP-025 Registrar inventario de producto
-- Nombre del producto (no editable), unidades, lote, bodega (opcional), cultivo
-- Al guardar, **el sistema imprime los stickers de identificacion del producto**
+### RSP-009 Look up an Employee's history
+Searches by identification type and number and shows the **public data**: the
+farms where the person has worked with their periods, and the notes written
+about them. If there is no information, it says so. **Postcondition: it is
+recorded that this farm looked them up.**
 
 ---
 
-## 6. Gestion de Ventas
+## 3. Activity management (*Gestión de Actividades*)
 
-### RSP-026 Listar Ventas · RSP-027 Registrar Venta
-- Producto — select, obligatorio
-- Cantidad — double, obligatorio
-- Valor — double, obligatorio
-- Cliente — select (ej. cooperativa)
-- Foto del comprobante de venta
+### RSP-010 List Activities
+Pulls the latest categories and activities from the public repository on the
+internet. Lists them grouped by category, showing name, form of payment and the
+details of its units. For example:
 
-### RSP-028 Modificar Venta · RSP-029 Eliminar Venta
-Eliminar deja la venta **inactiva**.
+- Harvest → picking, paid by the kilo
+- Maintenance → felling by the day, fertilising by the day
 
----
+Offers a search box and the buttons "Agregar Actividad" (*add activity*) and
+"Definir Precios" (*set prices*).
 
-## 7. Gestion de Gastos
+### RSP-011 Register an Activity
+- Name — required
+- Category — select, required (planting, maintenance, harvest…), with the option
+  to create a new one
+- Payment — select, required: **by contract**, **by time** or **by unit of
+  work**
 
-### RSP-030 Listar Gastos · RSP-031 Registrar Gasto
-- Valor — double
-- Tipo de gasto — select: **actividad** o **lote/cultivo**
-  - Si es actividad: se elige de la lista de actividades existentes
-  - Si es lote/cultivo: el lote pasa a obligatorio y el sistema muestra los
-    cultivos asociados a ese lote
-- Lote y cultivos — opcionales segun el tipo
+Depending on the payment:
+- *Unit of work*: unit (kilos, arrobas, baskets) and price per unit
+- *Unit of time*: daily (`jornal`, a day's work at a day rate), weekly,
+  fortnightly, monthly or custom (quantity + unit: day, month, year), and price
 
-### RSP-032 Modificar Gasto · RSP-033 Eliminar Gasto
-Eliminar deja el gasto **inactivo**.
+### RSP-012 Modify an Activity · RSP-013 Delete an Activity
+Same fields; deleting leaves the activity **inactive**.
 
----
-
-## 8. Configuracion
-
-### Modificar datos de la finca
-- Nombre, telefono, dimension en hectareas — obligatorios
-- Pais (select), ciudad, direccion — obligatorios
-
-### Modificar precios de trabajo
-Pendiente de especificar por el dueno.
-
-### Gestion de usuarios
-Listar y agregar usuarios. Pendiente de detallar.
+### Setting activity prices
+Still to be specified by the owner.
 
 ---
 
-## 9. Autenticacion y registro
+## 4. Work record management (*Gestión de Labores*)
 
-### Autenticar usuario · Registrar finca
-Pendientes de especificar por el dueno.
+### RSP-014 List Labores
+Shows activity, form of payment, date performed, plots and crops, with a search
+box and a "Registrar labor" (*register work record*) button.
+
+### RSP-015 Register a Labor
+The user picks a category and then an activity; the system shows:
+- Activity name and form of payment (read only)
+- Employee — required
+- Units of time or of work — required
+- Price — defaults to the activity's
+- Date range — defaults to today, required
+- Plots — required
+- Crops — required
+
+### RSP-016 Modify a Labor · RSP-017 Delete a Labor
+Deleting leaves the work record **inactive**.
 
 ---
 
-## Tensiones que este documento abre
+## 5. Product and inventory management (*Gestión de Productos e Inventarios*)
 
-Anotadas por el equipo al recibirlo, para resolverlas antes de construir.
+### RSP-018 List Products
+Pulls categories and products from the public repository. Groups them by
+category showing name and units in stock, with options to modify, delete and
+update inventory.
 
-1. **La recoleccion deja de ser especial.** La app movil trata la pesada por
-   kilos como entidad de primera clase. Aqui es *una actividad* pagada por
-   unidad de trabajo, junto a tala por jornal o fertilizacion por contrato.
-   Generalizar el modelo afecta al ledger, a las liquidaciones y a la migracion
-   de los datos que ya existen.
+### RSP-019 Register a Product
+- Name — required
+- Category — select (raw material, processed product…), with the option to
+  create one
+- Storage units — select, with the option to create one
 
-2. **Parcela y cultivo no son lo mismo.** Hoy `crops` mezcla ambos; aqui una
-   parcela tiene varios cultivos, cada uno con tipo y variedad.
+### RSP-020 Modify a Product · RSP-021 Delete a Product
+Deleting leaves the product **inactive**.
 
-3. **RSP-004 y RSP-009 cruzan fincas.** Consultar el historial de un trabajador
-   en otras fincas y sus "alertas de seguridad" rompe el aislamiento entre
-   inquilinos y tiene implicaciones serias de privacidad: mal disenado, es una
-   lista negra de trabajadores. Que se comparte, quien lo ve y como se corrige
-   un dato injusto son decisiones del dueno, no del equipo.
+### RSP-025 Register product inventory
+- Product name (not editable), units, batch, warehouse (optional), crop
+- On save, **the system prints the product identification stickers**
 
-4. **Poligonos SIG** (RSP-001) implican PostGIS o GeoJSON en jsonb.
+---
 
-5. **Repositorio publico de actividades y productos** (RSP-010, RSP-018): un
-   catalogo compartido entre fincas que hoy no existe en ninguna parte.
+## 6. Sales management (*Gestión de Ventas*)
+
+### RSP-026 List Sales · RSP-027 Register a Sale
+- Product — select, required
+- Quantity — double, required
+- Value — double, required
+- Customer — select (e.g. a cooperative)
+- Photo of the sale receipt
+
+### RSP-028 Modify a Sale · RSP-029 Delete a Sale
+Deleting leaves the sale **inactive**.
+
+---
+
+## 7. Expense management (*Gestión de Gastos*)
+
+### RSP-030 List Expenses · RSP-031 Register an Expense
+- Value — double
+- Expense type — select: **activity** or **plot/crop**
+  - If it is an activity: it is picked from the list of existing activities
+  - If it is a plot/crop: the plot becomes required and the system shows the
+    crops associated with that plot
+- Plot and crops — optional depending on the type
+
+### RSP-032 Modify an Expense · RSP-033 Delete an Expense
+Deleting leaves the expense **inactive**.
+
+---
+
+## 8. Configuration (*Configuración*)
+
+### Modify farm details
+- Name, phone, size in hectares — required
+- Country (select), city, address — required
+
+### Modify work prices
+Still to be specified by the owner.
+
+### User management
+List and add users. Still to be detailed.
+
+---
+
+## 9. Authentication and registration
+
+### Authenticate a user · Register a farm
+Both still to be specified by the owner.
+
+---
+
+## Tensions this document opens
+
+Noted by the team on receiving it, to be resolved before building.
+
+1. **Picking stops being special.** The mobile app treats weighing by the kilo
+   as a first-class entity. Here it is *one activity* paid by unit of work,
+   alongside felling by the day or fertilising by contract. Generalising the
+   model touches the ledger, the settlements and the migration of the data that
+   already exists.
+
+2. **Parcela and cultivo are not the same thing.** Today `crops` mixes the two;
+   here a plot has several crops, each with its own type and variety.
+
+3. **RSP-004 and RSP-009 cross farms.** Looking up a worker's history at other
+   farms and their "safety alerts" breaks tenant isolation and carries serious
+   privacy implications: designed badly, it is a labour blacklist. What gets
+   shared, who sees it and how an unfair entry is corrected are the owner's
+   decisions, not the team's.
+
+4. **GIS polygons** (RSP-001) mean PostGIS, or GeoJSON in `jsonb`.
+
+5. **A public repository of activities and products** (RSP-010, RSP-018): a
+   catalogue shared between farms that today exists nowhere.

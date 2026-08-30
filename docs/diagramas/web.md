@@ -1,75 +1,77 @@
-# Báscula — App web
+# Báscula — Web app
 
-La web es la consola de administración de la finca: **Vite + React + TypeScript**, cliente
-HTTP generado desde `openapi.yaml` (cero tipos escritos a mano), MSW con los mismos mocks
-para no quedar bloqueada por la API.
+The web app is the farm's administration console: **Vite + React + TypeScript**, an HTTP
+client generated from `openapi.yaml` (zero hand-written types), MSW with the same mocks so
+it is never blocked waiting on the API.
 
-Reglas que atraviesan todas las pantallas y que no se repiten en cada diagrama:
+Rules that cut across every screen and that are not repeated in each diagram:
 
-- **La navegación oculta lo que el rol no puede**, pero eso no es una autorización: la
-  autorización está en el servidor y devuelve `403`. Ocultar un botón no es un permiso.
-- **Al entrar a un módulo sin privilegio**, la web muestra el aviso y saca al usuario del
-  módulo — es la convención de `casos-de-uso.md`, aplicada sobre el `403` de la API.
-- **Al guardar**, si faltan obligatorios se indica **cuáles** y **por qué**, y se vuelve al
-  formulario con lo escrito intacto.
-- **Eliminar nunca borra**: pide confirmación y hace `PATCH {status:"inactive"}`.
-- **Todo `POST` lleva el `id` UUIDv7 generado en el cliente**, así que reintentar tras un
-  timeout devuelve `200` con el recurso existente, no un duplicado.
-- **Los conflictos de negocio son `409` con código propio** y la web ramifica por `code`:
-  `WORK_RECORD_SETTLED`, `PAYABLE_ALREADY_CLAIMED`, `INVALID_GEOMETRY`,
-  `PLOT_HAS_ACTIVE_CROPS`, `FARM_SUSPENDED`, `NO_CONSENT`. La traducción vive en el cliente.
+- **Navigation hides what the role cannot do**, but that is not authorisation: the
+  authorisation is on the server and it returns `403`. Hiding a button is not a permission.
+- **On entering a module without the privilege**, the web app shows the warning and takes
+  the user out of the module — that is the convention from `casos-de-uso.md`, applied on top
+  of the API's `403`.
+- **On save**, if required fields are missing it says **which ones** and **why**, and it
+  returns to the form with what was typed intact.
+- **Delete never deletes**: it asks for confirmation and does `PATCH {status:"inactive"}`.
+- **Every `POST` carries the UUIDv7 `id` generated on the client**, so retrying after a
+  timeout returns `200` with the existing resource, not a duplicate.
+- **Business conflicts are `409` with a code of their own** and the web app branches on
+  `code`: `WORK_RECORD_SETTLED`, `PAYABLE_ALREADY_CLAIMED`, `INVALID_GEOMETRY`,
+  `PLOT_HAS_ACTIVE_CROPS`, `FARM_SUSPENDED`, `NO_CONSENT`. The translation lives in the
+  client.
 
-Referencias de interfaz que el dueño citó: **cropti.com** y **farmlogs.com**. De ahí salen
-tres cosas concretas: barra lateral fija de módulos, lista con buscador y botón primario
-arriba a la derecha, y el mapa como panel lateral del detalle de la parcela.
+Interface references the owner cited: **cropti.com** and **farmlogs.com**. Three concrete
+things come out of those: a fixed sidebar of modules, a list with a search box and a primary
+button top right, and the map as a side panel on the plot (*Parcela*) detail.
 
 ---
 
-## 1. Mapa de navegación
+## 1. Navigation map
 
 ```mermaid
 graph TD
     login["Login"]
-    signup["Autoregistro de finca<br/>nace en trial"]
-    shell["Shell autenticado<br/>barra lateral por rol"]
+    signup["Farm self-registration<br/>born in trial"]
+    shell["Authenticated shell<br/>sidebar by role"]
 
     login --> shell
     signup --> login
 
-    subgraph SG_admin["Consola de super-admin, fuera del tenant"]
-        sa_home["Fincas"]
-        sa_new["Crear finca y primer dueno"]
-        sa_det["Detalle de finca<br/>estado, plan, ultimo acceso"]
-        sa_susp["Suspender o reactivar"]
+    subgraph SG_admin["Super-admin console, outside the tenant"]
+        sa_home["Farms"]
+        sa_new["Create farm and first owner"]
+        sa_det["Farm detail<br/>status, plan, last access"]
+        sa_susp["Suspend or reactivate"]
         sa_home --> sa_new
         sa_home --> sa_det
         sa_det --> sa_susp
     end
-    login -.->|"solo is_super_admin"| sa_home
+    login -.->|"is_super_admin only"| sa_home
 
-    shell --> tablero["Tablero<br/>saldos pendientes, kilos de la semana,<br/>labores sin liquidar"]
+    shell --> tablero["Dashboard<br/>pending balances, kilos of the week,<br/>unsettled work records"]
 
-    subgraph SG_parc["Parcelas"]
-        p_list["Lista de parcelas"]
-        p_new["Alta de parcela<br/>paso 1 identidad y ubicacion<br/>paso 2 cultivos"]
-        p_det["Detalle de parcela<br/>cultivos, labores, gastos,<br/>panel de mapa"]
-        p_edit["Editar parcela RSP-002"]
-        p_del["Dar de baja RSP-003"]
+    subgraph SG_parc["Plots"]
+        p_list["Plot list"]
+        p_new["New plot<br/>step 1 identity and location<br/>step 2 crops"]
+        p_det["Plot detail<br/>crops, work records, expenses,<br/>map panel"]
+        p_edit["Edit plot RSP-002"]
+        p_del["Deactivate RSP-003"]
         p_list --> p_new
         p_list --> p_det
         p_det --> p_edit
         p_det --> p_del
     end
 
-    subgraph SG_emp["Empleados"]
-        e_list["Lista de empleados"]
-        e_new["Alta de empleado RSP-004<br/>foto y documento"]
-        e_prof["Perfil RSP-007<br/>saldo, labores, historial,<br/>anotaciones"]
-        e_pay["Pagar empleado RSP-008"]
-        e_debt["Registrar deuda"]
-        e_note["Agregar anotacion"]
-        e_rec["Recibo de pago"]
-        e_look["Consultar historial RSP-009"]
+    subgraph SG_emp["Employees"]
+        e_list["Employee list"]
+        e_new["New employee RSP-004<br/>photo and ID document"]
+        e_prof["Profile RSP-007<br/>balance, work records, history,<br/>notes"]
+        e_pay["Pay employee RSP-008"]
+        e_debt["Record a debt"]
+        e_note["Add a note"]
+        e_rec["Payment receipt"]
+        e_look["Look up history RSP-009"]
         e_list --> e_new
         e_list --> e_prof
         e_prof --> e_pay
@@ -79,58 +81,58 @@ graph TD
         e_list --> e_look
     end
 
-    subgraph SG_act["Actividades"]
-        a_list["Lista por categoria RSP-010"]
-        a_new["Alta RSP-011<br/>contrato, tiempo o unidad"]
-        a_price["Definir precios<br/>y precio de la semana"]
+    subgraph SG_act["Activities"]
+        a_list["List by category RSP-010"]
+        a_new["New RSP-011<br/>contrato, tiempo or unidad"]
+        a_price["Set prices<br/>and the price of the week"]
         a_list --> a_new
         a_list --> a_price
     end
 
-    subgraph SG_lab["Labores"]
-        l_list["Lista de labores RSP-014"]
-        l_new["Registrar labor RSP-015"]
-        l_edit["Modificar RSP-016 y anular RSP-017"]
+    subgraph SG_lab["Work records"]
+        l_list["Work record list RSP-014"]
+        l_new["Register a work record RSP-015"]
+        l_edit["Modify RSP-016 and void RSP-017"]
         l_list --> l_new
         l_list --> l_edit
     end
 
-    subgraph SG_liq["Liquidaciones"]
-        s_prev["Previsualizar liquidacion"]
-        s_det["Liquidacion<br/>lineas congeladas"]
-        s_void["Anular liquidacion"]
+    subgraph SG_liq["Settlements"]
+        s_prev["Preview settlement"]
+        s_det["Settlement<br/>frozen lines"]
+        s_void["Void settlement"]
         s_prev --> s_det
         s_det --> s_void
     end
 
-    subgraph SG_inv["Inventario"]
-        i_prod["Productos RSP-018 a 021"]
-        i_stock["Existencias derivadas"]
-        i_mov["Movimiento de inventario RSP-025"]
-        i_lbl["Stickers en PDF"]
+    subgraph SG_inv["Inventory"]
+        i_prod["Products RSP-018 to 021"]
+        i_stock["Derived stock"]
+        i_mov["Stock movement RSP-025"]
+        i_lbl["Stickers as PDF"]
         i_prod --> i_stock
         i_stock --> i_mov
         i_mov --> i_lbl
     end
 
-    subgraph SG_ven["Ventas"]
-        v_list["Lista RSP-026"]
-        v_new["Registrar venta RSP-027<br/>foto del comprobante"]
+    subgraph SG_ven["Sales"]
+        v_list["List RSP-026"]
+        v_new["Record a sale RSP-027<br/>photo of the proof of sale"]
         v_list --> v_new
     end
 
-    subgraph SG_gas["Gastos"]
-        g_list["Lista RSP-030"]
-        g_new["Registrar gasto RSP-031<br/>por actividad o por lote y cultivo"]
+    subgraph SG_gas["Expenses"]
+        g_list["List RSP-030"]
+        g_new["Record an expense RSP-031<br/>by activity or by plot and crop"]
         g_list --> g_new
     end
 
-    subgraph SG_cfg["Configuracion"]
-        c_farm["Datos de la finca"]
-        c_price["Precios de trabajo"]
-        c_user["Usuarios e invitaciones"]
-        c_dev["Dispositivos y sesiones"]
-        c_audit["Bitacora de auditoria"]
+    subgraph SG_cfg["Configuration"]
+        c_farm["Farm details"]
+        c_price["Work prices"]
+        c_user["Users and invitations"]
+        c_dev["Devices and sessions"]
+        c_audit["Audit log"]
     end
 
     tablero --> p_list
@@ -155,222 +157,224 @@ graph TD
     class i_prod,i_stock,i_mov,i_lbl,e_look,c_dev,sa_home,sa_new,sa_det,sa_susp s3;
 ```
 
-Verde = **Sprint 1**. Ámbar = **Sprint 2** (ventas, gastos, anotaciones, polígono,
-auditoría). Gris punteado = **Sprint 3 o sin decidir** (inventario, RSP-009, consola de
-super-admin, gestión de dispositivos).
+Green = **Sprint 1**. Amber = **Sprint 2** (sales, expenses, notes, polygon, audit). Dotted
+grey = **Sprint 3 or undecided** (inventory, RSP-009, super-admin console, device
+management).
 
-La consola de super-admin cuelga del login, **no del shell de la finca**: es otro conjunto
-de rutas, otro rol y ninguna lectura del ledger ajeno. `arquitectura-api.md` §8 dice que
-con autoregistro es "casi innecesaria"; queda como pantalla mínima para suspender.
+The super-admin console hangs off the login, **not off the farm shell**: it is a different
+set of routes, a different role and no reads of anyone else's ledger. `arquitectura-api.md`
+§8 says that with self-registration it is "almost unnecessary"; it stays as a minimal screen
+for suspending.
 
 ---
 
-## 2. Actividad: alta de parcela — RSP-001
+## 2. Activity: new plot — RSP-001
 
-Dos pasos, como cropti: identidad y ubicación primero, cultivos después. El mapa se
-maqueta y se deja **deshabilitado** en el Sprint 1 para que el Sprint 2 solo lo rellene.
+Two steps, like cropti: identity and location first, crops afterwards. The map is mocked up
+and left **disabled** in Sprint 1 so that Sprint 2 only has to fill it in.
 
 ```mermaid
 flowchart TD
-    ini(["Usuario pulsa Nueva parcela"]) --> perm{"Tiene permiso<br/>de escritura en parcelas"}
-    perm -->|"no"| neg["Avisar carencia<br/>y salir del modulo"] --> fin(["Fin"])
-    perm -->|"si"| p1["Paso 1<br/>nombre del lote, superficie en ha,<br/>departamento, municipio"]
+    ini(["User taps Nueva parcela"]) --> perm{"Has write permission<br/>on plots"}
+    perm -->|"no"| neg["Warn about the missing privilege<br/>and leave the module"] --> fin(["End"])
+    perm -->|"yes"| p1["Step 1<br/>plot name, area in ha,<br/>department, municipality"]
 
-    p1 --> mapa["Panel de mapa<br/>deshabilitado en sprint 1"]
-    mapa --> v1{"Obligatorios completos"}
-    v1 -->|"no"| e1["Marcar cuales faltan y por que<br/>volver al formulario"] --> p1
-    v1 -->|"si"| p2["Paso 2 Cultivos<br/>se precarga una fila de Cafe"]
+    p1 --> mapa["Map panel<br/>disabled in sprint 1"]
+    mapa --> v1{"Required fields complete"}
+    v1 -->|"no"| e1["Mark which ones are missing and why<br/>return to the form"] --> p1
+    v1 -->|"yes"| p2["Step 2 Crops<br/>a Cafe row is preloaded"]
 
-    p2 --> tipo["Elegir tipo de cultivo<br/>autocompletar sobre /v1/catalogs/crop-types"]
-    tipo --> t_hay{"El tipo existe<br/>en el catalogo de la finca"}
-    t_hay -->|"si"| varie
-    t_hay -->|"no"| t_add["Agregar si no existe<br/>POST /v1/catalogs/crop-types con name"]
-    t_add --> t_idem["Idempotente por farm_id y lower name<br/>si ya estaba devuelve 200 con el existente<br/>el autocompletar nunca duplica"] --> varie
+    p2 --> tipo["Choose the crop type<br/>autocomplete over /v1/catalogs/crop-types"]
+    tipo --> t_hay{"Does the type exist<br/>in the farm catalog"}
+    t_hay -->|"yes"| varie
+    t_hay -->|"no"| t_add["Add if it does not exist<br/>POST /v1/catalogs/crop-types with name"]
+    t_add --> t_idem["Idempotent by farm_id and lower name<br/>if it was already there it returns 200 with the existing one<br/>the autocomplete never duplicates"] --> varie
 
-    varie["Elegir variedad<br/>autocompletar filtrado por tipo"] --> v_hay{"La variedad existe"}
-    v_hay -->|"no"| v_add["POST /v1/catalogs/varieties<br/>misma idempotencia"] --> area
-    v_hay -->|"si"| area["Area del cultivo y fecha de siembra<br/>opcionales"]
+    varie["Choose the variety<br/>autocomplete filtered by type"] --> v_hay{"Does the variety exist"}
+    v_hay -->|"no"| v_add["POST /v1/catalogs/varieties<br/>same idempotency"] --> area
+    v_hay -->|"yes"| area["Crop area and planting date<br/>both optional"]
 
-    area --> otro{"Agregar otro cultivo"}
-    otro -->|"si"| tipo
-    otro -->|"no"| v2{"Al menos un cultivo<br/>con tipo y variedad"}
-    v2 -->|"no"| e2["Indicar que falta el cultivo"] --> p2
-    v2 -->|"si"| guardar["POST /v1/plots con id UUIDv7 del cliente<br/>luego POST /v1/plots/id/crops por cada fila"]
+    area --> otro{"Add another crop"}
+    otro -->|"yes"| tipo
+    otro -->|"no"| v2{"At least one crop<br/>with type and variety"}
+    v2 -->|"no"| e2["Say that the crop is missing"] --> p2
+    v2 -->|"yes"| guardar["POST /v1/plots with the client UUIDv7 id<br/>then POST /v1/plots/id/crops for each row"]
 
-    guardar --> resp{"Respuesta"}
-    resp -->|"201 o 200 idempotente"| ok["Ir al detalle de la parcela"] --> fin
-    resp -->|"400 con campos"| e1
-    resp -->|"403 FARM_SUSPENDED"| susp["Modo solo lectura<br/>ver maquina de estados"] --> fin
+    guardar --> resp{"Response"}
+    resp -->|"201 or 200 idempotent"| ok["Go to the plot detail"] --> fin
+    resp -->|"400 with fields"| e1
+    resp -->|"403 FARM_SUSPENDED"| susp["Read-only mode<br/>see the state machine"] --> fin
 
-    subgraph SG_s2["Sprint 2, mismo formulario"]
-        dib["Dibujar poligono en el mapa"] --> put["PUT /v1/plots/id/boundary con GeoJSON"]
+    subgraph SG_s2["Sprint 2, same form"]
+        dib["Draw the polygon on the map"] --> put["PUT /v1/plots/id/boundary with GeoJSON"]
         put --> geo{"ST_IsValid"}
-        geo -->|"no"| ger["400 INVALID_GEOMETRY<br/>el poligono se cruza a si mismo"]
-        geo -->|"si"| calc["Calcular ST_Area entre 10000<br/>y avisar solapes con ST_Intersects"]
-        calc --> dos["Mostrar las dos cifras<br/>declarada y calculada"]
+        geo -->|"no"| ger["400 INVALID_GEOMETRY<br/>the polygon crosses itself"]
+        geo -->|"yes"| calc["Compute ST_Area over 10000<br/>and warn about overlaps with ST_Intersects"]
+        calc --> dos["Show both figures<br/>declared and computed"]
     end
     ok -.-> dib
 ```
 
-**Por qué se muestran las dos áreas.** `area_ha` es lo que declara el dueño;
-`computedAreaHa` es lo que sale del polígono. Discrepan siempre. Ocultar una de las dos es
-decidir por el dueño cuál miente, así que la ficha muestra ambas y la diferencia en
-porcentaje. La web no elige.
+**Why both areas are shown.** `area_ha` is what the owner declares; `computedAreaHa` is what
+comes out of the polygon. They always disagree. Hiding one of the two is deciding on the
+owner's behalf which one is lying, so the record shows both and the difference as a
+percentage. The web app does not choose.
 
-**La excepción de RSP-001** —"el sistema muestra por defecto un cultivo de café disponible
-para seleccionar variedad"— se implementa sembrando el tipo *Café* en el catálogo al crear
-la finca y precargando una fila en el paso 2, no con un caso especial en el código.
+**The RSP-001 exception** — "the system shows by default an available coffee crop so a
+variety can be selected" — is implemented by seeding the type *Café* into the catalog when
+the farm is created and preloading one row in step 2, not with a special case in the code.
 
 ---
 
-## 3. Actividad: registrar labor — RSP-015
+## 3. Activity: register a work record — RSP-015
 
-El caso central del negocio y el nudo de dependencias: necesita empleado, actividad y
-lote/cultivo. Aquí es donde una pesada de café deja de ser especial y pasa a ser una labor
-pagada por unidad de trabajo.
+The central case of the business and the knot of dependencies: it needs an employee, an
+activity and a plot/crop. This is where a coffee weighing stops being special and becomes a
+work record (*Labor*) paid by work unit.
 
 ```mermaid
 flowchart TD
-    ini(["Registrar labor"]) --> cat["Elegir categoria<br/>siembra, mantenimiento, cosecha"]
-    cat --> act["Elegir actividad de esa categoria"]
-    act --> ro["Mostrar nombre y forma de pago<br/>solo lectura"]
-    ro --> emp["Elegir empleado, obligatorio"]
-    emp --> lote["Elegir lotes, obligatorio"]
-    lote --> cul["Elegir cultivos de esos lotes, obligatorio"]
-    cul --> modo{"pay_mode de la actividad"}
+    ini(["Register a work record"]) --> cat["Choose the category<br/>siembra, mantenimiento, cosecha"]
+    cat --> act["Choose an activity in that category"]
+    act --> ro["Show name and pay mode<br/>read only"]
+    ro --> emp["Choose the employee, required"]
+    emp --> lote["Choose plots, required"]
+    lote --> cul["Choose crops from those plots, required"]
+    cul --> modo{"pay_mode of the activity"}
 
-    modo -->|"work_unit"| wu["Cantidad en la unidad de la actividad<br/>kilos, arrobas, canastas"]
-    modo -->|"time_unit"| tu["Cantidad de unidades de tiempo<br/>jornal, semanal, quincenal,<br/>mensual o personalizado"]
-    modo -->|"contract"| ct["Sin cantidad<br/>el contrato es el trabajo entero"]
+    modo -->|"work_unit"| wu["Quantity in the unit of the activity<br/>kilos, arrobas, baskets"]
+    modo -->|"time_unit"| tu["Number of time units<br/>jornal, semanal, quincenal,<br/>mensual or personalizado"]
+    modo -->|"contract"| ct["No quantity<br/>the contract is the whole job"]
 
-    wu --> fuente{"rate_source de la actividad"}
-    fuente -->|"weekly_price"| wk["Precio del lunes de esa semana<br/>NO se escribe en la labor"]
-    fuente -->|"fixed"| fx["Precio por defecto de la actividad<br/>editable, solo el dueno"]
+    wu --> fuente{"rate_source of the activity"}
+    fuente -->|"weekly_price"| wk["Price of the Monday of that week<br/>NOT written onto the work record"]
+    fuente -->|"fixed"| fx["Default price of the activity<br/>editable, owner only"]
 
-    wk --> undia["Forzar un solo dia<br/>date_from igual a date_to"]
-    undia --> aviso["Avisar en la UI<br/>esta actividad usa precio semanal<br/>y se registra por dia"]
+    wk --> undia["Force a single day<br/>date_from equal to date_to"]
+    undia --> aviso["Warn in the UI<br/>this activity uses a weekly price<br/>and is recorded per day"]
     aviso --> fechas
 
-    tu --> fx2["rate_cents de la actividad, editable por el dueno"] --> fechas
-    ct --> fx3["Valor total del contrato"] --> fechas
-    fx --> fechas["Rango de fechas<br/>por defecto el dia de hoy<br/>en la zona horaria de la finca"]
+    tu --> fx2["rate_cents of the activity, editable by the owner"] --> fechas
+    ct --> fx3["Total value of the contract"] --> fechas
+    fx --> fechas["Date range<br/>today by default<br/>in the farm time zone"]
 
-    fechas --> val{"Obligatorios completos<br/>empleado, cantidad, fechas,<br/>lotes y cultivos"}
-    val -->|"no"| err["Indicar cuales faltan y por que"] --> emp
-    val -->|"si"| post["POST /v1/work-records con id del cliente"]
+    fechas --> val{"Required fields complete<br/>employee, quantity, dates,<br/>plots and crops"}
+    val -->|"no"| err["Say which ones are missing and why"] --> emp
+    val -->|"yes"| post["POST /v1/work-records with the client id"]
 
-    post --> res{"Respuesta"}
-    res -->|"201"| dev["El servidor NO devenga todavia<br/>la labor queda pendiente de liquidar"]
-    res -->|"409 WORK_RECORD_SETTLED"| conf["La labor ya esta en una liquidacion viva<br/>ofrecer anular la liquidacion primero"]
-    res -->|"403"| neg["Pesador fuera de work_unit<br/>o rol sin permiso"]
+    post --> res{"Response"}
+    res -->|"201"| dev["The server does NOT accrue yet<br/>the work record is left pending settlement"]
+    res -->|"409 WORK_RECORD_SETTLED"| conf["The work record is already in a live settlement<br/>offer to void the settlement first"]
+    res -->|"403"| neg["Weigher outside work_unit<br/>or role without permission"]
 
-    dev --> cong{"Cuando se congela el precio"}
-    cong -->|"work_unit mas weekly_price"| tarde["Al liquidar<br/>costForWeek del lunes<br/>comportamiento del movil, se preserva"]
-    cong -->|"work_unit fijo, contract, time_unit"| pronto["Al escribir<br/>rate_cents queda en la fila, congelado"]
+    dev --> cong{"When the price is frozen"}
+    cong -->|"work_unit plus weekly_price"| tarde["At settlement<br/>costForWeek of the Monday<br/>mobile behaviour, preserved"]
+    cong -->|"work_unit fixed, contract, time_unit"| pronto["At write time<br/>rate_cents stays on the row, frozen"]
 
-    tarde --> liq["En la liquidacion, settlement_items<br/>guarda week, quantity, rate_cents y amount_cents"]
+    tarde --> liq["In the settlement, settlement_items<br/>stores week, quantity, rate_cents and amount_cents"]
     pronto --> liq
-    liq --> led["La liquidacion posta UN devengo en el ledger<br/>y toma el candado del pagable"]
-    led --> fin(["Fin"])
+    liq --> led["The settlement posts ONE devengo in the ledger<br/>and takes the lock on the payable"]
+    led --> fin(["End"])
 ```
 
-Tres cosas que este flujo decide y que conviene no perder:
+Three things this flow decides that are worth not losing:
 
-- **El devengo no lo crea la labor, lo crea la liquidación.** Igual que en el móvil: la
-  labor es el hecho, la liquidación es el documento que congela precios y postea el
-  `devengo`. Por eso una labor se puede corregir mientras no esté liquidada.
-- **El candado.** `settlement_items` tiene `UNIQUE(payable_id) WHERE voided_at IS NULL`. Si
-  dos personas liquidan a la vez, la segunda recibe `409 PAYABLE_ALREADY_CLAIMED` con
-  `details.winningSettlement` completo para re-derivar. Nada se pierde en silencio.
-- **El rango de fechas con precio semanal se colapsa al día**, no se rechaza. Ver
-  `sistema.md` §7.5: es la salida a un choque real entre RSP-015 y el modelo de precios.
+- **The `devengo` is not created by the work record, it is created by the settlement.** Just
+  like on mobile: the work record is the fact, the settlement is the document that freezes
+  prices and posts the `devengo`. That is why a work record can be corrected as long as it
+  has not been settled.
+- **The lock.** `settlement_items` has `UNIQUE(payable_id) WHERE voided_at IS NULL`. If two
+  people settle at the same time, the second one gets `409 PAYABLE_ALREADY_CLAIMED` with a
+  complete `details.winningSettlement` to re-derive from. Nothing is lost silently.
+- **A date range with a weekly price collapses to a single day**, it is not rejected. See
+  `sistema.md` §7.5: it is the way out of a real clash between RSP-015 and the price model.
 
-**El pesador ve una versión recortada de esta pantalla**: solo actividades `work_unit`, sin
-campo de precio, sin `default_rate_cents` en el `GET /v1/activities`, y la lista de
-empleados llega con `id, name, lastName, tag` y nada más. No es la misma pantalla con
-campos ocultos: es una respuesta distinta del servidor.
+**The weigher sees a cut-down version of this screen**: only `work_unit` activities, no
+price field, no `default_rate_cents` in the `GET /v1/activities`, and the employee list
+arrives with `id, name, lastName, tag` and nothing else. It is not the same screen with
+fields hidden: it is a different response from the server.
 
 ---
 
-## 4. Actividad: pagar empleado — RSP-008
+## 4. Activity: pay an employee — RSP-008
 
 ```mermaid
 flowchart TD
-    ini(["Desde el perfil, boton Pagar"]) --> perm{"Rol dueno o administrador"}
-    perm -->|"no"| neg["403, avisar y salir"] --> fin(["Fin"])
-    perm -->|"si"| prev["GET /v1/settlements/preview del empleado<br/>y GET /v1/workers/id/balance"]
+    ini(["From the profile, the Pagar button"]) --> perm{"Role owner or administrator"}
+    perm -->|"no"| neg["403, warn and leave"] --> fin(["End"])
+    perm -->|"yes"| prev["GET /v1/settlements/preview for the employee<br/>and GET /v1/workers/id/balance"]
 
-    prev --> pan["Modulo de pagos<br/>labores pendientes con nombre, fecha, lotes y valor<br/>deudas con descripcion, fecha y valor<br/>total a pagar"]
+    prev --> pan["Payments module<br/>pending work records with name, date, plots and value<br/>debts with description, date and value<br/>total to pay"]
 
-    pan --> nada{"Hay algo que liquidar"}
-    nada -->|"no y saldo cero"| vacio["409 NOTHING_TO_SETTLE<br/>ofrecer registrar labor o deuda"] --> fin
-    nada -->|"si"| liq["POST /v1/settlements con payableIds<br/>congela lineas y postea el devengo"]
+    pan --> nada{"Is there anything to settle"}
+    nada -->|"no and balance zero"| vacio["409 NOTHING_TO_SETTLE<br/>offer to record a work record or a debt"] --> fin
+    nada -->|"yes"| liq["POST /v1/settlements with payableIds<br/>freezes lines and posts the devengo"]
 
-    liq --> lock{"Algun pagable ya reclamado"}
-    lock -->|"si"| clash["409 PAYABLE_ALREADY_CLAIMED<br/>mostrar la liquidacion ganadora<br/>y recargar el saldo"] --> pan
-    lock -->|"no"| saldo["Saldo actualizado desde el ledger<br/>nunca desde un total guardado"]
+    liq --> lock{"Is any payable already claimed"}
+    lock -->|"yes"| clash["409 PAYABLE_ALREADY_CLAIMED<br/>show the winning settlement<br/>and reload the balance"] --> pan
+    lock -->|"no"| saldo["Balance refreshed from the ledger<br/>never from a stored total"]
 
-    saldo --> tipo{"Que eligio el usuario"}
-    tipo -->|"Registrar deuda"| ded["POST /v1/deductions<br/>ledger kind deduccion, importe negativo"] --> saldo
-    tipo -->|"Pago total"| tot["POST /v1/payments por el saldo completo<br/>ledger kind pago"]
-    tipo -->|"Pago parcial"| par["Pedir el valor"]
+    saldo --> tipo{"What did the user choose"}
+    tipo -->|"Record a debt"| ded["POST /v1/deductions<br/>ledger kind deduccion, negative amount"] --> saldo
+    tipo -->|"Full payment"| tot["POST /v1/payments for the whole balance<br/>ledger kind pago"]
+    tipo -->|"Partial payment"| par["Ask for the amount"]
 
-    par --> cmp{"Valor contra el saldo"}
-    cmp -->|"menor"| ok1["POST /v1/payments por ese valor<br/>el saldo baja, no llega a cero"]
-    cmp -->|"igual"| tot
-    cmp -->|"mayor"| exc["RSP-008 lo prohibe, el ledger no<br/>preguntar al usuario"]
-    exc --> dec{"Que quiere hacer"}
-    dec -->|"Corregir"| par
-    dec -->|"Pagar de mas"| split["POST /v1/payments hasta el saldo<br/>mas POST /v1/advances por el excedente<br/>ledger kind anticipo"]
+    par --> cmp{"Amount against the balance"}
+    cmp -->|"lower"| ok1["POST /v1/payments for that amount<br/>the balance goes down, it does not reach zero"]
+    cmp -->|"equal"| tot
+    cmp -->|"higher"| exc["RSP-008 forbids it, the ledger does not<br/>ask the user"]
+    exc --> dec{"What do they want to do"}
+    dec -->|"Correct it"| par
+    dec -->|"Overpay"| split["POST /v1/payments up to the balance<br/>plus POST /v1/advances for the excess<br/>ledger kind anticipo"]
 
     ok1 --> rec
     tot --> rec
-    split --> rec["Generar recibo de pago<br/>PDF con lineas, metodo, saldo antes y despues"]
-    rec --> hist["El pago queda en el historial financiero<br/>append only, no editable"]
-    hist --> err{"Se registro mal"}
-    err -->|"si"| rev["POST /v1/ledger/id/reverse<br/>un asiento opuesto, nunca un UPDATE<br/>unico por reverses_id"] --> fin
+    split --> rec["Generate the payment receipt<br/>PDF with lines, method, balance before and after"]
+    rec --> hist["The payment stays in the financial history<br/>append only, not editable"]
+    hist --> err{"Was it recorded wrong"}
+    err -->|"yes"| rev["POST /v1/ledger/id/reverse<br/>an opposite entry, never an UPDATE<br/>unique by reverses_id"] --> fin
     err -->|"no"| fin
 ```
 
-- **Pago total deja el saldo en cero** posteando un `pago` por el saldo exacto en el
-  momento de la escritura, con el saldo releído dentro de la misma transacción. Leerlo
-  antes y postearlo después es cómo se paga de más cuando dos personas cobran a la vez.
-- **El excedente es un `anticipo`, no un error.** Ver `sistema.md` §7.9.
-- **Nada se edita.** Un pago mal registrado se cancela con `reverso`, y `reverses_id` es
-  único: un asiento no se puede reversar dos veces.
+- **A full payment leaves the balance at zero** by posting a `pago` for the exact balance at
+  the moment of the write, with the balance re-read inside the same transaction. Reading it
+  before and posting it afterwards is how you overpay when two people collect at once.
+- **The excess is an `anticipo`, not an error.** See `sistema.md` §7.9.
+- **Nothing is edited.** A payment recorded wrong is cancelled with a `reverso`, and
+  `reverses_id` is unique: an entry cannot be reversed twice.
 
 ---
 
-## 5. Secuencia: login y propagación de tenant
+## 5. Sequence: login and tenant propagation
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant B as Navegador
-    participant W as App web React
+    participant B as Browser
+    participant W as React web app
     participant API as httpapi
     participant AU as auth
     participant TN as tenant
     participant DB as Postgres RLS
 
-    B->>W: correo y contrasena
+    B->>W: email and password
     W->>API: POST /v1/auth/login
-    API->>AU: verificar credenciales
-    AU->>DB: SELECT users WHERE email, sin tenant aun
-    DB-->>AU: id y password_hash
-    AU->>AU: argon2id verify, tiempo constante
-    alt credenciales malas
-        AU-->>W: 401 UNAUTHENTICATED, mensaje generico
+    API->>AU: verify credentials
+    AU->>DB: SELECT users WHERE email, no tenant yet
+    DB-->>AU: id and password_hash
+    AU->>AU: argon2id verify, constant time
+    alt bad credentials
+        AU-->>W: 401 UNAUTHENTICATED, generic message
     end
 
     AU->>DB: SELECT memberships WHERE user_id
-    DB-->>AU: fincas y roles del usuario
+    DB-->>AU: farms and roles of the user
 
-    alt varias fincas
-        AU-->>W: 200 con la lista de fincas
-        W->>B: pedir elegir finca
-        B->>W: finca elegida
-        W->>API: POST /v1/auth/login con farmId
+    alt several farms
+        AU-->>W: 200 with the list of farms
+        W->>B: ask them to choose a farm
+        B->>W: farm chosen
+        W->>API: POST /v1/auth/login with farmId
     end
 
     AU->>DB: SELECT status FROM farms WHERE id
@@ -378,166 +382,169 @@ sequenceDiagram
         AU-->>W: 403 FARM_SUSPENDED
     end
 
-    AU->>DB: INSERT refresh_tokens con hash, device_id, 60 dias
-    AU-->>API: access JWT 15 min con sub, farm_id, role, device_id, jti
-    API-->>W: 200 con access y refresh
-    W->>B: guardar, refresh en cookie httpOnly
+    AU->>DB: INSERT refresh_tokens with hash, device_id, 60 days
+    AU-->>API: access JWT 15 min with sub, farm_id, role, device_id, jti
+    API-->>W: 200 with access and refresh
+    W->>B: store, refresh in an httpOnly cookie
 
-    Note over W,API: El tenant viaja en el token, nunca en la ruta.<br/>Un farmId en el path invita a que alguien confie en el.
+    Note over W,API: The tenant travels in the token, never in the path.<br/>A farmId in the path invites somebody to trust it.
 
-    W->>API: GET /v1/plots con Bearer
-    API->>AU: validar firma y exp
+    W->>API: GET /v1/plots with Bearer
+    API->>AU: validate signature and exp
     AU-->>API: claims
-    API->>TN: transaccion para claims.farm_id
+    API->>TN: transaction for claims.farm_id
     TN->>DB: BEGIN
     TN->>DB: SET LOCAL app.farm_id
-    API->>DB: SELECT sin WHERE farm_id
-    DB-->>API: la politica RLS filtra
-    API-->>W: 200 con las parcelas de esa finca
+    API->>DB: SELECT with no WHERE farm_id
+    DB-->>API: the RLS policy filters
+    API-->>W: 200 with the plots of that farm
     TN->>DB: COMMIT
 
-    Note over W,API: A los 15 min el access vence.
+    Note over W,API: After 15 min the access token expires.
 
     W->>API: POST /v1/auth/refresh
-    API->>AU: rotar
-    AU->>DB: marcar el viejo usado, INSERT el nuevo
-    alt refresh ya usado, reuso detectado
-        AU->>DB: revocar toda la cadena del device_id
-        AU-->>W: 401, forzar login
-        Note over AU,DB: Un telefono prestado se mata desde la web.
+    API->>AU: rotate
+    AU->>DB: mark the old one used, INSERT the new one
+    alt refresh already used, reuse detected
+        AU->>DB: revoke the whole chain for that device_id
+        AU-->>W: 401, force login
+        Note over AU,DB: A lent phone is killed from the web.
     end
-    AU-->>W: nuevo par de tokens
+    AU-->>W: new pair of tokens
 ```
 
-**Cambiar de finca es volver a autenticarse contra la otra membresía**, no un parámetro en
-la petición. Un usuario con dos fincas tiene dos tokens; nunca uno que valga para las dos.
+**Switching farms means authenticating again against the other membership**, not passing a
+parameter on the request. A user with two farms has two tokens; never one that is good for
+both.
 
 ---
 
-## 6. Secuencia: consulta cross-tenant — RSP-009
+## 6. Sequence: cross-tenant lookup — RSP-009
 
-**No es un endpoint más.** Es un producto distinto, con riesgo legal propio, servicio
-aparte, credenciales propias y ningún acceso al esquema de las fincas. Está **fuera del
-Sprint 1** y es la decisión 1 del dueño en `plan-sprint-1.md` §7.
+**This is not just one more endpoint.** It is a different product, with legal risk of its
+own, a separate service, its own credentials and no access to the farms schema. It is
+**outside Sprint 1** and it is decision 1 for the owner in `plan-sprint-1.md` §7.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant U as Dueno o administrador
-    participant W as App web
-    participant API as API de la finca
-    participant R as Servicio registry
+    participant U as Owner or administrator
+    participant W as Web app
+    participant API as Farm API
+    participant R as Registry service
     participant RD as Postgres registry
-    participant T as Empleado
+    participant T as Employee
 
-    U->>W: buscar por tipo y numero de documento
+    U->>W: search by document type and number
     W->>API: POST /v1/workers/lookup
     API->>API: Require action registry.lookup
-    Note over API: 403 para el pesador, siempre.
+    Note over API: 403 for the weigher, always.
 
-    API->>RD: leer opt_in de esta finca
-    alt la finca no participa
-        API-->>W: 403 REGISTRY_OPT_OUT<br/>el opt-out no borra historial ajeno,<br/>corta el aporte y el acceso
+    API->>RD: read opt_in for this farm
+    alt the farm does not take part
+        API-->>W: 403 REGISTRY_OPT_OUT<br/>opting out does not erase anyone else history,<br/>it cuts off both the contribution and the access
     end
 
     API->>R: POST /registry/v1/lookups<br/>documentType, documentNumber, purpose hiring
-    Note over API,R: HTTP entre binarios.<br/>La API no tiene credenciales<br/>del esquema de registry.
+    Note over API,R: HTTP between binaries.<br/>The API holds no credentials<br/>for the registry schema.
 
-    R->>R: hash del documento, docHash
-    R->>RD: SELECT consents WHERE doc_hash y no revocado
+    R->>R: hash of the document, docHash
+    R->>RD: SELECT consents WHERE doc_hash and not revoked
 
-    alt sin consentimiento registrado
-        RD-->>R: nada
-        R->>RD: INSERT lookup con outcome no_consent
+    alt no consent on record
+        RD-->>R: nothing
+        R->>RD: INSERT lookup with outcome no_consent
         R-->>API: 403 NO_CONSENT
-        API-->>W: pedir autorizacion firmada del empleado<br/>y nada mas en pantalla
-        Note over W: No se filtra si el documento existe.<br/>Un 403 que distinga existe de no existe<br/>ya es media consulta gratis.
+        API-->>W: ask for a signed authorisation from the employee<br/>and nothing else on screen
+        Note over W: Whether the document exists is not leaked.<br/>A 403 that tells exists from does not exist<br/>is already half a free lookup.
     end
 
-    RD-->>R: consentimiento vigente
-    R->>RD: SELECT employment_spans y disputes
-    R->>RD: INSERT lookup con farm_id, user_id,<br/>purpose y timestamp
-    Note over R,RD: Postcondicion de RSP-009<br/>queda registrado quien consulto.
+    RD-->>R: consent in force
+    R->>RD: SELECT employment_spans and disputes
+    R->>RD: INSERT lookup with farm_id, user_id,<br/>purpose and timestamp
+    Note over R,RD: Postcondition of RSP-009<br/>who did the lookup is on the record.
 
-    R-->>API: verified true, farmsWorked 3,<br/>employmentSpans en meses, disputes 0,<br/>consentOnFile true
-    Note over R,API: Jamas viaja nombre de finca, saldo,<br/>deuda, anticipo, kilos, productividad,<br/>anotacion, foto, telefono ni direccion.<br/>Ni siquiera al super-admin.
+    R-->>API: verified true, farmsWorked 3,<br/>employmentSpans in months, disputes 0,<br/>consentOnFile true
+    Note over R,API: Farm name, balance, debt, anticipo, kilos,<br/>productivity, notes, photo, phone and address<br/>never travel. Not even to the super-admin.
 
-    API-->>W: mismos campos, sin enriquecer
-    W->>U: 3 fincas, periodos en meses, 0 disputas
+    API-->>W: same fields, not enriched
+    W->>U: 3 farms, spans in months, 0 disputes
 
     T->>R: GET /registry/v1/workers/docHash/lookups
-    R->>RD: SELECT lookups del trabajador
-    R-->>T: quien lo consulto, cuando y con que proposito
-    Note over T,R: La mitad de RSP-009 que si vale la pena<br/>construir, y la que lo hace defendible.
-    T->>R: POST /registry/v1/disputes, derecho de replica
-    T->>R: POST /registry/v1/consents revocar
+    R->>RD: SELECT lookups for that worker
+    R-->>T: who looked them up, when and for what purpose
+    Note over T,R: The half of RSP-009 that is worth<br/>building, and the one that makes it defensible.
+    T->>R: POST /registry/v1/disputes, right of reply
+    T->>R: POST /registry/v1/consents revoke
 ```
 
-**Lo que este diagrama no dibuja porque no se construye:** las "alertas de seguridad" de
-texto libre de RSP-004. Un texto que diga "este señor es problemático" es difamación
-distribuida, no verificable y no contestable. Si el dueño insiste, la única versión
-defendible tiene cinco propiedades y ninguna es opcional: hecho estructurado de un catálogo
-cerrado, atribuido a una finca identificable, notificado al trabajador, disputable, y con
-caducidad automática a 24 meses. Queda detrás de un flag apagado.
+**What this diagram does not draw because it is not being built:** the free-text "security
+alerts" of RSP-004. A text saying «este señor es problemático» (*this guy is trouble*) is
+distributed defamation, not verifiable and not answerable. If the owner insists, the only
+defensible version has five properties and none of them is optional: a structured fact from
+a closed catalog, attributed to an identifiable farm, notified to the worker, disputable,
+and expiring automatically after 24 months. It sits behind a flag that is switched off.
 
-**Choque abierto:** RSP-009 pide mostrar los **nombres de las fincas** y las **anotaciones**.
-Este diseño no los entrega. Ver `sistema.md` §7.1.
+**Open clash:** RSP-009 asks to show the **farm names** and the **notes**. This design does
+not deliver them. See `sistema.md` §7.1.
 
 ---
 
-## 7. Máquina de estados de una finca
+## 7. State machine of a farm
 
 ```mermaid
 stateDiagram-v2
-    [*] --> trial : autoregistro POST /v1/signup
-    [*] --> active : alta por super-admin con credenciales entregadas
+    [*] --> trial : self-registration POST /v1/signup
+    [*] --> active : created by super-admin with credentials handed over
 
-    trial --> active : super-admin activa PATCH /v1/admin/farms/id
-    trial --> suspended : vence el periodo o abuso detectado
+    trial --> active : super-admin activates PATCH /v1/admin/farms/id
+    trial --> suspended : the period expires or abuse is detected
 
-    active --> suspended : impago o suspension manual
-    suspended --> active : reactivar, nada se perdio
+    active --> suspended : non-payment or manual suspension
+    suspended --> active : reactivate, nothing was lost
 
-    active --> [*] : cierre a peticion del dueno, deleted_at nunca DELETE
-    suspended --> [*] : cierre a peticion del dueno
+    active --> [*] : closure at the owner request, deleted_at never DELETE
+    suspended --> [*] : closure at the owner request
 
     note right of trial
-      Todo funciona. Limites blandos
-      y un aviso en el shell.
-      El dato no se toca.
+      Everything works. Soft limits
+      and a warning in the shell.
+      The data is not touched.
     end note
 
     note right of suspended
-      Login si, lectura si, escritura no.
-      Toda escritura devuelve 403 FARM_SUSPENDED
-      y la web pasa a solo lectura con banner.
-      Nada se borra ni se archiva.
+      Login yes, reads yes, writes no.
+      Every write returns 403 FARM_SUSPENDED
+      and the web goes read-only with a banner.
+      Nothing is deleted and nothing is archived.
     end note
 
     note right of active
-      Operacion normal.
+      Normal operation.
     end note
 ```
 
-Tres reglas que sostienen la máquina:
+Three rules that hold the machine up:
 
-- **Suspender no borra ni oculta.** Un dueño que vuelve tres meses después encuentra su
-  ledger intacto. El estado gobierna la **escritura**, no la existencia.
-- **`FARM_SUSPENDED` se decide en el middleware `tenant`**, junto al `SET LOCAL`, no en
-  cada handler. Un handler nuevo no puede olvidarse de comprobarlo.
-- **El estado inicial depende de por qué puerta se entró**, y las dos puertas existen
-  porque el dueño no ha respondido la decisión 2 de `plan-sprint-1.md` §7. Ojo:
-  `arquitectura-api.md` §5 atribuye el autoregistro a "RSP-033", que en realidad es
-  *Eliminar Gasto*. Ver `sistema.md` §7.6.
+- **Suspending does not delete and does not hide.** An owner who comes back three months
+  later finds their ledger intact. The state governs **writing**, not existence.
+- **`FARM_SUSPENDED` is decided in the `tenant` middleware**, next to the `SET LOCAL`, not in
+  each handler. A new handler cannot forget to check it.
+- **The initial state depends on which door you came in through**, and both doors exist
+  because the owner has not answered decision 2 in `plan-sprint-1.md` §7. Careful:
+  `arquitectura-api.md` §5 attributes self-registration to "RSP-033", which is actually
+  *Eliminar Gasto* (*Delete Expense*). See `sistema.md` §7.6.
 
 ---
 
 ## 8. Wireframes
 
-Estilo cropti / farmlogs: barra lateral fija, contenido en tarjeta, un solo botón primario
-por pantalla arriba a la derecha, tipografía grande en las cifras de dinero.
+cropti / farmlogs style: fixed sidebar, content in a card, a single primary button per
+screen at the top right, large type on the money figures.
 
-### 8.1 Lista de parcelas
+The wireframes below are the real Spanish interface, left exactly as the screen shows it.
+
+### 8.1 Plot list
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -567,11 +574,20 @@ por pantalla arriba a la derecha, tipografía grande en las cifras de dinero.
      ⋮ = Ver detalle · Editar · Dar de baja (solo dueno)
 ```
 
-Notas: la fila de "difiere 5%" es la doble área de PostGIS, y la web **no elige** cuál es
-la buena. La parcela inactiva se muestra apagada y no desaparece — eliminar nunca borra.
-El filtro por defecto es `Activas`.
+*Screen labels:* Tablero = Dashboard, Parcelas = Plots, Empleados = Employees,
+Actividades = Activities, Labores = Work records, Liquidacion = Settlement, Ventas = Sales,
+Gastos = Expenses, Inventario = Inventory, Config = Settings; Buscar por nombre o municipio
+= Search by name or municipality, Activas = Active, + Nueva = + New; NOMBRE / UBICACION /
+AREA / CULTIVOS = NAME / LOCATION / AREA / CROPS; declarada = declared, calculada =
+computed, difiere 5% = differs by 5%, inactiva = inactive, 4 parcelas · 14,45 ha declaradas
+= 4 plots · 14.45 ha declared; Ver detalle · Editar · Dar de baja (solo dueno) = View detail
+· Edit · Deactivate (owner only).
 
-### 8.2 Registro de labor
+Notes: the "difiere 5%" row is the double area from PostGIS, and the web app **does not
+choose** which one is the right one. The inactive plot is shown greyed out and does not
+disappear — delete never deletes. The default filter is «Activas» (*Active*).
+
+### 8.2 Work record entry
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -606,13 +622,25 @@ El filtro por defecto es `Activas`.
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Notas: el bloque gris de la actividad es **solo lectura**, como pide RSP-015. Si la
-actividad fuera *Guadañada* (`time_unit`, jornal) el paso 3 diría "Jornales" y el rango de
-fechas quedaría **abierto**, con el precio congelado en la fila. Al pesador esta pantalla
-le llega sin el precio de la semana, sin el valor estimado y con el selector de actividad
-limitado a las de unidad de trabajo.
+*Screen labels:* Registrar labor = Record work; ACTIVIDAD = ACTIVITY, Categoria = Category,
+Cosecha = Harvest, Recoleccion de cafe = Coffee picking, pago por UNIDAD DE TRABAJO = paid
+by WORK UNIT, Precio de la semana del lun 24 ago = Price for the week of Mon 24 Aug, precio
+semanal = weekly price, and the ⓘ line reads "this activity uses a weekly price: it is
+recorded per day and the value is frozen at settlement, not now"; QUIEN Y DONDE = WHO AND
+WHERE, Empleado = Employee, Lotes = Plots, Agregar lote = Add plot, Cultivos = Crops;
+CUANTO Y CUANDO = HOW MUCH AND WHEN, Cantidad = Quantity, Fecha = Date, un solo dia = a
+single day, "el rango se colapsa" = "the range collapses", Nota = Note; Valor estimado =
+Estimated value, "Aun no es un devengo: se posteara al liquidar" = "not a `devengo` yet: it
+will be posted at settlement"; Guardar y registrar otra = Save and record another, Guardar =
+Save.
 
-### 8.3 Perfil de empleado con saldo
+Notes: the grey activity block is **read only**, as RSP-015 requires. If the activity were
+*Guadañada* (brush cutting, `time_unit`, `jornal`) step 3 would say «Jornales» (*day rates*)
+and the date range would stay **open**, with the price frozen on the row. The weigher gets
+this screen without the price of the week, without the estimated value and with the activity
+selector limited to work-unit ones.
+
+### 8.3 Employee profile with balance
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -653,13 +681,28 @@ limitado a las de unidad de trabajo.
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Notas: el saldo es **derivado del ledger** en cada carga, nunca un total guardado — misma
-disciplina que las existencias. "Pendientes de liquidar" y "saldo" son cifras distintas y
-se muestran separadas: lo pendiente todavía no es un devengo. El botón *Agregar anotación*
-existe desde el Sprint 1 pero la sección se habilita en el Sprint 2. La nota al pie de
-anotaciones no es decorativa: es la promesa que hace defendible todo el módulo cross-tenant.
+*Screen labels:* foto = photo, CC = *cédula* number, Activa desde = Active since, Pagar
+empleado = Pay employee, Registrar deuda = Record debt, Agregar anotacion = Add note; SALDO
+PENDIENTE = OUTSTANDING BALANCE, a favor del empleado = in the employee's favour, ult.
+movimiento = last entry; LABORES = WORK RECORDS with ACTIVIDAD / FECHA / LOTES / CANT. /
+VALOR = ACTIVITY / DATE / PLOTS / QTY / VALUE, Guadanada = brush cutting, jorn. = `jornal`
+day rates, pendientes de liquidar = pending settlement; HISTORIAL FINANCIERO = FINANCIAL
+HISTORY with TIPO / CONCEPTO / FECHA / MONTO = KIND / DESCRIPTION / DATE / AMOUNT,
+Liquidacion 18-23 ago = Settlement 18-23 Aug, Efectivo = cash, recibo = receipt, Mercado
+adelantado = groceries advanced, Corrige pago #0038 = corrects payment #0038, and the ⓘ line
+reads "nothing is edited, a mistake is corrected with a `reverso`"; ANOTACIONES = NOTES,
+"Pidio adelanto para transporte. Autorizado." = "asked for an advance for transport,
+authorised", "Excelente en lote El Alto." = "excellent on plot El Alto", and the ⓘ line
+reads "notes never leave this farm, they never travel to the national registry".
+
+Notes: the balance is **derived from the ledger** on every load, never a stored total — the
+same discipline as stock. «Pendientes de liquidar» (*pending settlement*) and «saldo»
+(*balance*) are different figures and are shown separately: what is pending is not a
+`devengo` yet. The *Agregar anotación* (*Add note*) button exists from Sprint 1 but the
+section is enabled in Sprint 2. The footnote on notes is not decorative: it is the promise
+that makes the whole cross-tenant module defensible.
 
 ---
 
-Ver también: `docs/diagramas/sistema.md` (contexto, componentes, ER, RLS, despliegue y la
-lista completa de choques abiertos) y `docs/diagramas/movil.md` (app móvil).
+See also: `docs/diagramas/sistema.md` (context, components, ER, RLS, deployment and the full
+list of open clashes) and `docs/diagramas/movil.md` (the mobile app).

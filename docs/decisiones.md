@@ -1,251 +1,248 @@
-# Decisiones del dueño
+# Owner decisions
 
-Lo que el equipo no podía decidir solo. Cada una cierra una discusión abierta en
-los diseños; si alguna cambia, cambia el esquema o el contrato, así que se
-anotan aquí con su fecha y su consecuencia.
+The ones the team could not make on its own. Each closes a discussion left open
+in the designs; if any of them changes, the schema or the contract changes with
+it, so they are recorded here with their date and their consequence.
 
 ## 2026-08-28
 
-### 1. Historial del trabajador entre fincas — solo períodos y quién consultó
+### 1. Worker history across farms — periods and who looked, nothing else
 
-Se construye el servicio `registry`, pero **no publica opiniones**.
+The `registry` service gets built, but **it does not publish opinions**.
 
-Se comparte: que la cédula existe, en cuántas fincas trabajó y en qué **meses**.
-Nunca sale de la finca: anotaciones, saldos, deudas, anticipos, kilos,
-rendimiento, teléfono, dirección, foto, ni el nombre de las fincas.
+What is shared: that the *cédula* exists, at how many farms the person worked
+and in which **months**. What never leaves the farm: notes, balances, debts,
+advances, kilos, performance, phone, address, photo, or the names of the farms.
 
-Toda consulta queda registrada con quién la hizo y para qué, y **el trabajador
-puede leer ese registro**. Si esa pantalla no se construye, el registro no se
-habilita.
+Every lookup is recorded with who made it and what for, and **the worker can
+read that record**. If that screen does not get built, the registry does not get
+switched on.
 
-`employee_notes` nace con `visibility = 'private'` y no tiene ruta de salida. La
-tabla `employment_spans` no tiene columna de texto libre, ni bandera, ni puntaje:
-no hay dónde escribir un juicio sobre una persona, y eso es deliberado. El
-esquema es la defensa, no una política escrita que alguien pueda saltarse.
+`employee_notes` is born with `visibility = 'private'` and has no route out. The
+`employment_spans` table has no free-text column, no flag and no score: there is
+nowhere to write a judgement about a person, and that is deliberate. The schema
+is the defence, not a written policy somebody can step around.
 
-Las "alertas de seguridad" de RSP-009 quedan fuera. Un semáforo sobre una
-persona, consultable por cédula en toda la región, es una lista negra laboral con
-otro nombre, y la Ley 1581 de 2012 la haría responsabilidad de la plataforma.
-Existe una versión defendible —hechos de un catálogo cerrado, atribuidos,
-notificados al trabajador, disputables y caducos a 24 meses— y se puede construir
-después, por decisión escrita, no encendiendo un `if` un martes.
+The "safety alerts" of RSP-009 are out. A traffic light over a person, queryable
+by *cédula* across a whole region, is a labour blacklist under another name, and
+Law 1581 of 2012 would make the platform liable for it. A defensible version
+does exist — facts from a closed catalogue, attributed, notified to the worker,
+disputable and expiring at 24 months — and it can be built later, by a written
+decision, not by switching on an `if` one Tuesday.
 
-### 2. Alta de finca — auto-registro abierto
+### 2. Farm signup — open self-registration
 
-`POST /v1/signup` es público, con verificación por correo y limitación de
-frecuencia. La finca queda activa sin que nadie intervenga.
+`POST /v1/signup` is public, with email verification and rate limiting. The farm
+becomes active without anyone intervening.
 
-La consola de super-admin deja de ser la puerta de entrada y se queda con lo que
-sí necesita: ver las fincas, suspender una, y nada más. Sigue sin poder leer
-empleados, labores ni dinero de ninguna.
+The super-admin console stops being the front door and keeps only what it does
+need: see the farms, suspend one, and nothing else. It still cannot read any
+farm's employees, work records or money.
 
-Consecuencia: el registro público es la superficie de ataque más expuesta del
-sistema. Necesita limitación por IP, verificación de correo antes de la primera
-sesión, y un límite de fincas por correo.
+Consequence: public signup is the most exposed attack surface in the system. It
+needs per-IP rate limiting, email verification before the first session, and a
+cap on farms per email address.
 
-### 3. La web registra labores desde el sprint 1
+### 3. The web records work records from sprint 1
 
-No se espera a la sincronización. Se acepta que durante unas semanas el teléfono
-y el servidor lleven cuentas separadas.
+We do not wait for sync. We accept that for a few weeks the phone and the server
+will keep separate books.
 
-Consecuencia, y hay que decirla clara: **hasta que llegue la sincronización, una
-labor registrada en la web no existe para el teléfono y viceversa.** Pagarle a
-alguien desde los dos lados en la misma semana lo paga dos veces, porque el
-candado anti doble pago vive en cada base por separado.
+The consequence, and it has to be said plainly: **until sync arrives, a work
+record entered on the web does not exist for the phone, and vice versa.** Paying
+someone from both sides in the same week pays them twice, because the
+double-payment lock lives in each database separately.
 
-Mitigación mientras dure: durante la transición se paga **desde un solo lado**.
-La web muestra un aviso permanente hasta que la sincronización esté en
-producción.
+Mitigation while it lasts: during the transition, **pay from one side only**.
+The web shows a permanent warning until sync is in production.
 
-### 4. Los precios de actividad tienen historial por fechas
+### 4. Activity prices have a dated history
 
-Igual que el precio semanal de la recolección, que ya funciona así. Cada
-actividad guarda sus precios con vigencia; una labor congela el que estaba
-vigente en su fecha.
+Just like the weekly picking price, which already works that way. Each activity
+stores its prices with a validity date; a work record freezes the one in force
+on its own date.
 
-Consecuencia en el esquema: `activity_pay_*` deja de guardar un precio suelto y
-gana una tabla de vigencias con `valid_from`, con un índice que impide dos
-precios solapados para la misma actividad. Y una regla que ya estaba en el
-diseño se vuelve obligatoria: una labor con precio derivado por fecha tiene que
-ser **de un solo día**. Un jornal de martes a martes no tiene una única fecha de
-vigencia, y derivar un precio sobre un rango es exactamente la ambigüedad que
-termina en un pago mal calculado.
+Consequence in the schema: `activity_pay_*` stops holding a loose price and
+gains a validity table with `valid_from`, plus an index that forbids two
+overlapping prices for the same activity. And a rule that was already in the
+design becomes mandatory: a work record whose price is derived by date has to be
+**for a single day**. A day's work running Tuesday to Tuesday has no single
+validity date, and deriving a price over a range is exactly the ambiguity that
+ends in a miscalculated payment.
 
-## Pendiente de decidir
+## Still to be decided
 
-- **El repositorio público de actividades y productos** (RSP-010, RSP-018): los
-  casos de uso dicen que se traen "de internet", pero ese catálogo no existe
-  todavía en ninguna parte. ¿Quién lo mantiene?
-- **RSP-022, RSP-023 y RSP-024** faltan en el documento de casos de uso.
-- **El auto-registro no tiene caso de uso escrito.** RSP-033 es *Eliminar Gasto*;
-  la sección "Registro de finca" quedó sin numerar y sin detallar.
-
----
-
-# Decisiones del equipo
-
-Las que el equipo sí podía tomar, anotadas porque contradicen algo que ya
-estaba escrito en los diseños.
-
-## 2026-08-29 — Las categorías son catálogos, no enumeraciones
-
-`arquitectura-api.md` fijaba tres categorías de actividad y `modelo-datos.md`
-declaraba cuatro. Los dos se equivocaban: RSP-011 dice que el selector viene
-«con opción de crear una nueva». Una finca que además cultive cacao inventará
-categorías que nadie previó, y con un `ENUM` de Postgres cada una de ellas sería
-un `ALTER TYPE` en producción.
-
-Así que `activity_categories` es una tabla por finca, sembrada al crearla con
-las tres de arranque, y `SEED_ACTIVITY_CATEGORIES` en `packages/shared` es solo
-esa semilla. Lo mismo para todo lo que los casos de uso describen con «agregar
-si no existe»: tipos de cultivo, variedades, unidades de trabajo, categorías de
-producto y unidades de almacenamiento.
-
-Siguen siendo enumeraciones cerradas las que el código ramifica y que no
-significan nada si una finca inventa un valor: `ledger_kind`, `pay_method`,
-`farm_role`, `settlement_status`, `pay_scheme`, `time_unit` y `stock_reason`.
-
-## 2026-08-29 — Una labor se llama `work_record`, y solo así
-
-Los documentos traían tres nombres para la misma entidad: `arquitectura-api.md`
-usa `/v1/tasks` en su Entrega 2 y `work_records` en la revisión 2, y
-`modelo-datos.md` la llama `labors`. Con eso, el frontend construyó contra un
-nombre y el backend iba camino de otro.
-
-Queda `work_records`: tabla, endpoints `/v1/work-records`, y `payable_id` en
-`settlement_items` con el índice parcial anti doble pago intacto. `tasks` es
-demasiado genérico y choca con cualquier tarea de sistema; `labors` en inglés
-significa otra cosa. En la interfaz en español se sigue llamando «labor», que es
-la palabra del dueño.
-
-## 2026-08-29 — Un solo React en todo el monorepo
-
-La app móvil fija React en la versión que trae su Expo SDK. La web pedía un
-rango que resolvía a otra, y npm instalaba las dos. Dos instancias de React en
-el mismo proceso devuelven contextos nulos y tumban cualquier hook que los lea:
-las pruebas de la web fallaban por eso, no por su código.
-
-El `package.json` raíz fija ahora `react` y `react-dom` con `overrides`. Cuando
-Expo suba de versión, ese es el único sitio que hay que tocar.
-
-## Pendiente antes de desplegar: CORS
-
-La API no monta CORS, así que un navegador no puede llamarla desde otro origen.
-En desarrollo lo resuelve el proxy de Vite, que reenvía `/v1` y `/health`, y eso
-está bien mientras solo haya laptops. Antes de desplegar hay que elegir: servir
-la web y la API detrás del mismo origen, o montar CORS en el servidor con una
-lista de orígenes permitidos. La primera es más simple y no abre nada; la
-segunda hace falta si la web va a vivir en otro dominio.
+- **The public repository of activities and products** (RSP-010, RSP-018): the
+  use cases say they are pulled "from the internet", but that catalogue does not
+  exist anywhere yet. Who maintains it?
+- **RSP-022, RSP-023 and RSP-024** are missing from the use-case document.
+- **Self-registration has no written use case.** RSP-033 is *Eliminar Gasto*
+  (delete an expense); the "Registro de finca" section was left unnumbered and
+  undetailed.
 
 ---
 
-## 2026-08-29 — Sincronización: las cuatro que faltaban
+# Team decisions
 
-### 5. El teléfono deja de liquidar sin señal
+The ones the team could make, recorded because they contradict something already
+written in the designs.
 
-En el lote se entrega un **anticipo**, que se amortiza exacto cuando se liquide.
-El cierre de semana se hace con señal, contra el servidor, que es el único dueño
-del candado anti doble pago.
+## 2026-08-29 — Categories are catalogues, not enumerations
 
-No es una renuncia disfrazada: un anticipo no reclama ninguna pesada, así que no
-toma ningún candado y dos teléfonos sin señal se funden por unión sin
-posibilidad de conflicto. El caso de oro 02 ya demuestra que un anticipo mayor
-que la semana se amortiza contra las siguientes con el saldo exacto.
+`arquitectura-api.md` fixed three activity categories and `modelo-datos.md`
+declared four. Both were wrong: RSP-011 says the selector comes «con opción de
+crear una nueva» (*with the option to create a new one*). A farm that also grows
+cacao will invent categories nobody foresaw, and with a Postgres `ENUM` each one
+of them would be an `ALTER TYPE` in production.
 
-Lo que se evita es lo contrario: con dos candados, uno en cada base, pagar desde
-el teléfono y desde la web en la misma semana paga dos veces, y re-derivar
-después no devuelve el efectivo que ya salió del bolsillo.
+So `activity_categories` is a per-farm table, seeded on creation with the three
+starters, and `SEED_ACTIVITY_CATEGORIES` in `packages/shared` is only that seed.
+The same goes for everything the use cases describe with "add if it does not
+exist": crop types, varieties, work units, product categories and storage units.
 
-### 6. Lotes y precio semanal, solo en la web
+The ones that stay closed enumerations are the ones the code branches on, and
+that mean nothing if a farm invents a value: `ledger_kind`, `pay_method`,
+`farm_role`, `settlement_status`, `pay_scheme`, `time_unit` and `stock_reason`.
 
-El teléfono los lee y no los cambia. Evita que dos personas pongan precios
-distintos para la misma semana, que es el conflicto que no tiene una respuesta
-correcta: cualquiera de los dos precios deja a alguien mal pagado.
+## 2026-08-29 — A work record is called `work_record`, and only that
 
-Coste que hay que asumir y decir en voz alta: abrir un lote nuevo a mitad de
-cosecha ya no se puede hacer desde el lote. Alguien tiene que llegar a un
-computador.
+The documents carried three names for the same entity: `arquitectura-api.md`
+uses `/v1/tasks` in its Delivery 2 and `work_records` in revision 2, and
+`modelo-datos.md` calls it `labors`. With that, the front end built against one
+name and the back end was heading for another.
 
-### 7. El teléfono muestra el saldo completo, aunque no pueda detallarlo
+It is `work_records`: the table, the `/v1/work-records` endpoints, and
+`payable_id` in `settlement_items` with the partial double-payment index intact.
+`tasks` is too generic and collides with any kind of system task; `labors` in
+English means something else. In the Spanish interface it is still called
+«labor», which is the owner's word.
 
-Cuando la web registre jornales y contratos, el teléfono sumará todo lo que la
-persona tiene pendiente, no solo lo suyo de recolección, aunque solo pueda
-desglosar las pesadas. Un saldo que solo cuenta la mitad del trabajo es un saldo
-que miente, y quien lo lee no tiene forma de saberlo.
+## 2026-08-29 — One React across the whole monorepo
 
-### 8. Un trabajador de baja con trabajo nuevo se reactiva solo
+The mobile app pins React to the version its Expo SDK ships. The web asked for a
+range that resolved to a different one, and npm installed both. Two React
+instances in the same process return null contexts and bring down any hook that
+reads them: the web's tests were failing because of that, not because of their
+own code.
 
-Si volvió a trabajar, es que sigue en la finca. El equipo recomendaba lo
-contrario —dejarlo de baja y avisar, porque la baja la decidió alguien— y el
-dueño decidió la reactivación automática.
+The root `package.json` now pins `react` and `react-dom` with `overrides`. When
+Expo moves version, that is the only place to touch.
 
-Consecuencia que hay que cubrir: la reactivación **queda registrada** con qué
-labor la provocó y desde qué dispositivo, para que quien dio la baja pueda ver
-que se deshizo y por qué. Deshacer en silencio una decisión de una persona es lo
-único que no puede pasar aquí.
+## Pending before deploying: CORS
 
-## 2026-08-29 — Los cinco huecos que la sincronización destapó
+The API does not mount CORS, so a browser cannot call it from another origin. In
+development the Vite proxy handles it, forwarding `/v1` and `/health`, and that
+is fine while there are only laptops. Before deploying we have to choose: serve
+the web and the API behind the same origin, or mount CORS on the server with an
+allowlist of origins. The first is simpler and opens nothing; the second is
+needed if the web is going to live on another domain.
 
-Al implementar el protocolo aparecieron cinco casos que no cubría. Ninguno lo
-decidió la pareja que los encontró, que es lo correcto: deciden pagos.
+---
 
-### Los tres que cierra el equipo
+## 2026-08-29 — Sync: the four that were missing
 
-**Una pesada que llega nombrando a alguien que el teléfono no tiene.** El
-protocolo cubre un cultivo *borrado*, no uno *ausente*. Un referente ausente no
-es un conflicto, es un pull incompleto: el teléfono pidió las pesadas antes que
-las personas. Se ordena la recepción para que los referentes bajen primero
-—fincas, personas, lotes, cultivos, actividades, precios y solo entonces
-labores y movimientos— y una pesada huérfana pasa a ser un error del cliente que
-se reintenta, no una fila que se guarda apuntando a nada.
+### 5. The phone stops settling without a signal
 
-**Un trabajador reactivado que la web vuelve a dar de baja entre dos
-sincronizaciones.** Gana la baja. La reactivación es automática y la baja la
-decide una persona mirando el caso; una decisión humana posterior no la puede
-deshacer un automatismo. El trabajo registrado no se pierde —queda, y la persona
-queda inactiva—, y el teléfono lo muestra como conflicto para que alguien lo
-mire.
+Out at the plot, cash is handed over as an `anticipo`, which is amortised to the
+cent when the settlement happens. The week is closed with a signal, against the
+server, which is the only owner of the double-payment lock.
 
-**`IDEMPOTENCY_KEY_REUSED` no está en la tabla de conflictos del protocolo.**
-Es un código real del servidor y significa algo preciso: el mismo id con un
-cuerpo distinto. No es un reintento y no se debe reintentar — es un error de
-programación del cliente o una colisión de identificadores, y las dos cosas
-tienen que verse. Entra en la tabla como caso que se muestra y no se resuelve
-solo.
+This is not a retreat in disguise: an `anticipo` claims no weighing, so it takes
+no lock, and two phones with no signal merge by union with no possibility of
+conflict. Golden case 02 already demonstrates that an `anticipo` larger than the
+week amortises against the following ones with the balance exact.
 
-### Los dos que son trabajo de servidor, y esperan
+What it avoids is the opposite: with two locks, one in each database, paying
+from the phone and from the web in the same week pays twice, and re-deriving
+afterwards does not give back cash that has already left somebody's pocket.
 
-**El teléfono todavía liquida en local.** El protocolo quiere que la liquidación
-la cree el servidor, y la pareja hizo bien en no moverla: la temporada de
-liquidaciones que ya existe en el teléfono no se ha importado, así que una
-liquidación creada en el servidor reclamaría pesadas que el servidor no tiene.
-El orden correcto es importar primero. Hasta entonces el botón exige estar
-sincronizado, que es la mitad de la garantía.
+### 6. Plots and the weekly price, on the web only
 
-**La carrera entre previsualizar y liquidar no está protegida.** El protocolo
-pide que el cliente mande el bruto que vio (`expectedGrossCents`) y que el
-servidor rechace la liquidación si ha cambiado. Ese campo no existe todavía. Sin
-él, alguien puede liquidar mirando una cifra y firmar otra.
+The phone reads them and does not change them. This prevents two people setting
+different prices for the same week, which is the conflict that has no correct
+answer: either price leaves somebody underpaid.
 
-## Deuda declarada al cerrar el sprint 5
+A cost to accept and say out loud: opening a new plot mid-harvest can no longer
+be done from the plot. Somebody has to get to a computer.
 
-Cosas que se rodearon con honestidad y hay que cerrar. Ninguna está escondida:
-en la pantalla se ve que falta.
+### 7. The phone shows the full balance, even when it cannot itemise it
 
-1. **`GET /v1/settlements` no existe.** Solo hay `POST`. La consola compone la
-   lista recorriendo el libro de cada empleado por el `settlementId` del
-   devengo, lo cual funciona y no escala. Falta la ruta.
-2. **`/v1/users` no existe.** La pantalla de invitar a alguien a la finca está
-   construida y dice qué rutas espera; hoy la única forma de crear un usuario es
-   registrando una finca nueva.
-3. **La reactivación automática de un trabajador de baja con trabajo nuevo**
-   —decisión 8 del dueño— no está implementada en el servidor. Hoy la pesada
-   entra y la persona sigue de baja, que es lo contrario de lo que se decidió.
-   Y falta el registro de auditoría que era la condición para que fuera segura.
-4. **El tiempo de espera de la importación son 25 segundos**, y una temporada
-   son 11,7 MB. En el enlace de una finca eso se puede quedar corto. Un fallo
-   ahí no pierde datos —es una respuesta que nadie leyó, y el reintento es
-   seguro— pero conviene subirlo antes de la mudanza real.
-5. **La poda de `sync_log` y `sync_ops`** no está programada. El lado que la
-   detecta (`CURSOR_TOO_OLD`) sí existe, así que el día que se pode, un teléfono
-   muy atrasado se entera en vez de recibir historia incompleta.
+Once the web records day work and contracts, the phone will total everything the
+person is owed, not only their picking, even though it can only break down the
+weighings. A balance that counts half the work is a balance that lies, and
+whoever reads it has no way of knowing.
+
+### 8. A deleted worker with new work is reactivated automatically
+
+If they went back to work, they are still at the farm. The team recommended the
+opposite — leave them deleted and raise it, because somebody decided that
+deletion — and the owner chose automatic reactivation.
+
+A consequence that has to be covered: the reactivation **is recorded**, with the
+work record that triggered it and the device it came from, so that whoever did
+the deletion can see that it was undone and why. Silently undoing a person's
+decision is the one thing that cannot happen here.
+
+## 2026-08-29 — The five gaps that sync uncovered
+
+Implementing the protocol turned up five cases it did not cover. None of them
+was decided by the pair who found them, which is correct: they decide payments.
+
+### The three the team closes
+
+**A weighing arrives naming somebody the phone does not have.** The protocol
+covers a *deleted* crop, not an *absent* one. An absent referent is not a
+conflict, it is an incomplete pull: the phone asked for the weighings before the
+people. Receiving is ordered so that referents come down first — farms, people,
+plots, crops, activities, prices, and only then work records and movements — and
+an orphaned weighing becomes a client error that is retried, not a row saved
+pointing at nothing.
+
+**A reactivated worker whom the web deletes again between two syncs.** The
+deletion wins. Reactivation is automatic and the deletion is decided by a person
+looking at the case; a later human decision cannot be undone by an automatism.
+The recorded work is not lost — it stays, and the person stays inactive — and
+the phone shows it as a conflict so somebody looks at it.
+
+**`IDEMPOTENCY_KEY_REUSED` is not in the protocol's conflict table.** It is a
+real server code and it means something precise: the same id with a different
+body. It is not a retry and must not be retried — it is either a client
+programming error or an identifier collision, and both have to be visible. It
+goes into the table as a case that is shown and does not resolve itself.
+
+### The two that are server work, and wait
+
+**The phone still settles locally.** The protocol wants the settlement to be
+created by the server, and the pair were right not to move it: the season of
+settlements that already exists on the phone has not been imported, so a
+settlement created on the server would claim weighings the server does not have.
+The right order is to import first. Until then the button demands being in sync,
+which is half the guarantee.
+
+**The race between preview and settle is not protected.** The protocol asks the
+client to send the gross it saw (`expectedGrossCents`) and the server to reject
+the settlement if it has changed. That field does not exist yet. Without it,
+somebody can settle looking at one figure and sign for another.
+
+## Debt declared at the close of sprint 5
+
+Things that were worked around honestly and have to be closed. None of them is
+hidden: the screen shows that it is missing.
+
+1. **`GET /v1/settlements` does not exist.** There is only `POST`. The console
+   assembles the list by walking each employee's ledger via the `settlementId`
+   on the `devengo`, which works and does not scale. The route is missing.
+2. **`/v1/users` does not exist.** The screen for inviting somebody to the farm
+   is built and states the routes it expects; today the only way to create a
+   user is by registering a new farm.
+3. **Automatic reactivation of a deleted worker with new work** — the owner's
+   decision 8 — is not implemented on the server. Today the weighing goes in and
+   the person stays deleted, which is the opposite of what was decided. And the
+   audit record that was the condition for it being safe is missing too.
+4. **The import timeout is 25 seconds**, and a season is 11.7 MB. On a farm's
+   link that can fall short. A failure there loses no data — it is a response
+   nobody read, and the retry is safe — but it should be raised before the real
+   move.
+5. **Pruning `sync_log` and `sync_ops`** is not scheduled. The side that detects
+   it (`CURSOR_TOO_OLD`) does exist, so the day pruning starts, a badly
+   out-of-date phone finds out instead of receiving an incomplete history.

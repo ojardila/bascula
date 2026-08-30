@@ -1,14 +1,14 @@
-# Báscula — esquema PostgreSQL multitenant (entrega 1)
+# Báscula — multitenant PostgreSQL schema (delivery 1)
 
-## 0. Decisiones de cabecera
+## 0. Headline decisions
 
-| Punto | Decisión |
+| Point | Decision |
 |---|---|
-| IDs | **UUIDv7** generado en el cliente, columna `uuid` |
-| Aislamiento | **RLS** con `farm_id` + FKs compuestas |
-| Dinero | `BIGINT` en unidad menor + `currency` en la finca |
-| Fecha | `timestamptz` + `local_day date` (trigger) + `week_start` GENERATED |
-| Migraciones | **goose**, embebido, job previo al rollout |
+| IDs | **UUIDv7** generated on the client, `uuid` column |
+| Isolation | **RLS** with `farm_id` + composite FKs |
+| Money | `BIGINT` in the minor unit + `currency` on the farm |
+| Date | `timestamptz` + `local_day date` (trigger) + `week_start` GENERATED |
+| Migrations | **goose**, embedded, job that runs before the rollout |
 
 ## 1. DDL
 
@@ -52,7 +52,7 @@ CREATE TABLE memberships (
   PRIMARY KEY (farm_id, user_id)
 );
 CREATE INDEX ix_memberships_user ON memberships (user_id);
--- Toda finca conserva al menos un owner (se valida en el API; ver §6 nota).
+-- Every farm keeps at least one owner (enforced in the API; see the note in §6).
 
 CREATE TABLE devices (
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
@@ -65,7 +65,7 @@ CREATE TABLE people (
   name text NOT NULL CHECK (length(btrim(name)) > 0),
   last_name text, document_type text, doc_id text, tag text, image_url text,
   created_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz,
-  UNIQUE (farm_id, id)                       -- destino de las FK compuestas
+  UNIQUE (farm_id, id)                       -- target of the composite FKs
 );
 CREATE UNIQUE INDEX ux_people_doc  ON people (farm_id, document_type, doc_id)
   WHERE deleted_at IS NULL AND doc_id IS NOT NULL;
@@ -83,11 +83,11 @@ CREATE TABLE farm_config (
   farm_id uuid PRIMARY KEY REFERENCES farms(id) ON DELETE CASCADE,
   crop_type text NOT NULL, label text NOT NULL, unit text NOT NULL,
   yield_unit text NOT NULL,
-  price_minor bigint NOT NULL CHECK (price_minor > 0),   -- ya no REAL
+  price_minor bigint NOT NULL CHECK (price_minor > 0),   -- no longer REAL
   language text NOT NULL DEFAULT 'es' CHECK (language IN ('es','en','pt'))
-);   -- reemplaza `config` con CHECK (id = 1): el singleton ahora es por finca
+);   -- replaces `config` with CHECK (id = 1): the singleton is now per farm
 
-CREATE TABLE week_prices (                                -- ex cost_overrides
+CREATE TABLE week_prices (                                -- formerly cost_overrides
   farm_id uuid NOT NULL REFERENCES farms(id),
   week_start date NOT NULL CHECK (week_start = week_start(week_start)),
   price_minor bigint NOT NULL CHECK (price_minor > 0),
@@ -109,7 +109,7 @@ CREATE TABLE pickups (
 );
 CREATE INDEX ix_pickups_person_day ON pickups (farm_id, person_id, local_day);
 CREATE INDEX ix_pickups_week       ON pickups (farm_id, week_start);
-CREATE INDEX ix_pickups_crop_day   ON pickups (farm_id, crop_id, local_day);  -- índice IRL/outlier
+CREATE INDEX ix_pickups_crop_day   ON pickups (farm_id, crop_id, local_day);  -- IRL/outlier index
 
 CREATE TABLE settlements (
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
@@ -134,9 +134,9 @@ CREATE TABLE settlement_items (
   voided_at timestamptz,
   FOREIGN KEY (farm_id, settlement_id) REFERENCES settlements(farm_id, id),
   FOREIGN KEY (farm_id, pickup_id)     REFERENCES pickups(farm_id, id),
-  CHECK (amount_minor = round(weight * price_minor)::bigint)   -- el renglón cuadra o no entra
+  CHECK (amount_minor = round(weight * price_minor)::bigint)   -- the line adds up or it does not go in
 );
--- EL CANDADO: una pesada pertenece a una sola liquidación viva.
+-- THE LOCK: a weighing belongs to exactly one live settlement.
 CREATE UNIQUE INDEX ux_items_pickup_live ON settlement_items (pickup_id) WHERE voided_at IS NULL;
 CREATE INDEX ix_items_settlement ON settlement_items (settlement_id);
 
@@ -162,18 +162,25 @@ CREATE TABLE ledger (
 );
 CREATE INDEX ix_ledger_person ON ledger (farm_id, person_id, local_day DESC, created_at DESC);
 CREATE INDEX ix_ledger_sett   ON ledger (settlement_id) WHERE settlement_id IS NOT NULL;
--- Un movimiento se reversa una sola vez.
+-- An entry is reversed exactly once.
 CREATE UNIQUE INDEX ux_ledger_reverses ON ledger (reverses_id) WHERE reverses_id IS NOT NULL;
 ```
 
-## 2. Aislamiento: RLS, no `WHERE farm_id`
+## 2. Isolation: RLS, not `WHERE farm_id`
 
-**Recomiendo RLS.** El `WHERE` es una convención: basta una consulta nueva a las 11 p.m. para que la nómina de la finca A aparezca en la B, y eso no falla ruidosamente sino en silencio. RLS convierte el olvido en un `0 rows` en vez de una fuga. El costo real es bajo: la policy es una igualdad sobre `farm_id`, indexada, y el planner la empuja al índice.
+**I recommend RLS.** The `WHERE` is a convention: one new query written at 11 p.m. is enough
+for farm A's payroll to show up in farm B, and that does not fail loudly, it fails silently.
+RLS turns the oversight into `0 rows` instead of a leak. The real cost is low: the policy is
+an equality on `farm_id`, indexed, and the planner pushes it down to the index.
 
-Trade-off honesto: depurar se vuelve confuso (una fila "no existe" cuando la GUC no está puesta), los `EXPLAIN` traen un filtro extra, y hay que recordar que el dueño de las tablas y cualquier rol `BYPASSRLS` la ignoran — por eso el API corre con un rol propio sin esos privilegios. Las FKs compuestas de arriba son el segundo cinturón: aunque alguien burlara la policy, no puede coser una pesada de una finca a una persona de otra.
+Honest trade-off: debugging gets confusing (a row "does not exist" when the GUC is not set),
+`EXPLAIN` output carries an extra filter, and you have to remember that the table owner and
+any `BYPASSRLS` role ignore it — which is why the API runs under its own role without those
+privileges. The composite FKs above are the second belt: even if someone got around the
+policy, they cannot stitch a weighing from one farm to a person from another.
 
 ```sql
-CREATE ROLE bascula_app NOLOGIN;   -- sin BYPASSRLS, no dueño de las tablas
+CREATE ROLE bascula_app NOLOGIN;   -- no BYPASSRLS, not the table owner
 GRANT USAGE ON SCHEMA public TO bascula_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO bascula_app;
 
@@ -182,50 +189,66 @@ CREATE FUNCTION current_farm() RETURNS uuid
 CREATE FUNCTION current_role_name() RETURNS text
   LANGUAGE sql STABLE AS $$ SELECT coalesce(current_setting('bascula.role', true),'') $$;
 
--- Para cada tabla con farm_id:
+-- For every table with farm_id:
 ALTER TABLE pickups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pickups FORCE ROW LEVEL SECURITY;
 CREATE POLICY p_tenant ON pickups USING (farm_id = current_farm())
                                   WITH CHECK (farm_id = current_farm());
 
--- El dinero además por rol: el pesador no ve la nómina de nadie.
+-- Money is also gated by role: the weigher sees nobody's payroll.
 ALTER TABLE ledger ENABLE ROW LEVEL SECURITY; ALTER TABLE ledger FORCE ROW LEVEL SECURITY;
 CREATE POLICY p_ledger ON ledger
   USING (farm_id = current_farm() AND current_role_name() IN ('owner','admin'))
   WITH CHECK (farm_id = current_farm() AND current_role_name() IN ('owner','admin'));
 
--- Precios: sólo el owner escribe.
+-- Prices: only the owner writes.
 ALTER TABLE week_prices ENABLE ROW LEVEL SECURITY; ALTER TABLE week_prices FORCE ROW LEVEL SECURITY;
 CREATE POLICY p_wp_read  ON week_prices FOR SELECT USING (farm_id = current_farm());
 CREATE POLICY p_wp_write ON week_prices FOR ALL
   USING (farm_id = current_farm() AND current_role_name() = 'owner')
   WITH CHECK (farm_id = current_farm() AND current_role_name() = 'owner');
 
--- El super-admin administra fincas, no las lee por dentro.
+-- The super-admin administers farms, he does not read inside them.
 ALTER TABLE farms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_farms ON farms USING (
   id = current_farm() OR current_setting('bascula.superadmin', true) = 'on');
 ```
 
-Cada request abre transacción y hace `SET LOCAL bascula.farm_id = ...; SET LOCAL bascula.role = ...` desde el token, **nunca** desde un parámetro del cliente. `SET LOCAL` muere con la transacción, así que un pool no filtra contexto entre conexiones.
+Every request opens a transaction and runs `SET LOCAL bascula.farm_id = ...; SET LOCAL
+bascula.role = ...` from the token, **never** from a client parameter. `SET LOCAL` dies with
+the transaction, so a pool cannot leak context between connections.
 
-## 3. Identificadores
+## 3. Identifiers
 
-**UUIDv7, columna `uuid` (16 bytes), generada en el teléfono.** v4 es aleatorio: cada insert cae en una hoja distinta del B-tree, dispersa el WAL y fragmenta el índice — con años de pesadas eso se nota. v7 lleva el timestamp en los bits altos, así que inserta al final como un `bigserial` y además hace que `ORDER BY id` sea casi cronológico. ULID no aporta nada sobre v7 salvo la codificación en texto; si se quiere mostrar en base32, se codifica en el borde y se sigue guardando `uuid`. Nada de `text`: 36 bytes y comparación por colación.
+**UUIDv7, `uuid` column (16 bytes), generated on the phone.** v4 is random: every insert
+lands on a different B-tree leaf, scatters the WAL and fragments the index — with years of
+weighings that shows. v7 carries the timestamp in the high bits, so it inserts at the end
+like a `bigserial` and also makes `ORDER BY id` almost chronological. ULID adds nothing over
+v7 except the text encoding; if you want to show it in base32, encode at the edge and keep
+storing `uuid`. No `text`: 36 bytes and comparison by collation.
 
-Los enteros locales existentes **no viajan**. El móvil añade una columna `uuid` a cada tabla y hace backfill (`uuidv7` sembrado con el `createdAt` de la fila, así el orden se conserva), mantiene su PK entera para sus joins locales, y sincroniza por UUID. En el servidor no hay tabla de mapeo: el UUID es la identidad desde el primer push. `device_id` + UUID hacen el push idempotente — reenviar es `ON CONFLICT (id) DO NOTHING`.
+The existing local integers **do not travel**. The mobile app adds a `uuid` column to each
+table and backfills it (`uuidv7` seeded with the row's `createdAt`, so the ordering is
+preserved), keeps its integer PK for its local joins, and syncs by UUID. On the server there
+is no mapping table: the UUID is the identity from the first push. `device_id` + UUID make
+the push idempotent — resending is `ON CONFLICT (id) DO NOTHING`.
 
-Costo: ~8 bytes más por fila y por entrada de índice frente a `bigint`. En una finca de 50 recolectores y 3 pesadas diarias son ~55 000 filas/año; irrelevante.
+Cost: ~8 more bytes per row and per index entry compared to `bigint`. On a farm with 50
+pickers and 3 weighings a day that is ~55,000 rows/year; irrelevant.
 
-## 4. Fechas y zonas
+## 4. Dates and time zones
 
-Tres columnas, cada una con un trabajo:
+Three columns, each with one job:
 
-- `occurred_at timestamptz` — el instante. Verdad absoluta, ordena y audita.
-- `local_day date` — el día **en la zona de la finca**. Es lo que el recolector llama "hoy".
-- `week_start date GENERATED` — el lunes, derivado de `local_day`. Nunca se escribe a mano.
+- `occurred_at timestamptz` — the instant. Absolute truth, orders and audits.
+- `local_day date` — the day **in the farm's time zone**. It is what the picker calls
+  "today".
+- `week_start date GENERATED` — the Monday, derived from `local_day`. Never written by hand.
 
-La zona vive en `farms.timezone` (IANA), porque una finca en Colombia y otra en Brasil no comparten día. No se puede usar en una GENERATED (depende de otra tabla), así que la calcula un trigger — el punto es que **el código Go nunca escribe `local_day`**, que es exactamente como se coló el bug del móvil:
+The zone lives in `farms.timezone` (IANA), because a farm in Colombia and one in Brazil do
+not share a day. It cannot be used in a GENERATED column (it depends on another table), so a
+trigger computes it — the point is that **the Go code never writes `local_day`**, which is
+exactly how the bug crept into the mobile app:
 
 ```sql
 CREATE FUNCTION set_local_day() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -239,30 +262,42 @@ CREATE TRIGGER t_pickups_local_day BEFORE INSERT OR UPDATE OF occurred_at, farm_
   ON pickups FOR EACH ROW EXECUTE FUNCTION set_local_day();
 ```
 
-Con esto, la pesada de las 19:30 en Bogotá (00:30 UTC del día siguiente) queda con `local_day` del día correcto, y **todos** los reportes agrupan por columnas indexadas en vez de recalcular `date(x,'localtime')` en cada consulta. `WEEK_BY_DAY_SQL` pasa a ser `WHERE week_start = $1 GROUP BY local_day`, sargable.
+With this, the 19:30 weighing in Bogotá (00:30 UTC the next day) ends up with the right
+`local_day`, and **every** report groups by indexed columns instead of recomputing
+`date(x,'localtime')` on each query. `WEEK_BY_DAY_SQL` becomes
+`WHERE week_start = $1 GROUP BY local_day`, sargable.
 
-Cambiar `farms.timezone` no reescribe el histórico: es una decisión de negocio, y hacerlo movería pagos ya hechos. Se prohíbe si la finca tiene liquidaciones.
+Changing `farms.timezone` does not rewrite history: it is a business decision, and doing so
+would move payments that have already been made. It is forbidden if the farm has
+settlements.
 
-## 5. Dinero
+## 5. Money
 
-**Confirmado: `BIGINT` en unidad menor entera.** Ningún `numeric` ni `float`. `bigint` es exacto, atómico en sumas, y el saldo del `ledger` es una suma pura. El techo (9.2×10¹⁸) sobra: son 92 billones de pesos.
+**Confirmed: `BIGINT` in whole minor units.** No `numeric` and no `float`. `bigint` is
+exact, atomic under addition, and the `ledger` balance is a plain sum. The ceiling
+(9.2×10¹⁸) is more than enough: 92 trillion pesos.
 
-Para otra moneda: `farms.currency` + `farms.minor_unit`, y las columnas se llaman `*_minor`, no `*_cents` — porque el COP no tiene centavos de verdad y el CLP tampoco. **Una finca, una moneda**; nada multi-moneda dentro de una finca, que exigiría tasas de cambio con fecha y no hay caso de uso. Formatear es del borde; la BD sólo guarda el entero y el código ISO.
+For another currency: `farms.currency` + `farms.minor_unit`, and the columns are named
+`*_minor`, not `*_cents` — because COP has no real cents and neither does CLP. **One farm,
+one currency**; nothing multi-currency inside a farm, which would require dated exchange
+rates and has no use case. Formatting belongs to the edge; the DB only stores the integer
+and the ISO code.
 
-## 6. Lo que va en la base, no en Go
+## 6. What goes in the database, not in Go
 
-Todo lo de arriba con nombre de constraint es deliberado. Lo crítico:
+Everything above that carries a constraint name is deliberate. The critical parts:
 
 ```sql
--- 1. Signo por tipo: ledger_sign (arriba). Un 'pago' positivo no entra jamás.
--- 2. Doble pago: ux_items_pickup_live (arriba). Es el candado, y ahora es del servidor.
--- 3. Un reverso no se reversa dos veces: ux_ledger_reverses (arriba)
---    + que un reverso no sea reversable en absoluto, y que su monto sea el opuesto exacto:
+-- 1. Sign by kind: ledger_sign (above). A positive 'pago' never gets in.
+-- 2. Double payment: ux_items_pickup_live (above). It is the lock, and now it belongs to the server.
+-- 3. A reverso is not reversed twice: ux_ledger_reverses (above)
+--    plus a reverso not being reversible at all, and its amount being the exact opposite:
 CREATE FUNCTION check_reverso() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE o ledger;
 BEGIN
   IF NEW.reverses_id IS NULL THEN RETURN NEW; END IF;
   SELECT * INTO o FROM ledger WHERE id = NEW.reverses_id FOR UPDATE;
+  -- The messages below stay in Spanish: they are server-facing error strings.
   IF NOT FOUND                     THEN RAISE EXCEPTION 'reverso sin origen'; END IF;
   IF o.kind = 'reverso'            THEN RAISE EXCEPTION 'un reverso no se reversa'; END IF;
   IF o.farm_id <> NEW.farm_id
@@ -273,43 +308,72 @@ END $$;
 CREATE TRIGGER t_ledger_reverso BEFORE INSERT ON ledger
   FOR EACH ROW EXECUTE FUNCTION check_reverso();
 
--- 4. El ledger es append-only, y eso no es una costumbre del equipo:
+-- 4. The ledger is append-only, and that is not a team habit:
 CREATE RULE ledger_no_update AS ON UPDATE TO ledger DO INSTEAD NOTHING;
 CREATE RULE ledger_no_delete AS ON DELETE TO ledger DO INSTEAD NOTHING;
 REVOKE UPDATE, DELETE ON ledger FROM bascula_app;
--- Igual para settlement_items, salvo el voided_at:
+-- Same for settlement_items, except for voided_at:
 REVOKE DELETE ON settlement_items, settlements, pickups FROM bascula_app;
 ```
 
-Lo que **no** meto en la base: el cálculo del precio de la semana, las reglas de revisión (`RULE_*`), el índice IRL. Son política de negocio, cambian, y quiero probarlas en Go, no en plpgsql. Tampoco "una finca conserva un owner": eso vive en el API porque su mensaje de error es parte de la UX.
+What I do **not** put in the database: the weekly price calculation, the review rules
+(`RULE_*`), the IRL index. They are business policy, they change, and I want to test them in
+Go, not in plpgsql. Nor "a farm keeps one owner": that lives in the API because its error
+message is part of the UX.
 
-## 7. Migraciones
+## 7. Migrations
 
-**goose.** Sobre golang-migrate: soporta migraciones en Go (necesarias para el backfill de UUIDs y para recalcular `local_day` de un histórico importado), embebe con `embed.FS` en el binario del API, y permite marcar una migración `-- +goose NO TRANSACTION` para lo que Postgres no deja transaccionar (`CREATE INDEX CONCURRENTLY`). Atlas es más potente — declarativo, con diff — pero su modelo de "estado deseado" pelea con RLS, triggers y reglas escritas a mano, que es justo donde vive la seguridad de este esquema. Quiero migraciones que se lean como SQL.
+**goose.** Over golang-migrate: it supports migrations written in Go (needed for the UUID
+backfill and for recomputing `local_day` on an imported history), it embeds into the API
+binary with `embed.FS`, and it lets you mark a migration `-- +goose NO TRANSACTION` for what
+Postgres refuses to run in a transaction (`CREATE INDEX CONCURRENTLY`). Atlas is more
+powerful — declarative, with diffing — but its "desired state" model fights RLS, triggers and
+hand-written rules, which is exactly where this schema's security lives. I want migrations
+that read like SQL.
 
-Convención: `db/migrations/00007_add_week_prices.sql`, numeración secuencial (no timestamps: el equipo es pequeño y un choque de número es un conflicto de git visible, que es mejor que dos migraciones que se aplican en orden distinto en cada ambiente). Cada archivo con `-- +goose Up` y `-- +goose Down`; el Down existe pero en producción se avanza, no se retrocede.
+Convention: `db/migrations/00007_add_week_prices.sql`, sequential numbering (not timestamps:
+the team is small and a number clash is a visible git conflict, which beats two migrations
+applying in a different order in each environment). Every file with `-- +goose Up` and
+`-- +goose Down`; Down exists, but in production you go forward, not back.
 
-Despliegue: **paso propio, antes del rollout**, no en el arranque del proceso — cinco réplicas arrancando a la vez corriendo migraciones es una carrera. `goose up` en un job con `LOCK TIMEOUT` corto y `statement_timeout` corto para que un ALTER no bloquee la nómina. Esquema expand/contract: agregar columna nullable → desplegar código que la escribe → backfill → poner NOT NULL con `NOT VALID` + `VALIDATE CONSTRAINT`. Índices en producción siempre `CONCURRENTLY`.
+Deployment: **its own step, before the rollout**, not at process startup — five replicas
+starting at once and all running migrations is a race. `goose up` in a job with a short
+`LOCK TIMEOUT` and a short `statement_timeout` so an ALTER cannot block payroll.
+Expand/contract schema: add a nullable column → deploy code that writes it → backfill → set
+NOT NULL with `NOT VALID` + `VALIDATE CONSTRAINT`. Indexes in production always
+`CONCURRENTLY`.
 
-## 8. Lo que NO haría ahora
+## 8. What I would not build now
 
-- **Particionado** de `pickups` o `ledger` por finca o por fecha. Una finca grande hace ~60 000 pesadas al año. Postgres no se despeina hasta los millones. Particionar hoy es complejidad de mantenimiento a cambio de nada, y además rompe las FKs compuestas.
-- **Réplicas de lectura.** No hay carga de lectura, y una réplica introduce lag replicativo justo donde no se puede tener: leer un saldo que aún no incluye el pago recién hecho es un error de dinero.
-- **Índices especulativos.** Sólo los que sirven a consultas que ya existen en `schema.ts`. Cada índice se paga en cada INSERT — y este sistema es de escritura frecuente desde teléfonos con batería contada.
-- **Vista materializada de saldos.** El saldo se deriva con un `SUM` sobre decenas de filas por persona. Materializarlo reintroduce exactamente el problema que el ledger resolvió: un total que puede desincronizarse de sus eventos.
-- **Esquema por finca.** Aísla mejor, pero N esquemas × M migraciones es una operación que este equipo no puede sostener, y el super-admin necesitaría consultas cruzadas.
-- **Auditoría genérica** (triggers de historial en toda tabla). El `ledger` ya es el registro auditable de lo que importa. `created_by` en el ledger cubre el resto por ahora.
-- **`citext`, búsqueda full-text, PostGIS.** Nadie los ha pedido.
+- **Partitioning** of `pickups` or `ledger` by farm or by date. A large farm does ~60,000
+  weighings a year. Postgres does not break a sweat until the millions. Partitioning today is
+  maintenance complexity in exchange for nothing, and it also breaks the composite FKs.
+- **Read replicas.** There is no read load, and a replica introduces replication lag exactly
+  where you cannot have it: reading a balance that does not yet include the payment just made
+  is a money error.
+- **Speculative indexes.** Only the ones that serve queries that already exist in
+  `schema.ts`. Every index is paid for on every INSERT — and this system writes often, from
+  phones with a limited battery.
+- **A materialized view of balances.** The balance is derived with a `SUM` over dozens of
+  rows per person. Materializing it reintroduces exactly the problem the ledger solved: a
+  total that can drift away from its events.
+- **Schema per farm.** It isolates better, but N schemas × M migrations is an operation this
+  team cannot sustain, and the super-admin would need cross-schema queries.
+- **Generic auditing** (history triggers on every table). The `ledger` is already the
+  auditable record of what matters. `created_by` on the ledger covers the rest for now.
+- **`citext`, full-text search, PostGIS.** Nobody has asked for them.
 
 ---
 
-# Báscula — esquema PostgreSQL multitenant (revisión 2)
+# Báscula — multitenant PostgreSQL schema (revision 2)
 
-## 0. Qué cambia respecto de la revisión 1
+## 0. What changes from revision 1
 
-Se mantienen: UUIDv7, RLS, `bigint` en unidad menor, `timestamptz` + `local_day` + `week_start` GENERATED, goose. Se rompe una cosa: **`crops` desaparece** y **`pickups` se convierte en un caso particular de `labors`**.
+Kept: UUIDv7, RLS, `bigint` in the minor unit, `timestamptz` + `local_day` + `week_start`
+GENERATED, goose. One thing breaks: **`crops` disappears** and **`pickups` becomes a special
+case of `labors`**.
 
-## 1. DDL nuevo y modificado
+## 1. New and modified DDL
 
 ```sql
 CREATE TYPE activity_category AS ENUM ('siembra','mantenimiento','cosecha','otra');
@@ -318,29 +382,29 @@ CREATE TYPE time_unit         AS ENUM ('jornal','semanal','quincenal','mensual',
 CREATE TYPE stock_reason      AS ENUM ('cosecha','compra','venta','consumo','merma','traslado','ajuste');
 ```
 
-### Finca, parcelas y cultivos
+### Farm, plots and crops
 
 ```sql
 ALTER TABLE farms ADD COLUMN phone text, ADD COLUMN country text,
   ADD COLUMN city text, ADD COLUMN address text,
   ADD COLUMN area_ha numeric(10,3) CHECK (area_ha IS NULL OR area_ha > 0);
 
-CREATE TABLE plots (                                   -- PARCELA / lote
+CREATE TABLE plots (                                   -- PARCELA / field
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   name text NOT NULL CHECK (length(btrim(name)) > 0),
   area_ha numeric(10,3) CHECK (area_ha IS NULL OR area_ha > 0),
   department text, municipality text,
-  boundary geography(MultiPolygon,4326),               -- ver §D
+  boundary geography(MultiPolygon,4326),               -- see §D
   created_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz,
   UNIQUE (farm_id, id)
 );
 CREATE UNIQUE INDEX ux_plots_name ON plots (farm_id, lower(name)) WHERE deleted_at IS NULL;
 CREATE INDEX ix_plots_boundary ON plots USING gist (boundary);
 
-CREATE TABLE plot_crops (                              -- CULTIVO sembrado en la parcela
+CREATE TABLE plot_crops (                              -- CROP planted in the plot
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   plot_id uuid NOT NULL,
-  crop_type text NOT NULL,                             -- café, cacao…
+  crop_type text NOT NULL,                             -- coffee, cocoa...
   variety text,
   area_ha numeric(10,3) CHECK (area_ha IS NULL OR area_ha > 0),
   planted_on date, removed_on date,
@@ -352,18 +416,20 @@ CREATE TABLE plot_crops (                              -- CULTIVO sembrado en la
 CREATE INDEX ix_plot_crops_plot ON plot_crops (farm_id, plot_id) WHERE deleted_at IS NULL;
 ```
 
-La suma de `plot_crops.area_ha` no se restringe contra `plots.area_ha` en la base: un cultivo asociado (café con plátano de sombrío) ocupa la misma hectárea dos veces. Es una advertencia de UI, no un CHECK.
+The sum of `plot_crops.area_ha` is not constrained against `plots.area_ha` in the database:
+an intercropped planting (coffee with plantain for shade) occupies the same hectare twice.
+It is a UI warning, not a CHECK.
 
-### Empleados
+### Employees
 
 ```sql
-ALTER TABLE people RENAME TO employees;                -- conserva ids, FKs e índices
+ALTER TABLE people RENAME TO employees;                -- keeps ids, FKs and indexes
 ALTER TABLE employees
   ADD COLUMN phone text, ADD COLUMN address text, ADD COLUMN city text,
   ADD COLUMN municipality text, ADD COLUMN country text DEFAULT 'CO',
   ADD COLUMN photo_id uuid REFERENCES attachments(id);
 
-CREATE TABLE employee_notes (                          -- anotaciones con fecha
+CREATE TABLE employee_notes (                          -- dated notes
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   employee_id uuid NOT NULL, noted_on date NOT NULL, body text NOT NULL,
   created_by uuid REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now(),
@@ -371,18 +437,19 @@ CREATE TABLE employee_notes (                          -- anotaciones con fecha
 );
 CREATE INDEX ix_notes_employee ON employee_notes (farm_id, employee_id, noted_on DESC);
 
-CREATE TABLE attachments (                             -- fotos y comprobantes
+CREATE TABLE attachments (                             -- photos and receipts
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
-  object_key text NOT NULL UNIQUE,                     -- S3/R2; nunca bytes en la BD
+  object_key text NOT NULL UNIQUE,                     -- S3/R2; never bytes in the DB
   mime text NOT NULL, bytes bigint NOT NULL CHECK (bytes > 0),
   sha256 bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (farm_id, id)
 );
 ```
 
-### Actividades: tres formas de pago sin veinte columnas nulas
+### Activities: three ways of paying without twenty null columns
 
-Supertipo + tres subtipos, con el discriminador amarrado por FK compuesta. Cada variante tiene **sólo** sus columnas, todas `NOT NULL`.
+Supertype + three subtypes, with the discriminator tied down by a composite FK. Each variant
+has **only** its own columns, all `NOT NULL`.
 
 ```sql
 CREATE TABLE activities (
@@ -391,7 +458,7 @@ CREATE TABLE activities (
   pay_scheme pay_scheme NOT NULL,
   archived_at timestamptz,
   UNIQUE (farm_id, id),
-  UNIQUE (id, pay_scheme)                              -- destino del discriminador
+  UNIQUE (id, pay_scheme)                              -- target of the discriminator
 );
 
 CREATE TABLE activity_pay_contract (
@@ -405,14 +472,14 @@ CREATE TABLE activity_pay_time (
   activity_id uuid PRIMARY KEY,
   pay_scheme pay_scheme NOT NULL DEFAULT 'tiempo' CHECK (pay_scheme = 'tiempo'),
   unit time_unit NOT NULL,
-  custom_qty numeric(8,2), custom_unit text,           -- sólo para 'personalizado'
+  custom_qty numeric(8,2), custom_unit text,           -- only for 'personalizado'
   rate_minor bigint NOT NULL CHECK (rate_minor > 0),
   CHECK ((unit = 'personalizado') = (custom_qty IS NOT NULL AND custom_unit IS NOT NULL)),
   CHECK (custom_qty IS NULL OR custom_qty > 0),
   FOREIGN KEY (activity_id, pay_scheme) REFERENCES activities(id, pay_scheme) ON DELETE CASCADE
 );
 
-CREATE TABLE work_units (                              -- kilo, arroba, canasta, y las que inventen
+CREATE TABLE work_units (                              -- kilo, arroba, canasta, and whatever they invent
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   code text NOT NULL, label text NOT NULL,
   kg_factor numeric(10,4) CHECK (kg_factor IS NULL OR kg_factor > 0),  -- arroba = 12.5
@@ -427,7 +494,7 @@ CREATE TABLE activity_pay_work_unit (
   FOREIGN KEY (activity_id, pay_scheme) REFERENCES activities(id, pay_scheme) ON DELETE CASCADE
 );
 
--- Ninguna actividad sin su fila de pago (diferido: el API inserta las dos juntas).
+-- No activity without its pay row (deferred: the API inserts both together).
 CREATE FUNCTION activity_has_pay() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM activity_pay_contract   WHERE activity_id = NEW.id
@@ -440,17 +507,19 @@ CREATE CONSTRAINT TRIGGER t_activity_pay AFTER INSERT ON activities
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION activity_has_pay();
 ```
 
-`work_units` es una tabla y no un enum a propósito: "canasta" pesa distinto en cada finca, y `kg_factor` es lo que permite comparar rendimiento entre fincas que pagan por arroba y por kilo.
+`work_units` is a table and not an enum on purpose: a "canasta" weighs something different
+on every farm, and `kg_factor` is what makes it possible to compare yield between farms that
+pay by arroba and farms that pay by kilo.
 
-### Labores — la tabla que absorbe `pickups`
+### Work records — the table that absorbs `pickups`
 
 ```sql
 CREATE TABLE labors (
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   employee_id uuid NOT NULL, activity_id uuid NOT NULL,
-  pay_scheme pay_scheme NOT NULL,                      -- denormalizado, amarrado por FK
+  pay_scheme pay_scheme NOT NULL,                      -- denormalized, tied down by FK
   started_at timestamptz NOT NULL, ended_at timestamptz,
-  local_day date NOT NULL,                             -- trigger, zona de la finca
+  local_day date NOT NULL,                             -- trigger, farm time zone
   end_local_day date,
   week_start date GENERATED ALWAYS AS (week_start(local_day)) STORED,
   quantity numeric(12,3), unit_id uuid REFERENCES work_units(id),
@@ -487,24 +556,26 @@ CREATE TABLE labor_plot_crops (
   FOREIGN KEY (farm_id, labor_id)      REFERENCES labors(farm_id, id) ON DELETE CASCADE,
   FOREIGN KEY (farm_id, plot_crop_id)  REFERENCES plot_crops(farm_id, id)
 );
-CREATE INDEX ix_lpc_crop ON labor_plot_crops (farm_id, plot_crop_id);  -- índice IRL / outliers
+CREATE INDEX ix_lpc_crop ON labor_plot_crops (farm_id, plot_crop_id);  -- IRL / outlier index
 ```
 
-### Productos, bodegas e inventario
+### Products, warehouses and inventory
 
-Existencias **derivadas de movimientos**, igual que el saldo se deriva del ledger. Un stock materializado es un total que se desincroniza de sus hechos, y ya sabemos qué opinamos de eso.
+Stock **derived from movements**, the same way the balance is derived from the ledger. A
+materialized stock is a total that drifts away from its facts, and we already know what we
+think of that.
 
 ```sql
 CREATE TABLE product_categories (
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   name text NOT NULL, UNIQUE (farm_id, id), UNIQUE (farm_id, lower(name)));
 
-CREATE TABLE storage_units (                           -- bulto, kg, litro, caja
+CREATE TABLE storage_units (                           -- bulto, kg, litre, box
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   code text NOT NULL, label text NOT NULL,
   UNIQUE (farm_id, id), UNIQUE (farm_id, lower(code)));
 
-CREATE TABLE warehouses (                              -- bodegas
+CREATE TABLE warehouses (                              -- warehouses
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   name text NOT NULL, UNIQUE (farm_id, id), UNIQUE (farm_id, lower(name)));
 
@@ -519,8 +590,8 @@ CREATE TABLE products (
 CREATE TABLE stock_moves (                             -- append-only
   id uuid PRIMARY KEY, farm_id uuid NOT NULL REFERENCES farms(id),
   product_id uuid NOT NULL, warehouse_id uuid NOT NULL,
-  plot_id uuid, plot_crop_id uuid,                     -- de qué lote/cultivo salió
-  qty numeric(14,3) NOT NULL CHECK (qty <> 0),         -- signo: + entra, − sale
+  plot_id uuid, plot_crop_id uuid,                     -- which plot/crop it came from
+  qty numeric(14,3) NOT NULL CHECK (qty <> 0),         -- sign: + in, − out
   reason stock_reason NOT NULL,
   labor_id uuid, sale_id uuid, reverses_id uuid REFERENCES stock_moves(id),
   local_day date NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
@@ -539,7 +610,7 @@ CREATE VIEW stock_levels AS
     FROM stock_moves GROUP BY 1,2,3,4;
 ```
 
-### Ventas y gastos
+### Sales and expenses
 
 ```sql
 CREATE TABLE customers (
@@ -552,7 +623,7 @@ CREATE TABLE sales (
   product_id uuid NOT NULL, customer_id uuid,
   qty numeric(14,3) NOT NULL CHECK (qty > 0),
   amount_minor bigint NOT NULL CHECK (amount_minor > 0),
-  receipt_id uuid,                                     -- foto del comprobante
+  receipt_id uuid,                                     -- photo of the receipt
   local_day date NOT NULL, note text,
   created_by uuid REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now(),
   voided_at timestamptz,
@@ -571,21 +642,25 @@ CREATE TABLE expenses (
   FOREIGN KEY (farm_id, activity_id)  REFERENCES activities(farm_id, id),
   FOREIGN KEY (farm_id, plot_id)      REFERENCES plots(farm_id, id),
   FOREIGN KEY (farm_id, plot_crop_id) REFERENCES plot_crops(farm_id, id),
-  -- se imputa a una actividad, o a un lote/cultivo, no a las dos cosas ni a ninguna
+  -- charged to an activity, or to a plot/crop, not to both and not to neither
   CONSTRAINT expense_target CHECK (
     (activity_id IS NOT NULL)::int + (COALESCE(plot_id, plot_crop_id) IS NOT NULL)::int = 1));
 ```
 
 ---
 
-## A) `pickups` vs `labors`: **se unifican, conservando el id**
+## A) `pickups` vs `labors`: **they merge, keeping the id**
 
-Una pesada **es** una labor de una actividad `cosecha` pagada por unidad de trabajo. Mantener las dos tablas significa dos caminos hacia el mismo dinero: dos lugares donde aplicar el precio semanal, dos candados anti doble-pago, y el día que alguien liquide una labor de mantenimiento por contrato descubriremos que `settlement_items` sólo sabe bloquear pesadas. Unificar convierte el candado en general: **ninguna labor de ninguna actividad se paga dos veces**.
+A weighing **is** a work record of a `cosecha` activity paid by work unit. Keeping both
+tables means two paths to the same money: two places to apply the weekly price, two
+double-payment locks, and the day someone settles a maintenance work record paid by contract
+we will discover that `settlement_items` only knows how to lock weighings. Merging makes the
+lock general: **no work record of any activity is ever paid twice**.
 
-El coste de migrar es menor de lo que parece, porque **el id se conserva**:
+The cost of migrating is lower than it looks, because **the id is preserved**:
 
 ```sql
--- 1. Una actividad sintética "Recolección" por finca, con el precio general vigente.
+-- 1. One synthetic "Recolección" activity per farm, with the current general price.
 INSERT INTO work_units (id, farm_id, code, label, kg_factor)
   SELECT uuidv7(), f.id, 'kg', 'Kilo', 1 FROM farms f;
 INSERT INTO activities (id, farm_id, name, category, pay_scheme)
@@ -595,7 +670,7 @@ INSERT INTO activity_pay_work_unit (activity_id, unit_id, price_minor)
     FROM activities a JOIN work_units w USING (farm_id) JOIN farm_config c USING (farm_id)
    WHERE a.name = 'Recolección' AND w.code = 'kg';
 
--- 2. Cada pesada pasa a labor CON SU MISMO UUID.
+-- 2. Every weighing becomes a labor WITH THE SAME UUID.
 INSERT INTO labors (id, farm_id, employee_id, activity_id, pay_scheme, started_at,
                     local_day, quantity, unit_id, price_minor, amount_minor, device_id, created_at)
   SELECT p.id, p.farm_id, p.person_id, a.id, 'unidad_trabajo', p.occurred_at,
@@ -606,14 +681,14 @@ INSERT INTO labors (id, farm_id, employee_id, activity_id, pay_scheme, started_a
     JOIN activity_pay_work_unit apw ON apw.activity_id = a.id
     JOIN work_units w ON w.id = apw.unit_id;
 
--- 3. settlement_items sigue apuntando al mismo uuid; sólo cambia el nombre y la FK.
+-- 3. settlement_items still points at the same uuid; only the name and the FK change.
 ALTER TABLE settlement_items RENAME COLUMN pickup_id TO labor_id;
 ALTER TABLE settlement_items DROP CONSTRAINT settlement_items_farm_id_pickup_id_fkey,
   ADD FOREIGN KEY (farm_id, labor_id) REFERENCES labors(farm_id, id);
 ALTER INDEX ux_items_pickup_live RENAME TO ux_items_labor_live;
 DROP TABLE pickups;
 
--- 4. El móvil sigue leyendo `pickups` mientras se reescribe.
+-- 4. The mobile app keeps reading `pickups` while it is being rewritten.
 CREATE VIEW pickups AS
   SELECT l.id, l.farm_id, l.employee_id AS person_id, l.quantity AS weight,
          l.started_at AS occurred_at, l.local_day, l.week_start,
@@ -621,20 +696,32 @@ CREATE VIEW pickups AS
     FROM labors l WHERE l.pay_scheme = 'unidad_trabajo';
 ```
 
-**Cero remapeo de ids, cero reescritura de liquidaciones, cero riesgo sobre dinero ya pagado.** La migración es un `INSERT…SELECT` y dos `ALTER`. Lo que sí hay que reescribir son las consultas de reportes de `schema.ts` (índice IRL, reglas de revisión, semana), porque `cropId` ahora vive en un join. Ese trabajo es de lectura, no de dinero, y se puede hacer con la vista puesta.
+**Zero id remapping, zero settlement rewriting, zero risk on money already paid.** The
+migration is one `INSERT…SELECT` and two `ALTER`s. What does have to be rewritten are the
+report queries in `schema.ts` (IRL index, review rules, week), because `cropId` now lives
+behind a join. That work is about reading, not about money, and it can be done with the view
+in place.
 
-Un matiz: `settlement_items` gana `CHECK (pay_scheme = 'unidad_trabajo' OR …)`. No — mejor no restringir: que una labor por contrato entre a una liquidación es exactamente lo que queremos habilitar.
+One nuance: `settlement_items` gains `CHECK (pay_scheme = 'unidad_trabajo' OR …)`. No —
+better not to restrict it: a work record paid by contract entering a settlement is exactly
+what we want to enable.
 
-## B) A qué apunta el histórico de pagos
+## B) What the payment history points at
 
-**Nada del histórico de pagos apunta hoy a un cultivo.** `settlements`, `settlement_items` y `ledger` referencian persona, liquidación y pesada; `cropId` sólo vive en `pickups`, que es reporte. Esa es la respuesta corta y es la buena noticia: **la migración de parcela/cultivo no toca dinero.**
+**Nothing in the payment history points at a crop today.** `settlements`,
+`settlement_items` and `ledger` reference person, settlement and weighing; `cropId` only
+lives in `pickups`, which is reporting. That is the short answer and it is the good news:
+**the plot/crop migration does not touch money.**
 
-Las labores apuntan al **cultivo** (`plot_crops`), no a la parcela, y la parcela se deriva por join. Es el grano más fino: si una parcela tiene café y plátano, "cuánto rindió el café" sólo se puede responder desde el cultivo. `labor_plots` existe además porque una labor de mantenimiento (guadañar) es sobre el lote entero, sin cultivo asignable.
+Work records point at the **crop** (`plot_crops`), not at the plot, and the plot is derived
+through a join. That is the finest grain: if a plot has coffee and plantain, "how much did
+the coffee yield" can only be answered from the crop. `labor_plots` also exists because a
+maintenance work record (brush-cutting) is over the whole field, with no assignable crop.
 
-La migración conserva el uuid en el **cultivo**, que es a donde apuntaban las pesadas:
+The migration preserves the uuid on the **crop**, which is what the weighings pointed at:
 
 ```sql
--- Cada `crops` de hoy se abre en una parcela nueva + un cultivo que HEREDA EL UUID.
+-- Each of today's `crops` rows opens into a new plot + a crop that INHERITS THE UUID.
 INSERT INTO plots (id, farm_id, name, area_ha, created_at, deleted_at)
   SELECT uuidv7(), c.farm_id, c.name, c.dimension, c.created_at, c.deleted_at FROM crops c;
 INSERT INTO plot_crops (id, farm_id, plot_id, crop_type, variety, area_ha, created_at, deleted_at)
@@ -647,63 +734,78 @@ INSERT INTO labor_plots (labor_id, plot_id, farm_id)
     FROM labor_plot_crops lpc JOIN plot_crops pc ON pc.id = lpc.plot_crop_id;
 ```
 
-Queda una parcela por cada `crop` viejo, que es literalmente lo que el usuario tenía en la cabeza al crearlos ("Café lote 1"). Fusionar parcelas que en realidad eran la misma es trabajo manual del dueño, con una pantalla, no una adivinanza del script.
+What is left is one plot per old `crop`, which is literally what the user had in his head
+when he created them ("Café lote 1"). Merging plots that were really the same one is manual
+work for the owner, with a screen, not a guess made by the script.
 
-## C) SIG: **PostGIS desde el inicio**
+## C) GIS: **PostGIS from the start**
 
-Recomiendo `geography(MultiPolygon,4326)`, no GeoJSON en `jsonb`.
+I recommend `geography(MultiPolygon,4326)`, not GeoJSON in `jsonb`.
 
-El argumento decisivo no es la consulta espacial, es la **validez**. Sin PostGIS la base acepta cualquier `jsonb`: polígonos sin cerrar, anillos que se cruzan, coordenadas invertidas (lat/lon al revés es el error clásico y silencioso). Cuando dentro de un año se migre a geometría real, habrá que arreglar a mano polígonos que un usuario dibujó hace meses y ya no recuerda. Postponer no ahorra el trabajo, lo encarece y lo vuelve arqueología.
+The decisive argument is not spatial querying, it is **validity**. Without PostGIS the
+database accepts any `jsonb`: unclosed polygons, rings that cross themselves, swapped
+coordinates (lat/lon the wrong way round is the classic silent error). When you migrate to
+real geometry a year from now, you will have to hand-fix polygons a user drew months ago and
+no longer remembers. Postponing does not save the work, it makes it more expensive and turns
+it into archaeology.
 
-Y la consulta espacial está más cerca de lo que parece: el teléfono ya tiene GPS, y "en qué lote estoy pesando" es una pregunta de un `ST_Contains` — que además elimina un desplegable de la pantalla de báscula, que es donde el pesador se equivoca.
+And the spatial query is closer than it looks: the phone already has GPS, and "which field
+am I weighing in" is one `ST_Contains` away — which also removes a dropdown from the scale
+screen, which is precisely where the weigher makes mistakes.
 
-`MultiPolygon` y no `Polygon` porque una parcela partida por una vía o una quebrada son dos anillos y el usuario la piensa como una sola.
+`MultiPolygon` and not `Polygon` because a plot split by a road or a creek is two rings and
+the user thinks of it as one.
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 ALTER TABLE plots ADD CONSTRAINT plots_boundary_valid
   CHECK (boundary IS NULL OR ST_IsValid(boundary::geometry));
--- Superficie calculada, para contrastar con la que el usuario declaró.
+-- Computed area, to compare against the one the user declared.
 ALTER TABLE plots ADD COLUMN area_ha_gis numeric(10,3)
   GENERATED ALWAYS AS (round((ST_Area(boundary)/10000)::numeric, 3)) STORED;
--- ¿En qué lote estoy?
+-- Which field am I in?
 -- SELECT id FROM plots WHERE ST_Contains(boundary::geometry, ST_Point($lon,$lat,4326)::geometry);
 ```
 
-Coste operativo honesto: PostGIS es la extensión que más duele en un `pg_upgrade` (hay que actualizarla en un orden específico), agrega ~50 MB a la imagen de desarrollo, y obliga a que el proveedor la ofrezca — RDS, Cloud SQL, Supabase y Neon la tienen; un Postgres pelado en un VPS necesita un paquete más. Es un coste real y acotado. `boundary` es nullable: una finca puede operar sin dibujar un solo polígono, y la extensión no bloquea nada.
+Honest operational cost: PostGIS is the extension that hurts most in a `pg_upgrade` (it has
+to be upgraded in a specific order), it adds ~50 MB to the development image, and it forces
+the provider to offer it — RDS, Cloud SQL, Supabase and Neon have it; a bare Postgres on a
+VPS needs one more package. It is a real and bounded cost. `boundary` is nullable: a farm can
+operate without drawing a single polygon, and the extension blocks nothing.
 
-## D) El requisito cross-tenant (RSP-009)
+## D) The cross-tenant requirement (RSP-009)
 
-Esto no es una excepción al aislamiento; es **un sistema distinto** que comparte servidor. Va en su propio esquema, con sus propias reglas, y el rol del API no lo toca directamente.
+This is not an exception to the isolation; it is **a different system** sharing a server. It
+goes in its own schema, with its own rules, and the API role does not touch it directly.
 
-### Separación física
+### Physical separation
 
 ```sql
 CREATE SCHEMA registry;
-REVOKE ALL ON SCHEMA registry FROM bascula_app;      -- sin acceso directo a las tablas
-GRANT USAGE ON SCHEMA registry TO bascula_app;       -- sólo para llamar las funciones
+REVOKE ALL ON SCHEMA registry FROM bascula_app;      -- no direct access to the tables
+GRANT USAGE ON SCHEMA registry TO bascula_app;       -- only to call the functions
 
--- La identidad es un HASH con pepper de servidor. Un volcado de esta tabla
--- no entrega una lista de cédulas.
+-- The identity is a HASH with a server-side pepper. A dump of this table
+-- does not hand over a list of cédulas.
 CREATE TABLE registry.identities (
   id_hash bytea PRIMARY KEY,
   first_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Presencia, no juicio. Nótese lo que NO hay: ni texto libre, ni puntaje,
--- ni booleano, ni monto, ni "motivo de salida". No se puede opinar aquí.
+-- Presence, not judgement. Note what is NOT here: no free text, no score,
+-- no boolean, no amount, no "reason for leaving". There is nowhere to have an opinion.
 CREATE TABLE registry.employment_spans (
   id uuid PRIMARY KEY,
   id_hash bytea NOT NULL REFERENCES registry.identities(id_hash),
   farm_id uuid NOT NULL,
   started_on date NOT NULL, ended_on date,
-  disclosable boolean NOT NULL DEFAULT false,        -- la finca de origen decide
+  disclosable boolean NOT NULL DEFAULT false,        -- the originating farm decides
   CHECK (ended_on IS NULL OR ended_on >= started_on),
   UNIQUE (id_hash, farm_id, started_on)
 );
 CREATE INDEX ix_spans_hash ON registry.employment_spans (id_hash);
 
--- Toda consulta deja rastro. Append-only, sin excepciones.
+-- Every lookup leaves a trace. Append-only, no exceptions.
 CREATE TABLE registry.lookups (
   id uuid PRIMARY KEY,
   id_hash bytea NOT NULL,
@@ -717,7 +819,7 @@ CREATE INDEX ix_lookups_farm ON registry.lookups (by_farm_id, at DESC);
 CREATE RULE reg_lookups_no_update AS ON UPDATE TO registry.lookups DO INSTEAD NOTHING;
 CREATE RULE reg_lookups_no_delete AS ON DELETE TO registry.lookups DO INSTEAD NOTHING;
 
--- Única puerta: SECURITY DEFINER. No se puede consultar sin registrar la consulta.
+-- The only door: SECURITY DEFINER. You cannot query without recording the query.
 CREATE FUNCTION registry.lookup(p_doc_type text, p_doc_id text, p_reason text)
 RETURNS TABLE (farm_name text, started_on date, ended_on date)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = registry, public AS $$
@@ -726,6 +828,7 @@ BEGIN
   h := digest(current_setting('bascula.pepper') || p_doc_type || '|' || p_doc_id, 'sha256');
   SELECT count(*) INTO n FROM registry.lookups
     WHERE by_farm_id = current_farm() AND at > now() - interval '1 day';
+  -- Server-facing error message, kept in Spanish: daily lookup limit reached.
   IF n > 50 THEN RAISE EXCEPTION 'límite diario de consultas alcanzado'; END IF;
 
   RETURN QUERY
@@ -742,29 +845,48 @@ REVOKE ALL ON FUNCTION registry.lookup FROM public;
 GRANT EXECUTE ON FUNCTION registry.lookup TO bascula_app;
 ```
 
-Nada de `employees`, `employee_notes`, `ledger` ni `labors` cruza al registro. Lo que sale es: **esta identificación trabajó en tal finca entre tales fechas, si esa finca aceptó publicarlo.** Ni saldos, ni rendimiento, ni anotaciones.
+Nothing from `employees`, `employee_notes`, `ledger` or `labors` crosses into the registry.
+What comes out is: **this ID worked on that farm between those dates, if that farm agreed to
+publish it.** No balances, no yield, no notes.
 
-### El riesgo, dicho sin rodeos
+### The risk, said without hedging
 
-**Este requisito, mal construido, es una lista negra.** Un recolector al que una finca marque mal puede quedar fuera de la economía de la cosecha en toda la región, sin saber que existe el registro, sin poder verlo y sin poder apelar. En Colombia eso además cae de lleno en la Ley 1581 de 2012: dato personal, tratado sin autorización, con una decisión automatizada que lo afecta.
+**This requirement, built badly, is a blacklist.** A picker one farm marks wrongly can be
+shut out of the harvest economy across the whole region, without knowing the registry
+exists, without being able to see it and without being able to appeal. In Colombia that also
+lands squarely under Law 1581 of 2012: personal data, processed without authorization, with
+an automated decision that affects him.
 
-Por eso las defensas están en el esquema y no en una política escrita:
+That is why the defences are in the schema and not in a written policy:
 
-1. **No hay dónde escribir una opinión.** `employment_spans` no tiene columna de texto libre, ni bandera, ni score. Si mañana alguien pide "un campito para observaciones", la respuesta es no, y el motivo es este párrafo.
-2. **`disclosable` por defecto en `false`.** El registro no publica nada; la finca de origen opta por publicar. Sin opt-in, la función devuelve cero filas.
-3. **El consultante queda registrado, siempre.** `reason` obligatorio, mínimo 10 caracteres, y `registry.lookups` es append-only por regla, no por costumbre.
-4. **Rate limit en la propia función**, para que el registro no se pueda recorrer entero.
-5. **El trabajador tiene derecho a ver quién lo consultó.** `ix_lookups_hash` existe para eso: una pantalla donde el empleado, identificándose, ve la lista. Si esa pantalla no se construye, yo no habilitaría el registro.
+1. **There is nowhere to write an opinion.** `employment_spans` has no free-text column, no
+   flag, no score. If tomorrow someone asks for "a little field for remarks", the answer is
+   no, and the reason is this paragraph.
+2. **`disclosable` defaults to `false`.** The registry publishes nothing; the originating
+   farm opts in to publishing. Without opt-in, the function returns zero rows.
+3. **The person doing the lookup is recorded, always.** `reason` is mandatory, at least 10
+   characters, and `registry.lookups` is append-only by rule, not by habit.
+4. **Rate limit inside the function itself**, so the registry cannot be walked end to end.
+5. **The worker has the right to see who looked him up.** `ix_lookups_hash` exists for that:
+   a screen where the employee, identifying himself, sees the list. If that screen does not
+   get built, I would not enable the registry.
 
-Y una recomendación de producto que es también de datos: las "alertas de seguridad" de RSP-009 deben dispararse **hacia el trabajador y hacia el auditor**, no ser un semáforo sobre la persona. Una alerta que le dice al patrón "cuidado con este" es la lista negra con otro nombre.
+And a product recommendation that is also a data recommendation: the "safety alerts" in
+RSP-009 must fire **towards the worker and towards the auditor**, not be a traffic light over
+the person. An alert telling the boss "watch out for this one" is the blacklist under another
+name.
 
-Si el dueño no acepta el opt-in ni la visibilidad para el trabajador, mi recomendación es **no construir el cross-tenant** y resolver el caso real (verificar que alguien ya trabajó allí) pidiendo la referencia a la otra finca por fuera del sistema.
+If the owner will not accept the opt-in and the visibility for the worker, my recommendation
+is **not to build the cross-tenant part** and to solve the real case (checking that someone
+did work there) by asking the other farm for a reference outside the system.
 
 ---
 
-## Ajustes a las secciones anteriores
+## Adjustments to the earlier sections
 
-**§2 RLS.** Las policies se generan en bucle sobre toda tabla con `farm_id`, y un test de CI falla si alguna queda sin policy — con veinte tablas nuevas, esto ya no se puede llevar a mano:
+**§2 RLS.** The policies are generated in a loop over every table with `farm_id`, and a CI
+test fails if any table is left without a policy — with twenty new tables, this can no longer
+be done by hand:
 
 ```sql
 DO $$ DECLARE t text; BEGIN
@@ -779,7 +901,7 @@ DO $$ DECLARE t text; BEGIN
 END $$;
 ```
 
-El **pesador** gana restricción en `labors`: ve sólo lo que él registró.
+The **weigher** gains a restriction on `labors`: he sees only what he recorded himself.
 
 ```sql
 CREATE POLICY p_labors_weigher ON labors FOR SELECT
@@ -787,8 +909,16 @@ CREATE POLICY p_labors_weigher ON labors FOR SELECT
       OR created_by = current_setting('bascula.user_id')::uuid));
 ```
 
-`ventas`, `gastos` y `stock_moves` quedan fuera del pesador con la misma forma que `ledger`.
+`ventas`, `gastos` and `stock_moves` are kept away from the weigher in the same shape as
+`ledger`.
 
-**§6 Constraints en la base.** Se suman: `labor_shape` (la forma de una labor depende de su esquema de pago, y no hay manera de guardar una labor por contrato con precio unitario), `expense_target` (un gasto se imputa a una cosa y sólo una), `stock_sign` (una venta no puede aumentar existencias), el discriminador por FK compuesta de las actividades, y `plots_boundary_valid`.
+**§6 Constraints in the database.** Added: `labor_shape` (the shape of a work record depends
+on its pay scheme, and there is no way to store a contract work record with a unit price),
+`expense_target` (an expense is charged to one thing and only one), `stock_sign` (a sale
+cannot increase stock), the composite-FK discriminator on activities, and
+`plots_boundary_valid`.
 
-**§8 Lo que sigo sin hacer.** Todo lo de la revisión 1, más: nada de contabilidad de doble partida para gastos y ventas (el dueño pidió un registro, no un libro contable); ningún costeo por hectárea materializado; ninguna sincronización del registro cross-tenant fuera de un job nocturno idempotente.
+**§8 What I am still not doing.** Everything from revision 1, plus: no double-entry
+accounting for expenses and sales (the owner asked for a record, not a ledger of accounts);
+no materialized cost per hectare; no synchronization of the cross-tenant registry outside an
+idempotent nightly job.

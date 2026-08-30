@@ -1,110 +1,110 @@
-# Báscula — Vista de sistema
+# Báscula — System view
 
-Diagramas del sistema nuevo: **API en Go** y **app web en React**, multitenant, para
-fincas cafeteras.
+Diagrams of the new system: **Go API** and **React web app**, multitenant, for coffee
+farms.
 
-Fuentes de verdad de este documento, en este orden:
+Sources of truth for this document, in this order:
 
-1. `docs/casos-de-uso.md` — alcance (RSP-001 … RSP-033), escrito por el dueño.
-2. `docs/arquitectura-api.md` — diseño de API, auth, PostGIS, `work_records`, `registry`.
-3. `docs/plan-sprint-1.md` — el recorte de la primera entrega.
-4. `docs/sync-and-roles.md` — roles y notas de sync.
-5. `apps/mobile/src/schema.ts` y `db.ts` — el dominio contable que hay que preservar.
+1. `docs/casos-de-uso.md` — scope (RSP-001 … RSP-033), written by the owner.
+2. `docs/arquitectura-api.md` — API design, auth, PostGIS, `work_records`, `registry`.
+3. `docs/plan-sprint-1.md` — the cut for the first delivery.
+4. `docs/sync-and-roles.md` — roles and sync notes.
+5. `apps/mobile/src/schema.ts` and `db.ts` — the accounting domain that must be preserved.
 
-Los diagramas describen el **modelo objetivo** (los 33 casos). Lo que entra en el
-Sprint 1 va marcado; lo que espera, también. Donde los casos de uso y el diseño
-chocan, el choque está escrito en §7, no resuelto a la brava.
+The diagrams describe the **target model** (all 33 use cases). What lands in Sprint 1 is
+marked; so is what waits. Where the use cases and the design clash, the clash is written
+down in §7, not settled by force.
 
-Invariantes que ningún diagrama puede contradecir: centavos `int64`; ledger
-append-only que se corrige con `reverso`; semana = **fecha ISO del lunes**; fechas
-de negocio en `farms.timezone`; IDs `UUIDv7` generados en el cliente; **eliminar
-nunca borra** (`deleted_at` / `status='inactive'`).
+Invariants no diagram may contradict: cents as `int64`; an append-only ledger corrected
+with `reverso`; week = **the ISO Monday's date**; business dates in `farms.timezone`;
+`UUIDv7` IDs generated on the client; **delete never deletes**
+(`deleted_at` / `status='inactive'`).
 
 ---
 
-## 1. Diagrama de contexto
+## 1. Context diagram
 
 ```mermaid
 graph TD
-    superadmin["Super-admin<br/>crea y suspende fincas"]
-    dueno["Dueno de finca<br/>todo en su finca, precios incluidos"]
-    admin["Administrador<br/>operacion diaria"]
-    pesador["Pesador<br/>registra su propio trabajo"]
-    empleado["Empleado o trabajador<br/>no accede a la finca"]
+    superadmin["Super-admin<br/>creates and suspends farms"]
+    dueno["Farm owner<br/>everything in his farm, prices included"]
+    admin["Administrator<br/>daily operation"]
+    pesador["Weigher<br/>records his own work"]
+    empleado["Employee or worker<br/>no access to the farm"]
 
-    web["App web React<br/>Vite mas TypeScript<br/>administracion y consola"]
-    movil["App movil Expo<br/>pesada en campo<br/>hoy 100 por ciento local"]
+    web["React web app<br/>Vite plus TypeScript<br/>administration and console"]
+    movil["Expo mobile app<br/>weighing in the field<br/>today 100 percent local"]
 
-    api["API Bascula en Go<br/>chi mas pgx mas sqlc<br/>base /v1, tenant en el token"]
-    registry["Servicio registry<br/>binario y credenciales aparte<br/>base /registry/v1"]
+    api["Bascula API in Go<br/>chi plus pgx plus sqlc<br/>base /v1, tenant in the token"]
+    registry["registry service<br/>separate binary and credentials<br/>base /registry/v1"]
 
-    pg[("PostgreSQL mas PostGIS<br/>una base, farm_id en toda tabla, RLS")]
-    pgreg[("PostgreSQL registry<br/>esquema propio, sin acceso al tenant")]
-    blob[("Object storage S3<br/>fotos y comprobantes, URL prefirmada")]
+    pg[("PostgreSQL plus PostGIS<br/>one database, farm_id in every table, RLS")]
+    pgreg[("registry PostgreSQL<br/>its own schema, no access to the tenant")]
+    blob[("Object storage S3<br/>photos and receipts, presigned URL")]
 
     superadmin --> web
     dueno --> web
     admin --> web
     pesador --> movil
     pesador --> web
-    empleado -.->|"consentimiento, disputa,<br/>quien me consulto"| registry
+    empleado -.->|"consent, dispute,<br/>who looked me up"| registry
 
     web -->|"HTTPS JSON, JWT 15 min"| api
     movil -->|"HTTPS JSON, JWT 15 min"| api
-    web -->|"subida directa<br/>con URL prefirmada"| blob
-    movil -->|"subida directa"| blob
+    web -->|"direct upload<br/>with presigned URL"| blob
+    movil -->|"direct upload"| blob
 
     api --> pg
-    api -->|"prefirma y confirma<br/>tamano maximo 5 MB"| blob
-    api -.->|"lookup con proposito<br/>y consentimiento"| registry
+    api -->|"presigns and confirms<br/>maximum size 5 MB"| blob
+    api -.->|"lookup with purpose<br/>and consent"| registry
     registry --> pgreg
 
     classDef espera fill:#fff,stroke:#999,stroke-dasharray:5;
     class registry,pgreg espera;
 ```
 
-**Cómo leer las líneas punteadas.** Todo lo punteado **no entra en el Sprint 1**:
-`registry` es un producto distinto con riesgo legal propio (`arquitectura-api.md` §3)
-y el empleado no tiene sesión en ninguna finca — su única relación con el sistema es
-frente a `registry`, que es exactamente lo que lo hace defendible.
+**How to read the dotted lines.** Everything dotted is **out of Sprint 1**: `registry` is a
+different product with its own legal risk (`arquitectura-api.md` §3), and the employee has
+no session in any farm — his only relationship with the system is with `registry`, which is
+exactly what makes it defensible.
 
-**El empleado no es un rol de finca.** Los cuatro roles con sesión son super-admin,
-dueño, administrador y pesador (`sync-and-roles.md`, `arquitectura-api.md` §6). El
-empleado aparece como actor porque RSP-009 le da tres derechos que sí se construyen:
-leer quién lo consultó, dar o revocar consentimiento y abrir una disputa.
+**The employee is not a farm role.** The four roles with a session are super-admin, owner,
+administrator and weigher (`sync-and-roles.md`, `arquitectura-api.md` §6). The employee
+appears as an actor because RSP-009 gives him three rights that do get built: read who
+looked him up, grant or revoke consent, and open a dispute.
 
 ---
 
-## 2. Diagrama de componentes
+## 2. Component diagram
 
-Layout plano en `internal/`, tal como quedó decidido: `httpapi`, `domain`, `store`,
-`auth`, `tenant`, `media`, `registry`. Sin microservicios: **un binario**, más
-`registry` compilable aparte desde el día 1.
+Flat layout under `internal/`, exactly as decided: `httpapi`, `domain`, `store`, `auth`,
+`tenant`, `media`, `registry`. No microservices: **one binary**, plus `registry`, which is
+compilable on its own from day 1.
 
 ```mermaid
 graph TD
     subgraph SG_front["Front"]
-        webapp["apps/web<br/>React mas Vite mas TS"]
-        mobileapp["apps/mobile<br/>Expo mas SQLite"]
-        shared["packages/shared<br/>enums, DTO de dinero,<br/>mondayOf, toCents, signos, amountCents"]
-        openapi["openapi.yaml<br/>fuente de verdad del contrato"]
+        webapp["apps/web<br/>React plus Vite plus TS"]
+        mobileapp["apps/mobile<br/>Expo plus SQLite"]
+        shared["packages/shared<br/>enums, money DTOs,<br/>mondayOf, toCents, signs, amountCents"]
+        openapi["openapi.yaml<br/>source of truth for the contract"]
     end
 
-    subgraph SG_go["cmd/api mas internal"]
-        httpapi["httpapi<br/>rutas, DTO, validacion,<br/>errores code message details"]
-        authpkg["auth<br/>argon2id, JWT 15 min,<br/>refresh opaco 60 dias, rotacion"]
-        tenantpkg["tenant<br/>SET LOCAL app.farm_id<br/>por transaccion"]
-        permisos["permisos<br/>tabla Go ruta por rol<br/>ruta sin entrada rompe el build"]
-        domain["domain<br/>ledger, liquidar, anular, reversar,<br/>tarifas por pay_mode, semanas ISO"]
-        store["store<br/>sqlc mas pgx, PENDING_SQL,<br/>BALANCE_SQL portados literalmente"]
-        mediapkg["media<br/>prefirmado, confirmacion,<br/>limite 5 MB en servidor"]
+    subgraph SG_go["cmd/api plus internal"]
+        httpapi["httpapi<br/>routes, DTOs, validation,<br/>errors code message details"]
+        authpkg["auth<br/>argon2id, JWT 15 min,<br/>opaque refresh 60 days, rotation"]
+        tenantpkg["tenant<br/>SET LOCAL app.farm_id<br/>per transaction"]
+        permisos["permisos<br/>Go table of route by role<br/>a route with no entry breaks the build"]
+        domain["domain<br/>ledger, settle, void, reverse,<br/>rates by pay_mode, ISO weeks"]
+        store["store<br/>sqlc plus pgx, PENDING_SQL,<br/>BALANCE_SQL ported literally"]
+        mediapkg["media<br/>presigning, confirmation,<br/>5 MB limit on the server"]
     end
 
     subgraph SG_reg["cmd/registry"]
-        registrypkg["registry<br/>lookups, consents, disputes,<br/>log de consultas"]
+        registrypkg["registry<br/>lookups, consents, disputes,<br/>lookup log"]
     end
 
-    pg[("Postgres mas PostGIS<br/>RLS por farm_id")]
+    pg[("Postgres plus PostGIS<br/>RLS by farm_id")]
     blob[("Object storage")]
     pgreg[("Postgres registry")]
 
@@ -113,7 +113,7 @@ graph TD
     openapi -->|"openapi-typescript"| mobileapp
     shared --> webapp
     shared --> mobileapp
-    shared -.->|"cuatro reglas puras<br/>escritas dos veces,<br/>atadas por golden JSON"| domain
+    shared -.->|"four pure rules<br/>written twice,<br/>tied together by golden JSON"| domain
 
     webapp --> httpapi
     mobileapp --> httpapi
@@ -128,87 +128,87 @@ graph TD
     authpkg --> store
     store --> pg
     mediapkg --> blob
-    httpapi -.->|"cliente HTTP,<br/>nunca la misma base"| registrypkg
+    httpapi -.->|"HTTP client,<br/>never the same database"| registrypkg
     registrypkg --> pgreg
 
     classDef espera fill:#fff,stroke:#999,stroke-dasharray:5;
     class registrypkg,pgreg espera;
 ```
 
-Tres reglas que el diagrama codifica y que son de aceptación en cualquier PR:
+Three rules the diagram encodes, and they are acceptance criteria on any PR:
 
-- **`httpapi` nunca habla con `store`.** Todo lo que decide dinero pasa por `domain`,
-  que es el único paquete con los `golden/*.json` encima.
-- **`registry` no comparte conexión, credenciales ni esquema con el tenant.** La flecha
-  es HTTP, no una llamada a función. Si algún día alguien la convierte en un `import`,
-  el aislamiento se acabó.
-- **El orden del middleware es `Auth → Tenant → Require(action)`.** Invertirlo pone un
-  chequeo de permiso antes de saber de qué finca es la transacción.
+- **`httpapi` never talks to `store`.** Everything that decides money goes through
+  `domain`, the only package with the `golden/*.json` files on top of it.
+- **`registry` shares no connection, credentials or schema with the tenant.** The arrow is
+  HTTP, not a function call. The day someone turns it into an `import`, the isolation is
+  gone.
+- **The middleware order is `Auth → Tenant → Require(action)`.** Inverting it puts a
+  permission check before you know which farm the transaction belongs to.
 
 ---
 
-## 3. Casos de uso UML
+## 3. UML use cases
 
-Mermaid no tiene diagrama de casos de uso, así que va como `graph LR` agrupado por
-módulo. Está partido en dos lienzos por legibilidad: el primero es la operación de la
-finca, el segundo son los actores de perímetro.
+Mermaid has no use case diagram, so this goes as a `graph LR` grouped by module. It is
+split across two canvases for legibility: the first is farm operation, the second is the
+perimeter actors.
 
-### 3.1 Operación de la finca
+### 3.1 Farm operation
 
 ```mermaid
 graph LR
-    dueno(["Dueno"])
-    admin(["Administrador"])
-    pesador(["Pesador"])
+    dueno(["Owner"])
+    admin(["Administrator"])
+    pesador(["Weigher"])
 
-    subgraph M1["Parcelas"]
-        r001["RSP-001 Registrar parcela"]
-        r002["RSP-002 Modificar parcela"]
-        r003["RSP-003 Eliminar parcela"]
+    subgraph M1["Plots"]
+        r001["RSP-001 Register plot"]
+        r002["RSP-002 Modify plot"]
+        r003["RSP-003 Delete plot"]
     end
-    subgraph M2["Empleados"]
-        r004["RSP-004 Registrar empleado"]
-        r005["RSP-005 Modificar empleado"]
-        r006["RSP-006 Eliminar empleado"]
-        r007["RSP-007 Ver perfil y saldo"]
-        r008["RSP-008 Pagar empleado"]
-        r009["RSP-009 Consultar historial cross-tenant"]
+    subgraph M2["Employees"]
+        r004["RSP-004 Register employee"]
+        r005["RSP-005 Modify employee"]
+        r006["RSP-006 Delete employee"]
+        r007["RSP-007 View profile and balance"]
+        r008["RSP-008 Pay employee"]
+        r009["RSP-009 Query cross-tenant history"]
     end
-    subgraph M3["Actividades"]
-        r010["RSP-010 Listar actividades"]
-        r011["RSP-011 Registrar actividad"]
-        r012["RSP-012 Modificar actividad"]
-        r013["RSP-013 Eliminar actividad"]
-        rpre["Definir precios y precio semanal"]
+    subgraph M3["Activities"]
+        r010["RSP-010 List activities"]
+        r011["RSP-011 Register activity"]
+        r012["RSP-012 Modify activity"]
+        r013["RSP-013 Delete activity"]
+        rpre["Define prices and weekly price"]
     end
-    subgraph M4["Labores"]
-        r014["RSP-014 Listar labores"]
-        r015["RSP-015 Registrar labor"]
-        r016["RSP-016 Modificar labor"]
-        r017["RSP-017 Eliminar labor"]
+    subgraph M4["Work records"]
+        r014["RSP-014 List work records"]
+        r015["RSP-015 Register work record"]
+        r016["RSP-016 Modify work record"]
+        r017["RSP-017 Delete work record"]
     end
-    subgraph M5["Inventario"]
-        r018["RSP-018 Listar productos"]
-        r019["RSP-019 Registrar producto"]
-        r020["RSP-020 Modificar producto"]
-        r021["RSP-021 Eliminar producto"]
-        r025["RSP-025 Registrar inventario y stickers"]
+    subgraph M5["Inventory"]
+        r018["RSP-018 List products"]
+        r019["RSP-019 Register product"]
+        r020["RSP-020 Modify product"]
+        r021["RSP-021 Delete product"]
+        r025["RSP-025 Register inventory and stickers"]
     end
-    subgraph M6["Ventas"]
-        r026["RSP-026 Listar ventas"]
-        r027["RSP-027 Registrar venta"]
-        r028["RSP-028 Modificar venta"]
-        r029["RSP-029 Eliminar venta"]
+    subgraph M6["Sales"]
+        r026["RSP-026 List sales"]
+        r027["RSP-027 Register sale"]
+        r028["RSP-028 Modify sale"]
+        r029["RSP-029 Delete sale"]
     end
-    subgraph M7["Gastos"]
-        r030["RSP-030 Listar gastos"]
-        r031["RSP-031 Registrar gasto"]
-        r032["RSP-032 Modificar gasto"]
-        r033["RSP-033 Eliminar gasto"]
+    subgraph M7["Expenses"]
+        r030["RSP-030 List expenses"]
+        r031["RSP-031 Register expense"]
+        r032["RSP-032 Modify expense"]
+        r033["RSP-033 Delete expense"]
     end
-    subgraph M8["Configuracion"]
-        c1["Modificar datos de la finca"]
-        c2["Gestion de usuarios"]
+    subgraph M8["Configuration"]
+        c1["Modify farm data"]
+        c2["User management"]
     end
 
     dueno --> r001
@@ -273,28 +273,28 @@ graph LR
     pesador --> r014
 ```
 
-### 3.2 Perímetro: super-admin y empleado
+### 3.2 Perimeter: super-admin and employee
 
 ```mermaid
 graph LR
     sa(["Super-admin"])
-    emp(["Empleado o trabajador"])
+    emp(["Employee or worker"])
 
-    subgraph M9["Plataforma"]
-        p1["Crear finca"]
-        p2["Suspender o reactivar finca"]
-        p3["Listar fincas y su estado"]
+    subgraph M9["Platform"]
+        p1["Create farm"]
+        p2["Suspend or reactivate farm"]
+        p3["List farms and their status"]
     end
     subgraph M10["Auth"]
-        a1["Autoregistrar finca, nace en trial"]
-        a2["Iniciar sesion"]
-        a3["Refrescar y cerrar sesion"]
-        a4["Revocar dispositivo"]
+        a1["Self-register farm, born in trial"]
+        a2["Log in"]
+        a3["Refresh and log out"]
+        a4["Revoke device"]
     end
-    subgraph M11["Registry, fuera del tenant"]
-        g1["Dar o revocar consentimiento"]
-        g2["Ver quien me consulto"]
-        g3["Abrir disputa"]
+    subgraph M11["Registry, outside the tenant"]
+        g1["Grant or revoke consent"]
+        g2["See who looked me up"]
+        g3["Open dispute"]
     end
 
     sa --> p1
@@ -306,93 +306,94 @@ graph LR
     emp --> g3
 ```
 
-### 3.3 Qué puede hacer cada rol, sin ambigüedad
+### 3.3 What each role can do, with no ambiguity
 
-| Capacidad | Super-admin | Dueño | Administrador | Pesador | Empleado |
+| Capability | Super-admin | Owner | Administrator | Weigher | Employee |
 |---|---|---|---|---|---|
-| Crear y suspender fincas | Sí | No | No | No | No |
-| Leer datos de una finca | **No** | Sí | Sí | Recortado | No |
-| Alta, modificación en los 8 módulos | No | Sí | Sí | No | No |
-| **Eliminar** cualquier cosa, RSP-003/006/013/017/021/029/033 | No | **Sí** | **No** | No | No |
-| **Precios**: `default_rate_cents`, `week_prices`, `costPerUnitCents` | No | **Sí** | **No** | **No lo ve** | No |
-| Liquidar, pagar, anticipo, deducción, reverso, RSP-008 | No | Sí | Sí | No | No |
-| Perfil y saldo del empleado, RSP-007 | No | Sí | Sí | No | No |
-| Registrar labor, RSP-015 | No | Sí | Sí | Solo `work_unit` | No |
-| Listar labores, RSP-014 | No | Todas | Todas | Solo `created_by = sub` | No |
-| Leer empleados | No | Completo | Completo | `id, name, lastName, tag` | No |
-| RSP-009 lookup cross-tenant | **No** | Sí | Sí | **403** | No aplica |
-| Gestión de usuarios de la finca | No | Sí | No | No | No |
-| Consentimiento, disputa, log de consultas | No | No | No | No | Sí |
+| Create and suspend farms | Yes | No | No | No | No |
+| Read a farm's data | **No** | Yes | Yes | Cut down | No |
+| Create and modify in the 8 modules | No | Yes | Yes | No | No |
+| **Delete** anything, RSP-003/006/013/017/021/029/033 | No | **Yes** | **No** | No | No |
+| **Prices**: `default_rate_cents`, `week_prices`, `costPerUnitCents` | No | **Yes** | **No** | **Cannot see them** | No |
+| Settle, pay, `anticipo`, `deduccion`, `reverso`, RSP-008 | No | Yes | Yes | No | No |
+| Employee profile and balance, RSP-007 | No | Yes | Yes | No | No |
+| Register work record, RSP-015 | No | Yes | Yes | `work_unit` only | No |
+| List work records, RSP-014 | No | All | All | `created_by = sub` only | No |
+| Read employees | No | Full | Full | `id, name, lastName, tag` | No |
+| RSP-009 cross-tenant lookup | **No** | Yes | Yes | **403** | Not applicable |
+| Farm user management | No | Yes | No | No | No |
+| Consent, dispute, lookup log | No | No | No | No | Yes |
 
-Dos filas de esa tabla no salen de los casos de uso sino de `sync-and-roles.md`, y hay
-que decirlo: los casos de uso atribuyen **todo** al "Administrador de Finca", incluidos
-eliminar y definir precios. El diseño se los quita y se los deja al dueño. Ver §7.4.
+Two rows of that table do not come from the use cases but from `sync-and-roles.md`, and it
+has to be said out loud: the use cases attribute **everything** to the "Farm Administrator",
+deleting and setting prices included. The design takes those away from him and gives them to
+the owner. See §7.4.
 
-La defensa no es la tabla, es el código: los permisos viven en **una tabla Go**, un test
-de contrato recorre las rutas y afirma `403` para el pesador en toda ruta de dinero,
-personas o registry, y **una ruta nueva sin entrada en esa tabla hace fallar el build**.
+The defence is not the table, it is the code: permissions live in **a single Go table**, a
+contract test walks the routes and asserts `403` for the weigher on every money, people or
+registry route, and **a new route with no entry in that table fails the build**.
 
 ---
 
-## 4. Modelo de datos objetivo
+## 4. Target data model
 
-Postgres único, multitenant por `farm_id` y RLS. Todo lo que se puede dar de baja lleva
-`deleted_at` o `status`; **ninguna ruta ejecuta `DELETE`**. Dinero siempre en
+A single Postgres, multitenant by `farm_id` and RLS. Everything that can be taken out of
+service carries `deleted_at` or `status`; **no route ever runs `DELETE`**. Money is always
 `amount_cents int8`.
 
 ```mermaid
 erDiagram
-    FARMS ||--o{ MEMBERSHIPS : "tiene"
-    USERS ||--o{ MEMBERSHIPS : "pertenece"
-    USERS ||--o{ REFRESH_TOKENS : "abre sesion"
-    FARMS ||--o{ PLOTS : "posee"
-    FARMS ||--o{ WORKERS : "emplea"
-    FARMS ||--o{ ACTIVITIES : "define"
-    FARMS ||--o{ WEEK_PRICES : "fija"
-    FARMS ||--o{ PRODUCTS : "cataloga"
-    FARMS ||--o{ WAREHOUSES : "tiene"
-    FARMS ||--o{ SALES : "vende"
-    FARMS ||--o{ EXPENSES : "gasta"
-    FARMS ||--o{ MEDIA : "almacena"
-    FARMS ||--o{ AUDIT_LOG : "registra"
+    FARMS ||--o{ MEMBERSHIPS : "has"
+    USERS ||--o{ MEMBERSHIPS : "belongs to"
+    USERS ||--o{ REFRESH_TOKENS : "opens session"
+    FARMS ||--o{ PLOTS : "owns"
+    FARMS ||--o{ WORKERS : "employs"
+    FARMS ||--o{ ACTIVITIES : "defines"
+    FARMS ||--o{ WEEK_PRICES : "sets"
+    FARMS ||--o{ PRODUCTS : "catalogs"
+    FARMS ||--o{ WAREHOUSES : "has"
+    FARMS ||--o{ SALES : "sells"
+    FARMS ||--o{ EXPENSES : "spends"
+    FARMS ||--o{ MEDIA : "stores"
+    FARMS ||--o{ AUDIT_LOG : "records"
 
-    CROP_TYPES ||--o{ VARIETIES : "agrupa"
-    CROP_TYPES ||--o{ PLOT_CROPS : "clasifica"
-    VARIETIES ||--o{ PLOT_CROPS : "detalla"
-    PLOTS ||--o{ PLOT_CROPS : "siembra"
+    CROP_TYPES ||--o{ VARIETIES : "groups"
+    CROP_TYPES ||--o{ PLOT_CROPS : "classifies"
+    VARIETIES ||--o{ PLOT_CROPS : "details"
+    PLOTS ||--o{ PLOT_CROPS : "is planted with"
 
-    ACTIVITY_CATEGORIES ||--o{ ACTIVITIES : "agrupa"
-    UNITS ||--o{ ACTIVITIES : "mide"
-    ACTIVITIES ||--o{ WORK_RECORDS : "se ejecuta en"
-    ACTIVITIES ||--o{ WEEK_PRICES : "tarifa por semana"
-    WORKERS ||--o{ WORK_RECORDS : "ejecuta"
-    WORKERS ||--o{ SETTLEMENTS : "se le liquida"
-    WORKERS ||--o{ LEDGER : "acumula"
-    WORKERS ||--o{ WORKER_NOTES : "recibe"
-    WORKERS ||--o| MEDIA : "foto"
+    ACTIVITY_CATEGORIES ||--o{ ACTIVITIES : "groups"
+    UNITS ||--o{ ACTIVITIES : "measures"
+    ACTIVITIES ||--o{ WORK_RECORDS : "is carried out in"
+    ACTIVITIES ||--o{ WEEK_PRICES : "rate per week"
+    WORKERS ||--o{ WORK_RECORDS : "performs"
+    WORKERS ||--o{ SETTLEMENTS : "is settled for"
+    WORKERS ||--o{ LEDGER : "accrues"
+    WORKERS ||--o{ WORKER_NOTES : "receives"
+    WORKERS ||--o| MEDIA : "photo"
 
-    WORK_RECORDS ||--o{ WORK_RECORD_PLOTS : "cubre"
-    PLOTS ||--o{ WORK_RECORD_PLOTS : "es trabajado en"
-    PLOT_CROPS ||--o{ WORK_RECORD_PLOTS : "sobre el cultivo"
-    WORK_RECORDS ||--o| SETTLEMENT_ITEMS : "pagable reclamado por"
-    SETTLEMENTS ||--o{ SETTLEMENT_ITEMS : "congela"
-    SETTLEMENTS ||--o{ LEDGER : "genera devengo"
-    LEDGER ||--o| LEDGER : "reversa"
+    WORK_RECORDS ||--o{ WORK_RECORD_PLOTS : "covers"
+    PLOTS ||--o{ WORK_RECORD_PLOTS : "is worked in"
+    PLOT_CROPS ||--o{ WORK_RECORD_PLOTS : "on the crop"
+    WORK_RECORDS ||--o| SETTLEMENT_ITEMS : "payable claimed by"
+    SETTLEMENTS ||--o{ SETTLEMENT_ITEMS : "freezes"
+    SETTLEMENTS ||--o{ LEDGER : "generates devengo"
+    LEDGER ||--o| LEDGER : "reverses"
 
-    PRODUCT_CATEGORIES ||--o{ PRODUCTS : "agrupa"
-    UNITS ||--o{ PRODUCTS : "unidad de almacenamiento"
-    PRODUCTS ||--o{ STOCK_MOVEMENTS : "entra y sale"
-    WAREHOUSES ||--o{ STOCK_MOVEMENTS : "guarda"
-    PLOT_CROPS ||--o{ STOCK_MOVEMENTS : "procede de"
-    PRODUCTS ||--o{ SALES : "se vende"
-    MEDIA ||--o| SALES : "comprobante"
-    ACTIVITIES ||--o{ EXPENSES : "gasto de actividad"
-    PLOT_CROPS ||--o{ EXPENSES : "gasto de lote y cultivo"
+    PRODUCT_CATEGORIES ||--o{ PRODUCTS : "groups"
+    UNITS ||--o{ PRODUCTS : "storage unit"
+    PRODUCTS ||--o{ STOCK_MOVEMENTS : "moves in and out"
+    WAREHOUSES ||--o{ STOCK_MOVEMENTS : "holds"
+    PLOT_CROPS ||--o{ STOCK_MOVEMENTS : "comes from"
+    PRODUCTS ||--o{ SALES : "is sold"
+    MEDIA ||--o| SALES : "receipt"
+    ACTIVITIES ||--o{ EXPENSES : "activity expense"
+    PLOT_CROPS ||--o{ EXPENSES : "plot and crop expense"
 
     FARMS {
         uuid id PK
         text name
-        text timezone "obligatoria, define el dia de negocio"
+        text timezone "required, defines the business day"
         text country
         text city
         text address
@@ -407,7 +408,7 @@ erDiagram
         citext email UK
         text name
         text password_hash "argon2id"
-        bool is_super_admin "fuera de todo tenant"
+        bool is_super_admin "outside every tenant"
         timestamptz created_at
         timestamptz deleted_at
     }
@@ -425,18 +426,18 @@ erDiagram
         uuid user_id FK
         uuid farm_id FK
         text device_id
-        text token_hash "opaco, 60 dias"
+        text token_hash "opaque, 60 days"
         uuid rotated_from FK
         timestamptz expires_at
-        timestamptz revoked_at "reuso detectado mata la cadena"
+        timestamptz revoked_at "detected reuse kills the chain"
     }
     PLOTS {
         uuid id PK
         uuid farm_id FK
-        text name "RSP-001 nombre del lote"
+        text name "RSP-001 name of the plot"
         text department
         text municipality
-        numeric area_ha "declarada por el dueno"
+        numeric area_ha "declared by the owner"
         geography boundary "Polygon 4326, PostGIS, sprint 2"
         text status "active inactive"
         timestamptz created_at
@@ -456,15 +457,15 @@ erDiagram
     CROP_TYPES {
         uuid id PK
         uuid farm_id FK
-        text name "unico por farm_id y lower name"
-        bool is_seed "cafe viene sembrado"
+        text name "unique per farm_id and lower name"
+        bool is_seed "coffee comes preseeded"
         timestamptz deleted_at
     }
     VARIETIES {
         uuid id PK
         uuid farm_id FK
         uuid crop_type_id FK
-        text name "unico por farm_id crop_type_id lower name"
+        text name "unique per farm_id crop_type_id lower name"
         timestamptz deleted_at
     }
     UNITS {
@@ -486,7 +487,7 @@ erDiagram
         text name
         text last_name
         text document_type
-        text document_number "unico por farm_id tipo numero"
+        text document_number "unique per farm_id type number"
         text phone
         text address
         text city
@@ -501,7 +502,7 @@ erDiagram
         uuid id PK
         uuid farm_id FK
         uuid worker_id FK
-        text body "append only, nunca sale de la finca"
+        text body "append only, never leaves the farm"
         uuid created_by FK
         timestamptz created_at
     }
@@ -515,7 +516,7 @@ erDiagram
         int custom_qty
         text custom_period "dia mes ano"
         uuid work_unit_id FK
-        int8 default_rate_cents "solo dueno"
+        int8 default_rate_cents "owner only"
         text rate_source "weekly_price fixed"
         text status
         timestamptz deleted_at
@@ -526,9 +527,9 @@ erDiagram
         uuid worker_id FK
         uuid activity_id FK
         date date_from
-        date date_to "igual a date_from si rate_source weekly_price"
+        date date_to "equal to date_from if rate_source weekly_price"
         numeric quantity
-        int8 rate_cents "nulo solo si weekly_price"
+        int8 rate_cents "null only if weekly_price"
         text note
         uuid created_by FK
         timestamptz created_at
@@ -557,25 +558,25 @@ erDiagram
         uuid id PK
         uuid farm_id FK
         uuid settlement_id FK
-        uuid payable_id FK "antes pickupId"
-        text payable_kind "hoy siempre work_record"
-        date week "lunes ISO"
+        uuid payable_id FK "formerly pickupId"
+        text payable_kind "today always work_record"
+        date week "ISO Monday"
         numeric quantity
         int8 rate_cents
         int8 amount_cents
-        timestamptz voided_at "unico payable_id donde voided_at es nulo"
+        timestamptz voided_at "unique payable_id where voided_at is null"
     }
     LEDGER {
         uuid id PK
         uuid farm_id FK
         uuid worker_id FK
         text kind "devengo pago anticipo deduccion ajuste reverso"
-        int8 amount_cents "distinto de cero, signo por kind"
+        int8 amount_cents "nonzero, sign given by kind"
         date date
         uuid settlement_id FK
         text method
         text note
-        uuid reverses_id FK "unico, un asiento se reversa una vez"
+        uuid reverses_id FK "unique, an entry is reversed once"
         uuid created_by FK
         timestamptz created_at
     }
@@ -583,7 +584,7 @@ erDiagram
         uuid id PK
         uuid farm_id FK
         uuid activity_id FK
-        date monday "unico por farm_id activity_id monday"
+        date monday "unique per farm_id activity_id monday"
         int8 cost_per_unit_cents
         uuid created_by FK
         timestamptz created_at
@@ -615,7 +616,7 @@ erDiagram
         uuid farm_id FK
         uuid product_id FK
         uuid warehouse_id FK
-        numeric qty "positiva entrada, negativa salida"
+        numeric qty "positive in, negative out"
         uuid unit_id FK
         text reason "harvest purchase sale adjustment transfer"
         uuid plot_id FK
@@ -654,10 +655,10 @@ erDiagram
         uuid farm_id FK
         text kind "worker_photo sale_receipt"
         text content_type
-        int8 size_bytes "maximo 5 MB verificado al confirmar"
+        int8 size_bytes "maximum 5 MB checked on confirm"
         text storage_key
         timestamptz uploaded_at
-        timestamptz confirmed_at "sin esto la media no se referencia"
+        timestamptz confirmed_at "without this the media is never referenced"
     }
     AUDIT_LOG {
         uuid id PK
@@ -672,40 +673,41 @@ erDiagram
     }
 ```
 
-Siete decisiones que el ER congela y conviene leer despacio:
+Seven decisions the ER freezes, worth reading slowly:
 
-1. **No hay tabla `pickups`.** Una pesada es un `work_record` con
+1. **There is no `pickups` table.** A weighing is a `work_record` with
    `pay_mode='work_unit'`, `unit='kg'`, `date_from = date_to`, `quantity = weight`.
-   `/v1/pickups` sobrevive como fachada HTTP para que el móvil no se toque; en Postgres
-   no existe.
-2. **El candado anti doble pago no cambió de forma, solo de nombre.**
-   `UNIQUE(payable_id) WHERE voided_at IS NULL` es literalmente el `ux_items_pickup_live`
-   del móvil. Es lo único que impide pagar dos veces la misma labor, y por eso hay un
-   solo tipo de pagable en vez de dos tablas con dos candados.
-3. **`ledger` no se toca.** Los mismos seis `kind`, el mismo `CHECK` de signos, el mismo
-   `reverses_id` único. `BALANCE_SQL` se porta literalmente; los `golden/*.json` obligan
-   a que Go devuelva **exactamente los mismos centavos** que el teléfono.
-4. **`work_record_plots` es la forma normalizada de los `plot_ids[]` y `crop_ids[]`** del
-   boceto de `arquitectura-api.md` §1. Misma semántica; se normaliza porque un array no
-   se puede indexar por RLS ni unir contra `expenses` por lote.
-5. **`stock` y `balance` no son tablas.** Las existencias se derivan de
-   `stock_movements` igual que el saldo se deriva de `ledger`. Misma disciplina, mismo
-   motivo: un total almacenado es un total que algún día miente.
-6. **`week_prices` cuelga de `activity_id`**, no de la finca. El `cost_overrides` del
-   móvil era global porque solo existía la recolección; con varias actividades pagadas
-   por unidad, el precio semanal del café no es el precio semanal de la arroba de yuca.
-   La migración pone las filas existentes bajo la actividad semilla *Recolección*.
-7. **`media` tiene `confirmed_at`.** Una fila sin confirmar es una subida que nunca llegó;
-   ninguna otra tabla puede referenciarla.
+   `/v1/pickups` survives as an HTTP façade so the mobile app is left alone; in Postgres it
+   does not exist.
+2. **The double-payment lock did not change shape, only name.**
+   `UNIQUE(payable_id) WHERE voided_at IS NULL` is literally the mobile app's
+   `ux_items_pickup_live`. It is the only thing that stops the same work record being paid
+   twice, and that is why there is a single payable kind instead of two tables with two
+   locks.
+3. **`ledger` is untouched.** The same six `kind` values, the same sign `CHECK`, the same
+   unique `reverses_id`. `BALANCE_SQL` is ported literally; the `golden/*.json` files force
+   Go to return **exactly the same cents** as the phone.
+4. **`work_record_plots` is the normalized form of the `plot_ids[]` and `crop_ids[]`** in
+   the sketch in `arquitectura-api.md` §1. Same semantics; it is normalized because an array
+   cannot be indexed by RLS nor joined against `expenses` by plot.
+5. **`stock` and `balance` are not tables.** Stock is derived from `stock_movements` the
+   same way the balance is derived from `ledger`. Same discipline, same reason: a stored
+   total is a total that lies one day.
+6. **`week_prices` hangs off `activity_id`**, not off the farm. The mobile app's
+   `cost_overrides` was global because only picking existed; with several activities paid by
+   unit, the weekly price of coffee is not the weekly price of an arroba of cassava. The
+   migration files the existing rows under the seed activity *Recolección*.
+7. **`media` has `confirmed_at`.** An unconfirmed row is an upload that never arrived; no
+   other table may reference it.
 
 ---
 
-## 5. Aislamiento multitenant
+## 5. Multitenant isolation
 
-Una base, `farm_id` en toda tabla, y **RLS en Postgres en vez de acordarse de poner el
-`WHERE`** — porque el día que a alguien se le olvida, una finca ve la nómina de otra.
+One database, `farm_id` in every table, and **RLS in Postgres instead of remembering to
+write the `WHERE`** — because the day someone forgets, one farm sees another's payroll.
 
-La política, idéntica en todas las tablas del tenant:
+The policy, identical on every tenant table:
 
 ```sql
 ALTER TABLE work_records ENABLE ROW LEVEL SECURITY;
@@ -716,108 +718,109 @@ CREATE POLICY tenant_isolation ON work_records
   WITH CHECK (farm_id = current_setting('app.farm_id', true)::uuid);
 ```
 
-El rol de aplicación **no tiene `BYPASSRLS`** y no es el dueño de las tablas — de ahí el
-`FORCE`. Las migraciones corren con otro rol.
+The application role **does not have `BYPASSRLS`** and does not own the tables — hence the
+`FORCE`. Migrations run under a different role.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Cliente web o movil
+    participant C as Web or mobile client
     participant H as httpapi
     participant A as auth
     participant T as tenant
     participant P as permisos
     participant DB as Postgres RLS
 
-    C->>H: GET /v1/work-records con Bearer JWT
-    H->>A: validar firma, exp, jti
+    C->>H: GET /v1/work-records with Bearer JWT
+    H->>A: validate signature, exp, jti
     A-->>H: claims sub, farm_id, role, device_id
 
-    alt token invalido o vencido
+    alt invalid or expired token
         A-->>C: 401 UNAUTHENTICATED
     end
 
-    H->>T: abrir transaccion para farm_id
+    H->>T: open transaction for farm_id
     T->>DB: BEGIN
     T->>DB: SET LOCAL app.farm_id = claims.farm_id
-    Note over T,DB: SET LOCAL, no SET. El valor muere<br/>con la transaccion y no puede filtrarse<br/>a la siguiente peticion del pool.
+    Note over T,DB: SET LOCAL, not SET. The value dies<br/>with the transaction and cannot leak<br/>into the next request from the pool.
     T->>DB: SELECT status FROM farms WHERE id = app.farm_id
 
-    alt finca suspendida
+    alt farm suspended
         DB-->>T: status = suspended
         T-->>C: 403 FARM_SUSPENDED
     end
 
-    H->>P: Require action work_records.list para role
-    alt rol sin permiso
+    H->>P: Require action work_records.list for role
+    alt role without permission
         P-->>C: 403 FORBIDDEN
     end
 
     H->>DB: SELECT ... FROM work_records
-    Note over DB: La consulta no lleva WHERE farm_id.<br/>La politica lo aplica y ademas lo aplica<br/>a INSERT, UPDATE y DELETE con WITH CHECK.
-    DB-->>H: solo filas de esa finca
-    H-->>C: 200 con la lista
+    Note over DB: The query carries no WHERE farm_id.<br/>The policy applies it, and applies it too<br/>to INSERT, UPDATE and DELETE via WITH CHECK.
+    DB-->>H: only rows from that farm
+    H-->>C: 200 with the list
     H->>DB: COMMIT
 ```
 
-### Qué pasa si `app.farm_id` falta
+### What happens if `app.farm_id` is missing
 
-Esta es la parte que hay que dejar por escrito, porque el modo de fallo es traicionero.
+This is the part that has to be written down, because the failure mode is treacherous.
 
-Con `current_setting('app.farm_id', true)` la variable ausente devuelve `NULL`, el
-predicado da `NULL`, la política es falsa y la consulta devuelve **cero filas sin error**.
-Un `SELECT` vacío no se distingue de una finca sin datos, y un `INSERT` falla con un
-mensaje de RLS que nadie relaciona con el middleware. Es la clase de bug que se
-diagnostica un viernes.
+With `current_setting('app.farm_id', true)`, a missing variable returns `NULL`, the
+predicate evaluates to `NULL`, the policy is false, and the query returns **zero rows with
+no error**. An empty `SELECT` is indistinguishable from a farm with no data, and an `INSERT`
+fails with an RLS message nobody connects to the middleware. It is the class of bug you
+diagnose on a Friday.
 
-Por eso hay tres capas, no una:
+That is why there are three layers, not one:
 
-1. **El middleware `tenant` es obligatorio y falla ruidoso.** Si un handler pide conexión
-   sin haber pasado por `tenant`, `store` devuelve `500 TENANT_NOT_SET`. La conexión no
-   se entrega "a ver qué pasa".
-2. **`store` no expone `*pgxpool.Pool`.** Solo entrega una transacción ya inicializada con
-   `SET LOCAL`. No hay forma de obtener una conexión cruda desde `domain`.
-3. **Un test de dos fincas sembradas** recorre cada tabla y afirma que la finca A no ve
-   nada de la B, ni leyendo ni escribiendo con un `farm_id` ajeno en el cuerpo — ahí es
-   donde entra el `WITH CHECK`, que es lo que impide *escribir* en la finca del vecino.
+1. **The `tenant` middleware is mandatory and fails loudly.** If a handler asks for a
+   connection without having gone through `tenant`, `store` returns `500 TENANT_NOT_SET`.
+   The connection is not handed over "to see what happens".
+2. **`store` does not expose `*pgxpool.Pool`.** It only hands out a transaction already
+   initialized with `SET LOCAL`. There is no way to get a raw connection from `domain`.
+3. **A two-seeded-farms test** walks every table and asserts that farm A sees nothing of
+   farm B, neither reading nor writing with someone else's `farm_id` in the body — that is
+   where `WITH CHECK` comes in, and it is what stops you *writing* into the neighbour's
+   farm.
 
-El super-admin **no es una excepción a RLS**. Opera sobre `farms` y `memberships` con un
-rol distinto y un conjunto de rutas distinto (`/v1/admin/farms`); no puede leer el ledger
-de nadie, y eso es una propiedad del esquema, no una promesa de la UI.
+The super-admin **is not an exception to RLS**. He operates on `farms` and `memberships`
+with a different role and a different set of routes (`/v1/admin/farms`); he cannot read
+anyone's ledger, and that is a property of the schema, not a promise from the UI.
 
-> **Nota de nomenclatura.** `plan-sprint-1.md` H3 dice `app.current_farm` y
-> `arquitectura-api.md` §6 dice `app.farm_id`. Gana `app.farm_id`. Hay que corregir H3.
+> **Naming note.** `plan-sprint-1.md` H3 says `app.current_farm` and
+> `arquitectura-api.md` §6 says `app.farm_id`. `app.farm_id` wins. H3 needs fixing.
 
 ---
 
-## 6. Despliegue
+## 6. Deployment
 
 ```mermaid
 graph TD
-    subgraph SG_disp["Dispositivos"]
-        nav["Navegador<br/>web React, bundle estatico"]
-        tel["Telefono Android<br/>Expo, SQLite local"]
+    subgraph SG_disp["Devices"]
+        nav["Browser<br/>React web, static bundle"]
+        tel["Android phone<br/>Expo, local SQLite"]
     end
 
-    subgraph SG_edge["Borde"]
-        cdn["CDN mas hosting estatico<br/>apps/web compilado"]
-        lb["Reverse proxy TLS<br/>rate limit en /signup y /login"]
+    subgraph SG_edge["Edge"]
+        cdn["CDN plus static hosting<br/>apps/web built"]
+        lb["TLS reverse proxy<br/>rate limit on /signup and /login"]
     end
 
-    subgraph SG_app["Plano de aplicacion"]
-        api1["Contenedor api<br/>binario Go unico<br/>httpapi domain store auth tenant media"]
-        reg1["Contenedor registry<br/>binario aparte<br/>credenciales propias"]
+    subgraph SG_app["Application plane"]
+        api1["api container<br/>single Go binary<br/>httpapi domain store auth tenant media"]
+        reg1["registry container<br/>separate binary<br/>its own credentials"]
     end
 
-    subgraph SG_datos["Plano de datos"]
-        pgm[("Postgres 16 mas PostGIS<br/>tenant, RLS activa<br/>rol app sin BYPASSRLS")]
-        pgr[("Postgres registry<br/>instancia o esquema aparte<br/>el rol de api no puede leerlo")]
-        s3[("Object storage S3<br/>bucket privado<br/>solo URL prefirmada")]
+    subgraph SG_datos["Data plane"]
+        pgm[("Postgres 16 plus PostGIS<br/>tenant, RLS enabled<br/>app role without BYPASSRLS")]
+        pgr[("Postgres registry<br/>separate instance or schema<br/>the api role cannot read it")]
+        s3[("Object storage S3<br/>private bucket<br/>presigned URL only")]
     end
 
-    subgraph SG_ci["Fuera de produccion"]
-        ci["CI<br/>openapi diff, golden JSON en TS y Go,<br/>testcontainers con Postgres mas PostGIS real"]
-        bk["Backups probados<br/>restauracion verificada, no solo programada"]
+    subgraph SG_ci["Outside production"]
+        ci["CI<br/>openapi diff, golden JSON in TS and Go,<br/>testcontainers with real Postgres plus PostGIS"]
+        bk["Tested backups<br/>restore verified, not merely scheduled"]
     end
 
     nav --> cdn
@@ -827,10 +830,10 @@ graph TD
     lb --> reg1
     api1 --> pgm
     api1 --> s3
-    api1 -.->|"HTTP con proposito<br/>y consentimiento"| reg1
+    api1 -.->|"HTTP with purpose<br/>and consent"| reg1
     reg1 --> pgr
-    nav -->|"PUT prefirmado"| s3
-    tel -->|"PUT prefirmado"| s3
+    nav -->|"presigned PUT"| s3
+    tel -->|"presigned PUT"| s3
     ci --> api1
     pgm --> bk
     pgr --> bk
@@ -839,116 +842,119 @@ graph TD
     class reg1,pgr espera;
 ```
 
-- **Un binario, no seis.** `registry` es el segundo y existe solo porque necesita
-  credenciales que `api` no debe tener. Se despliega junto hasta que haga falta separarlo.
-- **La web es estática.** No hay servidor de render; el bundle sale del CDN y todo lo
-  dinámico entra por `/v1`. Cambiar de MSW a la API real es una variable de entorno.
-- **Las fotos nunca pasan por el binario.** El cliente sube directo a S3 con URL
-  prefirmada, la API confirma y valida los 5 MB en servidor, no solo en el prefirmado.
-- **Los tests corren contra Postgres real con PostGIS**, no contra un mock. El SQL de
-  dinero es el activo del proyecto y un mock no lo prueba.
+- **One binary, not six.** `registry` is the second, and it exists only because it needs
+  credentials `api` must not have. It ships alongside until separating it becomes necessary.
+- **The web app is static.** There is no render server; the bundle comes from the CDN and
+  everything dynamic goes through `/v1`. Switching from MSW to the real API is one
+  environment variable.
+- **Photos never pass through the binary.** The client uploads straight to S3 with a
+  presigned URL, the API confirms and enforces the 5 MB on the server, not just at
+  presigning time.
+- **Tests run against a real Postgres with PostGIS**, not against a mock. The money SQL is
+  the asset of this project, and a mock does not test it.
 
 ---
 
-## 7. Choques entre los casos de uso y el diseño
+## 7. Clashes between the use cases and the design
 
-Están sin resolver a propósito. Resolverlos por nuestra cuenta es inventar producto.
+They are unresolved on purpose. Resolving them on our own is inventing product.
 
-### 7.1 RSP-009 quiere nombres de finca; el diseño los prohíbe
+### 7.1 RSP-009 wants farm names; the design forbids them
 
-RSP-009 dice mostrar *"las fincas donde ha trabajado con sus periodos, y las anotaciones
-realizadas"*. `arquitectura-api.md` §3 dice que **jamás** se comparten nombres de finca ni
-anotaciones libres, solo `farmsWorked: 3`, meses y `disputes: 0`.
+RSP-009 says to show *"the farms where he has worked with their periods, and the notes
+written about him"*. `arquitectura-api.md` §3 says farm names and free-text notes are
+**never** shared, only `farmsWorked: 3`, months, and `disputes: 0`.
 
-Es un choque frontal, y no se puede partir la diferencia. Nombres de finca más anotaciones
-de texto libre entre fincas es una lista negra laboral: en Colombia cae bajo la Ley 1581
-de 2012, sin finalidad declarada ni derecho de rectificación. **Se implementa la versión
-del diseño y RSP-009 queda parcialmente sin cumplir hasta que el dueño decida.** Es la
-decisión 1 de `plan-sprint-1.md` §7.
+This is a head-on clash, and you cannot split the difference. Farm names plus free-text
+notes travelling between farms is a labour blacklist: in Colombia that falls under Law 1581
+of 2012, with no declared purpose and no right of rectification. **The design's version gets
+built and RSP-009 stays partially unmet until the owner decides.** It is decision 1 in
+`plan-sprint-1.md` §7.
 
-### 7.2 RSP-004 exige internet y una comprobación que hoy devuelve 403
+### 7.2 RSP-004 requires internet and a check that today returns 403
 
-RSP-004 dice que **antes de guardar** se consulta el historial y las alertas de seguridad.
-Con el diseño de `registry`: sin consentimiento registrado del trabajador, el `lookup`
-devuelve `403 NO_CONSENT` y nada más — que será el caso de casi todo trabajador nuevo. Y
-las "alertas de seguridad" de texto libre **no se construyen**.
+RSP-004 says that **before saving**, the history and the safety alerts are looked up. With
+the `registry` design: without a recorded consent from the worker, the `lookup` returns
+`403 NO_CONSENT` and nothing else — which will be the case for nearly every new worker. And
+the free-text "safety alerts" **are not built**.
 
-Además RSP-004 dice que sin internet se crea "una solicitud de análisis que se sincroniza
-después", y `arquitectura-api.md` §8 deja el **sync offline fuera de la entrega 1**. En el
-Sprint 1 el alta de empleado es online y sin lookup.
+On top of that, RSP-004 says that with no internet the system creates "an analysis request
+that syncs later", and `arquitectura-api.md` §8 puts **offline sync out of delivery 1**. In
+Sprint 1, creating an employee is online and without a lookup.
 
-**Efecto práctico:** el paso de comprobación del alta se maqueta y se salta. Que RSP-004
-sea "obligatorio antes de guardar" no puede bloquear dar de alta a un recolector.
+**Practical effect:** the check step during creation is mocked up and skipped. RSP-004 being
+"mandatory before saving" cannot be allowed to block registering a picker.
 
-### 7.3 El "repositorio público" de RSP-010 y RSP-018 no existe
+### 7.3 The "public repository" in RSP-010 and RSP-018 does not exist
 
-Los dos casos dicen *"trae del repositorio público en internet las últimas categorías y
-actividades / productos"*. En el diseño, los catálogos son **por finca**, idempotentes por
-`(farm_id, lower(name))`. No hay catálogo compartido, ni endpoint, ni quién lo cura, ni
-qué pasa cuando cambia una categoría que una finca ya usó.
+Both use cases say *"pull the latest categories and activities / products from the public
+repository on the internet"*. In the design, catalogs are **per farm**, idempotent on
+`(farm_id, lower(name))`. There is no shared catalog, no endpoint, no one curating it, and
+no answer for what happens when a category a farm already uses changes.
 
-Es un producto entero sin especificar. **El Sprint 1 siembra los catálogos de cada finca
-en el alta** (café, siembra, mantenimiento, cosecha, kg, arroba, canasta, jornal) y el
-repositorio compartido queda como pregunta abierta al dueño.
+That is a whole product with no spec. **Sprint 1 seeds each farm's catalogs at creation**
+(coffee, siembra, mantenimiento, cosecha, kg, arroba, canasta, jornal) and the shared
+repository stays an open question for the owner.
 
-### 7.4 Los casos de uso le dan todo al administrador; los roles no
+### 7.4 The use cases give everything to the administrator; the roles do not
 
-`casos-de-uso.md` §Convenciones dice que el actor de los 33 casos es el **Administrador de
-Finca**, incluidos RSP-003/006/013 (eliminar) y "definir precios". `sync-and-roles.md` dice
-que el administrador **no cambia precios ni elimina gente**.
+`casos-de-uso.md` §Convenciones says the actor for all 33 use cases is the **Farm
+Administrator**, including RSP-003/006/013 (delete) and "define prices". `sync-and-roles.md`
+says the administrator **does not change prices and does not delete people**.
 
-Se aplica la tabla de roles: eliminar y precios son del **dueño**. Es una restricción más
-dura de lo que el documento del dueño pide, y hay que confirmarla — un administrador que
-no puede corregir un precio mal puesto llama al dueño por teléfono cada semana.
+The roles table applies: deleting and prices belong to the **owner**. It is a harder
+restriction than the owner's own document asks for, and it needs confirming — an
+administrator who cannot fix a wrong price will phone the owner every week.
 
-### 7.5 RSP-015 pide rango de fechas; el precio semanal exige un solo día
+### 7.5 RSP-015 asks for a date range; the weekly price demands a single day
 
-RSP-015 pide *"rango de fechas"* obligatorio. `arquitectura-api.md` §1 exige que un
-`work_record` con `rate_source='weekly_price'` sea **de un solo día**: un jornal de martes
-a martes no tiene "una" semana y derivar precio semanal sobre un rango termina en un pago
-mal calculado.
+RSP-015 requires a *"date range"*. `arquitectura-api.md` §1 requires that a `work_record`
+with `rate_source='weekly_price'` be **for a single day**: a `jornal` from Tuesday to
+Tuesday has no single week, and deriving a weekly price over a range ends in a miscalculated
+payment.
 
-**Resolución dentro del diseño, sin pedirle nada al dueño:** el formulario permite rango
-siempre; si la actividad usa precio semanal, el rango se colapsa al día y la UI lo dice.
-Con precio congelado el rango es legítimo. Está dibujado en `web.md` §3.
+**Resolved inside the design, with nothing asked of the owner:** the form always allows a
+range; if the activity uses the weekly price, the range collapses to the day and the UI says
+so. With a frozen price the range is legitimate. It is drawn in `web.md` §3.
 
-### 7.6 Numeración RSP: dos errores que arrastran los documentos
+### 7.6 RSP numbering: two errors the documents carry around
 
-- **`arquitectura-api.md` §5 y §8 llaman "RSP-033" al autoregistro de finca.** RSP-033 es
-  *Eliminar Gasto*. El autoregistro está en `casos-de-uso.md` §9 *Registrar finca*, que el
-  dueño dejó **pendiente de especificar**. Es decir: la decisión del autoregistro con
-  `status='trial'` **no está respaldada por ningún caso de uso escrito**; es la opción (c)
-  de la decisión 2 de `plan-sprint-1.md` §7 y sigue esperando respuesta.
-- **No existen RSP-022, RSP-023 ni RSP-024.** El documento salta de *Eliminar Producto* a
-  *Registrar inventario*. Faltan casi con seguridad bodegas y unidades de almacenamiento,
-  que RSP-019 y RSP-025 dan por existentes. Modelados como `warehouses` y `units`, sin caso
-  de uso que los describa.
+- **`arquitectura-api.md` §5 and §8 call farm self-registration "RSP-033".** RSP-033 is
+  *Delete Expense*. Self-registration is in `casos-de-uso.md` §9 *Register farm*, which the
+  owner left **pending specification**. In other words: the decision to self-register with
+  `status='trial'` **is backed by no written use case**; it is option (c) of decision 2 in
+  `plan-sprint-1.md` §7 and is still waiting for an answer.
+- **RSP-022, RSP-023 and RSP-024 do not exist.** The document jumps from *Delete Product* to
+  *Register inventory*. What is almost certainly missing is warehouses and storage units,
+  which RSP-019 and RSP-025 take for granted. Modelled as `warehouses` and `units`, with no
+  use case describing them.
 
-### 7.7 "Lote dentro de parcela": una jerarquía que no existe
+### 7.7 "Field inside plot": a hierarchy that does not exist
 
-`plan-sprint-1.md` H4 dice *"lotes dentro de la parcela"*. RSP-001 llama *"nombre del
-lote"* al nombre de la parcela, y `arquitectura-api.md` modela un solo nivel: `plots`.
+`plan-sprint-1.md` H4 says *"fields inside the plot"*. RSP-001 calls the plot's name *"the
+name of the field"*, and `arquitectura-api.md` models a single level: `plots`.
 
-**Un solo nivel.** Lote = parcela = `plots`; el detalle de siembra es `plot_crops`. H4 está
-mal redactado. Un segundo nivel duplicaría las claves de `work_records`, `expenses` y
-`stock_movements` por una necesidad que nadie ha expresado.
+**One level only.** Field = plot = `plots`; the planting detail is `plot_crops`. H4 is badly
+worded. A second level would duplicate the keys of `work_records`, `expenses` and
+`stock_movements` for a need nobody has expressed.
 
-### 7.8 RSP-025 dice "el sistema imprime los stickers"
+### 7.8 RSP-025 says "the system prints the stickers"
 
-El sistema **no imprime**: `POST /v1/labels/print` devuelve un PDF o ZPL de tamaño fijo que
-el usuario manda a su impresora. Sin plantillas configurables y sin descubrimiento de
-impresoras. Además todo el módulo de inventario es Sprint 3.
+The system **does not print**: `POST /v1/labels/print` returns a fixed-size PDF or ZPL that
+the user sends to his own printer. No configurable templates and no printer discovery. On
+top of that, the whole inventory module is Sprint 3.
 
-### 7.9 RSP-008 "pago parcial menor al saldo actual" choca con el anticipo
+### 7.9 RSP-008's "partial payment lower than the current balance" clashes with the `anticipo`
 
-RSP-008 valida que el pago parcial sea **menor al saldo actual**. El ledger admite saldo a
-favor del trabajador, y pagar más de lo devengado es exactamente un `anticipo`.
+RSP-008 validates that a partial payment is **lower than the current balance**. The ledger
+allows a credit balance in the worker's favour, and paying more than what has been earned is
+exactly an `anticipo` (an advance).
 
-**Resolución dentro del diseño:** el monto mayor al saldo no se rechaza, se reclasifica. La
-web pregunta y escribe `pago` hasta el saldo y `anticipo` por el excedente. Está dibujado
-en `web.md` §4. Si el dueño quiere el rechazo duro, es una línea, pero pierde el anticipo,
-que en cosecha se usa todas las semanas.
+**Resolved inside the design:** an amount above the balance is not rejected, it is
+reclassified. The web app asks, then writes `pago` up to the balance and `anticipo` for the
+excess. It is drawn in `web.md` §4. If the owner wants the hard rejection, that is one line,
+but he loses the `anticipo`, which during harvest gets used every week.
 
 ---
 
-Ver también: `docs/diagramas/web.md` (app web) y `docs/diagramas/movil.md` (app móvil).
+See also: `docs/diagramas/web.md` (web app) and `docs/diagramas/movil.md` (mobile app).

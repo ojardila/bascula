@@ -1,456 +1,466 @@
-# La simplificación que propuso el dueño
+# The simplification the owner proposed
 
-> «¿Crees que nos estamos complicando con ese modelo sync? ¿No será mejor
-> manejar balances solo con lo que hay en web y solo registrar recolecciones de
-> cosecha async?»
+> "Do you think we are overcomplicating things with that sync model? Wouldn't it
+> be better to handle balances only with what is on the web, and only record
+> harvest pickings asynchronously?"
 
-Es decir: **el teléfono deja de ser dueño del dinero.** Captura pesadas y las
-sube; saldos, liquidaciones, pagos y el libro viven sólo en el servidor.
+That is: **the phone stops owning the money.** It captures weighings and uploads
+them; balances, settlements, payments and the ledger live only on the server.
 
-Este documento no opina sobre si eso «es más limpio». Cuenta qué se borra, qué
-se pierde, qué hallazgos de la auditoría desaparecen, cómo se muda la finca real
-y qué costaría la alternativa. Las cifras están medidas sobre `master` en
-`b539d08`, no estimadas.
+This document does not offer an opinion on whether that "is cleaner". It sets
+out what gets deleted, what gets lost, which audit findings disappear, how the
+real farm moves across, and what the alternative would cost. The figures are
+measured against `master` at `b539d08`, not estimated.
 
-Nota de estado al escribir esto: `master` está verde (189/189 pruebas del móvil,
-85/85 de `packages/shared`, 334/334 de la web). El árbol de trabajo tiene
-cambios sin confirmar de otra pareja en `schema.ts` y `sqliteRepository.ts` que
-rompen 4 pruebas —falta importar `BALANCE_COLUMNS` en
-`apps/mobile/src/data/sqliteRepository.ts`—. No es de este documento, pero
-conviene que lo sepan.
-
----
-
-## 0. Por qué la propuesta es más fuerte de lo que parece, con los ficheros delante
-
-La decisión 5 del dueño ya le quitó al teléfono la autoridad sobre el dinero: el
-cierre de semana se hace con señal, contra el servidor, y el efectivo del lote es
-un **anticipo**. Lo que quedó en el código después de esa decisión es
-contradictorio, y no es una sospecha — es lo que ejecuta hoy:
-
-1. `apps/mobile/src/screens/PayWorker.tsx:131` llama a `payments.settle`, que
-   escribe `settlements`, `settlement_items` y el `devengo` en el SQLite del
-   teléfono.
-2. Los disparadores del outbox (`apps/mobile/src/schema.ts`,
-   `outboxTriggersSql` sobre `SYNCED_TABLES`, que incluye `settlements` y
-   `settlement_items`) encolan esas filas.
-3. `apps/mobile/src/sync/engine.ts:421-426` las envía como `readOnlyEnvelope`.
-4. `services/api/internal/httpapi/handlers_sync.go:402-406` las **rechaza**:
-   *«settlements are created by POST /v1/settlements»*.
-5. El `devengo` ni siquiera sale: `apps/mobile/src/sync/restTransport.ts:475` lo
-   marca `unsendable` / `SERVER_OWNED`.
-6. **Pero el `pago` sí sale**, por `/v1/payments` con `allowOverpayment: true`
-   (`restTransport.ts:458` y `:496`).
-
-El resultado, a partir de la fase 6 de `sincronizacion.md` §8: el servidor recibe
-un pago sin el devengo que lo justifica, **y las pesadas siguen sin reclamar en
-`ux_items_payable_live`**, así que la web puede liquidarlas otra vez y pagarlas
-otra vez. Es el doble pago que todo el diseño existe para impedir, entrando por
-la puerta que la decisión 5 dejó a medio cerrar. Hoy no está vivo sólo porque
-sigue en pie la mitigación de la decisión 3 —«se paga desde un solo lado»—. El
-día que se retire, lo está.
-
-Y hay dos agujeros más en el mismo sitio, que ninguna de las dos opciones puede
-dejar como está:
-
-- **La nómina de cuadrilla no tiene ninguna guarda de sincronización.**
-  `PayWorker.tsx:112` sí exige un pull fresco (`settleAllowed = !status.registered || fresh`).
-  `PaymentsPanel.tsx:141` llama a `Payments.runPayroll` **sin comprobar nada**.
-  La regla de §6.1 protege la ruta de un trabajador y deja abierta la de treinta.
-- **`capabilities.settleOffline` se decodifica y se tira.** Los dos transportes
-  lo parsean (`restTransport.ts:248`, `feedTransport.ts:167`) y **ninguna
-  pantalla lo lee**. El «modo lectura de dinero por control remoto» que la fase 4
-  de §8 da por hecho no existe.
-
-La propuesta del dueño es, en el fondo, señalar que construimos la
-sincronización bidireccional de dinero **antes** de la decisión 5 y nunca
-volvimos a quitar lo que dejó de hacer falta.
+Status note as this is written: `master` is green (189/189 mobile tests, 85/85
+in `packages/shared`, 334/334 on the web). The working tree has uncommitted
+changes from another pair in `schema.ts` and `sqliteRepository.ts` that break 4
+tests — `BALANCE_COLUMNS` is not imported in
+`apps/mobile/src/data/sqliteRepository.ts`. Not this document's business, but
+worth knowing.
 
 ---
 
-## 1. Qué se borra exactamente, y qué se queda
+## 0. Why the proposal is stronger than it looks, with the files open
 
-### 1.1 Lo que se borra — código de aplicación
+The owner's decision 5 already took the phone's authority over money away: the
+week is closed with a signal, against the server, and the cash handed over at
+the plot is an `anticipo`. What was left in the code after that decision is
+contradictory, and this is not a suspicion — it is what runs today:
 
-Rangos de línea sobre `b539d08`.
+1. `apps/mobile/src/screens/PayWorker.tsx:131` calls `payments.settle`, which
+   writes `settlements`, `settlement_items` and the `devengo` into the phone's
+   SQLite.
+2. The outbox triggers (`apps/mobile/src/schema.ts`, `outboxTriggersSql` over
+   `SYNCED_TABLES`, which includes `settlements` and `settlement_items`) queue
+   those rows.
+3. `apps/mobile/src/sync/engine.ts:421-426` sends them as a `readOnlyEnvelope`.
+4. `services/api/internal/httpapi/handlers_sync.go:402-406` **rejects** them:
+   *"settlements are created by POST /v1/settlements"*.
+5. The `devengo` never even leaves:
+   `apps/mobile/src/sync/restTransport.ts:475` marks it `unsendable` /
+   `SERVER_OWNED`.
+6. **But the `pago` does leave**, via `/v1/payments` with
+   `allowOverpayment: true` (`restTransport.ts:458` and `:496`).
 
-| Fichero | Qué | Líneas |
+The result, from phase 6 of `sincronizacion.md` §8 onwards: the server receives
+a payment without the `devengo` that justifies it, **and the weighings are still
+unclaimed in `ux_items_payable_live`**, so the web can settle them again and pay
+them again. That is the double payment the whole design exists to prevent,
+coming in through the door decision 5 left half closed. It is not live today
+only because decision 3's mitigation — "pay from one side only" — still stands.
+The day that is lifted, it is live.
+
+And there are two more holes in the same place, neither of which either option
+can leave as it is:
+
+- **Crew payroll has no sync guard at all.** `PayWorker.tsx:112` does require a
+  fresh pull (`settleAllowed = !status.registered || fresh`).
+  `PaymentsPanel.tsx:141` calls `Payments.runPayroll` **without checking
+  anything**. The §6.1 rule protects the path for one worker and leaves the path
+  for thirty wide open.
+- **`capabilities.settleOffline` is decoded and thrown away.** Both transports
+  parse it (`restTransport.ts:248`, `feedTransport.ts:167`) and **no screen
+  reads it**. The "money read-only mode by remote control" that phase 4 of §8
+  takes for granted does not exist.
+
+The owner's proposal is, at bottom, pointing out that we built bidirectional
+money sync **before** decision 5 and never went back to remove what had stopped
+being necessary.
+
+---
+
+## 1. What exactly gets deleted, and what stays
+
+### 1.1 What gets deleted — application code
+
+Line ranges against `b539d08`.
+
+| File | What | Lines |
 |---|---|---|
 | `apps/mobile/src/data/sqliteRepository.ts` | `pendingItems` 1108‑1136 (29) · `reverseHere` 1170‑1197 (28) · `voidSettlementHere` 1199‑1256 (58) | 115 |
-| ídem, dentro de `payments` | `preview` 1260‑1275 (16) · `settle` 1276‑1330 (55) · `voidSettlement` 1331‑1344 (14) · `runPayroll` 1345‑1401 (57) · `pay` 1402‑1415 (14) · `adjust` 1448‑1464 (17) · `reverse` 1465‑1495 (31) · `undoRun` 1496‑1526 (31) · `paidAgainst` 1606‑1609 (4) · `paidInRange` 1610‑1617 (8) · `pendingAll` 1637‑1689 (53) | 300 |
-| ídem | `balance` / `balances` / `fullBalance` 1527‑1597 (71) se reescriben a ~25 | −46 |
-| `apps/mobile/src/schema.ts` | `BALANCE_SQL` 126‑160 (35 → ~6) · `PAID_AGAINST_SQL` 161‑187 (27) · `PAID_IN_RANGE_SQL` 188‑196 (9) · `PENDING_SQL` 197‑212 (16) · `ux_items_pickup_live` dentro de `PAYMENTS_SCHEMA` (4) | 85 |
+| same file, inside `payments` | `preview` 1260‑1275 (16) · `settle` 1276‑1330 (55) · `voidSettlement` 1331‑1344 (14) · `runPayroll` 1345‑1401 (57) · `pay` 1402‑1415 (14) · `adjust` 1448‑1464 (17) · `reverse` 1465‑1495 (31) · `undoRun` 1496‑1526 (31) · `paidAgainst` 1606‑1609 (4) · `paidInRange` 1610‑1617 (8) · `pendingAll` 1637‑1689 (53) | 300 |
+| same file | `balance` / `balances` / `fullBalance` 1527‑1597 (71) rewritten down to ~25 | −46 |
+| `apps/mobile/src/schema.ts` | `BALANCE_SQL` 126‑160 (35 → ~6) · `PAID_AGAINST_SQL` 161‑187 (27) · `PAID_IN_RANGE_SQL` 188‑196 (9) · `PENDING_SQL` 197‑212 (16) · `ux_items_pickup_live` inside `PAYMENTS_SCHEMA` (4) | 85 |
 | `apps/mobile/src/data/syncStore.ts` | `applySettlement` 399‑480 | 82 |
-| `apps/mobile/src/sync/engine.ts` | `checkBalances` 615‑693 (79) · ramas `settlements`/`settlement_items` de `envelope` y `readOnlyEnvelope` (~30) | 109 |
-| `apps/mobile/src/screens/PayWorker.tsx` | entero | 406 |
-| `apps/mobile/src/screens/PaymentsPanel.tsx` | entero | 435 |
-| `apps/mobile/src/screens/Account.tsx` | se reescribe a lectura (393 → ~200) | 193 |
-| `apps/mobile/src/screens/Adjust.tsx` | queda sólo el anticipo (172 → ~110) | 62 |
+| `apps/mobile/src/sync/engine.ts` | `checkBalances` 615‑693 (79) · the `settlements`/`settlement_items` branches of `envelope` and `readOnlyEnvelope` (~30) | 109 |
+| `apps/mobile/src/screens/PayWorker.tsx` | whole file | 406 |
+| `apps/mobile/src/screens/PaymentsPanel.tsx` | whole file | 435 |
+| `apps/mobile/src/screens/Account.tsx` | rewritten as read-only (393 → ~200) | 193 |
+| `apps/mobile/src/screens/Adjust.tsx` | only the `anticipo` remains (172 → ~110) | 62 |
 | `apps/mobile/src/receiptHtml.ts` | `payrollHtml` 181‑312 | 132 |
-| `apps/mobile/src/data/repository.ts` | 14 de los 21 métodos de `PaymentsRepo`, y los tipos `SettlementPreview`, `PendingItem`, `PayrollRun`, `SettleResult`, `PendingWorker` | ~90 |
-| **Total código** | | **≈ 1.963** |
+| `apps/mobile/src/data/repository.ts` | 14 of the 21 `PaymentsRepo` methods, and the types `SettlementPreview`, `PendingItem`, `PayrollRun`, `SettleResult`, `PendingWorker` | ~90 |
+| **Total code** | | **≈ 1,963** |
 
-Hay que escribir a cambio: una pantalla de anticipo (~120), la tarjeta de saldo
-leído con su fecha (~60) y la lectura de `server_balances` en la ficha del
-trabajador (~40). **≈ 220.** Neto: **−1.743 líneas de código**.
+To be written in exchange: an `anticipo` screen (~120), the balance-as-read card
+with its timestamp (~60) and reading `server_balances` on the worker's page
+(~40). **≈ 220.** Net: **−1,743 lines of code**.
 
-El móvil tiene hoy 23.418 líneas de TS/TSX, de las que 5.705 son pruebas. Se
-borra el **11 %** de su código de aplicación.
+The mobile app today is 23,418 lines of TS/TSX, of which 5,705 are tests. This
+deletes **11 %** of its application code.
 
-### 1.2 Lo que se borra — pruebas
+### 1.2 What gets deleted — tests
 
-| Fichero | Qué | Líneas |
+| File | What | Lines |
 |---|---|---|
-| `apps/mobile/src/data/repository.test.ts` | 27 de 52 pruebas (liquidar, anular, nómina, deshacer, planilla, `paidAgainst`) | 581 |
-| `apps/mobile/src/ledger.test.ts` | 11 de 13; el fichero se queda sin objeto | 275 |
-| `apps/mobile/src/sync/sync.test.ts` | las de liquidación bajada y las del checksum de saldo | ~200 |
-| `apps/mobile/src/receiptHtml.test.ts`, `csv.test.ts` | las de liquidación y planilla | 36 |
-| `packages/shared/golden/runner.ts` (522) + `golden.test.ts` (86) + `real-repository.test.ts` (264) | el recorredor de TypeScript entero. Los diez `cases/*.json` **se quedan**: pasan a ser la suite de regresión del servidor, que ya los ejecuta en `services/api/internal/apitest/golden_test.go` | 872 |
-| **Total pruebas** | | **≈ 1.964** |
+| `apps/mobile/src/data/repository.test.ts` | 27 of 52 tests (settle, void, payroll, undo, payroll sheet, `paidAgainst`) | 581 |
+| `apps/mobile/src/ledger.test.ts` | 11 of 13; the file is left with no subject | 275 |
+| `apps/mobile/src/sync/sync.test.ts` | the ones for pulled settlements and for the balance checksum | ~200 |
+| `apps/mobile/src/receiptHtml.test.ts`, `csv.test.ts` | the settlement and payroll-sheet ones | 36 |
+| `packages/shared/golden/runner.ts` (522) + `golden.test.ts` (86) + `real-repository.test.ts` (264) | the entire TypeScript runner. The ten `cases/*.json` **stay**: they become the server's regression suite, which already runs them in `services/api/internal/apitest/golden_test.go` | 872 |
+| **Total tests** | | **≈ 1,964** |
 
-**Total borrado ≈ 3.927 líneas. Escrito ≈ 220. Neto ≈ −3.700.**
+**Total deleted ≈ 3,927 lines. Written ≈ 220. Net ≈ −3,700.**
 
-En el servidor no se borra **ni una línea**. La rama de rechazo de
-`handlers_sync.go:402` se queda: pasa de ser la que salta a la que nunca salta,
-que es exactamente donde tiene que estar una guarda.
+On the server **not one line** is deleted. The rejection branch at
+`handlers_sync.go:402` stays: it goes from being the one that fires to the one
+that never fires, which is exactly where a guard belongs.
 
-### 1.3 Lo que se queda — y aquí discuto contigo
+### 1.3 What stays — and here I argue with you
 
-**El saldo mostrado: sí, y el código ya está construido para ello.**
-`SERVER_BALANCES_SCHEMA` (`schema.ts:839`) y `recordServerBalances` existen. Lo
-que cambia es su estatus: hoy el saldo del servidor es un **checksum** que se
-compara contra el local y se tira (`engine.ts:634-693`); pasa a ser *el* número.
-Tres condiciones que no son negociables, porque son literalmente la familia
-entera de hallazgos de la consola web (A5, A6, A7):
+**The displayed balance: yes, and the code is already built for it.**
+`SERVER_BALANCES_SCHEMA` (`schema.ts:839`) and `recordServerBalances` exist.
+What changes is their status: today the server balance is a **checksum**
+compared against the local one and thrown away (`engine.ts:634-693`); it becomes
+*the* number. Three conditions that are not negotiable, because they are
+literally the entire family of web console findings (A5, A6, A7):
 
-1. nunca se enseña sin la marca de cuándo llegó, **en la misma línea**, no en una
-   cabecera;
-2. un teléfono que nunca oyó un saldo no enseña «$0» — enseña «no lo sé». La
-   unión de cuatro estados sin miembro numérico para el desconocido, que el
-   módulo de cosecha de la web ya resolvió bien;
-3. con anticipos sin enviar, se enseña el saldo del servidor menos lo no
-   enviado, etiquetado «provisional».
+1. it is never shown without the mark of when it arrived, **on the same line**,
+   not in a header;
+2. a phone that has never heard a balance does not show «$0» — it shows «no lo
+   sé» (*I don't know*). The four-state union with no numeric member for the
+   unknown, which the web's harvest module already got right;
+3. with unsent advances, it shows the server balance minus what has not been
+   sent, labelled «provisional» (*provisional*).
 
-Ganancia lateral que vale por sí sola: hoy el saldo del teléfono **miente** para
-quien además hizo jornales (§2.2), y `engine.ts:664-673` lo dice por escrito —
-un trabajador con pesadas *y* jornales se reporta como bug de cálculo, y «dos
-totales no bastan para distinguir *el teléfono sabe menos* de *las dos
-implementaciones discrepan*». Con un solo saldo, esa ambigüedad no existe.
+A side gain that is worth it on its own: today the phone's balance **lies** for
+anyone who also did day work (§2.2), and `engine.ts:664-673` says so in writing
+— a worker with weighings *and* day work is reported as a calculation bug, and
+"two totals are not enough to tell *the phone knows less* from *the two
+implementations disagree*". With a single balance, that ambiguity does not
+exist.
 
-**El comprobante del anticipo: sí, y es más fácil de lo que parece.** Un recibo
-de anticipo no necesita ningún cálculo: nombre, cédula, fecha, importe entregado,
-firma. `receiptHtml` ya lo imprime; lo que se le quita es el desglose de pesadas
-y el `paidCents` contra una liquidación (`ReceiptData.lines`, `balanceCents`,
-`paidCents`). Queda un documento de ~90 líneas en vez de 180.
+**The `anticipo` receipt: yes, and it is easier than it looks.** An advance
+receipt needs no calculation at all: name, *cédula*, date, amount handed over,
+signature. `receiptHtml` already prints it; what comes off it is the breakdown
+of weighings and the `paidCents` against a settlement (`ReceiptData.lines`,
+`balanceCents`, `paidCents`). What is left is a ~90-line document instead of
+180.
 
-Un matiz sobre eso, y es importante: **el recibo del anticipo no puede llevar el
-saldo.** Llevaría un saldo de hace seis días impreso en un papel que el
-trabajador guarda. Lleva lo entregado, que es lo único que el teléfono sabe con
-certeza.
+One caveat about that, and it matters: **the `anticipo` receipt cannot carry the
+balance.** It would carry a six-day-old balance printed on a piece of paper the
+worker keeps. It carries what was handed over, which is the only thing the phone
+knows for certain.
 
-**Donde discrepo contigo: si el teléfono muestra el saldo, tiene que mostrar
-también los movimientos.** Un recolector que ve «$340.000» y no ve de dónde sale
-no puede reclamar, y un saldo que no se puede impugnar es peor que ninguno. Eso
-significa seguir bajando el `ledger` y aplicarlo —`applyLedgerEntry`,
-`syncStore.ts:481-511`, 31 líneas— aunque ya no se bajen las liquidaciones. Es
-la diferencia entre borrar 82 líneas y borrar 113, y las 31 valen la pena.
+**Where I disagree with you: if the phone shows the balance, it has to show the
+movements too.** A picker who sees "$340,000" and cannot see where it comes from
+cannot dispute it, and a balance that cannot be disputed is worse than none.
+That means continuing to pull the `ledger` down and apply it —
+`applyLedgerEntry`, `syncStore.ts:481-511`, 31 lines — even though settlements
+are no longer pulled. It is the difference between deleting 82 lines and
+deleting 113, and those 31 are worth it.
 
-**Se queda entero, sin tocar:** la captura de pesadas, la corrección y el borrado
-lógico, las cinco reglas de revisión, rendimiento/IRL, los informes de semana,
-lote y trabajador, el CSV, el outbox y sus disparadores, el motor de sync para
-`worker` / `workRecord` / `ledgerEntry`, los dos transportes, la exportación y la
-importación de temporada, y las migraciones v5→v6→v7.
+**Stays whole, untouched:** capturing weighings, correcting and soft-deleting
+them, the five review rules, performance/IRL, the week, plot and worker reports,
+the CSV, the outbox and its triggers, the sync engine for `worker` /
+`workRecord` / `ledgerEntry`, both transports, season export and import, and the
+v5→v6→v7 migrations.
 
 ---
 
-## 2. Qué se pierde
+## 2. What gets lost
 
-### 2.1 En el lote, sin señal
+### 2.1 Out at the plot, with no signal
 
-| Hoy | Después |
+| Today | Afterwards |
 |---|---|
-| Pesar, corregir, borrar | igual |
-| Ver el saldo (derivado en local) | ver el último saldo conocido, con su fecha |
-| Dar un anticipo, imprimir su recibo | igual |
-| Dar una deducción | se muda a la web |
-| **Liquidar la semana** | ya está prohibido por la decisión 5 (`PayWorker.tsx:112`) |
-| **Pagar contra una liquidación** | se muda a la web |
-| **Imprimir la liquidación definitiva** | se muda a la web |
-| **Correr la nómina de la cuadrilla y firmar la planilla** | se muda a la web — **y en la web no existe todavía** |
-| **Deshacer la nómina** | se muda a la web |
+| Weigh, correct, delete | same |
+| See the balance (derived locally) | see the last known balance, with its date |
+| Give an `anticipo`, print its receipt | same |
+| Give a `deduccion` | moves to the web |
+| **Settle the week** | already forbidden by decision 5 (`PayWorker.tsx:112`) |
+| **Pay against a settlement** | moves to the web |
+| **Print the final settlement** | moves to the web |
+| **Run the crew payroll and sign the payroll sheet** | moves to the web — **and on the web it does not exist yet** |
+| **Undo the payroll** | moves to the web |
 
-Hay que decir la mitad honesta: **buena parte de esa lista ya la había perdido la
-decisión 5.** Sin señal, hoy, el botón de liquidar está apagado. Lo que la
-propuesta quita de verdad y que hoy sí funciona *con* señal es liquidar y pagar
-**desde el teléfono**, y la nómina de cuadrilla.
+The honest half has to be said: **decision 5 had already lost most of that
+list.** With no signal, today, the settle button is off. What the proposal
+genuinely removes, and which does work today *with* a signal, is settling and
+paying **from the phone**, and the crew payroll.
 
-Y la nómina de cuadrilla es la pérdida que cuesta dinero de construcción: la web
-paga **de uno en uno** (`apps/web/src/features/workers/PayWorkerPage.tsx`, 636
-líneas, un trabajador por pantalla). Imprime la planilla
-(`SettlementsPage.tsx:118`), pero no tiene la acción «liquidar y pagar a los
-treinta». Eso hay que construirlo, y no es opcional: es lo que la finca hace los
-sábados.
+And the crew payroll is the loss that costs construction money: the web pays
+**one at a time** (`apps/web/src/features/workers/PayWorkerPage.tsx`, 636 lines,
+one worker per screen). It prints the payroll sheet (`SettlementsPage.tsx:118`),
+but it has no "settle and pay all thirty" action. That has to be built, and it
+is not optional: it is what the farm does on Saturdays.
 
-### 2.2 Una defensa local que desaparece
+### 2.2 A local defence that disappears
 
-`pickups.isSettled` impide hoy corregir o borrar una pesada que ya está dentro de
-una liquidación viva, **en el momento de escribir**. Sin liquidaciones locales,
-esa comprobación la hace el servidor y llega tarde: el pesador corrige un peso el
-jueves en el lote y el conflicto (`WORK_RECORD_SETTLED`) aparece cuando haya
-señal, quizá el sábado.
+`pickups.isSettled` today prevents correcting or deleting a weighing that is
+already inside a live settlement, **at the moment of writing**. With no local
+settlements, that check is the server's and arrives late: the weigher corrects a
+weight on Thursday out at the plot and the conflict (`WORK_RECORD_SETTLED`)
+shows up when there is a signal, maybe on Saturday.
 
-Mitigación barata y que recomiendo incluir desde el primer día: seguir bajando
-los `payable_id` reclamados como una **lista de lápidas** — un conjunto de UUID,
-sin importes, sin precios, sin nombres. No es dinero, y devuelve el aviso al
-momento de escribir.
+A cheap mitigation I recommend including from day one: keep pulling down the
+claimed `payable_id`s as a **tombstone list** — a set of UUIDs, no amounts, no
+prices, no names. It is not money, and it puts the warning back at the moment of
+writing.
 
-### 2.3 El día que el servidor esté caído y haya que pagar
+### 2.3 The day the server is down and somebody has to be paid
 
-El escenario realista, no el catastrófico: **sábado por la tarde, treinta
-recolectores esperando, la finca tiene señal pero el servidor no responde** — el
-VPS caído, el certificado vencido, la base en mantenimiento, o el token de
-refresco quemado por el hallazgo API 1 que ya se cerró pero que enseñó que esto
-pasa.
+The realistic scenario, not the catastrophic one: **Saturday afternoon, thirty
+pickers waiting, the farm has a signal but the server does not answer** — the
+VPS down, the certificate expired, the database in maintenance, or the refresh
+token burnt by API finding 1, which is closed now but which showed that this
+happens.
 
-- **Hoy:** se corre la nómina desde el teléfono, se paga, se firma la planilla.
-- **Con la propuesta:** no se emite ninguna liquidación. La salida existe y es la
-  decisión 5: se entrega el efectivo como **anticipo**, con su recibo, y la
-  liquidación se emite el lunes amortizándolo al centavo — el caso de oro 02 lo
-  fija.
+- **Today:** the payroll is run from the phone, everyone is paid, the sheet is
+  signed.
+- **With the proposal:** no settlement is issued. There is a way out and it is
+  decision 5: the cash is handed over as an `anticipo`, with its receipt, and
+  the settlement is issued on Monday amortising it to the cent — golden case 02
+  fixes that.
 
-O sea: **el dinero sí sale igual**. Lo que cambia es el papel que el recolector se
-lleva a casa. Dice «anticipo, $180.000», no «liquidación, semana del 24 al 30,
-190,5 kg a $950, $180.000». Para un jornalero que no sabe cuánto pesó, es peor. Y
-quien se marcha de la finca ese sábado se marcha sin la cuenta cerrada.
+In other words: **the money does go out just the same**. What changes is the
+piece of paper the picker takes home. It says «anticipo, $180.000» (*advance,
+$180,000*), not «liquidación, semana del 24 al 30, 190,5 kg a $950, $180.000»
+(*settlement, week of the 24th to the 30th, 190.5 kg at $950, $180,000*). For a
+day labourer who does not know how much he weighed, that is worse. And whoever
+leaves the farm that Saturday leaves without their account closed.
 
-**El peor escenario realista, nombrado sin adornos: la finca sin conectividad
-estable.** Hoy Báscula es un producto que funciona sola en un teléfono, un
-trimestre entero, sin servidor. Con la propuesta, un teléfono sin servidor es una
-libreta de kilos. Si la finca de hoy es la única cliente y tiene señal en la casa
-por la noche, esto cuesta cero. Si Báscula va a venderse a fincas de las que no
-se sabe si tienen señal, la propuesta le corta ese mercado — y eso es una
-decisión de negocio, no de arquitectura. Si la respuesta es «sí quiero vender a
-esas fincas», entonces ni esta propuesta ni el modelo actual son la respuesta:
-lo es la variante «provisional» de `sincronizacion.md` §6.4, y hay que costearla
-ahora y no descubrirlo con la primera finca que la pida.
+**The worst realistic scenario, named without decoration: the farm with no
+stable connectivity.** Today Báscula is a product that works on its own, on one
+phone, for a whole quarter, with no server. With the proposal, a phone with no
+server is a notebook full of kilos. If today's farm is the only customer and has
+a signal at the house in the evening, this costs nothing. If Báscula is going to
+be sold to farms that may or may not have a signal, the proposal cuts off that
+market — and that is a business decision, not an architectural one. If the
+answer is "yes, I do want to sell to those farms", then neither this proposal
+nor the current model is the answer: the answer is the "provisional" variant in
+`sincronizacion.md` §6.4, and it has to be costed now rather than discovered
+with the first farm that asks for it.
 
 ---
 
-## 3. Los 26 hallazgos de la auditoría
+## 3. The 26 audit findings
 
-### Se evaporan por construcción — 4
+### Evaporate by construction — 4
 
-| # | Hallazgo | Por qué desaparece |
+| # | Finding | Why it disappears |
 |---|---|---|
-| API 4 | El redondeo en coma flotante hace discrepar teléfono y servidor en el **31 %** de las liquidaciones | Con un solo calculador no hay dos números que comparar. Está cerrado hoy; deja de **poder** reabrirse. La aritmética exacta sigue haciendo falta en el servidor, pero la clase «dos implementaciones del mismo dinero» se acaba |
-| API 7 | El pull del pesador lleva el precio del kilo y todos los precios semanales | Un teléfono que no calcula importes **no tiene motivo para recibir un precio**. Hoy está cerrado con un filtro por rol; con la propuesta el precio deja de estar en la carga útil del pesador por diseño, no por un `if` que alguien puede tocar |
-| API 9 (**abierta**, «necesita diseño, no parche») | Lo saltado por rol no vuelve nunca: un teléfono que cambia de manos se queda con el libro incompleto | El teléfono **no tiene libro**. El libro está en el servidor y se lee entero cada vez. **La propuesta es el diseño que el auditor decía que faltaba** |
-| — (`engine.ts:664-673`) | Un trabajador con pesadas *y* jornales se reporta como bug de cálculo, y el propio comentario dice que no es decidible desde ahí | Hay un solo saldo. No hay nada que comparar |
+| API 4 | Floating-point rounding makes phone and server disagree on **31 %** of settlements | With a single calculator there are no two numbers to compare. It is closed today; it stops **being able** to reopen. Exact arithmetic is still needed on the server, but the class "two implementations of the same money" ends |
+| API 7 | The weigher's pull carries the price per kilo and every weekly price | A phone that does not calculate amounts **has no reason to receive a price**. Today it is closed with a role filter; with the proposal the price leaves the weigher's payload by design, not because of an `if` somebody can touch |
+| API 9 (**open**, "needs design, not a patch") | What a role skipped never comes back: a phone that changes hands is left with an incomplete ledger | The phone **has no ledger**. The ledger is on the server and is read whole every time. **The proposal is the design the auditor said was missing** |
+| — (`engine.ts:664-673`) | A worker with weighings *and* day work is reported as a calculation bug, and the comment itself says it cannot be decided from there | There is one balance. There is nothing to compare |
 
-### Se atenúan pero siguen — 3
+### Soften but remain — 3
 
-| # | Hallazgo | Qué cambia |
+| # | Finding | What changes |
 |---|---|---|
-| API 5 | El pesador escribe trabajadores por sincronización y enumera cédulas | Nada: el alta de gente en el campo se conserva |
-| API 13 | Cantidades con más decimales de los que caben, redondeadas en silencio | Nada: la cantidad es justo lo que el teléfono sí manda |
-| API 14 (abierta) | Suspender una finca no corta las sesiones vivas (hasta 15 min) | Sigue, pero el radio se encoge: en esos 15 minutos un teléfono suspendido ya no puede liquidar ni pagar, sólo anotar kilos |
+| API 5 | The weigher writes workers through sync and enumerates ID numbers | Nothing: registering people in the field is kept |
+| API 13 | Quantities with more decimals than fit, rounded silently | Nothing: the quantity is precisely what the phone does send |
+| API 14 (open) | Suspending a farm does not cut live sessions (up to 15 min) | It remains, but the blast radius shrinks: in those 15 minutes a suspended phone can no longer settle or pay, only note kilos |
 
-### Siguen intactas — 19
+### Untouched — 19
 
-API 1, 2, 3 (y la deuda que abrió su arreglo: no hay ruta que libere las
-liquidaciones anuladas con línea viva que ya existan), 6, 8, 10, 11, 12; y las
-doce de la consola, A1 a A12.
+API 1, 2, 3 (and the debt its fix opened: there is no route that frees the
+already-existing voided settlements holding a live line), 6, 8, 10, 11, 12; and
+the twelve console ones, A1 to A12.
 
-Con un matiz que hay que decir en voz alta: **las doce de la consola pesan más
-después de la simplificación**, porque la consola pasa a ser el único sitio donde
-se mueve el dinero. A1 —un doble clic paga dos veces, $20.000 entregados donde se
-aprobaron $10.000— está cerrada. El día que vuelva un fallo de esa familia, ya no
-hay un teléfono que sirva de segunda opinión.
+With one caveat that has to be said out loud: **the twelve console findings
+weigh more after the simplification**, because the console becomes the only
+place money moves. A1 — a double click pays twice, $20,000 handed over where
+$10,000 was approved — is closed. The day a failure of that family comes back,
+there is no longer a phone to serve as a second opinion.
 
-### Nacen de la simplificación — 4
+### Born from the simplification — 4
 
-**N1. Un número que se enseña sin poder verificarlo.** Es exactamente A5/A6/A7
-mudadas al teléfono. Se cubre con las tres condiciones de §1.3, y hay que
-escribirlas antes de la primera línea, no auditarlas después.
+**N1. A number shown that cannot be verified.** This is exactly A5/A6/A7 moved
+onto the phone. It is covered by the three conditions in §1.3, and they have to
+be written before the first line, not audited afterwards.
 
-**N2. El anticipo se entrega contra un saldo viejo.** Un capataz que ve
-«$340.000 · hace 6 días» y entrega $300.000 puede estar entregando sobre un saldo
-ya cobrado. No es un fallo del sistema —el caso de oro 07 fija que el exceso se
-comporta como anticipo y el saldo se va a negativo— pero es dinero que sale de un
-bolsillo por una cifra obsoleta. La antigüedad tiene que ir pegada al importe.
+**N2. The `anticipo` is handed over against a stale balance.** A foreman who
+sees «$340.000 · hace 6 días» (*$340,000 · 6 days ago*) and hands over $300,000
+may be handing over against a balance that has already been collected. It is not
+a system failure — golden case 07 fixes that the excess behaves as an `anticipo`
+and the balance goes negative — but it is money leaving somebody's pocket
+against an out-of-date figure. The age has to sit right next to the amount.
 
-**N3. El aviso de «esta pesada ya se pagó» llega tarde.** §2.2. Nace de quitar
-`isSettled`, y la lista de lápidas lo devuelve.
+**N3. The "this weighing has already been paid" warning arrives late.** §2.2. It
+is born from removing `isSettled`, and the tombstone list gives it back.
 
-**N4. El teléfono deja de ser una segunda copia del dinero de la finca.** Hoy, si
-el servidor pierde datos, el `.db` del teléfono los tiene todos. Después de la
-fase P7 no: el teléfono tiene kilos y anticipos, y el resto vive sólo en
-Postgres. La copia de seguridad del servidor deja de ser una buena práctica y
-pasa a ser lo único. **Hay que nombrar quién la hace y cada cuánto antes del
-corte, no después.**
+**N4. The phone stops being a second copy of the farm's money.** Today, if the
+server loses data, the phone's `.db` has all of it. After phase P7 it does not:
+the phone has kilos and advances, and the rest lives only in Postgres. The
+server backup stops being good practice and becomes the only thing there is.
+**Somebody has to be named as doing it, and how often, before the cutover, not
+after.**
 
-**Marcador: 4 se evaporan, 3 se atenúan, 19 siguen, 4 nacen.**
+**Scoreboard: 4 evaporate, 3 soften, 19 remain, 4 are born.**
 
 ---
 
-## 4. La migración, con la finca real en plena cosecha
+## 4. The migration, with the real farm mid-harvest
 
-La propuesta **no cambia la migración: la simplifica.** La importación ya está
-construida (`services/api/internal/store/import.go`, 754 líneas), conserva los
-UUID del teléfono, es idempotente (`ON CONFLICT (id) DO NOTHING`) y **aborta la
-transacción entera si un solo centavo de un solo saldo no cuadra**
-(`reconcileImport`, import.go:554-633). Eso no se toca. Lo que cambia es qué app
-queda encima al final.
+The proposal **does not change the migration: it simplifies it.** The import is
+already built (`services/api/internal/store/import.go`, 754 lines), keeps the
+phone's UUIDs, is idempotent (`ON CONFLICT (id) DO NOTHING`) and **aborts the
+whole transaction if a single cent of a single balance does not reconcile**
+(`reconcileImport`, import.go:554-633). None of that is touched. What changes is
+which app is left on top at the end.
 
-| Paso | Qué | Riesgo |
+| Step | What | Risk |
 |---|---|---|
-| **P0** | Apagar la liquidación en el teléfono, sin desplegar código: cablear `capabilities.settleOffline` (hoy se decodifica y se tira) y poner la guarda de §6.1 también en `PaymentsPanel`, que hoy no la tiene | **Bajo, y es trabajo, no riesgo.** Son dos condicionales. Pero hasta que estén, cualquier plan tiene una nómina de cuadrilla sin candado |
-| **P1** | La copia, y **restaurada** en un teléfono de repuesto, con tres cifras comparadas contra el original: kilos de la temporada, liquidaciones vivas, saldo del trabajador con más movimientos | **Ninguno.** Es una lectura. Y sin él, todo lo demás pierde su red: una copia que nadie ha restaurado no es una copia |
-| **P2** | El ensayo de la importación contra una base de prueba, tantas veces como haga falta hasta que salga limpia | **Ninguno.** La base es desechable y el teléfono no se entera: `SyncRepo.seasonExport` es una lectura pura, y la interfaz lo declara devolviendo un valor y sin recibir callback |
-| **P3** | **El corte.** Martes por la mañana, no día de pago, con alguien presente. Modo lectura de dinero → segunda copia → importación contra producción con las tres reconciliaciones **dentro** de la transacción → si algo falla, `ROLLBACK` | **ES EL ÚNICO PASO CON RIESGO.** Ver abajo |
-| **P4** | Sólo pull, 24 horas. El teléfono recibe y no manda. Se comparan a mano cinco saldos, los kilos de la semana y el número de liquidaciones vivas | **Ninguno.** Nada se ha escrito en el servidor desde el teléfono; un error aquí sale gratis |
-| **P5** | Push. El outbox se vacía en orden. Se reconcilia otra vez | **Ninguno** *si y sólo si* P0 está hecho. Si no, cada liquidación local pendiente en el outbox se rechaza y levanta una tarjeta de conflicto |
-| **P6** | Desplegar la versión sin cálculo. **Aquí, y sólo aquí, se borran las 1.963 líneas** | **Ninguno.** Para entonces el servidor tiene la temporada, reconciliada al centavo, dos veces |
-| **P7** | Se levanta el modo lectura, se retira el aviso de la web, se paga desde la web. Termina la mitigación de la decisión 3 | **Ninguno técnico.** Ver la advertencia del §6 |
-| **P8** | La copia previa se guarda toda la temporada. Y ahora con más motivo: N4 | — |
+| **P0** | Turn settling off on the phone, without deploying code: wire up `capabilities.settleOffline` (today decoded and discarded) and put the §6.1 guard on `PaymentsPanel` too, which does not have it | **Low, and it is work, not risk.** Two conditionals. But until they exist, any plan has a crew payroll with no lock |
+| **P1** | The backup, and **restored** onto a spare phone, with three figures compared against the original: the season's kilos, live settlements, and the balance of the worker with the most movements | **None.** It is a read. And without it everything else loses its safety net: a backup nobody has restored is not a backup |
+| **P2** | The import rehearsal against a test database, as many times as it takes to come out clean | **None.** The database is disposable and the phone never knows: `SyncRepo.seasonExport` is a pure read, and the interface says so by returning a value and taking no callback |
+| **P3** | **The cutover.** Tuesday morning, not a pay day, with somebody present. Money read-only mode → second backup → import against production with the three reconciliations **inside** the transaction → if anything fails, `ROLLBACK` | **THE ONLY STEP WITH RISK.** See below |
+| **P4** | Pull only, 24 hours. The phone receives and does not send. Five balances, the week's kilos and the number of live settlements are compared by hand | **None.** Nothing has been written to the server from the phone; a mistake here is free |
+| **P5** | Push. The outbox drains in order. Reconcile again | **None** *if and only if* P0 is done. If not, every pending local settlement in the outbox is rejected and raises a conflict card |
+| **P6** | Deploy the version without calculation. **Here, and only here, the 1,963 lines are deleted** | **None.** By then the server has the season, reconciled to the cent, twice |
+| **P7** | Read-only mode is lifted, the web's warning is removed, payment happens on the web. Decision 3's mitigation ends | **None technical.** See the warning in §6 |
+| **P8** | The pre-migration backup is kept for the whole season. And now with more reason: N4 | — |
 
-**Por qué P3 es el único con riesgo, y cuál es el riesgo de verdad.** No es
-perder datos: hasta P6 nada modifica el SQLite del teléfono de forma destructiva,
-y si la transacción del servidor aborta, la finca sigue exactamente como estaba
-porque **el teléfono no se ha tocado**. El riesgo es de **operación**: subir
-11,7 MB por el enlace de una finca con un tiempo de espera de 25 segundos (deuda 4
-del sprint 5). Un fallo ahí no pierde nada —es una respuesta que nadie leyó, y el
-reintento es seguro por el `ON CONFLICT`— pero deja a la finca en modo lectura de
-dinero más rato del previsto, un martes, con gente esperando. **Subir ese tiempo
-de espera es el único cambio de servidor que la mudanza exige, y hay que hacerlo
-antes del martes.**
+**Why P3 is the only one with risk, and what the real risk is.** It is not
+losing data: until P6 nothing modifies the phone's SQLite destructively, and if
+the server transaction aborts, the farm carries on exactly as it was, because
+**the phone has not been touched**. The risk is **operational**: uploading
+11.7 MB over a farm's link with a 25-second timeout (sprint 5 debt 4). A failure
+there loses nothing — it is a response nobody read, and the retry is safe
+because of the `ON CONFLICT` — but it leaves the farm in money read-only mode
+longer than planned, on a Tuesday, with people waiting. **Raising that timeout
+is the only server change the move requires, and it has to happen before that
+Tuesday.**
 
-**Por qué en los demás no hay riesgo, dicho de una vez:** P1 y P2 son lecturas.
-P4 no escribe en el servidor. P5 sólo empuja hechos —pesadas y movimientos— que
-son idempotentes por UUID en tres capas independientes (§4). P6 borra código
-sobre datos que ya están reconciliados. La seguridad la da **el orden**, no la
-prudencia de quien lo ejecuta.
+**Why the others carry no risk, said once:** P1 and P2 are reads. P4 writes
+nothing to the server. P5 only pushes facts — weighings and movements — which
+are idempotent by UUID across three independent layers (§4). P6 deletes code
+over data that is already reconciled. The safety comes from **the order**, not
+from the care of whoever runs it.
 
-**Un orden que NO hay que seguir, porque es el tentador:** desplegar primero la
-app simplificada y migrar después. Deja a la finca sin poder liquidar en el
-teléfono y sin que el servidor tenga la temporada — es decir, sin poder pagar por
-ningún lado.
-
----
-
-## 5. El plan alternativo, si el dueño dice que no
-
-Qué queda a medias hoy para que el modelo actual sea defendible, en orden de
-gravedad.
-
-**A. Mover `settle` al servidor. Dos semanas, una pareja.**
-Es el agujero del §0. Hay que: llamar a `POST /v1/settlements` con
-`expectedGrossCents` (el servidor ya lo **exige**, `handlers_money.go:233`);
-quitar `settlements` y `settlement_items` de `SYNCED_TABLES` para que dejen de
-encolarse; construir la pantalla de `GROSS_CHANGED` con las dos cifras y la
-semana que cambió (§5.5); y reescribir `runPayroll` como N llamadas al servidor
-con su manejo de fallos parciales. Dos semanas es la estimación **optimista**:
-`runPayroll` es la parte con más casos de borde vivos —`repository.test.ts` tiene
-ocho pruebas dedicadas sólo a deshacer una nómina, incluida una de un devengo que
-ya venía reversado.
-
-**B. Que el saldo del teléfono deje de mentir. Tres semanas, una pareja.**
-`engine.ts:664-673` dice que no se puede arreglar desde ahí. Arreglarlo de verdad
-exige bajar jornales y contratos al teléfono, o sea la pantalla de labores del
-móvil — el punto 4 de §10, que nadie ha costeado. Es una pantalla nueva, no un
-ajuste. Mientras no exista, la ficha del trabajador enseña medio saldo a quien
-hace las dos cosas, y la tarjeta roja de discrepancia salta por diseño.
-
-**C. Las dos guardas del P0. Un día.**
-Cablear `capabilities.settleOffline` y poner la guarda de §6.1 en
-`PaymentsPanel`. Hacen falta elija lo que elija el dueño.
-
-**D. Programar la poda de `sync_log`/`sync_ops`. Media hora.**
-`main.go --prune` existe; falta el cron.
-
-**E. Subir el tiempo de espera de la importación. Una línea.**
-
-**Total del plan alternativo: unas cinco semanas de pareja**, contra ~1.500
-líneas escritas — frente a ~3.900 borradas y ~220 escritas por el otro camino.
-
-### Riesgos permanentes que acepta quien siga con el modelo actual
-
-Aunque se cierre todo lo anterior:
-
-1. **Dos implementaciones del mismo dinero, para siempre.** Los diez casos de oro
-   existen porque hay dos motores. Cada regla nueva —una deducción con tope, un
-   anticipo que caduca, un redondeo por lote— hay que escribirla dos veces, en
-   TypeScript y en Go, y demostrar que coinciden. El hallazgo API 4 —31 % de las
-   liquidaciones discrepando— es lo que pasa cuando una de las dos se escribe de
-   memoria, y volverá a pasar, porque la disciplina que lo evita no es
-   estructural: es que alguien se acuerde.
-2. **Dos candados sobre el mismo hecho.** `ux_items_pickup_live` en SQLite y
-   `ux_items_payable_live` en Postgres. §1.4 dice que eso no es un problema
-   «una vez que sólo uno de los dos puede crear una liquidación» — o sea, es
-   correcto exactamente en la medida en que se implemente **A**, y ni un día
-   antes.
-3. **La pantalla de conflictos hay que mantenerla y hay que enseñar a usarla.**
-   Es la parte del sistema que sólo se ejerce cuando algo va mal, o sea la que
-   nunca está probada en campo. Con el modelo actual son seis clases de tarjeta y
-   tres son de dinero; con la propuesta se reducen a dos —pesada rechazada y
-   trabajador de baja— y ninguna de dinero llega al pesador porque no hay ninguna.
+**An order NOT to follow, because it is the tempting one:** deploy the
+simplified app first and migrate afterwards. That leaves the farm unable to
+settle on the phone and with the server not holding the season — that is, unable
+to pay from either side.
 
 ---
 
-## 6. Sobre el coste hundido, sin rodeos
+## 5. The alternative plan, if the owner says no
 
-Casi todo lo que se borraría se escribió esta semana: el repositorio entero tiene
-dos días de historia. Eso **no** es un argumento para conservar nada, y conviene
-decir por qué de forma que no suene a consigna: el coste ya está pagado, y
-haberlo pagado no compra nada hacia adelante. La pregunta útil es qué cuesta
-mantener cada línea **a partir de hoy**, y una línea que calcula dinero cuesta un
-caso de oro, un puerto en Go y una discrepancia posible cada vez que alguien la
-toca.
+What is left half-done today for the current model to be defensible, in order of
+severity.
 
-**Hay un sitio donde la antigüedad sí es un argumento, y va justo en la dirección
-contraria a la que se espera.** Lo que se borra no es el código nuevo: es el
-viejo.
+**A. Move `settle` to the server. Two weeks, one pair.**
+This is the hole in §0. It means: calling `POST /v1/settlements` with
+`expectedGrossCents` (the server already **requires** it,
+`handlers_money.go:233`); taking `settlements` and `settlement_items` out of
+`SYNCED_TABLES` so they stop being queued; building the `GROSS_CHANGED` screen
+with both figures and the week that changed (§5.5); and rewriting `runPayroll`
+as N server calls with its own partial-failure handling. Two weeks is the
+**optimistic** estimate: `runPayroll` is the part with the most live edge cases
+— `repository.test.ts` has eight tests dedicated to undoing a payroll alone,
+including one for a `devengo` that was already reversed.
 
-- Escrito ayer y **nunca usado por la finca**: el motor de sincronización,
-  `syncStore`, los dos transportes, la exportación e importación de temporada,
-  las tres pantallas de sync, las migraciones v6 y v7. **Se quedan casi enteros.**
-- Corriendo en la finca desde hace una temporada, pagando gente de verdad:
-  `payments.settle`, `runPayroll`, `PayWorker`, `PaymentsPanel`, `Account`,
-  `BALANCE_SQL`, `PENDING_SQL`, el recibo. **Es lo que la propuesta borra.**
+**B. Stop the phone's balance lying. Three weeks, one pair.**
+`engine.ts:664-673` says it cannot be fixed from there. Actually fixing it means
+pulling day work and contracts down to the phone, i.e. the mobile work-records
+screen — point 4 of §10, which nobody has costed. It is a new screen, not a
+tweak. Until it exists, the worker's page shows half a balance to anyone doing
+both, and the red discrepancy card fires by design.
 
-Ese es el coste real y no aparece en ninguna cuenta de líneas: la nómina lleva
-meses haciéndose con dos botones que el pesador y el administrador conocen de
-memoria, y la propuesta los cambia por una pantalla web que en su forma de
-cuadrilla todavía no existe. Cambiar código con kilometraje por código sin
-kilometraje es la parte cara, y no se mide en líneas — se mide en un sábado de
-pago que no salga bien.
+**C. The two P0 guards. One day.**
+Wire up `capabilities.settleOffline` and put the §6.1 guard on `PaymentsPanel`.
+They are needed whatever the owner chooses.
 
-Y una advertencia contra mi propia recomendación: **esta simplificación es más
-fácil de defender en un documento que un sábado a las cinco de la tarde con
-treinta personas esperando.** Si el dueño la acepta, P7 no se levanta hasta que la
-web pague a una cuadrilla entera en una pantalla, con su planilla firmada, y
-alguien lo haya hecho una vez con el papel delante.
+**D. Schedule the `sync_log`/`sync_ops` pruning. Half an hour.**
+`main.go --prune` exists; the cron is missing.
+
+**E. Raise the import timeout. One line.**
+
+**Total for the alternative plan: about five pair-weeks**, against ~1,500 lines
+written — versus ~3,900 deleted and ~220 written by the other route.
+
+### Permanent risks accepted by whoever stays with the current model
+
+Even with all of the above closed:
+
+1. **Two implementations of the same money, for ever.** The ten golden cases
+   exist because there are two engines. Every new rule — a capped `deduccion`,
+   an `anticipo` that expires, per-batch rounding — has to be written twice, in
+   TypeScript and in Go, and proved to agree. Finding API 4 — 31 % of
+   settlements disagreeing — is what happens when one of the two is written from
+   memory, and it will happen again, because the discipline that prevents it is
+   not structural: it is somebody remembering.
+2. **Two locks over the same fact.** `ux_items_pickup_live` in SQLite and
+   `ux_items_payable_live` in Postgres. §1.4 says that is not a problem "once
+   only one of the two can create a settlement" — that is, it is correct exactly
+   to the extent that **A** is implemented, and not a day sooner.
+3. **The conflicts screen has to be maintained and people have to be taught to
+   use it.** It is the part of the system exercised only when something goes
+   wrong, i.e. the part never tested in the field. With the current model there
+   are six kinds of card and three of them are about money; with the proposal
+   they come down to two — rejected weighing and deleted worker — and no money
+   conflict reaches the weigher because there are none.
 
 ---
 
-## 7. Recomendación
+## 6. On sunk cost, without hedging
 
-**Recomiendo aceptar la propuesta, y el motivo es de coherencia, no de líneas de
-código: la decisión 5 ya le quitó al teléfono la autoridad sobre el dinero, y lo
-que queda en `payments.settle` es un motor de nómina que el servidor rechaza por
-diseño (`handlers_sync.go:402`) mientras el pago que lo acompaña sí entra — un
-doble pago esperando a que se retire la mitigación de la decisión 3.** Mantener
-el modelo actual no es «no cambiar»: es comprometerse a dos semanas para mover
-`settle` al servidor, tres más para bajar los jornales al teléfono y que el saldo
-deje de mentir, y a sostener dos implementaciones del mismo dinero para siempre.
-La propuesta llega al mismo sitio borrando ~3.900 líneas en vez de escribiendo
-~1.500, y hace desaparecer por construcción cuatro hallazgos, incluida la 9 —la
-única abierta de la que el auditor dijo que «necesita diseño, no parche»—.
-Lo que cuesta es real y hay que firmarlo con los ojos abiertos: la nómina de
-cuadrilla se muda a la web y **hay que construirla allí**, porque hoy la web paga
-de uno en uno; el recolector que cobra un sábado con el servidor caído se lleva
-un recibo de anticipo en vez de una liquidación; y Báscula deja de funcionar como
-producto autónomo en un teléfono. Si esa última propiedad es parte del negocio
-—vender a fincas sin señal fiable— entonces la respuesta no es ni esta propuesta
-ni el modelo actual, sino la variante «provisional» de §6.4, y eso hay que
-decidirlo ahora.
+Almost everything that would be deleted was written this week: the whole
+repository has two days of history. That is **not** an argument for keeping
+anything, and it is worth saying why in a way that does not sound like a slogan:
+the cost is already paid, and having paid it buys nothing going forward. The
+useful question is what each line costs to maintain **from today**, and a line
+that calculates money costs a golden case, a Go port, and a possible
+discrepancy every time somebody touches it.
+
+**There is one place where age *is* an argument, and it points in exactly the
+opposite direction to the expected one.** What gets deleted is not the new code:
+it is the old.
+
+- Written yesterday and **never used by the farm**: the sync engine,
+  `syncStore`, both transports, season export and import, the three sync
+  screens, the v6 and v7 migrations. **They stay almost entirely.**
+- Running on the farm for a season, paying real people: `payments.settle`,
+  `runPayroll`, `PayWorker`, `PaymentsPanel`, `Account`, `BALANCE_SQL`,
+  `PENDING_SQL`, the receipt. **That is what the proposal deletes.**
+
+That is the real cost and it appears in no line count: the payroll has been done
+for months with two buttons the weigher and the administrator know by heart, and
+the proposal swaps them for a web screen that in its crew form does not exist
+yet. Swapping code with mileage for code without mileage is the expensive part,
+and it is not measured in lines — it is measured in a pay Saturday that does not
+go well.
+
+And a warning against my own recommendation: **this simplification is easier to
+defend in a document than at five o'clock on a Saturday afternoon with thirty
+people waiting.** If the owner accepts it, P7 is not lifted until the web pays a
+whole crew in one screen, with its signed sheet, and somebody has done it once
+with the paper in front of them.
+
+---
+
+## 7. Recommendation
+
+**I recommend accepting the proposal, and the reason is coherence, not lines of
+code: decision 5 already took the phone's authority over money away, and what is
+left in `payments.settle` is a payroll engine the server rejects by design
+(`handlers_sync.go:402`) while the payment that accompanies it does go through —
+a double payment waiting for decision 3's mitigation to be lifted.** Keeping the
+current model is not "not changing": it is committing to two weeks to move
+`settle` to the server, three more to pull day work down to the phone so the
+balance stops lying, and to sustaining two implementations of the same money for
+ever. The proposal reaches the same place by deleting ~3,900 lines instead of
+writing ~1,500, and makes four findings disappear by construction, including
+number 9 — the only open one the auditor said "needs design, not a patch".
+
+What it costs is real and has to be signed for with eyes open: the crew payroll
+moves to the web and **has to be built there**, because today the web pays one
+at a time; the picker collecting on a Saturday with the server down takes home
+an `anticipo` receipt instead of a settlement; and Báscula stops working as a
+standalone product on a phone. If that last property is part of the business —
+selling to farms without reliable signal — then the answer is neither this
+proposal nor the current model, but the "provisional" variant in §6.4, and that
+has to be decided now.
