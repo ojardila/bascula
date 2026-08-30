@@ -123,13 +123,25 @@ export function formatWeekRange(monday: string, today: Date = new Date()): strin
 }
 
 /**
- * THE PERIOD A DOCUMENT ACTUALLY COVERS, from both of its ends.
+ * A SETTLEMENT'S PERIOD, printed from both of its ends.
  *
  * `formatWeekRange` takes ONE day and prints the seven days that follow it,
  * because a harvest week is keyed by its Monday and its end is arithmetic. A
- * settlement's period is not: `periodStart` is the Monday of the earliest
- * payable taken in and `periodEnd` is the last, and those can be a year apart
- * — the running farm has settlements from 2026-08-24 to 2027-08-29.
+ * settlement's period is not, and its two ends do not mean the same kind of
+ * thing:
+ *
+ *   periodStart  the Monday of the EARLIEST payable taken in — pulled
+ *                backwards from what was asked for, because the alternative
+ *                is a receipt dated 1970.
+ *   periodEnd    the `to` that was ASKED for. Not the last day covered, and
+ *                not the mirror of periodStart. "Settle everything up to this
+ *                date" has the same answer whether or not the last week in it
+ *                happened to hold a weighing.
+ *
+ * openapi.yaml is where that asymmetry is decided and explained; this comment
+ * is only repeating it, and once said it backwards. The two can be a year
+ * apart either way — the running farm has settlements from 2026-08-24 to
+ * 2027-08-29.
  *
  * Passing only the start to `formatWeekRange` therefore labelled every one of
  * them "24–30 ago", which is not a rounding: it is a different period. The
