@@ -244,6 +244,7 @@ type farmFixture struct {
 	// See relogin.
 	OwnerEmail   string
 	OwnerToken   string
+	AdminUserID  string
 	AdminToken   string
 	WeigherToken string
 	WeigherID    string
@@ -307,7 +308,7 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 		FarmID: farmID, OwnerUserID: userID, OwnerEmail: email,
 		OwnerToken: access, PriceCents: priceCents,
 	}
-	f.AdminToken = h.addUser(t, farmID, domain.RoleAdmin, "")
+	f.AdminUserID, f.AdminToken = h.addUserWithID(t, farmID, domain.RoleAdmin)
 	f.WeigherID, f.WeigherToken = h.addUserWithID(t, farmID, domain.RoleWeigher)
 	return f
 }

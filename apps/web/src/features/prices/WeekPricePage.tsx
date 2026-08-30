@@ -120,9 +120,23 @@ export function WeekPricePage() {
 
   const newCents = parseMoneyInput(draft);
 
-  /** That week's picking that is still paid at the week's price. */
-  const movable: WorkRecord[] = (data?.records ?? []).filter(
-    (r) => !r.settled && r.amountIsEstimate && r.unitLabel !== null,
+  /**
+   * That week's picking that is still paid at the week's price.
+   *
+   * `estimatedAmountCents !== null` is in the predicate rather than assumed:
+   * the server withholds every figure of money from a session that may not
+   * read prices, and this screen adds those figures up to show what changing
+   * the price would cost. A row whose amount we cannot see cannot be part of
+   * that arithmetic — and it never is in practice, because reaching this
+   * screen at all requires `money.read`. Saying it in the type is what keeps
+   * the next reader from having to know that.
+   */
+  const movable = (data?.records ?? []).filter(
+    (r): r is WorkRecord & { estimatedAmountCents: number } =>
+      !r.settled &&
+      r.amountIsEstimate === true &&
+      r.unitLabel !== null &&
+      r.estimatedAmountCents !== null,
   );
   const frozen = (data?.records ?? []).filter((r) => r.settled).length;
   const beforeCents = movable.reduce((a, r) => a + r.estimatedAmountCents, 0);

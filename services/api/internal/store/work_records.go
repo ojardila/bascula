@@ -61,6 +61,19 @@ type WorkRecord struct {
 	// is, because "what we owe" and "what we paid" must never look alike.
 	EffectiveMinor   int64 `json:"estimatedAmountCents"`
 	AmountIsEstimate bool  `json:"amountIsEstimate"`
+
+	// PriceWithheld says the week's price was not READABLE by the caller, so
+	// EffectiveMinor was never derived. It is not "worth zero" and it is not an
+	// estimate of zero — it is the absence of a figure, and the two have to be
+	// distinguishable here because they are indistinguishable in an int64.
+	//
+	// It never travels: the projection in handlers_work_records.go removes
+	// every money field for exactly the callers this flag is true for. The
+	// field exists so that projection can be enforced rather than remembered —
+	// projectWorkRecord refuses to serialise a withheld record whole even when
+	// asked to, so a future route that forgets to project cannot publish a
+	// figure that was never computed.
+	PriceWithheld bool `json:"-"`
 }
 
 const workRecordCols = `l.id::text, l.employee_id::text, l.activity_id::text, l.pay_scheme,
@@ -194,6 +207,20 @@ func GetWorkRecord(ctx context.Context, tx pgx.Tx, id string) (*WorkRecord, erro
 // season list is thousands of rows over a few dozen weeks.
 func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) error {
 	prices := map[string]int64{}
+	// Whether the caller may read a price at all, asked once and only if some
+	// record actually needs one. Under migration 00022 the weigher's SELECT on
+	// week_prices returns no row, and WeekPrice COALESCEs a missing override to
+	// farm_config.price_minor — so for him the fallback is not a fallback, it
+	// is a different number wearing the right name. Every week the owner
+	// overrode, his estimate would come out at the general price and say
+	// nothing about it. The projection means it never reaches him, but a figure
+	// that is wrong and confident is worse than one that leaks, because the day
+	// something surfaces it there is no symptom to notice.
+	//
+	// So it is not computed. Deriving nothing is also the cheaper answer: it is
+	// one round trip instead of one per distinct week, on the list the handset
+	// asks for all day.
+	readsMoney, roleKnown := false, false
 	for i := range records {
 		r := &records[i]
 		switch {
@@ -202,6 +229,13 @@ func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) erro
 		case r.AmountMinor != nil:
 			r.EffectiveMinor, r.AmountIsEstimate = *r.AmountMinor, false
 		case r.RateSource == domain.RateWeeklyPrice:
+			if !roleKnown {
+				readsMoney, roleKnown = currentRoleIsMoney(ctx, tx), true
+			}
+			if !readsMoney {
+				r.EffectiveMinor, r.AmountIsEstimate, r.PriceWithheld = 0, true, true
+				continue
+			}
 			key := r.WeekStart.Format("2006-01-02")
 			price, ok := prices[key]
 			if !ok {

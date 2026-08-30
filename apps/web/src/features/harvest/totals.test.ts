@@ -11,7 +11,15 @@
  * exist so that keystroke fails the build.
  */
 import { describe, expect, it } from "vitest";
-import { NO_TOTALS, foldTotals, kgForDrawing, kgState, valueState, type Totals } from "./totals";
+import {
+  NO_TOTALS,
+  foldTotals,
+  kgForDrawing,
+  kgState,
+  totalsOfRecords,
+  valueState,
+  type Totals,
+} from "./totals";
 
 function totals(over: Partial<Totals> = {}): Totals {
   return { ...NO_TOTALS, ...over };
@@ -91,6 +99,43 @@ describe("folding rows keeps the admissions", () => {
 
   it("folds nothing into unknown rather than into zero", () => {
     expect(valueState(foldTotals([])).kind).toBe("unknown");
+  });
+});
+
+describe("folding records the session may not price", () => {
+  const priced = { quantity: 10, unitLabel: "kg", estimatedAmountCents: 800_00, amountIsEstimate: true };
+  // What the weigher's row looks like once it has been through the adapter:
+  // the server projected the money out, so the amount is withheld.
+  const withheld = { quantity: 10, unitLabel: "kg", estimatedAmountCents: null, amountIsEstimate: null };
+
+  it("declares a withheld amount as a hole instead of adding it as zero", () => {
+    const t = totalsOfRecords([priced, withheld]);
+    expect(t.valueCents).toBe(800_00);
+    expect(t.recordsWithoutValue).toBe(1);
+    // "al menos $800, 1 sin valor" — a floor, labelled as one.
+    expect(valueState(t)).toEqual({
+      kind: "partial",
+      cents: 800_00,
+      missing: 1,
+      isEstimate: true,
+    });
+    // The kilos were never withheld: he weighs them, he may read them.
+    expect(kgState(t)).toEqual({ kind: "known", kg: 20 });
+  });
+
+  it("says nothing at all when every amount was withheld", () => {
+    const t = totalsOfRecords([withheld, withheld]);
+    expect(t.valueCents).toBeNull();
+    expect(valueState(t)).toEqual({ kind: "unknown", missing: 2, records: 2 });
+    // And it is not called an estimate: a withheld amount is not a provisional
+    // one, it is an absent one.
+    expect(t.valueIsEstimate).toBe(false);
+  });
+
+  it("still totals a list nothing was withheld from", () => {
+    const t = totalsOfRecords([priced, priced]);
+    expect(t.recordsWithoutValue).toBe(0);
+    expect(valueState(t)).toEqual({ kind: "estimate", cents: 1_600_00 });
   });
 });
 

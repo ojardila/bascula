@@ -471,17 +471,29 @@ export interface WireWorkRecord {
    */
   quantity: number | string;
   unitId: Uuid | null;
-  /** Null while the price is still open (weekly_price, until settlement). */
-  rateCents: number | null;
-  amountCents: number | null;
+  /**
+   * ── THE FOUR KEYS THAT ARE ABSENT FOR THE WEIGHER ────────────────────
+   *
+   * Optional in the same sense `WireActivity.rate` is: the server projects
+   * them away for that role, so the key is MISSING rather than null. Every one
+   * of them is money, and `estimatedAmountCents` is the one that mattered — it
+   * is the quantity at the price in force for the week, so a weighing of one
+   * kilo is the price of a kilo and any other weighing is a division away from
+   * it. `adapters.ts` already reads all four through `??`, which is why the
+   * console needs nothing else.
+   *
+   * Null while the price is still open (weekly_price, until settlement).
+   */
+  rateCents?: number | null;
+  amountCents?: number | null;
   /**
    * What the record is worth, always a number. `amountCents` is the row's own
    * truth and stays null for weekly-price work; rendering that null printed $0
    * against every harvest record the console listed, settled ones included.
    */
-  estimatedAmountCents: number;
+  estimatedAmountCents?: number;
   /** False once a settlement froze the amount, true while it is still derived. */
-  amountIsEstimate: boolean;
+  amountIsEstimate?: boolean;
   note: string | null;
   createdBy: Uuid | null;
   createdAt: Instant;

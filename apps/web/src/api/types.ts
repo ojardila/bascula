@@ -536,14 +536,36 @@ export interface WorkRecord {
    * at settlement time, everything else freezes on write.
    */
   rateCents: number | null;
-  /** What it is worth today. Not a ledger entry until it is settled. */
-  estimatedAmountCents: number;
+  /**
+   * What it is worth today. Not a ledger entry until it is settled.
+   *
+   * NULL means WITHHELD, and it is not the same fact as `rateCents === null`.
+   * A rate that is null is a price this record does not have yet; a value that
+   * is null is a price this SESSION is not allowed to read — the server
+   * projects every figure of money out of a work record for the weigher, so
+   * the key does not arrive at all. Both of them mean "do not print a number",
+   * and the reason they are one shape here is that a screen must not be able
+   * to tell them apart and act on the difference. That is the server's
+   * business.
+   *
+   * It is `| null` and not optional on purpose. Optional would let a call site
+   * forget the case with `?.`; null forces it to be answered, and the answer is
+   * never 0 — a zero is a claim that the weighing was worth nothing, which is
+   * the one thing the farm must never be told. Where a sum meets one of these,
+   * see `totalsOfRecords`: the row is counted in `recordsWithoutValue` and the
+   * total becomes `partial` or `unknown`, which `Figures.tsx` already renders
+   * as a dash with a reason.
+   */
+  estimatedAmountCents: number | null;
   /**
    * False once a settlement froze the amount, true while it still comes from
    * the week's price and could move if that price changes. What the farm owes
    * and what it has paid must not look alike on a screen.
+   *
+   * Null when the amount itself is withheld: a flag about a number that is not
+   * there says only that a number is being kept back, and it travels with it.
    */
-  amountIsEstimate: boolean;
+  amountIsEstimate: boolean | null;
   note: string | null;
   settled: boolean;
   status: RecordStatus;
