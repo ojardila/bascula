@@ -272,7 +272,7 @@ function Stat({
           {label}
         </Text>
         {!!sub && (
-          <Text variant="labelSmall" style={{ opacity: 0.6, textAlign: "center" }}>
+          <Text variant="labelSmall" style={{ opacity: 0.7, textAlign: "center" }}>
             {sub}
           </Text>
         )}
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   stats: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   stat: { flexGrow: 1, minWidth: "30%" },
   chart: { borderRadius: 12, marginVertical: 4, marginLeft: -8 },
-  empty: { opacity: 0.6, paddingVertical: 8 },
+  empty: { opacity: 0.7, paddingVertical: 8 },
   barRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 5 },
   barLabel: { width: 92 },
   barTrack: {

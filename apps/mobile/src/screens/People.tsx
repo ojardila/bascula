@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
   fab: { position: "absolute", right: 16, bottom: 16 },
   avatar: { marginLeft: 8, alignSelf: "center" },
   emptyWrap: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-  empty: { opacity: 0.6, padding: 24, textAlign: "center" },
+  empty: { opacity: 0.7, padding: 24, textAlign: "center" },
   dialogTitle: { textAlign: "center" },
   dialogBody: { textAlign: "center", opacity: 0.7, marginTop: 8 },
 });

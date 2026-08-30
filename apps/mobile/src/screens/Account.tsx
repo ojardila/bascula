@@ -259,7 +259,7 @@ export default function Account() {
                 {/* Not «$0». A phone that has never heard a balance is not
                     saying the account is settled — it is saying it does not
                     know, and those two must never render the same. */}
-                <Text variant="displaySmall" style={styles.zeroBig}>
+                <Text variant="displaySmall" style={styles.unknownBig}>
                   {t("pay.balanceUnknownShort")}
                 </Text>
                 <Text style={styles.dim}>{t("pay.balanceUnknownBody")}</Text>
@@ -465,12 +465,30 @@ const styles = StyleSheet.create({
   half: { flex: 1, borderRadius: 12 },
   creditText: { color: "#3949ab" },
   creditBig: { color: "#3949ab", fontWeight: "800", marginVertical: 4 },
-  zeroBig: { opacity: 0.35, fontWeight: "800", marginVertical: 4 },
+  // 0.35 was 2.17:1 against the card — below AA for large text (3:1), never
+  // mind a phone held at arm's length in a lote at midday. 0.65 is 5.30:1 and
+  // still visibly quieter than the blue credit and the amber debt beside it,
+  // which is all the muting was ever for: this figure is not a claim.
+  zeroBig: { opacity: 0.65, fontWeight: "800", marginVertical: 4 },
+  /**
+   * «No lo sé», and it is not the same style as «$0» any more.
+   *
+   * It used to share `zeroBig`, which is the one place in this screen where
+   * dimming means "this is nothing to look at". `usability.md` protects this
+   * exact distinction as the thing the product gets right that almost no
+   * software does — "it is not zero: it is that we do not know" — and it was
+   * being rendered at 2.17:1, the least legible text on the screen, in the
+   * sun, on the one state where a misread costs somebody their money.
+   *
+   * It is a sentence, not a number, and it is the answer to the question the
+   * screen was opened to ask. So it is full contrast.
+   */
+  unknownBig: { fontWeight: "800", marginVertical: 4 },
   dim: { opacity: 0.78 },
   action: { marginTop: 10, borderRadius: 12 },
   tall: { height: 52 },
-  empty: { opacity: 0.6, textAlign: "center", padding: 20 },
-  voidedRow: { textDecorationLine: "line-through", opacity: 0.6 },
+  empty: { opacity: 0.7, textAlign: "center", padding: 20 },
+  voidedRow: { textDecorationLine: "line-through", opacity: 0.7 },
   dialogTitle: { textAlign: "center" },
   dialogBody: { textAlign: "center", opacity: 0.7, marginTop: 8 },
   plus: { color: "#1b5e20", alignSelf: "center", fontWeight: "700" },

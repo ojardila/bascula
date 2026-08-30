@@ -36,6 +36,80 @@
  * the flag goes false for good, the capability and the code behind it are what
  * `simplificacion.md` §1.1 deletes — and until then, wiring the flag to the
  * handshake would let a server outage silently take the farm's payroll away.
+ *
+ * ## What comes out when it goes false, measured against THIS commit
+ *
+ * `simplificacion.md` §1.1 and §1.2 give line ranges against `b539d08` and
+ * they no longer resolve — the files have grown, and a demolition list whose
+ * line numbers point at the wrong functions is worse than none on the day
+ * somebody is in a hurry. So the inventory is kept here, next to the switch,
+ * by SYMBOL rather than by line: a name still resolves after the file moves.
+ *
+ * **Deleted outright — application code, ≈ 1,730 lines**
+ *
+ *   `data/sqliteRepository.ts`   `pendingItems` · `reverseHere` ·
+ *                                `voidSettlementHere`                   104
+ *     inside `payments`          `preview` · `settle` · `voidSettlement` ·
+ *                                `runPayroll` · `pay` · `adjust` ·
+ *                                `reverse` · `undoRun` · `paidAgainst` ·
+ *                                `paidInRange` · `pendingAll`           222
+ *   `schema.ts`                  `BALANCE_COLUMNS` · `BALANCE_SQL` ·
+ *                                `PAID_AGAINST_SQL` · `PAID_IN_RANGE_SQL` ·
+ *                                `PENDING_SQL` · `ux_items_pickup_live`  41
+ *   `data/syncStore.ts`          `applySettlement`                       76
+ *   `sync/engine.ts`             `checkBalances`, plus the `settlements`
+ *                                and `settlement_items` branches of
+ *                                `envelope` / `readOnlyEnvelope`          78
+ *   `receiptHtml.ts`             `payrollHtml`                          132
+ *   `screens/PayWorker.tsx`      whole file                             434
+ *   `screens/PaymentsPanel.tsx`  whole file                             553
+ *   `data/repository.ts`         14 of the 19 `PaymentsRepo` methods and
+ *                                the types `SettlementPreview`,
+ *                                `PendingItem`, `PayrollRun`,
+ *                                `SettleResult`, `PendingWorker`       ~90
+ *
+ * **Rewritten smaller, ≈ −380 lines net**
+ *
+ *   `payments.balance` / `balances` / `fullBalance`   58 → ~25
+ *   `screens/Account.tsx`      read-only              478 → ~200
+ *   `screens/Adjust.tsx`       only the `anticipo`    181 → ~110
+ *
+ * **Deleted — tests, ≈ 2,490 lines**
+ *
+ *   `data/repository.test.ts`    36 of 63 tests                        734
+ *   `sync/sync.test.ts`          11 of 26 (pulled settlements, the
+ *                                balance checksum)                     620
+ *   `ledger.test.ts`             9 of 13; the file loses its subject   186
+ *   `receiptHtml.test.ts`        6 of 15 (the payroll sheet)            74
+ *   `packages/shared/golden/`    `runner.ts` 523 + `golden.test.ts` 87
+ *                                + `real-repository.test.ts` 265       875
+ *                                The ten `cases/*.json` STAY: they are
+ *                                already the server's regression suite
+ *                                in `internal/apitest/golden_test.go`.
+ *
+ * **≈ 4,600 lines out.** More than §1.1's 3,927, because the product grew
+ * since that count and the settling code grew with it — which is the argument
+ * for doing it rather than against.
+ *
+ * Written in exchange: §1.1 budgeted ~220 lines for an `anticipo` screen, the
+ * balance-as-read card and the `server_balances` read. All three now EXIST —
+ * `Adjust.tsx`, `balanceDisplay.ts` and `recordServerBalances` — so the
+ * exchange is close to nothing and the net is close to the gross.
+ *
+ * On the server, not one line. `handlers_sync.go`'s rejection branch goes from
+ * the one that fires to the one that never fires, which is where a guard
+ * belongs.
+ *
+ * ## What was checked, with the flag actually off
+ *
+ * Not reasoned about — run. `LOCAL_SETTLEMENT = false`, then the whole suite:
+ * `tsc --noEmit` clean, and 259 of 260 tests green. The one red is the
+ * tripwire in `flagOff.test.ts` that asserts the flag ships ON, which is the
+ * single line that is SUPPOSED to fail the day somebody flips it. Nothing
+ * else broke: no orphan screen, no dead control, and `importScreen.test.ts`'s
+ * sweep of every translation key every screen asks for — the literal ones and
+ * the four families built at run time — passes in all three languages with
+ * the flag off, so no screen falls back to printing a raw key.
  */
 
 /**

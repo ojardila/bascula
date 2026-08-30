@@ -90,5 +90,5 @@ const styles = StyleSheet.create({
   emptyWrap: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
   dialogTitle: { textAlign: "center" },
   dialogBody: { textAlign: "center", opacity: 0.7, marginTop: 8 },
-  empty: { opacity: 0.6, padding: 24, textAlign: "center" },
+  empty: { opacity: 0.7, padding: 24, textAlign: "center" },
 });

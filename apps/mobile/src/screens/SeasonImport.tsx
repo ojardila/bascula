@@ -100,6 +100,13 @@ export default function SeasonImport() {
   // the whole season and read a 403 at the end of it. On a Tuesday morning,
   // with somebody standing there, having spent the climb. The mudanza happens
   // once; the person who can do it should be the only one offered it.
+  //
+  // The comment was right and `import.noMoney` was wrong: it read «solo el
+  // dueño o un administrador», in all three languages, on the one card an
+  // administrator is the likeliest person to be reading — because they are the
+  // one this gate just stopped. It told them they could do the thing the
+  // button beside it had disabled. The sentence now names the same single role
+  // the permission table does, and says who to go and ask.
   const mayImport = status.role === "owner";
 
   return (
@@ -142,6 +149,21 @@ export default function SeasonImport() {
           <Card mode="elevated" style={styles.card}>
             <Card.Title title={t("import.whatGoes")} />
             <Card.Content>
+              {/* The whole thing in one sentence, before the grid.
+                  A grid of eight figures is a report; what somebody deciding
+                  whether to press this needs first is the size of the thing in
+                  the four words he would use himself — how many of his people,
+                  how many pesadas, how many weeks, and how much money. The
+                  grid stays underneath for whoever wants to check it, but it
+                  is no longer the first thing to parse. */}
+              <Text variant="titleMedium" style={styles.headline}>
+                {t("import.headline", {
+                  workers: num(preview.totals.workers),
+                  pickups: num(preview.totals.workRecords),
+                  weeks: num(preview.reconciliation.weeks.length),
+                  money: money(fromCents(preview.totals.balanceCents)),
+                })}
+              </Text>
               {preview.totals.firstDay && preview.totals.lastDay && (
                 <Text style={styles.dim}>
                   {t("import.range", {
@@ -152,6 +174,14 @@ export default function SeasonImport() {
               )}
               <View style={styles.grid}>
                 <Figure label={t("import.workers")} value={num(preview.totals.workers)} />
+                {/* The season's length in the unit a farm is paid in. It costs
+                    nothing: `reconciliation.weeks` is already derived for the
+                    check the server runs, and «22 semanas» is the figure a
+                    person uses to recognise their own season. */}
+                <Figure
+                  label={t("import.weeks")}
+                  value={num(preview.reconciliation.weeks.length)}
+                />
                 <Figure label={t("import.plots")} value={num(preview.totals.plots)} />
                 <Figure
                   label={t("import.pickups")}
@@ -227,6 +257,17 @@ export default function SeasonImport() {
               {t("import.confirmBody", {
                 n: num(preview?.totals.workRecords ?? 0),
                 m: num(preview?.totals.ledgerEntries ?? 0),
+              })}
+            </Text>
+            {/* The money, in the dialog. `usability.md` protects the crew
+                payroll screen as the model for a confirmation — "a confirmation
+                that lists every person by name" — because it makes the person
+                confirm the thing itself and not a row count. Twenty-four names
+                do not fit here, but the figure they add up to does, and it is
+                what makes this a decision rather than an OK. */}
+            <Text style={[styles.body, styles.strong]}>
+              {t("import.confirmMoney", {
+                money: money(fromCents(preview?.totals.balanceCents ?? 0)),
               })}
             </Text>
             <Text style={[styles.body, styles.safe]}>{t("import.safety")}</Text>
@@ -315,6 +356,23 @@ function Progress({
         )}
 
         <Text style={[styles.dim, styles.centered]}>{t("import.dontClose")}</Text>
+
+        {/* What the silence at the end is.
+            Measured, not guessed. Moving a real season — 18.000 pesadas,
+            39.568 filas, 9,5 MB — against real Postgres over a link with no
+            latency at all still took 77 s on a cold database and 16 s on a
+            warm one (`sync/mudanza.e2e.ts`). None of that is the uplink: it is
+            the server writing forty thousand rows in one transaction and
+            deriving every worker's balance before it commits any of them. Over
+            a farm's link the upload is the larger half and this tail is still
+            minutes on top of it.
+            `fetch` cannot tell the phone when the last byte left, so the
+            screen cannot honestly switch to a «guardando» phase — but it can
+            say that the long quiet part is expected, which is the difference
+            between waiting and deciding the app has hung. */}
+        {sending && (
+          <Text style={[styles.dim, styles.centered]}>{t("import.tail")}</Text>
+        )}
         {/* The property §8's whole plan rests on, said while the waiting is
             happening and not only before and after it. */}
         <Text style={[styles.centered, styles.safe]}>{t("import.safety")}</Text>
@@ -497,6 +555,7 @@ const styles = StyleSheet.create({
   centered: { textAlign: "center" },
   safe: { color: "#2e7d32", fontWeight: "600" },
   farmChip: { marginTop: 4 },
+  headline: { fontWeight: "700", lineHeight: 24, marginBottom: 6 },
   grid: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   figure: { width: "33%", paddingVertical: 8 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 4 },

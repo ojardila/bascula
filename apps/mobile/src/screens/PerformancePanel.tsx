@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   kpiValue: { fontWeight: "800", color: "#1b5e20" },
   card: { marginBottom: 12 },
   dim: { opacity: 0.78 },
-  empty: { opacity: 0.6, textAlign: "center", padding: 20 },
+  empty: { opacity: 0.7, textAlign: "center", padding: 20 },
   irlCell: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "center" },
   perHa: { alignSelf: "center", opacity: 0.8 },
   note: { paddingHorizontal: 16, paddingTop: 10 },

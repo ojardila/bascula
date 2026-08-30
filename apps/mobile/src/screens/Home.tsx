@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   statValue: { fontWeight: "800" },
-  statLabel: { fontSize: 12, opacity: 0.6 },
+  statLabel: { fontSize: 12, opacity: 0.7 },
   payRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   payAmount: { fontWeight: "800", color: "#1b5e20" },
   cta: { borderRadius: 16 },

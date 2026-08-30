@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   dim: { opacity: 0.78 },
   note: { paddingHorizontal: 16, paddingTop: 10 },
   chart: { borderRadius: 12, marginLeft: -8 },
-  empty: { opacity: 0.6, textAlign: "center", padding: 20 },
+  empty: { opacity: 0.7, textAlign: "center", padding: 20 },
   workerRow: {
     flexDirection: "row",
     alignItems: "center",

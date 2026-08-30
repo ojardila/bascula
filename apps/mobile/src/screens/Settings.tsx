@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 16 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {},
-  empty: { opacity: 0.6, paddingVertical: 8 },
+  empty: { opacity: 0.7, paddingVertical: 8 },
   ovRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   exportRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   demoRow: { flexDirection: "row", gap: 8, alignItems: "center" },

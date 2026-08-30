@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   viewSwitch: { marginBottom: 12 },
   weekNo: { opacity: 0.72 },
-  cost: { opacity: 0.6 },
+  cost: { opacity: 0.7 },
   lots: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -400,7 +400,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 6,
   },
-  lotsLabel: { opacity: 0.5 },
+  // 0.5 was 3.28:1 on `labelSmall` — the smallest type in the app, at the
+  // lowest contrast in the app, naming the lotes a week's kilos came from.
+  // 0.7 is 6.25:1 and still reads as a label rather than as a figure.
+  lotsLabel: { opacity: 0.7 },
   inactive: { opacity: 0.72, fontStyle: "italic" },
   lot: {
     opacity: 0.75,

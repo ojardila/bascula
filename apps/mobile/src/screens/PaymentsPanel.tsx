@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   tall: { height: 56 },
   avatar: { alignSelf: "center", marginLeft: 8 },
   amountCell: { flexDirection: "row", alignItems: "center", gap: 4 },
-  empty: { opacity: 0.6, textAlign: "center", padding: 24 },
+  empty: { opacity: 0.7, textAlign: "center", padding: 24 },
   creditCard: { borderColor: "#3949ab", backgroundColor: "#eef0fb" },
   creditTitle: { color: "#3949ab", paddingHorizontal: 16, paddingBottom: 4 },
   creditAvatar: { alignSelf: "center", marginLeft: 8, backgroundColor: "#3949ab" },
