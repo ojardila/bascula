@@ -63,23 +63,22 @@ export default function WorkerDetail({
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
   const [snack, setSnack] = useState("");
 
-  useFocusEffect(
-    useCallback(() => {
-      const found = People.byId(personId) ?? null;
-      setPerson(found);
-      if (found) {
-        navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
-      }
-      const s = WorkerReports.stats(personId);
-      if (s) setStats(s);
-      setByWeek(WorkerReports.byWeek(personId));
-      setByCrop(WorkerReports.byCrop(personId));
-      setRecent(WorkerReports.recent(personId));
-      const c = Config.get();
-      setConfig(c ?? null);
-      setBalance(balanceDisplay(Payments.fullBalance(personId), status.pending, status.registered));
-    }, [personId, status.pending, status.registered]),
-  );
+  const load = useCallback(() => {
+    const found = People.byId(personId) ?? null;
+    setPerson(found);
+    if (found) {
+      navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
+    }
+    const s = WorkerReports.stats(personId);
+    if (s) setStats(s);
+    setByWeek(WorkerReports.byWeek(personId));
+    setByCrop(WorkerReports.byCrop(personId));
+    setRecent(WorkerReports.recent(personId));
+    const c = Config.get();
+    setConfig(c ?? null);
+    setBalance(balanceDisplay(Payments.fullBalance(personId), status.pending, status.registered));
+  }, [personId, status.pending, status.registered, navigation]);
+  useFocusEffect(load);
 
   const unit = config?.unit || "kg";
   const days = stats.days;
@@ -272,9 +271,7 @@ export default function WorkerDetail({
         onDismiss={() => setFixing(null)}
         onDone={(message) => {
           setFixing(null);
-          const found = People.byId(personId) ?? null;
-          setPerson(found);
-          setRecent(WorkerReports.recent(personId));
+          load();
           setSnack(message);
         }}
       />

@@ -69,23 +69,22 @@ export default function CropDetail({
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
   const [snack, setSnack] = useState("");
 
-  useFocusEffect(
-    useCallback(() => {
-      const found = CropsDb.byId(cropId) ?? null;
-      setCrop(found);
-      // The plot may have been deleted while its pickups remain; say so instead
-      // of showing a nameless screen full of numbers.
-      navigation.setOptions({ title: found ? found.name : t("crop.deleted") });
-      const c = Config.get();
-      setConfig(c ?? null);
-      const s = CropReports.stats(cropId);
-      if (s) setStats(s);
-      setByWeek(CropReports.byWeek(cropId));
-      setByWorker(CropReports.byWorker(cropId));
-      setRecent(CropReports.recent(cropId));
-      setValue(CropReports.value(cropId, c?.costPerUnit ?? 0));
-    }, [cropId]),
-  );
+  const load = useCallback(() => {
+    const found = CropsDb.byId(cropId) ?? null;
+    setCrop(found);
+    // The plot may have been deleted while its pickups remain; say so instead
+    // of showing a nameless screen full of numbers.
+    navigation.setOptions({ title: found ? found.name : t("crop.deleted") });
+    const c = Config.get();
+    setConfig(c ?? null);
+    const s = CropReports.stats(cropId);
+    if (s) setStats(s);
+    setByWeek(CropReports.byWeek(cropId));
+    setByWorker(CropReports.byWorker(cropId));
+    setRecent(CropReports.recent(cropId));
+    setValue(CropReports.value(cropId, c?.costPerUnit ?? 0));
+  }, [cropId, navigation, t]);
+  useFocusEffect(load);
 
   const unit = config?.unit || "kg";
   const ha = crop?.dimension ?? 0;
@@ -287,7 +286,7 @@ export default function CropDetail({
         onDismiss={() => setFixing(null)}
         onDone={(message) => {
           setFixing(null);
-          setRecent(CropReports.recent(cropId));
+          load();
           setSnack(message);
         }}
       />

@@ -181,7 +181,7 @@ export default function Adjust() {
                 save();
               }}
             >
-              {t("pay.yes")}
+              {mode === "anticipo" ? t("pay.yes") : t("pay.saveMovement")}
             </Button>
           </Dialog.Actions>
         </Dialog>
