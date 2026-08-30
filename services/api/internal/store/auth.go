@@ -377,3 +377,41 @@ func CountSignupAttempts(ctx context.Context, tx pgx.Tx, ip string, window time.
 		ip, window.String()).Scan(&n)
 	return n, err
 }
+
+// RecordLoginFailure writes one refused login.
+//
+// It takes the request's own transaction and nothing else, which is the whole
+// reason it looks like this. The caller answers 401 or 429 and the tenant
+// middleware rolls a 4xx back, so the row is kept with tenant.KeepChanges
+// rather than written on a second pool connection — see the note there for the
+// two outages the second connection caused. `signup_attempts` still does it the
+// other way, on s.pool, and that is a hole this change deliberately does not
+// widen.
+func RecordLoginFailure(ctx context.Context, tx pgx.Tx, id, ip, email string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO login_failures (id, ip, email) VALUES ($1, $2::inet, $3)`,
+		id, ip, email)
+	return err
+}
+
+// CountLoginFailures counts the recent refusals on both axes at once: the ones
+// aimed at this address, from anywhere, and the ones coming from this IP, at
+// anybody.
+//
+// One round trip and not two, for the reason tenant.setContext gives about the
+// membership check: a limit that costs an extra query on the hot path of the
+// most-called endpoint in the service is a limit somebody optimises away. The
+// OR in the WHERE clause is there so the planner can take both partial index
+// ranges and stop, rather than counting the whole window and filtering.
+func CountLoginFailures(ctx context.Context, tx pgx.Tx, email, ip string,
+	window time.Duration) (byEmail, byIP int, err error) {
+
+	err = tx.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE lower(email) = $1),
+		       count(*) FILTER (WHERE ip = $2::inet)
+		  FROM login_failures
+		 WHERE at > now() - $3::interval
+		   AND (lower(email) = $1 OR ip = $2::inet)`,
+		email, ip, window.String()).Scan(&byEmail, &byIP)
+	return byEmail, byIP, err
+}

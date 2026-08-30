@@ -55,6 +55,12 @@ type harness struct {
 	pool     *pgxpool.Pool
 	admin    *pgxpool.Pool
 	server   *httpapi.Server
+	// The login limiter's numbers, copied off the config the server was built
+	// with so a test can reach the threshold without writing it down twice. A
+	// test that hardcoded "5" would keep passing after the limit moved, while
+	// asserting something about a limit that no longer exists.
+	loginFailuresPerEmail int
+	loginFailuresPerIP    int
 }
 
 var shared *harness
@@ -136,6 +142,16 @@ func setupAndRun(m *testing.M) (int, error) {
 	cfg.UploadDir = uploadDir
 	cfg.SignupsPerIPPerHour = 1000
 	cfg.MaxFarmsPerEmail = 3
+	// The login limiter, small enough that a test can reach it without paying
+	// for a hundred hashes, and with the two axes far enough apart that a test
+	// can trip one without tripping the other. The window stays long: nothing
+	// here waits for it to drain on the clock — the test that needs a drained
+	// window ages the rows instead. Tests that provoke failures give themselves
+	// a client address of their own, so these buckets never leak into the rest
+	// of the suite. See doFrom.
+	cfg.LoginFailuresPerEmail = 5
+	cfg.LoginFailuresPerIP = 12
+	cfg.LoginFailureWindow = 15 * time.Minute
 
 	shared = &harness{
 		adminDSN: adminDSN,
@@ -143,6 +159,9 @@ func setupAndRun(m *testing.M) (int, error) {
 		pool:     pool,
 		admin:    adminPool,
 		server:   httpapi.New(pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg),
+
+		loginFailuresPerEmail: cfg.LoginFailuresPerEmail,
+		loginFailuresPerIP:    cfg.LoginFailuresPerIP,
 	}
 	return m.Run(), nil
 }
@@ -195,6 +214,18 @@ func (r response) code() string {
 
 func (h *harness) do(t *testing.T, method, path, token string, body any) response {
 	t.Helper()
+	return h.doFrom(t, "10.0.0.1", method, path, token, body)
+}
+
+// doFrom is do from a named client address.
+//
+// Every request in this suite comes from 10.0.0.1, which is harmless until a
+// test is about something the server counts PER IP. Then one bucket is shared
+// by the whole package and the tests leak into each other in the order they
+// happen to run, which is the kind of failure that gets blamed on the database.
+// A test about a per-IP limit names its own address and keeps its own bucket.
+func (h *harness) doFrom(t *testing.T, ip, method, path, token string, body any) response {
+	t.Helper()
 	var reader *strings.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -206,7 +237,7 @@ func (h *harness) do(t *testing.T, method, path, token string, body any) respons
 		reader = strings.NewReader("")
 	}
 	req := httptest.NewRequest(method, path, reader)
-	req.RemoteAddr = "10.0.0.1:12345"
+	req.RemoteAddr = ip + ":12345"
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

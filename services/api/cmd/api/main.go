@@ -294,5 +294,21 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
 		rc.http.SignupsPerIPPerHour = n
 	}
+	// The login limiter's two axes. They are tunable because the right number
+	// for a farm office behind one router and the right number for a platform
+	// serving a hundred of them are not the same number, and the operator who
+	// finds that out at four in the morning should not need a build to act on
+	// it. A zero or a negative value keeps the default rather than disabling
+	// the limit: "0" in an environment file is far more often a mistake than a
+	// decision to turn the front door's lock off.
+	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_EMAIL")); err == nil && n > 0 {
+		rc.http.LoginFailuresPerEmail = n
+	}
+	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_IP")); err == nil && n > 0 {
+		rc.http.LoginFailuresPerIP = n
+	}
+	if d, err := time.ParseDuration(getenv("LOGIN_FAILURE_WINDOW")); err == nil && d > 0 {
+		rc.http.LoginFailureWindow = d
+	}
 	return rc, nil
 }

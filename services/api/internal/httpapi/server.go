@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -25,6 +26,26 @@ type Config struct {
 	SignupsPerIPPerHour int
 	// MaxFarmsPerEmail caps how many farms one address can own.
 	MaxFarmsPerEmail int
+	// LoginFailuresPerEmail and LoginFailuresPerIP are the two axes of the
+	// login limiter, counted over LoginFailureWindow. They are separate
+	// numbers because they bound different attacks and one of them cannot
+	// stand in for the other: a single address hammered from a botnet never
+	// trips a per-IP count, and one IP walking through ten thousand addresses
+	// never trips a per-address one.
+	//
+	// The per-IP number is the loose one on purpose. A farm office is one
+	// router: the owner, the administrator and three weighers share an address,
+	// they all mistype on the same Monday morning, and a limit tight enough to
+	// stop a spray would lock the whole farm out of its own payroll. The
+	// per-address number is the tight one, because there is only ever one
+	// person behind an address and ten wrong passwords in a quarter of an hour
+	// is already not that person.
+	LoginFailuresPerEmail int
+	LoginFailuresPerIP    int
+	// LoginFailureWindow is how far back the counts look. It is also how long
+	// a lockout lasts, because the two are the same fact: the count drains as
+	// the window slides, so nothing has to expire anything.
+	LoginFailureWindow time.Duration
 	// UploadDir is where internal/blob writes uploaded objects. It exists
 	// because this environment has no object storage; the design document
 	// says S3/R2 and internal/blob is the seam that makes swapping to it one
@@ -35,7 +56,11 @@ type Config struct {
 
 // DefaultConfig is the production posture.
 func DefaultConfig() Config {
-	return Config{DevEcho: false, SignupsPerIPPerHour: 5, MaxFarmsPerEmail: 3}
+	return Config{
+		DevEcho: false, SignupsPerIPPerHour: 5, MaxFarmsPerEmail: 3,
+		LoginFailuresPerEmail: 10, LoginFailuresPerIP: 50,
+		LoginFailureWindow: 15 * time.Minute,
+	}
 }
 
 type Server struct {

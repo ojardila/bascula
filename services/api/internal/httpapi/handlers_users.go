@@ -187,6 +187,14 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("password must be at least 10 characters"))
 		return
 	}
+	// The ceiling is here too even though this route is behind a token: an
+	// administrator is trusted to add somebody to their own farm, not to decide
+	// how much memory the server spends on a single request. See
+	// auth.MaxPasswordLength.
+	if len(body.Password) > auth.MaxPasswordLength {
+		writeError(w, r, domain.BadRequest("password is too long"))
+		return
+	}
 
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {

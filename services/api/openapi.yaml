@@ -189,7 +189,16 @@ paths:
         not a failure.
 
         An unknown address and a wrong password produce the same
-        INVALID_CREDENTIALS.
+        INVALID_CREDENTIALS, and take the same time to say it: the branch
+        with no account still runs the password verification, against a hash
+        nobody holds, so the reply cannot be used to test whether an address
+        has an account here.
+
+        Refusals are counted on two axes over a sliding window — per address
+        and per source IP — and either count reaching its limit answers 429
+        RATE_LIMITED until the window drains. The correct password gets the
+        429 too while the limit is tripped; a lockout that stepped aside for
+        the right guess would announce it.
       x-action: auth.login
       x-roles: [public]
       security: []
@@ -218,6 +227,13 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "403":
           description: EMAIL_NOT_VERIFIED, FARM_SUSPENDED, or no membership at all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: |
+            RATE_LIMITED: too many recent failures for this address or from
+            this IP. Retry after the window, not immediately.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

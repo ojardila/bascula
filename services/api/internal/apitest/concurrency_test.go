@@ -52,6 +52,15 @@ type concurrentResult struct {
 func (h *harness) fireConcurrently(n int, deadline time.Duration,
 	build func(i int) (method, path, token string, body any)) []concurrentResult {
 
+	return h.fireConcurrentlyFrom("10.0.0.1", n, deadline, build)
+}
+
+// fireConcurrentlyFrom is fireConcurrently from a named client address, for the
+// same reason doFrom exists: a race against something the server counts per IP
+// needs a bucket of its own, or the rest of the package fills it first.
+func (h *harness) fireConcurrentlyFrom(ip string, n int, deadline time.Duration,
+	build func(i int) (method, path, token string, body any)) []concurrentResult {
+
 	results := make([]concurrentResult, n)
 	var ready sync.WaitGroup
 	var done sync.WaitGroup
@@ -76,7 +85,7 @@ func (h *harness) fireConcurrently(n int, deadline time.Duration,
 				reader = strings.NewReader("")
 			}
 			req := httptest.NewRequest(method, path, reader)
-			req.RemoteAddr = "10.0.0.1:12345"
+			req.RemoteAddr = ip + ":12345"
 			if body != nil {
 				req.Header.Set("Content-Type", "application/json")
 			}

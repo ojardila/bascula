@@ -76,6 +76,12 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("owner.password must be at least 10 characters"))
 		return
 	}
+	// And a ceiling, which is not a strength rule: the hash below is paid for
+	// by the server and priced by the caller. See auth.MaxPasswordLength.
+	if len(req.Owner.Password) > auth.MaxPasswordLength {
+		writeError(w, r, domain.BadRequest("owner.password is too long"))
+		return
+	}
 	if strings.TrimSpace(req.Farm.Name) == "" {
 		writeError(w, r, domain.BadRequest("farm.name is required"))
 		return
@@ -497,10 +503,52 @@ type sessionResponse struct {
 	Role         domain.Role `json:"role"`
 }
 
+// handleLogin opens a session, and is the one door in this service that an
+// unauthenticated stranger is invited to knock on repeatedly. Two things follow
+// from that, and neither was here.
+//
+// # The count
+//
+// There was no limit of any kind: no lockout, no delay, and no row written
+// afterwards. A spray — one common password against every address on the
+// platform, then the next password — could run all night at whatever rate the
+// network allowed and leave nothing behind to notice it by. signup got a
+// Postgres-backed limiter in migration 00002 on the grounds that it was "the
+// most exposed surface in the system", which it is not; this is. The counter
+// lives in the same place and for the same stated reason: an in-memory bucket
+// forgets everything on deploy, and a deploy is a thing an attacker can wait
+// for.
+//
+// # The clock
+//
+// The two branches below answered the same status and the same body, and the
+// comment on the old one — "Same answer whether the address exists or not" —
+// was true about the bytes and false about the reply. An address with no
+// account returned in about a millisecond because it returned BEFORE the
+// Argon2id verification; an address with one paid 19 MiB and tens of
+// milliseconds first. An order of magnitude, readable with `curl -w
+// %{time_total}` from anywhere in the world, is a working answer to "does this
+// person bank here" — which handleSignup goes to the trouble of
+// tenant.DiscardChanges to avoid giving, on the strength of the argument that
+// "a list of addresses that are coffee farm owners in Huila is a phishing
+// list". The same list was on offer here, one endpoint away, for free.
+//
+// So the branch with no account verifies against auth.DecoyHash: the same
+// algorithm, the same parameters, the same cost, on a password nobody holds.
+// The order of the checks matters as much as the decoy does — everything that
+// happens before the verification has to happen for both addresses, or the
+// difference simply moves upstream.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := decode(r, &req); err != nil {
 		writeError(w, r, err)
+		return
+	}
+	// Refused before the hash and not after it, because the whole point of a
+	// maximum is that the expensive part never sees the oversized input. See
+	// auth.MaxPasswordLength.
+	if len(req.Password) > auth.MaxPasswordLength {
+		writeError(w, r, domain.BadRequest("password is too long"))
 		return
 	}
 	tx, err := tenant.Tx(r.Context())
@@ -512,19 +560,84 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	invalid := domain.Coded(http.StatusUnauthorized, domain.CodeInvalidCredentials,
 		"email or password is not correct")
 
-	user, err := store.FindUserByEmail(r.Context(), tx, strings.ToLower(strings.TrimSpace(req.Email)))
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	ip := clientIP(r)
+
+	// The limit is consulted BEFORE the account is looked up, which is what
+	// keeps it from becoming the oracle the decoy hash below exists to close:
+	// a 429 that only ever arrived for real addresses would say exactly what a
+	// fast 401 used to say.
+	failedForEmail, failedForIP, err := store.CountLoginFailures(
+		r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Same answer whether the address exists or not.
-			writeError(w, r, invalid)
-			return
-		}
 		writeError(w, r, err)
 		return
 	}
-	ok, err := auth.VerifyPassword(req.Password, user.PasswordHash)
-	if err != nil || !ok {
+	if failedForEmail >= s.cfg.LoginFailuresPerEmail || failedForIP >= s.cfg.LoginFailuresPerIP {
+		// Nothing is recorded here, and that is the difference between a
+		// lockout that ends and one that does not. If a refused attempt also
+		// counted, an attacker could hold somebody's address locked for ever by
+		// going on knocking after the door had already been shut to them — the
+		// lock would be renewed by the very traffic it was refusing. The window
+		// only drains if the refusals stop being written, so they are not.
+		//
+		// The correct password gets this answer too. That is deliberate: the
+		// limit is a property of the door, not of the guess, and a lockout that
+		// stepped aside for the right password would tell whoever tripped it
+		// that they had just found the right password.
+		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many failed sign-in attempts; try again later"))
+		return
+	}
+
+	// refuse answers the caller AND keeps the failure, in this request's own
+	// transaction. The response is a 401, which the tenant middleware rolls
+	// back, so the row would vanish with it.
+	//
+	// KeepChanges and not AfterRequest, and the distinction is the one
+	// AfterRequest's own note draws: it is for a write that must survive its
+	// transaction being rolled back, which is signup's problem — the attempt
+	// row has to outlive a farm that was refused, and committing the two
+	// together would commit the farm. Here there is no half-built anything.
+	// When this line runs the transaction has executed nothing but SELECTs, so
+	// the row above is the entirety of what gets committed, which is exactly
+	// the obligation KeepChanges puts on its caller. One connection, and the
+	// count is durable before the 401 leaves rather than shortly after it.
+	// handleRefresh is the other handler with this shape.
+	refuse := func() {
+		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
+			// Not swallowed, and not answered as a 401 either. A limiter that
+			// silently fails to count is the state this whole change is about,
+			// and a login door that has quietly stopped counting should be
+			// loud rather than convenient.
+			writeError(w, r, domain.Internal(
+				"could not record the failed sign-in").WithCause(err))
+			return
+		}
+		tenant.KeepChanges(r.Context())
 		writeError(w, r, invalid)
+	}
+
+	user, err := store.FindUserByEmail(r.Context(), tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, r, err)
+		return
+	}
+	// The hash to check against, which is a real one either way. Reading it out
+	// of the user when there is one and out of the decoy when there is not is
+	// the ONLY difference the two branches are allowed to have, and it is a
+	// pointer read.
+	hash := auth.DecoyHash()
+	if user != nil {
+		hash = user.PasswordHash
+	}
+	ok, err := auth.VerifyPassword(req.Password, hash)
+	// `user == nil` is last in the condition rather than first because it must
+	// not short-circuit the verification above out of existence: the work is
+	// the point, and an early return placed anywhere before this line puts the
+	// millisecond gap straight back.
+	if err != nil || !ok || user == nil {
+		refuse()
 		return
 	}
 	if user.EmailVerifiedAt == nil {
