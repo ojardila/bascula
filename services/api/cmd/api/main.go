@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -92,20 +93,12 @@ func run(migrateOnly, pruneOnly bool) error {
 		return nil
 	}
 
-	secret := os.Getenv("JWT_SECRET")
-	devEcho := env("APP_ENV", "development") == "development"
-	if secret == "" {
-		if !devEcho {
-			return errors.New("JWT_SECRET is required outside development")
-		}
-		secret = "development-only-signing-key-not-for-production"
-		slog.Warn("using the development signing key; set JWT_SECRET before deploying")
+	rc, err := resolveConfig(os.Getenv)
+	if err != nil {
+		return err
 	}
-	if devEcho {
-		// The signup response echoes the email verification token, because
-		// there is no mail sender yet. Saying so out loud beats discovering it
-		// in production.
-		slog.Warn("development mode: signup echoes the email verification token")
+	for _, w := range rc.warnings {
+		slog.Warn(w)
 	}
 
 	pool, err := store.Open(ctx, appDSN)
@@ -114,21 +107,7 @@ func run(migrateOnly, pruneOnly bool) error {
 	}
 	defer pool.Close()
 
-	cfg := httpapi.DefaultConfig()
-	cfg.DevEcho = devEcho
-	// Where uploaded photos and receipts land. There is no object storage in
-	// this environment, so internal/blob writes to disk and this is the
-	// directory. It must be a volume that survives a restart and is shared by
-	// every replica; the default under /tmp is a development convenience and
-	// nothing else, which is why it is warned about.
-	cfg.UploadDir = os.Getenv("UPLOAD_DIR")
-	if cfg.UploadDir == "" && !devEcho {
-		return errors.New("UPLOAD_DIR is required outside development: " +
-			"uploads go to a directory, and the default one is temporary")
-	}
-	if n, err := strconv.Atoi(os.Getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
-		cfg.SignupsPerIPPerHour = n
-	}
+	cfg := rc.http
 
 	// The timeouts, and the reason they stay where they are.
 	//
@@ -151,8 +130,8 @@ func run(migrateOnly, pruneOnly bool) error {
 	// the upload keeps making progress. See importReadBudget in
 	// internal/httpapi/handlers_import.go. Everything else keeps these.
 	srv := &http.Server{
-		Addr:              ":" + env("PORT", "8080"),
-		Handler:           httpapi.New(pool, auth.NewSigner([]byte(secret), "bascula"), cfg),
+		Addr:              ":" + rc.port,
+		Handler:           httpapi.New(pool, auth.NewSigner(rc.secret, "bascula"), cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -178,4 +157,142 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// appEnvDevelopment is the one and only value of APP_ENV that unlocks the
+// development posture. Anything else — "production", "staging", a typo, and
+// above all NOTHING AT ALL — is production.
+//
+// The direction of that default is the whole point, and it used to run the
+// other way. `env("APP_ENV", "development")` made the omission of the variable
+// mean development, which put the guard "JWT_SECRET is required outside
+// development" behind the very variable whose absence should have fired it: a
+// process started with no environment at all took the development branch,
+// signed its access tokens with a constant that is committed to this
+// repository, echoed the email verification token out of signup, and dropped
+// uploads in the system temp directory. Every one of those is a decision that
+// must be TAKEN, never inherited from a missing line in a unit file.
+//
+// A misconfigured deployment now refuses to boot, which is a page at three in
+// the morning. The alternative was a deployment that boots and hands anybody
+// who can read this file an owner token for any farm on the platform, which is
+// the payroll of everybody picking coffee this week.
+const appEnvDevelopment = "development"
+
+// minSecretBytes is the floor for JWT_SECRET, and it is not arbitrary.
+//
+// The tokens are HS256, and RFC 7518 §3.2 says of HMAC with SHA-2: "A key of
+// the same size as the hash output (for instance, 256 bits for HS256) or
+// larger MUST be used with this algorithm." Shorter than the digest and the
+// key, not the hash, is what an attacker attacks — and an HS256 token is an
+// offline oracle, so the guessing costs them no request to this server and
+// leaves nothing in these logs.
+const minSecretBytes = 32
+
+// leakedDevSigningKey is the constant this program used to fall back to. It is
+// kept for exactly one purpose: to refuse it.
+//
+// It is in the git history of a public repository, so it is not a secret and
+// cannot be made into one by pasting it into JWT_SECRET — which is precisely
+// what somebody does when a boot fails and the error says a signing key is
+// missing and this string is the nearest one to hand. Refusing it in EVERY
+// environment, development included, is what keeps that from being a workable
+// shortcut.
+const leakedDevSigningKey = "development-only-signing-key-not-for-production"
+
+// resolved is what the serving path takes from the environment.
+//
+// The two database URLs stay in run(): -migrate and -prune reach for
+// ADMIN_DATABASE_URL and exit before ever coming here, and they must keep
+// booting without a signing key, because a job that applies migrations signs
+// nothing.
+type resolved struct {
+	port     string
+	secret   []byte
+	http     httpapi.Config
+	warnings []string
+}
+
+// resolveConfig reads the environment and decides whether this process is
+// allowed to serve. It takes getenv rather than calling os.Getenv so that the
+// refusals below can be tested — the old code made these decisions inline in
+// run(), between a signal handler and a listening socket, where no test could
+// reach them and where they went four sprints without one.
+func resolveConfig(getenv func(string) string) (resolved, error) {
+	or := func(key, fallback string) string {
+		if v := getenv(key); v != "" {
+			return v
+		}
+		return fallback
+	}
+
+	development := getenv("APP_ENV") == appEnvDevelopment
+	rc := resolved{port: or("PORT", "8080"), http: httpapi.DefaultConfig()}
+
+	secret := getenv("JWT_SECRET")
+	switch {
+	case secret == leakedDevSigningKey:
+		return resolved{}, errors.New(
+			"JWT_SECRET is the old built-in development key, which is public: " +
+				"generate one with `openssl rand -base64 48`")
+	case secret == "":
+		if !development {
+			return resolved{}, errors.New(
+				"JWT_SECRET is required unless APP_ENV=development: " +
+					"generate one with `openssl rand -base64 48`")
+		}
+		// Development gets a key, but a DIFFERENT key on every boot.
+		//
+		// A constant here was worse than the missing environment variable it
+		// covered for: it made one forged token work against every laptop,
+		// every branch deployment and every machine that ever started without
+		// APP_ENV set, forever, because a value that ships in the source can
+		// never be rotated. Random-per-boot is the same convenience with none
+		// of that — no key to configure, and the tokens it signs are worth
+		// nothing anywhere but the process that minted them.
+		//
+		// The cost is that a restart invalidates the access tokens handed out
+		// before it. That is 15 minutes of them (auth.AccessTTL), and both
+		// clients answer a 401 by refreshing exactly once: refresh tokens are
+		// rows in Postgres hashed with sha256, not signatures, so a session
+		// survives the restart even though the access token does not.
+		buf := make([]byte, minSecretBytes)
+		if _, err := rand.Read(buf); err != nil {
+			return resolved{}, fmt.Errorf("generate a development signing key: %w", err)
+		}
+		secret = string(buf)
+		rc.warnings = append(rc.warnings,
+			"development mode: signing key generated at random for this process only; "+
+				"tokens issued before a restart stop working after it")
+	case len(secret) < minSecretBytes:
+		return resolved{}, fmt.Errorf(
+			"JWT_SECRET is %d bytes; HS256 needs at least %d (RFC 7518 §3.2)",
+			len(secret), minSecretBytes)
+	}
+	rc.secret = []byte(secret)
+
+	rc.http.DevEcho = development
+	if development {
+		// The signup response echoes the email verification token, because
+		// there is no mail sender yet. Saying so out loud beats discovering it
+		// in production.
+		rc.warnings = append(rc.warnings,
+			"development mode: signup echoes the email verification token")
+	}
+
+	// Where uploaded photos and receipts land. There is no object storage in
+	// this environment, so internal/blob writes to disk and this is the
+	// directory. It must be a volume that survives a restart and is shared by
+	// every replica; the default under /tmp is a development convenience and
+	// nothing else, which is why it is warned about.
+	rc.http.UploadDir = getenv("UPLOAD_DIR")
+	if rc.http.UploadDir == "" && !development {
+		return resolved{}, errors.New(
+			"UPLOAD_DIR is required unless APP_ENV=development: " +
+				"uploads go to a directory, and the default one is temporary")
+	}
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
+		rc.http.SignupsPerIPPerHour = n
+	}
+	return rc, nil
 }

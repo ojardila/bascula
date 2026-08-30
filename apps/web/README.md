@@ -50,7 +50,7 @@ startup, and the banner on screen when it is mocked.
 cd services/api
 make up
 make migrate
-PORT=8099 SIGNUPS_PER_IP_PER_HOUR=100 \
+APP_ENV=development PORT=8099 SIGNUPS_PER_IP_PER_HOUR=100 \
   DATABASE_URL="postgres://bascula_api:bascula_api_dev@localhost:5433/bascula?sslmode=disable" \
   go run ./cmd/api
 ```
