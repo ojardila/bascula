@@ -432,9 +432,9 @@ const KIND_LABEL: Record<string, string> = {
   devengo: "Liquidación de labores",
   pago: "Pago",
   anticipo: "Anticipo",
-  deduccion: "Deducción",
+  deduccion: "Descuento",
   ajuste: "Ajuste",
-  reverso: "Reverso",
+  reverso: "Corrección",
 };
 
 export function toLedgerEntry(e: WireLedgerEntry): LedgerEntry {

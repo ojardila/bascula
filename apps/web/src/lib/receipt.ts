@@ -11,9 +11,12 @@
  *
  * So the receipt is headed with the last eight digits of the id, in two blocks
  * of four and in upper case: `3F7A-91C2`. It is dictated in one go, written
- * down by hand, and searched for — the full id still goes in the footer of the
- * paper, in small type, because that is what support needs and not what the
- * owner reads.
+ * down by hand, and searched for. The paper carries only this short number;
+ * the full movement id stays in the ledger, not on the copy the worker takes.
+ *
+ * THE SETTLEMENT USES IT TOO, for the same reason and with no receipt number
+ * of its own: its id is all that separates two settlements of the same worker,
+ * and the footer of a document somebody signs has to say which one it is.
  *
  * IT IS NOT A SEQUENCE NUMBER and does not pretend to be. A per-farm sequence
  * is a server column and the server's decision; inventing one here would give

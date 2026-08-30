@@ -1339,9 +1339,8 @@ export const api = {
       amountCents: Math.abs(entry.amountCents),
       method: body.method,
       // The API issues no receipt numbers, so this is the movement id written
-      // for a person: eight digits in two blocks, dictable over the phone. The
-      // whole id still goes in the small print of the paper. See
-      // `lib/receipt.ts`.
+      // for a person: eight digits in two blocks, dictable over the phone.
+      // That short number is what the paper prints. See `lib/receipt.ts`.
       receiptNumber: shortReceiptNumber(entry.id),
       balanceBeforeCents: before.balanceCents,
       balanceAfterCents: after.balanceCents,

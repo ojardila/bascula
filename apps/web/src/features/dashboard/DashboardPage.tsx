@@ -5,6 +5,8 @@ import {
 import TerrainIcon from "@mui/icons-material/Terrain";
 import GroupsIcon from "@mui/icons-material/Groups";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import PriceChangeIcon from "@mui/icons-material/PriceChange";
+import PaymentsIcon from "@mui/icons-material/Payments";
 import { Money } from "../../components/Money";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
@@ -60,7 +62,7 @@ function Loading() {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const timezone = user?.farm?.timezone ?? "America/Bogota";
   const monday = mondayOf(todayInFarm(timezone));
 
@@ -236,8 +238,18 @@ export function DashboardPage() {
           <Typography variant="h3" gutterBottom>
             Qué hacer ahora
           </Typography>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
-            <Button variant="contained" startIcon={<FactCheckIcon />} onClick={() => navigate("/labores/nueva")}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
+            {can("config.prices") && (
+              <Button variant="contained" startIcon={<PriceChangeIcon />} onClick={() => navigate("/precio-semana")}>
+                Fijar precio del kilo
+              </Button>
+            )}
+            {can("money.pay") && (
+              <Button variant="contained" startIcon={<PaymentsIcon />} onClick={() => navigate("/nomina")}>
+                Pagar nómina
+              </Button>
+            )}
+            <Button variant="outlined" startIcon={<FactCheckIcon />} onClick={() => navigate("/labores/nueva")}>
               Registrar labor
             </Button>
             <Button variant="outlined" startIcon={<GroupsIcon />} onClick={() => navigate("/empleados/nuevo")}>

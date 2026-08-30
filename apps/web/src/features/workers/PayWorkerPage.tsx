@@ -50,7 +50,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
 import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
 import { Money } from "../../components/Money";
-import { PermissionDenied } from "../../components/Guards";
+import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -129,7 +129,7 @@ export function PayWorkerPage() {
 
   if (denied) return <PermissionDenied moduleName="pagar a un empleado" />;
   if (error) return <Alert severity="error">{error}</Alert>;
-  if (!data) return null;
+  if (!data) return <Splash />;
 
   const [worker, payables, balance] = data;
   // All pending records are ticked by default: paying part of a week is the

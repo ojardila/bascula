@@ -11,8 +11,10 @@
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Link, Stack, TextField, Typography,
+  Alert, Box, Button, IconButton, InputAdornment, Link, Stack, TextField, Typography,
 } from "@mui/material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
@@ -26,6 +28,7 @@ export function SignupPage() {
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -211,7 +214,7 @@ export function SignupPage() {
           />
           <TextField
             label="Contraseña"
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             error={!!fields["owner.password"]}
@@ -220,6 +223,21 @@ export function SignupPage() {
             size="medium"
             fullWidth
             required
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                      onClick={() => setShowPassword((v) => !v)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
 
           <Button type="submit" variant="contained" size="large" disabled={busy} fullWidth>

@@ -106,6 +106,17 @@ describe("the pay receipt (RSP-008)", () => {
     expect(html).not.toContain("Documento");
   });
 
+  it("does not print the movement UUID on the receipt the worker takes home", () => {
+    const html = paymentReceiptHtml({
+      farmName: "La Esperanza",
+      worker,
+      payment: { ...payment, id: "0192f3a0-0009-7000-8000-000000000009", receiptNumber: "3F7A-91C2" },
+      lines: [],
+    });
+    expect(html).toContain("Recibo N.º 3F7A-91C2");
+    expect(html).not.toContain("0192f3a0-0009-7000-8000-000000000009");
+  });
+
   it("escapes anything a person typed", () => {
     const html = paymentReceiptHtml({
       farmName: '<script>alert("x")</script>',
@@ -160,6 +171,42 @@ describe("the settlement", () => {
     expect(html).toContain("no es un comprobante de pago");
     expect(html).toContain("$153.600");
     hasNoExternalReference(html);
+  });
+
+  it("prints both ends of a period that is not one week", () => {
+    const html = settlementHtml({
+      farmName: "La Esperanza",
+      settlement: { ...settlement, periodStart: "2026-08-24", periodEnd: "2027-08-15" },
+      printedOn: "2026-08-31",
+    });
+    expect(html).toContain("24 ago 2026");
+    expect(html).toContain("15 ago 2027");
+    expect(html).not.toContain("24–30 ago —");
+    expect(html).not.toContain(settlement.id);
+  });
+
+  /**
+   * A settlement is signed and filed, and the API issues it no receipt number,
+   * so the id is the only thing that says which settlement a signed sheet is.
+   * The worker's name alone made two settlements of the same person into the
+   * same document.
+   */
+  it("numbers the paper so two settlements of one worker are told apart", () => {
+    const of = (id: string) =>
+      settlementHtml({
+        farmName: "La Esperanza",
+        settlement: { ...settlement, id },
+        printedOn: "2026-08-31",
+      });
+
+    const first = of("0192f3a0-0009-7000-8000-00000000aaaa");
+    const second = of("0192f3a0-0009-7000-8000-00000000bbbb");
+
+    expect(first).toContain("Liquidación N.º 0000-AAAA · María Restrepo Ospina");
+    expect(second).toContain("Liquidación N.º 0000-BBBB · María Restrepo Ospina");
+    // The number is short enough to read off a printed footer, and the whole
+    // UUID still stays off the paper.
+    expect(first).not.toContain("0192f3a0-0009-7000-8000-00000000aaaa");
   });
 });
 

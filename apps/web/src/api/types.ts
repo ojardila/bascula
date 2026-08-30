@@ -723,8 +723,8 @@ export interface Payment {
   /**
    * The movement id written for a person — `3F7A-91C2` — because the API
    * issues no receipt numbers and a 36-character UUID is not something anybody
-   * dictates over the phone. The whole id is `id`, above, and goes in the
-   * small print of the paper. See `lib/receipt.ts`.
+   * dictates over the phone. The whole id is `id`, above; it does not go on
+   * the paper. See `lib/receipt.ts`.
    */
   receiptNumber: string;
   balanceBeforeCents: number;

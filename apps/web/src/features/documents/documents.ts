@@ -34,8 +34,9 @@
  *   «provisional» en letra grande".
  */
 import { documentShell, esc } from "./documentCss";
-import { formatDate, formatDateRange, formatWeekRange } from "../../lib/dates";
+import { formatDate, formatDateRange, formatPeriod } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
+import { shortReceiptNumber } from "../../lib/receipt";
 import type { PayableLine, Payment, Settlement, Worker } from "../../api/types";
 
 const money = (c: number) => formatMoney(c);
@@ -153,9 +154,8 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
    *
    * This receipt used to be headed by a 36-character UUID — the number the
    * owner would read out over the phone if somebody disputes a payment. The
-   * short form goes at the top now, eight digits in two blocks, and the whole
-   * id stays in the footer in small type for whoever has to find it in the
-   * ledger.
+   * short form goes at the top now, eight digits in two blocks. The full
+   * movement id does not go on the paper: Recibo N.º is what they read out.
    */
   const receiptLine = `<div class="who"><div class="nm">Recibo N.º ${esc(
     payment.receiptNumber,
@@ -177,9 +177,7 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Recibo N.º ${esc(payment.receiptNumber)} · movimiento ${esc(
-       payment.id,
-     )}</span>
+     <p class="foot"><span>Recibo N.º ${esc(payment.receiptNumber)}</span>
        <span>${esc(formatDate(payment.date))}</span></p>`,
   );
 }
@@ -206,6 +204,18 @@ export interface SettlementDocInput {
 export function settlementHtml(input: SettlementDocInput): string {
   const s = input.settlement;
   const rows = lineRows(s.lines);
+  /**
+   * THE NUMBER THAT TELLS TWO SETTLEMENTS APART ON PAPER.
+   *
+   * A settlement has no receipt number of its own — the API issues none — so
+   * `id` is the only thing that identifies this document. The footer once
+   * printed the whole 36-character UUID, which nobody reads, and then printed
+   * the worker's name instead, which reads well and identifies nothing: two
+   * settlements for the same person came out as the same piece of paper. This
+   * is a document somebody signs, so it carries the same short form the pay
+   * receipt uses — eight digits in two blocks — next to the name.
+   */
+  const number = shortReceiptNumber(s.id);
   const weighed = s.lines.reduce((a, l) => a + (l.unitLabel ? l.quantity : 0), 0);
   const unit = s.lines.find((l) => l.unitLabel)?.unitLabel ?? null;
 
@@ -224,9 +234,7 @@ export function settlementHtml(input: SettlementDocInput): string {
     `${headerHtml({ farmName: input.farmName, date: input.printedOn }, "Liquidación")}
      ${voidBlock}
      <div class="who"><div class="nm">${esc(s.workerName)}</div>
-       <div class="doc">Periodo ${esc(formatWeekRange(s.periodStart))} — ${esc(
-         formatDate(s.periodEnd),
-       )}</div></div>
+       <div class="doc">Periodo ${esc(formatPeriod(s.periodStart, s.periodEnd))}</div></div>
      <div class="meta">
        <div class="card"><div class="k">Bruto liquidado</div>
          <div class="v">${esc(money(s.grossCents))}</div></div>
@@ -258,7 +266,7 @@ export function settlementHtml(input: SettlementDocInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Liquidación ${esc(s.id)}</span>
+     <p class="foot"><span>Liquidación N.º ${esc(number)} · ${esc(s.workerName)}</span>
        <span>Impreso el ${esc(formatDate(input.printedOn))}</span></p>`,
   );
 }

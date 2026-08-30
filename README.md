@@ -14,9 +14,9 @@ and whatever else gets picked by the kilo.
 | Piece | What it is | State |
 |---|---|---|
 | [`apps/mobile`](apps/mobile) | Expo app: weighing, settling, paying, performance | **Working** |
-| [`apps/web`](apps/web) | React: farm administration and super-admin | Planned |
-| [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint | Planned |
-| [`packages/shared`](packages/shared) | The ledger contract shared by all three | Planned |
+| [`apps/web`](apps/web) | React: farm administration and super-admin | **Working** |
+| [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint | **Working** |
+| [`packages/shared`](packages/shared) | The ledger contract shared by all three | **Working** |
 
 ## Getting started
 

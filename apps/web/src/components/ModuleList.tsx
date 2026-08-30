@@ -91,8 +91,8 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
   const [confirming, setConfirming] = useState<{ row: T; kind: "off" | "on" } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const loading = rows === null;
-  const empty = !loading && rows.length === 0;
+  const loading = rows === null && !error;
+  const empty = rows !== null && rows.length === 0;
   const searching = search.trim().length > 0;
 
   async function runConfirmed() {
@@ -202,7 +202,7 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                 ))}
 
               {!loading &&
-                rows.map((row) => {
+                rows?.map((row) => {
                   const inactive = isInactive(row);
                   return (
                     <TableRow
