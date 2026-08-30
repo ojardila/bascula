@@ -135,7 +135,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   PAYABLE_ALREADY_CLAIMED:
     "Otra persona liquidó estas labores mientras usted trabajaba en esta pantalla. Se recargó el saldo con la liquidación que ganó.",
   SETTLEMENT_ALREADY_VOID: "Esa liquidación ya estaba anulada.",
-  ALREADY_REVERSED: "Ese movimiento ya tenía un reverso. No se puede reversar dos veces.",
+  ALREADY_REVERSED: "Ese movimiento ya tenía una corrección. No se puede corregir dos veces.",
   NOTHING_TO_SETTLE:
     "No hay nada que liquidar: no hay labores pendientes en ese periodo.",
   AMOUNT_EXCEEDS_BALANCE:
@@ -164,7 +164,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   SETTLEMENT_NOT_VOID:
     "Esa liquidación está vigente, y sus líneas son justo lo que impide que una pesada se pague dos veces. Anúlela primero.",
   NOTHING_TO_RELEASE:
-    "Esa liquidación no tiene ninguna labor agarrada ni ningún reverso pendiente: no hay nada que soltar. Puede que sea otro documento el que está buscando.",
+    "Esa liquidación no tiene ninguna labor agarrada ni ninguna corrección pendiente: no hay nada que soltar. Puede que sea otro documento el que está buscando.",
   // What an owner sees when they take themselves off the farm. Untranslated
   // it reached the screen in English, and it is one of the worst ones to be
   // left in the dark on: the farm ends up with nobody who can set prices or

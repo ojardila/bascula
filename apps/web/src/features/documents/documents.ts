@@ -34,7 +34,7 @@
  *   «provisional» en letra grande".
  */
 import { documentShell, esc } from "./documentCss";
-import { formatDate, formatDateRange, formatWeekRange } from "../../lib/dates";
+import { formatDate, formatDateRange, formatPeriod } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
 import type { PayableLine, Payment, Settlement, Worker } from "../../api/types";
 
@@ -177,9 +177,7 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Recibo N.º ${esc(payment.receiptNumber)} · movimiento ${esc(
-       payment.id,
-     )}</span>
+     <p class="foot"><span>Recibo N.º ${esc(payment.receiptNumber)}</span>
        <span>${esc(formatDate(payment.date))}</span></p>`,
   );
 }
@@ -224,9 +222,7 @@ export function settlementHtml(input: SettlementDocInput): string {
     `${headerHtml({ farmName: input.farmName, date: input.printedOn }, "Liquidación")}
      ${voidBlock}
      <div class="who"><div class="nm">${esc(s.workerName)}</div>
-       <div class="doc">Periodo ${esc(formatWeekRange(s.periodStart))} — ${esc(
-         formatDate(s.periodEnd),
-       )}</div></div>
+       <div class="doc">Periodo ${esc(formatPeriod(s.periodStart, s.periodEnd))}</div></div>
      <div class="meta">
        <div class="card"><div class="k">Bruto liquidado</div>
          <div class="v">${esc(money(s.grossCents))}</div></div>
@@ -258,7 +254,7 @@ export function settlementHtml(input: SettlementDocInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Liquidación ${esc(s.id)}</span>
+     <p class="foot"><span>Liquidación · ${esc(s.workerName)}</span>
        <span>Impreso el ${esc(formatDate(input.printedOn))}</span></p>`,
   );
 }

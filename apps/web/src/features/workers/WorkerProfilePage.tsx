@@ -28,7 +28,7 @@ import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
 import { Money } from "../../components/Money";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
-import { PermissionDenied } from "../../components/Guards";
+import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
@@ -48,7 +48,7 @@ export function WorkerProfilePage() {
 
   if (denied) return <PermissionDenied moduleName="ver el perfil de un empleado" />;
   if (error) return <Alert severity="error">{error}</Alert>;
-  if (!data) return null;
+  if (!data) return <Splash />;
 
   const { worker, balance, workRecords, pendingCents, ledger, notes } = data;
   /**

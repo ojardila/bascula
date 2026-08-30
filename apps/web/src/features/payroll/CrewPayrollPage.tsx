@@ -413,11 +413,7 @@ export function CrewPayrollPage() {
         <Box>
           <Typography variant="h1">Nómina de cuadrilla</Typography>
           <Typography color="text.secondary" sx={{ maxWidth: 760 }}>
-            Pagar a toda la cuadrilla de una vez, en dos actos y en este orden:{" "}
-            <strong>liquidar</strong> congela el trabajo de la semana a su precio y lo
-            convierte en saldo; <strong>pagar</strong> entrega ese saldo. Se separan
-            porque no todo el que trabajó viene a cobrar el sábado, y porque la planilla
-            que se firma tiene que salir de cifras ya escritas y no de estimaciones.
+            Liquidar congela la semana; pagar entrega el efectivo.
           </Typography>
         </Box>
       </Stack>
@@ -435,7 +431,7 @@ export function CrewPayrollPage() {
           onClose={() => setUndone(null)}
         >
           <AlertTitle>Nómina deshecha</AlertTitle>
-          Se reversaron <strong>{undone.paymentsReversed}</strong>{" "}
+          Se anularon <strong>{undone.paymentsReversed}</strong>{" "}
           {undone.paymentsReversed === 1 ? "pago" : "pagos"} y se anularon{" "}
           <strong>{undone.settlementsVoided}</strong>{" "}
           {undone.settlementsVoided === 1 ? "liquidación" : "liquidaciones"}.
@@ -446,7 +442,7 @@ export function CrewPayrollPage() {
             <>
               {" "}
               <strong>{undone.failures.length} no se pudieron deshacer:</strong>{" "}
-              {undone.failures.join("; ")}. Quedan en el libro y hay que reversarlas a
+              {undone.failures.join("; ")}. Quedan en el libro y hay que corregirlas a
               mano desde la ficha del empleado.
             </>
           )}
@@ -1269,7 +1265,7 @@ function PayDriftDialog({
         <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
           <AlertTitle>No se pagó a nadie.</AlertTitle>
           Alguien de la corrida ya no tiene el saldo que usted aprobó — un anticipo
-          entregado en el lote, una deducción, un pago hecho desde el teléfono. Entregar
+          entregado en el lote, un descuento, un pago hecho desde el teléfono. Entregar
           la cifra vieja sería pagar de más o dejar la cuenta abierta sin decirlo.
         </Alert>
         {check && check.drifts.length > 0 && (

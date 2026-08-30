@@ -31,12 +31,12 @@ import PrintIcon from "@mui/icons-material/Print";
 import BlockIcon from "@mui/icons-material/Block";
 import { Money } from "../../components/Money";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { PermissionDenied } from "../../components/Guards";
+import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
-import { formatDate, formatDateRange, formatWeekRange, todayInFarm } from "../../lib/dates";
+import { formatDate, formatDateRange, formatPeriod, formatWeekRange, todayInFarm } from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { settlementHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
@@ -55,7 +55,7 @@ export function SettlementDetailPage() {
 
   if (denied) return <PermissionDenied moduleName="ver una liquidación" />;
   if (error) return <Alert severity="error">{error}</Alert>;
-  if (!data) return null;
+  if (!data) return <Splash />;
 
   const isVoid = data.status === "void";
   const provisional = data.lines.filter((l) => l.rateSource === "weekly_price");
@@ -109,7 +109,7 @@ export function SettlementDetailPage() {
         <Box>
           <Typography variant="h1">Liquidación de {data.workerName}</Typography>
           <Typography color="text.secondary">
-            {formatWeekRange(data.periodStart)} · registrada el{" "}
+            {formatPeriod(data.periodStart, data.periodEnd)} · registrada el{" "}
             {formatDate(data.createdAt.slice(0, 10))}
           </Typography>
         </Box>
