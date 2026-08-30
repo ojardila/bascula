@@ -562,7 +562,7 @@ describe("the review screen explains itself in sentences, not codes", () => {
     ]);
 
     const { container } = renderApp("/cosecha/revision");
-    await screen.findByText(/Qué revisa esta pantalla/);
+    await screen.findByText(/Cómo se decide/);
 
     expect(await screen.findByText(/merece una segunda mirada/)).toBeInTheDocument();
     expect(screen.getByText(/es más de lo que una persona alcanza a recoger/)).toBeInTheDocument();
