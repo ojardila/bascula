@@ -1,0 +1,117 @@
+# Four jobs, all at once, so the wall clock is the slowest one and not the sum.
+#
+# The job that guards the money needs no dependencies at all. Every test in
+# packages/shared and apps/mobile imports only node: builtins — node:test,
+# node:sqlite — and Node runs the TypeScript directly, so 350 tests answer
+# without npm ever running. Verified by deleting node_modules and running them.
+#
+# That is worth protecting rather than treating as a happy accident: the rules
+# that decide what a picker is paid should be checkable without a network, and
+# the first dependency added to those files takes that away.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push cancels the run still going for the same branch. Nobody reads
+  # the result of a commit that has already been replaced.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  money:
+    name: money rules (no install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: shared — formatters, week keys, and the ten golden cases
+        run: node --test src/*.test.ts golden/*.test.ts
+        working-directory: packages/shared
+      - name: mobile — the data layer, against node:sqlite
+        run: node --test src/*.test.ts src/data/*.test.ts src/sync/*.test.ts
+        working-directory: apps/mobile
+
+  web:
+    name: console
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --workspace apps/web
+      - run: npx --workspace apps/web vitest run
+      # `build` runs types:check first, which fails when the generated client
+      # has fallen behind services/api/openapi.yaml. That gate is the point.
+      - run: npm run build --workspace apps/web
+
+  types:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # A service container, not docker compose: GitHub pulls and starts it
+      # while the checkout runs, so it costs almost nothing on the clock.
+      # postgis/postgis is the official image; the compose file uses imresamu
+      # only because that one publishes no arm64 manifest and half the team is
+      # on Apple silicon. Runners are x86.
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bascula
+          TZ: UTC
+          PGTZ: UTC
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bascula"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - run: go vet ./...
+        working-directory: services/api
+      - name: gofmt
+        run: test -z "$(gofmt -l ./cmd ./internal ./migrations)"
+        working-directory: services/api
+      - name: migrate
+        run: go run ./cmd/api -migrate
+        working-directory: services/api
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+      - name: test
+        run: go test ./...
+        working-directory: services/api
+        env:
+          TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
