@@ -264,6 +264,10 @@ func (s *Server) handleListWorkRecords(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	if err := confirmWorkRecordFilter(r, f); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	// The weigher gets only his own rows, and that narrowing is the RLS policy
 	// on work_records, not a WHERE clause written here.
 	list, err := store.ListWorkRecords(r.Context(), tx, f)
@@ -272,6 +276,28 @@ func (s *Server) handleListWorkRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": list})
+}
+
+// confirmWorkRecordFilter is the zero trap, closed on the four ids this filter
+// accepts.
+//
+// Every row it lets through carries `amountCents`, and a console showing "what
+// this worker picked this fortnight" adds them up. Narrowing by another farm's
+// worker returned `{"items": []}` and 200 — "this person did no work" — which
+// is a completely credible sentence and is also what a real worker who has been
+// off sick looks like. Same for an activity, a plot and a crop.
+//
+// The rule is stated at the top of handlers_reports.go and enforced by
+// confirmOurs everywhere in stock and money; the two doors into the work
+// records were the ones it never reached. GET /v1/reactivations, which reads
+// the same `workerId` parameter, has guarded it since sprint 6.
+func confirmWorkRecordFilter(r *http.Request, f store.WorkRecordFilter) error {
+	return confirmOurs(r, map[string]string{
+		"employee": f.EmployeeID,
+		"activity": f.ActivityID,
+		"plot":     f.PlotID,
+		"plotCrop": f.PlotCropID,
+	})
 }
 
 func workRecordFilter(r *http.Request) (store.WorkRecordFilter, error) {

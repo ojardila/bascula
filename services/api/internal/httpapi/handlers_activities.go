@@ -292,6 +292,15 @@ func (s *Server) handleListActivityRates(w http.ResponseWriter, r *http.Request)
 		writeError(w, r, err)
 		return
 	}
+	// Rates are money, and an empty rate list is a real and meaningful state:
+	// it is what makes a work record fall back to the weekly price. Another
+	// farm's activity id used to produce exactly that state instead of a 404 —
+	// the same trap handleSetActivityRate, one function up, has always guarded
+	// against with store.GetActivity.
+	if err := confirmOurs(r, map[string]string{"activity": chi.URLParam(r, "id")}); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	rates, err := store.ListActivityRates(r.Context(), tx, chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, r, err)

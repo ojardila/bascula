@@ -402,8 +402,11 @@ export const api = {
       { anonymous: true },
     );
     return {
-      farmId: res.farmId,
-      userId: res.userId,
+      // The server no longer names the farm or the user here, on purpose: this
+      // route answers identically whether or not the address already has an
+      // account, so that a stranger cannot use it to discover who is
+      // registered. The ids arrive from verify-email, the first call whose
+      // caller has proved the address is theirs.
       verificationEmailSentTo: body.owner.email,
       // Present only when the server runs in development mode, where there is
       // no mail sender at all. The signup screen offers to verify in place
@@ -414,7 +417,7 @@ export const api = {
   },
 
   verifyEmail: (token: string) =>
-    http.post<{ userId: Uuid; verified: boolean }>(
+    http.post<{ userId: Uuid; farmId: Uuid; verified: boolean }>(
       "/v1/auth/verify-email",
       { token },
       { anonymous: true },

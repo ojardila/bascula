@@ -237,8 +237,12 @@ func (h *harness) mustDo(t *testing.T, method, path, token string, body any, wan
 // ---------------------------------------------------------------------------
 
 type farmFixture struct {
-	FarmID       string
-	OwnerUserID  string
+	FarmID      string
+	OwnerUserID string
+	// OwnerEmail is here so a test that changes the owner's own role can do
+	// what a real client does next: get a token that agrees with the database.
+	// See relogin.
+	OwnerEmail   string
 	OwnerToken   string
 	AdminToken   string
 	WeigherToken string
@@ -265,11 +269,16 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 		},
 	}, http.StatusCreated)
 
-	farmID, _ := res.Body["farmId"].(string)
-	userID, _ := res.Body["userId"].(string)
+	// The signup response says nothing that depends on the address — no farm
+	// id, no user id — because saying it for one address and not another is
+	// what made this endpoint an oracle. The ids come back from verify-email,
+	// which is the first request that has proved the address is the caller's.
 	token, _ := res.Body["verificationToken"].(string)
-	if farmID == "" || token == "" {
-		t.Fatalf("signup returned no farm or no verification token: %s", res.Raw)
+	if token == "" {
+		t.Fatalf("signup returned no verification token: %s", res.Raw)
+	}
+	if _, leaked := res.Body["farmId"]; leaked {
+		t.Fatalf("signup handed out a farm id again: %s", res.Raw)
 	}
 
 	// Before verification, no session.
@@ -281,8 +290,13 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 			pre.Status, pre.Raw)
 	}
 
-	h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
+	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
 		map[string]any{"token": token}, http.StatusOK)
+	farmID, _ := verified.Body["farmId"].(string)
+	userID, _ := verified.Body["userId"].(string)
+	if farmID == "" || userID == "" {
+		t.Fatalf("verify-email named no farm and no user: %s", verified.Raw)
+	}
 
 	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
 		"email": email, "password": "una-clave-larga-1",
@@ -290,11 +304,27 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 	access, _ := login.Body["accessToken"].(string)
 
 	f := &farmFixture{
-		FarmID: farmID, OwnerUserID: userID, OwnerToken: access, PriceCents: priceCents,
+		FarmID: farmID, OwnerUserID: userID, OwnerEmail: email,
+		OwnerToken: access, PriceCents: priceCents,
 	}
 	f.AdminToken = h.addUser(t, farmID, domain.RoleAdmin, "")
 	f.WeigherID, f.WeigherToken = h.addUserWithID(t, farmID, domain.RoleWeigher)
 	return f
+}
+
+// relogin swaps the fixture's owner token for a fresh one.
+//
+// A test that changes a role through the API leaves the token in its hand
+// describing a role its holder no longer has, and that token is now refused —
+// ROLE_CHANGED, on the next request, which is the whole point of the check in
+// tenant.setContext. A client meets this and refreshes without anybody
+// noticing; a test has to say so out loud.
+func (h *harness) relogin(t *testing.T, f *farmFixture) {
+	t.Helper()
+	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": f.OwnerEmail, "password": "una-clave-larga-1",
+	}, http.StatusOK)
+	f.OwnerToken = mustString(t, login.Body, "accessToken")
 }
 
 func (h *harness) addUser(t *testing.T, farmID string, role domain.Role, _ string) string {

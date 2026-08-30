@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"reflect"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -25,6 +27,19 @@ import (
 // in the scratchpad, the assertion below is the same sequence through the same
 // door, so the fix cannot be undone without something going red in this
 // repository.
+
+// keysOf lists a JSON object's field names in a fixed order, which is how two
+// responses are compared for SHAPE rather than for content: the point of the
+// signup fix is that the caller cannot tell which branch answered, and a key
+// present in one answer and missing from the other tells them.
+func keysOf(body map[string]any) []string {
+	out := make([]string, 0, len(body))
+	for k := range body {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // ---------------------------------------------------------------------------
 // The debt: a void settlement that still claims a weighing
@@ -540,8 +555,9 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 			"currency": "COP", "priceCents": 100000},
 		"owner": map[string]any{"email": email, "name": "Duena", "password": password},
 	}, http.StatusCreated)
-	h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
+	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
 		map[string]any{"token": first.Body["verificationToken"]}, http.StatusOK)
+	firstFarm := mustString(t, verified.Body, "farmId")
 
 	t.Run("the right password and a wrong one are the same answer", func(t *testing.T) {
 		right := signup("Finca dos", password)
@@ -550,12 +566,101 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 			t.Fatalf("the guess is still readable off the answer:\n  right: %d %s\n  wrong: %d %s",
 				right.Status, right.Raw, wrong.Status, wrong.Raw)
 		}
-		if right.code() != string(domain.CodeEmailTaken) {
-			t.Fatalf("got %s, want EMAIL_TAKEN: %s", right.code(), right.Raw)
-		}
 		// And no farm was created for the correct guess.
 		if _, made := right.Body["farmId"]; made {
 			t.Fatalf("a farm came out of a signup that should have refused: %s", right.Raw)
+		}
+	})
+
+	// The half that was still open when the two above closed: the answer no
+	// longer depends on the ACCOUNT either. Same status, same keys, same time.
+	t.Run("a registered address and an unknown one are the same answer", func(t *testing.T) {
+		fresh := h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
+			"farm": map[string]any{"name": "Finca nueva", "timezone": "America/Bogota",
+				"currency": "COP", "priceCents": 100000},
+			"owner": map[string]any{"email": "nadie-" + uuid.NewString() + "@example.com",
+				"name": "Nadie", "password": password},
+		})
+		taken := signup("Finca dos", password)
+
+		if fresh.Status != taken.Status {
+			t.Fatalf("status still says whether the address is registered: %d vs %d",
+				fresh.Status, taken.Status)
+		}
+		if fresh.Status != http.StatusCreated {
+			t.Fatalf("signup answered %d: %s", fresh.Status, fresh.Raw)
+		}
+		if got, want := keysOf(taken.Body), keysOf(fresh.Body); !reflect.DeepEqual(got, want) {
+			t.Fatalf("the two answers have different shapes: %v vs %v\n  %s\n  %s",
+				got, want, taken.Raw, fresh.Raw)
+		}
+		if taken.Body["verificationRequired"] != true {
+			t.Fatalf("a registered address got a different body: %s", taken.Raw)
+		}
+	})
+
+	t.Run("nothing survives the answer that created nothing", func(t *testing.T) {
+		// The branch runs the whole creation against a synthetic address so
+		// that the clock cannot tell the two apart, and throws it away. If the
+		// discard ever stopped working, this is where it shows: rows claiming
+		// a reserved domain that no mailbox can ever answer for.
+		var shadows int
+		if err := h.admin.QueryRow(context.Background(),
+			`SELECT count(*)::int FROM users WHERE email LIKE '%@shadow.invalid'`).
+			Scan(&shadows); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if shadows != 0 {
+			t.Fatalf("%d discarded signups were committed after all", shadows)
+		}
+
+		// And the token it echoed in development names nothing.
+		tok, _ := signup("Finca dos", password).Body["verificationToken"].(string)
+		if tok == "" {
+			t.Fatal("development stopped echoing a token for a registered address, " +
+				"which is the difference an attacker reads")
+		}
+		bad := h.do(t, http.MethodPost, "/v1/auth/verify-email", "",
+			map[string]any{"token": tok})
+		if bad.Status != http.StatusBadRequest {
+			t.Fatalf("a discarded verification token verified something: %d %s",
+				bad.Status, bad.Raw)
+		}
+	})
+
+	t.Run("and the clock does not tell them apart either", func(t *testing.T) {
+		// The disclosure this replaced was 26 ms against 2 ms: a thirteenfold
+		// difference readable from anywhere on the internet, with no body to
+		// read at all. The tolerance here is deliberately loose — a laptop
+		// running Postgres in Docker is not a quiet machine, and a test that
+		// fails on a noisy afternoon gets deleted — but it is nowhere near
+		// loose enough to let that ratio back in.
+		median := func(f func()) time.Duration {
+			const n = 9
+			out := make([]time.Duration, 0, n)
+			for i := 0; i < n; i++ {
+				start := time.Now()
+				f()
+				out = append(out, time.Since(start))
+			}
+			sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+			return out[n/2]
+		}
+		fresh := median(func() {
+			h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
+				"farm": map[string]any{"name": "F", "timezone": "America/Bogota",
+					"currency": "COP", "priceCents": 100000},
+				"owner": map[string]any{"email": "reloj-" + uuid.NewString() + "@example.com",
+					"name": "N", "password": password},
+			})
+		})
+		taken := median(func() { signup("Finca dos", password) })
+
+		ratio := float64(fresh) / float64(taken)
+		if ratio < 0.4 || ratio > 2.5 {
+			t.Fatalf("the answer's timing says which branch it took: "+
+				"unknown address %v, registered address %v (ratio %.2f)",
+				fresh, taken, ratio)
 		}
 	})
 
@@ -572,7 +677,7 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 			t.Errorf("the caller is not the owner of the farm they just made: %s", res.Raw)
 		}
 		newFarm, _ := res.Body["farmId"].(string)
-		if newFarm == "" || newFarm == first.Body["farmId"] {
+		if newFarm == "" || newFarm == firstFarm {
 			t.Fatalf("no new farm: %s", res.Raw)
 		}
 		// The old token still points at the old farm — the tenant travels in
@@ -842,10 +947,12 @@ func TestTheSeasonReadingWillNotStepOverAHole(t *testing.T) {
 		f.OwnerToken, nil, http.StatusOK)
 	var curve struct {
 		Shape struct {
-			FallingWeeks int  `json:"fallingWeeks"`
-			WindingDown  bool `json:"windingDown"`
-			Peak         *struct {
-				Kg float64 `json:"kg"`
+			FallingWeeks    int  `json:"fallingWeeks"`
+			WindingDown     bool `json:"windingDown"`
+			ContiguousWeeks int  `json:"contiguousWeeks"`
+			Peak            *struct {
+				Kg        float64 `json:"kg"`
+				WeekStart string  `json:"weekStart"`
 			} `json:"peak"`
 		} `json:"shape"`
 		WeeksWithoutRecords int `json:"weeksWithoutRecords"`
@@ -867,8 +974,24 @@ func TestTheSeasonReadingWillNotStepOverAHole(t *testing.T) {
 	if curve.WeeksWithoutRecords != 1 {
 		t.Errorf("weeksWithoutRecords = %d, want 1: %s", curve.WeeksWithoutRecords, res.Raw)
 	}
-	if curve.Shape.Peak == nil || math.Abs(curve.Shape.Peak.Kg-1000) > 1e-9 {
-		t.Errorf("peak = %+v, want the 1000 week", curve.Shape.Peak)
+	// And the peak stops at the same hole the run stops at, which is the half
+	// of this finding that was left open.
+	//
+	// This assertion used to want the 1000 kg week — the one on the FAR side of
+	// the gap — and it was wrong for the reason the rest of this test is right.
+	// The falling run refuses to compare across a week nobody worked; the peak
+	// was reading straight over it, so the same response said "your best week
+	// was 1000 kg" and "I will not compare these weeks to each other" at the
+	// same time. What this farm knows about its unbroken stretch is two weeks
+	// long and peaks at 300; the 1000 kg week is still in `weeks` for the chart
+	// to draw, and `contiguousWeeks` says how much of it the reading used.
+	if curve.Shape.Peak == nil || math.Abs(curve.Shape.Peak.Kg-300) > 1e-9 {
+		t.Errorf("peak = %+v, want the 300 week: the peak may not step over a "+
+			"week nobody worked either. %s", curve.Shape.Peak, res.Raw)
+	}
+	if curve.Shape.ContiguousWeeks != 2 {
+		t.Errorf("contiguousWeeks = %d, want 2 (the 300 week and the 100 week): %s",
+			curve.Shape.ContiguousWeeks, res.Raw)
 	}
 }
 

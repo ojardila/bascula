@@ -332,18 +332,22 @@ func InsertEmailVerification(ctx context.Context, tx pgx.Tx, id, userID, farmID 
 
 // ConsumeEmailVerification marks the token used and verifies the address, in
 // one statement so a replay cannot verify twice.
-func ConsumeEmailVerification(ctx context.Context, tx pgx.Tx, hash []byte) (string, error) {
-	var userID string
-	err := tx.QueryRow(ctx, `
+//
+// It returns the farm as well as the user. Both were on the signup response
+// until signup stopped being allowed to say anything that depends on the
+// address; here the caller is holding a secret that was mailed to that address,
+// which is the proof signup could not ask for, so here they are safe to give.
+func ConsumeEmailVerification(ctx context.Context, tx pgx.Tx, hash []byte) (userID, farmID string, err error) {
+	err = tx.QueryRow(ctx, `
 		UPDATE email_verifications SET used_at = now()
 		 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-		 RETURNING user_id::text`, hash).Scan(&userID)
+		 RETURNING user_id::text, farm_id::text`, hash).Scan(&userID, &farmID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE users SET email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1`, userID)
-	return userID, err
+	return userID, farmID, err
 }
 
 func RecordSignupAttempt(ctx context.Context, tx pgx.Tx, id, ip, email string, ok bool) error {

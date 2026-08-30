@@ -60,6 +60,28 @@ const (
 	// which is a branch, which needs a code.
 	CodeMembershipRevoked Code = "MEMBERSHIP_REVOKED"
 
+	// ROLE_CHANGED is the third of the family, and the last hole in it.
+	//
+	// FARM_SUSPENDED cuts a session when the platform stops trusting the farm.
+	// MEMBERSHIP_REVOKED cuts it when the farm stops trusting the person. This
+	// one is the case in between and the one that costs money: the person stays
+	// on the farm and their ROLE changes. An administrator demoted to weigher
+	// keeps a token that says `role: admin` for the rest of its fifteen minutes,
+	// and that claim is what the permission matrix reads AND what `app.role`
+	// puts in front of row level security. Fifteen minutes of settling, paying
+	// and voiding after the owner decided this person must not — the same hole
+	// as the other two, through the one door nobody had shut.
+	//
+	// It is a 401 and not a 403, and the difference is the whole point. The
+	// caller is not forbidden: their TOKEN is stale, and the fix is a new one.
+	// Both clients already retry a 401 exactly once after refreshing, and
+	// refresh re-reads the membership, so a demotion costs the phone one round
+	// trip and the person sees nothing — while the money routes then answer 403
+	// to the weigher token the refresh handed back, which is the correct answer
+	// and comes from the permission matrix, not from here. A 403 would have
+	// signed a promoted weigher out of the application for being promoted.
+	CodeRoleChanged Code = "ROLE_CHANGED"
+
 	// Business conflicts. These are 409 with a code of their own and they are
 	// part of the contract, not an implementation detail.
 	CodeWorkRecordSettled     Code = "WORK_RECORD_SETTLED"
@@ -195,6 +217,7 @@ func AllCodes() []Code {
 		CodeInvalidCredentials, CodeEmailNotVerified, CodeEmailTaken,
 		CodeTokenExpired, CodeTokenReused, CodeRateLimited,
 		CodeFarmLimitReached, CodeFarmSuspended, CodeMembershipRevoked,
+		CodeRoleChanged,
 
 		CodeWorkRecordSettled, CodePayableAlreadyClaimed, CodeSettlementAlreadyVoid,
 		CodeAlreadyReversed, CodeSettlementNotVoid, CodeNothingToRelease,

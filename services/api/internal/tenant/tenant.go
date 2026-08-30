@@ -59,7 +59,7 @@ func HasFarm(ctx context.Context) bool {
 // keepChanges is the flag KeepChanges sets and Middleware reads. It is a
 // pointer on the context because the handler runs with a derived context the
 // middleware never sees again.
-type keepChanges struct{ keep bool }
+type keepChanges struct{ keep, discard bool }
 
 // KeepChanges tells the middleware to COMMIT this request's transaction even
 // though the response is an error.
@@ -91,6 +91,31 @@ type keepChanges struct{ keep bool }
 func KeepChanges(ctx context.Context) {
 	if k, ok := ctx.Value(keepKey).(*keepChanges); ok && k != nil {
 		k.keep = true
+	}
+}
+
+// DiscardChanges is KeepChanges' mirror: ROLL BACK this request's transaction
+// even though the response is a success.
+//
+// It exists for one shape too, and it is narrower still: a handler that has to
+// SPEND the same work as another branch without keeping any of it. The only
+// case today is signup answering an address that already has an account. That
+// answer has to be indistinguishable from the answer a new address gets — same
+// status, same body, and the same time on the clock, because a reply that comes
+// back in 2 ms where the other takes 26 tells an unauthenticated caller which
+// branch it took just as loudly as a 409 does. So the branch runs the whole
+// creation, against a synthetic address, and throws it away here.
+//
+// Doing the work and discarding it is the only version of this that stays true
+// as the work changes: a sleep tuned to today's 26 ms is a measurement that
+// rots, and it would have to be re-tuned every time seedFarm grows a table.
+//
+// If both this and KeepChanges are called, this one wins. Nothing calls both,
+// and if anything ever does, losing a write is the recoverable half of that
+// mistake.
+func DiscardChanges(ctx context.Context) {
+	if k, ok := ctx.Value(keepKey).(*keepChanges); ok && k != nil {
+		k.discard = true
 	}
 }
 
@@ -145,7 +170,11 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			// unless the handler said otherwise with KeepChanges, which is how
 			// a deliberate side effect survives an error response without
 			// reaching for a second pool connection. See KeepChanges.
-			if rec.status < 400 || keep.keep {
+			//
+			// And the mirror: DiscardChanges throws away a successful
+			// request's writes, which is how signup spends the same work on an
+			// address it will not create anything for. See DiscardChanges.
+			if (rec.status < 400 || keep.keep) && !keep.discard {
 				if err := tx.Commit(ctx); err != nil {
 					// Nothing useful can be written now: the handler already
 					// sent its status line.
@@ -194,16 +223,21 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// costs a second query is a check somebody optimises away. See below.
 	var got *string
 	var suspendedAt *time.Time
-	var member bool
+	// liveRole is the role the DATABASE says this account holds on this farm
+	// right now. NULL means there is no membership row at all, which is the
+	// revocation case below; a non-NULL value that disagrees with the token is
+	// the role-drift case after it.
+	var liveRole *string
 	if err := tx.QueryRow(ctx, `
 		SELECT current_farm()::text,
 		       (SELECT f.suspended_at FROM farms f WHERE f.id = current_farm()),
-		       EXISTS (SELECT 1 FROM memberships m
-		                WHERE m.farm_id = current_farm()
-		                  AND m.user_id = current_user_id())`).
-		Scan(&got, &suspendedAt, &member); err != nil {
+		       (SELECT m.role::text FROM memberships m
+		         WHERE m.farm_id = current_farm()
+		           AND m.user_id = current_user_id())`).
+		Scan(&got, &suspendedAt, &liveRole); err != nil {
 		return domain.Internal("could not read back the tenant context").WithCause(err)
 	}
+	member := liveRole != nil
 	if got == nil || *got != p.FarmID {
 		return domain.TenantNotSet().WithCause(fmt.Errorf("app.farm_id did not take"))
 	}
@@ -257,6 +291,37 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	if check == enforceMembership && !member && !p.Superadmin {
 		return domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
 			"that account no longer has access to this farm")
+	}
+
+	// And the third cut, which is the one that costs money: the person is still
+	// on the farm, but not in the role the token says.
+	//
+	// An administrator demoted to weigher kept fifteen minutes of the money —
+	// the settlements, the ledger, the balances — because BOTH layers that
+	// decide read the claim and not the row. auth.Matrix is handed p.Role,
+	// which came out of the token; and app.role, four statements up, is set
+	// from the same claim, so row level security was being told the same stale
+	// thing. Neither layer could have caught it. This is where the row is, so
+	// this is where it is caught.
+	//
+	// Unlike its two siblings it is a 401, and that is deliberate. Suspension
+	// and revocation are decisions the caller cannot undo — a new token would
+	// be refused too, so sending the client to refresh would only make it fail
+	// twice. A role change is the opposite: the account is welcome, its token
+	// is simply out of date, and handleRefresh mints the new role from
+	// store.GetMembership. Both clients retry a 401 exactly once after
+	// refreshing, so a demotion costs the phone one round trip and nobody sees
+	// a screen. The refusal the demoted person then meets on a money route
+	// comes from the permission matrix, in the role they actually hold.
+	//
+	// The check is skipped when there is no membership row (the case above owns
+	// that, and signup has none yet by construction), and NOT skipped for the
+	// platform administrator: the two exemptions above exist because a
+	// suspended or revoked lever-holder could not get a working token back, and
+	// here they always can.
+	if check == enforceMembership && member && *liveRole != string(p.Role) {
+		return domain.Coded(http.StatusUnauthorized, domain.CodeRoleChanged,
+			"your role on this farm has changed; get a new access token")
 	}
 	return nil
 }
@@ -317,3 +382,31 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 // http.ErrNotSupported for every route in the service, and the season import
 // would go on being cut off at thirty seconds while appearing to be fixed.
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// ReleaseEarly ends this request's transaction now and hands the pool
+// connection back, while the handler goes on doing something that does not need
+// a database.
+//
+// There is exactly one shape that needs it, and it is the mirror image of the
+// one KeepChanges warns about. A handler that has decided its answer but must
+// still spend real time on the wire — draining an upload it is about to
+// refuse — would otherwise hold a connection for the whole of that time,
+// `idle in transaction`, having no further use for it. Ten of those is the pool
+// gone, which is the outage the season import's own gate exists to prevent; a
+// gate that held a connection while turning people away would be the same
+// failure wearing the uniform of the fix.
+//
+// It rolls back. Anything written so far is lost, which is correct for the
+// only caller and is the reason this is not called Commit: a handler that has
+// something to keep and something to answer wants KeepChanges, not this.
+//
+// After it, Tx returns a closed transaction and every store call fails. Call it
+// last, and only when the database part of the request is over.
+func ReleaseEarly(ctx context.Context) {
+	if k, ok := ctx.Value(keepKey).(*keepChanges); ok && k != nil {
+		k.discard = true
+	}
+	if tx, ok := ctx.Value(txKey).(pgx.Tx); ok && tx != nil {
+		_ = tx.Rollback(ctx)
+	}
+}

@@ -382,10 +382,20 @@ SELECT s.week_start, ` + totalsColsOuter + `,
 // week_prices, or the farm's standing price, rather than from the weighings that
 // are not there — a week nobody picked had a price all the same, and a null
 // there would be a second absence pretending to be a fact.
-func ReportWeeks(ctx context.Context, tx pgx.Tx, from, to *time.Time, limit int) ([]ReportWeek, error) {
-	rows, err := tx.Query(ctx, reportWeeksSQL, from, to, limit)
+// The second return value says the LIST was cut: there are older weeks inside
+// the from/to the caller asked for that `limit` left out. It is the same fact
+// `partialWindow` states about one row, one level up — a question answered
+// only in part — and it was the one truncation on this route that nothing
+// said. A season asked for over sixty weeks and answered with the newest
+// twenty-six looked exactly like a season twenty-six weeks long, which is the
+// shape of error the covered/partial fields exist to make impossible.
+//
+// It is found the way ReportCrop finds its own: ask for one more row than will
+// be returned, and let the extra row be the answer.
+func ReportWeeks(ctx context.Context, tx pgx.Tx, from, to *time.Time, limit int) ([]ReportWeek, bool, error) {
+	rows, err := tx.Query(ctx, reportWeeksSQL, from, to, limit+1)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
@@ -396,11 +406,18 @@ func ReportWeeks(ctx context.Context, tx pgx.Tx, from, to *time.Time, limit int)
 		targets = append(targets, &w.Pickers, &w.Days, &w.PriceCents, &w.Finished,
 			&w.CoveredFrom.Time, &w.CoveredTo.Time, &w.PartialWindow)
 		if err := rows.Scan(targets...); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		out = append(out, w)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	truncated := len(out) > limit
+	if truncated {
+		out = out[:limit]
+	}
+	return out, truncated, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +484,21 @@ type WeekDetail struct {
 	ByDay  Grid   `json:"byDay"`
 	ByCrop Grid   `json:"byCrop"`
 	Total  Totals `json:"total"`
+
+	// CoveredFrom, CoveredTo and PartialWindow, on a route whose window is a
+	// whole week by construction: Monday to Sunday, always, and PartialWindow
+	// therefore always false.
+	//
+	// Three constants are worth putting on the wire because the alternative is
+	// a client that has to know which routes carry the window and which do not.
+	// The list route learned to say which days it summed after a three-day
+	// question came back looking like a seven-day answer; a client that read
+	// `partialWindow` there and found nothing here would have to guess, and the
+	// safe guess ("assume it might be partial") is the wrong one on the one
+	// route that never is. Uniform beats terse on a contract.
+	CoveredFrom   domain.Day `json:"coveredFrom"`
+	CoveredTo     domain.Day `json:"coveredTo"`
+	PartialWindow bool       `json:"partialWindow"`
 }
 
 const weekByDayCellsSQL = `
@@ -531,12 +563,15 @@ func ReportWeekDetail(ctx context.Context, tx pgx.Tx, monday time.Time) (*WeekDe
 	}
 
 	return &WeekDetail{
-		Scope:     ScopeHarvest,
-		WeekStart: domain.Day{Time: monday},
-		Finished:  monday.Before(thisWeek),
-		ByDay:     *byDay,
-		ByCrop:    *byCrop,
-		Total:     byDay.Total,
+		Scope:         ScopeHarvest,
+		WeekStart:     domain.Day{Time: monday},
+		Finished:      monday.Before(thisWeek),
+		ByDay:         *byDay,
+		ByCrop:        *byCrop,
+		Total:         byDay.Total,
+		CoveredFrom:   domain.Day{Time: monday},
+		CoveredTo:     domain.Day{Time: end},
+		PartialWindow: false,
 	}, nil
 }
 
@@ -1345,6 +1380,21 @@ type HarvestCurve struct {
 	// as no holes is the exact shape of error this whole file is written
 	// against.
 	WeeksWithoutRecords int `json:"weeksWithoutRecords"`
+
+	// CoveredFrom, CoveredTo and PartialWindow: the stretch of calendar these
+	// weeks are, and whether the farm has harvest older than the oldest of
+	// them.
+	//
+	// This route reads a SHAPE — where the peak was, whether the season is
+	// ending — off the newest `weeks` weeks and no more. Ask for twelve of a
+	// twenty-week season and the peak is the highest of the twelve, which may
+	// be the twelfth, which is the edge of the window and not a peak at all.
+	// The reading cannot see past the cut, so the response has to say the cut
+	// is there. Null on both dates when there is no harvest at all: no weeks,
+	// no days covered, and nothing to invent.
+	CoveredFrom   *domain.Day `json:"coveredFrom"`
+	CoveredTo     *domain.Day `json:"coveredTo"`
+	PartialWindow bool        `json:"partialWindow"`
 }
 
 const harvestCurveSQL = `
@@ -1381,7 +1431,9 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 		return nil, err
 	}
 
-	rows, err := tx.Query(ctx, harvestCurveSQL, nil, nil, plotCropID, weeks)
+	// One more week than will be shown, so the extra row can say whether the
+	// window cut the season — the same probe ReportCrop makes for its header.
+	rows, err := tx.Query(ctx, harvestCurveSQL, nil, nil, plotCropID, weeks+1)
 	if err != nil {
 		return nil, err
 	}
@@ -1393,16 +1445,36 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 			return nil, err
 		}
 		w.WeekStart = monday.Format("2006-01-02")
+		out.Weeks = append(out.Weeks, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out.Weeks) > weeks {
+		out.PartialWindow = true
+		out.Weeks = out.Weeks[:weeks]
+	}
+	// The counts are folded after the trim, so they describe the series that
+	// was actually returned rather than the probe row that was thrown away.
+	for _, w := range out.Weeks {
 		switch {
 		case w.Records == 0:
 			out.WeeksWithoutRecords++
 		case w.Kg == nil:
 			out.WeeksWithoutKilos++
 		}
-		out.Weeks = append(out.Weeks, w)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if n := len(out.Weeks); n > 0 {
+		oldest, err := time.Parse("2006-01-02", out.Weeks[n-1].WeekStart)
+		if err != nil {
+			return nil, err
+		}
+		newest, err := time.Parse("2006-01-02", out.Weeks[0].WeekStart)
+		if err != nil {
+			return nil, err
+		}
+		out.CoveredFrom = &domain.Day{Time: oldest}
+		out.CoveredTo = &domain.Day{Time: newest.AddDate(0, 0, 6)}
 	}
 
 	out.Shape = domain.ReadHarvest(out.Weeks, out.CurrentWeek.Format("2006-01-02"),

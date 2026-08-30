@@ -127,13 +127,23 @@ trigger refuses it.
    in the system, it carries a per-IP rate limit that lives in Postgres (so it
    survives a restart) and mandatory verification.
 
-   It takes an address that has **no** account. One that already exists is
-   refused with 409 `EMAIL_TAKEN` on the address alone, and the password in the
-   body is never looked at — it used to be, and a wrong one answering 409 while
-   the right one answered 201 made the registration form a place to test
-   guesses without authenticating. Adding another farm to an account that
-   exists is `POST /v1/farms`, behind that account's own session, and the
-   farms-per-account cap lives there now.
+   **The answer does not depend on the address.** Registered or unknown, it is
+   the same 201, the same body, and the same time on the clock — the branch that
+   creates nothing runs the same work and discards it. There is no
+   `EMAIL_TAKEN` here any more, and the response names no farm and no user:
+   `farmId` and `userId` come back from `POST /v1/auth/verify-email`, the first
+   request whose caller has proved the address is theirs.
+
+   It was an oracle twice over. The password used to be looked at, and a wrong
+   one answering 409 while the right one answered 201 made the registration form
+   a place to test guesses without authenticating; that half was closed by
+   moving "add another farm to an account that exists" to `POST /v1/farms`,
+   behind that account's own session, with the farms-per-account cap. The 409
+   that remained still told any stranger whether a given address banks here,
+   which is a phishing list and the first step of the attack the 409 was the
+   second step of. What it costs the person who mistypes their address: they are
+   told to check their mail and no mail comes, because the address is somebody
+   else's. The alternative told every stranger the same thing it told them.
 
 2. **Activity rates have a history.** `activity_pay_*` does not hold one loose
    price; it holds periods with a `valid_from`. A period runs until the next one

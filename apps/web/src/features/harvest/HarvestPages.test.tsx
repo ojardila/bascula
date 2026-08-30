@@ -96,9 +96,12 @@ function serveCurve(over: Partial<WireHarvestCurve> = {}) {
         plotCropId: null,
         currentWeek: thisMonday,
         weeks: [],
-        shape: { peak: null, fallingWeeks: 0, windingDown: false, reason: "no_finished_weeks" },
+        shape: { peak: null, fallingWeeks: 0, windingDown: false, contiguousWeeks: 0, reason: "no_finished_weeks" },
         weeksWithoutKilos: 0,
         weeksWithoutRecords: 0,
+        coveredFrom: null,
+        coveredTo: null,
+        partialWindow: false,
         ...over,
       } satisfies WireHarvestCurve),
     ),
@@ -232,11 +235,11 @@ describe("the season screen answers the question it exists for", () => {
     serveWeeks([week(weekOf(1)), week(weekOf(2)), week(weekOf(3))]);
     serveCurve({
       weeks: [
-        { weekStart: weekOf(1), kg: 150 },
-        { weekStart: weekOf(2), kg: 260 },
-        { weekStart: weekOf(3), kg: 400 },
+        { weekStart: weekOf(1), kg: 150, records: 1 },
+        { weekStart: weekOf(2), kg: 260, records: 1 },
+        { weekStart: weekOf(3), kg: 400, records: 1 },
       ],
-      shape: { peak: { weekStart: weekOf(3), kg: 400 }, fallingWeeks: 2, windingDown: true },
+      shape: { peak: { weekStart: weekOf(3), kg: 400, records: 1 }, fallingWeeks: 2, windingDown: true, contiguousWeeks: 3 },
     });
 
     renderApp("/cosecha");
@@ -248,7 +251,7 @@ describe("the season screen answers the question it exists for", () => {
   it("refuses to read a trend when no week has finished, and says so", async () => {
     signIn();
     serveWeeks([week(thisMonday, { finished: false })]);
-    serveCurve({ weeks: [{ weekStart: thisMonday, kg: 40 }] });
+    serveCurve({ weeks: [{ weekStart: thisMonday, kg: 40, records: 1 }] });
 
     renderApp("/cosecha");
     expect(
@@ -260,8 +263,8 @@ describe("the season screen answers the question it exists for", () => {
     signIn();
     serveWeeks([week(weekOf(1)), week(weekOf(2))]);
     serveCurve({
-      weeks: [{ weekStart: weekOf(1), kg: 100 }],
-      shape: { peak: { weekStart: weekOf(1), kg: 100 }, fallingWeeks: 0, windingDown: false },
+      weeks: [{ weekStart: weekOf(1), kg: 100, records: 1 }],
+      shape: { peak: { weekStart: weekOf(1), kg: 100, records: 1 }, fallingWeeks: 0, windingDown: false, contiguousWeeks: 3 },
       weeksWithoutKilos: 2,
     });
 
@@ -283,8 +286,8 @@ describe("the season screen answers the question it exists for", () => {
     signIn();
     serveWeeks([week(thisMonday, { finished: false }), week(weekOf(1))]);
     serveCurve({
-      weeks: [{ weekStart: weekOf(1), kg: 100 }],
-      shape: { peak: { weekStart: weekOf(1), kg: 100 }, fallingWeeks: 0, windingDown: false },
+      weeks: [{ weekStart: weekOf(1), kg: 100, records: 1 }],
+      shape: { peak: { weekStart: weekOf(1), kg: 100, records: 1 }, fallingWeeks: 0, windingDown: false, contiguousWeeks: 3 },
     });
     renderApp("/cosecha");
     expect(await screen.findByText("en curso")).toBeInTheDocument();
@@ -332,6 +335,9 @@ describe("the week detail cross-foots on screen", () => {
       scope: "harvest",
       weekStart: monday,
       finished: true,
+      coveredFrom: weekOf(1),
+      coveredTo: weekOf(1),
+      partialWindow: false,
       byDay: grid("day"),
       byCrop: grid("crop"),
       total: priced(90, 3),
@@ -378,6 +384,9 @@ describe("the week detail cross-foots on screen", () => {
       scope: "harvest",
       weekStart: monday,
       finished: true,
+      coveredFrom: weekOf(1),
+      coveredTo: weekOf(1),
+      partialWindow: false,
       byDay: empty,
       byCrop: empty,
       total: totals(),
@@ -417,6 +426,9 @@ describe("the unattributed column is shown and explained, never hidden", () => {
       scope: "harvest",
       weekStart: monday,
       finished: true,
+      coveredFrom: weekOf(1),
+      coveredTo: weekOf(1),
+      partialWindow: false,
       byDay: {
         columns: [{ key: monday, label: monday, total: priced(90, 3) }],
         rows: [

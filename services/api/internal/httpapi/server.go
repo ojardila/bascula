@@ -11,6 +11,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/blob"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
 
@@ -43,6 +44,9 @@ type Server struct {
 	cfg    Config
 	blobs  blob.Store
 	router chi.Router
+	// importSlots is the season import's share of the pool, and it is a share
+	// rather than a queue. See store.MaxImportsAtOnce and handleImportSeason.
+	importSlots chan struct{}
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -50,7 +54,10 @@ type Server struct {
 // receipt photo is a service that fails in front of a customer instead of in
 // front of an operator.
 func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
-	s := &Server{pool: pool, signer: signer, cfg: cfg}
+	s := &Server{
+		pool: pool, signer: signer, cfg: cfg,
+		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
+	}
 	disk, err := blob.NewDisk(cfg.UploadDir)
 	if err != nil {
 		panic(err)

@@ -222,8 +222,12 @@ export interface SignupRequest {
 }
 
 export interface SignupResponse {
-  farmId: Uuid;
-  userId: Uuid;
+  /**
+   * Deliberately does NOT name the farm or the user. Signing up answers the
+   * same thing whether or not the address already has an account, so that the
+   * public route cannot be used to find out who is registered. The ids come
+   * back from verify-email instead.
+   */
   verificationEmailSentTo: string;
   /**
    * Only in development, where the server has no mail sender and echoes the

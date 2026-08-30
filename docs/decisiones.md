@@ -43,6 +43,16 @@ Consequence: public signup is the most exposed attack surface in the system. It
 needs per-IP rate limiting, email verification before the first session, and a
 cap on farms per email address.
 
+Amended in sprint 11, after the API audit's finding 12: **the endpoint answers
+the same thing whatever it is asked.** The cap turned out not to belong here at
+all — it is a rule about an ACCOUNT, and an account proves who it is by opening
+a session, so it moved to `POST /v1/farms`. What was left was a 409 that told
+any stranger whether an address is registered, and the 26 ms against 2 ms that
+said it again for anyone who did not read bodies. Both are gone: one answer, one
+shape, one duration, and no identifier in it. The price is that somebody who
+mistypes their address is told to check a mailbox that will never receive
+anything, which is the same thing every stranger is told, which is the point.
+
 ### 3. The web records work records from sprint 1
 
 We do not wait for sync. We accept that for a few weeks the phone and the server

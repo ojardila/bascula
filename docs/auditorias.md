@@ -37,6 +37,8 @@ afterwards.
 
 ## API — 14 findings
 
+Thirteen closed. The one that is open is open by decision, not by neglect.
+
 | # | What | State |
 |---|---|---|
 | 1 | A replayed refresh token blocks the request; ten of them switch the API off for every farm | **Closed** |
@@ -49,14 +51,118 @@ afterwards.
 | 8 | The cap on farms per email address is never enforced | **Closed** |
 | 10 | Push breaks its own contract: a reused identifier returns somebody else's id and the phone loses the weighing | **Closed** |
 | 13 | Quantities with more decimals than fit are rounded silently | **Closed** |
+| 12 | Public signup is an oracle for accounts and passwords | **Closed** |
+| 14 | Suspending a farm does not cut live sessions (up to 15 minutes) | **Closed** — all three of the family |
+| 11 | Reports: a week with no harvest disappears and the curve reads as joined across the gap; a truncated window is presented as a full week | **Closed** |
 | 9 | What a role skipped never comes back: a phone that changes hands is left with an incomplete ledger | Open — needs design, not a patch |
-| 12 | Public signup is an oracle for accounts and passwords | Open — the honest fix means moving the creation of a second farm behind a session |
-| 14 | Suspending a farm does not cut live sessions (up to 15 minutes) | Open |
-| 11 | Reports: a week with no harvest disappears and the curve reads as joined across the gap; a truncated window is presented as a full week | Open |
 
 Debt that the fix for #3 opened itself: the import no longer **creates** voided
 settlements holding a live line, but **there is no route that frees the ones
-that already exist**.
+that already exist**. Closed in sprint 8 with `POST /v1/settlements/{id}/release`.
+
+### The last three, and what closing them cost
+
+**12 — the signup oracle** was two oracles. The password half was closed in
+sprint 8 by moving "add a farm to an account that exists" behind a session
+(`POST /v1/farms`). What was left was the 409 itself, which told any stranger
+whether an address is registered — a phishing list, and the first step of the
+attack the 409 was the second step of. It now answers the same 201, with the
+same body, for every address; the branch that creates nothing runs the whole
+creation against a synthetic address and discards it, because 2 ms beside 26 ms
+says the same thing to anyone who does not read bodies. Measured before: 26.2 ms
+against 2.0 ms. After: within noise of each other.
+
+The response therefore names nothing. `farmId` and `userId` moved to
+`POST /v1/auth/verify-email`, which is the first request whose caller has proved
+the address is theirs. **This is a contract change the web console has to
+follow**: `apps/web/e2e/live-api.test.ts` asserts them on the signup response,
+and `apps/web/src/api/endpoints.ts` maps them there.
+
+And the person who typed somebody else's address by mistake is told to check
+their mail, and no mail comes. That is a worse minute for them than "ese correo
+ya tiene cuenta" would have been, and it is the right trade, because the
+alternative tells every stranger the same thing it tells them. What they should
+get is a message to the address saying somebody tried to register with it —
+which needs the mail sender this service still does not have.
+
+**14 — the third case of the family.** FARM_SUSPENDED cuts a session when the
+platform stops trusting the farm; MEMBERSHIP_REVOKED when the farm stops
+trusting the person. The case in between was the one that cost money: an
+administrator demoted to weigher kept `role: admin` in a signed claim for the
+rest of its fifteen minutes, and that claim is what the permission table reads
+AND what `app.role` puts in front of row level security. It is checked now in
+the same round trip as the other two — 401 ROLE_CHANGED, because unlike its
+siblings the remedy works: a refresh re-reads the membership, both clients
+already retry once after refreshing, and the person sees nothing. What the
+demoted person meets afterwards is an ordinary 403, in the role they hold.
+
+**11 — the truncated window and the peak over a hole.** The empty week was
+already in the series. Two things were not: every route that returns week totals
+now carries `coveredFrom`, `coveredTo` and `partialWindow` — the week detail,
+the list (including the truncation by `limit`, which nothing said) and the
+curve (including the truncation by `weeks`, which is where it matters most,
+because the peak of a cut window can be the cut itself). And the peak now stops
+at the same hole the falling run stops at: it is the maximum of the unbroken
+stretch the reading is made of, with `contiguousWeeks` saying how wide that
+stretch is. One response naming a peak on the far side of a gap that
+`fallingWeeks`, in the same response, refused to cross was two numbers
+disagreeing about what the series is.
+
+> The Go reading and its TypeScript twin in `packages/shared/src/harvest.ts` have
+> diverged: the phone has neither the gap-safe run nor this. That file is not
+> ours to change; it is written down here so the next person who reads "the port
+> is line for line" knows it is not.
+
+### The debt we opened ourselves, measured
+
+The season import holds its pool connection, `idle in transaction`, for the
+whole upload — the transaction is opened by the tenant middleware before the
+handler has a byte of the body, and the body may take 25 minutes. Called
+acceptable for a once-in-a-farm's-life act, and it is, until several owners move
+in the same week. Measured on a laptop, the upload compressed to make the shape
+visible:
+
+| Imports at once | Connections held | Ordinary traffic |
+|---|---|---|
+| 2 | 2 of 10 | 180 requests, 0 failures, median 2.9 ms |
+| 11 | **10 of 10** | 180 requests, 0 failures, median 4.6 ms, **max 17.8 s** |
+
+Nothing errors, which is the dangerous part: pgx queues, so the pool going dry
+looks like the whole service getting slower, on every route, for every farm,
+with `/health` answering throughout. At the real deadline that 17.8 s is
+25 minutes.
+
+Fixed with two numbers that only work together: at most three imports at a time,
+and a pool three connections larger than the ordinary ten, so the imports borrow
+their own and never the ones a payroll screen is waiting on. Re-measured with
+eleven at once: **3 held, ordinary traffic median 3.4 ms, max 9.5 ms**, and the
+other eight refused.
+
+The refusal took a second attempt. Written the obvious way — answer 429 and
+return — the fourth client never saw the 429 at all: it was still sending twelve
+megabytes, and what came back was `Errno 32, Broken pipe`. An owner told "no se
+pudo subir" learns nothing and retries at once. The refusal now hands its pool
+connection back first (`tenant.ReleaseEarly`), drains the upload, and then
+answers, so the 429 and its `Retry-After` actually arrive. Verified both ways:
+at full speed and trickled over 18 s.
+
+### The final sweep of the zero trap
+
+"A sum over an id that matches nothing comes back as a plausible *this produced
+nothing*." Four doors were still open, and all four were in neither of the two
+tables that walk this rule (`sprint2_test.go`, `sprint3_test.go`), which is
+exactly why:
+
+* `GET /v1/work-records` and `GET /v1/pickups` — `workerId`, `activityId`,
+  `plotId`, `plotCropId`, unguarded on both the console's door and the phone's.
+  Every row carries `amountCents`.
+* `GET /v1/activities/{id}/rates` — pay rates, and an empty rate list is a real
+  state: it is what makes a record fall back to the weekly price.
+* `GET /v1/products?categoryId=` — a believable "no products in that category".
+
+All four confirm the id first now. `GET /v1/sync/bootstrap` was checked and does
+not exist: cursor 0 on `GET /v1/sync/pull` is the bootstrap, and it refuses a
+cursor ahead of the feed rather than answering "you are up to date".
 
 ## Web console — 12 findings
 

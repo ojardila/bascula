@@ -167,8 +167,10 @@ suite(suiteName, () => {
       })
       .catch((e) => explain(e, "registrar la finca"));
 
-    expect(res.farmId).toBeTruthy();
-    expect(res.userId).toBeTruthy();
+    // Signing up names nobody: the route answers identically whether or not
+    // the address already has an account, so that a stranger cannot use it to
+    // learn who is registered. The ids arrive at verify-email.
+    expect(res.verificationEmailSentTo).toBe(email);
     // In development the server echoes the token because there is no mail
     // sender. If this is null the server is running with APP_ENV set to
     // something else, and the rest of the suite cannot proceed.

@@ -145,10 +145,40 @@ func (b *progressBody) Close() error { return b.body.Close() }
 // what it skipped rather than what it "merged". The rehearsal of phase 3 is
 // meant to be run until it comes out clean.
 func (s *Server) handleImportSeason(w http.ResponseWriter, r *http.Request) {
-	// FIRST, before a single byte of the body is read: this route's own
-	// deadline. See importReadBudget. It is done here rather than in a
-	// middleware so that it happens AFTER authentication and after the
-	// permission table — the long patience belongs to an owner uploading a
+	// FIRST, before a single byte of the body is read and before any patience
+	// is granted: a slot.
+	//
+	// This handler is going to hold its pool connection, inside a transaction,
+	// for as long as the upload takes — the tenant middleware opened that
+	// transaction before the handler was called, and there is no byte of the
+	// body in hand yet. Twenty-five minutes of `idle in transaction` is the
+	// deadline this route grants itself, and eleven of these at once is every
+	// connection in the pool. Measured: the ordinary requests do not fail, they
+	// WAIT — 17.8 seconds on a laptop with the upload compressed into 25, which
+	// at the real deadline is the whole service stopped for every farm while
+	// /health goes on saying ok. See the note on store.MaxImportsAtOnce.
+	//
+	// So: at most three at a time, and the pool carries three connections above
+	// the ordinary ten to lend them. The fourth is refused HERE, before it has
+	// read anything or waited for anything, and it gives its own connection
+	// straight back.
+	//
+	// Refused rather than queued, and that is the deliberate half. A queue would
+	// hold this request's connection while it waited, which is the problem
+	// wearing a different hat; and an owner told "come back in a few minutes" at
+	// the start of a 25-minute upload is far better served than one who waits
+	// half an hour to find out.
+	select {
+	case s.importSlots <- struct{}{}:
+		defer func() { <-s.importSlots }()
+	default:
+		refuseImport(w, r)
+		return
+	}
+
+	// The route's own deadline. See importReadBudget. It is done here rather
+	// than in a middleware so that it happens AFTER authentication and after
+	// the permission table — the long patience belongs to an owner uploading a
 	// season, not to whoever opens a socket.
 	extendImportDeadlines(w, r)
 
@@ -192,4 +222,43 @@ func (s *Server) handleImportSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+// refuseImport answers the fourth import, and spends a little care on HOW.
+//
+// The first version of this simply wrote the 429 and returned, which is what
+// every other refusal in this service does and is wrong here for one reason:
+// the client is in the middle of sending twelve megabytes. A handler that
+// answers without reading the body leaves the server closing a socket the
+// client is still writing to, and what the client gets is not a 429 — it is a
+// broken pipe. Measured, with a 2.9 MB body sent at full speed on a laptop:
+// `URLError: [Errno 32] Broken pipe`, and no status line at all.
+//
+// An owner who is told "no se pudo subir" learns nothing, retries at once, and
+// is refused again the same way. That is a worse fault than the one the gate
+// exists to prevent, and it would have been invisible in any test that posts a
+// small body.
+//
+// So the refusal reads the upload to its end and throws it away, and then
+// answers. The two things that make that affordable:
+//
+//   - The pool connection goes back FIRST. tenant.ReleaseEarly ends the
+//     transaction before the draining starts, so this request costs a goroutine
+//     and a socket while it waits, and none of the thing the whole gate is
+//     protecting.
+//   - No deadline is extended. The 25-minute patience is granted further down,
+//     to an import that is actually going to happen; a refused one lives under
+//     the server's ordinary 30-second ReadTimeout like every other route. A
+//     body too slow to arrive inside that is cut off — the same broken pipe as
+//     before, for the slowest uploads only, rather than for all of them.
+func refuseImport(w http.ResponseWriter, r *http.Request) {
+	tenant.ReleaseEarly(r.Context())
+	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxImportBytes))
+
+	w.Header().Set("Retry-After", "300")
+	writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+		"another season is being imported right now; the server takes a few at a "+
+			"time so one upload cannot slow the whole service down. Try again in "+
+			"a few minutes — nothing has been written and nothing is lost").
+		WithDetails(map[string]any{"importsAtOnce": store.MaxImportsAtOnce}))
 }

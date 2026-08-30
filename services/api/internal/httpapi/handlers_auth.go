@@ -46,8 +46,20 @@ type signupRequest struct {
 // This is the most exposed surface in the system, so it carries two limits: a
 // per-IP rate limit that survives a restart because it lives in Postgres, and
 // mandatory email verification. It carries no password check and no account
-// lookup beyond "is this address taken" — see the note further down, and
+// lookup the caller can observe — see the long note further down, and
 // handleCreateFarm, which is where the third limit went.
+//
+// # What comes back, and what does not
+//
+//	201 {"verificationRequired": true}
+//
+// and in development, where there is no mail sender, the token that would have
+// been mailed. That is the WHOLE response, for every address, and the two
+// identifiers it used to carry — farmId and userId — moved to
+// POST /v1/auth/verify-email, which is the first point at which the caller has
+// proved the address is theirs. Handing a farm's id to whoever filled in the
+// form was never necessary: the console shows "revise su correo" and goes no
+// further, and the phone was never in this flow at all.
 func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	var req signupRequest
 	if err := decode(r, &req); err != nil {
@@ -79,6 +91,9 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := clientIP(r)
+	// The address as it arrived. `email` below is reassigned in the branch that
+	// creates nothing, and the attempt row must not record that invention.
+	attempted := email
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -91,7 +106,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		_, _ = s.pool.Exec(r.Context(),
 			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
-			uuid.NewString(), ip, email, true)
+			uuid.NewString(), ip, attempted, true)
 	}()
 
 	n, err := store.CountSignupAttempts(r.Context(), tx, ip, time.Hour)
@@ -105,40 +120,66 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// An address that already has an account is refused HERE, on the address
-	// alone, and the password in the body is never looked at.
+	// An address that already has an account gets the SAME ANSWER as one that
+	// does not, and the password in the body is never looked at for either.
 	//
-	// It used to be looked at, and that made this endpoint an oracle for both
-	// halves of a credential. Send an address with a wrong password: 409. Send
-	// it with the right one: 201, a farm created, a session's worth of proof
-	// that the guess was correct — no token, no rate limit worth the name on a
-	// single guess, no trace on the account it belongs to. An unauthenticated
-	// caller could confirm that an address is registered AND that a guessed
-	// password is the real one, which is a login without a login.
+	// # What this used to be
 	//
-	// The honest fix was never to make the password check quieter. It was to
-	// notice that "create a second farm for an account that already exists" is
-	// an ACTION BY THAT ACCOUNT, and that an account proves who it is by opening
-	// a session. So it moved: POST /v1/farms, behind a token. The farms-per-
-	// email cap moved with it, because it is a rule about an account and this
-	// endpoint no longer knows which account it would be about.
+	// It used to look at the password, and that made the registration form an
+	// oracle for both halves of a credential. Send an address with a wrong
+	// password: 409. Send it with the right one: 201, a farm created — a
+	// stranger's confirmation that the guess was correct, with no token spent,
+	// no failed-login counter touched and no trace on the account it belongs
+	// to. A login without a login.
 	//
-	// What remains, and is not a defect of this fix: 409 here still says the
-	// address is registered. A public signup that must refuse a duplicate
-	// account cannot avoid saying so, and the alternatives — answering 201 to a
-	// registration that did not happen, or silently sending mail from a service
-	// with no mail sender — trade a small truth for a large lie. It is bounded
-	// by the per-IP rate limit above, and it reveals nothing about the password.
+	// The first half of the fix was to notice that "create a second farm for an
+	// account that already exists" is an ACTION BY THAT ACCOUNT, and that an
+	// account proves who it is by opening a session. So it moved: POST
+	// /v1/farms, behind a token, and the farms-per-email cap moved with it,
+	// because it is a rule about an account and this endpoint no longer knows
+	// which account it would be about.
+	//
+	// # What was still left, which is this half
+	//
+	// The 409 itself. It says nothing about the password and it still answers,
+	// to anybody who asks, whether a given person banks here. That is worth
+	// something on its own — a list of addresses that are coffee farm owners in
+	// Huila is a phishing list — and it is worth more as the first step of the
+	// attack the 409 was already the second step of.
+	//
+	// So the answer stopped depending on the account. Same status, same body,
+	// and — because a 2 ms reply beside a 26 ms one is the same disclosure said
+	// more quietly — the same work: the branch below runs the entire creation
+	// against a synthetic address and throws it away. See tenant.DiscardChanges.
+	//
+	// # And the person who mistyped their address
+	//
+	// They see "revise su correo", like everybody else, and no mail arrives,
+	// because the address they typed is somebody else's. They try again. That
+	// is a worse minute for them than "ese correo ya tiene cuenta" would have
+	// been, and it is the right trade: the alternative tells every stranger the
+	// same thing it tells them.
+	//
+	// What the person who OWNS that address should get is a message saying
+	// somebody tried to register with it and they already have an account —
+	// which is what makes this branch honest rather than merely quiet, and
+	// which this service cannot send, because it has no mail sender at all yet.
+	// The verification mail of the ordinary branch does not exist either. When
+	// one is wired in, both messages get written at the same time; until then
+	// the two branches are equally silent, which is at least not a new lie.
 	user, err := store.FindUserByEmail(r.Context(), tx, email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, r, err)
 		return
 	}
-	if user != nil {
-		writeError(w, r, domain.Coded(http.StatusConflict, domain.CodeEmailTaken,
-			"that address already has an account; open a session and use "+
-				"POST /v1/farms to add another farm to it"))
-		return
+	taken := user != nil
+	if taken {
+		// Nothing this branch writes survives the request. The address is
+		// synthetic and unreachable (RFC 2606 reserves .invalid) so that even a
+		// failure to discard could not leave a row claiming somebody's mailbox,
+		// and the id is fresh so it collides with nothing.
+		email = "signup-" + newID() + "@shadow.invalid"
+		tenant.DiscardChanges(r.Context())
 	}
 
 	passwordHash, err := auth.HashPassword(req.Owner.Password)
@@ -191,15 +232,21 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body := map[string]any{
-		"farmId":               farmID,
-		"userId":               user.ID,
-		"verificationRequired": true,
-	}
+	// The body says what happened to the REQUEST, and nothing about the
+	// account: an id here would be the oracle again, in the one place the two
+	// branches cannot both tell the truth. farmId and userId are on the
+	// verify-email response instead, where the caller has proved the address.
+	body := map[string]any{"verificationRequired": true}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on
 		// outside development.
+		//
+		// The discarded branch echoes its discarded token, so development
+		// answers exactly what production answers. It verifies nothing — the
+		// row it names was rolled back — and returns the same 400 an expired
+		// link returns, which is the truth about a registration that did not
+		// happen.
 		body["verificationToken"] = secret
 	}
 	writeJSON(w, http.StatusCreated, body)
@@ -706,7 +753,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	userID, err := store.ConsumeEmailVerification(r.Context(), tx, auth.HashToken(req.Token))
+	userID, farmID, err := store.ConsumeEmailVerification(r.Context(), tx, auth.HashToken(req.Token))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, r, domain.BadRequest("that verification link is not valid any more"))
@@ -715,7 +762,11 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"userId": userID, "verified": true})
+	// farmId is here and not on the signup response, and the difference is the
+	// whole of finding 12's second half: this caller has proved the address is
+	// theirs by presenting something that was sent to it. See handleSignup.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"userId": userID, "farmId": farmID, "verified": true})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {

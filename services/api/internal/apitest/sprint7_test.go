@@ -619,16 +619,16 @@ func TestTheFarmsPerEmailCapMovedBehindASession(t *testing.T) {
 	}, http.StatusOK)
 	token, _ := login.Body["accessToken"].(string)
 
-	// The signup is no longer a way round it: the address is taken, whatever
-	// password comes with it.
-	again := h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
+	// The signup is no longer a way round it, and no longer says so either: the
+	// answer is the one every address gets, and nothing was created. See
+	// TestSignupAnswersTheSameWhetherTheAddressIsRegisteredOrNot.
+	again := h.mustDo(t, http.MethodPost, "/v1/signup", "", map[string]any{
 		"farm": map[string]any{"name": "Finca 2", "timezone": "America/Bogota",
 			"currency": "COP", "priceCents": 100000},
 		"owner": map[string]any{"email": email, "name": "Duena", "password": password},
-	})
-	if again.code() != string(domain.CodeEmailTaken) {
-		t.Fatalf("a second farm through the public signup: got %d %s, want EMAIL_TAKEN",
-			again.Status, again.Raw)
+	}, http.StatusCreated)
+	if _, made := again.Body["farmId"]; made {
+		t.Fatalf("the public signup named a farm: %s", again.Raw)
 	}
 
 	// The harness caps at three, and one exists.

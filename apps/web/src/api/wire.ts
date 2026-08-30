@@ -937,6 +937,15 @@ export interface WireReportWeek extends WireReportTotals {
 export interface WireReportWeeksResult {
   scope: WireReportScope;
   items: WireReportWeek[];
+  /**
+   * The days these figures actually cover, and whether that is narrower than
+   * what was asked for. A list capped by `limit` or a curve capped by `weeks`
+   * used to say nothing, so a truncated answer looked like the whole one.
+   */
+  coveredFrom: DayISO | null;
+  coveredTo: DayISO | null;
+  partialWindow: boolean;
+
 }
 
 /**
@@ -980,6 +989,10 @@ export interface WireReportWeekDetail {
   scope: WireReportScope;
   weekStart: DayISO;
   finished: boolean;
+  /** The days this detail covers; narrower than the week when the range was. */
+  coveredFrom: DayISO;
+  coveredTo: DayISO;
+  partialWindow: boolean;
   byDay: WireReportGrid;
   byCrop: WireReportGrid;
   total: WireReportTotals;
@@ -1092,10 +1105,16 @@ export interface WireHarvestWeekTotal {
   /** Null is a week whose kilos could not be established, never a week of nothing. */
   kg: number | null;
   /** How many work records the week holds. Zero is a week nobody picked in. */
-  records?: number;
+  records: number;
 }
 
 export interface WireHarvestShape {
+  /**
+   * How wide the unbroken run the shape was read from is. The peak is the
+   * highest week of that run, not of the whole range — a peak found across a
+   * gap is a peak of two different harvests.
+   */
+  contiguousWeeks: number;
   /** Never a zero-valued week: "no peak yet" and "a peak of nothing" differ. */
   peak: WireHarvestWeekTotal | null;
   fallingWeeks: number;
@@ -1118,4 +1137,8 @@ export interface WireHarvestCurve {
    * end-of-season warning off weeks that are not neighbours.
    */
   weeksWithoutRecords: number;
+  /** The days the curve covers, and whether `weeks` cut it short. */
+  coveredFrom: DayISO | null;
+  coveredTo: DayISO | null;
+  partialWindow: boolean;
 }

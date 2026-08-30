@@ -119,3 +119,89 @@ func TestAWeekWithUnknownKilosIsNotAWeekOfNothing(t *testing.T) {
 		t.Fatalf("peak: %+v", r.Peak)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The peak walks the same calendar the falling run does
+// ---------------------------------------------------------------------------
+
+// TestThePeakDoesNotStepOverAHoleTheRunRefusesToCross.
+//
+// The run was taught to stop at a week whose kilos are unknown. The peak was
+// not, so one response could say "your best week was 1000 kg" and, of the very
+// same series, "I will not compare these weeks to each other because there is a
+// hole between them". Two numbers disagreeing about what the series is, with
+// nothing on the wire to show it.
+func TestThePeakDoesNotStepOverAHoleTheRunRefusesToCross(t *testing.T) {
+	// 1000, then a week nobody could put in kilos, then 300 and 100.
+	series := weeks(100, 300, 0, 1000)
+	series[2].Kg = nil
+
+	r := read(series, "2026-08-31")
+	if r.Peak == nil || *r.Peak.Kg != 300 {
+		t.Fatalf("peak = %+v, want the 300 week: the 1000 is on the far side "+
+			"of the hole", r.Peak)
+	}
+	if r.ContiguousWeeks != 2 {
+		t.Fatalf("contiguousWeeks = %d, want 2", r.ContiguousWeeks)
+	}
+	if r.FallingWeeks != 1 || r.WindingDown {
+		t.Fatalf("the run stepped over the hole after all: %+v", r)
+	}
+}
+
+// TestASeasonEndsOnlyOnItsOwnUnbrokenStretch.
+//
+// Two falls are enough to call the season over, so the weeks that produced them
+// had better be the weeks the peak came from. Here they are: an unbroken run,
+// and the verdict stands.
+func TestASeasonEndsOnlyOnItsOwnUnbrokenStretch(t *testing.T) {
+	r := read(weeks(100, 300, 500, 400), "2026-08-31")
+	if !r.WindingDown || r.FallingWeeks != 2 {
+		t.Fatalf("an unbroken decline was not read as one: %+v", r)
+	}
+	if r.Peak == nil || *r.Peak.Kg != 500 || r.ContiguousWeeks != 4 {
+		t.Fatalf("peak/contiguous: %+v %d", r.Peak, r.ContiguousWeeks)
+	}
+
+	// The same four numbers with a hole punched between the falls and the peak.
+	// The falls are still two, and they are still real; what is gone is the
+	// peak they were supposed to be falling FROM, so the season is not called.
+	holed := weeks(100, 300, 500, 0, 400)
+	holed[3].Kg = nil
+	h := read(holed, "2026-08-31")
+	if h.FallingWeeks != 2 {
+		t.Fatalf("fallingWeeks = %d, want 2: the hole is behind them", h.FallingWeeks)
+	}
+	if h.Peak == nil || *h.Peak.Kg != 500 {
+		t.Fatalf("peak = %+v, want the 500 week", h.Peak)
+	}
+	if h.ContiguousWeeks != 3 {
+		t.Fatalf("contiguousWeeks = %d, want 3", h.ContiguousWeeks)
+	}
+	// The peak is the oldest week of the stretch and the run has fallen away
+	// from it twice: that is a season ending, read over the three weeks this
+	// farm actually knows about, and it says so.
+	if !h.WindingDown {
+		t.Fatalf("a decline inside one unbroken stretch was thrown away: %+v", h)
+	}
+}
+
+// TestTheReadingStartsAtTheNewestWeekItCanSee.
+//
+// The newest finished week's kilos are unknown, so there is no run at all: the
+// reading must not answer with a peak drawn from weeks the run cannot reach.
+func TestTheReadingStartsAtTheNewestWeekItCanSee(t *testing.T) {
+	series := weeks(0, 400, 300, 200)
+	series[0].Kg = nil
+
+	r := read(series, "2026-08-31")
+	if r.FallingWeeks != 0 || r.WindingDown {
+		t.Fatalf("a run was read past an unknown week: %+v", r)
+	}
+	if r.Peak == nil || *r.Peak.Kg != 400 {
+		t.Fatalf("peak = %+v, want the 400 week — the newest one that is known", r.Peak)
+	}
+	if r.ContiguousWeeks != 3 {
+		t.Fatalf("contiguousWeeks = %d, want 3", r.ContiguousWeeks)
+	}
+}

@@ -26,8 +26,15 @@ func (s *Server) handleListProducts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	list, err := store.ListProducts(r.Context(), tx, listFilter(r),
-		r.URL.Query().Get("categoryId"))
+	category := r.URL.Query().Get("categoryId")
+	// A category of another farm narrowed to nothing and answered "no products
+	// in that category" — a true-sounding sentence about a category that does
+	// not exist here. See confirmOurs.
+	if err := confirmOurs(r, map[string]string{"productCategory": category}); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	list, err := store.ListProducts(r.Context(), tx, listFilter(r), category)
 	if err != nil {
 		writeError(w, r, err)
 		return

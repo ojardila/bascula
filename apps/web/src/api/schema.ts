@@ -42,13 +42,28 @@ export interface paths {
          *     because it lives in Postgres, a cap on farms per email address, and
          *     mandatory email verification before the first session.
          *
-         *     An address that already has an account is refused on the address alone,
-         *     with 409 EMAIL_TAKEN, and the password in the body is never looked at.
-         *     It used to be: a wrong password answered 409 and the right one answered
-         *     201, which made this form a place to test guesses without
-         *     authenticating. Adding a farm to an account that exists is now
-         *     `POST /v1/farms`, behind that account's own session, and the
-         *     farms-per-account cap went with it.
+         *     **The answer does not depend on the address.** Registered or unknown,
+         *     the reply is the same 201, the same body, and — because the branch that
+         *     creates nothing runs the same work and discards it — the same time on
+         *     the clock. There is no EMAIL_TAKEN here any more.
+         *
+         *     It used to be an oracle twice over. A wrong password answered 409 and
+         *     the right one answered 201, which made the registration form a place to
+         *     test guesses without authenticating; that half was closed by moving
+         *     "add a farm to an account that exists" to `POST /v1/farms`, behind that
+         *     account's own session, with the farms-per-account cap. The 409 that
+         *     remained still answered, to anybody who asked, whether a given address
+         *     banks here — which is a phishing list, and the first step of the attack
+         *     the 409 was the second step of. So it went too.
+         *
+         *     What this costs the person who mistypes their address: they are told to
+         *     check their mail, and no mail comes, because the address they typed is
+         *     somebody else's. They try again. The alternative told every stranger the
+         *     same thing it told them.
+         *
+         *     **The response names nothing.** `farmId` and `userId` are on
+         *     `POST /v1/auth/verify-email`, which is the first request whose caller
+         *     has proved the address is theirs.
          */
         post: operations["signup"];
         delete?: never;
@@ -119,6 +134,10 @@ export interface paths {
          * Verify the owner's address
          * @description Consumes the token echoed by signup (in development) or mailed to the
          *     address. Until this succeeds, login answers EMAIL_NOT_VERIFIED.
+         *
+         *     This is where `farmId` and `userId` come from. Presenting this token is
+         *     the proof that the address belongs to the caller — the proof the public
+         *     signup cannot ask for, and the reason it names nothing.
          */
         post: operations["verifyEmail"];
         delete?: never;
@@ -2144,6 +2163,11 @@ export interface paths {
          *     seven-day answer — same `weekStart`, same `finished: true`, a tenth of
          *     the kilos — which next to full weeks reads as a collapse rather than as
          *     a shorter question.
+         *
+         *     The envelope carries the same three fields for the LIST: the first and
+         *     last day these rows account for, and whether `limit` stopped the list
+         *     short of the span asked for. A cut at the oldest end is where a reader
+         *     takes the start of the series to be the start of the harvest.
          */
         get: operations["reportWeeks"];
         put?: never;
@@ -2533,6 +2557,23 @@ export interface paths {
          *     for a minute is dropped rather than being granted the rest of the
          *     budget. Nothing else in the API has that patience, and nothing else
          *     should.
+         *
+         *     **And because it is slow, only three of these run at a time.** The
+         *     transaction that serves this route is open before the first byte of the
+         *     body arrives, so an import holds a database connection `idle in
+         *     transaction` for as long as the upload takes — up to those 25 minutes.
+         *     Measured, with the upload compressed to make the shape visible: two at
+         *     once cost two connections and nothing else; eleven at once held every
+         *     connection in the pool, and ordinary requests on every other route did
+         *     not fail, they WAITED — 17.8 seconds, which at the real deadline is the
+         *     whole service stopped for every farm.
+         *
+         *     So the pool carries three connections above the ten ordinary traffic
+         *     uses, and at most three imports may borrow them. The fourth is answered
+         *     429 RATE_LIMITED immediately, having read nothing and waited for
+         *     nothing. Refused rather than queued on purpose: an owner told to come
+         *     back in a few minutes before a 25-minute upload is better served than
+         *     one who waits half an hour to be told the same.
          */
         post: operations["importSeason"];
         delete?: never;
@@ -2587,7 +2628,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -2656,16 +2697,23 @@ export interface components {
                 password: string;
             };
         };
+        /**
+         * @description Everything this object could say about the ACCOUNT has been taken out of
+         *     it, because saying it for one address and not another is what made the
+         *     public signup an oracle. `farmId` and `userId` are on the verify-email
+         *     response now.
+         */
         SignupResponse: {
-            /** Format: uuid */
-            farmId: string;
-            /** Format: uuid */
-            userId: string;
             verificationRequired: boolean;
             /**
              * @description Present only when the server runs with DevEcho on, because there is
              *     no mail sender yet. The server refuses to start with it on outside
              *     development.
+             *
+             *     It is echoed for a registered address too, and for that address it
+             *     verifies nothing — the row it names was rolled back with the rest of
+             *     the work that branch spent. Withholding it would be the difference
+             *     an attacker reads.
              */
             verificationToken?: string;
         };
@@ -4248,6 +4296,31 @@ export interface components {
         ReportWeeksResult: {
             scope: components["schemas"]["ReportScope"];
             items: components["schemas"]["ReportWeek"][];
+            /**
+             * Format: date
+             * @description The first day these items account for — the oldest row's
+             *     `coveredFrom`. Null when there are no rows: an empty list covers no
+             *     days, and a date invented to fill the field would be the kind of
+             *     figure these reports exist to refuse.
+             */
+            coveredFrom: string | null;
+            /**
+             * Format: date
+             * @description The last day these items account for.
+             */
+            coveredTo: string | null;
+            /**
+             * @description The same fact each row states about itself, one level up: this list
+             *     answers less than was asked for. True when `limit` cut older weeks
+             *     off the end of the `from`/`to` span, and true when an edge row's own
+             *     window was cut short.
+             *
+             *     The truncation by `limit` was the one thing nothing said. Sixty
+             *     weeks asked for and twenty-six returned looked exactly like a
+             *     twenty-six week season, with the cut at the oldest end where a
+             *     reader takes the start of the series to be the start of the harvest.
+             */
+            partialWindow: boolean;
         };
         /**
          * @description What these figures cover: work paid by the unit of work — the same
@@ -4312,6 +4385,24 @@ export interface components {
             byDay: components["schemas"]["ReportGrid"];
             byCrop: components["schemas"]["ReportGrid"];
             total: components["schemas"]["ReportTotals"];
+            /**
+             * Format: date
+             * @description The Monday. This route's window is a whole week, always.
+             */
+            coveredFrom: string;
+            /**
+             * Format: date
+             * @description The Sunday.
+             */
+            coveredTo: string;
+            /**
+             * @description Always false here, and on the wire anyway. Every route that returns
+             *     week totals carries these three fields, so a client can read the
+             *     window the same way everywhere instead of knowing which routes have
+             *     it; and the safe assumption for a route that omitted them ("this
+             *     might be partial") is the wrong one on the one route that never is.
+             */
+            partialWindow: boolean;
         };
         ReportCropWeek: components["schemas"]["ReportTotals"] & {
             /** Format: date */
@@ -4464,13 +4555,22 @@ export interface components {
              *     missing from it — which is what decides whether the weeks either
              *     side of it are consecutive.
              */
-            records?: number;
+            records: number;
         };
         HarvestShape: {
             /**
-             * @description The finished week with the highest yield so far, or null when there
-             *     is not one finished week to look at. Never a zero-valued week: "no
-             *     peak yet" and "a peak of nothing" are different answers.
+             * @description The highest week of the UNBROKEN STRETCH the reading is made of, or
+             *     null when there is not one finished week to look at. Never a
+             *     zero-valued week: "no peak yet" and "a peak of nothing" are
+             *     different answers.
+             *
+             *     The stretch runs back from the most recent week whose kilos are
+             *     known, for as long as the weeks are consecutive and known. The peak
+             *     used to be the maximum over every finished week in the window,
+             *     holes and all — so one response could name a peak on the far side of
+             *     a gap that `fallingWeeks`, in the same response, refused to compare
+             *     across. `contiguousWeeks` says how wide the stretch is. The weeks
+             *     before the break are still in `weeks`, for the chart.
              */
             peak: components["schemas"]["HarvestWeekTotal"] | null;
             /**
@@ -4483,11 +4583,18 @@ export interface components {
              */
             fallingWeeks: number;
             /**
-             * @description Two falling weeks AND the peak already behind us. Two alone could
-             *     be rain; both together is the season ending, which is when moving
-             *     people to another plot pays off.
+             * @description Two falling weeks AND the peak already behind us, both read over the
+             *     same unbroken stretch. Two alone could be rain; both together is the
+             *     season ending, which is when moving people to another plot pays off.
              */
             windingDown: boolean;
+            /**
+             * @description How many consecutive known weeks `peak`, `fallingWeeks` and
+             *     `windingDown` were read over. Zero only when `reason` says there is
+             *     no reading. A peak without this number invites the reading a hole in
+             *     the series makes impossible.
+             */
+            contiguousWeeks: number;
             /**
              * @description Why there is no reading. Absent when there is one. Without it a
              *     season that has barely started is indistinguishable from a healthy
@@ -4530,6 +4637,27 @@ export interface components {
              *     reports are written against.
              */
             weeksWithoutRecords: number;
+            /**
+             * Format: date
+             * @description The Monday of the oldest week in `weeks`, or null when the farm has
+             *     no harvest at all.
+             */
+            coveredFrom: string | null;
+            /**
+             * Format: date
+             * @description The Sunday of the newest week in `weeks`.
+             */
+            coveredTo: string | null;
+            /**
+             * @description True when the farm has harvest OLDER than `coveredFrom`: the `weeks`
+             *     parameter cut the season and the reading could not see past the cut.
+             *
+             *     It matters more here than anywhere else these three fields appear.
+             *     The peak of the newest twelve weeks of a twenty-week season may be
+             *     the twelfth — the edge of the window, and not a peak at all — and
+             *     nothing else in this response would have said so.
+             */
+            partialWindow: boolean;
         };
         /**
          * @description The wire name of a table, which is the handset's name and not the
@@ -4981,7 +5109,26 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description UNAUTHORIZED — no token, or a token this server did not issue. */
+        /**
+         * @description UNAUTHORIZED — no token, or a token this server did not issue.
+         *
+         *     Two other codes arrive with this status, and both mean the same thing to
+         *     a client: get a new access token and try once more.
+         *
+         *     * TOKEN_EXPIRED — fifteen minutes are up.
+         *     * ROLE_CHANGED — the account's role on this farm is no longer the role
+         *       the token says. Checked on EVERY request, in the same round trip as
+         *       FARM_SUSPENDED and MEMBERSHIP_REVOKED, and for the same reason: the
+         *       role is a signed claim good for fifteen minutes, and it is what the
+         *       permission table reads AND what row level security is told. An
+         *       administrator demoted to weigher otherwise kept a quarter of an hour
+         *       of the settlements, the ledger and the balances. It is a 401 and not a
+         *       403 because refreshing fixes it: the refresh re-reads the membership
+         *       and mints the role the account actually holds, and the client's usual
+         *       retry-once-after-refresh makes the change invisible to the person
+         *       holding the phone. What they meet afterwards, if they were demoted, is
+         *       an ordinary 403 from the permission table, in the role they have.
+         */
         Unauthorized: {
             headers: {
                 [name: string]: unknown;
@@ -5137,7 +5284,11 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The farm exists and is active; the owner cannot log in yet. */
+            /**
+             * @description The registration was accepted. Whether a farm was created depends on
+             *     whether the address already had an account, and this answer is the
+             *     same either way — by design, and see the description above.
+             */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -5147,19 +5298,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /**
-             * @description EMAIL_TAKEN — the address already has an account. Open a session and
-             *     use POST /v1/farms to add another farm to it. This answer does not
-             *     depend on the password and says nothing about it.
-             */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
             /** @description RATE_LIMITED — too many signups from this address this hour. */
             429: {
                 headers: {
@@ -5292,11 +5430,20 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         userId: string;
+                        /**
+                         * Format: uuid
+                         * @description The farm this registration created.
+                         */
+                        farmId: string;
                         verified: boolean;
                     };
                 };
             };
-            /** @description The link is not valid any more. */
+            /**
+             * @description The link is not valid any more — expired, already used, or naming a
+             *     registration that never happened, which is what the development echo
+             *     hands back for an address that already had an account.
+             */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -9161,6 +9308,19 @@ export interface operations {
              *     it is not something to paper over.
              */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description RATE_LIMITED — three seasons are already being imported. Nothing was
+             *     read and nothing was written; `Retry-After` says when to come back
+             *     and `details.importsAtOnce` says how many the server takes.
+             */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

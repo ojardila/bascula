@@ -76,13 +76,40 @@ func (s *Server) handleReportWeeks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := store.ReportWeeks(r.Context(), tx, from, to,
+	items, truncated, err := store.ReportWeeks(r.Context(), tx, from, to,
 		boundedParam(r, "limit", defaultWeeksInList, maxReportWeeks))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"scope": store.ScopeHarvest, "items": items})
+
+	// The window the LIST covers, beside the window each row covers.
+	//
+	// Every row already says which days of its own week it summed. What no row
+	// could say is that the list itself stops short of the question: `limit`
+	// cuts the oldest weeks off, and a chart drawn from the rows would start at
+	// the cut and call it the start of the season. So the envelope carries the
+	// same three fields, meaning the same thing one level up — the first and
+	// last day these items actually account for, and whether that is less than
+	// what was asked for.
+	//
+	// Null when there are no weeks at all: an empty list covers no days, and a
+	// pair of dates invented to fill the field would be exactly the kind of
+	// figure this file spends its comments arguing against.
+	body := map[string]any{
+		"scope":         store.ScopeHarvest,
+		"items":         items,
+		"coveredFrom":   nil,
+		"coveredTo":     nil,
+		"partialWindow": truncated,
+	}
+	if n := len(items); n > 0 {
+		newest, oldest := items[0], items[n-1] // the query orders newest first
+		body["coveredFrom"] = oldest.CoveredFrom
+		body["coveredTo"] = newest.CoveredTo
+		body["partialWindow"] = truncated || oldest.PartialWindow || newest.PartialWindow
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // handleReportWeek is the detail the phone already had: the employee × day

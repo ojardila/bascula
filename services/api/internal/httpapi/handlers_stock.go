@@ -45,6 +45,14 @@ func confirmOurs(r *http.Request, checks map[string]string) error {
 			q = `SELECT count(*) FROM customers WHERE id = $1`
 		case "activity":
 			q = `SELECT count(*) FROM activities WHERE id = $1`
+		case "employee":
+			// Ownership, not liveness: a worker who has been deleted still has
+			// last month's weighings, and listing them is the point of finding
+			// 6. GetEmployee would answer the same here, and this keeps every
+			// check in one round trip's worth of the same shape.
+			q = `SELECT count(*) FROM employees WHERE id = $1`
+		case "productCategory":
+			q = `SELECT count(*) FROM product_categories WHERE id = $1`
 		case "workRecord":
 			q = `SELECT count(*) FROM work_records WHERE id = $1`
 		case "attachment":

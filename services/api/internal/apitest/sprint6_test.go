@@ -443,6 +443,19 @@ func TestUserManagement(t *testing.T) {
 		if down.Body["role"] != "admin" {
 			t.Fatalf("role is %v: %s", down.Body["role"], down.Raw)
 		}
+
+		// The token in this test's hand still says `owner`; the database now
+		// says `admin`. That token is refused from here on — see
+		// tenant.setContext — so the fixture does what a client does with a
+		// 401: gets a new one. The rest of this test runs as an administrator,
+		// which is what this person now is.
+		stale := h.do(t, http.MethodGet, "/v1/users", f.OwnerToken, nil)
+		if stale.Status != http.StatusUnauthorized ||
+			stale.code() != string(domain.CodeRoleChanged) {
+			t.Fatalf("a token that outlived its role: got %d %s, want 401 ROLE_CHANGED",
+				stale.Status, stale.Raw)
+		}
+		h.relogin(t, f)
 	})
 
 	t.Run("removing access also ends the sessions it had", func(t *testing.T) {

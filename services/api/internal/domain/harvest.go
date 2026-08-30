@@ -38,6 +38,16 @@ type HarvestShape struct {
 	FallingWeeks int `json:"fallingWeeks"`
 	// WindingDown is true when the harvest is clearly on its way out.
 	WindingDown bool `json:"windingDown"`
+	// ContiguousWeeks is how many unbroken weeks the reading above is made of:
+	// the run of consecutive weeks, ending at the most recent week whose kilos
+	// are known, that Peak and WindingDown were read over.
+	//
+	// It is here because the two numbers beside it are only as wide as it is. A
+	// series with a hole in it is two seasons as far as this file is concerned,
+	// and saying "peak: 1000 kg" without saying "over 2 weeks" invites exactly
+	// the reading the hole makes impossible. Zero only when there is no
+	// reading at all, where Reason says why.
+	ContiguousWeeks int `json:"contiguousWeeks"`
 	// Reason names why there is no reading, and is empty when there is one.
 	// A caller must never render "peak: none, falling: 0" as a healthy season
 	// when the truth is that the season has barely started.
@@ -81,25 +91,54 @@ const ReasonSeasonTooShort = "no_finished_weeks"
 // reading says the smaller of the two — falling stops, WindingDown goes quiet —
 // because this number's job is to justify moving people off a plot.
 func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64) HarvestShape {
-	// Every finished week, holes included. The peak looks past the holes; the
-	// run below must not.
+	// Every finished week, holes included: the calendar, not the surviving
+	// rows. Both the peak and the run are read over a stretch of it.
 	series := make([]WeekTotal, 0, len(weeks))
-	finished := make([]WeekTotal, 0, len(weeks))
+	known := 0
 	for _, w := range weeks {
 		if w.WeekStart >= currentMonday {
 			continue
 		}
 		series = append(series, w)
 		if w.Kg != nil {
-			finished = append(finished, w)
+			known++
 		}
 	}
-	if len(finished) == 0 {
+	if known == 0 {
 		return HarvestShape{Reason: ReasonSeasonTooShort}
 	}
 
-	peak := finished[0]
-	for _, w := range finished {
+	// The stretch the reading is about: from the most recent week whose kilos
+	// are known, back for as long as the weeks are consecutive and known.
+	//
+	// The peak used to be the maximum over EVERY finished week in the window,
+	// holes or no holes, and that is the other half of the fault the run below
+	// was fixed for. A farm that picked 1000 kg, rested a week, and has since
+	// picked 300 and 100 was told its peak was the 1000 — a week on the far
+	// side of a break, which the falling run had already refused to compare
+	// against. One number stepping over a hole the number beside it will not is
+	// worse than either behaviour on its own: the two disagree about what the
+	// series even is, and the disagreement is invisible on the wire.
+	//
+	// So the peak is the maximum of THIS stretch, and ContiguousWeeks says how
+	// wide the stretch is, so nobody has to guess whether the peak is the
+	// season's or this fortnight's. Everything older than the break is still in
+	// `weeks` for the chart to draw; it is only the READING that stops.
+	first := 0
+	for first < len(series) && series[first].Kg == nil {
+		first++
+	}
+	last := first
+	for j := first + 1; j < len(series); j++ {
+		if series[j].Kg == nil || !isWeekBefore(series[j].WeekStart, series[j-1].WeekStart) {
+			break
+		}
+		last = j
+	}
+	run := series[first : last+1]
+
+	peak := run[0]
+	for _, w := range run {
 		// Strictly greater, so a tie keeps the newer week — the phone's
 		// reduce does the same, and which one is named changes the advice.
 		if *w.Kg > *peak.Kg {
@@ -132,10 +171,20 @@ func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64)
 
 	// Two falling weeks alone could be rain. Past the peak as well, it is the
 	// season ending — which is when moving people to another plot pays off.
+	//
+	// "Past the peak" used to be written `peak.WeekStart < currentMonday`, and
+	// every week that reaches this point is older than currentMonday: the
+	// filter at the top of the function drops the running week. It was a
+	// condition that could not fail, so `windingDown` was `falling >= 2` and
+	// nothing else, and the peak it claimed to be past could sit on the far
+	// side of a hole. It is now a real comparison against the most recent
+	// finished week, and — because both come out of the same unbroken stretch —
+	// a peak the falling run has actually walked back to.
 	return HarvestShape{
-		Peak:         &peak,
-		FallingWeeks: falling,
-		WindingDown:  falling >= 2 && peak.WeekStart < currentMonday,
+		Peak:            &peak,
+		FallingWeeks:    falling,
+		WindingDown:     falling >= 2 && peak.WeekStart < series[0].WeekStart,
+		ContiguousWeeks: len(run),
 	}
 }
 

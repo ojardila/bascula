@@ -124,6 +124,13 @@ func (s *Server) handleListPickups(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// The phone's door gets the same guard as the console's, for the reason
+	// this file exists: two doors onto one list must not answer differently.
+	// See confirmWorkRecordFilter.
+	if err := confirmWorkRecordFilter(r, f); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	f.PayScheme = domain.PaySchemeWorkUnit
 	list, err := store.ListWorkRecords(r.Context(), tx, f)
 	if err != nil {

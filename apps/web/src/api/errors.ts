@@ -106,6 +106,11 @@ export const ERROR_MESSAGES: Record<string, string> = {
   FORBIDDEN: "Su usuario no tiene permiso para esta parte del sistema.",
   // Somebody was taken off this farm while their session was still open. It is
   // not a password problem and saying so would send them to change one.
+  // Somebody's role changed while their session was open. The client refreshes
+  // and retries once, so this is normally invisible; the sentence is for when
+  // the refresh does not fix it, and it must not read like a password problem.
+  ROLE_CHANGED:
+    "Su permiso en esta finca cambió mientras trabajaba. Vuelva a entrar para seguir con los permisos nuevos.",
   MEMBERSHIP_REVOKED:
     "Su acceso a esta finca fue retirado. Si cree que es un error, hable con el dueño de la finca; no es problema de su contraseña.",
   // The server's loud failure when the tenant was never established. It is a
