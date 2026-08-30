@@ -433,3 +433,51 @@ func day(s string) time.Time {
 	}
 	return d
 }
+
+// oldestSeq is the farm's lowest retained sync_log seq, which is what
+// handlers_sync.go compares a cursor against. Read on the admin pool because
+// a test asking what retention left behind is not a tenant's question.
+func (h *harness) oldestSeq(t *testing.T, farmID string) int64 {
+	t.Helper()
+	var seq *int64
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT MIN(seq) FROM sync_log WHERE farm_id = $1`, farmID).Scan(&seq); err != nil {
+		t.Fatalf("oldest seq: %v", err)
+	}
+	if seq == nil {
+		return 0
+	}
+	return *seq
+}
+
+// pruneSyncLog removes a farm's oldest sync_log rows the way store.PruneSync
+// removes them: one transaction on the schema owner's pool, with
+// `app.sync_prune` set LOCAL on it.
+//
+// Both halves are load-bearing. Migration 00014 makes that flag the single
+// exception the append-only trigger honours, and it is read with
+// `current_setting` on the executing session — so a flag set on one connection
+// and a DELETE issued on another is no permission at all. And the tenant pool
+// cannot do it whatever it sets: `bascula_api` carries the REVOKE and gets
+// `permission denied for table sync_log`.
+func (h *harness) pruneSyncLog(t *testing.T, farmID string) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := h.admin.Begin(ctx)
+	if err != nil {
+		t.Fatalf("prune begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.sync_prune', 'on', true)`); err != nil {
+		t.Fatalf("prune flag: %v", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM sync_log WHERE farm_id = $1 AND seq <= (
+		   SELECT MIN(seq) + 2 FROM sync_log WHERE farm_id = $1)`, farmID); err != nil {
+		t.Fatalf("the prune was refused, so nothing was retained away: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("prune commit: %v", err)
+	}
+}

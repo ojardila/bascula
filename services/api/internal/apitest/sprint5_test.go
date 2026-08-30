@@ -1,14 +1,12 @@
 package apitest
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 )
@@ -579,14 +577,53 @@ func TestPullIsAFeedAndTheWeigherGetsNoMoneyOutOfIt(t *testing.T) {
 	t.Run("a cursor older than the retained feed says so instead of skipping the gap", func(t *testing.T) {
 		// Retention has not pruned anything on this farm, so the gap is
 		// simulated the only honest way: by pruning.
-		h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) error {
-				_, err := h.admin.Exec(ctx,
-					`DELETE FROM sync_log WHERE farm_id = $1 AND seq <= (
-					   SELECT MIN(seq) + 2 FROM sync_log WHERE farm_id = $1)`, f.FarmID)
-				return err
-			})
-		out := h.do(t, http.MethodGet, "/v1/sync/pull?cursor=1", f.OwnerToken, nil)
+		//
+		// Three things here were wrong for a long time and none of them was
+		// visible, because the assertion passed for an unrelated reason. The
+		// DELETE ran on `h.admin` rather than on `tx`, so it was a different
+		// session; it never set `app.sync_prune`, which migration 00014 makes
+		// the ONE exception the append-only trigger honours and which must be
+		// set on the same session; and `withTenantCommit`'s error was thrown
+		// away, so the refusal was silent. Nothing was ever pruned.
+		//
+		// What made it green: `seq` is one global bigserial for the whole
+		// table, so in a full-package run this farm is created late, MIN(seq)
+		// is large, and `cursor=1` is legitimately too old. Run the package
+		// with a -run filter and MIN(seq) is 2, `1 < 1` is false, and the
+		// endpoint answers 200 with every row still there. Measured, exactly
+		// that: `got 200 {... "changes":[{"seq":2 ...}], "cursor":8}`.
+		//
+		// So this test asserted nothing about retention on any PR that ever
+		// ran it.
+		// And it has to run the way the prune job runs: one transaction on the
+		// SCHEMA OWNER's pool, with `app.sync_prune` set LOCAL on that same
+		// transaction. Not the tenant pool -- `bascula_api` carries the REVOKE
+		// and answers `permission denied for table sync_log`, so the trigger's
+		// exception is not even reachable from there. Measured while fixing
+		// this, which is the other half of why the original never pruned.
+		before := h.oldestSeq(t, f.FarmID)
+		h.pruneSyncLog(t, f.FarmID)
+
+		// And it actually removed rows, rather than reporting success over a
+		// DELETE that matched nothing.
+		after := h.oldestSeq(t, f.FarmID)
+		if after <= before {
+			t.Fatalf("the oldest retained seq did not move: %d -> %d", before, after)
+		}
+
+		// Now the cursor is below the retained feed BECAUSE of retention, not
+		// because of where the global sequence happened to land. `cursor=1` is
+		// kept only when it is genuinely below `oldest-1`; otherwise the
+		// assertion would be about the boundary's arithmetic again.
+		cursor := after - 2
+		if cursor < 1 {
+			cursor = 1
+		}
+		if cursor >= after-1 {
+			t.Fatalf("not enough was pruned to put a cursor below the feed: oldest=%d", after)
+		}
+		out := h.do(t, http.MethodGet,
+			"/v1/sync/pull?cursor="+strconv.FormatInt(cursor, 10), f.OwnerToken, nil)
 		if out.code() != string(domain.CodeCursorTooOld) {
 			t.Fatalf("a cursor below the retained feed: got %d %s, want CURSOR_TOO_OLD",
 				out.Status, out.Raw)
