@@ -158,6 +158,12 @@ const es: Dict = {
   "settings.demoLoaded": "✅ Datos de demo cargados",
   "settings.cleared": "🗑️ Datos borrados",
   "settings.chooseWeekCost": "Elige una semana y un precio válido",
+  // The two refusals that keep a price nobody gave us from being saved as 0.
+  // They name what did not happen — nothing was saved — because the snackbar
+  // that used to appear here said «configuración guardada».
+  "settings.priceNotYet":
+    "El precio todavía no ha llegado del dueño. No se guardó nada: sin precio, la semana valdría $0.",
+  "settings.priceInvalid": "Escribe un precio válido antes de guardar. No se guardó nada.",
   "settings.weekUpdated": "✅ Precio de {week} actualizado",
 
   // Weekly lots breakdown
@@ -679,6 +685,9 @@ const en: Dict = {
   "settings.demoLoaded": "✅ Demo data loaded",
   "settings.cleared": "🗑️ Data cleared",
   "settings.chooseWeekCost": "Pick a week and a valid price",
+  "settings.priceNotYet":
+    "The owner's price has not arrived yet. Nothing was saved: with no price the week would be worth $0.",
+  "settings.priceInvalid": "Enter a valid price before saving. Nothing was saved.",
   "settings.weekUpdated": "✅ Price for {week} updated",
 
   "reports.lots": "Lots",
@@ -1175,6 +1184,9 @@ const pt: Dict = {
   "settings.demoLoaded": "✅ Dados de demo carregados",
   "settings.cleared": "🗑️ Dados apagados",
   "settings.chooseWeekCost": "Escolha uma semana e um preço válido",
+  "settings.priceNotYet":
+    "O preço do dono ainda não chegou. Nada foi salvo: sem preço, a semana valeria $0.",
+  "settings.priceInvalid": "Digite um preço válido antes de salvar. Nada foi salvo.",
   "settings.weekUpdated": "✅ Preço de {week} atualizado",
 
   "reports.lots": "Lotes",
