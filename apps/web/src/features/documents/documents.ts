@@ -153,9 +153,8 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
    *
    * This receipt used to be headed by a 36-character UUID — the number the
    * owner would read out over the phone if somebody disputes a payment. The
-   * short form goes at the top now, eight digits in two blocks, and the whole
-   * id stays in the footer in small type for whoever has to find it in the
-   * ledger.
+   * short form goes at the top now, eight digits in two blocks. The full
+   * movement id does not go on the paper: Recibo N.º is what they read out.
    */
   const receiptLine = `<div class="who"><div class="nm">Recibo N.º ${esc(
     payment.receiptNumber,

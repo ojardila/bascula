@@ -431,7 +431,7 @@ export function CrewPayrollPage() {
           onClose={() => setUndone(null)}
         >
           <AlertTitle>Nómina deshecha</AlertTitle>
-          Se anularon <strong>{undone.paymentsReversed}</strong>{" "}
+          Se corrigieron <strong>{undone.paymentsReversed}</strong>{" "}
           {undone.paymentsReversed === 1 ? "pago" : "pagos"} y se anularon{" "}
           <strong>{undone.settlementsVoided}</strong>{" "}
           {undone.settlementsVoided === 1 ? "liquidación" : "liquidaciones"}.
@@ -991,7 +991,7 @@ export function CrewPayrollPage() {
         <DialogTitle>Deshacer la nómina</DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
-            Se van a reversar <strong>{undoHandle.payments.length}</strong>{" "}
+            Se van a corregir <strong>{undoHandle.payments.length}</strong>{" "}
             {undoHandle.payments.length === 1 ? "pago" : "pagos"} y a anular{" "}
             <strong>{undoHandle.settlements.length}</strong>{" "}
             {undoHandle.settlements.length === 1 ? "liquidación" : "liquidaciones"}.

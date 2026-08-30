@@ -411,7 +411,7 @@ describe("undoing the payroll", () => {
     await user.click(await screen.findByRole("button", { name: "Deshacer" }));
     const askBox = await screen.findByRole("dialog");
     expect(askBox.textContent).toContain(
-      "Se van a reversar 4 pagos y a anular 3 liquidaciones",
+      "Se van a corregir 4 pagos y a anular 3 liquidaciones",
     );
     await user.click(within(askBox).getByRole("button", { name: "Deshacer" }));
 
