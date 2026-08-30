@@ -122,7 +122,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   /* -- plots --------------------------------------------------------- */
   INVALID_GEOMETRY: "El polígono se cruza a sí mismo. Vuelva a dibujarlo.",
   PLOT_HAS_ACTIVE_CROPS:
-    "La parcela todavía tiene cultivos activos. Dé de baja los cultivos primero.",
+    "El lote todavía tiene cultivos activos. Dé de baja los cultivos primero.",
 
   /* -- work records and settlements ---------------------------------- */
   WORK_RECORD_SETTLED:

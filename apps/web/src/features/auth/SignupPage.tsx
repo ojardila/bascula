@@ -160,7 +160,7 @@ export function SignupPage() {
 
             Sprint 1 asked here for departamento and municipio, which the API
             has nowhere to put: a department and a municipality describe a
-            PARCELA, and the farm's own location is set later in Configuración.
+            LOTE, and the farm's own location is set later in Configuración.
             What the server does require is this, because it seeds the new farm
             with a "Recolección" activity priced from it — so this field is the
             difference between a farm that can weigh coffee on day one and one
@@ -181,7 +181,7 @@ export function SignupPage() {
             inputMode="numeric"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            El municipio y el departamento se piden después, en cada parcela.
+            El municipio y el departamento se piden después, en cada lote.
           </Typography>
 
           <Typography variant="overline" color="text.secondary">

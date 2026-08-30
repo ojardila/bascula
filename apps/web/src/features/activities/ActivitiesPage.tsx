@@ -9,22 +9,11 @@ import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
 import { ActivityFormDialog } from "./ActivityFormDialog";
+import { PAY_MODE_LABEL, PROVISIONAL, PROVISIONAL_WHY } from "../../lib/vocab";
 import type { Activity } from "../../api/types";
 
 /** Categories come from the farm's catalogue, so they are only capitalised. */
 const titleCase = (s: string) => (s ? s[0].toLocaleUpperCase("es") + s.slice(1) : s);
-
-/**
- * En la finca esto se dice a destajo y al jornal. «Unidad de trabajo» y
- * «unidad de tiempo» son nombres de columna, y *destajo* —la palabra con la
- * que se paga la recolección en Colombia— no aparecía en ningún sitio del
- * producto. Los valores guardados no cambian; sólo cómo se leen.
- */
-const PAY_MODE_LABEL: Record<string, string> = {
-  contract: "Por contrato",
-  time_unit: "Al jornal",
-  work_unit: "A destajo",
-};
 
 export function ActivitiesPage() {
   const { can } = useAuth();
@@ -77,12 +66,17 @@ export function ActivitiesPage() {
             // it is frozen at settlement. Saying "$800" here would be a lie
             // with a number in it. Now it also says where the price DOES live,
             // which is the question somebody reading this cell is asking.
-            <Tooltip title="Lo pone el precio del kilo de la semana. Se cambia en «Precio del kilo».">
+            /* Se llamaba «precio de la semana», que era el TERCER nombre del
+               mismo estado: el papel lo llama PROVISIONAL y el tablero lo
+               llamaba «estimado». Uno solo, y gana el que ya está impreso.
+               El precio de la semana sigue existiendo —es lo que el dueño fija
+               los lunes— pero es el nombre del precio, no el del estado. */
+            <Tooltip title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}>
               <Chip
                 size="small"
                 color="warning"
                 variant="outlined"
-                label="precio de la semana"
+                label={PROVISIONAL}
                 sx={{ cursor: "help" }}
               />
             </Tooltip>

@@ -14,6 +14,7 @@
  * one: with ten modules coming, a permission expressed as a condition inside a
  * component is a permission nobody can audit.
  */
+import { EMPLEADO, LOTE } from "../lib/vocab";
 import type { Role } from "../api/types";
 
 export type Action =
@@ -194,8 +195,10 @@ export const MODULES: ModuleDef[] = [
   // morning during the season — not filed behind Labores, where the picking was
   // effectively hidden until Sprint 4.
   { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" },
-  { key: "plots", label: "Parcelas", path: "/parcelas", action: "plots.read", sprint: 1, available: true, icon: "terrain" },
-  { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, available: true, icon: "people" },
+  // «Lotes», no «Parcelas»: el menú y el primer campo del formulario decían
+  // cosas distintas de la misma tierra. `lib/vocab.ts` lo decide una sola vez.
+  { key: "plots", label: LOTE.Many, path: LOTE.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" },
+  { key: "workers", label: EMPLEADO.Many, path: EMPLEADO.path, action: "workers.read", sprint: 1, available: true, icon: "people" },
   { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
   /**
    * EL PRECIO DEL KILO DE LA SEMANA, con su propia entrada.

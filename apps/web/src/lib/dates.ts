@@ -173,16 +173,117 @@ export function weekTag(monday: string, today: string): string | null {
  * estadounidense: un caficultor que escribe el 3 de agosto como 03/08 acaba
  * registrando el 8 de marzo, y la labor se va a otra semana — a otro precio.
  *
- * SER HONESTOS CON LO QUE ESTO ARREGLA Y LO QUE NO. El formato de un
- * `<input type="date">` no lo decide la página: lo decide el navegador.
- * Firefox y Safari miran el idioma del elemento, y con esto pasan a
- * `dd/mm/aaaa`. Chrome mira el idioma con el que está configurado el
- * navegador y no hace caso, así que ahí sigue dependiendo del equipo. La
- * alternativa real es un campo propio con su calendario, que es trabajo de
- * verdad y no cabía en este sprint; esto es la mitad que sí cabía, en un solo
- * sitio para que ese día haya un solo sitio que cambiar.
+ * EL SPRINT PASADO SE HIZO LA MITAD QUE CABÍA: marcar el `<input type="date">`
+ * como `es-CO`, que a Firefox y a Safari les basta y a Chrome no, porque
+ * Chrome mira el idioma con el que está configurado el navegador y no hace
+ * caso — un arreglo que dependía de qué navegador tuviera la finca. Aquella
+ * nota decía que la salida de verdad era un campo propio con su calendario.
+ * Es `components/DateField.tsx`, y se apoya en lo que viene aquí abajo.
+ *
+ * `DATE_FIELD_PROPS` ya no existe porque no queda ni un `type="date"` en el
+ * producto: la máscara dejó de decidirla el navegador.
  */
-export const DATE_FIELD_PROPS = {
-  inputLabel: { shrink: true },
-  htmlInput: { lang: "es-CO" },
-} as const;
+
+const WEEKDAYS_LONG = [
+  "domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado",
+];
+
+/** "L M X J V S D" — la semana empieza en lunes, como el resto del producto. */
+export const WEEKDAY_INITIALS = ["L", "M", "X", "J", "V", "S", "D"] as const;
+
+export const MONTH_NAMES = MONTHS_LONG;
+
+/**
+ * «sábado 29 de agosto de 2026».
+ *
+ * ESTA FUNCIÓN ES EL ARREGLO, tanto como el calendario. El fallo que se
+ * reportó no es que la máscara esté en inglés: es que **quien escribe 29/08 no
+ * sabe qué guardó**. Un campo que repite en letras lo que entendió cierra esa
+ * duda sin que nadie tenga que confiar en la máscara, en el navegador ni en la
+ * configuración del equipo.
+ */
+export function formatDayFull(iso: string): string {
+  const d = parseDay(iso);
+  return (
+    `${WEEKDAYS_LONG[d.getUTCDay()]} ${d.getUTCDate()} de ` +
+    `${MONTHS_LONG[d.getUTCMonth()]} de ${d.getUTCFullYear()}`
+  );
+}
+
+/** ¿Es `YYYY-MM-DD` un día que existe de verdad? El 31 de febrero no lo es. */
+export function isValidDay(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1) return false;
+  return d <= daysInMonth(y, m - 1);
+}
+
+/** Cuántos días tiene ese mes, bisiestos incluidos. */
+export function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+/**
+ * Lo que la persona TECLEÓ, entendido como día. Devuelve `YYYY-MM-DD` o null.
+ *
+ * Se aceptan las formas con las que de verdad se escribe una fecha en una
+ * finca, todas en el orden de aquí —día primero, que es el punto entero de
+ * este sprint—:
+ *
+ *   "29/8"        el año se da por supuesto: `refYear`
+ *   "29/08/26"    dos dígitos de año, del siglo en curso
+ *   "29/08/2026"  entera
+ *   "29-8-2026"   con guiones o puntos, que es como sale de algunos teclados
+ *   "29082026"    ocho dígitos seguidos, para quien teclea sin levantar la vista
+ *
+ * Nunca adivina el mes: «13/08» no es agosto del 13, es un mes que no existe y
+ * devuelve null para que el campo lo diga en vez de guardar cualquier cosa.
+ */
+export function parseTypedDay(raw: string, refYear: number): string | null {
+  const cleaned = raw.trim();
+  if (cleaned === "") return null;
+
+  let d: number, m: number, y: number;
+  const digits = cleaned.replace(/\D/g, "");
+  const parts = cleaned.split(/[/\-.\s]+/).filter(Boolean);
+
+  if (parts.length >= 2 && parts.every((p) => /^\d+$/.test(p))) {
+    d = Number(parts[0]);
+    m = Number(parts[1]);
+    y = parts.length >= 3 ? Number(parts[2]) : refYear;
+  } else if (/^\d+$/.test(cleaned) && (digits.length === 8 || digits.length === 6)) {
+    d = Number(digits.slice(0, 2));
+    m = Number(digits.slice(2, 4));
+    y = Number(digits.slice(4));
+  } else {
+    return null;
+  }
+
+  // "26" es 2026 y no el año 26. El siglo se toma del año de referencia, así
+  // que esto sigue funcionando en 2100 sin que nadie vuelva por aquí.
+  if (y < 100) y = Math.floor(refYear / 100) * 100 + y;
+  if (!Number.isFinite(d) || !Number.isFinite(m) || !Number.isFinite(y)) return null;
+  if (y < 1900 || y > 2200) return null;
+
+  const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return isValidDay(iso) ? iso : null;
+}
+
+/** `YYYY-MM-DD` -> «29/08/2026», que es lo que se escribe en el campo. */
+export const toTypedDay = (iso: string): string => (isValidDay(iso) ? formatDate(iso) : "");
+
+/**
+ * Los días que pinta una rejilla de mes: seis semanas de lunes a domingo.
+ *
+ * Siempre seis, siempre completas — con los días del mes anterior y del
+ * siguiente en su sitio — porque una rejilla que cambia de alto al pasar de
+ * mes mueve el botón que la persona está a punto de pulsar.
+ */
+export function monthGrid(year: number, monthIndex: number): string[] {
+  const first = new Date(Date.UTC(year, monthIndex, 1));
+  const dow = first.getUTCDay(); // 0 = domingo
+  const start = addDays(first, dow === 0 ? -6 : 1 - dow);
+  return Array.from({ length: 42 }, (_, i) =>
+    addDays(start, i).toISOString().slice(0, 10),
+  );
+}

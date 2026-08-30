@@ -18,7 +18,7 @@ import { ExpensesPage } from "./ExpensesPage";
 import { AuthProvider } from "../../auth/AuthContext";
 import { setTokens } from "../../api/client";
 import { theme } from "../../theme";
-import { resetDb, FARM_ID } from "../../mocks/db";
+import { resetDb, tenantOf, FARM_ID } from "../../mocks/db";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
 
@@ -131,8 +131,64 @@ describe("the list", () => {
   it("shows the total the server summed, not the one the browser could add up", async () => {
     renderExpenses();
     // Four live expenses in the seed: 1.250.000 + 180.000 + 420.000 + 350.000.
-    expect(await screen.findByText(/4 gastos, por un total de/)).toBeInTheDocument();
+    expect(await screen.findByText(/4 gastos en esta lista/)).toBeInTheDocument();
     expect(screen.getByText("$2.200.000")).toBeInTheDocument();
+  }, 20000);
+
+  /**
+   * ── EL PIE HABLABA DE OTRA LISTA ─────────────────────────────────────
+   *
+   * `count` y `totalCents` cuentan sólo las filas vivas — decisión correcta
+   * para un total de plata gastada — pero el pie los leía como si fueran los
+   * de la tabla. Con el filtro en «Inactivas» se veían las filas dadas de baja
+   * y, debajo, «0 gastos, por un total de $0» en la misma frase.
+   */
+  it("no dice «0 gastos» debajo de una tabla con gastos", async () => {
+    const user = userEvent.setup();
+    renderExpenses();
+    await screen.findByText("Abono para el lote El Alto");
+    await user.click(screen.getByRole("button", { name: "Inactivas" }));
+    await screen.findByText("Alquiler de motobomba");
+
+    expect(screen.queryByText(/0 gastos/)).not.toBeInTheDocument();
+    expect(screen.getByText(/1 gasto en esta lista/)).toBeInTheDocument();
+    // Y dice por qué no hay total, que es la pregunta que deja el filtro.
+    expect(screen.getByText(/no hay total/)).toBeInTheDocument();
+  }, 20000);
+
+  it("y con «Todas» separa lo que se ve de lo que suma", async () => {
+    const user = userEvent.setup();
+    renderExpenses();
+    await screen.findByText("Abono para el lote El Alto");
+    await user.click(screen.getByRole("button", { name: "Todas" }));
+    await screen.findByText("Alquiler de motobomba");
+
+    expect(screen.getByText(/5 gastos en esta lista/)).toBeInTheDocument();
+    expect(screen.getByText(/4 siguen activos/)).toBeInTheDocument();
+    expect(screen.getByText("$2.200.000")).toBeInTheDocument();
+  }, 20000);
+
+  /**
+   * ── CINCUENTA CENTAVOS QUE NADIE ESCRIBIÓ ────────────────────────────
+   *
+   * El diálogo abría la casilla del valor con `Math.round(cents / 100)`, así
+   * que un gasto de $125,50 salía como «126». Entrar a cambiarle la nota y
+   * guardar mandaba 12600 en vez de 12550 sin que nadie tocara el valor.
+   */
+  it("no le redondea los centavos a un gasto que sólo se abrió para leerlo", async () => {
+    const user = userEvent.setup();
+    resetDb();
+    const t = tenantOf(FARM_ID)!;
+    t.expenses[0].amountCents = 12550;
+    renderExpenses();
+
+    await user.click(await screen.findByText(t.expenses[0].concept));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/^Valor/)).toHaveValue("125,50");
+
+    await user.click(within(dialog).getByRole("button", { name: /Guardar gasto/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(tenantOf(FARM_ID)!.expenses[0].amountCents).toBe(12550);
   }, 20000);
 
   it("keeps a gasto that was taken out of service, rather than deleting it", async () => {

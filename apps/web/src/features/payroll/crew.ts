@@ -239,7 +239,7 @@ export function settleApprovalOf(m: CrewMember): SettleApproval | null {
   };
 }
 
-/** True cuando alguna línea sigue al precio de la semana: estimada, no firme. */
+/** True cuando alguna línea sigue al precio de la semana: provisional, no firme. */
 export const hasProvisional = (a: SettleApproval): boolean =>
   a.lines.some((l) => l.rateSource === "weekly_price");
 

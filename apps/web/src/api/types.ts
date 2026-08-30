@@ -443,6 +443,20 @@ export interface WorkerProfile {
    */
   pendingCents: number | null;
   ledger: LedgerEntry[];
+  /**
+   * CUÁNTOS ASIENTOS COMO MÁXIMO PIDIÓ ESTA PANTALLA.
+   *
+   * `/v1/workers/{id}/profile` corta el libro por `?limit` y responde con la
+   * página sin decir en ninguna parte que la cortó. Una tabla titulada
+   * «Historial financiero» que en realidad son los últimos cincuenta asientos,
+   * y no lo dice, es de la misma familia que el resto de hallazgos de la
+   * auditoría: una pantalla afirmando más de lo que sabe.
+   *
+   * Con el tope aquí, la pantalla puede comparar `ledger.length` contra él y
+   * avisar. Y pedirlo explícitamente en vez de heredar el `default` del
+   * servidor significa que el número que se enseña es el que se pidió.
+   */
+  ledgerLimit: number;
   notes: WorkerNote[];
 }
 

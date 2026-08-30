@@ -7,11 +7,11 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PhotoField } from "./PhotoField";
 import { api } from "../../api/endpoints";
-import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
 import type { DocumentType } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 const DOC_TYPES: Array<{ value: DocumentType; label: string }> = [
   { value: "CC", label: "Cédula de ciudadanía" },
@@ -319,15 +319,7 @@ export function WorkerFormPage() {
                     />
                   </Grid>
                 </Grid>
-                <TextField
-                  label="Trabaja desde"
-                  type="date"
-                  value={startedAt}
-                  onChange={(e) => setStartedAt(e.target.value)}
-                  size="medium"
-                  fullWidth
-                  slotProps={DATE_FIELD_PROPS}
-                />
+                <DateField label="Trabaja desde" value={startedAt} onChange={setStartedAt} />
               </Stack>
             </CardContent>
           </Card>

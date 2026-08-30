@@ -3,7 +3,7 @@
  *
  * This is the one test that would catch "it compiles and every unit passes,
  * but the app is a white screen". It signs in through the real form, walks the
- * sprint-1 path — parcelas, empleados, perfil, pagar — and checks the figures
+ * sprint-1 path — lotes, empleados, perfil, pagar — and checks the figures
  * that `docs/diagramas/web.md` §8 promises to the peso.
  */
 import { describe, expect, it, beforeEach } from "vitest";
@@ -66,8 +66,8 @@ describe("the seeded farm renders what the wireframes promise", () => {
     });
   });
 
-  it("lists the parcelas with their area and their crops", async () => {
-    renderApp("/parcelas");
+  it("lists the lotes with their area and their crops", async () => {
+    renderApp("/lotes");
     expect(await screen.findByText("El Alto")).toBeInTheDocument();
     expect(screen.getByText("La Cuchilla")).toBeInTheDocument();
     expect(screen.getByText("Bajo del Río")).toBeInTheDocument();

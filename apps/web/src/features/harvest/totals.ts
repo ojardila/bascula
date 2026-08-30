@@ -130,7 +130,7 @@ export function foldTotals(rows: Totals[]): Totals {
  *
  * Rather than invent a second vocabulary for the same fact, those screens fold
  * their records into a `Totals` here and render it with `<Value>`, which
- * already knows how to say "estimado · precio de la semana".
+ * already knows how to say "provisional · al precio de la semana".
  */
 export interface RecordLike {
   quantity: number;

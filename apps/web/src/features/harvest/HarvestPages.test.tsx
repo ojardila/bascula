@@ -207,7 +207,7 @@ describe("a figure the server could not establish never renders as a zero", () =
     serveCurve();
     renderApp("/cosecha");
     await screen.findByRole("heading", { name: "Cosecha" });
-    expect((await screen.findAllByText(/estimado/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/provisional/i)).length).toBeGreaterThan(0);
   }, 20000);
 
   it("presents a partial total as a floor, not as the total", async () => {
@@ -275,7 +275,7 @@ describe("the season screen answers the question it exists for", () => {
     serveCurve();
     renderApp("/cosecha");
     expect(
-      await screen.findByText(/pagada por unidad de trabajo al precio de la semana/),
+      await screen.findByText(/pagada a destajo al precio de la semana/),
     ).toBeInTheDocument();
   }, 20000);
 

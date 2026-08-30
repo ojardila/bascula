@@ -41,6 +41,7 @@ import { Kg, Stat, Value } from "./Figures";
 import { unattributedReason } from "./text";
 import { kgForDrawing, type Totals } from "./totals";
 import type { WireReportGrid } from "../../api/wire";
+import { RECOLECTOR } from "../../lib/vocab";
 
 const DAY_LETTER = ["D", "L", "M", "X", "J", "V", "S"];
 
@@ -163,7 +164,7 @@ export function WeekPage() {
                 <Value total={data.total} scope="la semana" align="flex-start" />
               </Stat>
             )}
-            <Stat label="Recolectores">{grid.rows.length}</Stat>
+            <Stat label={RECOLECTOR.Many}>{grid.rows.length}</Stat>
             <Stat label={axis === "day" ? "Días trabajados" : "Cultivos"}>
               {grid.columns.length}
             </Stat>
@@ -214,7 +215,7 @@ export function WeekPage() {
                       <TableCell
                         sx={{ position: "sticky", left: 0, bgcolor: "#f2f5f0", zIndex: 1, minWidth: 150 }}
                       >
-                        Recolector
+                        {RECOLECTOR.One}
                       </TableCell>
                       {grid.columns.map((c) => (
                         <TableCell

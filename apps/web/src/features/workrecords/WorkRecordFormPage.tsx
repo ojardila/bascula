@@ -23,14 +23,16 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { formatMonday, mondayOf, todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
+import { formatMonday, mondayOf, todayInFarm } from "../../lib/dates";
 import { parseMoneyInput } from "../../lib/money";
 import {
   emptyDraft, estimateCents, forcesSingleDay, needsQuantity, needsRateField,
   parseQuantity, quantityLabel, validateWorkRecord,
   type FieldErrors, type WorkRecordDraft,
 } from "./validation";
+import { PAY_MODE_LABEL } from "../../lib/vocab";
 import type { Activity, Plot, Worker } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 export function WorkRecordFormPage() {
   const navigate = useNavigate();
@@ -245,12 +247,14 @@ export function WorkRecordFormPage() {
                 <Typography sx={{ fontWeight: 700 }}>{activity.name}</Typography>
                 <Chip
                   size="small"
+                  /* Decía «pago por unidad de trabajo», que es el nombre de
+                     una columna. `lib/vocab.ts`. */
                   label={
                     activity.payMode === "work_unit"
-                      ? `pago por unidad de trabajo · ${activity.workUnit}`
+                      ? `${PAY_MODE_LABEL.work_unit} · ${activity.workUnit}`
                       : activity.payMode === "time_unit"
-                        ? `pago por unidad de tiempo · ${activity.timeUnit}`
-                        : "pago por contrato"
+                        ? `${PAY_MODE_LABEL.time_unit} · ${activity.timeUnit}`
+                        : PAY_MODE_LABEL.contract
                   }
                 />
               </Stack>
@@ -409,36 +413,31 @@ export function WorkRecordFormPage() {
               </Grid>
             )}
             <Grid size={{ xs: 12, sm: 3 }}>
-              <TextField
+              <DateField
                 label="Fecha"
-                type="date"
                 value={draft.dateFrom}
-                onChange={(e) =>
+                onChange={(iso) =>
                   setDraft((d) => ({
                     ...d,
-                    dateFrom: e.target.value,
+                    dateFrom: iso,
                     dateTo:
                       activity && forcesSingleDay(activity)
-                        ? e.target.value
-                        : d.dateTo < e.target.value
-                          ? e.target.value
+                        ? iso
+                        : d.dateTo < iso
+                          ? iso
                           : d.dateTo,
                   }))
                 }
                 error={!!errors.dateFrom}
                 helperText={errors.dateFrom}
-                size="medium"
-                fullWidth
                 required
-                slotProps={DATE_FIELD_PROPS}
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 3 }}>
-              <TextField
+              <DateField
                 label="Hasta"
-                type="date"
                 value={activity && forcesSingleDay(activity) ? draft.dateFrom : draft.dateTo}
-                onChange={(e) => setDraft((d) => ({ ...d, dateTo: e.target.value }))}
+                onChange={(iso) => setDraft((d) => ({ ...d, dateTo: iso }))}
                 disabled={!activity || forcesSingleDay(activity)}
                 error={!!errors.dateTo}
                 helperText={
@@ -447,9 +446,7 @@ export function WorkRecordFormPage() {
                     ? "Un solo día: precio semanal."
                     : undefined)
                 }
-                size="medium"
-                fullWidth
-                slotProps={DATE_FIELD_PROPS}
+                min={draft.dateFrom || undefined}
               />
             </Grid>
             <Grid size={12}>
@@ -466,13 +463,13 @@ export function WorkRecordFormPage() {
           {can("money.read") && estimate !== null && (
             <Box sx={{ mt: 2.5, p: 2, borderRadius: 2, border: 1, borderColor: "divider" }}>
               <Typography variant="body2" color="text.secondary">
-                Valor estimado
+                Valor provisional
               </Typography>
               <Money cents={estimate} variant="big" />
               {activity && !needsRateField(activity) && (
                 <Typography variant="caption" color="text.secondary" component="div">
-                  Aún no es un devengo: se posteará al liquidar, con el precio de esa
-                  semana.
+                  Todavía no está liquidado: se escribe en el libro al liquidar, con el
+                  precio de esa semana.
                 </Typography>
               )}
             </Box>

@@ -30,7 +30,7 @@ interface Props {
   rows: unknown[] | null;
   error?: string | null;
   denied?: boolean;
-  /** «las existencias», «los movimientos». Va dentro de las frases. */
+  /** «las existencias», «las entradas y salidas». Va dentro de las frases. */
   subject: string;
   /** Lo que se dice cuando de verdad no hay nada. */
   emptyText: ReactNode;

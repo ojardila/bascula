@@ -18,6 +18,7 @@ import { Box, Chip, MenuItem, Stack, Tab, Tabs, TextField, Tooltip, Typography }
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useAuth } from "../../auth/AuthContext";
 import { todayInFarm } from "../../lib/dates";
+import { PROVISIONAL } from "../../lib/vocab";
 
 /** How far back a reading goes. Named in weeks, because a season is weeks. */
 export const RANGES = [
@@ -141,8 +142,8 @@ export function HarvestLayout() {
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 4, flexWrap: "wrap" }}>
         <Tooltip
           title={
-            "Estas cifras cubren el trabajo pagado por unidad de trabajo — la " +
-            "recolección. Un jornal no tiene kilos y no entra, así que el valor de " +
+            "Estas cifras cubren el trabajo pagado a destajo — la recolección. " +
+            "Un jornal no tiene kilos y no entra, así que el valor de " +
             "una semana es lo que valió la recogida, nunca la nómina completa."
           }
         >
@@ -156,8 +157,8 @@ export function HarvestLayout() {
         </Tooltip>
         {ctx.canSeeMoney && (
           <Typography variant="caption" color="text.secondary">
-            Un valor marcado <strong>estimado</strong> todavía depende del precio de la
-            semana y puede moverse hasta que se liquide.
+            Un valor marcado <strong>{PROVISIONAL}</strong> todavía depende del precio de
+            la semana y puede moverse hasta que se liquide.
           </Typography>
         )}
       </Stack>

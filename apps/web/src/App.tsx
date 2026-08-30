@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { RequireAuth, RequirePermission, RequireSuperAdmin } from "./components/Guards";
 import { useAuth } from "./auth/AuthContext";
@@ -33,6 +33,19 @@ import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ConfigPage } from "./features/config/ConfigPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 
+/**
+ * `/parcelas/<id>/mapa` -> `/lotes/<id>/mapa`, con la cola intacta.
+ *
+ * Renombrar la ruta es lo correcto —la barra de direcciones también es
+ * producto— pero un enlace que alguien pasó por WhatsApp hace tres semanas no
+ * tiene por qué morirse por eso. Es una redirección, no un alias: la barra
+ * acaba diciendo «lotes».
+ */
+function LegacyPlotRedirect() {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate to={pathname.replace(/^\/parcelas/, "/lotes") + search + hash} replace />;
+}
+
 /** Everything inside the tenant shell. */
 function Shell() {
   const { landing } = useAuth();
@@ -49,31 +62,37 @@ function Shell() {
           }
         />
 
+        {/* LA TIERRA SE LLAMA «LOTE», TAMBIÉN EN LA BARRA DE DIRECCIONES.
+            El menú decía «Parcelas» y el primer campo del formulario que las
+            crea decía «Nombre del lote»; el teléfono no conoce más palabra que
+            «lote». Ver `lib/vocab.ts`. La ruta vieja sigue abajo, redirigiendo,
+            porque hay quien tiene `/parcelas` guardado en favoritos y una
+            palabra nueva no es motivo para romperle el enlace. */}
         <Route
-          path="parcelas"
+          path="lotes"
           element={
-            <RequirePermission action="plots.read" moduleName="ver las parcelas">
+            <RequirePermission action="plots.read" moduleName="ver los lotes">
               <PlotsPage />
             </RequirePermission>
           }
         />
         <Route
-          path="parcelas/nueva"
+          path="lotes/nuevo"
           element={
-            <RequirePermission action="plots.write" moduleName="crear parcelas">
+            <RequirePermission action="plots.write" moduleName="crear lotes">
               <PlotFormPage />
             </RequirePermission>
           }
         />
         {/* The ONLY route in this file that had no guard, and the one that
-            leaked. `/parcelas` and `/parcelas/:id/mapa` are both
-            `plots.read`; the detail was reachable by typing the URL with no
-            check at all. A route without a guard is not a decision anybody
-            made — it is the one that was forgotten. */}
+            leaked. `/lotes` and `/lotes/:id/mapa` are both `plots.read`; the
+            detail was reachable by typing the URL with no check at all. A
+            route without a guard is not a decision anybody made — it is the
+            one that was forgotten. */}
         <Route
-          path="parcelas/:id"
+          path="lotes/:id"
           element={
-            <RequirePermission action="plots.read" moduleName="ver esta parcela">
+            <RequirePermission action="plots.read" moduleName="ver este lote">
               <PlotDetailPage />
             </RequirePermission>
           }
@@ -83,21 +102,27 @@ function Shell() {
             read-only without `plots.write`, and the server refuses the PUT
             with its own action, `plots.boundary.write`. */}
         <Route
-          path="parcelas/:id/mapa"
+          path="lotes/:id/mapa"
           element={
-            <RequirePermission action="plots.read" moduleName="ver el mapa de la parcela">
+            <RequirePermission action="plots.read" moduleName="ver el mapa del lote">
               <PlotMapPage />
             </RequirePermission>
           }
         />
         <Route
-          path="parcelas/:id/editar"
+          path="lotes/:id/editar"
           element={
-            <RequirePermission action="plots.write" moduleName="modificar parcelas">
+            <RequirePermission action="plots.write" moduleName="modificar lotes">
               <PlotFormPage />
             </RequirePermission>
           }
         />
+        {/* Lo que estuviera guardado sigue funcionando. `nueva` era femenino
+            porque la parcela lo era; el lote no, así que la ruta nueva es
+            `/lotes/nuevo` y la vieja la alcanza igual. */}
+        <Route path="parcelas" element={<Navigate to="/lotes" replace />} />
+        <Route path="parcelas/nueva" element={<Navigate to="/lotes/nuevo" replace />} />
+        <Route path="parcelas/*" element={<LegacyPlotRedirect />} />
 
         <Route
           path="empleados"

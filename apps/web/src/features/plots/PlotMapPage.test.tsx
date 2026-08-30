@@ -35,11 +35,11 @@ const DRAWN = "0192f3a0-0004-7000-8000-000000000003";
 function renderMap(plotId: string) {
   return render(
     <ThemeProvider theme={theme}>
-      <MemoryRouter initialEntries={[`/parcelas/${plotId}/mapa`]}>
+      <MemoryRouter initialEntries={[`/lotes/${plotId}/mapa`]}>
         <AuthProvider>
           <Routes>
-            <Route path="/parcelas/:id/mapa" element={<PlotMapPage />} />
-            <Route path="/parcelas/:id" element={<p>detalle</p>} />
+            <Route path="/lotes/:id/mapa" element={<PlotMapPage />} />
+            <Route path="/lotes/:id" element={<p>detalle</p>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>
@@ -192,7 +192,7 @@ describe("drawing a lot on the map", () => {
  * written. The `?? 0` was destroying a distinction the component below it was
  * already built to draw.
  */
-describe("una parcela sin superficie declarada", () => {
+describe("un lote sin superficie declarada", () => {
   it("dice «—» y no entra en el total de la finca", async () => {
     server.use(
       http.get("*/v1/plots", () =>
@@ -227,7 +227,7 @@ describe("una parcela sin superficie declarada", () => {
 
     render(
       <ThemeProvider theme={theme}>
-        <MemoryRouter initialEntries={["/parcelas"]}>
+        <MemoryRouter initialEntries={["/lotes"]}>
           <AuthProvider>
             <PlotsPage />
           </AuthProvider>

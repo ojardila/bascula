@@ -28,7 +28,7 @@ export function LabelSheetDialog({
   return (
     <Dialog open={!!batch} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle className="no-print">
-        Stickers del movimiento ({batch?.count ?? 0})
+        Stickers de esa entrada ({batch?.count ?? 0})
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" className="no-print" sx={{ mb: 2 }}>

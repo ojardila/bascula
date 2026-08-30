@@ -168,7 +168,7 @@ export function SalesPage() {
             : undefined
         }
         emptyTitle="Todavía no hay ventas"
-        emptyBody="Registre la primera. Al hacerlo, el producto sale de la bodega en el mismo movimiento."
+        emptyBody="Registre la primera. Al hacerlo, el producto sale de la bodega en el mismo acto."
         /**
          * NOTHING AT ALL UNTIL THE LIST HAS LOADED.
          *
@@ -187,7 +187,7 @@ export function SalesPage() {
               {totalQty > 0 && oneUnit && (
                 <> ({formatQuantity(totalQty)} {unitLabel(totalQty, oneUnit)})</>
               )}. Cada venta descuenta
-              el producto de su bodega; anularla lo devuelve con un movimiento de reverso.
+              el producto de su bodega; anularla lo devuelve con una entrada de corrección.
             </>
           ) : null
         }
@@ -218,7 +218,7 @@ export function SalesPage() {
         title="¿Anular esta venta?"
         body={
           voiding
-            ? `«${voiding.productName}» del ${formatDate(voiding.date)}. La venta queda registrada y marcada como anulada —no se borra— y ${formatQuantity(voiding.quantity)} ${voiding.storageUnit} vuelven a ${voiding.warehouseName} con un movimiento de reverso. Si el error fue la cantidad o el valor, después registre la venta correcta.`
+            ? `«${voiding.productName}» del ${formatDate(voiding.date)}. La venta queda registrada y marcada como anulada —no se borra— y ${formatQuantity(voiding.quantity)} ${voiding.storageUnit} vuelven a ${voiding.warehouseName} con una entrada de corrección. Si el error fue la cantidad o el valor, después registre la venta correcta.`
             : ""
         }
         confirmLabel="Anular la venta"

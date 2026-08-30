@@ -52,6 +52,7 @@ import { formatMoney } from "../../lib/money";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { SettlementSummary } from "../../api/types";
+import { GROSS_SETTLED_LIVE, GROSS_SETTLED_LIVE_FILTERED } from "../../lib/vocab";
 
 type StatusFilter = "all" | "open" | "void";
 
@@ -98,7 +99,7 @@ export function SettlementsPage() {
 
   /**
    * The three figures at the top are sums over the LIVE settlements only. A
-   * void settlement contributed a `devengo` and a `reverso` that cancel each
+   * void settlement contributed an earning and a reversal that cancel each
    * other, so counting it would state a total the ledger does not agree with.
    */
   const live = (rows ?? []).filter((s) => s.status === "open");
@@ -171,8 +172,9 @@ export function SettlementsPage() {
         <Box>
           <Typography variant="h1">Liquidaciones</Typography>
           <Typography color="text.secondary">
-            Cada liquidación congela unas labores a su precio y escribe un devengo en el
-            libro. Anularla no la borra: la deja anulada y suelta las labores.
+            Cada liquidación congela unas labores a su precio y escribe en el libro lo
+            que la persona ganó. Anularla no la borra: la deja anulada y suelta las
+            labores.
           </Typography>
         </Box>
         <Button
@@ -236,7 +238,10 @@ export function SettlementsPage() {
           <Card variant="outlined">
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                {filtered ? "Bruto liquidado (vigentes, filtrado)" : "Bruto liquidado (vigentes)"}
+                {/* Decía «(vigentes)», que es un estado de fila de base de
+                    datos. Lo que quiere decir es que las anuladas no cuentan,
+                    y eso se puede decir así. `lib/vocab.ts`. */}
+                {filtered ? GROSS_SETTLED_LIVE_FILTERED : GROSS_SETTLED_LIVE}
               </Typography>
               {/* No figure at all until the list has loaded. A "$0" while a
                   fan-out is in flight is a claim that the farm has settled

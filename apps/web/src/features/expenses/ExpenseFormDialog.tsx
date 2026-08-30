@@ -39,10 +39,11 @@ import {
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { parseMoneyInput } from "../../lib/money";
-import { todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
+import { moneyInputValue, parseMoneyInput } from "../../lib/money";
+import { todayInFarm } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
 import type { Activity, Expense, ExpenseInput, ExpenseTarget, Plot } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 export interface ExpenseFormDialogProps {
   open: boolean;
@@ -61,9 +62,10 @@ export function ExpenseFormDialog({
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
   const [concept, setConcept] = useState(expense?.concept ?? "");
-  const [amount, setAmount] = useState(
-    expense ? String(Math.round(expense.amountCents / 100)) : "",
-  );
+  // `moneyInputValue` y no `Math.round(.../100)`: abrir un gasto de $125,50
+  // para cambiarle la nota y guardar le subía el valor a $126 sin que nadie
+  // tocara la casilla. Ver la nota de `lib/money.ts`.
+  const [amount, setAmount] = useState(expense ? moneyInputValue(expense.amountCents) : "");
   const [date, setDate] = useState(expense?.date ?? today);
   const [target, setTarget] = useState<ExpenseTarget>(expense?.target ?? "activity");
   const [activityId, setActivityId] = useState(expense?.activityId ?? "");
@@ -152,14 +154,7 @@ export function ExpenseFormDialog({
               fullWidth
               required
             />
-            <TextField
-              label="Fecha"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              slotProps={DATE_FIELD_PROPS}
-              fullWidth
-            />
+            <DateField label="Fecha" value={date} onChange={setDate} />
           </Stack>
 
           <FormControl>

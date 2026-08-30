@@ -1,5 +1,5 @@
 /**
- * EL PERFIL DEL EMPLEADO, CUANDO NO SABE — y cuando lo que sabe es un estimado.
+ * EL PERFIL DEL EMPLEADO, CUANDO NO SABE — y cuando lo que sabe es provisional.
  *
  * "Pendiente de liquidar" does not come from `/v1/workers/{id}/profile`. It is
  * a second request, `/v1/workers/{id}/payables`, fired in parallel and caught
@@ -89,7 +89,7 @@ describe("cuando no se pueden consultar los pendientes", () => {
   }, 20000);
 });
 
-describe("lo estimado no se muestra como definitivo", () => {
+describe("lo provisional no se muestra como definitivo", () => {
   it("marca las labores que todavía se pagan al precio de la semana", async () => {
     renderProfile();
     const table = (await screen.findByText("Labores")).closest(".MuiCardContent-root")!;
@@ -97,7 +97,40 @@ describe("lo estimado no se muestra como definitivo", () => {
     // decided. `amountIsEstimate` is the server's own flag and had no reader
     // anywhere in the console before this.
     expect(
-      (await within(table as HTMLElement).findAllByText(/estimado · precio de la semana/)).length,
+      (await within(table as HTMLElement).findAllByText(/provisional · al precio de la semana/)).length,
     ).toBeGreaterThan(0);
+  }, 20000);
+});
+
+/**
+ * ── UNA TABLA QUE DECÍA SER TODO Y ERA UNA PÁGINA ────────────────────────
+ *
+ * `/v1/workers/{id}/profile` corta el libro por `?limit` —cincuenta por
+ * defecto en el servidor— y la respuesta no lleva ni el tope ni el total. La
+ * consola pintaba lo que llegara bajo el título «Historial financiero», así
+ * que a quien lleva dos temporadas en la finca se le enseñaba media cuenta sin
+ * una palabra. Es de la misma familia que el resto de la auditoría: una
+ * pantalla afirmando más de lo que sabe.
+ */
+describe("el historial no finge ser más largo de lo que es", () => {
+  it("avisa, con el número, cuando el libro viene cortado", async () => {
+    const t = db.tenantOf(db.FARM_ID)!;
+    const one = t.ledger.find((l) => l.workerId === MARIA)!;
+    // Sesenta asientos: más que el tope que pide la pantalla.
+    for (let i = 0; i < 60; i++) {
+      t.ledger.push({ ...one, id: `${one.id}-relleno-${i}` });
+    }
+    renderProfile();
+    expect(
+      await screen.findByText(/Se muestran los 50 movimientos más recientes/),
+    ).toBeInTheDocument();
+  }, 20000);
+
+  it("y no lo dice cuando de verdad están todos", async () => {
+    renderProfile();
+    await screen.findByText("Historial financiero");
+    await waitFor(() =>
+      expect(screen.queryByText(/Se muestran los 50/)).not.toBeInTheDocument(),
+    );
   }, 20000);
 });

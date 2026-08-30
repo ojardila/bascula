@@ -3,7 +3,7 @@
  *
  * There is no "editar la cantidad en stock" anywhere, and this dialog is why
  * there does not need to be one. `docs/modelo-datos.md`: "existencias
- * derivadas de movimientos, igual que el saldo se deriva del ledger. Un stock
+ * derivadas de entradas y salidas, igual que el saldo se deriva del ledger. Un stock
  * materializado es un total que se desincroniza de sus hechos, y ya sabemos
  * qué opinamos de eso."
  *
@@ -12,7 +12,7 @@
  * column" is the obvious thing and being unable to do it is baffling. Three
  * decisions do that work:
  *
- *  - THE PREVIEW. "Hay 30 Bulto. Después de este movimiento quedan 18." The
+ *  - THE PREVIEW. "Hay 30 Bulto. Después de esto quedan 18." The
  *    person still gets to see the number they were going to type; they just
  *    reach it by saying what happened.
  *  - THE REASON IS THE FIRST FIELD, not a footnote. Choosing "merma" and
@@ -34,13 +34,15 @@ import {
   ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
+import { DateField } from "../../components/DateField";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { formatQuantity, parseQuantityInput } from "../../lib/money";
 import { unitLabel } from "../../lib/plural";
 import { reasonNeedsDirection, signedQty, stockAfter } from "../../lib/stock";
-import { todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
+import { todayInFarm } from "../../lib/dates";
+import { STOCK_MOVE } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
 import {
   STOCK_REASON_LABEL, type CatalogItem, type LabelBatch, type Plot, type Product,
@@ -148,7 +150,7 @@ export function StockMoveDialog({
     // One movement per filled-in form: a double click used to move the stock
     // twice, and with the id minted inside the call the second request was a
     // new movement rather than a retry. See `lib/writeOnce.ts`.
-    const intent = ["movimiento", productId, warehouse.id ?? warehouse.name, signed,
+    const intent = ["entrada-salida", productId, warehouse.id ?? warehouse.name, signed,
                     reason, date, plotId, plotCropId].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
@@ -187,10 +189,10 @@ export function StockMoveDialog({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Registrar movimiento de inventario</DialogTitle>
+      <DialogTitle>Registrar una entrada o una salida</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Las existencias no se escriben: salen de sumar los movimientos. Diga qué pasó y
+          Las existencias no se escriben: salen de sumar lo que entra y lo que sale. Diga qué pasó y
           el sistema calcula cuánto queda.
         </Typography>
 
@@ -227,7 +229,7 @@ export function StockMoveDialog({
                 exclusive
                 value={direction}
                 onChange={(_, v) => v && setDirection(v as "in" | "out")}
-                aria-label="Dirección del movimiento"
+                aria-label="¿Entra o sale?"
               >
                 <ToggleButton value="in">Entra</ToggleButton>
                 <ToggleButton value="out">Sale</ToggleButton>
@@ -281,7 +283,7 @@ export function StockMoveDialog({
                 {formatQuantity(available)} {unitLabel(available, chosen.storageUnit)}
               </strong>{" "}
               en{" "}
-              {warehouse?.name}. Después de este movimiento quedan{" "}
+              {warehouse?.name}. Después de esto quedan{" "}
               <strong>
                 {formatQuantity(stockAfter(available, signed))}{" "}
                 {unitLabel(stockAfter(available, signed), chosen.storageUnit)}
@@ -342,14 +344,7 @@ export function StockMoveDialog({
           </Stack>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <TextField
-              label="Fecha"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              slotProps={DATE_FIELD_PROPS}
-              fullWidth
-            />
+            <DateField label="Fecha" value={date} onChange={setDate} />
             <TextField
               label={reason === "ajuste" ? "Por qué se ajusta" : "Nota (opcional)"}
               value={note}
@@ -374,7 +369,7 @@ export function StockMoveDialog({
           Cancelar
         </Button>
         <Button variant="contained" onClick={save} disabled={busy}>
-          {busy ? "Guardando…" : "Registrar movimiento"}
+          {busy ? "Guardando…" : `Registrar ${STOCK_MOVE.one}`}
         </Button>
       </DialogActions>
     </Dialog>

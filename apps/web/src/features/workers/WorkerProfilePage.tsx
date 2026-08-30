@@ -9,7 +9,8 @@
  *                     Never a stored total; a stored total is a total that one
  *                     day disagrees with its own rows.
  *   PENDIENTE DE LIQUIDAR — work already done that has not been settled, so it
- *                     is not a devengo yet and is not part of the balance.
+ *                     is not written in the ledger yet and is not part of
+ *                     the balance.
  *
  * Merging them into one number would be friendlier and wrong: it would show
  * money as owed before the document that owes it exists.
@@ -36,16 +37,7 @@ import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
 import { OwedFigure, owedDirection } from "./OwedFigure";
 import { totalOwedCents, type Owed } from "./owed";
-import type { LedgerKind } from "../../api/types";
-
-const KIND_LABEL: Record<LedgerKind, string> = {
-  devengo: "devengo",
-  pago: "pago",
-  anticipo: "anticipo",
-  deduccion: "deducción",
-  ajuste: "ajuste",
-  reverso: "reverso",
-};
+import { CORRECCION_GLOSS, LEDGER_KIND_LABEL, NOT_YET_EARNED } from "../../lib/vocab";
 
 export function WorkerProfilePage() {
   const { id = "" } = useParams();
@@ -204,8 +196,8 @@ export function WorkerProfilePage() {
                 </Stack>
               </Stack>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
-                Lo pendiente es trabajo hecho que todavía no es un devengo. Se le entrega
-                igual: liquidar es el papel, no la deuda.
+                Lo pendiente es {NOT_YET_EARNED}. Se le entrega igual: liquidar es el
+                papel, no la deuda.
               </Typography>
               {balance.lastMovementOn && (
                 <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
@@ -312,7 +304,7 @@ export function WorkerProfilePage() {
                     <Chip
                       size="small"
                       variant="outlined"
-                      label={KIND_LABEL[l.kind]}
+                      label={LEDGER_KIND_LABEL[l.kind]}
                       color={l.amountCents >= 0 ? "success" : "default"}
                     />
                   </TableCell>
@@ -326,16 +318,26 @@ export function WorkerProfilePage() {
               {ledger.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} sx={{ color: "text.secondary" }}>
-                    Todavía no hay movimientos de dinero.
+                    Todavía no se le ha pagado ni descontado nada.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+          {/* ── LA TABLA DECÍA SER TODO Y ERA UNA PÁGINA ──────────────────
+              «Historial financiero» son los últimos `ledgerLimit` asientos:
+              el servidor corta por ahí y la respuesta no lo menciona. Quien
+              lleva dos temporadas en la finca veía media cuenta bajo un
+              título que prometía la entera. Se dice, con el número, y sólo
+              cuando de verdad puede haber más — igual que en `/cosecha`. */}
+          {ledger.length >= data.ledgerLimit && (
+            <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
+              Se muestran los {data.ledgerLimit} movimientos más recientes. Puede haber
+              más atrás.
+            </Typography>
+          )}
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-            Nada de esto se edita ni se borra. Un error se corrige con un
-            <strong> reverso</strong>: un asiento opuesto que deja ver qué pasó y
-            cuándo se corrigió.
+            Nada de esto se edita ni se borra. Un error se corrige con {CORRECCION_GLOSS}
           </Alert>
         </CardContent>
       </Card>

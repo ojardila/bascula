@@ -21,6 +21,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
 import { AreaComparison } from "./AreaComparison";
+import { LOTE } from "../../lib/vocab";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -44,10 +45,10 @@ export function PlotMapPage() {
   const [overlaps, setOverlaps] = useState<CatalogItem[]>([]);
   const [done, setDone] = useState(false);
 
-  if (denied) return <PermissionDenied moduleName="ver esta parcela" />;
+  if (denied) return <PermissionDenied moduleName="ver este lote" />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!plots) return null;
-  if (!plot) return <Alert severity="error">No encontramos esa parcela.</Alert>;
+  if (!plot) return <Alert severity="error">No encontramos ese lote.</Alert>;
 
   const readOnly = !can("plots.write");
 
@@ -78,7 +79,7 @@ export function PlotMapPage() {
         // `boundary` is required on the PUT — so this is said rather than
         // faked with an empty polygon that PostGIS would refuse anyway.
         setSaveError(
-          "No hay ningún polígono que guardar. Marque al menos tres esquinas, o vuelva atrás para dejar la parcela como estaba.",
+          "No hay ningún polígono que guardar. Marque al menos tres esquinas, o vuelva atrás para dejar el lote como estaba.",
         );
         return;
       }
@@ -108,7 +109,7 @@ export function PlotMapPage() {
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate(`/parcelas/${plot.id}`)}
+        onClick={() => navigate(`${LOTE.path}/${plot.id}`)}
         color="inherit"
         sx={{ mb: 1 }}
       >
@@ -171,7 +172,7 @@ export function PlotMapPage() {
 
       {!readOnly && (
         <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
-          <Button color="inherit" onClick={() => navigate(`/parcelas/${plot.id}`)}>
+          <Button color="inherit" onClick={() => navigate(`${LOTE.path}/${plot.id}`)}>
             {dirty ? "Salir sin guardar" : "Volver"}
           </Button>
           <Button variant="contained" onClick={save} disabled={!dirty || saving}>

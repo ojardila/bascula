@@ -16,7 +16,7 @@
  *  - the row menu, with destructive actions hidden (not disabled) when the
  *    role cannot use them: pass no callback and the item does not render;
  *  - loading, empty, error and "your search matched nothing" as four distinct
- *    states, because "no hay parcelas" when the search is at fault is how a
+ *    states, because "no hay lotes" when the search is at fault is how a
  *    user concludes the data is gone.
  */
 import { useState, type ReactNode } from "react";
@@ -45,7 +45,7 @@ export interface Column<T> {
 
 export interface ModuleListProps<T> {
   title: string;
-  /** "parcela", "empleado" — used to write the confirmation sentence. */
+  /** "lote", "empleado" — used to write the confirmation sentence. */
   singular: string;
   plural: string;
   rows: T[] | null;
@@ -336,7 +336,7 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         open={!!confirming}
         busy={busy}
         /**
-         * Sin artículo: `singular === "parcela" ? "la" : "el"` escribía «¿Dar
+         * Sin artículo: `singular === "labor" ? "la" : "el"` escribía «¿Dar
          * de baja el actividad?», porque el género de un sustantivo no se
          * deduce de una lista de un elemento. El nombre propio se lee mejor
          * de todos modos — es el que la persona está mirando en la fila.

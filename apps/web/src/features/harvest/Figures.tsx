@@ -24,6 +24,7 @@ import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { Money } from "../../components/Money";
 import { formatQuantity } from "../../lib/money";
 import { moneyFont } from "../../theme";
+import { PROVISIONAL, PROVISIONAL_NOTE, PROVISIONAL_WHY } from "../../lib/vocab";
 import { kgState, valueState, type Totals } from "./totals";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -105,7 +106,7 @@ export function Value({
   return (
     <Stack alignItems={align} sx={{ minWidth: 0 }}>
       <Money cents={state.cents} variant={variant} />
-      {state.kind === "estimate" && <Note>estimado · precio de la semana</Note>}
+      {state.kind === "estimate" && <Note title={PROVISIONAL_WHY}>{PROVISIONAL_NOTE}</Note>}
       {state.kind === "partial" && (
         <Note
           title={
@@ -114,7 +115,7 @@ export function Value({
           }
         >
           al menos · faltan {state.missing}
-          {state.isEstimate ? " · estimado" : ""}
+          {state.isEstimate ? ` · ${PROVISIONAL}` : ""}
         </Note>
       )}
     </Stack>

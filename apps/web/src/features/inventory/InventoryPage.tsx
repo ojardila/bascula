@@ -9,7 +9,7 @@
  *
  * THE COLUMN THAT IS NOT EDITABLE. "Existencias" is a number with no pencil
  * next to it, and the footer says where it comes from. Every route into
- * changing it goes through "Registrar movimiento". See `StockMoveDialog` for
+ * changing it goes through "Registrar entrada o salida". See `StockMoveDialog` for
  * the argument; the short version is that this app treats a warehouse the way
  * it treats a wage: a total you can only reach by adding up what happened.
  */
@@ -29,13 +29,14 @@ import { ProductFormDialog } from "./ProductFormDialog";
 import { StockMoveDialog } from "./StockMoveDialog";
 import { LabelSheetDialog } from "./LabelSheetDialog";
 import { useAsync } from "../../lib/useAsync";
-import { api } from "../../api/endpoints";
+import { api, STOCK_MOVES_PAGE } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { formatQuantity } from "../../lib/money";
 import { unitLabel } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
 import { formatSignedQty } from "../../lib/stock";
+import { STOCK_MOVE } from "../../lib/vocab";
 import {
   STOCK_REASON_LABEL, type LabelBatch, type Product, type StockMove,
 } from "../../api/types";
@@ -68,7 +69,7 @@ export function InventoryPage() {
     [reloadTick],
   );
   const { data: moves, error: movesError, denied: movesDenied } = useAsync(
-    () => api.listStockMoves({ limit: 200 }),
+    () => api.listStockMoves({ limit: STOCK_MOVES_PAGE }),
     [reloadTick],
   );
   const { data: categories } = useAsync(() => api.productCategories(), []);
@@ -118,7 +119,7 @@ export function InventoryPage() {
         header: "Existencias",
         align: "right",
         render: (p) => (
-          <Tooltip title="Suma de los movimientos registrados. No se escribe a mano.">
+          <Tooltip title="Suma de las entradas y salidas registradas. No se escribe a mano.">
             <Stack alignItems="flex-end">
               <Typography sx={{ fontWeight: 600 }}>
                 {/* «16 Bulto» era el catálogo tal cual, con su mayúscula y en
@@ -126,7 +127,7 @@ export function InventoryPage() {
                 {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                de los movimientos
+                de las entradas y salidas
               </Typography>
             </Stack>
           </Tooltip>
@@ -172,7 +173,7 @@ export function InventoryPage() {
       <Tabs value={tab} onChange={(_, v) => setTab(v as number)} sx={{ mb: 3 }}>
         <Tab label="Productos" />
         <Tab label="Existencias por bodega" />
-        <Tab label="Movimientos" />
+        <Tab label={STOCK_MOVE.Many} />
       </Tabs>
 
       {tab === 0 && (
@@ -201,7 +202,7 @@ export function InventoryPage() {
           extraActions={
             writable
               ? (p) => [
-                  { label: "Registrar movimiento", onClick: () => setMovingFor(p) },
+                  { label: `Registrar ${STOCK_MOVE.one}`, onClick: () => setMovingFor(p) },
                 ]
               : undefined
           }
@@ -239,7 +240,7 @@ export function InventoryPage() {
                 startIcon={<SwapVertIcon />}
                 onClick={() => setMovingFor(null)}
               >
-                Registrar movimiento
+                Registrar entrada o salida
               </Button>
             ) : undefined
           }
@@ -247,9 +248,10 @@ export function InventoryPage() {
           emptyBody="Registre el primero: café pergamino, abono, fungicida… Después registre de dónde salió lo que hay en bodega."
           footer={
             <>
-              Las existencias no son un dato que se escriba: son la suma de los movimientos
-              de cada producto. Para cambiarlas, registre lo que pasó —una cosecha, una
-              compra, un consumo, una merma o un ajuste con su explicación.
+              Las existencias no son un dato que se escriba: son la suma de lo que ha
+              entrado y salido de cada producto. Para cambiarlas, registre lo que pasó
+              —una cosecha, una compra, un consumo, una merma o un ajuste con su
+              explicación.
             </>
           }
         />
@@ -262,7 +264,7 @@ export function InventoryPage() {
               Existencias por bodega
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Cada línea es una suma de movimientos, calculada al momento de consultar.
+              Cada línea es una suma de entradas y salidas, calculada al momento de consultar.
             </Typography>
             <Table size="small">
               <TableHead>
@@ -298,6 +300,15 @@ export function InventoryPage() {
                 />
               </TableBody>
             </Table>
+            {/* La lista viene cortada por `STOCK_MOVES_PAGE` desde que existe,
+                y la pantalla no lo decía: una bodega con más de doscientos
+                asientos enseñaba los doscientos últimos como si fueran todos.
+                `/cosecha` ya lo dice bien; esto es lo mismo, aquí. */}
+            {(moves ?? []).length >= STOCK_MOVES_PAGE && (
+              <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
+                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
+              </Typography>
+            )}
           </CardContent>
         </Card>
       )}
@@ -306,11 +317,12 @@ export function InventoryPage() {
         <Card>
           <CardContent>
             <Typography variant="h3" gutterBottom>
-              Movimientos
+              {STOCK_MOVE.Many}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Un movimiento no se modifica ni se borra: es un hecho. Si quedó mal, se
-              registra el reverso, que es un movimiento que lo cancela exactamente.
+              Lo que entró o salió no se modifica ni se borra: es un hecho. Si quedó mal,
+              se registra una corrección, que es una salida igual a la entrada (o al
+              revés) y la cancela exactamente.
             </Typography>
             <Table size="small">
               <TableHead>
@@ -340,8 +352,8 @@ export function InventoryPage() {
                     <TableCell>
                       <Stack direction="row" spacing={0.5} alignItems="center">
                         <Chip size="small" label={STOCK_REASON_LABEL[m.reason]} />
-                        {m.reversesId && <Chip size="small" label="reverso" color="warning" />}
-                        {m.reversedById && <Chip size="small" label="reversado" />}
+                        {m.reversesId && <Chip size="small" label="corrección" color="warning" />}
+                        {m.reversedById && <Chip size="small" label="corregido" />}
                         {m.saleId && <Chip size="small" label="de una venta" />}
                       </Stack>
                     </TableCell>
@@ -357,10 +369,10 @@ export function InventoryPage() {
                     </TableCell>
                     <TableCell align="right">
                       {m.labelBatchId && (
-                        <Tooltip title="Ver los stickers de este movimiento">
+                        <Tooltip title="Ver los stickers de esta entrada">
                           <IconButton
                             size="small"
-                            aria-label={`Stickers del movimiento de ${m.productName}`}
+                            aria-label={`Stickers de la entrada de ${m.productName}`}
                             onClick={async () => {
                               try {
                                 // The batch that already exists, not a new one:
@@ -377,10 +389,10 @@ export function InventoryPage() {
                         </Tooltip>
                       )}
                       {writable && !m.reversedById && !m.reversesId && !m.saleId && (
-                        <Tooltip title="Registrar el reverso de este movimiento">
+                        <Tooltip title="Corregir esto con una entrada o salida contraria">
                           <IconButton
                             size="small"
-                            aria-label={`Reversar el movimiento de ${m.productName}`}
+                            aria-label={`Corregir la entrada o salida de ${m.productName}`}
                             onClick={() => reverseMove(m)}
                           >
                             <UndoIcon fontSize="small" />
@@ -395,8 +407,8 @@ export function InventoryPage() {
                   rows={moves}
                   error={movesError}
                   denied={movesDenied}
-                  subject="los movimientos"
-                  emptyText="Todavía no hay movimientos registrados."
+                  subject={STOCK_MOVE.ofThem}
+                  emptyText="Todavía no ha entrado ni salido nada."
                   emptyAction={
                     writable ? (
                       <Button
@@ -411,6 +423,15 @@ export function InventoryPage() {
                 />
               </TableBody>
             </Table>
+            {/* La lista viene cortada por `STOCK_MOVES_PAGE` desde que existe,
+                y la pantalla no lo decía: una bodega con más de doscientos
+                asientos enseñaba los doscientos últimos como si fueran todos.
+                `/cosecha` ya lo dice bien; esto es lo mismo, aquí. */}
+            {(moves ?? []).length >= STOCK_MOVES_PAGE && (
+              <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
+                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
+              </Typography>
+            )}
           </CardContent>
         </Card>
       )}

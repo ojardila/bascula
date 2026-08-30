@@ -41,6 +41,7 @@ import { formatQuantity } from "../../lib/money";
 import { settlementHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import { useWriteOnce } from "../../lib/writeOnce";
+import { CORRECCION_GLOSS, PROVISIONAL } from "../../lib/vocab";
 
 export function SettlementDetailPage() {
   const { id = "" } = useParams();
@@ -127,8 +128,8 @@ export function SettlementDetailPage() {
         <Alert severity="error" variant="outlined" sx={{ mb: 3 }}>
           <strong>Liquidación anulada</strong>
           {data.voidedAt ? ` el ${formatDate(data.voidedAt.slice(0, 10))}` : ""}. Las labores
-          volvieron a quedar pendientes y el devengo se canceló con un reverso en el libro.
-          El documento se conserva: no es un comprobante de pago.
+          volvieron a quedar pendientes y lo que se había ganado se canceló con una
+          corrección en el libro. El documento se conserva: no es un comprobante de pago.
         </Alert>
       )}
 
@@ -205,7 +206,7 @@ export function SettlementDetailPage() {
                         size="small"
                         color="warning"
                         variant="outlined"
-                        label="precio de la semana"
+                        label={PROVISIONAL}
                         sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
                       />
                     )}
@@ -267,8 +268,8 @@ export function SettlementDetailPage() {
               Anular esta liquidación
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Anular suelta las labores para que puedan volver a liquidarse y cancela el
-              devengo con un reverso. No borra nada y{" "}
+              Anular suelta las labores para que puedan volver a liquidarse y cancela lo
+              que se había ganado con {CORRECCION_GLOSS} No borra nada y{" "}
               <strong>no se puede deshacer</strong>: una liquidación anulada no vuelve a
               quedar vigente.
             </Typography>
@@ -289,9 +290,9 @@ export function SettlementDetailPage() {
         title="¿Anular la liquidación?"
         body={
           `Se van a soltar ${data.lines.length} ` +
-          `${data.lines.length === 1 ? "labor" : "labores"} y se va a cancelar el devengo ` +
-          `de ${data.workerName} con un reverso en el libro. Anular es definitivo: ` +
-          `una liquidación anulada nunca vuelve a quedar vigente.`
+          `${data.lines.length === 1 ? "labor" : "labores"} y se va a cancelar lo que ` +
+          `${data.workerName} había ganado, con ${CORRECCION_GLOSS} Anular es ` +
+          `definitivo: una liquidación anulada nunca vuelve a quedar vigente.`
         }
         confirmLabel="Sí, anular"
         busy={busy}

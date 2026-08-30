@@ -3,7 +3,7 @@
  *
  * The interesting part is not the table — it is that the list exists at all
  * without a `GET /v1/settlements` behind it. `api.listSettlements` reads every
- * worker's ledger, collects the `settlementId` off each `devengo`, and fetches
+ * worker's ledger, collects the `settlementId` off each earning line, and fetches
  * those settlements. So the first thing worth asserting is that the
  * composition FINDS things: a settlement made through the app has to appear
  * here, or the composition is a decoration.
@@ -222,13 +222,13 @@ describe("cuando hay un filtro puesto", () => {
     await user.type(screen.getByLabelText("Buscar por empleado"), "Édinson");
 
     // The card cannot go on calling itself the farm's figure.
-    expect(await screen.findByText("Bruto liquidado (vigentes, filtrado)")).toBeInTheDocument();
+    expect(await screen.findByText("Bruto liquidado (sin las anuladas, filtrado)")).toBeInTheDocument();
     expect(screen.getByText(/Está viendo/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Quitar el filtro" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Planilla \(parcial\)/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Quitar el filtro" }));
-    expect(await screen.findByText("Bruto liquidado (vigentes)")).toBeInTheDocument();
+    expect(await screen.findByText("Bruto liquidado (sin las anuladas)")).toBeInTheDocument();
     expect(screen.queryByText(/Está viendo/)).not.toBeInTheDocument();
   }, 20000);
 
@@ -296,7 +296,7 @@ describe("una liquidación por dentro", () => {
     // cancelled by a reverso. THIS zero is computed and true — the farm really
     // has nothing live — which is the difference between a figure and a
     // placeholder.
-    expect(screen.getByText("Bruto liquidado (vigentes)")).toBeInTheDocument();
+    expect(screen.getByText("Bruto liquidado (sin las anuladas)")).toBeInTheDocument();
     expect(screen.getByText("$0")).toBeInTheDocument();
   }, 20000);
 });

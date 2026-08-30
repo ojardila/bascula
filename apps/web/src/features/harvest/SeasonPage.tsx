@@ -31,6 +31,7 @@ import { Kg, Stat, Value } from "./Figures";
 import { Curve, RowBar, type CurvePoint } from "./charts";
 import { NOT_ENOUGH_SEASON } from "./text";
 import { foldTotals, kgForDrawing, valueState } from "./totals";
+import { RECOLECTOR } from "../../lib/vocab";
 
 export function SeasonPage() {
   const { today, weeks: windowWeeks, canSeeMoney } = useHarvest();
@@ -70,8 +71,8 @@ export function SeasonPage() {
     return (
       <Alert severity="info">
         No hay recolección registrada en este periodo. Si la cosecha ya empezó, revise
-        que las labores se estén registrando con una actividad pagada por unidad de
-        trabajo al precio de la semana — es lo que las hace parte de la cosecha.
+        que las labores se estén registrando con una actividad pagada a destajo al
+        precio de la semana — es lo que las hace parte de la cosecha.
       </Alert>
     );
   }
@@ -137,7 +138,7 @@ export function SeasonPage() {
             <Value total={season} scope="el periodo" align="flex-start" />
           </Stat>
         )}
-        <Stat label="Recolectores" hint="El mayor número de personas que trabajó en una misma semana.">
+        <Stat label={RECOLECTOR.Many} hint="El mayor número de personas que trabajó en una misma semana.">
           {pickers}
         </Stat>
         <Stat label="Días con recolección">{days}</Stat>

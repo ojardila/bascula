@@ -17,6 +17,7 @@ import { formatDate, formatDateRange } from "../../lib/dates";
 import { PermissionDenied } from "../../components/Guards";
 import { formatArea } from "../../lib/money";
 import { asGeometry } from "../../lib/geo";
+import { LOTE } from "../../lib/vocab";
 
 export function PlotDetailPage() {
   const { id = "" } = useParams();
@@ -28,7 +29,7 @@ export function PlotDetailPage() {
   // The other lots, only so the map has context to draw behind this one.
   const { data: siblings } = useAsync(() => api.listPlots({ status: "active" }), [id]);
 
-  if (denied) return <PermissionDenied moduleName="ver esta parcela" />;
+  if (denied) return <PermissionDenied moduleName="ver este lote" />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!plot) return null;
 
@@ -43,11 +44,11 @@ export function PlotDetailPage() {
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate("/parcelas")}
+        onClick={() => navigate(LOTE.path)}
         color="inherit"
         sx={{ mb: 1 }}
       >
-        Parcelas
+        {LOTE.Many}
       </Button>
 
       <Stack
@@ -70,7 +71,7 @@ export function PlotDetailPage() {
           <Button
             variant="outlined"
             startIcon={<EditIcon />}
-            onClick={() => navigate(`/parcelas/${plot.id}/editar`)}
+            onClick={() => navigate(`${LOTE.path}/${plot.id}/editar`)}
           >
             Editar
           </Button>
@@ -124,7 +125,7 @@ export function PlotDetailPage() {
                   {plot.crops.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} sx={{ color: "text.secondary" }}>
-                        Esta parcela no tiene cultivos registrados.
+                        Este lote no tiene cultivos registrados.
                       </TableCell>
                     </TableRow>
                   )}
@@ -148,7 +149,7 @@ export function PlotDetailPage() {
                   <Button
                     size="small"
                     startIcon={<MapIcon />}
-                    onClick={() => navigate(`/parcelas/${plot.id}/mapa`)}
+                    onClick={() => navigate(`${LOTE.path}/${plot.id}/mapa`)}
                   >
                     {boundary ? "Editar el polígono" : "Dibujar el polígono"}
                   </Button>
@@ -165,7 +166,7 @@ export function PlotDetailPage() {
                 />
               ) : (
                 <Typography color="text.secondary" variant="body2">
-                  Esta parcela todavía no tiene su contorno dibujado. Mientras no lo tenga,
+                  Este lote todavía no tiene su contorno dibujado. Mientras no lo tenga,
                   la única superficie que existe es la que usted declaró.
                 </Typography>
               )}
@@ -206,7 +207,7 @@ export function PlotDetailPage() {
               ))}
               {records !== null && records.length === 0 && (
                 <Typography color="text.secondary" variant="body2">
-                  Todavía no hay labores registradas sobre esta parcela.
+                  Todavía no hay labores registradas sobre este lote.
                 </Typography>
               )}
             </CardContent>

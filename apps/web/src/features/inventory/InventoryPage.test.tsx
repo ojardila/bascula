@@ -1,7 +1,7 @@
 /**
  * The inventory module, with the one rule that shapes it under test.
  *
- * The rule is "las existencias se derivan de los movimientos", and a test that
+ * The rule is "las existencias se derivan de lo que entra y sale", and a test that
  * only checked the happy path would not notice the day somebody adds a helpful
  * little "editar cantidad" to the product form. So the first case here asserts
  * an ABSENCE — no field on any screen of this module accepts a quantity in
@@ -63,7 +63,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     expect(await screen.findByText("Café pergamino seco")).toBeInTheDocument();
     // 40 in, 12 sold, 5 consumed, 5 back from the voided sale.
     expect(screen.getByText("28 bultos")).toBeInTheDocument();
-    expect(screen.getAllByText("de los movimientos").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("de las entradas y salidas").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Las existencias no son un dato que se escriba/),
     ).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     renderInventory();
     await screen.findByText("Café pergamino seco");
 
-    await user.click(screen.getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(screen.getByRole("button", { name: "Registrar entrada o salida" }));
     const dialog = await screen.findByRole("dialog");
 
     await user.click(within(dialog).getByRole("combobox", { name: /Producto/ }));
@@ -102,11 +102,11 @@ describe("existencias are derived, and the interface never offers to set them", 
 
     // The number they would have typed into a stock column, arrived at the
     // other way round: 28 today, 38 after a harvest of 10.
-    expect(await within(dialog).findByText(/Después de este movimiento quedan/))
+    expect(await within(dialog).findByText(/Después de esto quedan/))
       .toBeInTheDocument();
     expect(within(dialog).getByText("38 bultos")).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(within(dialog).getByRole("button", { name: "Registrar entrada o salida" }));
 
     await waitFor(() => expect(screen.getByText("38 bultos")).toBeInTheDocument());
   }, 30000);
@@ -116,7 +116,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     renderInventory();
     await screen.findByText("Café pergamino seco");
 
-    await user.click(screen.getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(screen.getByRole("button", { name: "Registrar entrada o salida" }));
     const dialog = await screen.findByRole("dialog");
 
     await user.click(within(dialog).getByRole("combobox", { name: /Motivo/ }));
@@ -128,7 +128,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await user.type(within(dialog).getByLabelText(/^Cantidad/), "3");
 
     expect(within(dialog).getByText("25 bultos")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(within(dialog).getByRole("button", { name: "Registrar entrada o salida" }));
     await waitFor(() => expect(screen.getByText("25 bultos")).toBeInTheDocument());
   }, 30000);
 
@@ -137,7 +137,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     renderInventory();
     await screen.findByText("Café pergamino seco");
 
-    await user.click(screen.getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(screen.getByRole("button", { name: "Registrar entrada o salida" }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("combobox", { name: /Motivo/ }));
     await user.click(await screen.findByRole("option", { name: "Consumo" }));
@@ -148,7 +148,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await user.type(within(dialog).getByLabelText(/^Cantidad/), "40");
 
     expect(await within(dialog).findByText(/Queda en negativo/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(within(dialog).getByRole("button", { name: "Registrar entrada o salida" }));
     expect(await within(dialog).findByText(/En esa bodega no hay tanto/)).toBeInTheDocument();
 
     // The guard exists because a keyboard makes typos; the override exists
@@ -156,7 +156,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await user.click(
       within(dialog).getByRole("checkbox", { name: /Regístrelo de todos modos/ }),
     );
-    await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(within(dialog).getByRole("button", { name: "Registrar entrada o salida" }));
     await waitFor(() => expect(screen.getByText("-12 bultos")).toBeInTheDocument());
   }, 30000);
 
@@ -165,7 +165,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     renderInventory();
     await screen.findByText("Café pergamino seco");
 
-    await user.click(screen.getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(screen.getByRole("button", { name: "Registrar entrada o salida" }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("combobox", { name: /Motivo/ }));
     await user.click(await screen.findByRole("option", { name: "Ajuste" }));
@@ -173,7 +173,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await user.click(await screen.findByRole("option", { name: /Café pergamino seco/ }));
     await pickWarehouse(user, dialog);
     await user.type(within(dialog).getByLabelText(/^Cantidad/), "2");
-    await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
+    await user.click(within(dialog).getByRole("button", { name: "Registrar entrada o salida" }));
 
     // An adjustment is the one place a spreadsheet habit lands, so it is the
     // one that has to carry a reason.
@@ -184,17 +184,17 @@ describe("existencias are derived, and the interface never offers to set them", 
 });
 
 describe("movements are facts, so they are reversed and never edited", () => {
-  it("has no edit anywhere on the movement list, and offers the reversal", async () => {
+  it("has no edit anywhere on the movement list, and offers the correction", async () => {
     const user = userEvent.setup();
     renderInventory();
     await screen.findByText("Café pergamino seco");
-    await user.click(screen.getByRole("tab", { name: "Movimientos" }));
+    await user.click(screen.getByRole("tab", { name: "Entradas y salidas" }));
 
-    expect(await screen.findByText(/Un movimiento no se modifica ni se borra/))
+    expect(await screen.findByText(/Lo que entró o salió no se modifica ni se borra/))
       .toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Editar/ })).not.toBeInTheDocument();
     expect(
-      screen.getAllByRole("button", { name: /^Reversar el movimiento/ }).length,
+      screen.getAllByRole("button", { name: /^Corregir la entrada o salida/ }).length,
     ).toBeGreaterThan(0);
   }, 20000);
 
@@ -202,14 +202,14 @@ describe("movements are facts, so they are reversed and never edited", () => {
     const user = userEvent.setup();
     renderInventory();
     await screen.findByText("Café pergamino seco");
-    await user.click(screen.getByRole("tab", { name: "Movimientos" }));
+    await user.click(screen.getByRole("tab", { name: "Entradas y salidas" }));
 
-    const buttons = await screen.findAllByRole("button", { name: /^Reversar el movimiento/ });
+    const buttons = await screen.findAllByRole("button", { name: /^Corregir la entrada o salida/ });
     await user.click(buttons[0]);
 
     // A reversal is a new row marked as such, not a deletion of the old one.
-    await waitFor(() => expect(screen.getAllByText("reverso").length).toBeGreaterThan(0));
-    expect(screen.getAllByText("reversado").length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText("corrección").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("corregido").length).toBeGreaterThan(0);
   }, 30000);
 });
 
@@ -220,7 +220,7 @@ describe("the levels tab", () => {
     await screen.findByText("Café pergamino seco");
     await user.click(screen.getByRole("tab", { name: "Existencias por bodega" }));
 
-    expect(await screen.findByText(/Cada línea es una suma de movimientos/))
+    expect(await screen.findByText(/Cada línea es una suma de entradas y salidas/))
       .toBeInTheDocument();
     expect(screen.getAllByText("Bodega principal").length).toBeGreaterThan(0);
   }, 20000);
@@ -259,18 +259,18 @@ describe("cuando la consulta falla", () => {
     ).not.toBeInTheDocument();
   }, 20000);
 
-  it("los movimientos también", async () => {
+  it("las entradas y salidas también", async () => {
     const user = userEvent.setup();
     server.use(down("*/v1/stock/moves"));
     renderInventory();
     await screen.findByText("Café pergamino seco");
-    await user.click(screen.getByRole("tab", { name: "Movimientos" }));
+    await user.click(screen.getByRole("tab", { name: "Entradas y salidas" }));
 
     expect(
-      await screen.findByText("No se pudieron consultar los movimientos."),
+      await screen.findByText("No se pudieron consultar las entradas y salidas."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Todavía no hay movimientos registrados."),
+      screen.queryByText("Todavía no ha entrado ni salido nada."),
     ).not.toBeInTheDocument();
   }, 20000);
 });

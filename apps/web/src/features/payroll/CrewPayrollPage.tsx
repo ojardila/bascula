@@ -60,6 +60,7 @@ import { messageFor } from "../../api/errors";
 import { sentenceFor } from "../../api/grossChange";
 import { formatDate, formatDateRange, formatDayLong, todayInFarm } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
+import { CORRECCION_GLOSS } from "../../lib/vocab";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { PayMethod, Uuid } from "../../api/types";
@@ -517,8 +518,8 @@ export function CrewPayrollPage() {
             <Box>
               <Typography variant="h3">1 · Liquidar la semana</Typography>
               <Typography variant="body2" color="text.secondary">
-                Congela lo pendiente al precio que tiene hoy y escribe un devengo por
-                persona. Todavía no sale plata.
+                Congela lo pendiente al precio que tiene hoy y escribe en el libro lo
+                que ganó cada persona. Todavía no sale plata.
               </Typography>
             </Box>
             <Box sx={{ textAlign: { md: "right" } }}>
@@ -876,13 +877,15 @@ export function CrewPayrollPage() {
           <DialogContentText component="div" sx={{ mb: 2 }}>
             {confirm === "settle" ? (
               <>
-                Esto escribe una liquidación y un devengo por persona.{" "}
+                Esto escribe una liquidación por persona y deja anotado en el libro lo
+                que ganó.{" "}
                 <strong>No entrega plata todavía</strong>: eso es el paso 2.
               </>
             ) : (
               <>
                 Esto escribe un pago por persona en el libro. Los pagos{" "}
-                <strong>no se editan</strong>: si queda mal, se corrige con un reverso.
+                <strong>no se editan</strong>: si queda mal, se corrige con{" "}
+                {CORRECCION_GLOSS}
               </>
             )}
           </DialogContentText>
@@ -925,7 +928,7 @@ export function CrewPayrollPage() {
           {confirm === "settle" && anyProvisional && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
               Parte de este bruto está al precio de la semana. Liquidar es lo que lo
-              fija: a partir de aquí deja de ser estimado.
+              fija: a partir de aquí deja de ser provisional.
             </Alert>
           )}
           {search.trim() !== "" && (
@@ -996,13 +999,13 @@ export function CrewPayrollPage() {
             <strong>{undoHandle.settlements.length}</strong>{" "}
             {undoHandle.settlements.length === 1 ? "liquidación" : "liquidaciones"}.
             <Box sx={{ mt: 2 }}>
-              Primero los pagos y después las liquidaciones: anular escribe su propio
-              reverso del devengo, y al revés quedaría un pago en pie contra un devengo
-              que ya no existe.
+              Primero los pagos y después las liquidaciones: anular escribe su propia
+              corrección de lo ganado, y al revés quedaría un pago en pie contra algo
+              que ya no está.
             </Box>
             <Box sx={{ mt: 2 }}>
-              Nada se borra. Quedan la liquidación anulada y el reverso del pago, que es
-              como el libro cuenta lo que pasó.
+              Nada se borra. Quedan la liquidación anulada y la corrección del pago, que
+              es como el libro cuenta lo que pasó.
             </Box>
           </DialogContentText>
         </DialogContent>

@@ -27,14 +27,15 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
 import { api } from "../../api/endpoints";
-import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { areaHaOfRing, asGeometry, openRing, outerRings, type PolygonGeometry } from "../../lib/geo";
 import { formatArea } from "../../lib/money";
 import { departmentMismatch } from "./municipalities";
+import { LOTE } from "../../lib/vocab";
 import type { CatalogItem, PlotInput } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 const DEPARTMENTS = [
   "Caldas", "Quindío", "Risaralda", "Antioquia", "Huila", "Tolima",
@@ -211,7 +212,7 @@ export function PlotFormPage() {
     const e: Record<string, string> = {};
     const usable = rows.filter((r) => r.cropType);
     if (usable.length === 0) {
-      e.crops = "Agregue al menos un cultivo con su tipo. Sin cultivo no se pueden registrar labores sobre esta parcela.";
+      e.crops = "Agregue al menos un cultivo con su tipo. Sin cultivo no se pueden registrar labores sobre este lote.";
     }
     setFields(e);
     return Object.keys(e).length === 0;
@@ -237,7 +238,7 @@ export function PlotFormPage() {
     // `plotId` is already stable across clicks — `useState(() => id ?? uuidv7())`
     // — so the server's idempotency covers the data. This is the other half:
     // the second request that never leaves. See `lib/writeOnce.ts`.
-    const outcome = await runOnce(`parcela|${plotId}|${name.trim()}|${parsedArea}`, async () => {
+    const outcome = await runOnce(`lote|${plotId}|${name.trim()}|${parsedArea}`, async () => {
       setError(null);
       const crops: PlotInput["crops"] = [];
       for (const r of rows) {
@@ -274,21 +275,21 @@ export function PlotFormPage() {
       return { ran: false } as const;
     });
     if (!outcome.ran) return;
-    navigate(`/parcelas/${outcome.value.id}`, { replace: true });
+    navigate(`${LOTE.path}/${outcome.value.id}`, { replace: true });
   }
 
   return (
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate("/parcelas")}
+        onClick={() => navigate(LOTE.path)}
         sx={{ mb: 1 }}
         color="inherit"
       >
-        Parcelas
+        {LOTE.Many}
       </Button>
       <Typography variant="h1" gutterBottom>
-        {editing ? "Modificar parcela" : "Nueva parcela"}
+        {editing ? `Modificar ${LOTE.one}` : `Nuevo ${LOTE.one}`}
       </Typography>
 
       <Stepper activeStep={step} sx={{ maxWidth: 520, my: 3 }}>
@@ -424,7 +425,7 @@ export function PlotFormPage() {
         <Card>
           <CardContent>
             <Typography variant="h3" gutterBottom>
-              Cultivos de la parcela
+              Cultivos del lote
             </Typography>
             <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
               Si el tipo o la variedad no están en la lista, escríbalos y se agregan
@@ -506,18 +507,14 @@ export function PlotFormPage() {
                     />
                   </Grid>
                   <Grid size={{ xs: 5, sm: 1.5 }}>
-                    <TextField
+                    <DateField
                       label="Siembra"
-                      type="date"
                       value={row.plantedAt}
-                      onChange={(e) =>
+                      onChange={(iso) =>
                         setRows((rs) =>
-                          rs.map((r, j) => (j === i ? { ...r, plantedAt: e.target.value } : r)),
+                          rs.map((r, j) => (j === i ? { ...r, plantedAt: iso } : r)),
                         )
                       }
-                      size="medium"
-                      fullWidth
-                      slotProps={DATE_FIELD_PROPS}
                     />
                   </Grid>
                   <Grid size={{ xs: 1, sm: 0.5 }}>
@@ -567,7 +564,7 @@ export function PlotFormPage() {
         )}
         {step === 1 && (
           <Button variant="contained" onClick={save} disabled={busy}>
-            {busy ? "Guardando…" : "Guardar parcela"}
+            {busy ? "Guardando…" : `Guardar ${LOTE.one}`}
           </Button>
         )}
       </Stack>

@@ -60,7 +60,7 @@ describe("the sidebar shows only what the role can open", () => {
     signInAs("oscar@laesperanza.co");
     renderApp("/tablero");
     const text = await sidebarText();
-    for (const m of ["Tablero", "Parcelas", "Empleados", "Actividades", "Labores", "Configuración"]) {
+    for (const m of ["Tablero", "Lotes", "Empleados", "Actividades", "Labores", "Configuración"]) {
       expect(text).toContain(m);
     }
   });
@@ -116,10 +116,10 @@ describe("typing the URL by hand does not get you in", () => {
   /**
    * ── LA PLATA SE LE ESCAPABA POR UNA SOLA PUERTA ────────────────────────
    *
-   * `parcelas/:id` was the one route of thirty-five with no `RequirePermission`
+   * `lotes/:id` was the one route of thirty-five with no `RequirePermission`
    * around it, and `PlotDetailPage` printed the amount of every labor on the
    * lot without the `money.read` guard that `WorkRecordsPage` puts on the same
-   * column. So `/labores` showed the weigher no money and `/parcelas/<id>`
+   * column. So `/labores` showed the weigher no money and `/lotes/<id>`
    * showed him "Recoleccion · Ana Ramírez · $32.000".
    *
    * That is not one number leaking. The row also carries the kilos, and
@@ -127,9 +127,9 @@ describe("typing the URL by hand does not get you in", () => {
    * server strips out of `/v1/farm` and `/v1/activities` for this role. The
    * server's projection was right and one division on this side undid it.
    */
-  it("no le enseña al pesador la plata en el detalle de una parcela", async () => {
+  it("no le enseña al pesador la plata en el detalle de un lote", async () => {
     signInAs("pesador@laesperanza.co");
-    renderApp("/parcelas/0192f3a0-0004-7000-8000-000000000001");
+    renderApp("/lotes/0192f3a0-0004-7000-8000-000000000001");
 
     // He does get in — a weigher may look at the lot he is standing in — and
     // he does see his own labores, which is the point of the screen for him.
@@ -148,7 +148,7 @@ describe("typing the URL by hand does not get you in", () => {
    *  so the guard cannot be "passing" by hiding the column from everybody. */
   it("y al dueño sí, en la misma pantalla", async () => {
     signInAs("oscar@laesperanza.co");
-    renderApp("/parcelas/0192f3a0-0004-7000-8000-000000000001");
+    renderApp("/lotes/0192f3a0-0004-7000-8000-000000000001");
     await screen.findByText("Últimas labores");
     await waitFor(() => {
       expect(screen.queryAllByText(/\$\s?\d/).length).toBeGreaterThan(0);
@@ -159,6 +159,29 @@ describe("typing the URL by hand does not get you in", () => {
     signInAs("pesador@laesperanza.co");
     renderApp("/labores");
     expect(await screen.findByRole("heading", { name: "Labores" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * ── LA PALABRA CAMBIÓ; EL ENLACE QUE ALGUIEN GUARDÓ, NO ──────────────────
+ *
+ * `/parcelas` pasó a `/lotes` porque la barra de direcciones también es
+ * producto y el teléfono nunca ha dicho más que «lote». Pero un enlace pasado
+ * por WhatsApp hace tres semanas no tiene por qué morirse por un cambio de
+ * vocabulario, así que la ruta vieja redirige — con la cola intacta, que es la
+ * mitad que se suele olvidar.
+ */
+describe("la ruta vieja de las parcelas sigue llevando a alguna parte", () => {
+  it("manda /parcelas al listado de lotes", async () => {
+    signInAs("oscar@laesperanza.co");
+    renderApp("/parcelas");
+    expect(await screen.findByRole("heading", { name: "Lotes" })).toBeInTheDocument();
+  });
+
+  it("y conserva el resto del camino: /parcelas/<id> abre ese mismo lote", async () => {
+    signInAs("oscar@laesperanza.co");
+    renderApp("/parcelas/0192f3a0-0004-7000-8000-000000000001");
+    expect(await screen.findByRole("heading", { name: "El Alto" })).toBeInTheDocument();
   });
 });
 

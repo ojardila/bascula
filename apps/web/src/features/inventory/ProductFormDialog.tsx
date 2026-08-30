@@ -129,8 +129,9 @@ export function ProductFormDialog({
           />
           {!product && (
             <Typography variant="body2" color="text.secondary">
-              No se pide cantidad inicial a propósito: las existencias salen de los
-              movimientos. Al guardar, registre una <strong>cosecha</strong> o una{" "}
+              No se pide cantidad inicial a propósito: las existencias salen de lo que
+              entra y lo que sale. Al guardar, registre una <strong>cosecha</strong> o
+              una{" "}
               <strong>compra</strong> y quedará dicho de dónde vino lo que hay en bodega.
             </Typography>
           )}

@@ -57,6 +57,7 @@ import { ApiError, messageFor } from "../../api/errors";
 import { formatDate, formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
+import { CORRECCION_GLOSS } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
 import { grossChangeOf } from "../../api/endpoints";
 import { sentenceFor, type GrossChange } from "../../api/grossChange";
@@ -490,7 +491,7 @@ export function PayWorkerPage() {
 
               <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
                 El pago se registra en el libro y no se edita. Si queda mal, se corrige
-                con un reverso.
+                con {CORRECCION_GLOSS}
               </Alert>
             </CardContent>
           </Card>
@@ -522,7 +523,7 @@ export function PayWorkerPage() {
               <>Esto escribe el pago en el libro, contra el saldo que ya está escrito.</>
             )}{" "}
             <strong>Un pago no se edita ni se borra</strong>: si queda mal, se corrige con
-            un reverso, que es otro asiento.
+            {" "}{CORRECCION_GLOSS}
           </DialogContentText>
 
           {checked.size > 0 && (
@@ -590,7 +591,7 @@ export function PayWorkerPage() {
           {payables.workRecords.some((w) => checked.has(w.id) && w.rateSource === "weekly_price") && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
               Parte de esto está al precio de la semana. Liquidar es lo que lo fija: a
-              partir de aquí deja de ser estimado.
+              partir de aquí deja de ser provisional.
             </Alert>
           )}
         </DialogContent>

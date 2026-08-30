@@ -111,6 +111,36 @@ export function parseMoneyInput(raw: string): Cents | null {
   return toCents(n);
 }
 
+/**
+ * LO QUE SE PONE EN UNA CASILLA DE PESOS QUE SE VA A EDITAR.
+ *
+ * `formatMoney` redondea al peso a propósito: en Colombia no se cotiza con
+ * centavos y una pantalla llena de «,00» se lee peor. Pero los formularios de
+ * modificar hacían lo mismo *dentro del campo*:
+ *
+ *     String(Math.round(expense.amountCents / 100))
+ *
+ * Un gasto de $125.50 se abría con «126» en la casilla. Quien entraba a
+ * corregir la NOTA y pulsaba Guardar mandaba 12600 en vez de 12550 sin haber
+ * tocado el valor: cincuenta centavos que nadie escribió, en un registro que
+ * después no cuadra contra la factura. Los mismos cincuenta centavos por los
+ * que se arregló `packages/shared` cuando el teléfono redondeaba hacia abajo.
+ *
+ * Esta función es la inversa exacta de `parseMoneyInput`: lo que sale de aquí,
+ * metido allí, devuelve los mismos centavos. Los centavos sólo se escriben
+ * cuando los hay, así que el caso corriente sigue viéndose «30800».
+ */
+export function moneyInputValue(cents: Cents): string {
+  const neg = cents < 0;
+  const abs = Math.abs(Math.round(cents));
+  const pesos = Math.floor(abs / 100);
+  const rest = abs % 100;
+  const body = rest === 0
+    ? String(pesos)
+    : `${pesos}${DECIMAL}${String(rest).padStart(2, "0")}`;
+  return neg ? `-${body}` : body;
+}
+
 /** Same idea for a quantity field: "38,5" -> 38.5. */
 export function parseQuantityInput(raw: string): number | null {
   const cleaned = raw.replace(/[\s\u00a0]/g, "").replace(/\./g, "").replace(",", ".");

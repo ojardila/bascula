@@ -151,12 +151,47 @@ export function ExpensesPage() {
         }
         emptyTitle="Todavía no hay gastos"
         emptyBody="Registre el primero. Cada gasto se carga a una actividad o a un lote, para que después se pueda saber en qué se fue la plata."
+        /**
+         * ── EL PIE DESCRIBÍA UN CONJUNTO DISTINTO DEL QUE SE VE ENCIMA ──
+         *
+         * `GET /v1/expenses` devuelve `items` según el filtro que se pidió, y
+         * `count`/`totalCents` contando SÓLO las filas vivas — así lo hace
+         * `handleListExpenses` y así lo hace el mock. Es la decisión correcta
+         * para el total: un gasto dado de baja no es plata que la finca gastó.
+         *
+         * Lo que estaba mal era el pie, que leía ese `count` como si fuera el
+         * de la tabla. Con el filtro en «Inactivas» la pantalla enseñaba doce
+         * filas y debajo, en la misma frase, «0 gastos, por un total de $0».
+         * No es un redondeo: son dos conjuntos distintos con una sola
+         * etiqueta, que es exactamente lo que la auditoría vino encontrando
+         * pantalla por pantalla.
+         *
+         * Ahora el pie cuenta lo que hay encima y, cuando el total va de otra
+         * cosa, lo dice en la misma frase.
+         */
         footer={
           data ? (
             <>
-              {count(data.count, "gasto", "gastos")}, por un total de{" "}
-              <strong>{formatMoney(data.totalCents)}</strong>. Cada uno está cargado a una
-              actividad o a un lote, así que este total se puede desglosar por completo.
+              {count(data.items.length, "gasto", "gastos")} en esta lista.{" "}
+              {status === "active" ? (
+                <>
+                  Suman <strong>{formatMoney(data.totalCents)}</strong>.
+                </>
+              ) : status === "all" ? (
+                <>
+                  De esos, {count(data.count, "sigue activo", "siguen activos")} y{" "}
+                  {data.count === 1 ? "suma" : "suman"}{" "}
+                  <strong>{formatMoney(data.totalCents)}</strong>: un gasto dado de baja no
+                  es plata que la finca gastó, así que no entra en el total.
+                </>
+              ) : (
+                <>
+                  Están todos dados de baja, así que no hay total: un gasto de baja no es
+                  plata que la finca gastó.
+                </>
+              )}{" "}
+              Cada uno está cargado a una actividad o a un lote, así que lo que sí suma se
+              puede desglosar por completo.
             </>
           ) : null
         }

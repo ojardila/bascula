@@ -33,10 +33,11 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { formatMoney, formatQuantity, parseMoneyInput, parseQuantityInput } from "../../lib/money";
-import { todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
+import { todayInFarm } from "../../lib/dates";
 import { exceedsStock } from "../../lib/stock";
 import { useAuth } from "../../auth/AuthContext";
 import type { CatalogItem, Customer, Product, Sale, StockLevel } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 export interface SaleFormDialogProps {
   open: boolean;
@@ -281,14 +282,7 @@ export function SaleFormDialog({
           />
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <TextField
-              label="Fecha"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              slotProps={DATE_FIELD_PROPS}
-              fullWidth
-            />
+            <DateField label="Fecha" value={date} onChange={setDate} />
             <TextField
               label="Nota (opcional)"
               value={note}
@@ -298,7 +292,7 @@ export function SaleFormDialog({
           </Stack>
 
           <Typography variant="caption" color="text.secondary">
-            Al guardar se descuenta el producto de la bodega en el mismo movimiento. La
+            Al guardar, el producto sale de la bodega en el mismo acto. La
             cantidad no se podrá modificar después: si queda mal, se anula la venta —lo
             que devuelve el producto a la bodega— y se registra de nuevo.
           </Typography>

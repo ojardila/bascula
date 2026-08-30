@@ -14,6 +14,7 @@ import { mondayOf, todayInFarm, formatMonday } from "../../lib/dates";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
 import { owedByWorker, sumOwedToFarmWorkers } from "../workers/owed";
+import { LOTE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 /**
  * The farm at a glance. Deliberately four figures and not twelve: the useful
@@ -30,7 +31,7 @@ import { owedByWorker, sumOwedToFarmWorkers } from "../workers/owed";
  * AND IT IS NOT ONLY THE MONEY TILES. This function existed, with that comment
  * on it, while the two tiles next to it printed "0 kg" and "0" out of the very
  * same failed requests: `kgThisWeek` folds the `records` list that the tile
- * above it correctly refuses to sum, and "Parcelas activas" printed `plots
+ * above it correctly refuses to sum, and "Lotes activos" printed `plots
  * ?.length ?? 0`, which is 0 for a farm whose lots could not be loaded. A
  * quantity and a count are as capable of meaning "I do not know" as a peso is.
  */
@@ -137,7 +138,7 @@ export function DashboardPage() {
           : farmOwes.cents === null
             ? "al menos: sólo lo ya liquidado, lo pendiente no se pudo consultar"
             : "lo ya liquidado más lo que falta liquidar" +
-              (farmOwes.isEstimate ? " · incluye estimado al precio de la semana" : ""),
+              (farmOwes.isEstimate ? ` · ${PROVISIONAL_INCLUDES}` : ""),
       to: "/empleados",
     },
     {
@@ -178,8 +179,8 @@ export function DashboardPage() {
       to: "/labores",
     },
     {
-      label: "Parcelas activas",
-      // "0 parcelas activas" is a statement about a farm, and a farm with no
+      label: `${LOTE.Many} activos`,
+      // "0 lotes activos" is a statement about a farm, and a farm with no
       // lots does not exist. `plots?.length ?? 0` made it out of a failed GET.
       value: plotsLoading ? (
         <Loading />
@@ -196,7 +197,7 @@ export function DashboardPage() {
         ? "no se pudo consultar"
         : `${formatArea(totalHa)} ha declaradas` +
           (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
-      to: "/parcelas",
+      to: LOTE.path,
     },
   ];
 
@@ -242,8 +243,8 @@ export function DashboardPage() {
             <Button variant="outlined" startIcon={<GroupsIcon />} onClick={() => navigate("/empleados/nuevo")}>
               Nuevo empleado
             </Button>
-            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate("/parcelas/nueva")}>
-              Nueva parcela
+            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate(`${LOTE.path}/nuevo`)}>
+              Nuevo {LOTE.one}
             </Button>
           </Stack>
         </CardContent>

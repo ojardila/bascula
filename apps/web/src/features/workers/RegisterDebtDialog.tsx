@@ -3,11 +3,11 @@ import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
-import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { Money } from "../../components/Money";
+import { DateField } from "../../components/DateField";
 
 /**
  * A debt the worker owes the farm: a `deduccion` in their ledger.
@@ -94,15 +94,7 @@ export function RegisterDebtDialog({
             fullWidth
             inputMode="numeric"
           />
-          <TextField
-            label="Fecha"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            size="medium"
-            fullWidth
-            slotProps={DATE_FIELD_PROPS}
-          />
+          <DateField label="Fecha" value={date} onChange={setDate} />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>

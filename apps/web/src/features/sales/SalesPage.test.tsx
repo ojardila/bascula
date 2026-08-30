@@ -251,7 +251,7 @@ describe("undoing a sale", () => {
 
     // The confirmation says what will happen to the warehouse, not just "are
     // you sure".
-    expect(await screen.findByText(/vuelven a Bodega principal con un movimiento de reverso/))
+    expect(await screen.findByText(/vuelven a Bodega principal con una entrada de corrección/))
       .toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Anular la venta" }));
 

@@ -15,6 +15,7 @@
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { Money } from "../../components/Money";
 import { owedState, type Owed } from "./owed";
+import { PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 /** Un guion que dice por qué. Igual que el de `harvest/Figures.tsx`. */
 function Unknown({ reason, big }: { reason: string; big?: boolean }) {
@@ -76,7 +77,7 @@ export function OwedFigure({
             variant="caption"
             sx={{ color: "warning.dark", lineHeight: 1.2, cursor: "help" }}
           >
-            incluye estimado · precio de la semana
+            {PROVISIONAL_INCLUDES}
           </Typography>
         </Tooltip>
       )}

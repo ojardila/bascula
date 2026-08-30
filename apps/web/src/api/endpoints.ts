@@ -179,8 +179,26 @@ const items = <T>(res: WireList<T> | null | undefined): T[] => res?.items ?? [];
  * nothing at all — it would be rejected by `validStatus`. Translated here so
  * the filter chips can keep saying what they mean.
  */
+/**
+ * ── EL FILTRO QUE DECÍA «TODAS» Y ENSEÑABA SÓLO LAS ACTIVAS ──────────────
+ *
+ * `validStatus` en el servidor devuelve 400 para `status=all`; la forma
+ * soportada de pedirlo todo es `includeDeleted=true`, que es lo que manda el
+ * teléfono y lo que `listFilter` traduce a `Status: "all"`. Esta función
+ * traducía «all» a *nada*, y sin `status` el servidor responde sólo las
+ * activas. Es decir: el botón «Todas» de todas las listas de la consola
+ * enseñaba exactamente lo mismo que «Activas», sin decirlo.
+ *
+ * Es el mismo defecto que el pie de `/gastos` —una etiqueta describiendo un
+ * conjunto que no es el que se ve— y se arregla en el sitio donde se traduce
+ * el filtro, no lista por lista.
+ */
 const statusParam = (status?: string): string | undefined =>
   !status || status === "all" ? undefined : status;
+
+/** «all» viaja como `includeDeleted=true`, que es lo que el servidor acepta. */
+const includeDeletedParam = (status?: string): string | undefined =>
+  status === "all" ? "true" : undefined;
 
 /**
  * A local error dressed as an `ApiError`, so a screen's single catch block
@@ -339,6 +357,18 @@ function toSettlement(s: WireSettlement, refs: Refs, workerName: string): Settle
 /* ------------------------------------------------------------------ */
 /* The API                                                             */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Cuántos asientos del libro trae el perfil de un empleado.
+ *
+ * Cincuenta es el `default` que ya tenía el servidor; lo que cambia es que
+ * ahora lo pide la pantalla, así que la pantalla sabe el número y puede
+ * decirlo cuando la lista llega llena. Ver `WorkerProfile.ledgerLimit`.
+ */
+export const LEDGER_PAGE = 50;
+
+/** Lo mismo para la bodega: `GET /v1/stock/moves` corta por aquí. */
+export const STOCK_MOVES_PAGE = 200;
 
 export const api = {
   /* -- auth ---------------------------------------------------------- */
@@ -609,7 +639,11 @@ export const api = {
 
   listPlots: async (params?: { status?: string; q?: string }): Promise<Plot[]> => {
     const res = await http.get<WireList<WirePlot>>("/v1/plots", {
-      query: { q: params?.q, status: statusParam(params?.status) },
+      query: {
+        q: params?.q,
+        status: statusParam(params?.status),
+        includeDeleted: includeDeletedParam(params?.status),
+      },
     });
     return items(res).map(toPlot);
   },
@@ -700,7 +734,11 @@ export const api = {
 
   listWorkers: async (params?: { status?: string; q?: string }): Promise<Worker[]> => {
     const res = await http.get<WireList<WireEmployee | WireWorkerPublic>>("/v1/workers", {
-      query: { q: params?.q, status: statusParam(params?.status) },
+      query: {
+        q: params?.q,
+        status: statusParam(params?.status),
+        includeDeleted: includeDeletedParam(params?.status),
+      },
     });
     return items(res).map(toWorker);
   },
@@ -745,9 +783,18 @@ export const api = {
    * Both requests are fired together with the reference data, because the task
    * rows need names the server did not send.
    */
-  workerProfile: async (id: Uuid): Promise<WorkerProfile> => {
+  /**
+   * `limit` VIAJA A PROPÓSITO, aunque el servidor tenga su propio `default`.
+   *
+   * `handleWorkerProfile` corta el libro por `limitParam(r, 50)` y la
+   * respuesta no lleva ni el tope ni el total, así que una pantalla que no
+   * manda el número no tiene forma de saber si lo que recibió es el libro
+   * entero o la primera página. Mandándolo, el tope es una decisión de la
+   * pantalla y la pantalla puede decirlo.
+   */
+  workerProfile: async (id: Uuid, limit = LEDGER_PAGE): Promise<WorkerProfile> => {
     const [profile, refs, payables] = await Promise.all([
-      http.get<WireWorkerProfile>(`/v1/workers/${id}/profile`),
+      http.get<WireWorkerProfile>(`/v1/workers/${id}/profile`, { query: { limit: String(limit) } }),
       loadRefs(),
       // Caught, so a payables outage does not blank the whole profile — the
       // ledger and the notes are still worth showing. What it must NOT do is
@@ -762,6 +809,7 @@ export const api = {
       workRecords: (profile.tasks ?? []).map((t) => toWorkRecord(t, refs)),
       pendingCents: payables ? payables.grossCents : null,
       ledger: (profile.ledger ?? []).map(toLedgerEntry),
+      ledgerLimit: limit,
       notes: (profile.notes ?? []).map(toNote),
     };
   },
@@ -815,6 +863,7 @@ export const api = {
         query: {
           q: params?.q,
           status: statusParam(params?.status),
+          includeDeleted: includeDeletedParam(params?.status),
           category: params?.category,
         },
       }),
@@ -892,6 +941,7 @@ export const api = {
           to: params?.to,
           q: params?.q,
           status: statusParam(params?.status),
+          includeDeleted: includeDeletedParam(params?.status),
         },
       }),
       loadRefs(),
@@ -1368,6 +1418,7 @@ export const api = {
           query: {
             q: params?.q,
             status: statusParam(params?.status),
+            includeDeleted: includeDeletedParam(params?.status),
             categoryId: params?.categoryId,
           },
         }),
@@ -1581,6 +1632,7 @@ export const api = {
         query: {
           q: params?.q,
           status: statusParam(params?.status),
+          includeDeleted: includeDeletedParam(params?.status),
           from: params?.from,
           to: params?.to,
           productId: params?.productId,
@@ -1686,6 +1738,7 @@ export const api = {
         query: {
           q: params?.q,
           status: statusParam(params?.status),
+          includeDeleted: includeDeletedParam(params?.status),
           activityId: params?.activityId,
           plotId: params?.plotId,
           from: params?.from,
@@ -1730,7 +1783,11 @@ export const api = {
   adminListFarms: async (params?: { q?: string; status?: string }): Promise<AdminFarm[]> =>
     items(
       await http.get<WireList<WireAdminFarm>>("/v1/admin/farms", {
-        query: { q: params?.q, status: statusParam(params?.status) },
+        query: {
+        q: params?.q,
+        status: statusParam(params?.status),
+        includeDeleted: includeDeletedParam(params?.status),
+      },
       }),
     ).map(toAdminFarm),
 

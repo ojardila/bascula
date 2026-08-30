@@ -7,6 +7,7 @@ import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { formatArea } from "../../lib/money";
+import { LOTE } from "../../lib/vocab";
 import type { Plot } from "../../api/types";
 
 export function PlotsPage() {
@@ -31,7 +32,7 @@ export function PlotsPage() {
             <Typography sx={{ fontWeight: 600 }}>{p.name}</Typography>
             {p.status === "inactive" && (
               <Typography variant="caption" color="text.secondary">
-                inactiva
+                inactivo
               </Typography>
             )}
           </Stack>
@@ -98,7 +99,7 @@ export function PlotsPage() {
     [],
   );
 
-  if (denied) return <PermissionDenied moduleName="ver las parcelas" />;
+  if (denied) return <PermissionDenied moduleName="ver los lotes" />;
 
   /**
    * A SUM THAT KNOWS WHAT IS MISSING. Lots with no declared area are counted
@@ -118,9 +119,9 @@ export function PlotsPage() {
         </Alert>
       )}
       <ModuleList<Plot>
-        title="Parcelas"
-        singular="parcela"
-        plural="parcelas"
+        title={LOTE.Many}
+        singular={LOTE.one}
+        plural={LOTE.many}
         rows={data}
         error={error}
         columns={columns}
@@ -132,10 +133,10 @@ export function PlotsPage() {
         searchPlaceholder="Buscar por nombre o municipio"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("plots.write") ? () => navigate("/parcelas/nueva") : undefined}
-        createLabel="Nueva parcela"
-        onRowClick={(p) => navigate(`/parcelas/${p.id}`)}
-        onEdit={can("plots.write") ? (p) => navigate(`/parcelas/${p.id}/editar`) : undefined}
+        onCreate={can("plots.write") ? () => navigate(`${LOTE.path}/nuevo`) : undefined}
+        createLabel={`Nuevo ${LOTE.one}`}
+        onRowClick={(p) => navigate(`${LOTE.path}/${p.id}`)}
+        onEdit={can("plots.write") ? (p) => navigate(`${LOTE.path}/${p.id}/editar`) : undefined}
         onDeactivate={
           can("plots.delete")
             ? async (p) => {
@@ -156,11 +157,11 @@ export function PlotsPage() {
               }
             : undefined
         }
-        emptyTitle="Todavía no hay parcelas"
-        emptyBody="Una parcela es un lote con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre ella."
+        emptyTitle={`Todavía no hay ${LOTE.many}`}
+        emptyBody="Un lote es un pedazo de tierra con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre él."
         footer={
           data
-            ? `${data.length} ${data.length === 1 ? "parcela" : "parcelas"} · ` +
+            ? `${data.length} ${data.length === 1 ? LOTE.one : LOTE.many} · ` +
               `${formatArea(totalHa)} ha declaradas` +
               (undeclared > 0
                 ? ` · ${undeclared} sin superficie declarada, que no está en ese total`

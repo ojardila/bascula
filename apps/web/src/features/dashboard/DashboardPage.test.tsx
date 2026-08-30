@@ -79,25 +79,25 @@ describe("cuando una petición se cae", () => {
     expect(kg).toHaveTextContent("no se pudo consultar");
   }, 20000);
 
-  it("las parcelas activas dicen «—», no «0»", async () => {
+  it("los lotes activos dicen «—», no «0»", async () => {
     server.use(down("*/v1/plots"));
     renderDashboard();
 
-    const plots = tile("Parcelas activas");
+    const plots = tile("Lotes activos");
     await waitFor(() => expect(plots).toHaveTextContent("—"));
-    // "0 parcelas activas" describes a farm that does not exist, and it came
+    // "0 lotes activos" describes a farm that does not exist, and it came
     // out of `plots?.length ?? 0` on a GET that never answered.
     expect(plots).not.toHaveTextContent("0,00 ha");
     expect(plots).toHaveTextContent("no se pudo consultar");
   }, 20000);
 });
 
-describe("lo estimado no se muestra como definitivo", () => {
-  it("marca «Pendiente de liquidar» como precio de la semana", async () => {
+describe("lo provisional no se muestra como definitivo", () => {
+  it("marca «Pendiente de liquidar» como provisional", async () => {
     renderDashboard();
     const money = tile("Pendiente de liquidar");
     // The figure is shown — hiding it would be worse — but it is labelled.
-    expect(await within(money).findByText(/estimado · precio de la semana/)).toBeInTheDocument();
+    expect(await within(money).findByText(/provisional · al precio de la semana/)).toBeInTheDocument();
   }, 20000);
 
   /** …and it is not a decoration stapled to every figure. */
@@ -135,6 +135,6 @@ describe("lo estimado no se muestra como definitivo", () => {
     renderDashboard();
     const money = tile("Pendiente de liquidar");
     expect(await within(money).findByText("$50.000")).toBeInTheDocument();
-    expect(within(money).queryByText(/estimado/)).not.toBeInTheDocument();
+    expect(within(money).queryByText(/provisional/)).not.toBeInTheDocument();
   }, 20000);
 });

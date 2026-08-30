@@ -2,9 +2,9 @@
  * RSP-011. The form changes shape with the pay mode, because the three modes
  * genuinely need different data:
  *
- *   unidad de trabajo -> a unit (kg, arroba, canasta) and a price per unit
- *   unidad de tiempo  -> a period (jornal, semanal, ...) and a price per period
- *   contrato          -> a single total, and no unit at all
+ *   a destajo    -> a unit (kg, arroba, canasta) and a price per unit
+ *   al jornal    -> a period (jornal, semanal, ...) and a price per period
+ *   por contrato -> a single total, and no unit at all
  *
  * The price field is the owner's alone (sync-and-roles.md): an administrator
  * can create the activity and cannot decide what it pays.
@@ -16,20 +16,18 @@ import {
   Link, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
-import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { messageFor } from "../../api/errors";
-import { parseMoneyInput } from "../../lib/money";
+import { moneyInputValue, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { SEED_ACTIVITY_CATEGORIES } from "../../api/types";
+import { PAY_MODE_CHOICE, TIME_UNIT_LABEL } from "../../lib/vocab";
 import type { Activity, ActivityCategory, PayMode, TimeUnit } from "../../api/types";
+import { DateField } from "../../components/DateField";
 
 const WORK_UNITS = ["kg", "arroba", "canasta", "bulto", "caja"];
-const TIME_UNITS: Array<{ value: TimeUnit; label: string }> = [
-  { value: "jornal", label: "Jornal (día)" },
-  { value: "semanal", label: "Semanal" },
-  { value: "quincenal", label: "Quincenal" },
-  { value: "mensual", label: "Mensual" },
-];
+const TIME_UNITS: Array<{ value: TimeUnit; label: string }> = (
+  ["jornal", "semanal", "quincenal", "mensual"] as const
+).map((value) => ({ value, label: TIME_UNIT_LABEL[value] }));
 
 export function ActivityFormDialog({
   open, activity, canSetRate, knownCategories = [], onClose, onSaved,
@@ -65,10 +63,13 @@ export function ActivityFormDialog({
       setWorkUnit(activity.workUnit ?? "kg");
       setTimeUnit(activity.timeUnit ?? "jornal");
       setWeekly(activity.rateSource === "weekly_price");
+      // El mismo redondeo callado que el de los gastos, y aquí sobre el
+      // precio de una actividad: abrir y guardar movía los centavos de todo lo
+      // que se liquide después. Ver `lib/money.ts`.
       setRate(
         activity.defaultRateCents === undefined
           ? ""
-          : String(Math.round(activity.defaultRateCents / 100)),
+          : moneyInputValue(activity.defaultRateCents),
       );
     } else {
       setName("");
@@ -190,11 +191,10 @@ export function ActivityFormDialog({
             <Typography variant="overline" color="text.secondary" component="div">
               Cómo se paga este trabajo
             </Typography>
-            {/* «Unidad de trabajo» y «unidad de tiempo» son nombres de columna
-                de base de datos. En una finca cafetera eso se dice a destajo y
-                al jornal, y «destajo» —la palabra con la que se paga la
-                recolección en Colombia— no aparecía en ningún sitio del
-                producto. Los valores que se guardan no cambian. */}
+            {/* Los dos botones que deciden CÓMO SE LE PAGA A LA GENTE se
+                llamaban «Unidad de trabajo» y «Unidad de tiempo», que son
+                nombres de columna de base de datos. Las palabras están en
+                `lib/vocab.ts`; los valores que se guardan no cambian. */}
             <ToggleButtonGroup
               exclusive
               value={payMode}
@@ -203,9 +203,9 @@ export function ActivityFormDialog({
               disabled={locked}
               sx={{ mt: 0.5, flexWrap: "wrap" }}
             >
-              <ToggleButton value="work_unit">A destajo · por kilo</ToggleButton>
-              <ToggleButton value="time_unit">Al jornal · por día</ToggleButton>
-              <ToggleButton value="contract">Por contrato</ToggleButton>
+              <ToggleButton value="work_unit">{PAY_MODE_CHOICE.work_unit}</ToggleButton>
+              <ToggleButton value="time_unit">{PAY_MODE_CHOICE.time_unit}</ToggleButton>
+              <ToggleButton value="contract">{PAY_MODE_CHOICE.contract}</ToggleButton>
             </ToggleButtonGroup>
           </div>
 
@@ -345,14 +345,10 @@ export function ActivityFormDialog({
           )}
 
           {canSetRate && !(weekly && canBeWeekly) && (
-            <TextField
+            <DateField
               label="Precio vigente desde"
-              type="date"
               value={validFrom}
-              onChange={(e) => setValidFrom(e.target.value)}
-              size="medium"
-              fullWidth
-              slotProps={DATE_FIELD_PROPS}
+              onChange={setValidFrom}
               helperText="Las labores anteriores conservan el precio de su fecha."
             />
           )}

@@ -28,6 +28,7 @@ import { formatDate } from "../../lib/dates";
 import { OwedFigure } from "./OwedFigure";
 import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
+import { EMPLEADO, PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 export function WorkersPage() {
   const navigate = useNavigate();
@@ -77,7 +78,7 @@ export function WorkersPage() {
     const base: Column<Worker>[] = [
       {
         key: "name",
-        header: "Empleado",
+        header: EMPLEADO.One,
         render: (w) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar src={w.photoUrl ?? undefined} sx={{ width: 36, height: 36 }}>
@@ -148,9 +149,9 @@ export function WorkersPage() {
         </Alert>
       )}
       <ModuleList<Worker>
-        title="Empleados"
-        singular="empleado"
-        plural="empleados"
+        title={EMPLEADO.Many}
+        singular={EMPLEADO.one}
+        plural={EMPLEADO.many}
         rows={data}
         error={error}
         columns={columns}
@@ -162,13 +163,13 @@ export function WorkersPage() {
         searchPlaceholder="Buscar por nombre o identificación"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workers.write") ? () => navigate("/empleados/nuevo") : undefined}
-        createLabel="Nuevo empleado"
-        onRowClick={can("workers.profile") ? (w) => navigate(`/empleados/${w.id}`) : undefined}
-        onEdit={can("workers.write") ? (w) => navigate(`/empleados/${w.id}/editar`) : undefined}
+        onCreate={can("workers.write") ? () => navigate(`${EMPLEADO.path}/nuevo`) : undefined}
+        createLabel={`Nuevo ${EMPLEADO.one}`}
+        onRowClick={can("workers.profile") ? (w) => navigate(`${EMPLEADO.path}/${w.id}`) : undefined}
+        onEdit={can("workers.write") ? (w) => navigate(`${EMPLEADO.path}/${w.id}/editar`) : undefined}
         extraActions={
           can("money.pay")
-            ? (w) => [{ label: "Pagar empleado", onClick: () => navigate(`/empleados/${w.id}/pagar`) }]
+            ? (w) => [{ label: "Pagar empleado", onClick: () => navigate(`${EMPLEADO.path}/${w.id}/pagar`) }]
             : undefined
         }
         onDeactivate={
@@ -212,7 +213,7 @@ export function WorkersPage() {
                 ) : (
                   <Money cents={farmOwes.cents} variant="small" />
                 )}
-                {farmOwes.isEstimate && " (incluye estimado al precio de la semana)"}
+                {farmOwes.isEstimate && ` (${PROVISIONAL_INCLUDES})`}
               </span>
               {/* La suma dice de cuántos es. Un total con gente fuera, sin
                   decirlo, es la misma mentira que arreglamos arriba. */}
