@@ -122,7 +122,7 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
           onDismiss();
         }}
       >
-        <Dialog.Title>{t("fix.title")}</Dialog.Title>
+        <Dialog.Title>{confirmingDiscard ? t("pay.askDiscard") : t("fix.title")}</Dialog.Title>
         <Dialog.ScrollArea style={styles.area}>
           <ScrollView contentContainerStyle={styles.body}>
             <Text variant="bodyMedium">
@@ -135,12 +135,14 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
                   })
                 : ""}
             </Text>
-            {!!pickup?.reason && (
+            {!confirmingDiscard && !!pickup?.reason && (
               <Text variant="labelLarge" style={styles.reason}>
                 {pickup.reason}
               </Text>
             )}
 
+            {!confirmingDiscard && (
+              <>
             <Text variant="titleSmall" style={styles.section}>
               {t("fix.whose")}
             </Text>
@@ -164,6 +166,8 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
               onChangeText={setWeight}
               right={<TextInput.Affix text={unit} />}
             />
+              </>
+            )}
           </ScrollView>
         </Dialog.ScrollArea>
         <Dialog.Actions style={styles.actions}>
@@ -171,7 +175,7 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
             <>
               <Button onPress={() => setConfirmingDiscard(false)}>{t("confirm.cancel")}</Button>
               <Button textColor="#b3261e" onPress={discard}>
-                {t("pay.askDiscard")}
+                {t("pay.discardYes")}
               </Button>
             </>
           ) : (
