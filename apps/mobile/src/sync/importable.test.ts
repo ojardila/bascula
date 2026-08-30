@@ -143,3 +143,65 @@ test("every problem is reported at once, not one per attempt", () => {
   const said = refusal().problems;
   assert.ok(said.length >= 3, `only ${said.length} problem(s) reported: ${said.join(" | ")}`);
 });
+
+// ---- The same clock, the other two tables it writes to --------------------
+//
+// Checking only the weighings was the mistake `docs/auditorias.md` keeps
+// recording: one cause, three places, and closing the first does not reach the
+// other two. Both of these are refused by the server just as flatly, and both
+// name a uuid when they are:
+//
+//   movement 8888…888 is dated 2029-08-30, outside the window an import may
+//     cover (2015-01-01 to 2027-08-30)
+//   settlement 9999…999 is dated 2029-08-30, outside the window ...
+
+test("a payment dated years out is named, not just the weighings", () => {
+  const id = aWorker("Caro");
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  repo.pickups.add({ personId: id, cropId: 1, weight: 40, date: d.toISOString() });
+
+  const far = new Date();
+  far.setFullYear(far.getFullYear() + 3);
+  repo.payments.pay(id, 100000, { method: "efectivo", date: far.toISOString() });
+
+  const said = refusal().problems.join(" | ");
+  assert.match(said, /Caro Rodríguez/, "the failure does not name the worker");
+  assert.match(said, /movimiento/, "the movement is not reported as one");
+  assert.match(said, new RegExp(far.toISOString().slice(0, 10)));
+});
+
+test("a settlement whose period ends years out is named", () => {
+  const id = aWorker("Dani");
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  repo.pickups.add({ personId: id, cropId: 1, weight: 40, date: d.toISOString() });
+
+  const far = new Date();
+  far.setFullYear(far.getFullYear() + 3);
+  const to = far.toISOString().slice(0, 10);
+  repo.payments.settle(id, "1970-01-01", to, 800);
+
+  const said = refusal().problems.join(" | ");
+  assert.match(said, /Dani Rodríguez/);
+  assert.match(said, /liquidación/, "the settlement is not reported as one");
+  assert.match(said, new RegExp(to));
+});
+
+test("an ordinary season with real dates is still fine on all three", () => {
+  const id = aWorker("Eva");
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  repo.pickups.add({ personId: id, cropId: 1, weight: 40, date: d.toISOString() });
+  repo.payments.pay(id, 50000, { method: "efectivo" });
+
+  const monday = new Date();
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const end = new Date(monday);
+  end.setDate(end.getDate() + 6);
+  repo.payments.settle(id, "1970-01-01", end.toISOString().slice(0, 10), 800);
+
+  const out = build();
+  assert.equal(out.workRecords.length, 1);
+  assert.equal(out.settlements.length, 1);
+});

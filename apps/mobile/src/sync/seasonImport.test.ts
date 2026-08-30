@@ -223,13 +223,22 @@ function aPhone(pickupCount = 400, opts: { farmId?: string } = {}): Phone {
     `INSERT INTO ledger (personId,kind,amountCents,date,settlementId,method,createdAt)
      VALUES (?,?,?,?,?,?,?)`,
   );
-  const weeks = Math.ceil(whenOf.length / (people * 4));
+  // Settled over the SAME span the weighings occupy, not four per person per
+  // week regardless of volume. At 18,000 that fixed batch produced 375 weeks
+  // of Saturdays for 120 days of picking, so every settlement and every
+  // movement was dated years after the work it covered -- and past the window
+  // `POST /v1/import/season` will accept, which is how the inconsistency was
+  // finally noticed. A season is as long as it is; what grows with volume is
+  // how much each Saturday settles.
+  const lastPick = whenOf[whenOf.length - 1] ?? SEASON_START;
+  const weeks = Math.max(1, Math.ceil((lastPick - SEASON_START) / (7 * DAY)));
+  const perWeek = Math.max(1, Math.ceil((whenOf.length - 1) / (people * weeks)));
   let next = 1;
   for (let w = 0; w < weeks; w++)
     for (let p = 1; p <= people && next < whenOf.length; p++) {
       const paidAt = SEASON_START + (w * 7 + 6) * DAY;
       const mine: number[] = [];
-      for (let k = 0; k < 4 && next < whenOf.length; k++) mine.push(next++);
+      for (let k = 0; k < perWeek && next < whenOf.length; k++) mine.push(next++);
       const gross = mine.length * 40000;
       const sid = Number(
         st.run(p, iso(paidAt).slice(0, 10), iso(paidAt).slice(0, 10), gross, iso(paidAt))

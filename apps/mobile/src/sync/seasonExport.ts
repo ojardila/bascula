@@ -459,6 +459,45 @@ function requireImportableRows(db: SqlDatabase): void {
       `${r.who}: ${r.n} pesada(s) fechadas el ${r.day} — revisa la fecha del teléfono`,
     );
 
+  // The same wrong clock, the other two tables it writes to. Checking only the
+  // weighings was the mistake `docs/auditorias.md` keeps recording: one cause,
+  // three places, and fixing the first does not reach the other two. Measured,
+  // both are refused just as flatly:
+  //
+  //   movement 8888...888 is dated 2029-08-30, outside the window...
+  //   settlement 9999...999 is dated 2029-08-30, outside the window...
+  const badMovements = db.getAllSync<{ who: string; day: string; n: number }>(
+    `SELECT COALESCE(pe.name || ' ' || pe.lastName, '?') AS who,
+            l.localDay AS day, COUNT(*) AS n
+       FROM ledger l
+       LEFT JOIN people pe ON pe.id = l.personId
+      WHERE l.uuid IS NOT NULL
+        AND (l.localDay < '2015-01-01' OR l.localDay > ?)
+      GROUP BY who, day ORDER BY day`,
+    [ceiling],
+  );
+  for (const r of badMovements)
+    problems.push(
+      `${r.who}: ${r.n} movimiento(s) fechados el ${r.day} — revisa la fecha del teléfono`,
+    );
+
+  // A settlement is dated by the end of the period it covers, and that end
+  // comes from the same clock.
+  const badPeriods = db.getAllSync<{ who: string; day: string; n: number }>(
+    `SELECT COALESCE(pe.name || ' ' || pe.lastName, '?') AS who,
+            st.periodEnd AS day, COUNT(*) AS n
+       FROM settlements st
+       LEFT JOIN people pe ON pe.id = st.personId
+      WHERE st.uuid IS NOT NULL
+        AND (st.periodEnd < '2015-01-01' OR st.periodEnd > ?)
+      GROUP BY who, day ORDER BY day`,
+    [ceiling],
+  );
+  for (const r of badPeriods)
+    problems.push(
+      `${r.who}: ${r.n} liquidación(es) que terminan el ${r.day} — revisa la fecha del teléfono`,
+    );
+
   const unnamed =
     db.getFirstSync<{ n: number }>(
       `SELECT COUNT(*) AS n FROM people
