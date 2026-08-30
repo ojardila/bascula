@@ -484,6 +484,7 @@ export function toPlot(p: WirePlot): Plot {
     // shown: they always disagree slightly, and picking one for the owner is
     // deciding on their behalf which of them is lying.
     boundary: p.boundary ?? null,
+    location: p.location ?? null,
     crops: (p.crops ?? []).filter((c) => !c.deletedAt).map(toPlotCrop),
     status: statusOf(p.deletedAt),
   };

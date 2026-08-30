@@ -6,8 +6,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
 import MapIcon from "@mui/icons-material/Map";
-import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
-import { AreaComparison } from "./AreaComparison";
+import { pointOf, openInMaps, formatPoint } from "./PlotLocationField";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
@@ -16,7 +15,6 @@ import { totalsOfRecords } from "../harvest/totals";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { PermissionDenied } from "../../components/Guards";
 import { formatArea } from "../../lib/money";
-import { asGeometry } from "../../lib/geo";
 import { PLOT } from "../../lib/vocab";
 
 export function PlotDetailPage() {
@@ -27,18 +25,12 @@ export function PlotDetailPage() {
   const { data: plot, error, denied } = useAsync(() => api.getPlot(id), [id]);
   const { data: records } = useAsync(() => api.listWorkRecords({ plotId: id }), [id]);
   // The other lots, only so the map has context to draw behind this one.
-  const { data: siblings } = useAsync(() => api.listPlots({ status: "active" }), [id]);
 
   if (denied) return <PermissionDenied moduleName="ver este lote" />;
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!plot) return null;
 
-  const boundary = asGeometry(plot.boundary);
-  const neighbours: MapNeighbour[] = (siblings ?? []).flatMap((p) => {
-    if (p.id === plot.id) return [];
-    const g = asGeometry(p.boundary);
-    return g ? [{ id: p.id, name: p.name, boundary: g }] : [];
-  });
+  const location = pointOf(plot.location);
 
   return (
     <Box>
@@ -86,12 +78,13 @@ export function PlotDetailPage() {
                 Superficie
               </Typography>
               <Box sx={{ mt: 1 }}>
-                <AreaComparison declaredHa={plot.areaHa} computedHa={plot.computedAreaHa} />
+                <Typography variant="h2">
+                  {plot.areaHa === null ? "—" : `${formatArea(plot.areaHa)} ha`}
+                </Typography>
               </Box>
-              {plot.computedAreaHa === null && can("plots.write") && (
+              {plot.areaHa === null && can("plots.write") && (
                 <Alert severity="info" sx={{ mt: 2 }}>
-                  Todavía no hay polígono dibujado, así que solo hay una cifra. Dibújelo en
-                  el mapa y el sistema mide las hectáreas por su cuenta.
+                  Nadie ha declarado cuántas hectáreas tiene este lote.
                 </Alert>
               )}
             </CardContent>
@@ -144,30 +137,36 @@ export function PlotDetailPage() {
                 alignItems="center"
                 sx={{ mb: 1.5 }}
               >
-                <Typography variant="h3">Mapa</Typography>
+                <Typography variant="h3">Dónde queda</Typography>
                 {can("plots.write") && (
                   <Button
                     size="small"
                     startIcon={<MapIcon />}
-                    onClick={() => navigate(`${PLOT.path}/${plot.id}/mapa`)}
+                    onClick={() => navigate(`${PLOT.path}/${plot.id}/editar`)}
                   >
-                    {boundary ? "Editar el polígono" : "Dibujar el polígono"}
+                    {location ? "Volver a marcar" : "Marcar el punto"}
                   </Button>
                 )}
               </Stack>
-              {boundary ? (
-                <PlotBoundaryEditor
-                  plotId={plot.id}
-                  initialBoundary={plot.boundary}
-                  neighbours={neighbours}
-                  declaredAreaHa={plot.areaHa}
-                  readOnly
-                  height={240}
-                />
+              {location ? (
+                <Stack spacing={1} alignItems="flex-start">
+                  <Typography variant="body2">
+                    Punto guardado: <strong>{formatPoint(location)}</strong>
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    startIcon={<MapIcon />}
+                    href={openInMaps(location)}
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    Ver en el mapa
+                  </Button>
+                </Stack>
               ) : (
                 <Typography color="text.secondary" variant="body2">
-                  Este lote todavía no tiene su contorno dibujado. Mientras no lo tenga,
-                  la única superficie que existe es la que usted declaró.
+                  Nadie ha marcado dónde queda este lote. Estando parado en él, ábralo
+                  desde el celular y toque «Marcar el punto».
                 </Typography>
               )}
             </CardContent>

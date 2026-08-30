@@ -278,6 +278,9 @@ export interface PlotCrop {
   plantedAt: DayISO | null;
 }
 
+/** A GeoJSON Point, longitude first, exactly as it goes on the wire. */
+export type PlotPoint = { type: "Point"; coordinates: number[] };
+
 export interface Plot {
   id: Uuid;
   name: string;
@@ -309,6 +312,11 @@ export interface Plot {
    * draws nothing rather than drawing `undefined`.
    */
   boundary: unknown | null;
+  /**
+   * Where the plot IS: a GeoJSON Point, or null until somebody stood in it.
+   * Independent of `boundary`; a farm that drew a polygon keeps both.
+   */
+  location: PlotPoint | null;
   crops: PlotCrop[];
   status: RecordStatus;
 }
@@ -326,6 +334,11 @@ export interface PlotInput {
    * to a plot's name must not be able to erase a polygon by omission.
    */
   boundary?: Geometry | null;
+  /**
+   * Absent leaves whatever is stored; null erases it. The distinction is the
+   * server's, and it is why renaming a plot does not drop its point.
+   */
+  location?: PlotPoint | null;
   crops: Array<{
     id: Uuid;
     cropTypeId: Uuid;
