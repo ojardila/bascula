@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Divider, Link, Stack, TextField, Typography,
+  Alert, Box, Button, Divider, IconButton, InputAdornment, Link, Stack, TextField, Typography,
 } from "@mui/material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
@@ -20,6 +22,7 @@ export function LoginPage() {
   const location = useLocation() as { state?: { from?: string } };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /**
@@ -100,13 +103,28 @@ export function LoginPage() {
           />
           <TextField
             label="Contraseña"
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             fullWidth
             size="medium"
             required
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                      onClick={() => setShowPassword((v) => !v)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
           <Button type="submit" variant="contained" size="large" disabled={busy} fullWidth>
             {busy ? "Entrando…" : "Entrar"}

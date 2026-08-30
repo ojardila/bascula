@@ -75,37 +75,6 @@ export function ReviewPage() {
 
   return (
     <Stack spacing={3}>
-      <Card sx={{ bgcolor: "#f6f9f4" }}>
-        <CardContent>
-          <Typography variant="h3" gutterBottom>
-            Qué revisa esta pantalla
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Cinco reglas simples sobre las pesadas registradas. Ninguna acusa a nadie:
-            casi siempre la explicación es un peso guardado dos veces, una báscula mal
-            leída o la fecha del teléfono. Sirven para mirar de nuevo antes de liquidar.
-          </Typography>
-          <Stack spacing={1}>
-            {RULES.map((r) => (
-              <Box key={r.key}>
-                <Typography variant="body2" sx={{ fontWeight: 700, display: "inline" }}>
-                  {r.title}.{" "}
-                </Typography>
-                <Typography variant="body2" sx={{ display: "inline", color: "text.secondary" }}>
-                  {r.body}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-          {data && (
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block" }}>
-              Revisando desde el {formatDate(data.since)} ({data.days} días). El tope de
-              «peso imposible» está en {formatQuantity(data.maxKg)} kg.
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
-
       {error && (
         <Alert severity="error">
           No se pudieron consultar las pesadas: {error}. Esto no quiere decir que no
@@ -192,6 +161,36 @@ export function ReviewPage() {
           </Typography>
         </>
       )}
+
+      <Card sx={{ bgcolor: "#f6f9f4" }}>
+        <CardContent>
+          <Typography variant="h3" gutterBottom>
+            Cómo se decide
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Cinco reglas simples. Ninguna acusa a nadie: casi siempre es un peso
+            guardado dos veces, una báscula mal leída o la fecha del teléfono.
+          </Typography>
+          <Stack spacing={1}>
+            {RULES.map((r) => (
+              <Box key={r.key}>
+                <Typography variant="body2" sx={{ fontWeight: 700, display: "inline" }}>
+                  {r.title}.{" "}
+                </Typography>
+                <Typography variant="body2" sx={{ display: "inline", color: "text.secondary" }}>
+                  {r.body}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+          {data && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block" }}>
+              Revisando desde el {formatDate(data.since)} ({data.days} días). El tope de
+              «peso imposible» está en {formatQuantity(data.maxKg)} kg.
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
     </Stack>
   );
 }
