@@ -5153,6 +5153,30 @@ components:
 
     # -- plots ---------------------------------------------------------------
 
+    GeoJsonPoint:
+      type: object
+      description: |
+        A GeoJSON Point in WGS 84 -- longitude first, as the format says.
+
+        This is where a plot IS, captured by standing in it. It is not the
+        boundary and is not derived from one: a farm that drew a polygon keeps
+        both. The drawing surface has no basemap on purpose (no tile source is
+        same-origin, and none of them work on a farm with no signal), so a
+        point is what an owner can actually give, and it answers the question a
+        map is asked -- where is it, how do I get back -- by handing the
+        coordinates to whatever maps app the phone already has.
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: [Point] }
+        coordinates:
+          type: array
+          items: { type: number, format: double }
+          minItems: 2
+          maxItems: 2
+      example:
+        type: Point
+        coordinates: [-75.88, 5.66]
+
     GeoJsonGeometry:
       type: object
       description: |
@@ -5193,6 +5217,11 @@ components:
         boundary:
           allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
           nullable: true
+        location:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonPoint" }]
+          nullable: true
+          description: |
+            Where the plot is: one point. Null when nobody has stood in it yet.
         createdAt: { type: string, format: date-time }
         deletedAt: { type: string, format: date-time, nullable: true }
         crops:
@@ -5242,6 +5271,13 @@ components:
         boundary:
           allOf: [{ $ref: "#/components/schemas/GeoJsonGeometry" }]
           nullable: true
+        location:
+          allOf: [{ $ref: "#/components/schemas/GeoJsonPoint" }]
+          nullable: true
+          description: |
+            Omit to leave whatever is stored; send null to erase it. The two are
+            deliberately different: if an absent field erased, renaming a plot
+            would silently drop its point.
         crops:
           type: array
           items: { $ref: "#/components/schemas/PlotCropInput" }

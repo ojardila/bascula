@@ -844,6 +844,7 @@ export function resetDb(): void {
       computedAreaHa: 4.04,
       department: "Caldas",
       municipality: "Manizales",
+      location: { type: "Point" as const, coordinates: [-75.88, 5.66] },
       boundary: {
         type: "MultiPolygon",
         coordinates: [
@@ -894,6 +895,7 @@ export function resetDb(): void {
       computedAreaHa: null,
       department: "Caldas",
       municipality: "Manizales",
+      location: null,
       boundary: null,
       createdAt: "2026-01-12T14:05:00Z",
       deletedAt: null,
@@ -929,6 +931,7 @@ export function resetDb(): void {
       // MultiPolygon geography and `ST_Multi` promotes whatever is sent, so a
       // client that stores a Polygon reads a MultiPolygon on the next load —
       // verified against the running server, not assumed.
+      location: null,
       boundary: {
         type: "MultiPolygon",
         coordinates: [
@@ -970,6 +973,7 @@ export function resetDb(): void {
       computedAreaHa: null,
       department: "Caldas",
       municipality: "Chinchiná",
+      location: null,
       boundary: null,
       createdAt: "2026-01-12T14:15:00Z",
       deletedAt: "2026-06-30T15:00:00Z",

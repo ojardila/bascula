@@ -1388,6 +1388,7 @@ export const handlers = [
       municipality: body.municipality ?? null,
       // GeoJSON in and GeoJSON out; there is no polygon until somebody draws
       // one, and no PostGIS type ever crosses the wire.
+      location: null,
       boundary: null,
       createdAt: nowInstant(),
       deletedAt: null,

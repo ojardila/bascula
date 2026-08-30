@@ -389,6 +389,17 @@ export interface WirePlot {
    * phone never learn the storage engine and swapping it stays possible.
    */
   boundary: unknown | null;
+  /**
+   * Where the plot IS: a GeoJSON Point, or null until somebody has stood in it.
+   *
+   * Not the boundary and not derived from one -- a farm that drew a polygon
+   * keeps both. It exists because the drawing surface has no basemap (none is
+   * same-origin, and none of them work on a farm with no signal), so tracing a
+   * shape meant tracing it over a grey rectangle from memory. A point costs one
+   * tap and can be handed to whatever maps app the phone already has, which
+   * does have satellite imagery and knows the way back.
+   */
+  location: { type: "Point"; coordinates: number[] } | null;
   createdAt: Instant;
   deletedAt: Instant | null;
   crops: WirePlotCrop[];

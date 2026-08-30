@@ -3055,6 +3055,29 @@ export interface components {
             totalCents: number;
         };
         /**
+         * @description A GeoJSON Point in WGS 84 -- longitude first, as the format says.
+         *
+         *     This is where a plot IS, captured by standing in it. It is not the
+         *     boundary and is not derived from one: a farm that drew a polygon keeps
+         *     both. The drawing surface has no basemap on purpose (no tile source is
+         *     same-origin, and none of them work on a farm with no signal), so a
+         *     point is what an owner can actually give, and it answers the question a
+         *     map is asked -- where is it, how do I get back -- by handing the
+         *     coordinates to whatever maps app the phone already has.
+         * @example {
+         *       "type": "Point",
+         *       "coordinates": [
+         *         -75.88,
+         *         5.66
+         *       ]
+         *     }
+         */
+        GeoJsonPoint: {
+            /** @enum {string} */
+            type: "Point";
+            coordinates: number[];
+        };
+        /**
          * @description A GeoJSON Polygon or MultiPolygon in WGS 84. PostGIS never crosses this
          *     boundary: the wire format is GeoJSON so the clients never see a
          *     geography type and changing engines stays possible.
@@ -3110,6 +3133,8 @@ export interface components {
             department?: string | null;
             municipality?: string | null;
             boundary?: components["schemas"]["GeoJsonGeometry"] | null;
+            /** @description Where the plot is: one point. Null when nobody has stood in it yet. */
+            location?: components["schemas"]["GeoJsonPoint"] | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -3166,6 +3191,12 @@ export interface components {
             department?: string | null;
             municipality?: string | null;
             boundary?: components["schemas"]["GeoJsonGeometry"] | null;
+            /**
+             * @description Omit to leave whatever is stored; send null to erase it. The two are
+             *     deliberately different: if an absent field erased, renaming a plot
+             *     would silently drop its point.
+             */
+            location?: components["schemas"]["GeoJsonPoint"] | null;
             crops?: components["schemas"]["PlotCropInput"][];
         };
         PlotPatch: components["schemas"]["PlotInput"] & {

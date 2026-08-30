@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/store"
@@ -113,6 +114,10 @@ func (s *Server) handleCreatePlot(w http.ResponseWriter, r *http.Request) {
 		withShape.Crops = created.Crops
 		created = withShape
 	}
+	created, ok := s.applyLocation(w, r, tx, created.ID, body.Location, created)
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -190,11 +195,60 @@ func (s *Server) handleUpdatePlot(w http.ResponseWriter, r *http.Request) {
 		withShape.Crops = updated.Crops
 		updated = withShape
 	}
+	updated, ok := s.applyLocation(w, r, tx, id, body.Location, updated)
+	if !ok {
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
 func hasBoundary(raw json.RawMessage) bool {
 	return len(raw) > 0 && string(raw) != "null"
+}
+
+// locationIntent separates the three things a `location` field can mean, which
+// a plain nil cannot: absent (leave whatever is stored), explicitly null
+// (erase it), or a geometry (store it). An absent field that erased would make
+// every PATCH of a plot's name silently drop its point.
+type locationIntent int
+
+const (
+	locationUntouched locationIntent = iota
+	locationCleared
+	locationSet
+)
+
+func locationOf(raw json.RawMessage) locationIntent {
+	switch {
+	case len(raw) == 0:
+		return locationUntouched
+	case string(raw) == "null":
+		return locationCleared
+	default:
+		return locationSet
+	}
+}
+
+// applyLocation writes the point, or erases it, and returns the plot as it now
+// stands. It preserves Crops across the rewrite because scanPlot does not load
+// them and the caller has already paid for that read.
+func (s *Server) applyLocation(w http.ResponseWriter, r *http.Request, tx pgx.Tx,
+	id string, raw json.RawMessage, cur *store.Plot) (*store.Plot, bool) {
+	intent := locationOf(raw)
+	if intent == locationUntouched {
+		return cur, true
+	}
+	var body json.RawMessage
+	if intent == locationSet {
+		body = raw
+	}
+	moved, err := store.SetPlotLocation(r.Context(), tx, id, body)
+	if err != nil {
+		writeError(w, r, err)
+		return nil, false
+	}
+	moved.Crops = cur.Crops
+	return moved, true
 }
 
 // handleSetPlotBoundary stores the polygon the owner drew, as GeoJSON in and

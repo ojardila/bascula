@@ -45,25 +45,33 @@ type Plot struct {
 	// Boundary is GeoJSON and nothing else. PostGIS stops at this struct: the
 	// web and the phone never see a geography type, which is what keeps
 	// changing engines possible.
-	Boundary  json.RawMessage `json:"boundary"`
+	Boundary json.RawMessage `json:"boundary"`
+	// Location is where the plot is: one point, captured by standing in it.
+	// It is not derived from Boundary and does not replace it -- a farm that
+	// drew a polygon keeps both. GeoJSON here for the same reason Boundary is.
+	Location  json.RawMessage `json:"location"`
 	CreatedAt time.Time       `json:"createdAt"`
 	DeletedAt *time.Time      `json:"deletedAt"`
 	Crops     []PlotCrop      `json:"crops"`
 }
 
 const plotCols = `id::text, name, area_ha::float8, area_ha_gis::float8, department,
-	municipality, ST_AsGeoJSON(boundary), created_at, deleted_at`
+	municipality, ST_AsGeoJSON(boundary), ST_AsGeoJSON(location), created_at,
+	deleted_at`
 
 func scanPlot(row pgx.Row) (*Plot, error) {
 	var p Plot
-	var geojson *string
+	var geojson, loc *string
 	err := row.Scan(&p.ID, &p.Name, &p.AreaHa, &p.AreaHaGIS, &p.Department,
-		&p.Municipality, &geojson, &p.CreatedAt, &p.DeletedAt)
+		&p.Municipality, &geojson, &loc, &p.CreatedAt, &p.DeletedAt)
 	if err != nil {
 		return nil, err
 	}
 	if geojson != nil {
 		p.Boundary = json.RawMessage(*geojson)
+	}
+	if loc != nil {
+		p.Location = json.RawMessage(*loc)
 	}
 	p.Crops = []PlotCrop{}
 	return &p, nil
@@ -111,6 +119,53 @@ func SetPlotBoundary(ctx context.Context, tx pgx.Tx, id string, geojson []byte) 
 	return scanPlot(tx.QueryRow(ctx, `
 		UPDATE plots
 		   SET boundary = ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($2::text), 4326))::geography
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING `+plotCols, id, string(geojson)))
+}
+
+// SetPlotLocation stores where the plot is: one point, captured by standing in
+// it. GeoJSON in and GeoJSON out, like SetPlotBoundary and for the same reason.
+//
+// It is not derived from Boundary and does not replace it. A farm that drew a
+// polygon keeps it; a farm that never did -- which is every real farm in this
+// database -- gets the thing a map is actually asked for, which is "where is
+// it, how do I get back", answered by handing the coordinates to whatever maps
+// app the phone already has.
+//
+// Unlike a boundary, a location can be erased: pass nil. An owner who captured
+// the point while standing at the gate rather than in the plot must be able to
+// take it back, and a field that can be set but never unset is the complaint
+// this project keeps having to answer.
+func SetPlotLocation(ctx context.Context, tx pgx.Tx, id string, geojson []byte) (*Plot, error) {
+	if geojson == nil {
+		return scanPlot(tx.QueryRow(ctx, `
+			UPDATE plots SET location = NULL
+			 WHERE id = $1 AND deleted_at IS NULL
+			 RETURNING `+plotCols, id))
+	}
+
+	var geomType string
+	err := tx.QueryRow(ctx, `
+		SELECT GeometryType(ST_SetSRID(ST_GeomFromGeoJSON($1::text), 4326))`,
+		string(geojson)).Scan(&geomType)
+	if err != nil {
+		// Like SetPlotBoundary: a malformed GeoJSON aborts this transaction,
+		// so nothing may be queried after this point. The answer is a 4xx and
+		// the middleware rolls back without touching the database again.
+		return nil, domain.Coded(400, domain.CodeInvalidGeometry,
+			"that is not a GeoJSON geometry this service can read").WithCause(err)
+	}
+	if geomType != "POINT" {
+		return nil, domain.Coded(400, domain.CodeInvalidGeometry,
+			"a plot location must be a Point, not a "+geomType)
+	}
+
+	// No ST_IsValid. Validity is a question about rings crossing themselves; a
+	// point is valid or it is not a point. The type check above is the whole
+	// of what can be wrong here.
+	return scanPlot(tx.QueryRow(ctx, `
+		UPDATE plots
+		   SET location = ST_SetSRID(ST_GeomFromGeoJSON($2::text), 4326)::geography
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING `+plotCols, id, string(geojson)))
 }
