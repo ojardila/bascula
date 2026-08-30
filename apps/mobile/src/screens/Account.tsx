@@ -61,6 +61,7 @@ export default function Account() {
   // one before correcting a settled pickup, so there has to be a way to do it.
   const [voiding, setVoiding] = useState<LedgerEntry | null>(null);
   const [snack, setSnack] = useState("");
+  const [askingCredit, setAskingCredit] = useState(false);
 
   const load = useCallback(() => {
     setPerson(PeopleDb.byId(personId) ?? null);
@@ -315,7 +316,7 @@ export default function Account() {
               <Button
                 mode="contained-tonal"
                 icon="hand-coin"
-                onPress={payOutCredit}
+                onPress={() => setAskingCredit(true)}
                 style={styles.action}
                 contentStyle={styles.tall}
               >
@@ -402,6 +403,34 @@ export default function Account() {
       </ScrollView>
 
       <Portal>
+        <Dialog visible={askingCredit} onDismiss={() => setAskingCredit(false)}>
+          <Dialog.Title>{t("pay.deliverCredit")}</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              {t("pay.askCredit", {
+                amount: money(fromCents(credit)),
+                name: person?.name ?? "",
+              })}
+            </Text>
+            {status.registered && (
+              <Text variant="bodySmall" style={[styles.dim, { marginTop: 8 }]}>
+                {t("pay.oneSide")}
+              </Text>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAskingCredit(false)}>{t("pay.notNow")}</Button>
+            <Button
+              mode="contained"
+              onPress={() => {
+                setAskingCredit(false);
+                payOutCredit();
+              }}
+            >
+              {t("pay.yes")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
         <Dialog visible={!!voiding} onDismiss={() => setVoiding(null)}>
           <Dialog.Icon icon="file-remove-outline" />
           <Dialog.Title style={styles.dialogTitle}>{t("pay.voidTitle")}</Dialog.Title>

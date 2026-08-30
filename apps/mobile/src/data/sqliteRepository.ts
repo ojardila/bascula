@@ -2063,7 +2063,7 @@ ${BALANCE_COLUMNS("l")}
 
     recent: (cropId) =>
       db.getAllSync<CropPickup>(
-        `SELECT pk.id, pk.weight, pk.date,
+        `SELECT pk.id, pk.personId, pk.weight, pk.date,
                 COALESCE(pe.name || ' ' || pe.lastName,'?') AS person
            FROM pickups_live pk LEFT JOIN people pe ON pe.id = pk.personId
           WHERE pk.cropId = ? ORDER BY pk.date DESC LIMIT 30`,

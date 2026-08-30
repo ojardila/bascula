@@ -50,6 +50,7 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
   const { t, lang, num } = useT();
   const [weight, setWeight] = useState("");
   const [personId, setPersonId] = useState<number | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   // Re-seeded every time a different row is opened. Without the reset the
   // dialog would open on the second row still holding the first row's weight,
@@ -57,6 +58,7 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
   useEffect(() => {
     setWeight(pickup ? String(pickup.weight) : "");
     setPersonId(pickup?.personId ?? null);
+    setConfirmingDiscard(false);
   }, [pickup?.pickupId, pickup?.weight, pickup?.personId]);
 
   // Read while the dialog is open rather than held in the parent: the list is
@@ -113,7 +115,13 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
 
   return (
     <Portal>
-      <Dialog visible={!!pickup} onDismiss={onDismiss}>
+      <Dialog
+        visible={!!pickup}
+        onDismiss={() => {
+          setConfirmingDiscard(false);
+          onDismiss();
+        }}
+      >
         <Dialog.Title>{t("fix.title")}</Dialog.Title>
         <Dialog.ScrollArea style={styles.area}>
           <ScrollView contentContainerStyle={styles.body}>
@@ -159,13 +167,24 @@ export default function FixPickup({ pickup, unit, onDismiss, onDone }: Props) {
           </ScrollView>
         </Dialog.ScrollArea>
         <Dialog.Actions style={styles.actions}>
-          <Button onPress={onDismiss}>{t("perf.keep")}</Button>
-          <Button textColor="#b3261e" onPress={discard}>
-            {t("perf.discard")}
-          </Button>
-          <Button mode="contained" disabled={!canSave} onPress={save}>
-            {t("fix.save")}
-          </Button>
+          {confirmingDiscard ? (
+            <>
+              <Button onPress={() => setConfirmingDiscard(false)}>{t("confirm.cancel")}</Button>
+              <Button textColor="#b3261e" onPress={discard}>
+                {t("pay.askDiscard")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onPress={onDismiss}>{t("perf.keep")}</Button>
+              <Button textColor="#b3261e" onPress={() => setConfirmingDiscard(true)}>
+                {t("perf.discard")}
+              </Button>
+              <Button mode="contained" disabled={!canSave} onPress={save}>
+                {t("fix.save")}
+              </Button>
+            </>
+          )}
         </Dialog.Actions>
       </Dialog>
     </Portal>

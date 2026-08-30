@@ -165,9 +165,11 @@ test("handing over an advance does not depend on the flag", () => {
   assert.match(adjust, /printAdvance\(/, "the advance screen must print its voucher");
 
   // And the gate panel in PayWorker, which is the other place cash is handed
-  // over, keeps its advance button outside any flag branch.
+  // over, keeps its advance button outside any flag branch. The tap opens a
+  // confirm first — money still does not write until Sí — then handOverAdvance.
   const payWorker = read("screens/PayWorker.tsx");
-  assert.match(payWorker, /onPress=\{handOverAdvance\}/);
+  assert.match(payWorker, /setAsking\("advance"\)/);
+  assert.match(payWorker, /handOverAdvance\(/);
   assert.match(payWorker, /printAdvance\(/);
 });
 

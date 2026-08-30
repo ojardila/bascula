@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
-import { Text, Card, Button, TextInput, SegmentedButtons, Chip, Snackbar } from "react-native-paper";
+import { Text, Card, Button, TextInput, SegmentedButtons, Chip, Snackbar, Portal, Dialog } from "react-native-paper";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -36,6 +36,7 @@ export default function Adjust() {
   // as a column of identical "Other" lines nobody can tell apart later.
   const [otherLabel, setOtherLabel] = useState("");
   const [snack, setSnack] = useState("");
+  const [asking, setAsking] = useState(false);
 
   const load = useCallback(() => {
     setPerson(PeopleDb.byId(personId) ?? null);
@@ -150,13 +151,41 @@ export default function Adjust() {
               disabled={cents <= 0 || (mode === "deduccion" && reason === "other" && !otherLabel.trim())}
               contentStyle={styles.tall}
               style={styles.save}
-              onPress={save}
+              onPress={() => setAsking(true)}
             >
               {t("pay.saveMovement")}
             </Button>
           </Card.Content>
         </Card>
       </ScrollView>
+
+      <Portal>
+        <Dialog visible={asking} onDismiss={() => setAsking(false)}>
+          <Dialog.Title>{t("pay.saveMovement")}</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              {mode === "anticipo"
+                ? t("pay.askAdvance", {
+                    amount: money(fromCents(cents)),
+                    name: person?.name ?? "",
+                  })
+                : `${person ? `${person.name} ${person.lastName}`.trim() : ""} · ${money(fromCents(cents))}`}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAsking(false)}>{t("pay.notNow")}</Button>
+            <Button
+              mode="contained"
+              onPress={() => {
+                setAsking(false);
+                save();
+              }}
+            >
+              {t("pay.yes")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={2500}>
         {snack}

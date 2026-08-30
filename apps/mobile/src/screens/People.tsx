@@ -26,10 +26,20 @@ export default function People() {
   const [pending, setPending] = useState<Person | null>(null); // worker awaiting delete confirm
   // Payments live here rather than in a seventh tab: at 360dp a seventh item
   // drops each tab under the 48dp touch target and truncates every label.
-  const openAs = useRoute<RouteProp<TabParamList, "People">>().params?.view;
+  const route = useRoute<RouteProp<TabParamList, "People">>();
+  const openAs = route.params?.view;
   const [view, setView] = useState<"people" | "pay">(openAs === "pay" ? "pay" : "people");
   const load = useCallback(() => setItems(PeopleDb.all()), []);
   useFocusEffect(load);
+  // The tab stays mounted. Home's { view: "pay" } only landed on first mount.
+  useFocusEffect(
+    useCallback(() => {
+      if (openAs === "pay") {
+        setView("pay");
+        navigation.setParams({ view: undefined } as never);
+      }
+    }, [openAs, navigation]),
+  );
 
   function confirmDelete() {
     if (pending) {

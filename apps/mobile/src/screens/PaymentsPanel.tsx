@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
 import {
   Text,
@@ -85,6 +85,8 @@ export default function PaymentsPanel() {
   // Paper fires onDismiss when the action is tapped, which would drop lastRun
   // and take the retry away exactly when it is needed.
   const [retry, setRetry] = useState(false);
+  const busy = useRef(false);
+  const [running, setRunning] = useState(false);
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -181,7 +183,7 @@ export default function PaymentsPanel() {
   // while it was written out here nothing could test it. What is left in this
   // function is the sheet, the snackbar and the undo handle.
   function runBulk() {
-    if (!config) return;
+    if (busy.current || !config) return;
     // Also here, not only on the button. A guard that lives in the render is a
     // guard a future navigation or a deep link walks around, and what is
     // behind this one is thirty settlements and thirty payments.
@@ -190,6 +192,8 @@ export default function PaymentsPanel() {
     // the line above gives: a guard that lives only in the render is a guard a
     // deep link walks around.
     if (!payrollAllowed) return;
+    busy.current = true;
+    setRunning(true);
     const run = Payments.runPayroll(
       selected.map((r) => r.personId),
       EPOCH_START,
@@ -216,6 +220,10 @@ export default function PaymentsPanel() {
       .filter(Boolean)
       .join(" · ");
     setSnack(`${t("pay.paidTo", { n: run.paid })}${extra ? ` ${extra}` : ""}`);
+    setTimeout(() => {
+      busy.current = false;
+      setRunning(false);
+    }, 400);
   }
 
   // Reverse the payments first, then void the settlements: voiding posts its
@@ -489,10 +497,19 @@ export default function PaymentsPanel() {
                 n: selected.length,
               })}
             </Text>
+            {status.registered && (
+              <Text variant="bodySmall" style={{ opacity: 0.78, marginTop: 8 }}>
+                {t("pay.oneSide")}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setBulk(null)}>{t("pay.notNow")}</Button>
-            <Button mode="contained" disabled={!selected.length} onPress={runBulk}>
+            <Button
+              mode="contained"
+              disabled={!selected.length || running}
+              onPress={runBulk}
+            >
               {t("pay.yes")}
             </Button>
           </Dialog.Actions>

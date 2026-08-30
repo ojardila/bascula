@@ -88,7 +88,9 @@ export default function Settings() {
       label,
       unit,
       yieldUnit,
-      costPerUnit: Number(cost) || 0,
+      costPerUnit: priceIsReadOnly
+        ? (Config.get()?.costPerUnit ?? 0)
+        : Number(cost) || 0,
     });
     setSnack(t("settings.saved"));
   }
@@ -273,9 +275,11 @@ export default function Settings() {
               left={<TextInput.Affix text="$" />}
               value={cost}
               onChangeText={setCost}
+              editable={!priceIsReadOnly}
+              disabled={priceIsReadOnly}
             />
             <HelperText type="info" visible>
-              {t("settings.generalCostHelp")}
+              {priceIsReadOnly ? t("sync.changePrices") : t("settings.generalCostHelp")}
             </HelperText>
             <Button mode="contained" icon="content-save" onPress={saveConfig}>
               {t("settings.saveConfig")}

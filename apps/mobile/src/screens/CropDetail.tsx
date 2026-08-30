@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, List, Divider, Chip, Banner } from "react-native-paper";
+import { Text, Card, List, Divider, Chip, Banner, Snackbar } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -20,6 +20,8 @@ import {
   weekTag,
   mondayOf,
 } from "../i18n";
+import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -64,6 +66,8 @@ export default function CropDetail({
   const [byWorker, setByWorker] = useState<ReturnType<typeof CropReports.byWorker>>([]);
   const [recent, setRecent] = useState<ReturnType<typeof CropReports.recent>>([]);
   const [value, setValue] = useState(0);
+  const [fixing, setFixing] = useState<FixablePickup | null>(null);
+  const [snack, setSnack] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -239,20 +243,57 @@ export default function CropDetail({
       </Card>
 
       <Card style={styles.card} mode="elevated">
-        <Card.Title title={t("reports.recent")} />
+        <Card.Title
+          title={t("reports.recent")}
+          subtitle={recent.length ? t("fix.hint") : undefined}
+        />
         <Card.Content style={{ paddingHorizontal: 0 }}>
           {recent.map((r, i) => (
             <View key={r.id}>
               {i > 0 && <Divider />}
               <List.Item
+                onPress={() =>
+                  setFixing(
+                    fixableFrom({
+                      id: r.id,
+                      personId: r.personId,
+                      person: r.person,
+                      crop: crop?.name ?? "",
+                      date: r.date,
+                      weight: r.weight,
+                    }),
+                  )
+                }
                 title={`${num(r.weight)} ${unit}`}
                 description={`${r.person} · ${formatDay(r.date, lang)}`}
                 left={(p) => <List.Icon {...p} icon="scale" />}
+                right={(p) => (
+                  <MaterialCommunityIcons
+                    {...p}
+                    name="pencil-outline"
+                    size={18}
+                    color="#5a6b5c"
+                  />
+                )}
               />
             </View>
           ))}
         </Card.Content>
       </Card>
+
+      <FixPickup
+        pickup={fixing}
+        unit={unit}
+        onDismiss={() => setFixing(null)}
+        onDone={(message) => {
+          setFixing(null);
+          setRecent(CropReports.recent(cropId));
+          setSnack(message);
+        }}
+      />
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
+        {snack}
+      </Snackbar>
     </ScrollView>
   );
 }

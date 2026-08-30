@@ -10,6 +10,8 @@ import {
   Divider,
   Snackbar,
   ActivityIndicator,
+  Portal,
+  Dialog,
 } from "react-native-paper";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -58,6 +60,8 @@ export default function PayWorker() {
   const [mode, setMode] = useState<"full" | "part">("full");
   const [amount, setAmount] = useState("");
   const [snack, setSnack] = useState("");
+  /** Cash does not leave until Sí. The green button only opens this. */
+  const [asking, setAsking] = useState<null | "pay" | "advance">(null);
 
   const load = useCallback(() => {
     const c = Config.get();
@@ -340,7 +344,7 @@ export default function PayWorker() {
                       mode="contained"
                       icon="cash-fast"
                       disabled={dueCents <= 0 && typedCents <= 0}
-                      onPress={handOverAdvance}
+                      onPress={() => setAsking("advance")}
                       style={styles.gateButton}
                     >
                       {t("pay.advanceNow")}
@@ -378,7 +382,7 @@ export default function PayWorker() {
                   disabled={!canSettle}
                   contentStyle={styles.tall}
                   style={styles.confirm}
-                  onPress={confirm}
+                  onPress={() => setAsking("pay")}
                 >
                   {t("pay.confirm")}
                 </Button>
@@ -394,6 +398,45 @@ export default function PayWorker() {
           </Card>
         )}
       </ScrollView>
+
+      <Portal>
+        <Dialog visible={asking !== null} onDismiss={() => setAsking(null)}>
+          <Dialog.Title>
+            {asking === "advance" ? t("pay.advanceNow") : t("pay.confirm")}
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">
+              {asking === "advance"
+                ? t("pay.askAdvance", {
+                    amount: money(fromCents(mode === "full" ? dueCents : typedCents)),
+                    name: person?.name ?? "",
+                  })
+                : t("pay.askOne", {
+                    amount: money(fromCents(payCents)),
+                    name: person?.name ?? "",
+                  })}
+            </Text>
+            {status.registered && asking === "pay" && (
+              <Text variant="bodySmall" style={[styles.dim, { marginTop: 8 }]}>
+                {t("pay.oneSide")}
+              </Text>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAsking(null)}>{t("pay.notNow")}</Button>
+            <Button
+              mode="contained"
+              onPress={() => {
+                setAsking(null);
+                if (asking === "advance") handOverAdvance();
+                else confirm();
+              }}
+            >
+              {t("pay.yes")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={3000}>
         {snack}
