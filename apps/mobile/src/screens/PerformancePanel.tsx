@@ -22,6 +22,7 @@ import {
   type CropConfig,
 } from "../db";
 import FixPickup, { type FixablePickup } from "../components/FixPickup.tsx";
+import { priceForReport } from "../configPrice.ts";
 import {
   useT,
   formatDay,
@@ -62,9 +63,12 @@ export default function PerformancePanel() {
     setConfig(c ?? null);
     setCrew(Performance.crew());
     setPlots(Performance.plots());
-    setCost(Performance.realCost(c?.costPerUnit ?? 0));
+    // A real cost per kilo computed at a price of 0 is not a low cost,
+    // it is no answer. Leave it unset rather than report zero pesos.
+    const price = priceForReport(c);
+    setCost(price === null ? null : Performance.realCost(price));
     setAnomalies(Anomalies.all());
-    setPriceRows(Performance.priceResponse(c?.costPerUnit ?? 0));
+    setPriceRows(price === null ? [] : Performance.priceResponse(price));
   }, []);
   useFocusEffect(load);
 
@@ -121,7 +125,7 @@ export default function PerformancePanel() {
               {t("perf.realCost", { unit })}
             </Text>
             <Text variant="titleLarge" style={styles.kpiValue}>
-              {money(cost?.real ?? 0)}
+              {cost === null ? "—" : money(cost.real)}
             </Text>
             {!!cost && cost.budget > 0 && (
               <Text variant="labelSmall" style={styles.dim}>

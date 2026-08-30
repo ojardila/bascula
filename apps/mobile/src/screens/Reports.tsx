@@ -29,6 +29,7 @@ import {
 import PerformancePanel from "./PerformancePanel";
 import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
 import type { Lang } from "../i18n";
+import { priceForReport } from "../configPrice.ts";
 import {
   useT,
   formatWeekRange,
@@ -77,7 +78,9 @@ export default function Reports() {
     yieldUnit: "kg por recolector",
     costPerUnit: 800,
   });
-  const [payout, setPayout] = useState(0);
+  // null, not 0: a farm whose price has not arrived is owed «we do not
+  // know yet», and «$0» says this coffee was worth nothing.
+  const [payout, setPayout] = useState<number | null>(0);
   const [recent, setRecent] = useState<RecentPickup[]>([]);
   // A weighing somebody has just realised is wrong. See `FixPickup`.
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
@@ -88,8 +91,9 @@ export default function Reports() {
       if (t) setTotals(t);
       const c = Config.get();
       if (c) setConfig(c);
-      setPayout(totalPayout(c ? c.costPerUnit : 0));
-      setRows(reportBy(grouping, c?.costPerUnit ?? 0));
+      const price = priceForReport(c);
+      setPayout(price === null ? null : totalPayout(price));
+      setRows(reportBy(grouping, price ?? 0));
       if (grouping === "week") {
         const map: Record<string, { crop: string; kg: number; active: number }[]> = {};
         for (const wc of weekCrops()) {
@@ -149,7 +153,7 @@ export default function Reports() {
       <View style={styles.stats}>
         <Stat label={t("reports.total", { unit })} value={num(totals.kg)} />
         <Stat label={t("reports.pickups")} value={String(totals.pickups)} />
-        <Stat label={t("reports.toPay")} value={money(payout)} highlight />
+        <Stat label={t("reports.toPay")} value={payout === null ? "—" : money(payout)} highlight />
         <Stat label={t("reports.pickers")} value={String(totals.people)} />
       </View>
 
@@ -203,10 +207,17 @@ export default function Reports() {
                 // Weekly rows price their own week; the others carry the value
                 // already computed with each week's price, so the same plot no
                 // longer shows one number here and another on its detail.
+                // null when the farm has no price at all. The ranking's kilos
+                // are still true and still worth showing; only the pesos are
+                // unknown, and «$0» beside a real weight is the claim this
+                // whole rule exists to stop.
+                const priced = priceForReport(config);
                 const cost =
-                  grouping === "week"
-                    ? b.kg * costForWeek(b.label, config.costPerUnit)
-                    : (b.value ?? b.kg * config.costPerUnit);
+                  priced === null
+                    ? null
+                    : grouping === "week"
+                      ? b.kg * costForWeek(b.label, priced)
+                      : (b.value ?? b.kg * priced);
                 // Weeks open their own detail; the others need an id.
                 const tappable = grouping === "week" || b.id != null;
                 const lots = grouping === "week" ? lotsByWeek[b.label] ?? [] : [];
@@ -242,7 +253,7 @@ export default function Reports() {
                     <View style={styles.barValues}>
                       <Text variant="labelMedium">{num(b.kg)} {unit}</Text>
                       <Text variant="labelSmall" style={styles.cost}>
-                        {money(cost)}
+                        {cost === null ? "—" : money(cost)}
                       </Text>
                     </View>
                     {tappable && (

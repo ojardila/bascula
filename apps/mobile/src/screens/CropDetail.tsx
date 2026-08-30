@@ -22,6 +22,7 @@ import {
 } from "../i18n";
 import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { priceForReport } from "../configPrice.ts";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -65,7 +66,9 @@ export default function CropDetail({
   const [byWeek, setByWeek] = useState<ReturnType<typeof CropReports.byWeek>>([]);
   const [byWorker, setByWorker] = useState<ReturnType<typeof CropReports.byWorker>>([]);
   const [recent, setRecent] = useState<ReturnType<typeof CropReports.recent>>([]);
-  const [value, setValue] = useState(0);
+  // null when the farm has no price. `—` is already this screen's word
+  // for a figure it cannot state (see the kg/ha stat below).
+  const [value, setValue] = useState<number | null>(0);
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
   const [snack, setSnack] = useState("");
 
@@ -82,7 +85,8 @@ export default function CropDetail({
     setByWeek(CropReports.byWeek(cropId));
     setByWorker(CropReports.byWorker(cropId));
     setRecent(CropReports.recent(cropId));
-    setValue(CropReports.value(cropId, c?.costPerUnit ?? 0));
+    const price = priceForReport(c);
+    setValue(price === null ? null : CropReports.value(cropId, price));
   }, [cropId, navigation, t]);
   useFocusEffect(load);
 
@@ -132,7 +136,7 @@ export default function CropDetail({
       <View style={styles.stats}>
         <Stat value={String(stats.days)} label={t("crop.days")} />
         <Stat value={String(stats.pickups)} label={t("reports.pickups")} />
-        <Stat value={money(value)} label={t("crop.value")} />
+        <Stat value={value === null ? "—" : money(value)} label={t("crop.value")} />
       </View>
 
       {hasChart && (

@@ -109,3 +109,22 @@ export function priceRefusalKey(p: PriceRefused): string {
       return "settings.priceInvalid";
   }
 }
+
+/**
+ * The reading counterpart: what a REPORT is allowed to price at.
+ *
+ * `priceToSave` above answers what may be written. This answers the question
+ * every report screen was getting wrong in the same way — `c?.costPerUnit ?? 0`
+ * handed straight to a money function, which then computed a farm-wide payout,
+ * a real cost per kilo or a plot's value **at zero** and displayed it as a
+ * figure. `$0` is a claim: it says this coffee was worth nothing. A farm whose
+ * price has not arrived is owed an answer of «we do not know yet», and those
+ * are not the same sentence.
+ *
+ * Returning `null` rather than 0 is the whole point, and it is the same reason
+ * `balanceDisplay`'s `unknown` carries no number: the caller cannot pass it on
+ * to arithmetic by accident. `null` has to be handled to be rendered.
+ */
+export function priceForReport(config: CropConfig | null | undefined): number | null {
+  return usable(config?.costPerUnit) ? config!.costPerUnit : null;
+}
