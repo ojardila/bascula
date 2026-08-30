@@ -14,6 +14,10 @@
  * down by hand, and searched for. The paper carries only this short number;
  * the full movement id stays in the ledger, not on the copy the worker takes.
  *
+ * THE SETTLEMENT USES IT TOO, for the same reason and with no receipt number
+ * of its own: its id is all that separates two settlements of the same worker,
+ * and the footer of a document somebody signs has to say which one it is.
+ *
  * IT IS NOT A SEQUENCE NUMBER and does not pretend to be. A per-farm sequence
  * is a server column and the server's decision; inventing one here would give
  * two receipts numbered "N.º 14" the moment two devices write at once. This is

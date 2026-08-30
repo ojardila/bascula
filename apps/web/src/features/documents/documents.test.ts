@@ -184,6 +184,30 @@ describe("the settlement", () => {
     expect(html).not.toContain("24–30 ago —");
     expect(html).not.toContain(settlement.id);
   });
+
+  /**
+   * A settlement is signed and filed, and the API issues it no receipt number,
+   * so the id is the only thing that says which settlement a signed sheet is.
+   * The worker's name alone made two settlements of the same person into the
+   * same document.
+   */
+  it("numbers the paper so two settlements of one worker are told apart", () => {
+    const of = (id: string) =>
+      settlementHtml({
+        farmName: "La Esperanza",
+        settlement: { ...settlement, id },
+        printedOn: "2026-08-31",
+      });
+
+    const first = of("0192f3a0-0009-7000-8000-00000000aaaa");
+    const second = of("0192f3a0-0009-7000-8000-00000000bbbb");
+
+    expect(first).toContain("Liquidación N.º 0000-AAAA · María Restrepo Ospina");
+    expect(second).toContain("Liquidación N.º 0000-BBBB · María Restrepo Ospina");
+    // The number is short enough to read off a printed footer, and the whole
+    // UUID still stays off the paper.
+    expect(first).not.toContain("0192f3a0-0009-7000-8000-00000000aaaa");
+  });
 });
 
 describe("the payroll sheet", () => {

@@ -36,6 +36,7 @@
 import { documentShell, esc } from "./documentCss";
 import { formatDate, formatDateRange, formatPeriod } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
+import { shortReceiptNumber } from "../../lib/receipt";
 import type { PayableLine, Payment, Settlement, Worker } from "../../api/types";
 
 const money = (c: number) => formatMoney(c);
@@ -203,6 +204,18 @@ export interface SettlementDocInput {
 export function settlementHtml(input: SettlementDocInput): string {
   const s = input.settlement;
   const rows = lineRows(s.lines);
+  /**
+   * THE NUMBER THAT TELLS TWO SETTLEMENTS APART ON PAPER.
+   *
+   * A settlement has no receipt number of its own — the API issues none — so
+   * `id` is the only thing that identifies this document. The footer once
+   * printed the whole 36-character UUID, which nobody reads, and then printed
+   * the worker's name instead, which reads well and identifies nothing: two
+   * settlements for the same person came out as the same piece of paper. This
+   * is a document somebody signs, so it carries the same short form the pay
+   * receipt uses — eight digits in two blocks — next to the name.
+   */
+  const number = shortReceiptNumber(s.id);
   const weighed = s.lines.reduce((a, l) => a + (l.unitLabel ? l.quantity : 0), 0);
   const unit = s.lines.find((l) => l.unitLabel)?.unitLabel ?? null;
 
@@ -253,7 +266,7 @@ export function settlementHtml(input: SettlementDocInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Liquidación · ${esc(s.workerName)}</span>
+     <p class="foot"><span>Liquidación N.º ${esc(number)} · ${esc(s.workerName)}</span>
        <span>Impreso el ${esc(formatDate(input.printedOn))}</span></p>`,
   );
 }
