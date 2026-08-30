@@ -270,6 +270,15 @@ export interface WireWorkUnit {
   code: string;
   label: string;
   kgFactor: number | null;
+  /**
+   * Whether any activity or work record points at this unit.
+   *
+   * It decides what DELETE does: a unit nothing references is removed, one
+   * that history references is retired instead. Returned so the console can
+   * say which will happen before the button is pressed, rather than promising
+   * a deletion and performing an archive.
+   */
+  inUse: boolean;
 }
 
 /* -- workers --------------------------------------------------------- */

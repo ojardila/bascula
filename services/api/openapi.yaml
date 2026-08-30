@@ -1834,6 +1834,83 @@ paths:
   # ---------------------------------------------------------------------------
   # Work records — "labores"
   # ---------------------------------------------------------------------------
+
+  /v1/catalogs/work-units/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    patch:
+      tags: [catalogs]
+      operationId: updateWorkUnit
+      summary: Correct a unit's code, name or weight
+      description: |
+        A farm that typed "canata" had to live with it: units could be created
+        and listed and nothing else.
+
+        `kgFactor` distinguishes absent from null. Absent leaves the stored
+        factor; null clears it. They are deliberately different because the
+        factor converts the unit into kilos -- a rename that wiped it would
+        silently change what a picker is paid.
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkUnitInput" }
+      responses:
+        "200":
+          description: The unit as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkUnit" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Another live unit on this farm already uses that code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [catalogs]
+      operationId: deleteWorkUnit
+      summary: Remove a unit, or retire it when it cannot be removed
+      description: |
+        The server decides which of the two happens, because the caller cannot
+        know and the difference is somebody's pay.
+
+        A unit no activity and no work record points at is DELETED. A unit any
+        of them points at is ARCHIVED: it leaves the pickers and every record
+        that already referenced it still resolves. Deleting a referenced unit
+        would leave a row saying "40" of something nobody can name, in the row
+        that decided what a picker was owed.
+
+        `archived` in the response says which happened, so the console can tell
+        the truth rather than claim a deletion that was a retirement.
+
+        A code freed by archiving can be used again: uniqueness is over live
+        units only.
+      x-action: catalogs.write
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: What was done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, archived]
+                properties:
+                  id: { type: string, format: uuid }
+                  archived:
+                    type: boolean
+                    description: |
+                      True when the unit was retired because history points at
+                      it; false when it was deleted outright.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/work-records:
     get:
       tags: [work-records]
@@ -5359,6 +5436,12 @@ components:
           format: double
           nullable: true
           description: What one of these weighs, for farms that count in baskets.
+        inUse:
+          type: boolean
+          description: |
+            Whether any activity or work record points at this unit. It decides
+            whether DELETE removes it or retires it, and is returned so the
+            console can say which before the button is pressed.
 
     WorkUnitInput:
       type: object

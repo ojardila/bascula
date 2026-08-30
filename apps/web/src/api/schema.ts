@@ -1089,6 +1089,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/catalogs/work-units/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a unit, or retire it when it cannot be removed
+         * @description The server decides which of the two happens, because the caller cannot
+         *     know and the difference is somebody's pay.
+         *
+         *     A unit no activity and no work record points at is DELETED. A unit any
+         *     of them points at is ARCHIVED: it leaves the pickers and every record
+         *     that already referenced it still resolves. Deleting a referenced unit
+         *     would leave a row saying "40" of something nobody can name, in the row
+         *     that decided what a picker was owed.
+         *
+         *     `archived` in the response says which happened, so the console can tell
+         *     the truth rather than claim a deletion that was a retirement.
+         *
+         *     A code freed by archiving can be used again: uniqueness is over live
+         *     units only.
+         */
+        delete: operations["deleteWorkUnit"];
+        options?: never;
+        head?: never;
+        /**
+         * Correct a unit's code, name or weight
+         * @description A farm that typed "canata" had to live with it: units could be created
+         *     and listed and nothing else.
+         *
+         *     `kgFactor` distinguishes absent from null. Absent leaves the stored
+         *     factor; null clears it. They are deliberately different because the
+         *     factor converts the unit into kilos -- a rename that wiped it would
+         *     silently change what a picker is paid.
+         */
+        patch: operations["updateWorkUnit"];
+        trace?: never;
+    };
     "/v1/work-records": {
         parameters: {
             query?: never;
@@ -3252,6 +3297,12 @@ export interface components {
              * @description What one of these weighs, for farms that count in baskets.
              */
             kgFactor?: number | null;
+            /**
+             * @description Whether any activity or work record points at this unit. It decides
+             *     whether DELETE removes it or retires it, and is returned so the
+             *     console can say which before the button is pressed.
+             */
+            inUse?: boolean;
         };
         WorkUnitInput: {
             /** Format: uuid */
@@ -7032,6 +7083,78 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteWorkUnit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What was done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /**
+                         * @description True when the unit was retired because history points at
+                         *     it; false when it was deleted outright.
+                         */
+                        archived: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateWorkUnit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkUnitInput"];
+            };
+        };
+        responses: {
+            /** @description The unit as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkUnit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Another live unit on this farm already uses that code. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listWorkRecords: {

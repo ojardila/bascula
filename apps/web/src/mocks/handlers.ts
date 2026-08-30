@@ -1055,6 +1055,8 @@ export const handlers = [
       code: body.code,
       label: body.label || body.code,
       kgFactor: body.kgFactor ?? null,
+      // A unit the farm has just invented cannot be referenced yet.
+      inUse: false,
     };
     g.p.tenant.workUnits.push(created);
     return HttpResponse.json(created);

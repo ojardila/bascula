@@ -14,6 +14,11 @@ type WorkUnit struct {
 	Code     string   `json:"code"`
 	Label    string   `json:"label"`
 	KgFactor *float64 `json:"kgFactor"`
+	// InUse says whether any activity or work record points at this unit. It
+	// is what decides whether the farm may delete it or only retire it, and it
+	// is returned so the console can say which of the two a button will do
+	// before it is pressed.
+	InUse bool `json:"inUse"`
 }
 
 // ActivityRate is one period of an activity's price history. Decision 4: the
@@ -44,9 +49,17 @@ type Activity struct {
 	Rate *ActivityRate `json:"rate,omitempty"`
 }
 
+// ListWorkUnits returns the farm's live units. Archived ones are left out:
+// they exist so that records already written still resolve, not so that a
+// picker offers a unit the farm stopped using.
 func ListWorkUnits(ctx context.Context, tx pgx.Tx) ([]WorkUnit, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, code, label, kg_factor::float8 FROM work_units ORDER BY code`)
+		SELECT u.id::text, u.code, u.label, u.kg_factor::float8,
+		       EXISTS (SELECT 1 FROM activities a WHERE a.unit_id = u.id)
+		    OR EXISTS (SELECT 1 FROM work_records w WHERE w.unit_id = u.id)
+		  FROM work_units u
+		 WHERE u.archived_at IS NULL
+		 ORDER BY u.code`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,12 +68,75 @@ func ListWorkUnits(ctx context.Context, tx pgx.Tx) ([]WorkUnit, error) {
 	out := []WorkUnit{}
 	for rows.Next() {
 		var u WorkUnit
-		if err := rows.Scan(&u.ID, &u.Code, &u.Label, &u.KgFactor); err != nil {
+		if err := rows.Scan(&u.ID, &u.Code, &u.Label, &u.KgFactor, &u.InUse); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// UpdateWorkUnit renames a unit or corrects its factor.
+//
+// A farm that typed "canata" had to live with it until now. Changing kg_factor
+// is allowed and is not retroactive by accident: work_records store the
+// quantity in the unit, so a corrected factor changes what future conversions
+// say and leaves every recorded quantity exactly as it was written.
+//
+// touchFactor separates "leave the factor alone" from "set it to nothing". A
+// PATCH that only renames must not wipe kg_factor: it is what converts a
+// canasta into kilos, so losing it silently changes what a picker is paid.
+func UpdateWorkUnit(ctx context.Context, tx pgx.Tx, id, code, label string,
+	kgFactor *float64, touchFactor bool) (*WorkUnit, error) {
+	var u WorkUnit
+	err := tx.QueryRow(ctx, `
+		UPDATE work_units
+		   SET code = COALESCE(NULLIF($2, ''), code),
+		       label = COALESCE(NULLIF($3, ''), label),
+		       kg_factor = CASE WHEN $5 THEN $4 ELSE kg_factor END
+		 WHERE id = $1 AND archived_at IS NULL
+		 RETURNING id::text, code, label, kg_factor::float8,
+		           EXISTS (SELECT 1 FROM activities a WHERE a.unit_id = work_units.id)
+		        OR EXISTS (SELECT 1 FROM work_records w WHERE w.unit_id = work_units.id)`,
+		id, code, label, kgFactor, touchFactor).Scan(&u.ID, &u.Code, &u.Label, &u.KgFactor, &u.InUse)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// WorkUnitInUse reports whether any activity or work record points at the unit.
+func WorkUnitInUse(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
+	var used bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM activities WHERE unit_id = $1)
+		    OR EXISTS (SELECT 1 FROM work_records WHERE unit_id = $1)`, id).Scan(&used)
+	return used, err
+}
+
+// ArchiveWorkUnit retires a unit that history points at.
+//
+// Not a delete, and the difference is somebody's pay: a work record that says
+// "40 canastas" means nothing once the canasta is gone. Archiving takes it out
+// of the pickers and leaves every record that already referenced it readable.
+func ArchiveWorkUnit(ctx context.Context, tx pgx.Tx, id string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE work_units SET archived_at = now()
+		 WHERE id = $1 AND archived_at IS NULL`, id)
+	return err
+}
+
+// DeleteWorkUnit removes a unit nothing points at. The caller must have
+// established that with WorkUnitInUse; the WHERE clause repeats the check
+// anyway, because between the two statements is a transaction another writer
+// could have used to reference it.
+func DeleteWorkUnit(ctx context.Context, tx pgx.Tx, id string) error {
+	_, err := tx.Exec(ctx, `
+		DELETE FROM work_units
+		 WHERE id = $1
+		   AND NOT EXISTS (SELECT 1 FROM activities WHERE unit_id = $1)
+		   AND NOT EXISTS (SELECT 1 FROM work_records WHERE unit_id = $1)`, id)
+	return err
 }
 
 // EnsureWorkUnit is idempotent by (farm_id, lower(code)), so the "add it if it
@@ -70,7 +146,8 @@ func EnsureWorkUnit(ctx context.Context, tx pgx.Tx, farmID, id, code, label stri
 	err := tx.QueryRow(ctx, `
 		INSERT INTO work_units (id, farm_id, code, label, kg_factor)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (farm_id, lower(code)) DO UPDATE SET label = work_units.label
+		ON CONFLICT (farm_id, lower(code)) WHERE archived_at IS NULL
+		  DO UPDATE SET label = work_units.label
 		RETURNING id::text`, id, farmID, code, label, kgFactor).Scan(&out)
 	return out, err
 }

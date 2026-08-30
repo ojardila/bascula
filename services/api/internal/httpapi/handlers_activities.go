@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -386,4 +387,92 @@ func (s *Server) handleCreateWorkUnit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "code": body.Code, "label": body.Label, "kgFactor": body.KgFactor,
 	})
+}
+
+// handleUpdateWorkUnit renames a unit or corrects its factor. The farm could
+// create units and never change one, so a typed "canata" was permanent.
+func (s *Server) handleUpdateWorkUnit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Code  string `json:"code"`
+		Label string `json:"label"`
+		// Raw, so that an ABSENT kgFactor is distinguishable from an explicit
+		// null. Decoded into *float64 it is nil either way, and a PATCH that
+		// only renames the unit would wipe the factor that converts it to
+		// kilos -- which is what somebody gets paid by.
+		KgFactor json.RawMessage `json:"kgFactor"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	touchFactor := len(body.KgFactor) > 0
+	var kgFactor *float64
+	if touchFactor && string(body.KgFactor) != "null" {
+		var v float64
+		if err := json.Unmarshal(body.KgFactor, &v); err != nil {
+			writeError(w, r, domain.BadRequest("kgFactor must be a number or null"))
+			return
+		}
+		kgFactor = &v
+	}
+	if err := checkFixedScale("kgFactor", kgFactor,
+		domain.KgFactorPrecision, domain.KgFactorScale); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	unit, err := store.UpdateWorkUnit(r.Context(), tx, chi.URLParam(r, "id"),
+		body.Code, body.Label, kgFactor, touchFactor)
+	if err != nil {
+		if store.IsUniqueViolation(err, "ux_work_units_code_live") {
+			writeError(w, r, domain.Conflict(domain.CodeDuplicateName,
+				"this farm already has a unit with that code"))
+			return
+		}
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, unit)
+}
+
+// handleDeleteWorkUnit removes a unit, or retires it when it cannot be removed.
+//
+// The two are not the same and the server decides which, because the caller
+// cannot know: a unit any activity or work record points at is retired, and one
+// nothing points at is deleted. Deleting a referenced unit would leave a record
+// saying "40" of something nobody can name -- in a row that decided what a
+// picker was paid. Refusing outright would be the other failure: a farm stuck
+// with a typo it can never clear.
+//
+// The response says which happened, so the console can tell the truth rather
+// than claim a deletion that was an archive.
+func (s *Server) handleDeleteWorkUnit(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	used, err := store.WorkUnitInUse(r.Context(), tx, id)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if used {
+		if err := store.ArchiveWorkUnit(r.Context(), tx, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "archived": true})
+		return
+	}
+	if err := store.DeleteWorkUnit(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "archived": false})
 }

@@ -360,7 +360,7 @@ export function emptyTenant(farmId: string, priceCents: number, id: () => string
     id: id(),
     name,
   }));
-  const kg: WireWorkUnit = { id: id(), code: "kg", label: "Kilo", kgFactor: 1 };
+  const kg: WireWorkUnit = { id: id(), code: "kg", label: "Kilo", kgFactor: 1, inUse: true };
   const harvest = categories[2];
   const lastYear = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   return {
@@ -803,8 +803,10 @@ export function resetDb(): void {
   ];
 
   const workUnits: WireWorkUnit[] = [
-    { id: "0192f3a0-000d-7000-8000-000000000001", code: "kg", label: "Kilo", kgFactor: 1 },
-    { id: "0192f3a0-000d-7000-8000-000000000002", code: "canasta", label: "Canasta", kgFactor: null },
+    // The kilo is referenced by the seeded activities, so it is the one the
+    // console must offer to RETIRE rather than delete.
+    { id: "0192f3a0-000d-7000-8000-000000000001", code: "kg", label: "Kilo", kgFactor: 1, inUse: true },
+    { id: "0192f3a0-000d-7000-8000-000000000002", code: "canasta", label: "Canasta", kgFactor: null, inUse: false },
   ];
 
   const cropTypes: WireCatalogItem[] = [

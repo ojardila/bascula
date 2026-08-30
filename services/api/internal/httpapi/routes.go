@@ -99,6 +99,8 @@ func (s *Server) Routes() []Route {
 		// add to, which is what "with an option to create a new one" means.
 		{http.MethodGet, "/v1/catalogs/work-units", auth.ActionCatalogsRead, s.handleListWorkUnits},
 		{http.MethodPost, "/v1/catalogs/work-units", auth.ActionCatalogsWrite, s.handleCreateWorkUnit},
+		{http.MethodPatch, "/v1/catalogs/work-units/{id}", auth.ActionCatalogsWrite, s.handleUpdateWorkUnit},
+		{http.MethodDelete, "/v1/catalogs/work-units/{id}", auth.ActionCatalogsWrite, s.handleDeleteWorkUnit},
 		{http.MethodGet, "/v1/catalogs/activity-categories", auth.ActionCatalogsRead,
 			s.handleListCatalog(store.CatalogActivityCategories)},
 		{http.MethodPost, "/v1/catalogs/activity-categories", auth.ActionCatalogsWrite,
