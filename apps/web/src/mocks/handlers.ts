@@ -475,6 +475,25 @@ function patch<T extends object, K extends keyof T>(row: T, value: T[K] | undefi
   if (value !== undefined && value !== null) row[key] = value;
 }
 
+/**
+ * Like `patch`, but an explicit null CLEARS the field, which is what
+ * `UpdateEmployee` does since a worker's wrong phone number could be replaced
+ * and never removed.
+ *
+ * It is a second helper rather than a change to the first because only the
+ * employee columns behave this way on the server. Making `patch` clear on null
+ * everywhere would fix the divergence here and open the same one on every other
+ * entity, in the other direction.
+ */
+function patchClearable<T extends object, K extends keyof T>(
+  row: T,
+  value: T[K] | undefined | null,
+  key: K,
+) {
+  if (value === undefined) return;
+  row[key] = value as T[K];
+}
+
 /** `EnsureCatalogItem`: idempotent by lower(name), so a picker cannot duplicate. */
 function ensureCatalogItem(list: WireCatalogItem[], name: string, id?: string): WireCatalogItem {
   const existing = list.find((i) => sameName(i.name, name));
@@ -1345,16 +1364,16 @@ export const handlers = [
     // still answers with the row it changed.
     if (worker.deletedAt != null) return HttpResponse.json(worker);
     patch(worker, body.name, "name");
-    patch(worker, body.lastName, "lastName");
-    patch(worker, body.documentType, "documentType");
-    patch(worker, body.docId, "docId");
-    patch(worker, body.tag, "tag");
-    patch(worker, body.phone, "phone");
-    patch(worker, body.address, "address");
-    patch(worker, body.city, "city");
-    patch(worker, body.municipality, "municipality");
-    patch(worker, body.country, "country");
-    patch(worker, body.photoId, "photoId");
+    patchClearable(worker, body.lastName, "lastName");
+    patchClearable(worker, body.documentType, "documentType");
+    patchClearable(worker, body.docId, "docId");
+    patchClearable(worker, body.tag, "tag");
+    patchClearable(worker, body.phone, "phone");
+    patchClearable(worker, body.address, "address");
+    patchClearable(worker, body.city, "city");
+    patchClearable(worker, body.municipality, "municipality");
+    patchClearable(worker, body.country, "country");
+    patchClearable(worker, body.photoId, "photoId");
     return HttpResponse.json(worker);
   }),
 

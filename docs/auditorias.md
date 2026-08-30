@@ -347,3 +347,39 @@ column in a `SET` clause, exactly like the two next to it.
 takes a `PATCH`, at the moment it is learned.** The search costs a grep. Both
 of these were written on the same day; the second could have been prevented by
 five minutes of looking rather than four hours of not.
+
+### The grep, and what it turned up
+
+Done immediately, and it found two more — neither of them new, both there since
+sprint 1, and neither seen by either audit.
+
+`UpdateEmployee` and `UpdateFarm` used `coalesce` on every optional column.
+That is the mirror image of the work-units bug: instead of an absent field
+wiping a value, an explicit null failed to clear one. The console sends null
+for an emptied box (`endpoints.ts:1870` for a worker, `:499-502` for the farm),
+so an owner who typed a phone number wrong could replace it with another number
+and never remove it. Same for address, city, country, tag, document, photo, and
+the farm's declared hectares. Measured before fixing:
+
+    PATCH {"phone": null}  -> 3001112233   the wrong number, kept
+    PATCH {"phone": ""}    -> ""           an empty string, not a null
+
+Both now clear on an explicit null, through one helper — `decodeNulls` — that
+reports which keys arrived as null, because a `*string` cannot say. Three fields
+deliberately do NOT clear: a worker's name, and the farm's timezone and
+currency. The timezone is the interesting one: a settlement week is a local
+date, so the field that looks like a formality decides which day a weighing
+belongs to.
+
+What the grep also did was clear the endpoints that matter most.
+`UpdateWorkRecord`, `UpdateSale` and `UpdateExpense` all use `coalesce` on their
+money columns, and there it is right: those columns are not nullable and there
+is nothing to clear. Knowing that took the same five minutes and is worth as
+much as the two fixes.
+
+One more thing the grep exposed, in the other direction. The web mock's `patch`
+helper ignored nulls — matching the server as it *had* been. The moment the
+server started clearing, the mock became the stricter of the two, so a test of
+the fix would have failed against a world where the fix did not exist. It is
+the same trap as the non-idempotent mock above, pointing the other way: the
+danger is not that a mock is more permissive, it is that it is *different*.

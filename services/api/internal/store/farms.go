@@ -86,22 +86,36 @@ func IsKnownTimezone(ctx context.Context, tx pgx.Tx, name string) (bool, error) 
 // value. The timezone is deliberately patchable and deliberately validated by
 // the farms_tz_valid CHECK: a bad IANA name would silently shift every
 // business day the farm has ever recorded.
-func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm) (*Farm, error) {
+//
+// cleared names the fields sent as an explicit null, which is a different
+// request from not mentioning them. Same reason as UpdateEmployee: the console
+// sends null for an emptied box, so without this a farm could replace a wrong
+// address with another one and never remove it.
+//
+// name, timezone and currency have no CASE and are not clearable. A farm
+// without a timezone has no week boundaries, and a settlement week is a local
+// date -- so the field that looks like a formality decides which day a
+// weighing belongs to, and an empty one would move somebody's pay.
+func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm, cleared map[string]bool) (*Farm, error) {
+	clear := make([]string, 0, len(cleared))
+	for k := range cleared {
+		clear = append(clear, k)
+	}
 	out, err := scanFarm(tx.QueryRow(ctx, `
 		UPDATE farms f SET
 			name     = coalesce($1, f.name),
 			timezone = coalesce($2, f.timezone),
 			currency = coalesce($3, f.currency),
-			phone    = coalesce($4, f.phone),
-			country  = coalesce($5, f.country),
-			city     = coalesce($6, f.city),
-			address  = coalesce($7, f.address),
-			area_ha  = coalesce($8, f.area_ha),
+			phone    = CASE WHEN 'phone'   = ANY($10) THEN NULL ELSE coalesce($4, f.phone) END,
+			country  = CASE WHEN 'country' = ANY($10) THEN NULL ELSE coalesce($5, f.country) END,
+			city     = CASE WHEN 'city'    = ANY($10) THEN NULL ELSE coalesce($6, f.city) END,
+			address  = CASE WHEN 'address' = ANY($10) THEN NULL ELSE coalesce($7, f.address) END,
+			area_ha  = CASE WHEN 'areaHa'  = ANY($10) THEN NULL ELSE coalesce($8, f.area_ha) END,
 			money_read_only = coalesce($9, f.money_read_only)
 		 WHERE f.id = current_farm()
 		 RETURNING `+farmCols,
 		nilIfEmpty(f.Name), nilIfEmpty(f.Timezone), nilIfEmpty(f.Currency),
-		f.Phone, f.Country, f.City, f.Address, f.AreaHa, f.MoneyReadOnly))
+		f.Phone, f.Country, f.City, f.Address, f.AreaHa, f.MoneyReadOnly, clear))
 	if err != nil {
 		return nil, err
 	}

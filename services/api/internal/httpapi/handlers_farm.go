@@ -38,7 +38,10 @@ func (s *Server) handleGetFarm(w http.ResponseWriter, r *http.Request) {
 // handleUpdateFarm is the configuration screen. Owner only.
 func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 	var body store.Farm
-	if err := decode(r, &body); err != nil {
+	// decodeNulls, not decode: an emptied box arrives as an explicit null and
+	// must clear the field rather than read as "not mentioned".
+	cleared, err := decodeNulls(r, &body)
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -74,7 +77,7 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := store.UpdateFarm(r.Context(), tx, body)
+	updated, err := store.UpdateFarm(r.Context(), tx, body, cleared)
 	if err != nil {
 		if store.IsCheckViolation(err, "farms_tz_valid") {
 			writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
