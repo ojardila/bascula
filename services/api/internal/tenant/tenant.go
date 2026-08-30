@@ -25,6 +25,7 @@ const (
 	txKey ctxKey = iota
 	farmKey
 	keepKey
+	afterKey
 )
 
 // Tx returns the transaction serving this request.
@@ -119,6 +120,34 @@ func DiscardChanges(ctx context.Context) {
 	}
 }
 
+// afterRequest is the list AfterRequest appends to and Middleware drains.
+type afterRequest struct{ fns []func(context.Context) }
+
+// AfterRequest registers work to run once this request's transaction is over
+// and its pool connection has been handed back.
+//
+// It exists for the shape that has already taken this platform down twice, and
+// that the note on KeepChanges describes from the other side: a handler that
+// holds the request transaction and then asks the pool for a SECOND connection
+// needs two of the thirteen to make progress, so thirteen concurrent requests
+// deadlock the pool itself, with no lock and no database involved. /health goes
+// on answering throughout, because it touches no database.
+//
+// KeepChanges is the answer when the durable write BELONGS to the request's own
+// transaction. This is the answer when it must survive that transaction being
+// rolled back — an audit row that a rejected request must still leave behind.
+// The callback runs with the connection already returned, so it can take one of
+// its own without ever wanting two at once.
+//
+// The context it receives is the request's, minus the transaction: tenant.Tx
+// returns an error inside it, deliberately. Errors are the callback's to
+// handle; nothing can be written to the response by then.
+func AfterRequest(ctx context.Context, fn func(context.Context)) {
+	if a, ok := ctx.Value(afterKey).(*afterRequest); ok && a != nil {
+		a.fns = append(a.fns, fn)
+	}
+}
+
 func withTx(ctx context.Context, tx pgx.Tx) context.Context {
 	return context.WithValue(ctx, txKey, tx)
 }
@@ -154,6 +183,26 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			ctx = withTx(ctx, tx)
 			keep := &keepChanges{}
 			ctx = context.WithValue(ctx, keepKey, keep)
+			after := &afterRequest{}
+			ctx = context.WithValue(ctx, afterKey, after)
+
+			// The callbacks run on the way out of EVERY path through this
+			// middleware, including the ones that answer before the handler is
+			// reached. An audit row that only survives when the request got as
+			// far as the handler is not an audit row.
+			defer func() {
+				if len(after.fns) == 0 {
+					return
+				}
+				if !committed {
+					_ = tx.Rollback(ctx)
+					committed = true
+				}
+				bare := context.WithValue(r.Context(), afterKey, (*afterRequest)(nil))
+				for _, fn := range after.fns {
+					fn(bare)
+				}
+			}()
 
 			if p, ok := auth.PrincipalFrom(ctx); ok && p.FarmID != "" {
 				if err := setContext(ctx, tx, p, enforceMembership); err != nil {
