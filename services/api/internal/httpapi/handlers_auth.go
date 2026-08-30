@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -103,11 +104,23 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// The attempt is recorded outside the request transaction on purpose: a
 	// rejected signup rolls that transaction back, and a rate limit that
 	// forgets every failure is not a rate limit.
-	defer func() {
-		_, _ = s.pool.Exec(r.Context(),
+	//
+	// It is recorded AFTER that transaction rather than beside it. A `defer`
+	// here runs while the middleware still holds the request's connection, so
+	// asking the pool for a second one wants two of the thirteen at once — the
+	// deadlock the note on tenant.KeepChanges says took the platform down
+	// twice, on the one route that needs no credential to reach. Thirteen
+	// concurrent signups were enough to stop every farm, with /health still
+	// green. tenant.AfterRequest runs the write once the connection is back.
+	succeeded := false
+	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
+		if _, err := s.pool.Exec(ctx,
 			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
-			uuid.NewString(), ip, attempted, true)
-	}()
+			uuid.NewString(), ip, attempted, succeeded); err != nil {
+			slog.ErrorContext(ctx, "could not record the signup attempt",
+				"err", err, "ip", ip)
+		}
+	})
 
 	n, err := store.CountSignupAttempts(r.Context(), tx, ip, time.Hour)
 	if err != nil {
@@ -236,6 +249,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// account: an id here would be the oracle again, in the one place the two
 	// branches cannot both tell the truth. farmId and userId are on the
 	// verify-email response instead, where the caller has proved the address.
+	// The attempt row records what actually happened. It used to be written
+	// with `true` on every path, including the rejected ones.
+	succeeded = true
+
 	body := map[string]any{"verificationRequired": true}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
