@@ -241,7 +241,7 @@ test("a season of 18,000 weighings migrates without losing a row", () => {
   repo.init();
   const ms = performance.now() - t0;
 
-  assert.equal(version(season.db), 7);
+  assert.equal(version(season.db), 8);
   assert.deepEqual(counts(season.db), before, "not one row lost or invented");
   assert.equal(kilos(season.db), beforeKg, "not a kilo moved");
   assert.equal(
@@ -446,7 +446,7 @@ test("a migration killed halfway leaves a version-5 database that still works", 
     still.init();
     assert.equal(still.reports.totals()?.pickups, 400, `depth ${depth}`);
     assert.ok(still.payments.balances().length > 0, `depth ${depth}`);
-    assert.equal(version(season.db), 7, `depth ${depth}: the retry`);
+    assert.equal(version(season.db), 8, `depth ${depth}: the retry`);
     assert.deepEqual(counts(season.db), before, `depth ${depth}: the retry kept every row`);
     assert.equal(
       identities(season.db).filter((r) => r.uuid === null).length,
@@ -475,7 +475,7 @@ test("migrating twice does nothing the second time", () => {
   repo.init();
   repo.init();
 
-  assert.equal(version(season.db), 7);
+  assert.equal(version(season.db), 8);
   assert.deepEqual(identities(season.db), first, "an id was re-minted");
   assert.deepEqual(
     season.db.prepare("SELECT id, updatedAt FROM pickups ORDER BY id").all(),

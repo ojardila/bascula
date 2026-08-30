@@ -267,6 +267,7 @@ export function buildSeasonExport(
   input: SeasonExportInput,
 ): SeasonExport {
   requireNamedRows(db);
+  requirePositiveWeekPrices(db);
 
   const workers = db.getAllSync<ExportWorker>(
     `SELECT uuid AS id, name, lastName, documentType, docId, tag, createdAt, deletedAt
@@ -391,6 +392,38 @@ function requireNamedRows(db: SqlDatabase): void {
     if (n > 0) problems.push(`${table}: ${n} filas sin uuid`);
   }
   if (problems.length) throw new SeasonExportError("MISSING_UUIDS", problems);
+}
+
+/**
+ * A week price of zero cannot cross to the server, and must not cross quietly.
+ *
+ * The server refuses one outright — measured, `POST /v1/import/season` answers
+ * 400 «a week price must be positive: 2026-08-24» — and the import is
+ * all-or-nothing, so one such week takes the whole farm's season down. The
+ * message names a week and not a cause, which is the worst place to find out.
+ *
+ * Dropping the row instead would be worse than failing: with no override for
+ * that week the server falls back to the farm's general price, so the money
+ * silently CHANGES, and the balances reconciliation — a single cent aborts
+ * everything — would refuse it anyway, further from the cause.
+ *
+ * The app cannot create such a row: `addOverride` refuses a zero, and v8
+ * repairs the ones v7's backfill invented. What is left is old or corrupted
+ * data, and it needs a person, not a default.
+ */
+function requirePositiveWeekPrices(db: SqlDatabase): void {
+  const rows = db.getAllSync<{ week: string }>(
+    `SELECT week FROM cost_overrides
+      WHERE uuid IS NOT NULL
+        AND COALESCE(costPerUnitCents, CAST(ROUND(costPerUnit * 100) AS INTEGER)) <= 0
+      ORDER BY week`,
+    [],
+  );
+  if (rows.length)
+    throw new SeasonExportError(
+      "NON_POSITIVE_WEEK_PRICE",
+      rows.map((r) => `semana ${r.week}: el precio es cero o negativo`),
+    );
 }
 
 /**

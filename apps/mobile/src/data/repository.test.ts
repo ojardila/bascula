@@ -71,7 +71,7 @@ beforeEach(() => {
 
 test("a fresh database comes up at the current schema version", () => {
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 7);
+  assert.equal(v.user_version, 8);
   assert.deepEqual({ ...repo.config.get() }, {
     cropType: "cafe",
     label: "Café",
@@ -103,7 +103,7 @@ test("starting up twice changes nothing — every launch runs this", () => {
   repo.init();
   repo.init();
   const v = raw.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 7);
+  assert.equal(v.user_version, 8);
   assert.equal(repo.reports.totals()?.pickups, 1);
   assert.equal(repo.config.get()?.label, "Café");
   // A re-run must not re-mint an identity the server may already know.
@@ -137,7 +137,7 @@ test("a database from the first release migrates all the way up", () => {
   upgraded.init();
 
   const v = old.prepare("PRAGMA user_version").get() as { user_version: number };
-  assert.equal(v.user_version, 7);
+  assert.equal(v.user_version, 8);
   assert.equal(upgraded.reports.totals()?.pickups, 1, "the season survives");
   assert.equal(upgraded.people.all().length, 1, "deletedAt was added, not reset");
   // The payments half now exists and works.

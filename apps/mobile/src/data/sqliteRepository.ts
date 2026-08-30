@@ -28,6 +28,7 @@ import {
 import { createUuidV7 } from "../../../../packages/shared/src/uuid.ts";
 import { migrateToV6 } from "./migrateToV6.ts";
 import { migrateToV7, restampDays } from "./migrateToV7.ts";
+import { migrateToV8 } from "./migrateToV8.ts";
 import { createSyncStore, reactivateWorker } from "./syncStore.ts";
 import {
   BASE_SCHEMA,
@@ -145,7 +146,7 @@ export interface SqlDatabase {
 
 // ---- Pure helpers ------------------------------------------------------
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 // Monday of the "%Y-Www" week that strftime('%W') would have produced:
 // week 01 starts on the year's first Monday, and earlier days fall in week 00.
@@ -416,6 +417,17 @@ export function createSqliteRepository(
       // the rollback prevents.
       db.withTransactionSync(() => {
         migrateToV7(db, opts.timezone ?? storedTimezone() ?? DEFAULT_TIMEZONE);
+        db.execSync(`PRAGMA user_version = 7`);
+      });
+    }
+
+    if (v < 8) {
+      // Undoing a zero v7 invented and wrote down. Handsets that already ran
+      // v7 are carrying those rows now, and one of them is enough for the
+      // season import -- which is all-or-nothing -- to refuse the whole farm
+      // with «a week price must be positive». See `migrateToV8.ts`.
+      db.withTransactionSync(() => {
+        migrateToV8(db);
         db.execSync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       });
     }
