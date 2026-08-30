@@ -130,6 +130,26 @@ func run(migrateOnly, pruneOnly bool) error {
 		cfg.SignupsPerIPPerHour = n
 	}
 
+	// The timeouts, and the reason they stay where they are.
+	//
+	// These are the numbers that protect the process from a connection that
+	// dribbles: a body read with no deadline is a goroutine, a socket and a
+	// file descriptor held for as long as somebody cares to hold them, on any
+	// of the 117 routes, by anybody who can open a socket.
+	//
+	// ONE route legitimately needs more than 30 seconds of body: POST
+	// /v1/import/season carries a whole season — 11,7 MB in the rehearsal —
+	// and on a farm's connection that is minutes, not seconds. It would be a
+	// mistake to buy that here. Raising ReadTimeout to 25 minutes globally
+	// gives every anonymous caller the same 25 minutes and turns the one
+	// exception into the rule.
+	//
+	// So the exception is bought where it applies: the import handler extends
+	// this connection's own read and write deadlines with
+	// http.ResponseController, after the permission table has established that
+	// the caller is the owner of a real farm, and it extends them only while
+	// the upload keeps making progress. See importReadBudget in
+	// internal/httpapi/handlers_import.go. Everything else keeps these.
 	srv := &http.Server{
 		Addr:              ":" + env("PORT", "8080"),
 		Handler:           httpapi.New(pool, auth.NewSigner([]byte(secret), "bascula"), cfg),

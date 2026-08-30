@@ -459,6 +459,10 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		res := s.applyPushOp(r, tx, farmID, body.DeviceID, p, op)
 		results = append(results, res)
 
+		// A refusal is not remembered — it wrote nothing, so a resend has
+		// nothing to duplicate, and a handset that corrects the body must get
+		// a verdict on the body it corrected rather than yesterday's. The rule
+		// lives in RecordSyncOp so no caller can forget it.
 		if err := store.RecordSyncOp(r.Context(), tx, farmID, op.OpID, body.DeviceID, fp, res); err != nil {
 			writeError(w, r, err)
 			return

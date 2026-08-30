@@ -39,6 +39,27 @@ const (
 	CodeFarmLimitReached   Code = "FARM_LIMIT_REACHED"
 	CodeFarmSuspended      Code = "FARM_SUSPENDED"
 
+	// MEMBERSHIP_REVOKED is FARM_SUSPENDED's twin, and it closes the same
+	// fifteen-minute hole from the other side.
+	//
+	// An access token carries the farm and the role as claims and lives for
+	// fifteen minutes. Taking somebody off a farm deletes their membership and
+	// revokes their refresh tokens, so they cannot get a NEW session — but the
+	// one already in their pocket went on working for the rest of its life,
+	// reading the payroll and writing to the ledger of a farm that had just
+	// removed them. Removal is what a farm does when it stops trusting
+	// somebody, and it has to bite on the next request rather than at the next
+	// quarter hour.
+	//
+	// It is a 403 with a name, not a 404. The "another farm's data is a 404"
+	// rule is about ROWS — it exists so that probing ids cannot tell "not
+	// yours" from "does not exist". This is not a row: it is the caller's own
+	// session being refused, and answering 404 to every route at once would
+	// tell the console that the API had vanished. The screen has to say "ya no
+	// tienes acceso a esta finca" and send the person back to the farm picker,
+	// which is a branch, which needs a code.
+	CodeMembershipRevoked Code = "MEMBERSHIP_REVOKED"
+
 	// Business conflicts. These are 409 with a code of their own and they are
 	// part of the contract, not an implementation detail.
 	CodeWorkRecordSettled     Code = "WORK_RECORD_SETTLED"
@@ -173,7 +194,7 @@ func AllCodes() []Code {
 
 		CodeInvalidCredentials, CodeEmailNotVerified, CodeEmailTaken,
 		CodeTokenExpired, CodeTokenReused, CodeRateLimited,
-		CodeFarmLimitReached, CodeFarmSuspended,
+		CodeFarmLimitReached, CodeFarmSuspended, CodeMembershipRevoked,
 
 		CodeWorkRecordSettled, CodePayableAlreadyClaimed, CodeSettlementAlreadyVoid,
 		CodeAlreadyReversed, CodeSettlementNotVoid, CodeNothingToRelease,

@@ -83,7 +83,8 @@ const ScopeHarvest = "harvest"
 // $3 so the numbering never has to be reasoned about twice.
 const harvestCTE = `
 harvest AS (
-  SELECT l.id, l.employee_id, l.local_day, l.week_start, l.quantity, l.created_at,
+  SELECT l.id, l.employee_id, l.local_day, l.end_local_day, l.week_start,
+         l.quantity, l.created_at,
          (l.quantity * u.kg_factor)::float8 AS kg,
          COALESCE(
            sl.amount_minor,
@@ -164,6 +165,27 @@ type Totals struct {
 	// week rather than by a settlement or a frozen amount — what the farm
 	// would owe, not what it has paid. The two must never look alike.
 	ValueIsEstimate bool `json:"valueIsEstimate"`
+
+	// RecordsSpanningWeeks counts contributing records whose work carries on
+	// past the week this row files them under, and it is the third admission
+	// of the same kind as the two above.
+	//
+	// A work record has a start day and an end day. Ranges are legal — a
+	// contract cleared over five days is one record, priced once — but
+	// `week_start` is a generated column over the START day alone, so the
+	// whole of a Saturday-to-Wednesday labour is credited to the week that
+	// Saturday falls in and none of it to the week that got three of its five
+	// days. Nothing else in the schema can undo that: there is no per-day
+	// split anywhere, because nobody recorded one, and dividing the quantity
+	// evenly across the span would be this file inventing the very thing it
+	// refuses to invent everywhere else.
+	//
+	// So the attribution stays where the data supports it — all of it on the
+	// first week — and the count travels beside the figure, exactly as
+	// recordsNotInKg travels beside the kilos. A week whose kilos include a
+	// labour that ran into the next week says so, and a reader comparing two
+	// weeks knows which one borrowed from the other.
+	RecordsSpanningWeeks int `json:"recordsSpanningWeeks"`
 }
 
 // totalsCols is the SELECT list that fills a Totals from a `harvest h`.
@@ -177,7 +199,8 @@ const totalsCols = `count(*)::int,
 	count(*) FILTER (WHERE h.kg IS NULL)::int,
 	sum(h.value_minor)::bigint,
 	count(*) FILTER (WHERE h.value_minor IS NULL)::int,
-	coalesce(bool_or(h.value_is_estimate), false)`
+	coalesce(bool_or(h.value_is_estimate), false),
+	count(*) FILTER (WHERE week_start(h.end_local_day) > h.week_start)::int`
 
 // totalsColsOuter is totalsCols for a query that LEFT JOINs the weighings onto
 // something else — a calendar of weeks, in practice.
@@ -193,11 +216,14 @@ const totalsColsOuter = `count(h.id)::int,
 	count(*) FILTER (WHERE h.id IS NOT NULL AND h.kg IS NULL)::int,
 	sum(h.value_minor)::bigint,
 	count(*) FILTER (WHERE h.id IS NOT NULL AND h.value_minor IS NULL)::int,
-	coalesce(bool_or(h.value_is_estimate), false)`
+	coalesce(bool_or(h.value_is_estimate), false),
+	count(*) FILTER (WHERE h.id IS NOT NULL
+	                   AND week_start(h.end_local_day) > h.week_start)::int`
 
 func (t *Totals) scanTargets() []any {
 	return []any{&t.Records, &t.Kg, &t.RecordsNotInKg,
-		&t.ValueCents, &t.RecordsWithoutValue, &t.ValueIsEstimate}
+		&t.ValueCents, &t.RecordsWithoutValue, &t.ValueIsEstimate,
+		&t.RecordsSpanningWeeks}
 }
 
 // weekSeriesCTE is the calendar a weekly report is drawn on: every Monday from
@@ -269,6 +295,7 @@ func (t *Totals) add(o Totals) {
 	t.Records += o.Records
 	t.RecordsNotInKg += o.RecordsNotInKg
 	t.RecordsWithoutValue += o.RecordsWithoutValue
+	t.RecordsSpanningWeeks += o.RecordsSpanningWeeks
 	t.ValueIsEstimate = t.ValueIsEstimate || o.ValueIsEstimate
 	if o.Kg != nil {
 		sum := *o.Kg
@@ -656,6 +683,30 @@ type CropReport struct {
 	// Their kilos are counted here in full, so the reader has to know that the
 	// same kilos may appear under a second crop as well.
 	SharedRecords int `json:"sharedRecords"`
+
+	// Weeks is the cap the caller asked for, and CoveredFrom/CoveredTo are the
+	// window the figures above actually cover. All three are on the wire
+	// because of what they used to hide.
+	//
+	// Every figure in the header — records, kilos, value, pickers, days,
+	// firstOn, lastOn, kgPerHa — was summed over the crop's ENTIRE history,
+	// with no window at all, while byWeek underneath it showed the last twelve
+	// weeks. So a lot picked for two seasons answered `?weeks=4` with a header
+	// worth two seasons sitting on top of four weeks of rows, and the screen
+	// had nothing to tell it from a month that produced eight tonnes. This is
+	// audit finding A4 in another building: a figure summed over one thing and
+	// labelled as another.
+	//
+	// The header now covers exactly the weeks in byWeek. PartialWindow says
+	// whether `weeks` cut anything off — whether this crop has older weeks the
+	// caller is not being shown — so a total can never be read as the whole
+	// crop unless it is one. All three are null/false when byWeek is empty:
+	// there is no window over nothing.
+	Weeks         int         `json:"weeks"`
+	CoveredFrom   *domain.Day `json:"coveredFrom"`
+	CoveredTo     *domain.Day `json:"coveredTo"`
+	PartialWindow bool        `json:"partialWindow"`
+
 	// ByWeek is the evolution, newest first.
 	ByWeek []CropWeek `json:"byWeek"`
 }
@@ -718,6 +769,11 @@ SELECT s.week_start, ` + totalsColsOuter + `,
 // ReportCrop answers for one crop. The crop is confirmed to be ours FIRST:
 // every figure below is a SUM, and a sum over another farm's id comes back as
 // a perfectly plausible "this crop produced nothing".
+//
+// The header and byWeek cover THE SAME WEEKS. The weeks are therefore read
+// first and the window they describe is what the header is then summed over —
+// see the note on CropReport.Weeks for what the two of them used to disagree
+// about.
 func ReportCrop(ctx context.Context, tx pgx.Tx, plotCropID string, weeks int) (*CropReport, error) {
 	out := CropReport{Scope: ScopeHarvest, PlotCropID: plotCropID, ByWeek: []CropWeek{}}
 	err := tx.QueryRow(ctx, `
@@ -733,19 +789,13 @@ func ReportCrop(ctx context.Context, tx pgx.Tx, plotCropID string, weeks int) (*
 		return nil, err
 	}
 
-	var firstOn, lastOn *time.Time
-	targets := out.Totals.scanTargets()
-	targets = append(targets, &out.Pickers, &out.Days, &firstOn, &lastOn, &out.SharedRecords)
-	if err := tx.QueryRow(ctx, cropStatsSQL, nil, nil, plotCropID).Scan(targets...); err != nil {
-		return nil, err
-	}
-	out.FirstOn, out.LastOn = asDay(firstOn), asDay(lastOn)
-	if out.Kg != nil && out.AreaHa != nil && *out.AreaHa > 0 {
-		v := *out.Kg / *out.AreaHa
-		out.KgPerHa = &v
-	}
-
-	rows, err := tx.Query(ctx, cropWeeksSQL, nil, nil, plotCropID, weeks)
+	// The weeks come FIRST, because they decide the window the header is then
+	// summed over. One week more than the caller asked for is fetched and
+	// thrown away: it is the cheapest honest answer to "is there more of this
+	// crop than I am being shown", and it costs one row rather than a second
+	// query over the whole span.
+	out.Weeks = weeks
+	rows, err := tx.Query(ctx, cropWeeksSQL, nil, nil, plotCropID, weeks+1)
 	if err != nil {
 		return nil, err
 	}
@@ -759,7 +809,37 @@ func ReportCrop(ctx context.Context, tx pgx.Tx, plotCropID string, weeks int) (*
 		}
 		out.ByWeek = append(out.ByWeek, w)
 	}
-	return &out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out.ByWeek) > weeks {
+		out.ByWeek = out.ByWeek[:weeks]
+		out.PartialWindow = true
+	}
+
+	// The window, in local days, taken from the rows themselves: the oldest
+	// Monday shown, to the Sunday of the newest. byWeek is newest first, so
+	// the oldest is last.
+	var from, to *time.Time
+	if n := len(out.ByWeek); n > 0 {
+		lo := out.ByWeek[n-1].WeekStart.Time
+		hi := out.ByWeek[0].WeekStart.Time.AddDate(0, 0, 6)
+		from, to = &lo, &hi
+		out.CoveredFrom, out.CoveredTo = asDay(from), asDay(to)
+	}
+
+	var firstOn, lastOn *time.Time
+	targets := out.Totals.scanTargets()
+	targets = append(targets, &out.Pickers, &out.Days, &firstOn, &lastOn, &out.SharedRecords)
+	if err := tx.QueryRow(ctx, cropStatsSQL, from, to, plotCropID).Scan(targets...); err != nil {
+		return nil, err
+	}
+	out.FirstOn, out.LastOn = asDay(firstOn), asDay(lastOn)
+	if out.Kg != nil && out.AreaHa != nil && *out.AreaHa > 0 {
+		v := *out.Kg / *out.AreaHa
+		out.KgPerHa = &v
+	}
+	return &out, nil
 }
 
 // ---------------------------------------------------------------------------

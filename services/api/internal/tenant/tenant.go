@@ -131,7 +131,7 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 			ctx = context.WithValue(ctx, keepKey, keep)
 
 			if p, ok := auth.PrincipalFrom(ctx); ok && p.FarmID != "" {
-				if err := setContext(ctx, tx, p); err != nil {
+				if err := setContext(ctx, tx, p, enforceMembership); err != nil {
 					onError(w, r, err)
 					return
 				}
@@ -157,9 +157,20 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 	}
 }
 
+// membershipCheck says whether the caller's membership of this farm has to
+// exist already. It does on every request that arrives with a token, and it
+// does NOT during signup, where the farm and the membership are being written
+// by the very transaction that is pinning itself to them.
+type membershipCheck bool
+
+const (
+	enforceMembership membershipCheck = true
+	membershipPending membershipCheck = false
+)
+
 // setContext issues the SET LOCALs and reads current_farm() back in the same
 // round trip, so a broken GUC name fails loudly instead of returning zero rows.
-func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal) error {
+func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check membershipCheck) error {
 	superadmin := ""
 	if p.Superadmin {
 		superadmin = "on"
@@ -178,15 +189,19 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal) error {
 	// GUC name would otherwise turn every query into an empty result set, and
 	// an empty worker list is indistinguishable from a brand new farm.
 	//
-	// The farm's status comes back in the SAME round trip, because it has to be
-	// checked on every request and a suspension that costs a second query would
-	// be a suspension somebody optimises away. See below.
+	// The farm's status and the caller's membership come back in the SAME round
+	// trip, because both have to be checked on every request and a check that
+	// costs a second query is a check somebody optimises away. See below.
 	var got *string
 	var suspendedAt *time.Time
+	var member bool
 	if err := tx.QueryRow(ctx, `
 		SELECT current_farm()::text,
-		       (SELECT f.suspended_at FROM farms f WHERE f.id = current_farm())`).
-		Scan(&got, &suspendedAt); err != nil {
+		       (SELECT f.suspended_at FROM farms f WHERE f.id = current_farm()),
+		       EXISTS (SELECT 1 FROM memberships m
+		                WHERE m.farm_id = current_farm()
+		                  AND m.user_id = current_user_id())`).
+		Scan(&got, &suspendedAt, &member); err != nil {
 		return domain.Internal("could not read back the tenant context").WithCause(err)
 	}
 	if got == nil || *got != p.FarmID {
@@ -216,6 +231,33 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal) error {
 		return domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
 			"that farm is suspended")
 	}
+
+	// And the same cut from the other side: an account that has been taken off
+	// this farm stops HERE, on the next request.
+	//
+	// DELETE /v1/users/{id} already deletes the membership and revokes the
+	// refresh tokens, so the person cannot open a NEW session. What it could
+	// not touch is the access token already in their pocket, which carries the
+	// farm and the role as signed claims and is good for another fifteen
+	// minutes — fifteen minutes of reading the payroll and writing to the
+	// ledger of a farm that has just removed them. Removal is what a farm does
+	// when it stops trusting somebody; a lever that takes a quarter of an hour
+	// is the same non-lever the suspension fix was about, and the answer is the
+	// same one, in the same round trip.
+	//
+	// It costs no extra query and it is not a permission check: auth.Matrix
+	// still decides what the role may do. This decides whether the caller is
+	// still in the room at all, which is a question the token cannot answer
+	// because the token is a photograph of a moment that has passed.
+	//
+	// The platform administrator is exempt, and for the reason the suspension
+	// check gives: their token is pinned to a farm like everybody else's, and
+	// an owner of that farm removing them would lock the lever holder out of
+	// the room the lever is in.
+	if check == enforceMembership && !member && !p.Superadmin {
+		return domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
+			"that account no longer has access to this farm")
+	}
 	return nil
 }
 
@@ -225,7 +267,10 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal) error {
 // becomes the tenant the moment it is generated.
 func SetForSignup(ctx context.Context, tx pgx.Tx, farmID, userID string) (context.Context, error) {
 	p := &auth.Principal{UserID: userID, FarmID: farmID, Role: domain.RoleOwner}
-	if err := setContext(ctx, tx, p); err != nil {
+	// membershipPending: the membership row is written a few statements from
+	// now, by this transaction. Demanding it here would make it impossible to
+	// create a farm at all.
+	if err := setContext(ctx, tx, p, membershipPending); err != nil {
 		return ctx, err
 	}
 	return withFarm(ctx, farmID), nil
@@ -260,3 +305,15 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	s.written = true
 	return s.ResponseWriter.Write(b)
 }
+
+// Unwrap hands http.ResponseController the writer underneath.
+//
+// It is not decoration. A wrapper that embeds http.ResponseWriter promotes
+// exactly the three methods of that interface and NOTHING else, so the
+// connection's SetReadDeadline and SetWriteDeadline — which is how a single
+// route buys itself a longer body than the server's global ReadTimeout allows
+// — become invisible the moment a request passes through here. Without this
+// method http.NewResponseController(w).SetReadDeadline returns
+// http.ErrNotSupported for every route in the service, and the season import
+// would go on being cut off at thirty seconds while appearing to be fixed.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }

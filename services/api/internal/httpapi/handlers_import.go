@@ -3,7 +3,9 @@ package httpapi
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
@@ -18,6 +20,107 @@ import (
 // It is still a cap, because the alternative to a large number is no number,
 // and no number is how a single request takes a process down.
 const maxImportBytes = 64 << 20
+
+// The time this one route is allowed to take, and it is TWO numbers on purpose.
+//
+// # The problem
+//
+// cmd/api sets ReadTimeout: 30s on the whole server. That deadline is armed on
+// the connection before the handler is entered and covers the body, so the
+// season import — 48 022 rows and 11,7 MB in the rehearsal the handset pair
+// ran — is cut off mid-upload on any link slower than about 3 Mbit. The phone
+// had already raised its own patience to 25 minutes; it never got to use a
+// second of it, because this deadline fires first and belongs to us.
+//
+// # Why the global timeout is not raised
+//
+// Because it protects every other route from exactly the attack this one needs
+// an exemption from: a connection that dribbles a byte a minute holds a
+// goroutine, a socket and a file descriptor for as long as the deadline allows.
+// Raising ReadTimeout to 25 minutes hands that to anonymous callers on all 117
+// routes. The exemption is bought here instead, on the one route that needs it,
+// AFTER the permission table has run — so the caller is an authenticated owner
+// of a real farm, and there is exactly one of those in the room.
+//
+// # Why two numbers and not one
+//
+// importReadIdle is the real defence. A deadline of "25 minutes from now" is
+// still 25 minutes of a connection that may have stopped sending anything at
+// all; a deadline that moves forward only WHILE BYTES ARRIVE cannot be held
+// open by silence. So the connection gets a fresh 60 seconds each time the
+// upload makes progress, and importReadBudget is the wall it can never move
+// past — the phone's own measured margin, and the answer to a client that
+// sends one byte a second for ever.
+const (
+	importReadBudget = 25 * time.Minute
+	importReadIdle   = 60 * time.Second
+
+	// importAnswerBudget is what is left for the import itself and for writing
+	// the reply. It is a WRITE deadline, and forgetting it is the subtle half
+	// of this fix: net/http arms WriteTimeout when the request header has been
+	// read, and it covers everything after — so a 25-minute body under the
+	// 60-second WriteTimeout in cmd/api would upload perfectly, import
+	// perfectly, commit, and then fail to send the answer. The season would be
+	// on the server and the handset would never be told.
+	importAnswerBudget = 10 * time.Minute
+)
+
+// extendImportDeadlines buys this connection the budget above.
+//
+// It reports whether it managed to. On a plain net/http server it always does;
+// under httptest.NewRecorder, which is not a connection at all, the controller
+// answers ErrNotSupported and the server's own ReadTimeout stands. That is a
+// degradation and not a failure — every in-process test posts its body in one
+// piece — so it is logged and the request continues rather than being refused
+// over a facility it does not need.
+func extendImportDeadlines(w http.ResponseWriter, r *http.Request) bool {
+	rc := http.NewResponseController(w)
+	hard := time.Now().Add(importReadBudget)
+	if err := rc.SetReadDeadline(time.Now().Add(importReadIdle)); err != nil {
+		slog.Warn("season import: could not extend the read deadline; "+
+			"the server's global ReadTimeout applies", "err", err)
+		return false
+	}
+	if err := rc.SetWriteDeadline(hard.Add(importAnswerBudget)); err != nil {
+		slog.Warn("season import: could not extend the write deadline", "err", err)
+	}
+	r.Body = &progressBody{rc: rc, body: r.Body, hard: hard}
+	return true
+}
+
+// progressBody pushes the connection's read deadline forward as the upload
+// makes progress, and never past `hard`.
+type progressBody struct {
+	rc   *http.ResponseController
+	body io.ReadCloser
+	hard time.Time
+	// set is when the current deadline was granted. The deadline is only
+	// re-armed once half the idle window has gone: a json.Decoder reads a
+	// 12 MB body in thousands of small chunks, and one setsockopt per chunk
+	// would be thousands of syscalls to answer a question whose resolution is
+	// half a minute.
+	set time.Time
+}
+
+func (b *progressBody) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	if n > 0 {
+		now := time.Now()
+		if now.Sub(b.set) >= importReadIdle/2 {
+			next := now.Add(importReadIdle)
+			if next.After(b.hard) {
+				// Past the wall the deadline stops moving, so the upload is
+				// cut off there whether or not it is still making progress.
+				next = b.hard
+			}
+			_ = b.rc.SetReadDeadline(next)
+			b.set = now
+		}
+	}
+	return n, err
+}
+
+func (b *progressBody) Close() error { return b.body.Close() }
 
 // handleImportSeason is §8 phases 3 and 4: the season that is already on a
 // handset, moved onto the server WITHOUT changing a single identifier.
@@ -42,6 +145,13 @@ const maxImportBytes = 64 << 20
 // what it skipped rather than what it "merged". The rehearsal of phase 3 is
 // meant to be run until it comes out clean.
 func (s *Server) handleImportSeason(w http.ResponseWriter, r *http.Request) {
+	// FIRST, before a single byte of the body is read: this route's own
+	// deadline. See importReadBudget. It is done here rather than in a
+	// middleware so that it happens AFTER authentication and after the
+	// permission table — the long patience belongs to an owner uploading a
+	// season, not to whoever opens a socket.
+	extendImportDeadlines(w, r)
+
 	var in store.SeasonImport
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxImportBytes))
 	dec.DisallowUnknownFields()

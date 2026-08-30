@@ -390,11 +390,24 @@ func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID str
 	}
 
 	var gross int64
-	// The period the settlement records is the period it actually covers, not
-	// the window the caller happened to ask over. A caller asking from
-	// 1970-01-01 means "everything outstanding", and writing 1970 onto the
-	// receipt would be nonsense; the period starts at the Monday of the
-	// earliest payable taken in.
+	// The two ends of the period mean DIFFERENT things, and that asymmetry is
+	// deliberate. openapi.yaml carries the contract; this is why.
+	//
+	// period_start is the period actually COVERED: the Monday of the earliest
+	// payable taken in. A caller asking from 1970-01-01 means "everything
+	// outstanding", and writing 1970 onto the receipt would be nonsense.
+	//
+	// period_end is the range that was ASKED for — `to`, untouched. Nothing
+	// pulls it back to the last payable, because `to` is a statement about the
+	// period being closed and not about which day inside it had work: a
+	// settlement run to the end of August covered to the end of August, and
+	// reporting it as covering to the 22nd because that is when the last
+	// weighing fell would tell the person holding the receipt something they
+	// were not told when they approved it.
+	//
+	// The migration only checks period_end >= period_start, which is all that
+	// holds between two facts of different kinds. The season import fills both
+	// ends from the handset, which decided the same way.
 	periodStart := to
 	for _, p := range chosen {
 		gross += p.AmountMinor

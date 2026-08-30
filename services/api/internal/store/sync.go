@@ -532,8 +532,39 @@ func FindSyncOp(ctx context.Context, tx pgx.Tx, opID, fingerprint string) (*Sync
 	return &out, nil
 }
 
+// RecordSyncOp remembers what an envelope did — UNLESS it did nothing.
+//
+// A rejection is not recorded, and that is the whole of this function's
+// judgement.
+//
+// The registry exists (§4.2) to make a RESEND safe: an envelope that voided a
+// settlement or reversed a movement must not perform the act a second time when
+// the handset, having lost the reply, sends it again. That danger is entirely a
+// property of envelopes that CHANGED something. A rejected envelope changed
+// nothing: applyPushOp rolled its savepoint back, so there is no side effect for
+// a replay to duplicate and nothing to protect.
+//
+// Recording it anyway had a cost and no benefit, and the cost was permanent.
+// The stored answer is returned literally, so a handset whose op was refused
+// for a body it could fix — a weighing naming a worker that had not arrived
+// yet, a malformed date the pair corrected — got the OLD refusal for ever if it
+// resent the same bytes. And if it corrected the bytes, the fingerprint no
+// longer matched and it got IDEMPOTENCY_KEY_REUSED instead, which §4.3 files
+// under "never retry — it is a client bug". Both doors were shut on an
+// operation that had never happened, over an opId whose act was never
+// performed. The outbox row could never leave the phone.
+//
+// So a rejection is recomputed rather than remembered. A handset that resends
+// the same bad envelope gets the same refusal, freshly derived and identical;
+// one that fixes the body gets a fresh verdict on the fixed body. Migration
+// 00018 removes the rows already cemented and teaches the table's own CHECK
+// that 'rejected' is not a status it stores.
 func RecordSyncOp(ctx context.Context, tx pgx.Tx, farmID, opID, deviceID, fingerprint string,
 	r SyncOpResult) error {
+
+	if r.Status == "rejected" {
+		return nil
+	}
 
 	raw, err := json.Marshal(r)
 	if err != nil {
