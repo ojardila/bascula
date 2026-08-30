@@ -19,7 +19,7 @@
 --   * DELETE is revoked from bascula_app on settlements and settlement_items,
 --     so nobody can cut the line out from underneath.
 --
--- The pesada is therefore stuck for ever: worked, unpayable, and invisible in
+-- The weighing is therefore stuck for ever: worked, unpayable, and invisible in
 -- every "pendiente" list because the lock says it is already claimed. That is
 -- somebody's day of picking.
 --

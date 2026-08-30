@@ -55,7 +55,7 @@ func keysOf(body map[string]any) []string {
 //	it touches a line; ux_items_payable_live holds the payable while the line
 //	lives; DELETE is revoked from the application role on both tables.
 //
-// So the pesada was worked, could never be settled again, and did not appear in
+// So the weighing was worked, could never be settled again, and did not appear in
 // any pending list — because the lock said it was already claimed. That is
 // somebody's day of picking, trapped.
 func TestAVoidSettlementCannotTrapAWeighingForEver(t *testing.T) {
@@ -129,7 +129,7 @@ func TestAVoidSettlementCannotTrapAWeighingForEver(t *testing.T) {
 		}
 	})
 
-	t.Run("the pesada can be paid again", func(t *testing.T) {
+	t.Run("the weighing can be paid again", func(t *testing.T) {
 		pending := h.mustDo(t, http.MethodGet,
 			"/v1/pending?workerId="+worker+"&from=2026-08-24&to=2026-08-30",
 			f.OwnerToken, nil, http.StatusOK)

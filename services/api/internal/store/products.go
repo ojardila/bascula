@@ -82,7 +82,7 @@ func GetProduct(ctx context.Context, tx pgx.Tx, id string) (*Product, error) {
 
 // NewProduct is the write shape. Category and StorageUnit are the names, so a
 // caller can send a value that is not in the catalogue yet and get it created
-// rather than rejected — the "con opción de crear" of RSP-019.
+// rather than rejected — the "with the option to create one" of RSP-019.
 type NewProduct struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
@@ -161,7 +161,7 @@ func UpdateProduct(ctx context.Context, tx pgx.Tx, farmID, id string, n NewProdu
 	return GetProduct(ctx, tx, id)
 }
 
-// SoftDeleteProduct is RSP-021: eliminar deja el producto inactivo. The
+// SoftDeleteProduct is RSP-021: deleting leaves the product inactive. The
 // movements it already has stay exactly where they are — they are facts, and a
 // product going out of the catalogue does not un-harvest last week's coffee.
 func SoftDeleteProduct(ctx context.Context, tx pgx.Tx, id string) error {

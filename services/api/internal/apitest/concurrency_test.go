@@ -393,7 +393,7 @@ func TestARetriedFullPaymentStillAnswersWithThePaymentItAlreadyMade(t *testing.T
 }
 
 // ---------------------------------------------------------------------------
-// 3. Existencias, the same hole in the same shape
+// 3. Stock on hand, the same hole in the same shape
 // ---------------------------------------------------------------------------
 
 // TestConcurrentSalesCannotSellTheSameStockTwice. Five sales of a hundred
@@ -432,7 +432,7 @@ func TestConcurrentSalesCannotSellTheSameStockTwice(t *testing.T) {
 				"were accepted, want exactly 1", round, accepted, n)
 		}
 		if left := h.stockOf(t, f, inv.ProductID); left < 0 {
-			t.Fatalf("round %d: the warehouse holds %v units. Existencias are "+
+			t.Fatalf("round %d: the warehouse holds %v units. Stock on hand is "+
 				"derived from the movements, so a negative total is not a display "+
 				"bug: it is stock that was sold and never existed.", round, left)
 		}

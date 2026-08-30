@@ -65,7 +65,7 @@ CREATE TABLE varieties (
 );
 CREATE UNIQUE INDEX ux_varieties_name ON varieties (farm_id, lower(name));
 
--- CULTIVO planted in the plot. Labors point at the crop, not the plot: if a
+-- The CROP planted in the plot. Labors point at the crop, not the plot: if a
 -- plot has coffee and plantain, "how did the coffee do" is only answerable at
 -- this grain.
 CREATE TABLE plot_crops (
@@ -90,7 +90,7 @@ CREATE INDEX ix_plot_crops_plot ON plot_crops (farm_id, plot_id) WHERE deleted_a
 -- plots.area_ha: an associated crop (coffee shaded by plantain) occupies the
 -- same hectare twice. That is a UI warning, not a constraint.
 
--- EMPLEADO. Named `employees` in the database and `/v1/workers` on the wire;
+-- The EMPLOYEE. Named `employees` in the database and `/v1/workers` on the wire;
 -- see README for the naming map between the two design documents.
 CREATE TABLE employees (
   id            uuid PRIMARY KEY,

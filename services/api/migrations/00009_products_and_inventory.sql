@@ -1,9 +1,9 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- PRODUCTOS E INVENTARIO — RSP-018 … RSP-025.
+-- PRODUCTS AND INVENTORY — RSP-018 … RSP-025.
 --
--- The one decision this migration exists to enforce: EXISTENCIAS ARE DERIVED.
+-- The one decision this migration exists to enforce: STOCK ON HAND IS DERIVED.
 -- There is no `products.stock` column and there never will be. A stored total
 -- is a total that some day disagrees with the facts underneath it, and when it
 -- does, nobody can tell which of the two is lying. Exactly the argument that
@@ -37,7 +37,7 @@ BEGIN
 END $fn$;
 
 -- ---------------------------------------------------------------------------
--- Catalogues (RSP-019: "select, con opción de crear")
+-- Catalogues (RSP-019: "select, with the option to create one")
 -- ---------------------------------------------------------------------------
 -- Product categories and storage units are per-farm tables and not Postgres
 -- enums, the same call the team made for crop types and activity categories:
@@ -74,7 +74,7 @@ CREATE TABLE storage_units (
 );
 CREATE UNIQUE INDEX ux_storage_units_name ON storage_units (farm_id, lower(name));
 
--- BODEGAS. A place, nothing more: what is in it is derived from the movements
+-- WAREHOUSES. A place, nothing more: what is in it is derived from the movements
 -- that name it.
 CREATE TABLE warehouses (
   id         uuid PRIMARY KEY,
@@ -107,7 +107,7 @@ CREATE UNIQUE INDEX ux_products_name ON products (farm_id, lower(name)) WHERE de
 CREATE INDEX ix_products_category ON products (farm_id, category_id) WHERE deleted_at IS NULL;
 
 -- ---------------------------------------------------------------------------
--- Stock movements (RSP-025) — the facts existencias are derived from
+-- Stock movements (RSP-025) — the facts stock on hand is derived from
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE stock_moves (
@@ -115,7 +115,7 @@ CREATE TABLE stock_moves (
   farm_id        uuid NOT NULL REFERENCES farms(id),
   product_id     uuid NOT NULL,
   warehouse_id   uuid NOT NULL,
-  -- Where it came out of. RSP-025 asks for lote and cultivo on the inventory
+  -- Where it came out of. RSP-025 asks for the plot and the crop on the inventory
   -- form; both are optional because a bought sack of fertiliser came out of no
   -- plot at all.
   plot_id        uuid,
@@ -144,7 +144,7 @@ CREATE TABLE stock_moves (
     OR (reason IN ('traslado', 'ajuste'))),
 
   -- A 'venta' movement is the shadow of a sale and cannot exist without one.
-  -- That is what keeps ventas and existencias from contradicting each other:
+  -- That is what keeps sales and stock on hand from contradicting each other:
   -- there is no way to write the movement without the sale, and the sales
   -- handler writes both in one transaction.
   CONSTRAINT stock_venta_has_sale CHECK (reason <> 'venta' OR sale_id IS NOT NULL),
@@ -229,7 +229,7 @@ CREATE TRIGGER t_stock_moves_append_only BEFORE UPDATE OR DELETE ON stock_moves
 
 REVOKE UPDATE, DELETE ON stock_moves FROM bascula_app;
 
--- EXISTENCIAS. A view, so there is exactly one definition of "how much is
+-- STOCK ON HAND. A view, so there is exactly one definition of "how much is
 -- there" and no job that could fall behind.
 --
 -- security_invoker is not optional: a view is otherwise executed with the

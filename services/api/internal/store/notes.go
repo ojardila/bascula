@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Note is an anotacion: what the farm wrote down about one of its people.
+// Note is a written remark: what the farm wrote down about one of its people.
 //
 // It is append-only and it is born private. Decision 1 in docs/decisiones.md
 // is explicit that these never leave the farm, and the schema is the defence

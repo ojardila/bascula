@@ -71,7 +71,7 @@ func (h *harness) move(t *testing.T, f *farmFixture, inv inventoryFixture,
 // RSP-018 … RSP-025
 // ---------------------------------------------------------------------------
 
-// TestExistenciasAreDerivedFromMovements is the inventory equivalent of
+// TestStockOnHandIsDerivedFromMovements is the inventory equivalent of
 // TestBalanceIsDerivedAndReversalsAreOnce, and it exists for the same reason.
 //
 // There is no `stock` column. Every quantity this API reports is a SUM over
@@ -80,7 +80,7 @@ func (h *harness) move(t *testing.T, f *farmFixture, inv inventoryFixture,
 // corrected with its opposite. If any of that stops being true, a total will
 // one day disagree with the movements underneath it, and nothing in the system
 // will be able to say which of the two is lying.
-func TestExistenciasAreDerivedFromMovements(t *testing.T) {
+func TestStockOnHandIsDerivedFromMovements(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca de bodega", 80000)
 	inv := h.seedInventory(t, f, "Cafe pergamino", "Bodega principal")
@@ -540,7 +540,7 @@ func TestAnExpenseIsChargedToExactlyOneThing(t *testing.T) {
 		}
 	})
 
-	t.Run("eliminar deja el gasto inactivo, and it comes back", func(t *testing.T) {
+	t.Run("deleting leaves the expense inactive, and it comes back", func(t *testing.T) {
 		res := h.mustDo(t, http.MethodPost, "/v1/expenses", f.OwnerToken, map[string]any{
 			"concept": "Borrable", "amountCents": 7000, "plotId": plot,
 		}, http.StatusCreated)

@@ -149,7 +149,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/settlements/{id}/void", auth.ActionSettlementsVoid, s.handleVoidSettlement},
 		// The way out of a void settlement that still claims a weighing. The
 		// import no longer creates that shape; nothing could open the ones
-		// already in the field, and a pesada held by a document that can never
+		// already in the field, and a weighing held by a document that can never
 		// pay it is somebody's day of picking, trapped for ever.
 		{http.MethodPost, "/v1/settlements/{id}/release", auth.ActionSettlementsRelease, s.handleReleaseSettlement},
 		{http.MethodPost, "/v1/payments", auth.ActionLedgerPayment, s.handlePayment},
@@ -172,7 +172,7 @@ func (s *Server) Routes() []Route {
 		// owner's alone, and Money: it writes a year of payroll in one act.
 		{http.MethodPost, "/v1/import/season", auth.ActionImportSeason, s.handleImportSeason},
 
-		// Productos e inventario (RSP-018 … RSP-025). The two pickers are
+		// Products and inventory (RSP-018 … RSP-025). The two pickers are
 		// catalogues for the same reason every other picker here is one:
 		// RSP-019 puts an "add it if it is not there" button beside both.
 		{http.MethodGet, "/v1/catalogs/product-categories", auth.ActionProductsRead,
@@ -184,7 +184,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/catalogs/storage-units", auth.ActionProductsWrite,
 			s.handleCreateCatalogItem(store.CatalogStorageUnits)},
 
-		// Bodegas. A place and a name; what is in one is derived from the
+		// Warehouses. A place and a name; what is in one is derived from the
 		// movements that name it, never stored on it.
 		{http.MethodGet, "/v1/warehouses", auth.ActionProductsRead,
 			s.handleListCatalog(store.CatalogWarehouses)},
@@ -197,7 +197,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPatch, "/v1/products/{id}", auth.ActionProductsWrite, s.handleUpdateProduct},
 		{http.MethodDelete, "/v1/products/{id}", auth.ActionProductsWrite, s.handleDeleteProduct},
 
-		// Existencias: every one of these is a SUM over stock_moves computed
+		// Stock on hand: every one of these is a SUM over stock_moves computed
 		// on the way out. There is no stored total anywhere behind them.
 		{http.MethodGet, "/v1/stock", auth.ActionStockRead, s.handleListStock},
 		{http.MethodGet, "/v1/products/{id}/stock", auth.ActionStockRead, s.handleProductStock},
@@ -206,7 +206,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/stock/moves/{id}/reverse", auth.ActionStockWrite, s.handleReverseStockMove},
 		{http.MethodGet, "/v1/label-batches/{id}", auth.ActionStockRead, s.handleGetLabelBatch},
 
-		// Ventas (RSP-026 … RSP-029). POST writes the sale and its outgoing
+		// Sales (RSP-026 … RSP-029). POST writes the sale and its outgoing
 		// movement in one transaction; DELETE voids it and gives the stock
 		// back, also in one.
 		{http.MethodGet, "/v1/customers", auth.ActionSalesRead, s.handleListCustomers},
@@ -217,7 +217,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPatch, "/v1/sales/{id}", auth.ActionSalesWrite, s.handleUpdateSale},
 		{http.MethodDelete, "/v1/sales/{id}", auth.ActionSalesVoid, s.handleVoidSale},
 
-		// Gastos (RSP-030 … RSP-033). Nothing here reaches the ledger: an
+		// Expenses (RSP-030 … RSP-033). Nothing here reaches the ledger: an
 		// expense is the farm's accounting, a debt is one person's balance,
 		// and the document calling both of them "gasto" does not make them the
 		// same thing. See handlers_expenses.go.

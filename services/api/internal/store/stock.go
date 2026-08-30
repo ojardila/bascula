@@ -14,7 +14,7 @@ import (
 
 // StockMove is one fact about the warehouse. The table is append-only and the
 // database enforces it with a trigger and a REVOKE, exactly as it does for the
-// ledger: existencias are derived from these rows, and a derivation is only
+// ledger: stock on hand is derived from these rows, and a derivation is only
 // worth anything if the rows underneath it never change after the fact.
 //
 // Sign travels with the reason and Postgres checks the pair (`stock_sign`), so
@@ -115,7 +115,7 @@ func GetStockMove(ctx context.Context, tx pgx.Tx, id string) (*StockMove, error)
 		`SELECT `+stockMoveCols+` `+stockMoveFrom+` WHERE m.id = $1`, id))
 }
 
-// StockLevel is one line of the existencias screen: how much of a product sits
+// StockLevel is one line of the stock-on-hand screen: how much of a product sits
 // in a warehouse, as a SUM and never as a stored total.
 type StockLevel struct {
 	ProductID   string  `json:"productId"`
@@ -164,10 +164,10 @@ func StockLevels(ctx context.Context, tx pgx.Tx, productID, warehouseID string) 
 }
 
 // LockProductForStock serialises every decision taken FROM a product's
-// existencias, per product, for the rest of the transaction.
+// stock on hand, per product, for the rest of the transaction.
 //
 // Exactly the same hole as the balance, in exactly the same shape and for
-// exactly the same reason: existencias are DERIVED — a SUM over stock_moves,
+// exactly the same reason: stock on hand is DERIVED — a SUM over stock_moves,
 // with no stored total anywhere, deliberately — so "read what is on hand,
 // decide, write the movement" is three steps that two requests interleave.
 // Five concurrent sales of a hundred units against a hundred on hand were all

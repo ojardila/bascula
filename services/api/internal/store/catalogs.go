@@ -21,9 +21,9 @@ const (
 	CatalogCropTypes          Catalog = "crop-types"
 	CatalogVarieties          Catalog = "varieties"
 
-	// RSP-019's two pickers, both with the "con opción de crear" button, and
+	// RSP-019's two pickers, both with the "with the option to create one" button, and
 	// the warehouses, which are a name and a row and nothing else: what is in
-	// a bodega is derived from the movements that name it, never stored on it.
+	// a warehouse is derived from the movements that name it, never stored on it.
 	CatalogProductCategories Catalog = "product-categories"
 	CatalogStorageUnits      Catalog = "storage-units"
 	CatalogWarehouses        Catalog = "warehouses"

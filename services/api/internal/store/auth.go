@@ -234,7 +234,7 @@ func SetMembershipRole(ctx context.Context, tx pgx.Tx, userID string, role domai
 
 // DeleteMembership takes the account's access to this farm away. It is a real
 // DELETE and the one in this service, and that is not a contradiction of
-// "eliminar nunca borra": what is removed is a permission, not a person. The
+// "delete never deletes": what is removed is a permission, not a person. The
 // user row, their other farms and everything they ever wrote here stay exactly
 // where they were — work records and ledger entries point at users(id), which
 // is untouched.

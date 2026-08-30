@@ -245,7 +245,7 @@ type NewReactivation struct {
 // The decision: somebody taken off the payroll who turns up with new work is
 // back on the payroll, because if he is working he is still on the farm.
 //
-// The boundary: "gana la baja". A deactivation decided by a person, AFTER the
+// The boundary: "the removal wins". A deactivation decided by a person, AFTER the
 // work happened, is not undone by an automatism. That is why the comparison is
 // against `started_at` — when the work was performed — and never against when
 // the row reached the server. The concrete case is the ordinary one: a handset

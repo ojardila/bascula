@@ -126,12 +126,12 @@ type Rule struct {
 	Roles []domain.Role
 	// Money marks the surface the weigher must never reach: payroll, prices,
 	// balances, settlements, a worker's private file, sales, expenses,
-	// existencias, and (when it exists) the registry. A contract test walks
+	// stock on hand, and (when it exists) the registry. A contract test walks
 	// this table and asserts 403 for the weigher on every one of them.
 	//
 	// Stock is on that list even though a sack of coffee is not a peso.
 	// docs/modelo-datos.md §9 is explicit: "ventas, gastos y stock_moves
-	// quedan fuera del pesador con la misma forma que ledger". The flag is
+	// are out of the weigher's reach the same way the ledger is". The flag is
 	// what the contract test walks, so anything the weigher must not see
 	// carries it — the name is about payroll because that is where it
 	// started, not because that is where it stops.
@@ -248,7 +248,7 @@ var Matrix = map[Action]Rule{
 	// The release is the owner's alone, which is one notch stricter than the
 	// void beside it, and deliberately so. Voiding cancels a document; this
 	// frees a weighing that a cancelled document was still holding, which puts
-	// money back into circulation — the pesada becomes payable again and the
+	// money back into circulation — the weighing becomes payable again and the
 	// next settlement pays it. It is a repair of the farm's books rather than a
 	// day's administration, it is the same shape as ActionImportSeason, and it
 	// is rare enough that needing the owner costs a farm nothing.
@@ -262,13 +262,13 @@ var Matrix = map[Action]Rule{
 	ActionLedgerAdjust:       {Roles: admins, Money: true},
 	ActionLedgerReverse:      {Roles: admins, Money: true},
 
-	// Productos, inventario, ventas y gastos. All admin, all Money.
+	// Products, inventory, sales and expenses. All admin, all Money.
 	//
 	// The weigher is kept out of the whole surface and not only out of the
 	// prices in it, because "al entrar a cualquier modulo sin privilegios, el
 	// sistema notifica la carencia y saca al usuario del modulo" is what the
 	// use cases say about a module, and because a product list carries its
-	// existencias: RSP-018 puts "unidades existentes" on the very first
+	// stock on hand: RSP-018 puts "unidades existentes" on the very first
 	// screen, so there is no reduced projection of it worth the trouble.
 	ActionProductsRead:  {Roles: admins, Money: true},
 	ActionProductsWrite: {Roles: admins, Money: true},
@@ -316,7 +316,7 @@ var Matrix = map[Action]Rule{
 	// The first is what the endpoints actually carry: the weekly list and the
 	// crop detail put kilos AND value on the first screen, so there is no
 	// reduced projection of them worth the trouble — the same argument
-	// ActionProductsRead makes about existencias on RSP-018.
+	// ActionProductsRead makes about stock on hand on RSP-018.
 	//
 	// The second matters more. The two reports with no peso in them are the
 	// two that judge people: the comparative index is the number a farm would

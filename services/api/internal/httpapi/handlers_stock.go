@@ -72,7 +72,7 @@ func confirmOurs(r *http.Request, checks map[string]string) error {
 	return nil
 }
 
-// handleListStock is the existencias screen: a derived level per product and
+// handleListStock is the stock-on-hand screen: a derived level per product and
 // warehouse, never a stored total.
 func (s *Server) handleListStock(w http.ResponseWriter, r *http.Request) {
 	productID := r.URL.Query().Get("productId")

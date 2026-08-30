@@ -792,7 +792,7 @@ paths:
         whose handset is the reason for removing them.
 
         It is a real DELETE and the only one in this service, which does not
-        contradict "eliminar nunca borra": what is removed is a permission, not
+        contradict "delete never deletes": what is removed is a permission, not
         a person. The account, its other farms and everything it ever wrote
         here stay where they were.
 
@@ -1658,7 +1658,7 @@ paths:
       summary: Activity categories
       description: |
         None of the catalogues is a Postgres enum. Every use case that mentions
-        them says a farm may invent a value ("con opción de crear una nueva"),
+        them says a farm may invent a value ("with the option to create a new one"),
         and a closed type would make each invented value an ALTER TYPE in
         production. A new farm is seeded with siembra, mantenimiento and
         cosecha; anything it adds afterwards is exactly as valid.
@@ -2472,7 +2472,7 @@ paths:
         could undo it: `POST /v1/settlements/{id}/void` answers 409
         SETTLEMENT_ALREADY_VOID before it looks at a line, the partial unique
         index holds each payable while its line lives, and DELETE is revoked
-        from the application role on both tables. The pesada was worked, cannot
+        from the application role on both tables. The weighing was worked, cannot
         be paid, and appears in no pending list — because the lock says it is
         already claimed.
 
@@ -2764,17 +2764,17 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # Productos e inventario — RSP-018 … RSP-025
+  # Products and inventory — RSP-018 … RSP-025
   #
-  # EXISTENCIAS ARE DERIVED. There is no stored total anywhere behind these
+  # STOCK ON HAND IS DERIVED. There is no stored total anywhere behind these
   # endpoints: every quantity below is a SUM over stock_moves computed on the
   # way out, the same discipline the balance gets from the ledger and for the
   # same reason. A stored total is a total that some day disagrees with the
   # facts underneath it, and when it does nothing can say which one is lying.
   #
   # The whole module is on the weigher's deny list, alongside payroll:
-  # docs/modelo-datos.md §9 puts ventas, gastos and stock_moves outside his
-  # reach "con la misma forma que ledger", and RSP-018 puts existencias on the
+  # docs/modelo-datos.md §9 puts sales, expenses and stock_moves outside his
+  # reach "the same way the ledger is", and RSP-018 puts stock on hand on the
   # very first product screen, so there is no reduced projection worth having.
   # ---------------------------------------------------------------------------
   /v1/catalogs/product-categories:
@@ -2841,7 +2841,7 @@ paths:
     get:
       tags: [products]
       operationId: listWarehouses
-      summary: Bodegas
+      summary: Warehouses
       description: |
         A warehouse is a name and a row. What is in one is not on it: ask
         `/v1/stock?warehouseId=...`, which sums the movements.
@@ -2854,7 +2854,7 @@ paths:
     post:
       tags: [products]
       operationId: createWarehouse
-      summary: Add a bodega
+      summary: Add a warehouse
       x-action: products.write
       x-roles: [owner, admin]
       requestBody: { $ref: "#/components/requestBodies/CatalogItem" }
@@ -2868,7 +2868,7 @@ paths:
     get:
       tags: [products]
       operationId: listProducts
-      summary: List products with their existencias
+      summary: List products with their stock on hand
       description: |
         RSP-018: grouped by category, with the units on hand. `stock` on every
         row is a SUM over that product's movements across every warehouse,
@@ -2903,7 +2903,7 @@ paths:
       description: |
         RSP-019. `category` and `storageUnit` may be sent as names instead of
         ids, and a name that is not in the catalogue yet is added to it rather
-        than rejected — that is the "con opción de crear" button.
+        than rejected — that is the "with the option to create one" button.
 
         Idempotent by (farm_id, id): a retry answers 200 with the product.
       x-action: products.write
@@ -2978,7 +2978,7 @@ paths:
       operationId: deleteProduct
       summary: Take a product out of the catalogue
       description: |
-        RSP-021: eliminar deja el producto inactivo. Its movements stay exactly
+        RSP-021: deleting leaves the product inactive. Its movements stay exactly
         where they are — they are facts, and a product leaving the catalogue
         does not un-harvest last week's coffee.
       x-action: products.write
@@ -2993,7 +2993,7 @@ paths:
     get:
       tags: [stock]
       operationId: listStock
-      summary: Existencias, by product and warehouse
+      summary: Stock on hand, by product and warehouse
       description: |
         A SUM over stock_moves. Narrowing by `productId` or `warehouseId`
         confirms the id belongs to this farm BEFORE it sums: a sum over
@@ -3060,7 +3060,7 @@ paths:
     get:
       tags: [stock]
       operationId: listStockMoves
-      summary: The movements existencias are derived from
+      summary: The movements stock on hand is derived from
       x-action: stock.read
       x-roles: [owner, admin]
       parameters:
@@ -3221,13 +3221,13 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------------------------------------------------------------------------
-  # Ventas — RSP-026 … RSP-029
+  # Sales — RSP-026 … RSP-029
   # ---------------------------------------------------------------------------
   /v1/customers:
     get:
       tags: [sales]
       operationId: listCustomers
-      summary: Clientes
+      summary: Customers
       x-action: sales.read
       x-roles: [owner, admin]
       parameters:
@@ -3250,7 +3250,7 @@ paths:
     post:
       tags: [sales]
       operationId: createCustomer
-      summary: Add a cliente
+      summary: Add a customer
       description: |
         Idempotent by (farm_id, lower(name)) and answers 200, like every other
         picker here: the sales screen must not be able to produce two
@@ -3447,7 +3447,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # Gastos — RSP-030 … RSP-033
+  # Expenses — RSP-030 … RSP-033
   #
   # A GASTO IS NOT A DEUDA, and this is the place the distinction is made
   # visible to every client at once.
@@ -4061,7 +4061,7 @@ paths:
 
 
   # ---------------------------------------------------------------------------
-  # Sincronización móvil ↔ servidor (docs/sincronizacion.md §3)
+  # Mobile ↔ server synchronisation (docs/sincronizacion.md §3)
   #
   # A change feed with a per-farm sequence. The handset carries ONE number,
   # `cursor`, and what it is missing is "everything with a seq greater than
@@ -4288,7 +4288,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # La importación de la temporada (docs/sincronizacion.md §8, fases 3 y 4)
+  # The season import (docs/sincronizacion.md §8, phases 3 and 4)
   # ---------------------------------------------------------------------------
   /v1/import/season:
     post:
@@ -5832,7 +5832,7 @@ components:
 
     StockLevel:
       type: object
-      description: One derived line of the existencias screen.
+      description: One derived line of the stock-on-hand screen.
       required: [productId, product, storageUnit, warehouseId, warehouse, qty]
       properties:
         productId: { type: string, format: uuid }

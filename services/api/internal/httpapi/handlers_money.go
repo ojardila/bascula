@@ -400,7 +400,7 @@ func (s *Server) handleVoidSettlement(w http.ResponseWriter, r *http.Request) {
 // and nothing could open the ones already in the field. VoidSettlement leaves
 // with 409 SETTLEMENT_ALREADY_VOID before it looks at a line; the partial
 // unique index holds the payable while the line lives; and DELETE is revoked
-// from the application role on both tables. The pesada was worked, is
+// from the application role on both tables. The weighing was worked, is
 // unpayable, and does not appear in any pending list, because the lock says it
 // is already claimed.
 //

@@ -106,7 +106,7 @@ func TestDeactivatedWorkerWithNewWorkComesBackOn(t *testing.T) {
 }
 
 // TestWorkOlderThanTheDeactivationDoesNotUndoIt is the boundary the team drew
-// around decision 8 on 2026-08-29: "gana la baja".
+// around decision 8 on 2026-08-29: "the removal wins".
 //
 // The scenario is the ordinary one, not a corner case. A handset spends the
 // afternoon without signal; the web deactivates Juan at midday; at six the

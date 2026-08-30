@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- VENTAS (RSP-026 … RSP-029) y GASTOS (RSP-030 … RSP-033).
+-- SALES (RSP-026 … RSP-029) and EXPENSES (RSP-030 … RSP-033).
 --
 -- One warning before the DDL, because it is the mistake this schema is shaped
 -- to make impossible:
@@ -52,7 +52,7 @@ CREATE TABLE sales (
   -- "Valor — double"; a double is how you lose a peso per sale and find out at
   -- the end of the year. Same call as every other amount in this schema.
   amount_minor bigint NOT NULL CHECK (amount_minor > 0),
-  receipt_id   uuid,                   -- foto del comprobante
+  receipt_id   uuid,                   -- photo of the receipt
   note         text,
   local_day    date NOT NULL,
   created_by   uuid REFERENCES users(id),

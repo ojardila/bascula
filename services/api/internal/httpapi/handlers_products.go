@@ -156,7 +156,7 @@ func (s *Server) handleUpdateProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// handleDeleteProduct is RSP-021: eliminar deja el producto inactivo. Its
+// handleDeleteProduct is RSP-021: deleting leaves the product inactive. Its
 // movements stay exactly where they are — they are facts, and a product
 // leaving the catalogue does not un-harvest last week's coffee.
 func (s *Server) handleDeleteProduct(w http.ResponseWriter, r *http.Request) {

@@ -221,7 +221,7 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// handleDeleteExpense is RSP-033: eliminar deja el gasto inactivo. Unlike a
+// handleDeleteExpense is RSP-033: deleting leaves the expense inactive. Unlike a
 // sale this really is only a flag, because an expense carries no stock
 // movement — there is nothing to give back.
 func (s *Server) handleDeleteExpense(w http.ResponseWriter, r *http.Request) {
