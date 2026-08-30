@@ -1894,7 +1894,7 @@ export const handlers = [
     }
     if (body.status === "inactive") {
       if (record.deletedAt === null) record.deletedAt = nowInstant();
-      return HttpResponse.json(db.projectWorkRecord(t, record));
+      return HttpResponse.json(projectWorkRecordFor(g.p, t, record));
     }
     if (body.status === "active") record.deletedAt = null;
     if (record.deletedAt !== null) return notFound();
@@ -1907,7 +1907,11 @@ export const handlers = [
         record.rateCents === null ? null : db.amountCents(body.quantity, record.rateCents);
     }
     patch(record, body.note, "note");
-    return HttpResponse.json(db.projectWorkRecord(t, record));
+    // By role, like every other door onto a work record. `work_records.admin`
+    // keeps the weigher out of this one today, so it is not a leak in the
+    // double — it is a divergence between the double and the thing, which is
+    // the failure a double exists to prevent. The server projects here too.
+    return HttpResponse.json(projectWorkRecordFor(g.p, t, record));
   }),
 
   /**

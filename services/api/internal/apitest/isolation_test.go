@@ -179,4 +179,50 @@ func TestTheWeigherCannotReadTheWeekPrice(t *testing.T) {
 				t.Fatalf("the owner reads %d, want the 91500 he set", price)
 			}
 		})
+
+	// The administrator is the other half of `IN ('owner', 'admin')`, and it is
+	// the half a narrowing policy gets wrong silently: the owner writes the
+	// price, so a test written around the owner passes on a policy that says
+	// only the owner may read it. Nothing in this repository asserted the admin
+	// arm on any money path before this, so a settlement run by an
+	// administrator — which is what actually happens on a farm, since the owner
+	// is not the one at the desk on payday — would have started returning the
+	// general price instead of the week's, with no test going red.
+	//
+	// A broken settlement is worse than the bug this migration closes, so the
+	// arm is asserted at both levels: the row itself, and the figure the
+	// administrator's screens are built on.
+	t.Run("the administrator still reads the week price", func(t *testing.T) {
+		h.withTenant(t, f.FarmID, f.AdminUserID, domain.RoleAdmin,
+			func(ctx context.Context, tx pgx.Tx) {
+				var price int64
+				if err := tx.QueryRow(ctx,
+					`SELECT price_minor FROM week_prices WHERE week_start = '2026-08-24'`).
+					Scan(&price); err != nil {
+					t.Fatalf("RLS hid the week price from the administrator: %v", err)
+				}
+				if price != 91500 {
+					t.Fatalf("the administrator reads %d, want the 91500 the owner set", price)
+				}
+			})
+
+		got := h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-24",
+			f.AdminToken, nil, http.StatusOK)
+		if p := mustInt(t, got.Body, "priceCents"); p != 91500 {
+			t.Fatalf("the administrator's price screen says %d, want 91500: %s", p, got.Raw)
+		}
+
+		// And the figure survives all the way onto a record he is paid from:
+		// the projection is by role, so it must not have narrowed onto him.
+		worker := h.createWorker(t, f, "Trabajador del precio", "5544332211")
+		activity := h.harvestActivityID(t, f)
+		rec := h.mustDo(t, http.MethodPost, "/v1/work-records", f.AdminToken, map[string]any{
+			"activityId": activity, "workerId": worker,
+			"quantity": 1, "dateFrom": "2026-08-27",
+		}, http.StatusCreated)
+		if got := mustInt(t, rec.Body, "estimatedAmountCents"); got != 91500 {
+			t.Fatalf("one kilo in the overridden week is worth %d to the administrator, "+
+				"want the week's 91500 and not the farm's general price: %s", got, rec.Raw)
+		}
+	})
 }

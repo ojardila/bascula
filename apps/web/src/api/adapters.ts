@@ -565,9 +565,15 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
     // the failure this whole module was rewritten to stop. Let a broken
     // contract be visible instead; the generated types are checked in CI so it
     // cannot break quietly.
-    estimatedAmountCents: r.estimatedAmountCents,
+    // Absent — not null — for a session that may not read money: the server
+    // projects the four money keys out of the record entirely. `?? null` is
+    // the ONLY fallback allowed here, and it is not a default value: it
+    // carries "withheld" into the model as a state the compiler makes every
+    // reader answer. A `?? 0` would print a confident zero against a real
+    // weighing, and `?? false` would call a withheld amount final.
+    estimatedAmountCents: r.estimatedAmountCents ?? null,
     /** False once a settlement froze it. See WorkRecordsPage for the badge. */
-    amountIsEstimate: r.amountIsEstimate,
+    amountIsEstimate: r.amountIsEstimate ?? null,
     note: r.note,
     settled: r.settled,
     status: statusOf(r.deletedAt),

@@ -3322,7 +3322,7 @@ export interface components {
          *     that the sync feed refuses to send him a `weekPrice` row for.
          *
          *     The database says it a second time: the RLS policy on `week_prices` is
-         *     owner and administrator only (migration 00020), so a route that forgot
+         *     owner and administrator only (migration 00022), so a route that forgot
          *     to project could still not reach an override.
          */
         WorkRecord: {

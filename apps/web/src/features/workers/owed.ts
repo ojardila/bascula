@@ -197,8 +197,9 @@ export function sumOwedToFarmWorkers(rows: Owed[]): OwedSum {
 export interface PendingRecordLike {
   workerId: Uuid;
   settled: boolean;
-  estimatedAmountCents: number;
-  amountIsEstimate: boolean;
+  /** Null when the session may not read money. See `WorkRecord`. */
+  estimatedAmountCents: number | null;
+  amountIsEstimate: boolean | null;
 }
 
 /** The least we need from a balance. */
@@ -247,6 +248,16 @@ export function owedByWorker(
   for (const r of records ?? []) {
     if (r.settled) continue;
     const o = get(r.workerId);
+    if (r.estimatedAmountCents === null) {
+      // Withheld, not zero: this session may not read what the record is
+      // worth. An account with one unreadable row is an account we cannot
+      // total, and `pendingCents: null` is the shape this module already uses
+      // for "that read did not happen" — `owedState` renders it as unknown
+      // instead of a figure. Adding 0 would understate what the farm owes,
+      // which is the direction that costs somebody their pay.
+      o.pendingCents = null;
+      continue;
+    }
     o.pendingCents = (o.pendingCents ?? 0) + r.estimatedAmountCents;
     if (r.amountIsEstimate) o.pendingIsEstimate = true;
   }

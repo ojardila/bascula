@@ -73,8 +73,14 @@ type publicWorkRecord struct {
 	Settled     bool              `json:"settled"`
 }
 
+// full says the caller may read money. l.PriceWithheld says the price was not
+// readable when the record was priced, so store.priceWorkRecords never derived
+// one — see the field's comment. The two cannot disagree through any route that
+// exists today, since both read the same role; the second condition is here so
+// that a route which forgets to project still cannot publish a figure that was
+// never computed. An invariant a call site has to remember is not an invariant.
 func projectWorkRecord(l store.WorkRecord, full bool) any {
-	if full {
+	if full && !l.PriceWithheld {
 		return l
 	}
 	return publicWorkRecord{

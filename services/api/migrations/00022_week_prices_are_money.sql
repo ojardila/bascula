@@ -57,7 +57,7 @@ CREATE POLICY p_week_prices_read ON week_prices FOR SELECT
 COMMENT ON TABLE week_prices IS
   'The price of a kilo for one week. Money: readable by the owner and the '
   'administrator only, like the ledger and the settlements. See migration '
-  '00020.';
+  '00022.';
 
 -- +goose StatementEnd
 

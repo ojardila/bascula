@@ -260,10 +260,18 @@ func (s *Server) handleWorkerProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"worker":        worker,
-		"balance":       balance,
-		"ledger":        entries,
-		"tasks":         tasks,
+		"worker":  worker,
+		"balance": balance,
+		"ledger":  entries,
+		// The same projection the six weigher-reachable routes get, for the
+		// same reason and not because this door leaks today: ActionWorkersPrivate
+		// is administrators and Money, so nobody without the price reaches it.
+		// It is projected because the rule publicWorkRecord is written for is
+		// "every route that puts a work record on the wire", and a rule with one
+		// exception is a rule the next role added gets wrong. The condition is
+		// the caller's, not a hardcoded true, so the day this action is relaxed
+		// the projection narrows with it instead of staying open.
+		"tasks":         projectWorkRecords(tasks, callerSeesPrivateData(r)),
 		"notes":         notes,
 		"reactivations": reactivations,
 	})
