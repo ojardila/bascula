@@ -307,3 +307,43 @@ instead, which is NIST SP 800-63B §5.2.2's own recommendation for this shape,
 and concedes what that concedes: a search spread thinly across many sources is
 slowed by the per-IP axis rather than stopped. The pair keeps the budget an
 attacker spends their own.
+
+## The same mistake, twice, in one afternoon
+
+The lesson above says a pattern solved in one place does not spread on its own.
+It is worse than that. It does not spread within **one author, across one
+afternoon**, either.
+
+Plots got a `location` field. Absent and null had to mean different things —
+absent leaves the stored point, null erases it — because if absent erased, then
+renaming a plot would silently drop its location. That was reasoned about,
+written down in the migration, in the handler, in the OpenAPI description and in
+the test that asserts a rename does not lose the point.
+
+Four hours later, work units got a `PATCH`. It was written as:
+
+```sql
+UPDATE work_units SET ..., kg_factor = $4
+```
+
+so a request that only renamed a unit set its factor to null. `kg_factor` is
+what converts a canasta into kilos. Wiping it does not fail loudly; it changes
+what a picker is paid, quietly, the next time somebody converts.
+
+Nothing about the second case was harder than the first. The same person had
+just written the same reasoning, in the same session, and did not carry it
+across a different noun. It was caught only because the test asked what the
+factor was after a rename — a question there was no reason to ask except that
+the first feature had taught it.
+
+Two things follow, and they are not "be careful":
+
+**Any partial update of a field somebody is paid by needs the absent/null
+question asked out loud, in the test.** Not in the review. The review is where
+this one would have been missed, because the diff reads correctly: it is one
+column in a `SET` clause, exactly like the two next to it.
+
+**A rule learned on one endpoint should be looked for on every endpoint that
+takes a `PATCH`, at the moment it is learned.** The search costs a grep. Both
+of these were written on the same day; the second could have been prevented by
+five minutes of looking rather than four hours of not.

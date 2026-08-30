@@ -139,7 +139,10 @@ type updateWorkerRequest struct {
 
 func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 	var body updateWorkerRequest
-	if err := decode(r, &body); err != nil {
+	// decodeNulls rather than decode: an emptied box arrives as an explicit
+	// null, and it must clear the field rather than be read as "not mentioned".
+	cleared, err := decodeNulls(r, &body)
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -171,7 +174,7 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := store.UpdateEmployee(r.Context(), tx, id, body.Employee)
+	updated, err := store.UpdateEmployee(r.Context(), tx, id, body.Employee, cleared)
 	if err != nil {
 		if body.Status == "inactive" {
 			// Deactivating and nothing else: UpdateEmployee skips deleted

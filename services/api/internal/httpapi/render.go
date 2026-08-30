@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,6 +88,43 @@ func decode(r *http.Request, v any) error {
 		return domain.BadRequest(decodeMessage(err)).WithCause(err)
 	}
 	return nil
+}
+
+// decodeNulls reads the body like decode, and additionally reports which keys
+// the caller sent EXPLICITLY AS NULL.
+//
+// It exists because a *string is nil for two different requests -- "I did not
+// mention this field" and "clear this field" -- and the two must not mean the
+// same thing. Where they were conflated, an owner could change a worker's wrong
+// phone number to another number but never remove it: the console sends null
+// for an emptied box, and null was read as "leave it alone".
+//
+// The body is read once into memory (already capped at 1 MiB) and decoded
+// twice: into the caller's struct, and into a shallow key map.
+func decodeNulls(r *http.Request, v any) (map[string]bool, error) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return nil, domain.BadRequest("could not read the request body").WithCause(err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return nil, domain.BadRequest(decodeMessage(err)).WithCause(err)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		// The struct decode above already succeeded, so this cannot be a
+		// malformed body; an array or a scalar would have failed there first.
+		return map[string]bool{}, nil
+	}
+	nulls := map[string]bool{}
+	for k, val := range keys {
+		if string(val) == "null" {
+			nulls[k] = true
+		}
+	}
+	return nulls, nil
 }
 
 // decodeMessage keeps the field name when the decoder knows it. A bare

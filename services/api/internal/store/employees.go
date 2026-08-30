@@ -158,24 +158,39 @@ func CreateEmployee(ctx context.Context, tx pgx.Tx, farmID string, e Employee) (
 
 // UpdateEmployee patches with COALESCE, so a field absent from the body keeps
 // its value rather than being nulled.
-func UpdateEmployee(ctx context.Context, tx pgx.Tx, id string, e Employee) (*Employee, error) {
+//
+// cleared names the fields the caller sent as an explicit null, which is not
+// the same request as not mentioning them. Without that distinction a *string
+// is nil for both, coalesce keeps the stored value, and an owner who typed a
+// worker's phone number wrong can replace it with another number but never
+// remove it -- the console sends null for an emptied box, and null read as
+// "leave it alone".
+//
+// `name` is not clearable and deliberately has no CASE: a worker without a name
+// is not a worker, and nilIfEmpty already stops an empty one.
+func UpdateEmployee(ctx context.Context, tx pgx.Tx, id string, e Employee,
+	cleared map[string]bool) (*Employee, error) {
+	clear := make([]string, 0, len(cleared))
+	for k := range cleared {
+		clear = append(clear, k)
+	}
 	return scanEmployee(tx.QueryRow(ctx, `
 		UPDATE employees SET
 			name          = coalesce($2, name),
-			last_name     = coalesce($3, last_name),
-			document_type = coalesce($4, document_type),
-			doc_id        = coalesce($5, doc_id),
-			tag           = coalesce($6, tag),
-			phone         = coalesce($7, phone),
-			address       = coalesce($8, address),
-			city          = coalesce($9, city),
-			municipality  = coalesce($10, municipality),
-			country       = coalesce($11, country),
-			photo_id      = coalesce($12, photo_id)
+			last_name     = CASE WHEN 'lastName'     = ANY($13) THEN NULL ELSE coalesce($3, last_name) END,
+			document_type = CASE WHEN 'documentType' = ANY($13) THEN NULL ELSE coalesce($4, document_type) END,
+			doc_id        = CASE WHEN 'docId'        = ANY($13) THEN NULL ELSE coalesce($5, doc_id) END,
+			tag           = CASE WHEN 'tag'          = ANY($13) THEN NULL ELSE coalesce($6, tag) END,
+			phone         = CASE WHEN 'phone'        = ANY($13) THEN NULL ELSE coalesce($7, phone) END,
+			address       = CASE WHEN 'address'      = ANY($13) THEN NULL ELSE coalesce($8, address) END,
+			city          = CASE WHEN 'city'         = ANY($13) THEN NULL ELSE coalesce($9, city) END,
+			municipality  = CASE WHEN 'municipality' = ANY($13) THEN NULL ELSE coalesce($10, municipality) END,
+			country       = CASE WHEN 'country'      = ANY($13) THEN NULL ELSE coalesce($11, country) END,
+			photo_id      = CASE WHEN 'photoId'      = ANY($13) THEN NULL ELSE coalesce($12, photo_id) END
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING `+employeeCols,
 		id, nilIfEmpty(e.Name), e.LastName, e.DocumentType, e.DocID, e.Tag,
-		e.Phone, e.Address, e.City, e.Municipality, e.Country, e.PhotoID))
+		e.Phone, e.Address, e.City, e.Municipality, e.Country, e.PhotoID, clear))
 }
 
 // SoftDeleteEmployee is the only kind of delete this service performs. The
