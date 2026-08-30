@@ -35,7 +35,7 @@ export default function SyncStatus() {
   const [cards, setCards] = useState<Conflict[]>([]);
   const [snack, setSnack] = useState("");
   /**
-   * Whether §8's mudanza already happened, from the record rather than from a
+   * Whether §8's move already happened, from the record rather than from a
    * flag somebody could forget to clear. `already-imported` counts: the farm's
    * season IS on the server, and the only honest thing to do with a second
    * offer to upload it is to stop offering.

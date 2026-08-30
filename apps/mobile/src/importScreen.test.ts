@@ -8,7 +8,7 @@
  *
  *   1. **«No se subió nada» y «tu teléfono sigue exactamente igual».** That is
  *      the property `docs/sincronizacion.md` §8's whole plan rests on: a
- *      failed mudanza costs nothing, so trying it is not brave. It was in the
+ *      failed move costs nothing, so trying it is not brave. It was in the
  *      source and in the dictionaries and in nothing that would notice its
  *      removal. A person reading a red card has no other way to learn it.
  *
@@ -41,20 +41,20 @@ const LANGS = ["es", "en", "pt"] as const;
 
 const SCREEN = "screens/SeasonImport.tsx";
 
-// ---- 1. The sentence that makes the mudanza safe to attempt --------------
+// ---- 1. The sentence that makes the move safe to attempt -----------------
 
-test("cada rama de fallo dice que no se subió nada y que el teléfono sigue igual", () => {
+test("every failure branch says nothing was uploaded and the phone is unchanged", () => {
   const src = read(SCREEN);
 
   // The failure card is one card with three bodies — rejected, refused, broke
   // — precisely so that these two lines cannot be written three times and
   // forgotten once. Pinning that structure is what keeps it that way.
-  assert.match(src, /t\("import\.failTitle"\)/, "el título de fallo no está");
-  assert.match(src, /t\("import\.failSafe"\)/, "la frase de seguridad no está");
+  assert.match(src, /t\("import\.failTitle"\)/, "the failure title is missing");
+  assert.match(src, /t\("import\.failSafe"\)/, "the safety sentence is missing");
 
   const failCard = src.slice(src.indexOf("const rejected ="));
   for (const body of ["import.rejectedBody", "import.refusedBody", "import.brokeBody"])
-    assert.ok(failCard.includes(body), `${body} no se muestra en ninguna rama`);
+    assert.ok(failCard.includes(body), `${body} is shown in no branch at all`);
 
   // And the safe sentence is rendered OUTSIDE the three-way branch, above it,
   // so no branch can be added that omits it.
@@ -62,11 +62,11 @@ test("cada rama de fallo dice que no se subió nada y que el teléfono sigue igu
   const branchAt = failCard.indexOf("rejected\n");
   assert.ok(
     safeAt !== -1 && (branchAt === -1 || safeAt < branchAt),
-    "la frase de seguridad tiene que ir antes de la explicación, no dentro de una rama",
+    "the safety sentence has to come before the explanation, not inside a branch",
   );
 });
 
-test("la promesa de que no se toca el teléfono se dice antes, durante y después", () => {
+test("the promise that the phone is not touched is said before, during and after", () => {
   const src = read(SCREEN);
   // Three occurrences of `import.safety`: the hero card, the confirmation
   // dialog, and the progress card. The minutes in between the button and the
@@ -75,42 +75,42 @@ test("la promesa de que no se toca el teléfono se dice antes, durante y despué
   const occurrences = src.split('t("import.safety")').length - 1;
   assert.ok(
     occurrences >= 3,
-    `la frase de seguridad aparece ${occurrences} veces; hacen falta al menos 3 (antes, en la confirmación y durante)`,
+    `the safety sentence appears ${occurrences} times; at least 3 are needed (before, in the confirmation and during)`,
   );
 });
 
-test("nada se sube sin pasar por una confirmación que dice cuánto dinero viaja", () => {
+test("nothing is uploaded without a confirmation that says how much money travels", () => {
   const src = read(SCREEN);
   // `usability.md` §"What must be protected": the console's crew payroll is
   // the model, and what makes it the model is that the confirmation names what
   // moves. A row count is not what moves; the money is.
-  assert.match(src, /setConfirming\(true\)/, "el botón ya no abre una confirmación");
-  assert.match(src, /t\("import\.confirmMoney"/, "la confirmación no dice cuánto dinero viaja");
+  assert.match(src, /setConfirming\(true\)/, "the button no longer opens a confirmation");
+  assert.match(src, /t\("import\.confirmMoney"/, "the confirmation does not say how much money travels");
   // And the upload is only reachable from inside the dialog.
   const upload = src.indexOf("void upload()");
-  assert.ok(upload !== -1, "el envío ya no sale de la confirmación");
+  assert.ok(upload !== -1, "the upload no longer leaves from the confirmation");
 });
 
-test("un rechazo por saldos no ofrece un botón de reintentar", () => {
+test("a rejection over balances offers no retry button", () => {
   const src = read(SCREEN);
   // Repeating a 409 produces the same 409. The button would be an invitation
   // to press it until it works, and it never will until somebody finds out why
   // the arithmetic differs.
-  assert.match(src, /\{!rejected && \(\s*<Button/, "el reintento no está condicionado al rechazo");
+  assert.match(src, /\{!rejected && \(\s*<Button/, "the retry is not conditioned on the rejection");
 });
 
 // ---- 2. Who may press it ------------------------------------------------
 
-test("la pantalla ofrece la mudanza solo al dueño, como la tabla de permisos", () => {
+test("the screen offers the move to the owner alone, like the permission table", () => {
   const src = read(SCREEN);
   assert.match(
     src,
     /const mayImport = status\.role === "owner";/,
-    "la puerta ya no es exactamente el dueño",
+    "the gate is no longer exactly the owner",
   );
 });
 
-test("y la frase que la acompaña no le promete a un administrador lo que el servidor le niega", () => {
+test("and the sentence beside it does not promise an administrator what the server denies them", () => {
   // The regression, named. `ActionImportSeason: {Roles: owners}` on the server
   // means an administrator gets a 403 — after uploading the whole season, if
   // the phone had let them start. The sentence must not say otherwise in any
@@ -122,18 +122,18 @@ test("y la frase que la acompaña no le promete a un administrador lo que el ser
   ];
   for (const lang of LANGS) {
     const said = translate(lang, "import.noMoney");
-    assert.notEqual(said, "import.noMoney", `import.noMoney falta en ${lang}`);
+    assert.notEqual(said, "import.noMoney", `import.noMoney is missing in ${lang}`);
     for (const pattern of forbidden)
       assert.ok(
         !pattern.test(said) || /ni un|neither|nem um/i.test(said),
-        `import.noMoney en ${lang} le dice a un administrador que puede: «${said}»`,
+        `import.noMoney in ${lang} tells an administrator they can: «${said}»`,
       );
   }
 });
 
 // ---- 3. What the person is told while nothing appears to happen ----------
 
-test("la espera lleva reloj, tamaño, plazo y una explicación del tramo callado", () => {
+test("the wait carries a clock, a size, a deadline and an explanation of the quiet stretch", () => {
   const src = read(SCREEN);
   for (const key of [
     "import.elapsed", // the clock: the only evidence the process is alive
@@ -142,10 +142,10 @@ test("la espera lleva reloj, tamaño, plazo y una explicación del tramo callado
     "import.dontClose",
     "import.tail", // and that the long quiet part at the end is the server
   ])
-    assert.ok(src.includes(key), `la pantalla de espera no dice ${key}`);
+    assert.ok(src.includes(key), `the waiting screen does not say ${key}`);
 });
 
-test("el reloj se ancla al comienzo de la fase, no al toque del botón", () => {
+test("the clock is anchored to the start of the phase, not to the button press", () => {
   const src = read(SCREEN);
   // Building and checking a season of eighteen thousand weighings is itself
   // tens of seconds. Counting those against the request's deadline would put a
@@ -189,21 +189,21 @@ function runtimeKeys(): string[] {
   const reasons = [...block.slice(0, block.indexOf("];")).matchAll(/key: "(\w+)"/g)].map(
     (m) => m[1],
   );
-  assert.ok(reasons.length >= 5, `DISCOUNTS ya no se puede leer: ${reasons.length} motivos`);
+  assert.ok(reasons.length >= 5, `DISCOUNTS can no longer be read: ${reasons.length} reasons`);
   for (const reason of reasons) out.push(`disc.${reason}`);
 
   // The anomaly rules, read off the union the repository declares.
   const repo = read("data/repository.ts");
   const union = /rule: ((?:"\w+"(?: \| )?)+);/.exec(repo);
-  assert.ok(union, "el union de Anomaly['rule'] ya no se puede leer");
+  assert.ok(union, "the union of Anomaly['rule'] can no longer be read");
   const rules = [...union[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
-  assert.ok(rules.length >= 5, `solo se leyeron ${rules.length} reglas`);
+  assert.ok(rules.length >= 5, `only ${rules.length} rules were read`);
   for (const rule of rules) out.push(`perf.rule.${rule}`);
 
   // The import's phases, from the union that produces them.
   const importer = read("sync/seasonImport.ts");
   const phases = /phase: ((?:"\w+"(?: \| )?)+);/.exec(importer);
-  assert.ok(phases, "el union de SeasonImportProgress['phase'] ya no se puede leer");
+  assert.ok(phases, "the union of SeasonImportProgress['phase'] can no longer be read");
   for (const m of phases[1].matchAll(/"(\w+)"/g)) out.push(`import.phase.${m[1]}`);
 
   return out;
@@ -219,23 +219,23 @@ function runtimeKeys(): string[] {
  * makes adding a screen safe, and it is the check that has to keep passing
  * with `LOCAL_SETTLEMENT` off.
  */
-test("ninguna pantalla puede enseñar una clave de traducción en crudo", () => {
+test("no screen can show a raw translation key", () => {
   const keys = new Set<string>(runtimeKeys());
   for (const file of screenFiles())
     for (const m of readFileSync(join(SCREENS_DIR, file), "utf8").matchAll(/\bt\(\s*"([\w.]+)"/g))
       keys.add(m[1]);
 
-  assert.ok(keys.size > 200, `solo se encontraron ${keys.size} claves: el barrido no está mirando`);
+  assert.ok(keys.size > 200, `only ${keys.size} keys were found: the sweep is not looking`);
 
   const missing: string[] = [];
   for (const lang of LANGS)
     for (const key of [...keys].sort())
       if (translate(lang, key) === key) missing.push(`${lang}: ${key}`);
 
-  assert.deepEqual(missing, [], `claves sin traducir:\n${missing.join("\n")}`);
+  assert.deepEqual(missing, [], `untranslated keys:\n${missing.join("\n")}`);
 });
 
-test("y toda clave armada en tiempo de ejecución está cubierta por el barrido", () => {
+test("and every key built at runtime is covered by the sweep", () => {
   // The sweep above is only honest while every `t(\`…\`)` in the product
   // belongs to a family `runtimeKeys` expands. A sixth one added elsewhere
   // would be invisible to it and would reach a screen as raw text — which is
@@ -251,6 +251,6 @@ test("y toda clave armada en tiempo de ejecución está cubierta por el barrido"
   assert.deepEqual(
     uncovered,
     [],
-    "hay claves armadas en tiempo de ejecución que el barrido no puede ver",
+    "there are keys built at runtime that the sweep cannot see",
   );
 });

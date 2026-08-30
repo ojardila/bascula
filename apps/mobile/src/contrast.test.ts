@@ -127,7 +127,7 @@ function dimmedStyles(): Dimmed[] {
  */
 const LARGE_TEXT = new Set(["Account.tsx:zeroBig"]);
 
-test("ningún texto atenuado de una pantalla baja del contraste AA", () => {
+test("no dimmed text on any screen falls below AA contrast", () => {
   const failures: string[] = [];
 
   for (const { file, style, alpha } of dimmedStyles()) {
@@ -143,45 +143,45 @@ test("ningún texto atenuado de una pantalla baja del contraste AA", () => {
   assert.deepEqual(failures, [], `contraste insuficiente:\n${failures.join("\n")}`);
 });
 
-test("la arruga de opacity 0.6 no puede volver: está justo por debajo del umbral", () => {
+test("the opacity 0.6 wrinkle cannot come back: it sits just under the threshold", () => {
   // The number this whole file was written around. It is worth asserting on
   // its own, because "0.6 looks fine" is exactly what somebody will think.
   const ratio = contrast(over(ON_SURFACE, SURFACE, 0.6), SURFACE);
   assert.ok(ratio < AA, `0.6 daba ${ratio.toFixed(2)}:1 y ahora pasa: revisa el tema`);
-  assert.ok(contrast(over(ON_SURFACE, SURFACE, 0.7), SURFACE) >= AA, "0.7 tiene que pasar");
+  assert.ok(contrast(over(ON_SURFACE, SURFACE, 0.7), SURFACE) >= AA, "0.7 has to pass");
 });
 
-test("«no lo sé» se dibuja a contraste pleno, no atenuado como un $0", () => {
+test("«no lo sé» is drawn at full contrast, not dimmed like a $0", () => {
   // `usability.md`: "it is not zero: it is that we do not know" is protected as
   // the distinction that saves the most money. Rendering it in the same grey
   // the screen uses for "nothing to see here" is the one way to lose it
   // without deleting a line of it.
   const src = readFileSync(join(SCREENS, "Account.tsx"), "utf8");
   const at = src.indexOf('t("pay.balanceUnknownShort")');
-  assert.ok(at !== -1, "la pantalla ya no dice «no lo sé»");
+  assert.ok(at !== -1, "the screen no longer says «no lo sé»");
   const tag = src.lastIndexOf("<Text", at);
   const style = src.slice(tag, at);
   assert.ok(
     !style.includes("zeroBig"),
-    "«no lo sé» volvió a compartir el gris del $0, que es lo contrario de lo que significa",
+    "«no lo sé» went back to sharing the $0 grey, which is the opposite of what it means",
   );
   assert.match(style, /styles\.unknownBig/);
   assert.ok(
     !/unknownBig: \{[^}]*opacity/.test(src),
-    "unknownBig no puede llevar opacity: es la respuesta a la pregunta de la pantalla",
+    "unknownBig cannot carry opacity: it is the answer to the screen's question",
   );
 });
 
-test("los colores que significan algo siguen siendo legibles sobre la tarjeta", () => {
+test("the colours that mean something are still legible on the card", () => {
   // Not a sweep: these five carry meaning, and each is pinned by name so that
   // changing one is a decision. Red is only ever conflicts, on this phone, and
   // that discipline is what makes red mean something (`usability.md`).
   const named: [string, string, number][] = [
-    ["verde de «no se toca tu teléfono»", "#2e7d32", AA],
+    ["green for «no se toca tu teléfono»", "#2e7d32", AA],
     ["rojo de conflicto", "#b3261e", AA],
     ["ámbar de deuda", "#8a5a00", AA],
-    ["azul de saldo a favor", "#3949ab", AA],
-    ["rojo de quitar la foto", "#c0392b", AA],
+    ["blue for a balance in credit", "#3949ab", AA],
+    ["red for removing the photo", "#c0392b", AA],
   ];
   const failures = named
     .map(([label, colour, floor]): [string, number, number] => [
@@ -195,12 +195,12 @@ test("los colores que significan algo siguen siendo legibles sobre la tarjeta", 
   assert.deepEqual(failures, []);
 });
 
-test("el texto sobre el verde oscuro del inicio también se lee", () => {
+test("text on the home screen's dark green reads too", () => {
   // The hero on `Home.tsx` inverts: pale text on a dark green. It is the first
   // thing anybody sees and the only place in the app that does this.
   const HERO = hex("#1b5e20");
   for (const colour of ["#cdeccb", "#eafbe7"]) {
     const ratio = contrast(hex(colour), HERO);
-    assert.ok(ratio >= AA, `${colour} sobre el verde del hero: ${ratio.toFixed(2)}:1`);
+    assert.ok(ratio >= AA, `${colour} on the hero green: ${ratio.toFixed(2)}:1`);
   }
 });

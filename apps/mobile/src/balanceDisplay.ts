@@ -44,7 +44,7 @@ export type BalanceDisplay =
    * This state is not a fallback and it is not a lesser answer. It is what
    * Báscula was before any of this: a product that runs alone on a handset for
    * a whole season, which is what the farm is running TODAY, before the
-   * mudanza. Collapsing it into `unknown` would have told a farm that has
+   * move. Collapsing it into `unknown` would have told a farm that has
    * never synced that it does not know its own payroll, which it does.
    */
   | { state: "local"; cents: number }

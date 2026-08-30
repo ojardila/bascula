@@ -63,8 +63,8 @@ export type PayMode = (typeof PAY_MODES)[number];
  * Activity families — and the one set here that is deliberately NOT closed.
  *
  * `arquitectura-api.md` lists three, `modelo-datos.md` declares four with
- * `otra`, and both are wrong: RSP-011 says the category picker comes "con
- * opcion de crear una nueva". A farm that grows cocoa alongside coffee will
+ * `otra`, and both are wrong: RSP-011 says the category picker comes "with
+ * an option to create a new one". A farm that grows cocoa alongside coffee will
  * invent categories nobody here thought of, and a closed set would make that
  * an `ALTER TYPE` in production every time.
  *

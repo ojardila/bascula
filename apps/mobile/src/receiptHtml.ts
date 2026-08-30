@@ -264,8 +264,8 @@ export interface AdvanceReceiptData {
  * The advance receipt.
  *
  * Same paper, same printer, half the document. `docs/simplificacion.md` §1.3:
- * «Un recibo de anticipo no necesita ningún cálculo: nombre, cédula, fecha,
- * importe entregado, firma.» There is no arithmetic in this function, which is
+ * «An advance voucher needs no calculation at all: name, id number, date,
+ * amount handed over, signature.» There is no arithmetic in this function, which is
  * the property worth having — nothing here can disagree with the server,
  * because nothing here is derived.
  */

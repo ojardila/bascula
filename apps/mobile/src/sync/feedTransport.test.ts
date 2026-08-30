@@ -157,7 +157,7 @@ const uuidOf = (db: DatabaseSync, table: string, id: number): string =>
 
 // ---- The handshake -----------------------------------------------------
 
-test("el handshake trae la zona, el cursor y cuántos cambios faltan", async () => {
+test("the handshake brings the timezone, the cursor and how many changes are outstanding", async () => {
   const { calls, transport } = fakeApi({ behind: 412, cursor: 149006 });
   const hs = await transport.handshake({
     deviceId: "device-1",
@@ -178,7 +178,7 @@ test("el handshake trae la zona, el cursor y cuántos cambios faltan", async () 
   assert.equal(calls[0]!.body!.schemaVersion, 7);
 });
 
-test("el pesador no lee dinero, y el pull lo dice en vez de fingir que está al día", async () => {
+test("the weigher does not read money, and the pull says so instead of pretending to be up to date", async () => {
   const { transport } = fakeApi({ role: "weigher" });
   await transport.handshake({ deviceId: "d", schemaVersion: 7, cursor: null });
   const hs = await transport.handshake({ deviceId: "d", schemaVersion: 7, cursor: null });
@@ -191,7 +191,7 @@ test("el pesador no lee dinero, y el pull lo dice en vez de fingir que está al 
   );
 });
 
-test("un cursor que la versión anterior dejó escrito no rompe nada", async () => {
+test("a cursor the previous version left written breaks nothing", async () => {
   // The REST shim wrote a JSON window into the same TEXT column. It means
   // nothing to the feed, and the only safe reading of a position this server
   // never issued is 0: read everything, upsert by uuid, lose nothing.
@@ -203,7 +203,7 @@ test("un cursor que la versión anterior dejó escrito no rompe nada", async () 
   assert.match(calls[0]!.url, /cursor=0/);
 });
 
-test("un CURSOR_TOO_OLD se relee desde cero en vez de saltarse el hueco", async () => {
+test("a CURSOR_TOO_OLD is re-read from zero instead of skipping the gap", async () => {
   const { calls, transport } = fakeApi({ cursorTooOldOnce: true });
   const res = await transport.pull({ cursor: "12", limit: 500 });
 
@@ -220,7 +220,7 @@ test("un CURSOR_TOO_OLD se relee desde cero en vez de saltarse el hueco", async 
   assert.equal(res.bootstrapped, true);
 });
 
-test("una pasada normal no dice que se haya bajado todo de nuevo", async () => {
+test("an ordinary pass does not claim everything came down again", async () => {
   const { transport } = fakeApi();
   const res = await transport.pull({ cursor: "12", limit: 500 });
   assert.equal(res.bootstrapped, false);
@@ -228,7 +228,7 @@ test("una pasada normal no dice que se haya bajado todo de nuevo", async () => {
 
 // ---- The push ----------------------------------------------------------
 
-test("una pesada viaja con el INSTANTE, nunca con el día de la finca", async () => {
+test("a weighing travels with the INSTANT, never with the farm's day", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -286,7 +286,7 @@ test("una pesada viaja con el INSTANTE, nunca con el día de la finca", async ()
   ]);
 });
 
-test("el opId es un uuid, el mismo en cada reenvío y otro tras una corrección", () => {
+test("the opId is a uuid, the same on every resend and a different one after a correction", () => {
   const row = "0198f3e1-2a4c-7abc-8def-0123456789ab";
   const key = (rev: number) => `pickups:${row}:${rev}`;
 
@@ -317,7 +317,7 @@ test("el opId es un uuid, el mismo en cada reenvío y otro tras una corrección"
   assert.notEqual(opUuid(`people:${row}:1`), opUuid(`pickups:${row}:1`));
 });
 
-test("un batch entero va en una sola petición, no una por sobre", async () => {
+test("a whole batch goes in a single request, not one per envelope", async () => {
   const { repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -346,7 +346,7 @@ test("un batch entero va en una sola petición, no una por sobre", async () => {
   assert.equal(repo.sync.pendingCount(), 0, "and the queue emptied");
 });
 
-test("un movimiento de dinero viaja con su signo, y una deducción sin método", async () => {
+test("a movement of money travels with its sign, and a deducción with no method", async () => {
   const { repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -393,7 +393,7 @@ test("un movimiento de dinero viaja con su signo, y una deducción sin método",
   ]);
 });
 
-test("un devengo no sale del teléfono y levanta una tarjeta en vez de un 400", async () => {
+test("a devengo does not leave the phone and raises a card instead of a 400", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -451,7 +451,7 @@ test("un devengo no sale del teléfono y levanta una tarjeta en vez de un 400", 
  *
  * This test is here so the two transports cannot drift apart again silently.
  */
-test("un pago no sale solo: viaja con la liquidación que lo justifica", async () => {
+test("a pago does not travel alone: it goes with the settlement that justifies it", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -483,11 +483,11 @@ test("un pago no sale solo: viaja con la liquidación que lo justifica", async (
     entity: string;
     payload: Record<string, unknown>;
   }[];
-  assert.ok(!ops.some((o) => o.payload.kind === "pago"), "el pago no salió");
-  assert.ok(!ops.some((o) => o.payload.kind === "devengo"), "ni el devengo");
+  assert.ok(!ops.some((o) => o.payload.kind === "pago"), "the pago did not go out");
+  assert.ok(!ops.some((o) => o.payload.kind === "devengo"), "nor the devengo");
   assert.ok(
     ops.some((o) => o.payload.kind === "anticipo"),
-    "el anticipo sí sale: es el que no puede pagarse dos veces",
+    "the anticipo does go out: it is the one that cannot be paid twice",
   );
 
   // Nothing is lost. Both rows are still on the handset, and that is where the
@@ -510,7 +510,7 @@ test("un pago no sale solo: viaja con la liquidación que lo justifica", async (
  * would hold the chip's «sin enviar» count above zero permanently, which is
  * the number the dueño checks before walking away from the lote.
  */
-test("un pago rechazado no queda reintentándose para siempre", async () => {
+test("a rejected pago does not sit there retrying for ever", async () => {
   const { repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -533,14 +533,14 @@ test("un pago rechazado no queda reintentándose para siempre", async () => {
 
   const { transport } = fakeApi();
   await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
-  assert.equal(repo.sync.pendingCount(), 0, "el buzón queda vacío, no atascado");
+  assert.equal(repo.sync.pendingCount(), 0, "the outbox ends up empty, not stuck");
 
   // A second pass finds nothing to send and raises nothing new: the card is
   // upserted on (kind, entity, entityUuid), so it does not multiply either.
   const after = repo.sync.conflicts().length;
   await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
   assert.equal(repo.sync.pendingCount(), 0);
-  assert.equal(repo.sync.conflicts().length, after, "ni una tarjeta nueva por pasada");
+  assert.equal(repo.sync.conflicts().length, after, "not one new card per pass");
 });
 
 /**
@@ -550,7 +550,7 @@ test("un pago rechazado no queda reintentándose para siempre", async () => {
  * hecho en el teléfono», sixty times, naming nobody — it shared a branch with
  * decision 6's plots and prices. It was wrong in every word that mattered.
  */
-test("la tarjeta del dinero que se queda nombra a la persona, el día y el importe", async () => {
+test("the card for money that stays behind names the person, the day and the amount", async () => {
   const { repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -575,14 +575,14 @@ test("la tarjeta del dinero que se queda nombra a la persona, el día y el impor
   await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
 
   const cards = repo.sync.conflicts().filter((c) => c.kind === "money-stays-here");
-  assert.ok(cards.length >= 2, "el devengo y el pago");
+  assert.ok(cards.length >= 2, "the devengo and the pago");
   for (const c of cards) {
-    assert.equal(c.personId, person, "la tarjeta sabe de quién habla");
-    assert.equal(c.payload.person, "Ana R", "y lo dice con su nombre");
-    assert.ok(c.payload.date, "y con el día");
+    assert.equal(c.personId, person, "the card knows who it is talking about");
+    assert.equal(c.payload.person, "Ana R", "and it says so with their name");
+    assert.ok(c.payload.date, "and with the day");
     assert.ok(
       typeof c.payload.amountCents === "number" && c.payload.amountCents !== 0,
-      "y con el importe",
+      "and with the amount",
     );
   }
   // The ledger rows are NOT on the plots-and-prices card any more. The
@@ -593,17 +593,17 @@ test("la tarjeta del dinero que se queda nombra a la persona, el día y el impor
   const readOnly = repo.sync.conflicts().filter((c) => c.kind === "read-only-on-phone");
   assert.ok(
     readOnly.some((c) => c.payload.table === "settlements"),
-    "la liquidación sí levanta la suya",
+    "the settlement does raise its own",
   );
   // The lote in this fixture legitimately raises decision 6's card. What must
   // never appear there again is a row of the ledger.
   assert.ok(
     !readOnly.some((c) => c.payload.table === "ledger"),
-    "ningún movimiento de dinero vuelve a la tarjeta de lotes y precios",
+    "no movement of money ever lands on the plots-and-prices card again",
   );
 });
 
-test("un sobre rechazado no arrastra a los demás", async () => {
+test("one rejected envelope does not drag the others down", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -652,7 +652,7 @@ test("un sobre rechazado no arrastra a los demás", async () => {
 
 // ---- The pull ----------------------------------------------------------
 
-test("lo que baja del feed se aplica con los nombres que el teléfono usa", async () => {
+test("what comes down the feed is applied under the names the phone uses", async () => {
   const { db, repo } = aPhone();
   const workerId = "0198f3e1-0001-7000-8000-000000000001";
   const cropId = "0198f3e1-0002-7000-8000-000000000002";
@@ -814,7 +814,7 @@ test("lo que baja del feed se aplica con los nombres que el teléfono usa", asyn
   assert.ok(report.skipped.some((s) => /lote/.test(s.what)));
 });
 
-test("un saldo que no cuadra levanta una tarjeta y no copia el número", async () => {
+test("a balance that does not add up raises a card and does not copy the number", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
     name: "Ana",
@@ -840,7 +840,7 @@ test("un saldo que no cuadra levanta una tarjeta y no copia el número", async (
   assert.equal(repo.payments.balance(person).balanceCents, -10_000_00);
 });
 
-test("aplicar dos veces el mismo lote de cambios no duplica nada", async () => {
+test("applying the same batch of changes twice duplicates nothing", async () => {
   // The feed is ordered and the cursor never steps over a change, but a run
   // cut between applying and advancing repeats the batch — so the property the
   // whole design rests on is that repeating is a no-op.

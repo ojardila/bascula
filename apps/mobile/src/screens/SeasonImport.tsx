@@ -1,7 +1,7 @@
 /**
  * The screen that moves a farm's season to the server. §8 fase 3 and 4.
  *
- * Whoever presses this is moving the nómina of their finca. That is not a
+ * Whoever presses this is moving their farm's payroll. That is not a
  * settings toggle, and the screen is built around three sentences the person
  * has to be able to say back before anything happens:
  *
@@ -98,7 +98,7 @@ export default function SeasonImport() {
   // table has `ActionImportSeason: {Roles: owners}` and `owners` is
   // `[]domain.Role{domain.RoleOwner}`, so an admin who got this far uploaded
   // the whole season and read a 403 at the end of it. On a Tuesday morning,
-  // with somebody standing there, having spent the climb. The mudanza happens
+  // with somebody standing there, having spent the climb. The move happens
   // once; the person who can do it should be the only one offered it.
   //
   // The comment was right and `import.noMoney` was wrong: it read «solo el
@@ -361,7 +361,7 @@ function Progress({
             Measured, not guessed. Moving a real season — 18.000 pesadas,
             39.568 filas, 9,5 MB — against real Postgres over a link with no
             latency at all still took 77 s on a cold database and 16 s on a
-            warm one (`sync/mudanza.e2e.ts`). None of that is the uplink: it is
+            warm one (`sync/move.e2e.ts`). None of that is the uplink: it is
             the server writing forty thousand rows in one transaction and
             deriving every worker's balance before it commits any of them. Over
             a farm's link the upload is the larger half and this tail is still

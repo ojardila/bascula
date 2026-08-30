@@ -126,7 +126,7 @@ test("a negative balance is an advance not worked off, and stays signed", () => 
   assert.ok(d.state === "known" && d.cents === -180_00);
 });
 
-// ---- Before the mudanza: a phone that is nobody's client ----------------
+// ---- Before the move: a phone that is nobody's client -------------------
 
 test("an unregistered phone shows its own ledger, and is not told «no lo sé»", () => {
   // The regression this parameter exists to prevent. Báscula runs alone on a

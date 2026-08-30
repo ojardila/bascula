@@ -76,7 +76,7 @@ export interface SyncStore {
    * jornal lines do not (`composeWorkRecord` filters everything that is not
    * `unidad_trabajo`), and `applySettlement` drops those lines as orphans.
    *
-   * That difference is exactly «lo que el teléfono no puede desglosar», in
+   * That difference is exactly «what the phone cannot break down», in
    * cents, per worker, derived from documents the server itself issued. It is
    * what §2.2 previously had to be inferred from — badly — by asking whether
    * the phone's own balance happened to be zero.

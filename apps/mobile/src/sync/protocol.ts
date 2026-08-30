@@ -60,7 +60,7 @@ export interface Handshake {
   /**
    * How many changes this phone has still to receive.
    *
-   * §3.1: «lo que convierte el chip de estado de un spinner en un número». A
+   * §3.1: «what turns the status chip from a spinner into a number». A
    * transport that cannot know it says zero, which reads as "nothing pending"
    * — the honest answer for a server with no feed to be behind.
    */

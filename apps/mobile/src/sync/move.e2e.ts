@@ -1,8 +1,8 @@
 /**
- * The mudanza, rehearsed against the real server and real Postgres.
+ * The move, rehearsed against the real server and real Postgres.
  *
  *     cd services/api && make up && make migrate && make dev     # port 8099
- *     node apps/mobile/src/sync/mudanza.e2e.ts
+ *     node apps/mobile/src/sync/move.e2e.ts
  *
  * `seasonImport.test.ts` proves the same properties against a fake server that
  * behaves the way `store/import.go` is documented to behave. That is the right
@@ -22,18 +22,18 @@
  *
  * The four rehearsals, which are §8 fase 4's four fears:
  *
- *   1. **La mudanza entera.** ~18.000 pesadas, 22 weeks at different prices,
- *      anticipos, deducciones, anulaciones and reliquidaciones. It reports
+ *   1. **The whole move.** ~18,000 weighings, 22 weeks at different prices,
+ *      anticipos, deducciones, voids and re-settlements. It reports
  *      what it really weighed, how long it really took, and it reads every
  *      worker's balance back OUT of the server through `GET /v1/workers/{id}`
  *      to check it against the handset to the centavo. The server checks the
  *      balances it was SENT; only reading them back proves what it STORED.
- *   2. **La conexión que se cae a la mitad**, then the retry. The socket is
+ *   2. **The link that drops halfway**, then the retry. The socket is
  *      cut while the body is still climbing, which is the case that decides
  *      whether a retry is free.
- *   3. **Un saldo que no cuadra**, against real Postgres, and the farm has to
- *      come out with nothing on it — not half a nómina.
- *   4. **La segunda importación** over a farm that already received one.
+ *   3. **A balance that does not add up**, against real Postgres, and the farm
+ *      has to come out with nothing on it — not half a payroll.
+ *   4. **The second import** over a farm that already received one.
  *
  * Each rehearsal gets its OWN farm, because a rehearsal that shared one would
  * be reading the previous rehearsal's rows and calling them its own.
@@ -126,7 +126,7 @@ async function freshFarm(label: string): Promise<Farm> {
   if (created.verificationRequired) {
     if (!created.verificationToken)
       throw new Error(
-        "el servidor pide verificación y no devolvió el token: arranca la API con DevEcho",
+        "the server asks for verification and returned no token: start the API with DevEcho",
       );
     await anon.request("/v1/auth/verify-email", {
       method: "POST",
@@ -227,12 +227,12 @@ interface Phone {
  * nothing else. What actually decides whether the arithmetic survives the move
  * is the corrections:
  *
- *   - **precios distintos por semana**, so a re-settlement at a corrected
+ *   - **different prices per week**, so a re-settlement at a corrected
  *     price produces a different amount for the same kilos, which is the whole
  *     reason `week_prices` travels at all;
- *   - **anticipos y deducciones**, which are the two negative kinds that are
+ *   - **anticipos and deducciones**, which are the two negative kinds that are
  *     not `pago` and which the ledger's CHECK constrains differently;
- *   - **anulaciones**: a settlement voided, its lines voided with it (which
+ *   - **voids**: a settlement voided, its lines voided with it (which
  *     releases their weighings under `ux_items_pickup_live`), and a `reverso`
  *     cancelling its `devengo` — three rows that have to stay consistent
  *     across the wire or the balance moves;
@@ -416,12 +416,12 @@ function buildSeason(pickupCount: number): Phone {
           day(paidAt + DAY),
           sid,
           null,
-          "anula la liquidación mal tarifada",
+          "voids the settlement priced wrong",
           devengoId,
           iso(paidAt + DAY),
         );
 
-        // RELIQUIDACIÓN. The same weighings, at the price that was right.
+        // RE-SETTLEMENT. The same weighings, at the price that was right.
         const rightGross = mine.reduce((n, r) => n + amountOf(r, priceOf(w)), 0);
         const rsid = Number(
           st.run(
@@ -509,7 +509,7 @@ function buildSeason(pickupCount: number): Phone {
   const repo = createSqliteRepository(nodeSqlite(db), { timezone: "America/Bogota" });
   repo.init(); // the real v6 and v7 migrations, over the rows above
 
-  // ANULACIÓN DE PESADA. A handful of weighings the weigher cancelled, which
+  // VOIDED WEIGHING. A handful of weighings the weigher cancelled, which
   // travel WITH their tombstone: leaving them out would make the server's
   // count disagree with the phone's for a reason nobody could reconstruct.
   // Only ones no live settlement line claims, which is what the phone's own
@@ -586,15 +586,15 @@ const pesos = (cents: number) =>
     .format(cents / 100);
 
 function reportOutcome(o: SeasonImportOutcome): void {
-  log(`  estado      : ${o.status}`);
-  log(`  filas       : ${o.rows.toLocaleString("es-CO")}`);
-  log(`  tamaño      : ${mb(o.bytes)} MB`);
-  log(`  duración    : ${secs(o.durationMs)} s`);
+  log(`  status      : ${o.status}`);
+  log(`  rows        : ${o.rows.toLocaleString("es-CO")}`);
+  log(`  size        : ${mb(o.bytes)} MB`);
+  log(`  duration    : ${secs(o.durationMs)} s`);
   if (o.error) log(`  error       : ${o.error.code} — ${o.error.message}`);
-  if (o.problems.length) log(`  problemas   : ${o.problems.slice(0, 5).join(" · ")}`);
+  if (o.problems.length) log(`  problems    : ${o.problems.slice(0, 5).join(" · ")}`);
   if (o.mismatches.length)
     log(
-      `  descuadres  : ${o.mismatches
+      `  mismatches  : ${o.mismatches
         .slice(0, 5)
         .map((m) => `${m.name ?? m.workerId}: tel ${m.phoneCents} / srv ${m.serverCents}`)
         .join(" · ")}`,
@@ -631,48 +631,48 @@ function check(ok: boolean, what: string): void {
   if (!ok) failures++;
 }
 
-// ---- 1. The whole mudanza ------------------------------------------------
+// ---- 1. The whole move ---------------------------------------------------
 
 async function rehearsalFull(): Promise<void> {
-  rule("1. LA MUDANZA ENTERA, contra Postgres de verdad");
+  rule("1. THE WHOLE MOVE, against real Postgres");
 
   const t0 = Date.now();
   const phone = buildSeason(PICKUPS);
-  log(`  temporada construida en ${secs(Date.now() - t0)} s`);
+  log(`  season built in ${secs(Date.now() - t0)} s`);
   log(`  ${JSON.stringify(phone.shape)}`);
 
   const farm = await freshFarm("full");
-  log(`  finca nueva : ${farm.farmId}`);
+  log(`  new farm    : ${farm.farmId}`);
   const importer = await handset(farm, phone.repo);
 
   const preview = importer.preview();
   const problems = verifySeasonExport(preview);
-  check(problems.length === 0, `la verificación local pasa (${problems.length} problemas)`);
+  check(problems.length === 0, `the local check passes (${problems.length} problems)`);
   const input = toImportInput(preview);
 
   log("");
-  log(`  LO QUE VA A SUBIR, en lo que el dueño entiende:`);
-  log(`    ${preview.totals.workers} recolectores · ${preview.totals.workRecords.toLocaleString("es-CO")} pesadas · ${phone.shape.weeks} semanas`);
-  log(`    ${preview.totals.kg.toLocaleString("es-CO")} kg · ${preview.totals.settlements} liquidaciones (${preview.totals.settlementItems.toLocaleString("es-CO")} líneas)`);
-  log(`    ganado ${pesos(preview.totals.earnedCents)} · pagado ${pesos(preview.totals.paidCents)} · saldo ${pesos(preview.totals.balanceCents)}`);
-  log(`    ${rowsOf(input).toLocaleString("es-CO")} filas · ${mb(byteLengthOf(input))} MB en un solo envío`);
-  log(`    del ${preview.totals.firstDay} al ${preview.totals.lastDay}`);
+  log(`  WHAT IS ABOUT TO GO UP, in what the owner understands:`);
+  log(`    ${preview.totals.workers} pickers · ${preview.totals.workRecords.toLocaleString("es-CO")} weighings · ${phone.shape.weeks} weeks`);
+  log(`    ${preview.totals.kg.toLocaleString("es-CO")} kg · ${preview.totals.settlements} settlements (${preview.totals.settlementItems.toLocaleString("es-CO")} lines)`);
+  log(`    earned ${pesos(preview.totals.earnedCents)} · paid ${pesos(preview.totals.paidCents)} · balance ${pesos(preview.totals.balanceCents)}`);
+  log(`    ${rowsOf(input).toLocaleString("es-CO")} rows · ${mb(byteLengthOf(input))} MB in a single upload`);
+  log(`    from ${preview.totals.firstDay} to ${preview.totals.lastDay}`);
   log("");
 
   const outcome = await importer.run({
-    onProgress: (p) => log(`  … ${p.phase} ${p.rows ? `${p.rows} filas` : ""} ${p.bytes ? `${mb(p.bytes)} MB` : ""}`),
+    onProgress: (p) => log(`  … ${p.phase} ${p.rows ? `${p.rows} rows` : ""} ${p.bytes ? `${mb(p.bytes)} MB` : ""}`),
   });
   reportOutcome(outcome);
 
-  check(seasonWasImported(outcome), "la temporada quedó en el servidor");
-  check(outcome.status === "imported", "y la escribió esta llamada, no una anterior");
+  check(seasonWasImported(outcome), "the season ended up on the server");
+  check(outcome.status === "imported", "and this call wrote it, not an earlier one");
   check(
     outcome.durationMs < SEASON_IMPORT_TIMEOUT_MS,
-    `cupo en el plazo (${secs(outcome.durationMs)} s de ${SEASON_IMPORT_TIMEOUT_MS / 60000} min)`,
+    `it fitted the deadline (${secs(outcome.durationMs)} s of ${SEASON_IMPORT_TIMEOUT_MS / 60000} min)`,
   );
   check(
     outcome.report?.balancesChecked === preview.reconciliation.balances.length,
-    `el servidor comparó los ${preview.reconciliation.balances.length} saldos`,
+    `the server compared all ${preview.reconciliation.balances.length} balances`,
   );
 
   // The half the import cannot prove about itself: read it back out.
@@ -683,33 +683,33 @@ async function rehearsalFull(): Promise<void> {
     const there = server.get(b.workerId);
     if (there === undefined) {
       off++;
-      log(`    ✘ ${b.workerId}: el servidor no lo tiene`);
+      log(`    ✘ ${b.workerId}: the server does not have them`);
       continue;
     }
     compared++;
     if (there !== b.balanceCents) {
       off++;
-      log(`    ✘ ${b.workerId}: teléfono ${b.balanceCents} / servidor ${there}`);
+      log(`    ✘ ${b.workerId}: phone ${b.balanceCents} / server ${there}`);
     }
   }
   check(
     off === 0 && compared === preview.reconciliation.balances.length,
-    `los ${compared} saldos leídos DE VUELTA del servidor cuadran al centavo`,
+    `the ${compared} balances read BACK from the server agree to the cent`,
   );
 
   const there = await serverWorkerCount(farm);
-  log(`  recolectores que el servidor dice tener: ${there}`);
-  check(there === preview.totals.workers, "y son los mismos que salieron del teléfono");
+  log(`  pickers the server says it has: ${there}`);
+  check(there === preview.totals.workers, "and they are the same ones that left the phone");
 
   phone.db.close();
 
   log("");
-  log(`  CIFRAS DEL ENSAYO:`);
-  log(`    pesadas   ${preview.totals.workRecords.toLocaleString("es-CO")}`);
-  log(`    filas     ${outcome.rows.toLocaleString("es-CO")}`);
-  log(`    tamaño    ${mb(outcome.bytes)} MB`);
-  log(`    subida    ${secs(outcome.durationMs)} s`);
-  log(`    dinero    ${pesos(preview.totals.balanceCents)} en cuentas`);
+  log(`  REHEARSAL FIGURES:`);
+  log(`    weighings ${preview.totals.workRecords.toLocaleString("es-CO")}`);
+  log(`    rows      ${outcome.rows.toLocaleString("es-CO")}`);
+  log(`    size      ${mb(outcome.bytes)} MB`);
+  log(`    upload    ${secs(outcome.durationMs)} s`);
+  log(`    money     ${pesos(preview.totals.balanceCents)} in accounts`);
 }
 
 // ---- 2. The connection that dies halfway ---------------------------------
@@ -751,7 +751,7 @@ function farmLink(opts: { kbPerSec: number; cutAfterBytes?: number }): typeof fe
           // The uplink drops. Not a polite EOF — the socket goes away with the
           // server still waiting for the rest of a body it has half of.
           inner.abort();
-          controller.error(new Error("el enlace se cayó"));
+          controller.error(new Error("the link dropped"));
           return;
         }
         await new Promise((r) => setTimeout(r, 100));
@@ -772,11 +772,11 @@ function farmLink(opts: { kbPerSec: number; cutAfterBytes?: number }): typeof fe
 }
 
 async function rehearsalDrop(): Promise<void> {
-  rule("2. LA CONEXIÓN QUE SE CAE A LA MITAD, y el reintento");
+  rule("2. THE LINK THAT DROPS HALFWAY, and the retry");
 
   const phone = buildSeason(PICKUPS);
   const farm = await freshFarm("drop");
-  log(`  finca nueva : ${farm.farmId}`);
+  log(`  new farm    : ${farm.farmId}`);
 
   // First attempt: a 1 MB/s link that dies after 3 MB, with the server still
   // reading. The body is genuinely half up when it goes.
@@ -786,32 +786,32 @@ async function rehearsalDrop(): Promise<void> {
   const before = fingerprint(phone.db);
   const first = await dying.run();
   reportOutcome(first);
-  check(first.status === "failed", "el intento cortado se reporta como fallido");
+  check(first.status === "failed", "the cut attempt is reported as failed");
   check(
     fingerprint(phone.db) === before,
-    "y el teléfono está bit a bit exactamente igual que antes",
+    "and the phone is bit for bit exactly what it was before",
   );
 
   const afterFail = await serverBalances(farm).catch(() => new Map<string, number>());
-  check(afterFail.size === 0, "el servidor no se quedó con media nómina");
+  check(afterFail.size === 0, "the server was not left with half a payroll");
 
   // Second attempt, on a link that holds.
   const healthy = await handset(farm, phone.repo);
   const second = await healthy.run();
   reportOutcome(second);
-  check(seasonWasImported(second), "el reintento sube la temporada entera");
-  check(second.status === "imported", "y la escribe: el corte no había dejado nada");
+  check(seasonWasImported(second), "the retry uploads the whole season");
+  check(second.status === "imported", "and it writes it: the cut had left nothing behind");
 
   const server = await serverBalances(farm);
   const phoneBalances = healthy.preview().reconciliation.balances;
   const off = phoneBalances.filter((b) => server.get(b.workerId) !== b.balanceCents);
-  check(off.length === 0, `los ${phoneBalances.length} saldos cuadran tras el reintento`);
+  check(off.length === 0, `the ${phoneBalances.length} balances agree after the retry`);
 
   // And a third, to prove the retry after a SUCCESS is free too.
   const third = await healthy.run();
   check(
     third.status === "already-imported",
-    "un tercer intento no escribe nada nuevo (already-imported)",
+    "a third attempt writes nothing new (already-imported)",
   );
 
   phone.db.close();
@@ -846,14 +846,14 @@ function fingerprint(db: DatabaseSync): string {
  * server's, inside the transaction, against real Postgres — so the tampering
  * happens below the importer, on the wire value itself. That is the only way
  * to find out whether a refusal really rolls a 12 MB import back or leaves
- * half a nómina behind.
+ * half a payroll behind.
  */
 async function rehearsalMismatch(): Promise<void> {
-  rule("3. UN SALDO QUE NO CUADRA: la importación entera se aborta");
+  rule("3. A BALANCE THAT DOES NOT ADD UP: the whole import is aborted");
 
   const phone = buildSeason(Math.min(PICKUPS, 4000));
   const farm = await freshFarm("mismatch");
-  log(`  finca nueva : ${farm.farmId}`);
+  log(`  new farm    : ${farm.farmId}`);
 
   const deviceId = phone.repo.sync.identity().deviceId;
   await farm.session.login(farm.email, farm.password, deviceId);
@@ -872,8 +872,8 @@ async function rehearsalMismatch(): Promise<void> {
       b.workerId === victim.workerId ? { ...b, balanceCents: b.balanceCents + 1 } : b,
     ),
   };
-  log(`  ${input.balances.length} saldos, uno de ellos falseado en 1 centavo`);
-  log(`  ${rowsOf(tampered).toLocaleString("es-CO")} filas · ${mb(byteLengthOf(tampered))} MB`);
+  log(`  ${input.balances.length} balances, one of them falsified by 1 centavo`);
+  log(`  ${rowsOf(tampered).toLocaleString("es-CO")} rows · ${mb(byteLengthOf(tampered))} MB`);
 
   let rejected: ApiError | null = null;
   try {
@@ -883,22 +883,22 @@ async function rehearsalMismatch(): Promise<void> {
     if (!rejected) throw e;
   }
 
-  check(rejected !== null, "el servidor rechazó la importación");
-  check(rejected?.status === 409, `y con 409 (fue ${rejected?.status})`);
-  check(rejected?.code === "IMPORT_MISMATCH", `código IMPORT_MISMATCH (fue ${rejected?.code})`);
+  check(rejected !== null, "the server refused the import");
+  check(rejected?.status === 409, `and with a 409 (it was ${rejected?.status})`);
+  check(rejected?.code === "IMPORT_MISMATCH", `code IMPORT_MISMATCH (it was ${rejected?.code})`);
   const named = (rejected?.details?.balances as unknown[] | undefined) ?? [];
-  check(named.length > 0, `y nombra a quién: ${JSON.stringify(named.slice(0, 2))}`);
+  check(named.length > 0, `and it names who: ${JSON.stringify(named.slice(0, 2))}`);
 
   // The property the whole plan rests on: nothing was written.
   const server = await serverBalances(farm);
-  check(server.size === 0, `la finca sigue vacía tras el rechazo (${server.size} saldos)`);
+  check(server.size === 0, `the farm is still empty after the refusal (${server.size} balances)`);
   const workers = await serverWorkerCount(farm);
-  check(workers === 0, `ni un solo recolector escrito (${workers})`);
+  check(workers === 0, `not one single picker written (${workers})`);
 
   // And the honest payload goes up afterwards, whole.
   const good = await importer.run();
   reportOutcome(good);
-  check(seasonWasImported(good), "arreglada la causa, la temporada sube entera");
+  check(seasonWasImported(good), "with the cause fixed, the whole season goes up");
 
   phone.db.close();
 }
@@ -906,41 +906,41 @@ async function rehearsalMismatch(): Promise<void> {
 // ---- 4. The second import ------------------------------------------------
 
 async function rehearsalSecond(): Promise<void> {
-  rule("4. LA SEGUNDA IMPORTACIÓN sobre una finca que ya la recibió");
+  rule("4. THE SECOND IMPORT over a farm that already received one");
 
   const phone = buildSeason(Math.min(PICKUPS, 6000));
   const farm = await freshFarm("second");
-  log(`  finca nueva : ${farm.farmId}`);
+  log(`  new farm    : ${farm.farmId}`);
   const importer = await handset(farm, phone.repo);
 
   const first = await importer.run();
-  check(first.status === "imported", "la primera sube");
+  check(first.status === "imported", "the first one uploads");
   const wrote = first.report!;
 
   // A DIFFERENT handset, on the same farm, offering the same season. This is
   // the case a naive import turns into a second parcela per retry.
   const second = await importer.run();
   reportOutcome(second);
-  check(second.status === "already-imported", "la segunda no escribe nada");
+  check(second.status === "already-imported", "the second writes nothing");
   check(
     (second.report?.workers.written ?? -1) === 0 &&
       (second.report?.workRecords.written ?? -1) === 0 &&
       (second.report?.ledger.written ?? -1) === 0,
-    "written = 0 en trabajadores, pesadas y movimientos",
+    "written = 0 on workers, weighings and movements",
   );
   check(
     second.report?.workRecords.skipped === wrote.workRecords.written,
-    `y skipped = lo que escribió la primera (${second.report?.workRecords.skipped} = ${wrote.workRecords.written})`,
+    `and skipped = what the first one wrote (${second.report?.workRecords.skipped} = ${wrote.workRecords.written})`,
   );
   check(
     second.report?.plots.written === 0 && second.report?.crops.written === 0,
-    "y no inventó una segunda parcela por lote",
+    "and it did not invent a second parcela per lote",
   );
 
   const server = await serverBalances(farm);
   const phoneBalances = importer.preview().reconciliation.balances;
   const off = phoneBalances.filter((b) => server.get(b.workerId) !== b.balanceCents);
-  check(off.length === 0, "los saldos siguen cuadrando tras la segunda");
+  check(off.length === 0, "the balances still agree after the second");
 
   phone.db.close();
 }
@@ -948,8 +948,8 @@ async function rehearsalSecond(): Promise<void> {
 // ---- Runner --------------------------------------------------------------
 
 async function main(): Promise<void> {
-  log(`Ensayo de la mudanza contra ${BASE}`);
-  log(`Pesadas: ${PICKUPS.toLocaleString("es-CO")}`);
+  log(`Rehearsal of the move against ${BASE}`);
+  log(`Weighings: ${PICKUPS.toLocaleString("es-CO")}`);
 
   const only = process.argv[2];
   const all: Record<string, () => Promise<void>> = {

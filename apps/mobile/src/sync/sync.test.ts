@@ -808,9 +808,9 @@ test("two runs cannot overlap", async () => {
   assert.equal(server.pushes.length, 1);
 });
 
-// ---- Lo que quedó a medias de la sincronización -------------------------
+// ---- What the sync left half-done --------------------------------------
 
-test("un pull que se corta por el tope de páginas no se apunta como completo", async () => {
+test("a pull cut short by the page cap is not written down as complete", async () => {
   // §6.1: the phone does not settle without having synchronised. `pulledAt`
   // is what `canSettle` reads to decide that, and it used to be written after
   // EVERY pull — including one that stopped at `maxPages` with the server
@@ -852,13 +852,13 @@ test("un pull que se corta por el tope de páginas no se apunta como completo", 
   const engine = new SyncEngine({ repo, transport: endless, maxPages: 3 });
   const report = await engine.sync({ force: true });
 
-  assert.equal(pulls, 3, "paró donde le dijeron, que es una cortesía, no un fallo");
-  assert.equal(report.stillBehind, true, "y lo dice");
-  assert.equal(report.behind, 5000, "§3.1: un número, no un spinner");
+  assert.equal(pulls, 3, "it stopped where it was told, which is a courtesy, not a failure");
+  assert.equal(report.stillBehind, true, "and it says so");
+  assert.equal(report.behind, 5000, "§3.1: a number, not a spinner");
   assert.equal(
     repo.sync.state().pulledAt,
     null,
-    "no se apuntó como al día, porque no lo está",
+    "not written down as up to date, because it is not",
   );
   // The cursor DID move: what came down is applied and will not come again.
   assert.equal(repo.sync.state().cursor, "c3");
@@ -876,11 +876,11 @@ test("un pull que se corta por el tope de páginas no se apunta como completo", 
     force: true,
   });
   assert.equal(done.stillBehind, false);
-  assert.ok(repo.sync.state().pulledAt, "ahora sí");
+  assert.ok(repo.sync.state().pulledAt, "now it is");
   db.close();
 });
 
-test("un pull que termina limpio sigue apuntándose, y el saldo se compara", async () => {
+test("a pull that finishes clean is still written down, and the balance is compared", async () => {
   // The guard above must not have turned every ordinary sync into an
   // incomplete one: `more: false` is the normal answer and it still counts.
   const { db, repo } = aPhone();
@@ -894,15 +894,15 @@ test("un pull que termina limpio sigue apuntándose, y el saldo se compara", asy
   db.close();
 });
 
-// ---- Decisión 7: el saldo completo -------------------------------------
+// ---- Decision 7: the full balance --------------------------------------
 
-test("el saldo que se enseña incluye los jornales que el teléfono no sabe desglosar", async () => {
+test("the balance on show includes the jornales the phone cannot break down", async () => {
   // §2.2 and decision 7. The web registers jornales and contracts, the pull
   // filters them out — the phone has no screen that could show a day's wage in
   // kilos — and so `BALANCE_SQL` here sums only the weighings. The owner's
-  // decision is that the phone shows the FULL balance anyway: «un saldo que
-  // cuenta la mitad del trabajo es un saldo que miente, y quien lo lee no
-  // tiene forma de saberlo».
+  // decision is that the phone shows the FULL balance anyway: «a balance that
+  // counts half the work is a balance that lies, and whoever reads it has no
+  // way of knowing».
   //
   // Before this, the server's figure was compared and thrown away. The card
   // that came out of the comparison was the only trace of it, and the worker's
@@ -925,19 +925,19 @@ test("el saldo que se enseña incluye los jornales que el teléfono no sabe desg
   server.balances = [{ workerId: uuid, balanceCents: itemised + jornalCents }];
 
   const before = repo.payments.fullBalance(person);
-  assert.equal(before.serverCents, null, "todavía no ha hablado con nadie");
-  assert.equal(before.balanceCents, itemised, "y enseña lo único que tiene");
+  assert.equal(before.serverCents, null, "it has not talked to anybody yet");
+  assert.equal(before.balanceCents, itemised, "and it shows the only thing it has");
 
   const report = await engineFor(repo, server).sync({ force: true });
   assert.equal(report.ok, true);
 
   const full = repo.payments.fullBalance(person);
-  assert.equal(full.itemisedCents, itemised, "lo que el teléfono puede desglosar");
+  assert.equal(full.itemisedCents, itemised, "what the phone can break down");
   assert.equal(full.serverCents, itemised + jornalCents);
-  assert.equal(full.balanceCents, itemised + jornalCents, "lo que se enseña es el completo");
-  assert.equal(full.notItemisableCents, jornalCents, "y se puede decir cuánto es jornal");
+  assert.equal(full.balanceCents, itemised + jornalCents, "what is shown is the full one");
+  assert.equal(full.notItemisableCents, jornalCents, "and it can say how much of it is jornal");
   assert.equal(full.provisional, false);
-  assert.ok(full.serverAt, "§2.2: con la marca de cuándo llegó");
+  assert.ok(full.serverAt, "§2.2: with the mark of when it arrived");
 
   // And the money that is HANDED OVER is still derived from this phone's own
   // ledger, movement by movement. Paying out a figure that arrived on the wire
@@ -947,7 +947,7 @@ test("el saldo que se enseña incluye los jornales que el teléfono no sabe desg
   db.close();
 });
 
-test("mientras quede algo sin enviar, el saldo que se enseña es el del teléfono y lo dice", async () => {
+test("while anything is still unsent, the balance on show is the phone's, and it says so", async () => {
   // §7.4, word for word: «Saldo $340.000 · provisional, faltan 4 movimientos
   // por enviar». The received figure is a moment behind the instant somebody
   // handed over cash in a lote, and showing it as if it were current would
@@ -975,7 +975,7 @@ test("mientras quede algo sin enviar, el saldo que se enseña es el del teléfon
   assert.equal(
     now.balanceCents,
     repo.payments.balance(person).balanceCents,
-    "el derivado, que es el único que sabe del pago de hace un minuto",
+    "the derived one, which is the only one that knows about the payment a minute ago",
   );
   // The received figure is still there, so the screen can say what it was and
   // when — it just is not the headline any more.
@@ -984,7 +984,7 @@ test("mientras quede algo sin enviar, el saldo que se enseña es el del teléfon
   db.close();
 });
 
-test("el saldo recibido no se guarda cuando el teléfono no está a la par", async () => {
+test("the received balance is not stored while the phone is not level", async () => {
   // The guard that keeps this from becoming the materialised balance three
   // documents refused: a figure recorded while the outbox still had rows in it
   // would describe a moment that never existed on either side.
@@ -1002,19 +1002,19 @@ test("el saldo recibido no se guarda cuando el teléfono no está a la par", asy
   stubborn.balances = [{ workerId: uuid, balanceCents: 99_999_00 }];
 
   const report = await engineFor(repo, stubborn).sync({ force: true });
-  assert.ok(report.retrying > 0, "quedó cosa por enviar");
-  assert.equal(report.mismatched, 0, "y no se compara nada, que sería gritar al lobo");
+  assert.ok(report.retrying > 0, "there is still something to send");
+  assert.equal(report.mismatched, 0, "and nothing is compared, which would be crying wolf");
   assert.equal(
     repo.payments.fullBalance(person).serverCents,
     null,
-    "ni se guarda una cifra sobre un momento que no existió",
+    "nor is a figure stored about a moment that never existed",
   );
   db.close();
 });
 
 // ---- The two codes that retried for ever, sprint 8 ----------------------
 
-test("un documento que ya es de alguien retirado deja de reintentarse y pide una persona", async () => {
+test("a document already belonging to somebody off the books stops retrying and asks for a person", async () => {
   // `EMPLOYEE_EXISTS_DELETED`, checked against the API rather than assumed.
   //
   // The reading last sprint was that decision 8 would sort this out on the
@@ -1045,13 +1045,13 @@ test("un documento que ya es de alguien retirado deja de reintentarse y pide una
 
   const report = await engineFor(repo, refusing).sync({ force: true });
 
-  assert.equal(report.conflicts, 1, "una tarjeta, no un reintento");
-  assert.equal(repo.sync.pendingCount(), 0, "y sale de la cola en vez de girar en ella");
+  assert.equal(report.conflicts, 1, "a card, not a retry");
+  assert.equal(repo.sync.pendingCount(), 0, "and it leaves the queue instead of spinning in it");
 
   const card = repo.sync.conflicts().find((c) => c.kind === "worker-exists-deleted");
-  assert.ok(card, "con su tarjeta");
+  assert.ok(card, "with its card");
   assert.equal(card!.payload.person, "Ana Rodríguez");
-  assert.equal(card!.payload.serverName, "Ana Rodríguez R.", "los dos nombres, para comparar");
+  assert.equal(card!.payload.serverName, "Ana Rodríguez R.", "both names, to compare");
   assert.equal(card!.payload.serverWorkerId, "0192e2aa-0000-7000-8000-000000000001");
 
   // And nothing merged the two people. The phone's worker is untouched, with
@@ -1067,14 +1067,14 @@ test("un documento que ya es de alguien retirado deja de reintentarse y pide una
   );
 });
 
-test("una liquidación cuya cifra se movió no se reenvía sola, y la tarjeta dice qué se movió", async () => {
+test("a settlement whose figure moved is not resent on its own, and the card says what moved", async () => {
   // `GROSS_CHANGED`. The envelope carries the gross this phone computed, so
   // resending it asks the same question and gets the same answer for ever.
   //
   // The card reads the server's own `payableIdsProvided`. That flag is the
-  // difference between «entraron dos pesadas» and «no se le dijo al servidor
-  // qué estabas viendo», and showing the first when it is the second is how a
-  // screen blames a reprice for a late weighing.
+  // difference between «two weighings came in» and «the server was not told
+  // what you were looking at», and showing the first when it is the second is
+  // how a screen blames a reprice for a late weighing.
   const { repo } = aPhone();
   const person = aWorker(repo);
   repo.payments.advance(person, 5_000_00, "anticipo");
@@ -1099,7 +1099,7 @@ test("una liquidación cuya cifra se movió no se reenvía sola, y la tarjeta di
   const report = await engineFor(repo, refusing).sync({ force: true });
 
   assert.equal(report.conflicts, 1);
-  assert.equal(repo.sync.pendingCount(), 0, "no se queda girando en la cola");
+  assert.equal(repo.sync.pendingCount(), 0, "it does not stay spinning in the queue");
 
   const card = repo.sync.conflicts().find((c) => c.kind === "gross-changed");
   assert.ok(card);
@@ -1110,7 +1110,7 @@ test("una liquidación cuya cifra se movió no se reenvía sola, y la tarjeta di
   assert.equal(card!.payload.explained, true);
 });
 
-test("sin payableIds el servidor no sabe qué se movió, y la tarjeta no se lo inventa", async () => {
+test("without payableIds the server cannot know what moved, and the card does not invent it", async () => {
   const { repo } = aPhone();
   const person = aWorker(repo);
   repo.payments.advance(person, 5_000_00, "anticipo");
@@ -1123,8 +1123,8 @@ test("sin payableIds el servidor no sabe qué se movió, y la tarjeta no se lo i
         details: {
           expectedCents: 1_187_500,
           actualCents: 1_265_000,
-          // The server's own words: empty lists here mean «no se nos dijo qué
-          // estabas viendo», never «no se movió nada».
+          // The server's own words: empty lists here mean «we were not told
+          // what you were looking at», never «nothing moved».
           addedPayableIds: [],
           removedPayableIds: [],
           payableIdsProvided: false,
@@ -1136,20 +1136,20 @@ test("sin payableIds el servidor no sabe qué se movió, y la tarjeta no se lo i
   await engineFor(repo, refusing).sync({ force: true });
   const card = repo.sync.conflicts().find((c) => c.kind === "gross-changed");
   assert.ok(card);
-  assert.equal(card!.payload.explained, false, "y la pantalla lo dice así");
+  assert.equal(card!.payload.explained, false, "and the screen says it that way");
 });
 
-// ---- El caso mixto -----------------------------------------------------
+// ---- The mixed case ----------------------------------------------------
 
-test("un jornal que baja dentro de una liquidación se puede medir, no adivinar", async () => {
+test("a jornal that comes down inside a settlement can be measured, not guessed", async () => {
   // The mixed case of §2.2, closed.
   //
   // `composeSettlement` on the server «sends the header WITH ITS LINES,
   // always», and `composeWorkRecord` returns nothing for anything that is not
   // paid by the unit of work. So a settlement covering a week in which the
   // worker also did a jornal arrives with a `grossCents` bigger than the lines
-  // this phone can resolve — and that difference IS «lo que el teléfono no
-  // puede desglosar», in cents, measured off a document the server issued.
+  // this phone can resolve — and that difference IS «what the phone cannot
+  // break down», in cents, measured off a document the server issued.
   //
   // Before this it was inferred from whether the phone's own balance happened
   // to be zero, which put every worker with BOTH kinds of work in the wrong
@@ -1230,7 +1230,7 @@ test("un jornal que baja dentro de una liquidación se puede medir, no adivinar"
 
   // The jornal line was dropped — there is no weighing to hang it on — and the
   // document kept its own gross.
-  assert.ok(report.applied!.orphans >= 1, "la línea del jornal no se pudo colgar de nada");
+  assert.ok(report.applied!.orphans >= 1, "the jornal line had nothing to hang from");
 
   const measured = repo.sync
     .balanceChecksums()
@@ -1238,23 +1238,23 @@ test("un jornal que baja dentro de una liquidación se puede medir, no adivinar"
   assert.equal(
     measured.unitemisableCents,
     jornalCents,
-    "y lo que no se pudo desglosar se puede decir al centavo",
+    "and what could not be broken down can be stated to the cent",
   );
 
-  // So the card is «el teléfono sabe menos», not «las dos implementaciones no
-  // cuadran» — which is the distinction that could not be made before.
+  // So the card is «the phone knows less», not «the two implementations do
+  // not agree» — which is the distinction that could not be made before.
   const card = repo.sync.conflicts().find((c) => c.kind === "balance-not-itemisable");
-  assert.ok(card, "la tarjeta correcta");
+  assert.ok(card, "the right card");
   assert.equal(card!.payload.unitemisableCents, jornalCents);
   assert.equal(
     repo.sync.conflicts().filter((c) => c.kind === "balance-mismatch").length,
     0,
-    "y no se acusa de un fallo de cálculo a una nómina normal",
+    "and an ordinary payroll is not accused of a calculation bug",
   );
   db.close();
 });
 
-test("una diferencia mayor de la que el teléfono puede justificar sigue siendo un fallo", async () => {
+test("a difference bigger than the phone can account for is still a failure", async () => {
   // The other half, and the reason the rule is «covered by», not «there is
   // some». A peso more than the documents account for is the part that
   // matters, and it stays a mismatch.

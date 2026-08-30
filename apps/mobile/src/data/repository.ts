@@ -301,8 +301,8 @@ export interface BalanceRow extends Balance {
  *
  * §2.2 is the rule and it is short: the web registers jornales and contracts,
  * the pull does not bring them down, and so `BALANCE_SQL` here sums only the
- * weighings. «Un saldo que cuenta la mitad del trabajo es un saldo que miente,
- * y quien lo lee no tiene forma de saberlo.» So the screen shows the figure
+ * weighings. «A balance that counts half the work is a balance that lies, and
+ * whoever reads it has no way of knowing.» So the screen shows the figure
  * that came down the feed, marked with when it arrived, and falls back to the
  * derived one — labelled «provisional» — while this phone still owes the
  * server movements it has not sent.
@@ -719,7 +719,7 @@ export interface SyncRepo {
     uuid: string,
   ): { id: number; name: string; deletedAt: string | null } | null;
 
-  // ---- The mudanza, §8 fase 3 and 4 -----------------------------------
+  // ---- The move, §8 fase 3 and 4 --------------------------------------
 
   /**
    * The whole season this phone is holding, packed for the server.

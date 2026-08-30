@@ -156,7 +156,7 @@ test("a worker with nothing left over gets a dash, not a zero", () => {
 
 // ---- A settlement this handset cannot fully itemise ---------------------
 
-test("un recibo declara lo que dice el documento, no lo que suman las líneas", () => {
+test("a receipt states what the document says, not what the lines add up to", () => {
   // The receipt added its own lines up. That is the same figure for a
   // settlement written here, and it is NOT the same figure for one that came
   // down the feed covering a week the worker also spent on a jornal: the
@@ -170,14 +170,14 @@ test("un recibo declara lo que dice el documento, no lo que suman las líneas", 
   const html = receiptHtml({ ...base, grossCents: itemised + jornalCents }, "es");
 
   // The lines add up to $740.130; the document says $752.130.
-  assert.ok(html.includes("$752.130"), "el total es el del documento");
+  assert.ok(html.includes("$752.130"), "the total is the document's");
   // And the difference is NAMED rather than folded in, so a worker checking
   // the total against the weeks listed can see why it is bigger.
-  assert.ok(html.includes("Otros trabajos"), "y se dice de dónde sale");
+  assert.ok(html.includes("Otros trabajos"), "and it says where it comes from");
   assert.ok(html.includes("$12.000"), "y cuánto es");
 });
 
-test("un recibo sin documento que citar sigue sumando sus líneas", () => {
+test("a receipt with no document to cite still adds up its lines", () => {
   // The ordinary case, and the one that must not change: a settlement written
   // on this phone has a gross equal to its lines, and there is no extra row.
   const html = receiptHtml(base, "es");

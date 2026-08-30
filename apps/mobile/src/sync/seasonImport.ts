@@ -22,10 +22,10 @@
  *     so "did the retry do anything" has a number and not an opinion. An
  *     import that dies after the server committed but before the answer
  *     arrives is retried, and the retry writes nothing.
- *  2. **Con verificación de saldo.** `balances` is not optional here either:
+ *  2. **With a balance check.** `balances` is not optional here either:
  *     `toImportInput` always fills it, and the local check refuses to send a
  *     payload whose balances disagree with its own ledger.
- *  3. **Sin tocar el original.** The only local write in this file is the row
+ *  3. **Without touching the original.** The only local write in this file is the row
  *     in `import_runs`, which is not a synced table and fires no outbox
  *     trigger. Everything else is a read and an HTTP call.
  *
@@ -193,7 +193,7 @@ export interface SeasonImportTransport {
  * that a bad place to stand:
  *
  *   - 11,7 MB is what the season weighs TODAY, measured, mid-harvest
- *     (18.000 pesadas → 48.022 filas → 11,7 MB, `seasonImport.test.ts`). It
+ *     (18,000 weighings → 48,022 rows → 11,7 MB, `seasonImport.test.ts`). It
  *     grows every day until the cut, and the cut is the point of it.
  *   - 13 kB/s is an estimate of a bad afternoon, not a floor. Nobody measured
  *     the farm's worst.
@@ -330,7 +330,7 @@ export function toImportInput(x: SeasonExport): SeasonImportInput {
 /**
  * How big the body is, in bytes.
  *
- * The screen needs it: «11,7 MB en un solo envío» is what turns a wait nobody
+ * The screen needs it: «11,7 MB in a single upload» is what turns a wait nobody
  * can interpret into one that has a reason, and it is the figure that explains
  * why the deadline above is fifteen minutes and not twenty-five seconds.
  *

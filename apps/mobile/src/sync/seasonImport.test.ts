@@ -1,5 +1,5 @@
 /**
- * The mudanza, tested against what actually goes wrong on a Tuesday morning.
+ * The move, tested against what actually goes wrong on a Tuesday morning.
  *
  * `docs/sincronizacion.md` §8 fase 4 gives this exactly one hour, with
  * somebody standing there, on a farm that is mid-harvest. The cases below are
@@ -459,7 +459,7 @@ const importerFor = (phone: Phone, server: FakeImportServer): SeasonImporter =>
 
 // ---- What it exports ----------------------------------------------------
 
-test("exporta la temporada entera con los uuid que ya tenía el teléfono", () => {
+test("it exports the whole season with the uuids the phone already had", () => {
   const phone = aPhone(400);
   const x = phone.repo.sync.seasonExport(identityOf(phone.repo), "2026-08-29T12:00:00.000Z");
 
@@ -501,7 +501,7 @@ test("exporta la temporada entera con los uuid que ya tenía el teléfono", () =
   assert.deepEqual(verifySeasonExport(x), []);
 });
 
-test("el saldo que viaja es el que el teléfono le muestra a cada persona", () => {
+test("the balance that travels is the one the phone shows each person", () => {
   const phone = aPhone(200);
   const x = phone.repo.sync.seasonExport(identityOf(phone.repo), "2026-08-29T12:00:00.000Z");
 
@@ -514,7 +514,7 @@ test("el saldo que viaja es el que el teléfono le muestra a cada persona", () =
     assert.equal(
       phone.repo.payments.balance(person.id).balanceCents,
       b.balanceCents,
-      `saldo de ${person.name}`,
+      `balance of ${person.name}`,
     );
   }
   assert.ok(
@@ -523,7 +523,7 @@ test("el saldo que viaja es el que el teléfono le muestra a cada persona", () =
   );
 });
 
-test("el teléfono se niega a exportar una temporada con filas sin nombre", () => {
+test("the phone refuses to export a season with unnamed rows", () => {
   const phone = aPhone(50);
   // A row the v6 backfill somehow missed. §1.3 says `missing = 0`; a phone
   // that exported anyway would hand the server a season short by exactly the
@@ -538,7 +538,7 @@ test("el teléfono se niega a exportar una temporada con filas sin nombre", () =
 
 // ---- The check that has to fail before anything leaves ------------------
 
-test("una verificación que no cuadra consigo misma se detecta aquí, no en el servidor", () => {
+test("a verification that does not add up to itself is caught here, not on the server", () => {
   const phone = aPhone(120);
   const good = phone.repo.sync.seasonExport("x", "2026-08-29T12:00:00.000Z");
   assert.deepEqual(verifySeasonExport(good), []);
@@ -571,7 +571,7 @@ test("una verificación que no cuadra consigo misma se detecta aquí, no en el s
   );
 });
 
-test("un envío que no cuadra no llega a salir del teléfono", async () => {
+test("a payload that does not add up never leaves the phone", async () => {
   const phone = aPhone(80);
   const server = new FakeImportServer();
 
@@ -602,7 +602,7 @@ test("un envío que no cuadra no llega a salir del teléfono", async () => {
 
 // ---- Cut in half, and started again -------------------------------------
 
-test("una importación cuya respuesta se pierde no duplica nada al reintentarla", async () => {
+test("an import whose answer is lost duplicates nothing when it is retried", async () => {
   // The worst case of §8 fase 4 and the reason idempotence is not optional:
   // the server WROTE the season and the answer never got back. The phone has
   // no way to tell that apart from a request that never arrived, so it does
@@ -650,7 +650,7 @@ test("una importación cuya respuesta se pierde no duplica nada al reintentarla"
   assert.equal(phone.repo.sync.pendingCount(), owedBefore);
 });
 
-test("una importación que se corta antes de escribir se reintenta y escribe entera", async () => {
+test("an import cut short before writing is retried and writes the whole thing", async () => {
   const phone = aPhone(300);
   const before = fingerprint(phone.db);
 
@@ -675,8 +675,8 @@ test("una importación que se corta antes de escribir se reintenta y escribe ent
   assert.equal(fingerprint(phone.db), before);
 });
 
-test("tres intentos seguidos dejan exactamente una temporada", async () => {
-  // §8 fase 3: «Se repite hasta que salga limpio.» That sentence is only safe
+test("three attempts in a row leave exactly one season", async () => {
+  // §8 fase 3: «Repeat until it comes out clean.» That sentence is only safe
   // if repeating is free, so it is worth pinning rather than assuming.
   const phone = aPhone(200);
   const server = new FakeImportServer();
@@ -701,7 +701,7 @@ test("tres intentos seguidos dejan exactamente una temporada", async () => {
 
 // ---- A saldo that does not add up ---------------------------------------
 
-test("un saldo que no coincide al centavo aborta la importación entera", async () => {
+test("a balance that does not match to the cent aborts the whole import", async () => {
   const phone = aPhone(300);
   const before = fingerprint(phone.db);
 
@@ -729,7 +729,7 @@ test("un saldo que no coincide al centavo aborta la importación entera", async 
   assert.ok(outcome.mismatches[0]!.name, "the worker is named, not a uuid");
 
   // NOTHING was written. Not the workers, not the weighings, not half the
-  // ledger — media nómina importada es peor que ninguna.
+  // ledger — half a payroll imported is worse than none.
   assert.equal(server.rows.size, 0, "the whole transaction rolled back");
   assert.equal(fingerprint(phone.db), before, "and the phone did not move either");
 
@@ -740,7 +740,7 @@ test("un saldo que no coincide al centavo aborta la importación entera", async 
   assert.match(String(run.error), /IMPORT_MISMATCH/);
 });
 
-test("después de un rechazo, arreglar la causa y reintentar sube la temporada entera", async () => {
+test("after a rejection, fixing the cause and retrying uploads the whole season", async () => {
   // The other half of the previous case: a rejection is not a dead end, and
   // the retry has to write EVERYTHING — nothing was left behind by the
   // attempt that failed.
@@ -762,8 +762,8 @@ test("después de un rechazo, arreglar la causa y reintentar sube la temporada e
   assert.equal(fixed.report!.balancesChecked, x.reconciliation.balances.length);
 });
 
-test("un centavo de diferencia basta, y lo caza el teléfono antes de salir", async () => {
-  // The rule is "al centavo", and this is what that costs: one cent, on one
+test("one cent of difference is enough, and the phone catches it before it leaves", async () => {
+  // The rule is "to the cent", and this is what that costs: one cent, on one
   // worker, in a season of hundreds of movements. It is caught by the LOCAL
   // check rather than by the server, which is the better of the two places —
   // the season never leaves the handset — and the assertion is that both the
@@ -808,7 +808,7 @@ test("un centavo de diferencia basta, y lo caza el teléfono antes de salir", as
 
 // ---- Doing it twice, and never starting -------------------------------
 
-test("una segunda importación sobre una finca que ya la recibió no escribe nada nuevo", async () => {
+test("a second import onto a farm that already received one writes nothing new", async () => {
   const phone = aPhone(400);
   const server = new FakeImportServer();
 
@@ -837,7 +837,7 @@ test("una segunda importación sobre una finca que ya la recibió no escribe nad
     assert.equal(c.written, 0, `${name} wrote something on a re-run`);
 });
 
-test("una importación que ni siquiera sale queda registrada y no toca nada", async () => {
+test("an import that never even leaves is recorded and touches nothing", async () => {
   const phone = aPhone(60);
   const before = fingerprint(phone.db);
   const server = new FakeImportServer({
@@ -854,7 +854,7 @@ test("una importación que ni siquiera sale queda registrada y no toca nada", as
 
 // ---- The body that actually goes on the wire ---------------------------
 
-test("el cuerpo lleva exactamente los campos del contrato, ni uno más", async () => {
+test("the body carries exactly the contract's fields, not one more", async () => {
   // `handleImportSeason` decodes with `DisallowUnknownFields`. One extra
   // property — a `localDay` the trigger computes, a `weekStart` the server
   // derives — and the whole season comes back as a 400, after the upload.
@@ -927,7 +927,7 @@ test("el cuerpo lleva exactamente los campos del contrato, ni uno más", async (
   assert.equal(body.deviceId, phone.repo.sync.identity().deviceId);
 });
 
-test("una fecha que no es una fecha se detecta aquí, no en un 400 tras subir la temporada", () => {
+test("a date that is not a date is caught here, not in a 400 after uploading the season", () => {
   const phone = aPhone(50);
   // `occurredAt` is the one timestamp the contract does NOT allow to be null.
   phone.db.exec("UPDATE pickups SET date = 'ayer', createdAt = 'ayer' WHERE id = 3");
@@ -935,7 +935,7 @@ test("una fecha que no es una fecha se detecta aquí, no en un 400 tras subir la
   assert.ok(verifySeasonExport(x).some((p) => p.includes("no es una fecha")));
 });
 
-test("un createdAt ilegible se manda como nulo en vez de tumbar la temporada", () => {
+test("an unreadable createdAt is sent as null instead of taking the season down", () => {
   const phone = aPhone(50);
   phone.db.exec("UPDATE people SET createdAt = 'hace tiempo' WHERE id = 1");
   const input = toImportInput(
@@ -949,7 +949,7 @@ test("un createdAt ilegible se manda como nulo en vez de tumbar la temporada", (
 
 // ---- A real season ------------------------------------------------------
 
-test("una temporada de 18.000 pesadas se empaqueta y se sube en un tiempo humano", async () => {
+test("a season of 18,000 weighings is packed and uploaded in a human amount of time", async () => {
   const phone = aPhone(18000);
   const before = fingerprint(phone.db);
 
@@ -975,33 +975,33 @@ test("una temporada de 18.000 pesadas se empaqueta y se sube en un tiempo humano
   assert.equal(outcome.status, "imported", outcome.error?.message ?? "");
   assert.equal(server.of("workRecords").length, 18000);
   assert.equal(outcome.report!.balancesChecked, x.reconciliation.balances.length);
-  assert.equal(fingerprint(phone.db), before, "18.000 pesadas y el teléfono intacto");
+  assert.equal(fingerprint(phone.db), before, "18,000 weighings and the phone untouched");
 
   console.log(
-    `      temporada: ${x.totals.workRecords} pesadas, ${x.totals.ledgerEntries} movimientos, ` +
-      `${x.totals.settlementItems} líneas, ${outcome.rows} filas · ` +
-      `empaquetar ${buildMs.toFixed(0)} ms · verificar ${checkMs.toFixed(0)} ms · ` +
-      `serializar ${serialiseMs.toFixed(0)} ms · ${(json.length / 1e6).toFixed(1)} MB · ` +
-      `todo el envío ${uploadMs.toFixed(0)} ms`,
+    `      season: ${x.totals.workRecords} weighings, ${x.totals.ledgerEntries} movements, ` +
+      `${x.totals.settlementItems} lines, ${outcome.rows} rows · ` +
+      `pack ${buildMs.toFixed(0)} ms · verify ${checkMs.toFixed(0)} ms · ` +
+      `serialise ${serialiseMs.toFixed(0)} ms · ${(json.length / 1e6).toFixed(1)} MB · ` +
+      `whole upload ${uploadMs.toFixed(0)} ms`,
   );
 
   // Generous, because a loaded CI box is not a phone: these are here to catch
   // a regression into a per-row round trip, not to measure hardware. §8 fase 4
   // allows an hour for the whole cut, of which this is one step.
-  assert.ok(buildMs < 20000, `empaquetar tardó ${buildMs.toFixed(0)} ms`);
-  assert.ok(checkMs < 20000, `verificar tardó ${checkMs.toFixed(0)} ms`);
+  assert.ok(buildMs < 20000, `packing took ${buildMs.toFixed(0)} ms`);
+  assert.ok(checkMs < 20000, `verifying took ${checkMs.toFixed(0)} ms`);
   // The body has to fit the server's 64 MB cap with room to spare.
-  assert.ok(json.length < 32e6, `el cuerpo pesa ${(json.length / 1e6).toFixed(1)} MB`);
+  assert.ok(json.length < 32e6, `the body weighs ${(json.length / 1e6).toFixed(1)} MB`);
 });
 
-// ---- El plazo, y una pantalla que no se queda muda -----------------------
+// ---- The deadline, and a screen that does not go mute --------------------
 //
-// §8 fase 4 gives the mudanza an hour, with the owner watching. Two things
+// §8 fase 4 gives the move an hour, with the owner watching. Two things
 // used to make that hour unsurvivable and neither was about the server: the
 // request had 25 seconds to move 11,7 MB, and the screen said nothing at all
 // while it tried.
 
-test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
+test("the season's deadline survives 12 MB over a farm's link", () => {
   // The arithmetic in `SEASON_IMPORT_TIMEOUT_MS`, pinned so the constant stays
   // a decision with a reason instead of a number somebody rounds down.
   //
@@ -1009,7 +1009,7 @@ test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
   // fifteen minutes the two answers differed: 11,7 MB passed with a margin of
   // exactly zero seconds and 12 MB would have failed. A deadline equal to the
   // upload is not a deadline that covers it; the first link 1 % slower than
-  // the assumption aborts the mudanza. So the test now asks what its title
+  // the assumption aborts the move. So the test now asks what its title
   // always claimed, against a season that is still growing.
   const SEASON_BYTES = 12e6;
   // ~100 kbit/s of usable uplink. What a farm's link degrades to on a bad
@@ -1019,8 +1019,8 @@ test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
 
   assert.ok(
     SEASON_IMPORT_TIMEOUT_MS >= needed,
-    `${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min no alcanzan para 12 MB ` +
-      `a 13 kB/s (hacen falta ${(needed / 60000).toFixed(1)} min)`,
+    `${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min is not enough for 12 MB ` +
+      `at 13 kB/s (${(needed / 60000).toFixed(1)} min are needed)`,
   );
   // And with room, not on the nose. The season measured 11,7 MB mid-harvest
   // and grows every day until the cut; 13 kB/s is a guess at a bad afternoon,
@@ -1028,8 +1028,8 @@ test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
   // is a deadline that will be met by the farm, once, on the day it matters.
   assert.ok(
     SEASON_IMPORT_TIMEOUT_MS >= needed * 1.5,
-    `sin margen: ${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min contra ` +
-      `${(needed / 60000).toFixed(1)} min necesarios`,
+    `no margin: ${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min against ` +
+      `${(needed / 60000).toFixed(1)} min needed`,
   );
   // And it is still a deadline. A socket with no end is a screen that says
   // "enviando" until somebody force-quits the app.
@@ -1038,7 +1038,7 @@ test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
   assert.ok(SEASON_IMPORT_TIMEOUT_MS > DEFAULT_TIMEOUT_MS * 20);
 });
 
-test("una petición puede llevar su propio plazo, más largo que el del cliente", async () => {
+test("a request can carry its own deadline, longer than the client's", async () => {
   // The plumbing under the constant: without a per-request deadline the only
   // way to give the import fifteen minutes is to give every weighing push
   // fifteen minutes too, which is how a hung socket holds the outbox all day.
@@ -1052,14 +1052,14 @@ test("una petición puede llevar su propio plazo, más largo que el del cliente"
   await assert.rejects(
     () => http.request("/v1/anything"),
     (e: ApiError) => e.code === "TIMEOUT",
-    "el plazo del cliente sigue mandando cuando la petición no pide otro",
+    "the client's deadline still rules when the request does not ask for another",
   );
 
   // The same client, the same slow answer, one request that asked for room.
   await http.request("/v1/import/season", { method: "POST", timeoutMs: 5000 });
 });
 
-test("la subida de la temporada no se aborta con el plazo de un lote de sync", async () => {
+test("the season upload is not aborted by a sync batch's deadline", async () => {
   // End to end through the real `RestTransport`, against a client whose
   // default deadline is far too short. If `importSeason` did not ask for its
   // own, this would come back TIMEOUT — which is exactly what the farm saw.
@@ -1081,10 +1081,10 @@ test("la subida de la temporada no se aborta con el plazo de un lote de sync", a
 
   const report = await transport.importSeason(anInput());
   assert.equal(report.balancesChecked, 0);
-  assert.ok(seen, "el cuerpo salió");
+  assert.ok(seen, "the body went out");
 });
 
-test("el tamaño que enseña la pantalla es el que tiene que subir, en bytes", () => {
+test("the size the screen shows is the one it has to upload, in bytes", () => {
   // Names on a farm are full of ñ and í: one JS character, two bytes. A size
   // measured in characters understates the climb, and the size is the whole
   // explanation of why the wait is minutes.
@@ -1104,12 +1104,12 @@ test("el tamaño que enseña la pantalla es el que tiene que subir, en bytes", (
   ];
   const grew = byteLengthOf(accented) - byteLengthOf(plain);
   const chars = JSON.stringify(accented).length - JSON.stringify(plain).length;
-  assert.ok(grew > chars, "los dos caracteres con tilde cuentan dos bytes cada uno");
+  assert.ok(grew > chars, "the two accented characters count two bytes each");
   assert.equal(byteLengthOf(plain), Buffer.byteLength(JSON.stringify(plain), "utf8"));
   assert.equal(byteLengthOf(accented), Buffer.byteLength(JSON.stringify(accented), "utf8"));
 });
 
-test("la pantalla recibe fase, filas, bytes y un reloj mientras espera", async () => {
+test("the screen gets phase, rows, bytes and a clock while it waits", async () => {
   const phone = aPhone(400);
   const server = new FakeImportServer();
   const seen: SeasonImportProgress[] = [];
@@ -1129,7 +1129,7 @@ test("la pantalla recibe fase, filas, bytes y un reloj mientras espera", async (
   assert.ok(sending.rows > 0);
   // The megabytes, which are the reason the wait is what it is. Without them
   // the card is a spinner with a noun on it.
-  assert.ok(sending.bytes > 0, "la pantalla no puede decir cuánto pesa");
+  assert.ok(sending.bytes > 0, "the screen cannot say how much it weighs");
   assert.equal(sending.bytes, outcome.bytes);
   assert.equal(sending.bytes, byteLengthOf(toImportInput(phone.repo.sync.seasonExport(
     identityOf(phone.repo),
@@ -1141,7 +1141,7 @@ test("la pantalla recibe fase, filas, bytes y un reloj mientras espera", async (
   assert.ok(sending.since <= Date.now());
 });
 
-test("una importación que se cae por plazo sigue sin haber tocado el teléfono", async () => {
+test("an import that falls over on the deadline still has not touched the phone", async () => {
   // The sentence the screen shows in green while it waits — «si esto falla no
   // se perdió nada» — has to be true of the timeout too, which is the failure
   // a fifteen-minute deadline makes MORE likely to be the one that happens.
@@ -1158,7 +1158,7 @@ test("una importación que se cae por plazo sigue sin haber tocado el teléfono"
   assert.equal(outcome.error?.code, "TIMEOUT");
   assert.equal(seasonWasImported(outcome), false);
   assert.equal(server.rows.size, 0);
-  assert.equal(fingerprint(phone.db), before, "el teléfono sigue exactamente igual");
+  assert.equal(fingerprint(phone.db), before, "the phone is exactly as it was");
   assert.equal(phone.repo.sync.pendingCount(), owedBefore);
   // And the size is on the record, so the retry knows what it is up against.
   assert.ok(outcome.bytes > 0);

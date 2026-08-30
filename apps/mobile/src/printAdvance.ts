@@ -4,10 +4,10 @@
  * An advance is handed over from `Adjust` (the movement screen) and from
  * `PayWorker` (the §6.1 gate, when there is no signal to settle with). Both
  * used to end the same way: a snackbar, and the worker walking off with
- * nothing on paper. `docs/sincronizacion.md` §6.2 promises otherwise — «El
- * pesador entrega efectivo en el lote, IMPRIME UN RECIBO DE ANTICIPO, y el
- * trabajador ve su saldo bajar» — and `simplificacion.md` §2.1 keeps «dar un
- * anticipo, imprimir su recibo» in the after column, unchanged. It was the one
+ * nothing on paper. `docs/sincronizacion.md` §6.2 promises otherwise — «the
+ * weigher hands over cash in the lote, PRINTS AN ADVANCE VOUCHER, and the
+ * worker sees their balance go down» — and `simplificacion.md` §2.1 keeps «give
+ * an advance, print its voucher» in the after column, unchanged. It was the one
  * line of that promise the app did not keep.
  *
  * It matters more the closer the farm gets to the cut. After it, an advance

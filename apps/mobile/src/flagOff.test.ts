@@ -217,10 +217,10 @@ test("a flag-off phone can still do the whole of the lote's day", () => {
 
   // 2. READ THE BALANCE. Not derived here any more — read, with its age.
   //    A phone that has never heard one says so rather than showing $0.
-  // `registered: true` — this walk is the post-mudanza phone, which is the one
+  // `registered: true` — this walk is the post-move phone, which is the one
   // the flag will be off on. An unregistered handset is a different state and
   // `balanceDisplay.test.ts` pins it: it shows its own ledger, because before
-  // the mudanza this phone IS the book.
+  // the move this phone IS the book.
   const cold = balanceDisplay(repo.payments.fullBalance(personId), 0, true);
   assert.equal(cold.state, "unknown");
   assert.ok(!("cents" in cold), "the unknown state must carry no number to render");

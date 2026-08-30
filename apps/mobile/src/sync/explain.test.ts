@@ -37,22 +37,22 @@ const CODES = [
   "CURSOR_TOO_OLD",
 ];
 
-test("todos los códigos que puede guardar el motor tienen una frase, no un código", () => {
+test("every code the engine can store has a sentence, not a code", () => {
   for (const code of CODES) {
-    const e = explainSyncError(`${code}: lo que dijo el servidor`);
-    assert.notEqual(e.key, "sync.errBug", `${code} se queda sin explicar`);
-    assert.equal(e.code, code, `${code} pierde su código, que es lo que se lee por teléfono`);
+    const e = explainSyncError(`${code}: what the server said`);
+    assert.notEqual(e.key, "sync.errBug", `${code} is left unexplained`);
+    assert.equal(e.code, code, `${code} loses its code, which is what gets read out over the phone`);
   }
 });
 
-test("los cuatro que hacen parar el sync se explican como sesión o como finca", () => {
+test("the four that halt the sync are explained as the session or as the farm", () => {
   // §4.3's `halt` row. They stop the run, so they are the ones a person is
   // most likely to be staring at, and "vuelve a conectar" is only true for
   // three of them.
   const halting = ["UNAUTHORIZED", "FORBIDDEN", "TOKEN_EXPIRED", "TOKEN_REUSED", "FARM_SUSPENDED"];
   for (const code of halting) {
     const r: OpResult = { opId: "x", status: "rejected", error: { code, message: "" } };
-    assert.equal(dispositionOf(r), "halt", `${code} ya no para el sync`);
+    assert.equal(dispositionOf(r), "halt", `${code} no longer halts the sync`);
   }
 
   for (const code of ["UNAUTHORIZED", "FORBIDDEN", "TOKEN_EXPIRED", "TOKEN_REUSED"])
@@ -65,13 +65,13 @@ test("los cuatro que hacen parar el sync se explican como sesión o como finca",
   assert.equal(suspended.retryable, false);
 });
 
-test("una app demasiado vieja no se arregla reintentando, y se dice así", () => {
+test("an app too old is not fixed by retrying, and it says so", () => {
   const e = explainSyncError("SCHEMA_TOO_OLD: this client is older than the feed");
   assert.equal(e.key, "sync.errAppOld");
   assert.equal(e.retryable, false);
 });
 
-test("sin señal es una cosa y algo salió mal es otra", () => {
+test("no signal is one thing and something went wrong is another", () => {
   // The distinction §7.1 makes: one of them a person can act on by walking
   // towards the house, the other they cannot act on at all.
   assert.equal(explainSyncError("NETWORK: sin conexión").key, "sync.errNoSignal");
@@ -80,11 +80,11 @@ test("sin señal es una cosa y algo salió mal es otra", () => {
 
   const bug = explainSyncError("EXPENSE_TARGET_INVALID: no such target");
   assert.equal(bug.key, "sync.errBug");
-  assert.equal(bug.code, "EXPENSE_TARGET_INVALID", "el código se enseña, que es el punto");
+  assert.equal(bug.code, "EXPENSE_TARGET_INVALID", "the code is shown, which is the point");
   assert.equal(bug.retryable, false);
 });
 
-test("el código sale del principio de la línea, no de cualquier parte del texto", () => {
+test("the code comes off the start of the line, not from anywhere in the text", () => {
   // The regex this replaces matched /UNAUTHORIZED|FORBIDDEN|TOKEN/ anywhere in
   // the string, so a server message that merely mentioned a token turned a
   // network hiccup into "vuelve a conectar el teléfono".
@@ -96,7 +96,7 @@ test("el código sale del principio de la línea, no de cualquier parte del text
   assert.equal(codeOf("PARTIAL: quedaron cambios sin enviar"), "PARTIAL");
 });
 
-test("un error sin forma de código sigue llegando entero a la pantalla", () => {
+test("an error with no code shape still reaches the screen whole", () => {
   // An `INTERNAL` built from a thrown Error carries a message with colons of
   // its own, and a message nobody can parse is still better on the screen
   // than an empty card.

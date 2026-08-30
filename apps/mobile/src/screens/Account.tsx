@@ -285,8 +285,8 @@ export default function Account() {
 
             {/*
               §2.2 and decision 7. The phone shows the whole balance and then
-              says which part of it it cannot break down — «un saldo que cuenta
-              la mitad del trabajo es un saldo que miente». Without the second
+              says which part of it it cannot break down — «a balance that
+              counts half the work is a balance that lies». Without the second
               line the first one would be a number the history underneath does
               not add up to, which is its own kind of lie.
             */}

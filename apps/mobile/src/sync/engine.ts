@@ -59,8 +59,8 @@ export interface SyncReport {
   stillBehind: boolean;
   /**
    * How many changes the server said this phone was missing, at handshake
-   * time. §3.1: «lo que convierte el chip de estado de un spinner en un
-   * número». Zero from a transport that cannot know.
+   * time. §3.1: «what turns the status chip from a spinner into a
+   * number». Zero from a transport that cannot know.
    */
   behind: number;
   skipped: { what: string; reason: string }[];
@@ -798,7 +798,7 @@ export class SyncEngine {
           localCents: mine.balanceCents,
           serverCents: s.balanceCents,
           // What of the difference this phone can account for, so the card
-          // says «de los cuales X son jornales» rather than only a total.
+          // says «of which X are jornales» rather than only a total.
           unitemisableCents: mine.unitemisableCents,
           at: this.now().toISOString(),
         },

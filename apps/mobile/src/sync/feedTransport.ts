@@ -2,7 +2,7 @@
  * `docs/sincronizacion.md` §3, spoken to the change feed that now exists.
  *
  * `restTransport.ts` was written to be replaced by this file, and its own
- * header says so: «El día que `/v1/sync/*` ships, a second implementation of
+ * header says so: «The day `/v1/sync/*` ships, a second implementation of
  * that interface replaces this one and nothing else moves.» This is that
  * second implementation. The engine, the outbox, the conflicts, the balance
  * checksum and every screen are unchanged; what changes is that the cursor is

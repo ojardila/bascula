@@ -4,8 +4,8 @@
  * `docs/sincronizacion.md` §8 fase 3 and fase 4. The farm has been running on
  * this handset for months; the server has never seen a row of it. Until it
  * has, the liquidación cannot move there, and §8's whole safety argument —
- * "hasta la fase 7 el teléfono conserva su SQLite completo y correcto, y nada
- * de lo que se hace lo modifica de forma destructiva" — rests on this file
+ * "until fase 7 the phone keeps its SQLite complete and correct, and nothing
+ * that is done to it modifies it destructively" — rests on this file
  * being a **read**.
  *
  * Three properties, and they are the brief:
@@ -16,16 +16,16 @@
  *    is started again offers the same ids, and §4.1's `(farm_id, id)` makes
  *    the second offer a no-op. Nothing here invents an identity at send time.
  *
- * 2. **Con verificación de saldo.** The value carries the phone's OWN derived
+ * 2. **With a balance check.** The value carries the phone's OWN derived
  *    balance per worker, which `POST /v1/import/season` requires and compares
  *    against its own derivation inside the transaction: one centavo of
- *    disagreement is a 409 and nothing is written. Media nómina importada es
- *    peor que ninguna. Kilos per week and the count of live settlement lines
+ *    disagreement is a 409 and nothing is written. Half a payroll imported is
+ *    worse than none. Kilos per week and the count of live settlement lines
  *    are derived here too — the contract has the server work those out for
  *    itself, so they never go on the wire, but they are what the local check
  *    below compares against.
  *
- * 3. **Sin tocar el original.** There is not one INSERT, UPDATE or DELETE in
+ * 3. **Without touching the original.** There is not one INSERT, UPDATE or DELETE in
  *    this file. It cannot fire an outbox trigger, it cannot move a business
  *    date, it cannot renumber a row. If the import fails at any point the
  *    phone is bit for bit what it was before somebody pressed the button.
@@ -56,8 +56,8 @@ export interface ExportWorker {
 /**
  * `crops` → a `plot` plus the `plot_crop` that hangs off it.
  *
- * §8 fase 3: «crops -> plots (uuid nuevo) + plot_crops (HEREDA el uuid del
- * crop)». `plotCropId` is the phone's own crop uuid, because that is what
+ * §8 fase 3: «crops -> plots (a new uuid) + plot_crops (INHERITS the crop's
+ * uuid)». `plotCropId` is the phone's own crop uuid, because that is what
  * every weighing points at and what `settlement_items.payable_id` has to keep
  * resolving against.
  *
@@ -305,7 +305,7 @@ export function buildSeasonExport(
 
   const settlements = readSettlements(db);
 
-  // §8: «ledger, en orden de id, con settlement_id y reverses_id resueltos por
+  // §8: «ledger, in id order, with settlement_id and reverses_id resolved by
   // uuid». By `id` rather than by uuid because a reversal has to arrive after
   // the movement it cancels, and `id` is the order the rows were written —
   // which is the order that actually happened, even when a correction carries

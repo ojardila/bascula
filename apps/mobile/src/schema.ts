@@ -254,7 +254,7 @@ export const PAID_AGAINST_SQL = `
  * query per worker, and a HARD LIMIT of fifty movements. A worker past their
  * fiftieth movement of the season had this week's payment fall off the end of
  * the window and printed as if they had been handed nothing, on the sheet
- * they sign (`movil.md` §9.6: «la historia se trunca en silencio»).
+ * they sign (`movil.md` §9.6: «the history is truncated in silence»).
  *
  * Same predicate the JS had, deliberately: every `pago` dated in the range.
  * A `pago` that was later reversed still counts, exactly as it did before —
@@ -851,7 +851,7 @@ export const REACTIVATIONS_SCHEMA = `
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     personId   INTEGER NOT NULL,
     personUuid TEXT,
-    -- The weighing whose arrival did it. This is the "qué labor la provocó".
+    -- The weighing whose arrival did it. This is the "what work caused it".
     causeEntity TEXT NOT NULL,
     causeUuid   TEXT NOT NULL,
     deviceId   TEXT,
@@ -867,8 +867,8 @@ export const REACTIVATIONS_SCHEMA = `
  * A separate table and NOT a synced one, deliberately on both counts.
  *
  * Separate, because §8 fase 8 says the copy previous to the migration is kept
- * the whole season — «un descuadre se descubre cuando alguien reclama, y eso
- * pasa a las tres semanas» — and the same argument applies to the record of
+ * the whole season — «a discrepancy is discovered when somebody complains, and
+ * that happens three weeks later» — and the same argument applies to the record of
  * what was offered and what was answered. A screen that only remembers the
  * import while it is open remembers nothing three weeks later.
  *
@@ -900,9 +900,9 @@ export const REACTIVATIONS_SCHEMA = `
  * jornales and contracts, the pull filters them out because the phone has no
  * screen that could show a day's wage in kilos, and so the phone's own
  * `BALANCE_SQL` sums only the part of the work it happens to carry. Decision 7
- * is that the phone shows the FULL balance anyway — «un saldo que cuenta la
- * mitad del trabajo es un saldo que miente, y quien lo lee no tiene forma de
- * saberlo». To show it, it has to keep it.
+ * is that the phone shows the FULL balance anyway — «a balance that counts half
+ * the work is a balance that lies, and whoever reads it has no way of
+ * knowing». To show it, it has to keep it.
  *
  * Hence the two columns that make it safe to read: `at`, so the screen can say
  * WHEN this was true, and `derivedCents`, the phone's own figure at that same

@@ -5,8 +5,8 @@
  * settling and paying move to the web console. This file is the preparation
  * for that, and NOT the execution of it. Nothing is deleted this sprint,
  * because the farm settles and pays from this handset every Saturday and the
- * web cannot yet pay a crew — `simplificacion.md` §2.1: «se muda a la web — y
- * en la web no existe todavía». Taking it away before then leaves the farm
+ * web cannot yet pay a crew — `simplificacion.md` §2.1: «it moves to the web —
+ * and on the web it does not exist yet». Taking it away before then leaves the farm
  * with no way to pay anybody.
  *
  * What this file buys is that the removal becomes a one-line change with a

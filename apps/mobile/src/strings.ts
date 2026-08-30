@@ -7,12 +7,13 @@ import { mondayOf, parseDay, addDays } from "../../../packages/shared/src/format
 type Dict = Record<string, string>;
 
 const es: Dict = {
-  // ---- Arreglar una pesada, y evitar la que no debía guardarse ----------
+  // ---- Fixing a weighing, and heading off the one that should never have
+  // been saved ---------------------------------------------------------
   //
-  // Lo que faltaba: una pesada bien puesta en la persona equivocada no rompe
-  // ninguna regla, así que la pantalla de revisión nunca la lista. Estas son
-  // las palabras de las tres puertas —el snackbar, las listas de pesadas
-  // recientes y la revisión— que ahora llevan al mismo sitio.
+  // What was missing: a weighing correctly recorded against the wrong person
+  // breaks no rule, so the review screen never lists it. These are the words
+  // of the three doors — the snackbar, the recent-weighing lists and the
+  // review — that now lead to the same place.
   "pickup.search": "Buscar por nombre o carné",
   "pickup.searchLot": "Buscar lote",
   "pickup.noMatch": "Nadie con ese nombre ni ese carné.",
@@ -32,11 +33,11 @@ const es: Dict = {
   "fix.moved": "La pesada quedó a nombre de {name}.",
   "fix.noPerson": "Ese recolector ya no está en la finca.",
   "fix.hint": "Toca una pesada para arreglarla",
-  // §6.1 para la cuadrilla. Aquí no se ofrece anticipo porque un anticipo es
-  // de una persona y esto es la nómina entera: se señala la fila, que es donde
-  // el anticipo de cada quien ya vive.
+  // §6.1 for the crew. No advance is offered here because an advance belongs
+  // to one person and this is the whole payroll: it points at the row, which
+  // is where each person's advance already lives.
   "pay.needsSyncCrew": "Sin estar al día no se puede correr la nómina: el servidor es el que impide pagar dos veces. Si alguien necesita plata ya, tócalo en la lista y entrégale un anticipo.",
-  // En un recibo firmado no va un botón en infinitivo.
+  // A signed receipt does not carry a button in the infinitive.
   "pay.paidOut": "Se le entregó",
   "pay.dayCol": "Día",
   "pay.paidOutShort": "Entregado",
@@ -161,8 +162,8 @@ const es: Dict = {
 
   // Weekly lots breakdown
   "reports.lots": "Lotes",
-  // Sigue en el ranking porque las arrobas se recogieron de verdad; la marca
-  // es para que un nombre en la lista no se lea como alguien que sigue aquí.
+  // They stay in the ranking because the arrobas really were picked; the mark
+  // is so a name on the list does not read as somebody who is still here.
   "reports.inactive": "retirado",
 
   // Worker detail
@@ -420,10 +421,11 @@ const es: Dict = {
   "sync.wontRetry": "Esto no se arregla solo.",
   "sync.behindTitle": "Faltan cambios por recibir",
   "sync.behindBody": "Se bajó lo que cupo en esta pasada y quedan más en el servidor. Vuelve a sincronizar hasta que este aviso desaparezca; hasta entonces el teléfono no está al día y no se puede liquidar.",
-  // §3.4. El servidor guarda 180 días de cambios. Un teléfono que estuvo más
-  // tiempo sin señal no se puede poner al día por partes, así que se baja
-  // todo otra vez. No es un error y no se pierde nada — pero si no se dice,
-  // el contador de «faltan N» salta de once a la temporada entera.
+  // §3.4. The server keeps 180 days of changes. A phone that was out of
+  // signal for longer than that cannot be brought up to date in pieces, so
+  // everything comes down again. It is not an error and nothing is lost — but
+  // unless it is said, the «faltan N» counter jumps from eleven to the whole
+  // season.
   "sync.bootstrapTitle": "Se está bajando todo de nuevo",
   "sync.bootstrapBody": "Este teléfono pasó demasiado tiempo sin conectarse, así que está volviendo a bajar la temporada completa. No se perdió nada: lo que este teléfono tenía sigue aquí y lo que faltaba por enviar se envía igual. Puede tardar varias pasadas.",
   "sync.behindCount": "El servidor dice que faltan {n}.",
@@ -452,11 +454,13 @@ const es: Dict = {
   "conflict.balanceMismatch": "El teléfono calcula {local} y el servidor {server}. Nadie cambió nada: hay que averiguar por qué no cuadran.",
   "conflict.notItemisable": "El saldo completo es {server}. El teléfono solo puede desglosar las pesadas; los jornales y contratos están en la web.",
   // §5.6. Two names and one document. Nobody on this screen may join them:
-  // restaurar al que ya existe es un botón de la web, y unir dos fichas aquí
-  // sería unir un libro de movimientos que esta pantalla no puede ver.
+  // restoring the one that already exists is a button on the web, and joining
+  // two files here would mean joining a book of movements this screen cannot
+  // see.
   "conflict.workerExistsDeleted":
     "Ese documento ya es de {name}, que está retirado en esta finca. No se creó una segunda ficha: hay que reactivar la que ya existe desde la web.",
-  // §5.5. Se aprobó una cifra y al llegar al servidor era otra. No se escribió nada.
+  // §5.5. A figure was approved and by the time it reached the server it was
+  // another one. Nothing was written.
   "conflict.grossChanged":
     "Se aprobó {expected} y la liquidación ahora suma {actual}. No se guardó nada.",
   "conflict.grossChangedWhy":
@@ -472,12 +476,12 @@ const es: Dict = {
   "conflict.closed": "Listo",
   "conflict.reported": "Anotado",
 
-  // ---- §8: la mudanza de la temporada que ya está en el teléfono -------
+  // ---- §8: moving the season that is already on the phone --------------
   //
-  // Quien pulsa esto está mudando la nómina de su finca. Las dos frases que
-  // no se negocian son «no se subió nada» y «tu teléfono sigue exactamente
-  // igual»: son la propiedad en la que descansa todo el plan de §8, y la
-  // persona que mira una tarjeta roja no tiene otra forma de saberlo.
+  // Whoever presses this is moving their farm's payroll. The two sentences
+  // that are not negotiable are «no se subió nada» and «tu teléfono sigue
+  // exactamente igual»: they are the property the whole of §8's plan rests
+  // on, and the person staring at a red card has no other way to know it.
   "stack.seasonImport": "Subir la temporada",
   "import.title": "Subir la temporada al servidor",
   "import.intro": "La finca lleva meses en este teléfono y el servidor no la tiene. Esto se la entrega, con las mismas pesadas, las mismas liquidaciones y los mismos saldos.",
@@ -1459,7 +1463,7 @@ const pt: Dict = {
   "conflict.closed": "Pronto",
   "conflict.reported": "Anotado",
 
-  // ---- §8: a mudança da safra que já está no telefone ------------------
+  // ---- §8: moving the season that is already on the phone --------------
   "stack.seasonImport": "Subir a safra",
   "import.title": "Subir a safra para o servidor",
   "import.intro": "A fazenda está há meses neste telefone e o servidor não a tem. Isto a entrega, com as mesmas pesagens, os mesmos acertos e os mesmos saldos.",

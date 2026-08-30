@@ -358,9 +358,9 @@ test("a discarded weighing stops counting as what somebody usually carries", () 
 });
 
 test("a settlement's lines carry the day each load was weighed", () => {
-  // Without it the receipt can only say «esta semana: 155 kg», which is a
-  // figure a picker has to take on trust. With it the paper says «el martes,
-  // 85 y 70», which is two loads somebody watched go on the scale.
+  // Without it the receipt can only say «this week: 155 kg», which is a
+  // figure a picker has to take on trust. With it the paper says «Tuesday,
+  // 85 and 70», which is two loads somebody watched go on the scale.
   const p = aWorker();
   aPlot();
   repo.pickups.add({ personId: p, cropId: 1, weight: 85, date: at(2) });
@@ -482,7 +482,7 @@ test("undoing a payroll run reverses the payment and voids the settlement togeth
   );
 });
 
-test("anular una liquidación cuyo devengo ya venía reversado no deja el documento a medias", () => {
+test("voiding a settlement whose devengo was already reversed does not leave the document half-done", () => {
   // `movil.md` §9: `voidSettlement` posts a `reverso` of the `devengo`, and
   // `ux_ledger_reverses` is UNIQUE on `reversesId`. If something already
   // reversed that devengo, the INSERT collides, the whole transaction rolls
@@ -509,9 +509,9 @@ test("anular una liquidación cuyo devengo ya venía reversado no deja el docume
   const row = raw
     .prepare("SELECT status, voidedAt FROM settlements WHERE id = ?")
     .get(s.settlementId) as { status: string; voidedAt: string | null };
-  assert.equal(row.status, "void", "el documento quedó anulado, no a medias");
+  assert.equal(row.status, "void", "the document ended up voided, not half-done");
   assert.ok(row.voidedAt);
-  assert.equal(repo.payments.itemsOf(s.settlementId).length, 0, "las líneas se soltaron");
+  assert.equal(repo.payments.itemsOf(s.settlementId).length, 0, "the lines were released");
 
   // The earning was cancelled ONCE. A second reverso would have taken the
   // worker 40.000 into debt for work they really did.
@@ -519,7 +519,7 @@ test("anular una liquidación cuyo devengo ya venía reversado no deja el docume
   assert.equal(
     repo.payments.history(p).filter((e) => e.kind === "reverso").length,
     1,
-    "un solo reverso por devengo, que es lo que dice el índice",
+    "a single reverso per devengo, which is what the index says",
   );
 
   // And the work is payable again, which is the whole reason to void.
@@ -529,7 +529,7 @@ test("anular una liquidación cuyo devengo ya venía reversado no deja el docume
   );
 });
 
-test("deshacer una nómina cuyo devengo ya venía reversado no tumba el resto de la nómina", () => {
+test("undoing a payroll whose devengo was already reversed does not take the rest of the payroll down", () => {
   // The same collision, reached the way the field reaches it: the Deshacer
   // button. `undoRun` is one transaction for the whole crew, so one worker
   // whose devengo came back reversed from the web used to roll back every
@@ -552,16 +552,16 @@ test("deshacer una nómina cuyo devengo ya venía reversado no tumba el resto de
     const row = raw.prepare("SELECT status FROM settlements WHERE id = ?").get(id) as {
       status: string;
     };
-    assert.equal(row.status, "void", `la liquidación ${id} quedó anulada`);
+    assert.equal(row.status, "void", `settlement ${id} ended up voided`);
   }
-  // Ana: devengo + reverso (web) + pago + reverso del pago = 0.
+  // Ana: devengo + reverso (web) + pago + reverso of the pago = 0.
   assert.equal(repo.payments.balance(ana).balanceCents, 0);
   assert.equal(repo.payments.balance(juan).balanceCents, 0);
 });
 
-// ---- La planilla que firma la cuadrilla ---------------------------------
+// ---- The sheet the crew signs -------------------------------------------
 
-test("la planilla no se queda corta cuando alguien lleva media temporada de movimientos", () => {
+test("the payroll sheet does not fall short when somebody has half a season of movements", () => {
   // `movil.md` §9.6: the sheet asked for each worker's last FIFTY movements
   // and filtered them by date afterwards. A recolector past their fiftieth
   // movement of the season had this week's payment fall off the end of the
@@ -580,17 +580,17 @@ test("la planilla no se queda corta cuando alguien lleva media temporada de movi
   const sheet = new Map(
     repo.payments.paidInRange(monday, today0).map((r) => [r.personId, r.cents]),
   );
-  assert.equal(sheet.get(p), money(25000), "el pago de la semana sale en la planilla");
+  assert.equal(sheet.get(p), money(25000), "the week's payment shows up on the sheet");
 
   // And what the old loop found, for the record: nothing. Sixty movements are
   // newer than the payment, and the window was fifty rows deep.
   const truncated = repo.payments
     .history(p, 50)
     .filter((h) => h.kind === "pago" && h.date >= monday);
-  assert.equal(truncated.length, 0, "que es exactamente el bug");
+  assert.equal(truncated.length, 0, "which is exactly the bug");
 });
 
-test("la planilla de una semana no cuenta lo que se pagó después", () => {
+test("a week's payroll sheet does not count what was paid afterwards", () => {
   // The other half: the sheet is titled with a week's dates, and the old
   // filter had no upper bound, so printing an old week's sheet swept in
   // everything paid since under that heading.
@@ -605,7 +605,7 @@ test("la planilla de una semana no cuenta lo que se pagó después", () => {
   assert.equal(week.get(p), money(10000));
 });
 
-test("quien no cobró esta semana no sale en la planilla, y quien sí sale una sola vez", () => {
+test("whoever was not paid this week is off the sheet, and whoever was appears exactly once", () => {
   const ana = aWorker("Ana");
   const juan = aWorker("Juan");
   aPlot();
@@ -613,15 +613,15 @@ test("quien no cobró esta semana no sale en la planilla, y quien sí sale una s
   repo.payments.pay(ana, money(5000), { date: "2026-08-27" });
 
   const rows = repo.payments.paidInRange("2026-08-24", "2026-08-30");
-  assert.equal(rows.length, 1, "una fila por persona");
+  assert.equal(rows.length, 1, "one row per person");
   assert.equal(rows[0].personId, ana);
-  assert.equal(rows[0].cents, money(15000), "sumados, no el último");
+  assert.equal(rows[0].cents, money(15000), "added up, not the last one");
   assert.ok(!rows.some((r) => r.personId === juan));
 });
 
-// ---- Lo que entra por la báscula ---------------------------------------
+// ---- What comes in over the scale ---------------------------------------
 
-test("una pesada absurda se rechaza al entrar, no sólo al corregirla", () => {
+test("an absurd weighing is refused on the way in, not only on the way to fixing it", () => {
   // `movil.md` §9.10: `setWeight` refused a zero, a NaN and an Infinity;
   // `add` refused nothing. The asymmetry meant a bad weight could only be
   // caught on the way OUT, by the review screen, after it had already counted
@@ -645,7 +645,7 @@ test("una pesada absurda se rechaza al entrar, no sólo al corregirla", () => {
   assert.ok(repo.anomalies.all().some((a) => a.rule === "impossible"));
 });
 
-test("la portada cuenta la gente que hay, no la que hubo", () => {
+test("the front page counts the people there are, not the people there were", () => {
   // `movil.md` §9.11: Home read `SELECT COUNT(*) FROM people`, so a farm that
   // had let people go showed one number on the front page and another in the
   // list on the next screen.
@@ -663,7 +663,7 @@ test("la portada cuenta la gente que hay, no la que hubo", () => {
   repo.crops.remove(2);
 
   const t = repo.reports.totals()!;
-  assert.equal(t.people, repo.people.all().length, "la portada y la lista, el mismo número");
+  assert.equal(t.people, repo.people.all().length, "the front page and the list, the same number");
   assert.equal(t.people, 1);
   assert.equal(t.crops, repo.crops.all().length);
   assert.equal(t.crops, 1);
@@ -674,14 +674,14 @@ test("la portada cuenta la gente que hay, no la que hubo", () => {
 
   // And money is still never hidden, only marked — that exception stands.
   const row = repo.payments.balances().find((b) => b.personId === goes);
-  assert.ok(row, "el saldo de quien se fue sigue estando");
-  assert.equal(row.inactive, 1, "marcado, no escondido");
+  assert.ok(row, "the balance of whoever left is still there");
+  assert.equal(row.inactive, 1, "marked, not hidden");
   assert.equal(row.balanceCents, -money(5000));
 });
 
-// ---- La nómina de la cuadrilla, y el botón Deshacer ---------------------
+// ---- The crew's payroll, and the Deshacer button ------------------------
 
-test("una liquidación sin efectivo que entregar sigue estando al alcance de «Deshacer»", () => {
+test("a settlement with no cash to hand over is still within reach of «Deshacer»", () => {
   // `movil.md` §9: the payroll button settled the worker, then read the
   // balance, and only recorded the settlement if a payment followed. An
   // advance bigger than the week means the balance comes out at zero — the
@@ -694,11 +694,11 @@ test("una liquidación sin efectivo que entregar sigue estando al alcance de «D
 
   const run = repo.payments.runPayroll([p], "1970-01-01", "2099-12-31", 800);
 
-  assert.equal(run.paid, 0, "no hubo efectivo que entregar");
+  assert.equal(run.paid, 0, "there was no cash to hand over");
   assert.equal(run.noCash, 1);
   assert.equal(run.failed, 0);
   assert.equal(run.paymentIds.length, 0);
-  assert.equal(run.settlementIds.length, 1, "pero la liquidación existe y hay que poder verla");
+  assert.equal(run.settlementIds.length, 1, "but the settlement exists and has to be reachable");
   assert.equal(repo.payments.balance(p).balanceCents, 0);
 
   // And the button reaches it.
@@ -712,11 +712,11 @@ test("una liquidación sin efectivo que entregar sigue estando al alcance de «D
   assert.equal(
     repo.payments.preview(p, "1970-01-01", "2099-12-31", 800).grossCents,
     money(40000),
-    "la pesada vuelve a la lista de pendientes",
+    "the weighing goes back on the pending list",
   );
 });
 
-test("un saldo negativo tampoco esconde su liquidación", () => {
+test("a negative balance does not hide its settlement either", () => {
   // The other half of "zero or negative": the advance is bigger than the week,
   // so the worker still owes after settling. Same trap, same fix.
   const p = aWorker();
@@ -733,7 +733,7 @@ test("un saldo negativo tampoco esconde su liquidación", () => {
   assert.equal(repo.payments.balance(p).balanceCents, -money(50000));
 });
 
-test("un trabajador sin nada pendiente no crea ningún documento", () => {
+test("a worker with nothing pending creates no document at all", () => {
   // The other branch of noCash, and the one that must NOT record anything:
   // `settle` returns null and no row was written, so there is nothing to undo.
   const p = aWorker();
@@ -746,7 +746,7 @@ test("un trabajador sin nada pendiente no crea ningún documento", () => {
   );
 });
 
-test("la nómina paga lo que dice el ledger, no el bruto de la semana", () => {
+test("the payroll pays what the ledger says, not the week's gross", () => {
   // Three workers, one of them with an advance. The one with the advance takes
   // home the difference, not the gross — paying the gross would hand the
   // advance over a second time, for the whole crew at once.
@@ -775,7 +775,7 @@ test("la nómina paga lo que dice el ledger, no el bruto de la semana", () => {
     assert.ok(repo.payments.paidAgainst(id) > 0);
 });
 
-test("un trabajador que falla no se lleva por delante al resto de la cuadrilla", () => {
+test("one worker failing does not take the rest of the crew down with them", () => {
   const ana = aWorker("Ana");
   const ghost = 9999; // nobody: the FK on settlements.personId refuses it
   const luz = aWorker("Luz");
@@ -787,7 +787,7 @@ test("un trabajador que falla no se lleva por delante al resto de la cuadrilla",
   const run = repo.payments.runPayroll([ana, ghost, luz], "1970-01-01", "2099-12-31", 800);
 
   assert.equal(run.failed, 1);
-  assert.equal(run.paid, 2, "Ana y Luz cobraron igual");
+  assert.equal(run.paid, 2, "Ana and Luz got paid all the same");
   assert.equal(repo.payments.balance(ana).balanceCents, 0);
   assert.equal(repo.payments.balance(luz).balanceCents, 0);
 });
@@ -1218,9 +1218,9 @@ test("paidAgainst does not reach across workers", () => {
   assert.equal(repo.payments.paidAgainst(sa.settlementId), 0);
 });
 
-// ---- «Gente con posición, no gente activa» — §9.11 ----------------------
+// ---- «People with a standing, not active people» — §9.11 ----------------
 
-test("el ranking sigue sumando lo mismo que la finca cuando alguien se va, y lo dice", () => {
+test("the ranking still adds up to the farm when somebody leaves, and it says so", () => {
   // The dilemma `movil.md` §9.11 left open: excluding removed workers made
   // the ranking stop adding up to the farm total printed above it, and
   // including them silently made a name in a list read as somebody still
@@ -1248,7 +1248,7 @@ test("el ranking sigue sumando lo mismo que la finca cuando alguien se va, y lo 
   assert.equal(
     byWorker.reduce((s, r) => s + r.kg, 0),
     farmKg,
-    "el ranking por recolector suma la finca entera",
+    "the per-picker ranking adds up to the whole farm",
   );
   assert.equal(byWorker.find((r) => r.id === stays)!.active, 1);
   assert.equal(byWorker.find((r) => r.id === goes)!.active, 0, "marcado, no escondido");
@@ -1260,7 +1260,7 @@ test("el ranking sigue sumando lo mismo que la finca cuando alguien se va, y lo 
   assert.equal(
     byCrop.reduce((s, r) => s + r.kg, 0),
     farmKg,
-    "y el de cultivo también",
+    "and the per-crop one does too",
   );
   assert.equal(byCrop.find((r) => r.id === retired)!.active, 0);
 
@@ -1271,14 +1271,14 @@ test("el ranking sigue sumando lo mismo que la finca cuando alguien se va, y lo 
   assert.ok(lots.some((l) => l.active === 0));
 
   // What does NOT change: the counts on the front page are still the active
-  // list, because "cuánta gente hay" has one honest answer.
+  // list, because "how many people there are" has one honest answer.
   assert.equal(repo.reports.totals()!.people, 1);
   assert.equal(repo.reports.totals()!.crops, 1);
 });
 
 // ---- §9.4 and §9.5: written once, checked as once ----------------------
 
-test("el desglose del saldo es el mismo por las dos puertas", () => {
+test("the balance breakdown is the same through either door", () => {
   // §9.4. `BALANCE_SQL` and the payroll screen's own list carried the sign
   // table twice, and only one of the two was covered. The copies are gone;
   // this is what would notice if one came back.
@@ -1300,7 +1300,7 @@ test("el desglose del saldo es el mismo por las dos puertas", () => {
   assert.equal(inList.lastMovementAt, one.lastMovementAt);
 });
 
-test("el valor de la cosecha es una sola cifra, mírese por donde se mire", () => {
+test("the harvest's value is a single figure, whichever way you look at it", () => {
   // §9.5. The value was derived two ways — row by row in SQL, and week by
   // week in a JS loop that cost a query per week — and the comment on
   // `byCrop` records what a divergence cost the last time: «the same lote was
@@ -1328,12 +1328,12 @@ test("el valor de la cosecha es una sola cifra, mírese por donde se mire", () =
   const perCrop = repo.cropReports.value(uno, 800) + repo.cropReports.value(dos, 800);
 
   for (const [what, v] of [
-    ["por recolector", sumWorkers],
-    ["por lote", sumCrops],
-    ["recolector a recolector", perWorker],
-    ["lote a lote", perCrop],
+    ["by picker", sumWorkers],
+    ["by plot", sumCrops],
+    ["picker by picker", perWorker],
+    ["plot by plot", perCrop],
   ] as const)
-    assert.equal(v, total, `${what} da otra cifra que el total de la finca`);
+    assert.equal(v, total, `${what} gives a different figure from the farm total`);
 
   // And it is the real arithmetic, not zero on both sides.
   assert.ok(total > 0);

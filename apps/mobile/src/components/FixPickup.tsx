@@ -1,5 +1,5 @@
 /**
- * The screen that did not exist: arreglar una pesada.
+ * The screen that did not exist: fixing a weighing.
  *
  * Wilson puts 85 kg on the wrong person with the queue watching. Until this
  * dialog there was no path — `Pickups.remove` and `setWeight` were reachable
