@@ -7,10 +7,6 @@ import {
   Divider,
   Chip,
   Banner,
-  Portal,
-  Dialog,
-  Button,
-  TextInput,
   Snackbar,
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -21,11 +17,11 @@ import {
   Config,
   Performance,
   Anomalies,
-  Pickups,
   type WorkerPerf,
   type Anomaly,
   type CropConfig,
 } from "../db";
+import FixPickup, { type FixablePickup } from "../components/FixPickup.tsx";
 import {
   useT,
   formatDay,
@@ -35,7 +31,7 @@ import {
 
 // Above 1 they beat the crew on the same plot; below, they trailed it.
 function irlColor(irl: number | null) {
-  if (irl == null) return "#9aa39a";
+  if (irl == null) return "#5a6b5c";
   if (irl >= 1.15) return "#1b5e20";
   if (irl >= 0.85) return "#4a5a4a";
   return "#8a5a00";
@@ -52,8 +48,13 @@ export default function PerformancePanel() {
   const [priceRows, setPriceRows] = useState<ReturnType<typeof Performance.priceResponse>>([]);
   // A flagged pickup the user is deciding about. Detection alone is not much
   // use if the wrong number has to stay in the books.
-  const [review, setReview] = useState<Anomaly | null>(null);
-  const [newWeight, setNewWeight] = useState("");
+  //
+  // The dialog itself is `FixPickup`, shared with the two «pesadas recientes»
+  // lists. It used to be written out here and could only change the weight —
+  // which left the one correction this screen most often needs unavailable:
+  // the review rules also fire on a load that was simply put on the wrong
+  // person, and «corregir el peso» is no answer to that.
+  const [review, setReview] = useState<FixablePickup | null>(null);
   const [snack, setSnack] = useState("");
 
   const load = useCallback(() => {
@@ -68,6 +69,24 @@ export default function PerformancePanel() {
   useFocusEffect(load);
 
   const unit = config?.unit ?? "";
+
+  /**
+   * A finding, as the correction dialog needs it. The rule that raised it
+   * travels as a sentence rather than a code, because by the time somebody
+   * opens the dialog the reason is the only context they have — and «¿un cero
+   * de más? normal: 78» is what tells them which of the three corrections to
+   * make.
+   */
+  const fromAnomaly = (a: Anomaly): FixablePickup => ({
+    pickupId: a.pickupId,
+    personId: a.personId,
+    person: a.person,
+    crop: a.crop,
+    date: a.date,
+    weight: a.weight,
+    reason: t(`perf.rule.${a.rule}`, { n: a.reference }),
+  });
+
   const crewKgDay = crew.length
     ? crew.reduce((s, r) => s + r.kgPerDay, 0) / crew.length
     : 0;
@@ -265,10 +284,7 @@ export default function PerformancePanel() {
               <View key={a.pickupId}>
                 {i > 0 && <Divider />}
                 <List.Item
-                  onPress={() => {
-                    setReview(a);
-                    setNewWeight(String(a.weight));
-                  }}
+                  onPress={() => setReview(fromAnomaly(a))}
                   title={`${num(a.weight)} ${unit} · ${a.person}`}
                   description={`${formatDay(a.date, lang)} · ${a.crop}`}
                   left={(p) => <List.Icon {...p} icon="alert-outline" color="#8a5a00" />}
@@ -283,73 +299,16 @@ export default function PerformancePanel() {
           </Card.Content>
         </Card>
       )}
-      <Portal>
-        <Dialog visible={!!review} onDismiss={() => setReview(null)}>
-          <Dialog.Title>{t("perf.reviewOne")}</Dialog.Title>
-          <Dialog.Content style={{ gap: 12 }}>
-            <Text variant="bodyMedium">
-              {review
-                ? t("perf.reviewBody", {
-                    weight: `${num(review.weight)} ${unit}`,
-                    person: review.person,
-                    reason: t(`perf.rule.${review.rule}`, { n: review.reference }),
-                  })
-                : ""}
-            </Text>
-            <TextInput
-              mode="outlined"
-              label={t("perf.newWeight", { unit })}
-              keyboardType="decimal-pad"
-              value={newWeight}
-              onChangeText={setNewWeight}
-            />
-          </Dialog.Content>
-          <Dialog.Actions style={styles.reviewActions}>
-            <Button onPress={() => setReview(null)}>{t("perf.keep")}</Button>
-            <Button
-              textColor="#b3261e"
-              onPress={() => {
-                if (!review) return;
-                try {
-                  Pickups.remove(review.pickupId);
-                  setReview(null);
-                  load();
-                  setSnack(t("perf.discarded"));
-                } catch (e) {
-                  setReview(null);
-                  setSnack(String(e).includes("SETTLED") ? t("perf.settled") : t("pay.error"));
-                }
-              }}
-            >
-              {t("perf.discard")}
-            </Button>
-            <Button
-              mode="contained"
-              onPress={() => {
-                if (!review) return;
-                try {
-                  Pickups.setWeight(review.pickupId, Number(newWeight.replace(",", ".")));
-                  setReview(null);
-                  load();
-                  setSnack(t("perf.corrected"));
-                } catch (e) {
-                  const m = String(e);
-                  setReview(null);
-                  setSnack(
-                    m.includes("SETTLED")
-                      ? t("perf.settled")
-                      : m.includes("BADWEIGHT")
-                        ? t("perf.badWeight")
-                        : t("pay.error"),
-                  );
-                }
-              }}
-            >
-              {t("perf.correct")}
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <FixPickup
+        pickup={review}
+        unit={unit}
+        onDismiss={() => setReview(null)}
+        onDone={(message) => {
+          setReview(null);
+          load();
+          setSnack(message);
+        }}
+      />
 
       <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
         {snack}
@@ -365,7 +324,7 @@ const styles = StyleSheet.create({
   kpi: { flex: 1 },
   kpiValue: { fontWeight: "800", color: "#1b5e20" },
   card: { marginBottom: 12 },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },
   irlCell: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "center" },
   perHa: { alignSelf: "center", opacity: 0.8 },
@@ -373,5 +332,4 @@ const styles = StyleSheet.create({
   priceCell: { alignItems: "flex-end", alignSelf: "center" },
   ruleChip: { alignSelf: "center", backgroundColor: "#fdf5e6" },
   ruleText: { fontSize: 11 },
-  reviewActions: { flexWrap: "wrap", gap: 4 },
 });

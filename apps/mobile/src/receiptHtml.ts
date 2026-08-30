@@ -15,6 +15,14 @@ export interface ReceiptLine {
   week: string;
   weight: number;
   amountCents: number;
+  /**
+   * The farm day this load was weighed on.
+   *
+   * Present, the receipt lists ONE ROW PER WEIGHING. Absent — a line whose
+   * pickup this phone does not hold — the whole document falls back to a row
+   * per week, because half a breakdown is worse than an honest coarse one.
+   */
+  day?: string | null;
 }
 
 export interface ReceiptData {
@@ -60,8 +68,21 @@ const cents = (c: number, lang: Lang) => formatMoney(c / 100, lang);
 export function receiptHtml(r: ReceiptData, lang: Lang): string {
   const t = (k: string, v?: Record<string, string | number>) => translate(lang, k, v);
 
-  // Newest week first, the way the worker remembers the season.
-  const lines = [...r.lines].sort((a, b) => (a.week < b.week ? 1 : -1));
+  // Newest first, the way the worker remembers the season.
+  //
+  // Per WEIGHING when every line knows its day, and that is the whole point of
+  // the document: «501 kg» against a week is a figure a worker can only take
+  // on trust — nobody remembers a week — while «martes · 85 kg» is a load they
+  // watched go onto the scale and can dispute on the spot. The file has said
+  // for two sprints that the breakdown is the point, and printed one line.
+  const perWeighing = r.lines.length > 0 && r.lines.every((l) => !!l.day);
+  const lines = [...r.lines].sort((a, b) =>
+    perWeighing
+      ? (a.day! < b.day! ? 1 : a.day! > b.day! ? -1 : 0)
+      : a.week < b.week
+        ? 1
+        : -1,
+  );
   const itemisedCents = lines.reduce((s, l) => s + l.amountCents, 0);
   // The document wins over the lines. See `grossCents` above.
   const grossCents = r.grossCents ?? itemisedCents;
@@ -69,13 +90,20 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
   const kg = lines.reduce((s, l) => s + l.weight, 0);
 
   const rows = lines
-    .map(
-      (l, i) => `<tr class="${i % 2 ? "alt" : ""}">
-        <td>${esc(formatWeekRange(l.week, lang))}</td>
+    .map((l, i) => {
+      // The date is printed once per day rather than on every load: three
+      // rows repeating «martes» read as three Tuesdays.
+      const when = perWeighing
+        ? i > 0 && lines[i - 1].day === l.day
+          ? ""
+          : formatDay(l.day!, lang)
+        : formatWeekRange(l.week, lang);
+      return `<tr class="${i % 2 ? "alt" : ""}">
+        <td>${esc(when)}</td>
         <td class="n">${esc(formatNumber(l.weight, lang))} ${esc(r.unit)}</td>
         <td class="n">${esc(cents(l.amountCents, lang))}</td>
-      </tr>`,
-    )
+      </tr>`;
+    })
     .join("");
 
   // The part of the document this phone holds no line for. Named rather than
@@ -168,7 +196,7 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
 
   <table>
     <thead>
-      <tr><th>${esc(t("reports.week"))}</th>
+      <tr><th>${esc(t(perWeighing ? "pay.dayCol" : "reports.week"))}</th>
           <th class="n">${esc(t("pay.gross"))}</th>
           <th class="n">${esc(t("crop.value"))}</th></tr>
     </thead>
@@ -184,8 +212,10 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
     </tbody>
   </table>
 
+  <!-- «Pagar» is a button. On a signed receipt the line has to say what
+       happened, not what somebody was about to do. -->
   <div class="paid">
-    <span class="k">${esc(t("pay.pay"))}</span>
+    <span class="k">${esc(t("pay.paidOut"))}</span>
     <span class="v">${esc(cents(r.paidCents, lang))}</span>
   </div>
 
@@ -418,7 +448,7 @@ export function payrollHtml(
 
   <div class="cards">
     <div class="card">
-      <div class="k">${esc(t("pay.pay"))}</div>
+      <div class="k">${esc(t("pay.paidOut"))}</div>
       <div class="v">${esc(cents(totalPaid, lang))}</div>
     </div>
     <div class="card">
@@ -436,7 +466,7 @@ export function payrollHtml(
       <tr><th></th>
           <th>${esc(t("label.workers"))}</th>
           <th class="n">${esc(opts.unit)}</th>
-          <th class="n">${esc(t("pay.pay"))}</th>
+          <th class="n">${esc(t("pay.paidOutShort"))}</th>
           <th class="n">${esc(t("pay.credit"))}</th>
           <th>${esc(t("pay.signWorker"))}</th></tr>
     </thead>

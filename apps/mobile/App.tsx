@@ -86,7 +86,10 @@ function MainTabs() {
         // work safe".
         headerRight: () => <SyncChip />,
         tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: "#9aa39a",
+        // Was #9aa39a: 2.6:1 on white, under the 3:1 floor and unreadable in
+        // the four-o'clock sun with the phone held at arm's length. This one
+        // is 5.7:1 and still clearly the unselected state.
+        tabBarInactiveTintColor: "#5a6b5c",
         tabBarStyle: {
           height: 64,
           paddingBottom: 8,

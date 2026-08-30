@@ -1,6 +1,14 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, List, Divider, SegmentedButtons, TouchableRipple } from "react-native-paper";
+import {
+  Text,
+  Card,
+  List,
+  Divider,
+  SegmentedButtons,
+  TouchableRipple,
+  Snackbar,
+} from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BarChart, LineChart } from "react-native-chart-kit";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -16,8 +24,10 @@ import {
   weekCrops,
   type Grouping,
   type CropConfig,
+  type RecentPickup,
 } from "../db";
 import PerformancePanel from "./PerformancePanel";
+import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
 import type { Lang } from "../i18n";
 import {
   useT,
@@ -68,12 +78,12 @@ export default function Reports() {
     costPerUnit: 800,
   });
   const [payout, setPayout] = useState(0);
-  const [recent, setRecent] = useState<
-    { id: number; weight: number; date: string; person: string; crop: string }[]
-  >([]);
+  const [recent, setRecent] = useState<RecentPickup[]>([]);
+  // A weighing somebody has just realised is wrong. See `FixPickup`.
+  const [fixing, setFixing] = useState<FixablePickup | null>(null);
+  const [snack, setSnack] = useState("");
 
-  useFocusEffect(
-    useCallback(() => {
+  const load = useCallback(() => {
       const t = ReportsDb.totals();
       if (t) setTotals(t);
       const c = Config.get();
@@ -88,8 +98,8 @@ export default function Reports() {
         setLotsByWeek(map);
       }
       setRecent(Pickups.recent());
-    }, [grouping]),
-  );
+  }, [grouping]);
+  useFocusEffect(load);
 
   const unit = config.unit || "kg";
   const max = Math.max(1, ...rows.map((r) => r.kg));
@@ -236,7 +246,7 @@ export default function Reports() {
                       </Text>
                     </View>
                     {tappable && (
-                      <MaterialCommunityIcons name="chevron-right" size={18} color="#9aa39a" />
+                      <MaterialCommunityIcons name="chevron-right" size={18} color="#5a6b5c" />
                     )}
                   </View>
                 );
@@ -281,7 +291,12 @@ export default function Reports() {
       </Card>
 
       <Card style={styles.card} mode="elevated">
-        <Card.Title title={t("reports.recent")} />
+        <Card.Title
+          title={t("reports.recent")}
+          // The fifty most recent weighings, and now the way back into any of
+          // them. A row that opens something has to say so.
+          subtitle={recent.length ? t("fix.hint") : undefined}
+        />
         <Card.Content style={{ paddingHorizontal: 0 }}>
           {recent.length === 0 ? (
             <Text style={[styles.empty, { paddingHorizontal: 16 }]}>{t("reports.nothing")}</Text>
@@ -290,15 +305,39 @@ export default function Reports() {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
+                  onPress={() => setFixing(fixableFrom(r))}
                   title={`${num(r.weight)} ${unit} · ${r.crop}`}
                   description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
+                  right={(p) => (
+                    <MaterialCommunityIcons
+                      {...p}
+                      name="pencil-outline"
+                      size={18}
+                      color="#5a6b5c"
+                      style={styles.pencil}
+                    />
+                  )}
                 />
               </View>
             ))
           )}
         </Card.Content>
       </Card>
+
+      <FixPickup
+        pickup={fixing}
+        unit={unit}
+        onDismiss={() => setFixing(null)}
+        onDone={(message) => {
+          setFixing(null);
+          load();
+          setSnack(message);
+        }}
+      />
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
+        {snack}
+      </Snackbar>
     </ScrollView>
   );
 }
@@ -335,7 +374,8 @@ const styles = StyleSheet.create({
   stat: { flexGrow: 1, minWidth: "45%" },
   card: { borderRadius: 14 },
   chart: { borderRadius: 12, marginVertical: 4, marginLeft: -8 },
-  empty: { opacity: 0.6, paddingVertical: 8 },
+  empty: { opacity: 0.75, paddingVertical: 8 },
+  pencil: { alignSelf: "center" },
   barRow: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 5 },
   barLabel: { width: 116 },
   barTrack: {
@@ -349,7 +389,7 @@ const styles = StyleSheet.create({
   barValues: { width: 88, alignItems: "flex-end" },
   flex: { flex: 1 },
   viewSwitch: { marginBottom: 12 },
-  weekNo: { opacity: 0.55 },
+  weekNo: { opacity: 0.72 },
   cost: { opacity: 0.6 },
   lots: {
     flexDirection: "row",
@@ -361,7 +401,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   lotsLabel: { opacity: 0.5 },
-  inactive: { opacity: 0.55, fontStyle: "italic" },
+  inactive: { opacity: 0.72, fontStyle: "italic" },
   lot: {
     opacity: 0.75,
     backgroundColor: "rgba(46,125,50,0.08)",

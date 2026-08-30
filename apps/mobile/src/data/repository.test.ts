@@ -238,6 +238,155 @@ test("correcting a weighing that is not there is an error, not a success", () =>
   assert.throws(() => repo.pickups.setWeight(9999, 40), /NOTFOUND/);
 });
 
+// ---- The right weight on the wrong person -------------------------------
+//
+// The commonest mistake at a scale and, until `setPerson`, the only one with
+// no path back: the number is plausible, the plot is plausible and the day is
+// today, so no review rule ever mentions it. Somebody is paid short and the
+// pesador is the one who has to explain it.
+
+test("a weighing moves to the person it belonged to, with its kilos", () => {
+  const ana = aWorker("Ana");
+  const beto = aWorker("Beto");
+  aPlot();
+  const pk = repo.pickups.add({
+    personId: ana,
+    cropId: 1,
+    weight: 85,
+    date: at(0),
+  }).lastInsertRowId;
+
+  repo.pickups.setPerson(pk, beto);
+
+  assert.equal(repo.workerReports.stats(ana)?.kg ?? 0, 0, "it left Ana whole");
+  assert.equal(repo.workerReports.stats(beto)?.kg, 85, "and arrived at Beto whole");
+  // The farm picked 85 kg either way: a reassignment is not a correction of
+  // how much was harvested.
+  assert.equal(repo.reports.totals()?.kg, 85);
+  assert.equal(repo.reports.totals()?.pickups, 1);
+});
+
+test("the server hears about a reassignment like any other correction", () => {
+  // Nothing about this needs a new message: `updatedAt` moves, the outbox
+  // trigger fires, and the wire projection already sends `personId` as the
+  // worker's uuid.
+  const ana = aWorker("Ana");
+  const beto = aWorker("Beto");
+  aPlot();
+  const pk = repo.pickups.add({
+    personId: ana,
+    cropId: 1,
+    weight: 85,
+    date: at(0),
+  }).lastInsertRowId;
+  const before = repo.sync.pending().find((e) => e.entity === "pickups")!;
+
+  repo.pickups.setPerson(pk, beto);
+
+  const after = repo.sync.pending().find((e) => e.entity === "pickups")!;
+  assert.equal(after.entityUuid, before.entityUuid, "the same weighing, corrected");
+  assert.ok(after.revision > before.revision, "and the queue knows it changed again");
+});
+
+test("a paid weighing cannot be moved to somebody else either", () => {
+  // The same reason `setWeight` refuses: its price is frozen and cash has
+  // changed hands against it. Void the settlement first — that is a decision
+  // for a person, not a side effect of tapping a name.
+  const ana = aWorker("Ana");
+  const beto = aWorker("Beto");
+  aPlot();
+  const pk = repo.pickups.add({
+    personId: ana,
+    cropId: 1,
+    weight: 50,
+    date: at(2),
+  }).lastInsertRowId;
+  settleAll(ana);
+
+  assert.throws(() => repo.pickups.setPerson(pk, beto), /SETTLED/);
+  assert.equal(repo.workerReports.stats(ana)?.kg, 50, "and nothing moved");
+});
+
+test("a weighing is never handed to somebody who is not on the farm", () => {
+  const ana = aWorker("Ana");
+  const gone = aWorker("Beto");
+  aPlot();
+  const pk = repo.pickups.add({
+    personId: ana,
+    cropId: 1,
+    weight: 50,
+    date: at(0),
+  }).lastInsertRowId;
+  repo.people.remove(gone);
+
+  assert.throws(() => repo.pickups.setPerson(pk, gone), /NOPERSON/);
+  assert.throws(() => repo.pickups.setPerson(pk, 9999), /NOPERSON/);
+  assert.throws(() => repo.pickups.setPerson(9999, ana), /NOTFOUND/);
+  assert.equal(repo.workerReports.stats(ana)?.kg, 50);
+});
+
+// ---- What this person usually carries -----------------------------------
+
+test("a person's usual load is their own history, and says how much of it there is", () => {
+  const ana = aWorker("Ana");
+  aPlot();
+  assert.deepEqual(repo.pickups.typical(ana), { avgWeight: 0, samples: 0 });
+
+  for (const w of [70, 80, 90])
+    repo.pickups.add({ personId: ana, cropId: 1, weight: w, date: at(1) });
+
+  assert.deepEqual(repo.pickups.typical(ana), { avgWeight: 80, samples: 3 });
+});
+
+test("a discarded weighing stops counting as what somebody usually carries", () => {
+  // Otherwise the 850 that was thrown away goes on inflating the reference
+  // that is supposed to catch the next one.
+  const ana = aWorker("Ana");
+  aPlot();
+  for (const w of [70, 80, 90])
+    repo.pickups.add({ personId: ana, cropId: 1, weight: w, date: at(1) });
+  const bad = repo.pickups.add({
+    personId: ana,
+    cropId: 1,
+    weight: 800,
+    date: at(0),
+  }).lastInsertRowId;
+  assert.equal(repo.pickups.typical(ana).samples, 4);
+
+  repo.pickups.remove(bad);
+  assert.deepEqual(repo.pickups.typical(ana), { avgWeight: 80, samples: 3 });
+});
+
+test("a settlement's lines carry the day each load was weighed", () => {
+  // Without it the receipt can only say «esta semana: 155 kg», which is a
+  // figure a picker has to take on trust. With it the paper says «el martes,
+  // 85 y 70», which is two loads somebody watched go on the scale.
+  const p = aWorker();
+  aPlot();
+  repo.pickups.add({ personId: p, cropId: 1, weight: 85, date: at(2) });
+  repo.pickups.add({ personId: p, cropId: 1, weight: 70, date: at(2) });
+  const s = settleAll(p)!;
+
+  const items = repo.payments.itemsOf(s.settlementId);
+  assert.equal(items.length, 2);
+  for (const i of items)
+    assert.equal(i.localDay, dayInZone(at(2), "America/Bogota"), "each line knows its day");
+});
+
+test("recent weighings carry who and where, so a row can be corrected from the list", () => {
+  // «Actividad reciente» is the only screen that ever shows the right weight
+  // on the wrong person again. A row that cannot say whose it is cannot open
+  // a dialog that reassigns it.
+  const ana = aWorker("Ana");
+  const cropId = aPlot();
+  repo.pickups.add({ personId: ana, cropId, weight: 85, date: at(0) });
+
+  const [row] = repo.pickups.recent();
+  assert.equal(row.personId, ana);
+  assert.equal(row.cropId, cropId);
+  assert.equal(row.person, "Ana Rodríguez");
+});
+
 // ---- Settle, pay, void, undo -------------------------------------------
 
 test("settling freezes the price, so a later override cannot move paid money", () => {

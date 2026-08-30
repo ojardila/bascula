@@ -282,7 +282,7 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
-  notItemisable: { opacity: 0.65, paddingHorizontal: 12, paddingBottom: 8, lineHeight: 18 },
+  notItemisable: { opacity: 0.78, paddingHorizontal: 12, paddingBottom: 8, lineHeight: 18 },
   container: { padding: 16, gap: 14 },
   account: { marginBottom: 12, borderRadius: 12 },
   tall: { height: 52 },

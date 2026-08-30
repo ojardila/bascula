@@ -137,6 +137,18 @@ export interface SettlementItem extends Synced {
   costPerUnitCents: number;
   amountCents: number;
   voidedAt?: string | null;
+  /**
+   * The farm day the weighing happened on, read across from the pickup.
+   *
+   * It is what turns the receipt from a document a worker has to take on
+   * trust into one they can check: a week's line says «501 kg» and nobody
+   * remembers a week, while «martes · 85 kg» is a load somebody watched go on
+   * the scale. Null for a line whose weighing this phone does not hold — a
+   * settlement that came down the feed can carry lines whose work records were
+   * filtered out (§2.2) — and the receipt falls back to the week for the whole
+   * document rather than printing half a breakdown.
+   */
+  localDay?: string | null;
 }
 
 export interface Balance {
@@ -197,6 +209,28 @@ export interface RecentPickup {
   date: string;
   person: string;
   crop: string;
+  /**
+   * Who it was put on, and where. Carried so a row on «actividad reciente» can
+   * be opened and CORRECTED without a second query: the whole point of making
+   * those rows tappable is that the right weight on the wrong person trips no
+   * anomaly rule, so the review screen never lists it and this list is the only
+   * place the mistake is ever seen again.
+   */
+  personId: number;
+  cropId: number;
+}
+
+/**
+ * What a person usually carries in one load, and how much history says it.
+ *
+ * `samples` is not decoration: three loads is the difference between "this is
+ * unusual for Ana" and "we have never seen Ana pick". A warning built on one
+ * previous weighing is a warning that cries wolf on the second day of the
+ * harvest, and a warning that cries wolf is a warning that gets tapped through.
+ */
+export interface TypicalLoad {
+  avgWeight: number;
+  samples: number;
 }
 
 export interface FarmTotals {
@@ -746,9 +780,31 @@ export interface CropsRepo {
 export interface PickupsRepo {
   isSettled(id: number): boolean;
   setWeight(id: number, weight: number): void;
+  /**
+   * Move a weighing to the person it belonged to.
+   *
+   * The mistake this exists for is the commonest one at a scale and the only
+   * one that had no path back: the RIGHT weight on the WRONG person. It trips
+   * no anomaly rule — the number is plausible, the plot is plausible, the day
+   * is today — so the review screen never lists it, and until this method
+   * existed the only correction available was to delete the weighing and type
+   * it again, which is not a correction a pesador can make while the queue
+   * watches.
+   *
+   * Refuses a settled weighing for the same reason `setWeight` does: its price
+   * is frozen and somebody has been paid on it. Refuses an unknown or removed
+   * worker with `NOPERSON`, because a weighing pointing at nobody is worse
+   * than the one on the wrong person.
+   */
+  setPerson(id: number, personId: number): void;
   remove(id: number): void;
   add(p: Omit<Pickup, "id" | "createdAt" | keyof Synced>): WriteResult;
   recent(): RecentPickup[];
+  /**
+   * What this person's loads usually weigh. Read before a save, so the extra
+   * zero is caught at the scale instead of two screens away in Reports.
+   */
+  typical(personId: number): TypicalLoad;
 }
 
 export interface ReportsRepo {

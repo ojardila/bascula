@@ -24,6 +24,55 @@ test("the receipt lists each week with its weight and value", () => {
   assert.ok(html.includes("$440.880"));
 });
 
+// ---- What a worker can actually check -----------------------------------
+
+test("a receipt whose lines know their day lists one row per load", () => {
+  // The complaint this closes: the breakdown was per WEEK, so somebody who
+  // picked six days got one line of «501 kg» and could verify nothing. The
+  // file's own comment has said for two sprints that the breakdown is the
+  // point of the document.
+  const html = receiptHtml(
+    {
+      ...base,
+      lines: [
+        { week: "2026-08-24", weight: 85, amountCents: 8_075_00, day: "2026-08-25" },
+        { week: "2026-08-24", weight: 70, amountCents: 6_650_00, day: "2026-08-25" },
+        { week: "2026-08-24", weight: 92, amountCents: 8_740_00, day: "2026-08-26" },
+      ],
+    },
+    "es",
+  );
+
+  assert.ok(html.includes("Día"), "the column is a day, not a week");
+  assert.ok(!html.includes("24–30 ago"), "and no week range is printed instead");
+  assert.ok(html.includes("26 ago"), "the newest day first");
+  assert.ok(html.indexOf("26 ago") < html.indexOf("25 ago"));
+  // Each load on its own row: this is the whole point.
+  for (const kg of ["85 kg", "70 kg", "92 kg"]) assert.ok(html.includes(kg), kg);
+  // And the date is printed once per day. Three rows saying «martes» read as
+  // three Tuesdays.
+  assert.equal(html.split("25 ago").length - 1, 1, "the repeated day is not repeated");
+});
+
+test("a document whose weighings this phone does not hold still prints by week", () => {
+  // A settlement that came down the feed can carry lines with no pickup row
+  // here. Half a breakdown — some rows dated, some not — would be worse than
+  // an honest coarse one, so the whole document falls back together.
+  const html = receiptHtml(
+    {
+      ...base,
+      lines: [
+        { week: "2026-08-24", weight: 315, amountCents: 29925000, day: "2026-08-25" },
+        { week: "2026-08-17", weight: 501, amountCents: 44088000 },
+      ],
+    },
+    "es",
+  );
+  assert.ok(html.includes("24–30 ago"));
+  assert.ok(html.includes("17–23 ago"));
+  assert.ok(!html.includes(">Día<"));
+});
+
 test("weeks read newest first, the way the season is remembered", () => {
   const html = receiptHtml(base, "es");
   assert.ok(html.indexOf("24–30 ago") < html.indexOf("17–23 ago"));
@@ -38,8 +87,23 @@ test("the total is the sum of the lines, not a number typed twice", () => {
 test("a credit balance is shown as the worker's, an advance as owed", () => {
   assert.ok(receiptHtml(base, "es").includes("Saldo a favor"));
   const owing = receiptHtml({ ...base, balanceCents: -5000000 }, "es");
-  assert.ok(owing.includes("Avance pendiente"));
+  // «Anticipo», not «avance». They were the same money under two names and
+  // both were printed — so a worker comparing two pieces of paper from the
+  // same farm read two different words for the one thing that matters most to
+  // them. The advance voucher already said «anticipo», so that is the word the
+  // rest of the product moved to rather than the other way round.
+  assert.ok(owing.includes("Anticipo pendiente"));
+  assert.ok(!owing.includes("Avance"), "one name for one thing, on paper above all");
   assert.ok(owing.includes("-$50.000"), "a debt carries its sign on paper");
+});
+
+test("the receipt says what happened, not what a button would have done", () => {
+  // `pay.pay` is «Pagar» — an infinitive, correct on a control and wrong on a
+  // signed document, where the worker is holding proof that the money already
+  // changed hands.
+  const html = receiptHtml(base, "es");
+  assert.ok(html.includes("Se le entregó"));
+  assert.ok(!html.includes(">Pagar<"), "no imperative survives onto the paper");
 });
 
 test("a settled balance of zero prints no balance line at all", () => {

@@ -152,10 +152,14 @@ export default function Account() {
             workerDoc: person?.docId,
             farmLabel: cfg?.label ?? "",
             unit: cfg?.unit ?? "",
+            // The day travels with the line: it is what lets the receipt list
+            // one row per load instead of one per week, which is the only
+            // form of it a worker can actually check.
             lines: items.map((i) => ({
               week: i.week,
               weight: i.weight,
               amountCents: i.amountCents,
+              day: i.localDay,
             })),
             // The document's own figure, not the sum of the lines above it.
             // A settlement that came down the feed for a week the worker also
@@ -462,7 +466,7 @@ const styles = StyleSheet.create({
   creditText: { color: "#3949ab" },
   creditBig: { color: "#3949ab", fontWeight: "800", marginVertical: 4 },
   zeroBig: { opacity: 0.35, fontWeight: "800", marginVertical: 4 },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   action: { marginTop: 10, borderRadius: 12 },
   tall: { height: 52 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },

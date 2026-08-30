@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   grow: { flex: 1 },
   strong: { fontWeight: "700" },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   body: { marginTop: 6, lineHeight: 20 },
   footnote: { marginTop: 8 },
   warn: { color: "#8a5a00", fontWeight: "600" },

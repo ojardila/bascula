@@ -49,6 +49,7 @@ export type {
   PendingItem,
   Person,
   Pickup,
+  RecentPickup,
   Settlement,
   SettlementItem,
   SettlementPreview,

@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", gap: 4, paddingVertical: 8 },
   heroNumber: { fontWeight: "800" },
   farmChip: { marginTop: 8 },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   warn: { color: "#8a5a00", fontWeight: "600" },
   body: { marginTop: 6, lineHeight: 20 },
   section: { marginTop: 20, fontWeight: "700" },

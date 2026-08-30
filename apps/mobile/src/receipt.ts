@@ -7,7 +7,7 @@ export interface ReceiptInput {
   farmLabel: string; // crop config label, stands in for the farm name
   unit: string;
   monday: string;
-  items: Pick<SettlementItem, "week" | "weight" | "amountCents">[];
+  items: Pick<SettlementItem, "week" | "weight" | "amountCents" | "localDay">[];
   /**
    * The settlement's own gross. Not the sum of `items` when the document came
    * down the feed covering a week the worker also spent on a jornal: the
@@ -26,7 +26,10 @@ export interface ReceiptInput {
  * Text rather than PDF on purpose: it arrives readable in the chat itself,
  * survives any phone, and needs no viewer, storage permission or extra
  * dependency. Workers distrust a weight they cannot check, so the breakdown
- * per week is the point of the document.
+ * is the point of the document — and it is per WEIGHING, not per week: a
+ * worker remembers the loads they carried on Tuesday and remembers no week at
+ * all. It falls back to the week only for a document whose weighings this
+ * phone does not hold.
  */
 export function buildReceipt(r: ReceiptInput, lang: Lang): string {
   const t = (k: string, v?: Record<string, string | number>) => translate(lang, k, v);
@@ -36,18 +39,24 @@ export function buildReceipt(r: ReceiptInput, lang: Lang): string {
   L.push(`${r.workerName} — ${formatDay(r.date, lang)}`);
   L.push("");
 
-  // Per-week breakdown, newest first, so the worker can check each weighing.
-  const byWeek = [...r.items].sort((a, b) => (a.week < b.week ? 1 : -1));
-  const grouped = new Map<string, { kg: number; cents: number }>();
-  for (const i of byWeek) {
-    const cur = grouped.get(i.week) ?? { kg: 0, cents: 0 };
+  // Newest first, so the worker can check each load they remember carrying.
+  const perDay = r.items.length > 0 && r.items.every((i) => !!i.localDay);
+  const key = (i: (typeof r.items)[number]) => (perDay ? i.localDay! : i.week);
+  const sorted = [...r.items].sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
+  const grouped = new Map<string, { kg: number; cents: number; loads: number }>();
+  for (const i of sorted) {
+    const cur = grouped.get(key(i)) ?? { kg: 0, cents: 0, loads: 0 };
     cur.kg += i.weight;
     cur.cents += i.amountCents;
-    grouped.set(i.week, cur);
+    cur.loads += 1;
+    grouped.set(key(i), cur);
   }
-  for (const [week, v] of grouped) {
+  for (const [when, v] of grouped) {
     L.push(
-      `${formatWeekRange(week, lang)}  ${formatNumber(v.kg, lang)} ${r.unit}  ${formatMoney(fromCents(v.cents), lang)}`,
+      `${perDay ? formatDay(when, lang) : formatWeekRange(when, lang)}  ${formatNumber(
+        v.kg,
+        lang,
+      )} ${r.unit}  ${formatMoney(fromCents(v.cents), lang)}`,
     );
   }
 
@@ -68,7 +77,7 @@ export function buildReceipt(r: ReceiptInput, lang: Lang): string {
   }
 
   L.push("");
-  L.push(`*${t("pay.pay")}: ${formatMoney(fromCents(r.paidCents), lang)}*`);
+  L.push(`*${t("pay.paidOut")}: ${formatMoney(fromCents(r.paidCents), lang)}*`);
 
   if (r.balance.balanceCents > 0) {
     L.push(`${t("pay.credit")}: ${formatMoney(fromCents(r.balance.balanceCents), lang)}`);

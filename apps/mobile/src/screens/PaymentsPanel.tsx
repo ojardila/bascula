@@ -12,11 +12,13 @@ import {
   Checkbox,
   Snackbar,
   Divider,
+  ActivityIndicator,
 } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import { payrollHtml } from "../receiptHtml";
 import { LOCAL_SETTLEMENT } from "../flags.ts";
+import { useSync } from "../sync/SyncProvider";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
@@ -50,6 +52,21 @@ type Row = { personId: number; name: string; kg: number; amountCents: number };
 
 export default function PaymentsPanel() {
   const { t, lang, money, num } = useT();
+  // §6.1, the half that was missing. `PayWorker` has had this guard since the
+  // protocol landed and the crew payroll — thirty settlements and thirty
+  // payments in one tap, the single most expensive button in the app — did
+  // not. The server owns the anti double-pay lock, so a handset that settles
+  // without being level with it can take a payable the server has already
+  // paid, thirty times over, and re-deriving afterwards does not put the cash
+  // back in anybody's pocket.
+  //
+  // The question that kept it out — «does the Saturday payroll ever run with
+  // no signal?» — has an answer now, from the owner: there is always signal
+  // when people are paid. So this gate costs the farm nothing and closes the
+  // other half of the risk.
+  const { status, ensureFresh, syncNow } = useSync();
+  const [fresh, setFresh] = useState(false);
+  const [checking, setChecking] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [config, setConfig] = useState<CropConfig | null>(null);
   const [monday, setMonday] = useState(() => mondayOf(new Date()));
@@ -98,6 +115,31 @@ export default function PaymentsPanel() {
   }, [monday]);
   useFocusEffect(load);
 
+  // On the way in, not on the way out: whoever walks up to this screen with
+  // signal should find the button already live, and whoever does not should
+  // see why before the crew is lined up.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      setChecking(true);
+      void ensureFresh()
+        .then((ok) => {
+          if (alive) setFresh(ok);
+        })
+        .finally(() => {
+          if (alive) setChecking(false);
+        });
+      return () => {
+        alive = false;
+      };
+    }, [ensureFresh]),
+  );
+
+  // The same two conditions as `PayWorker`, and for the same reason. A phone
+  // that was never registered keeps the old behaviour: it is alone with the
+  // farm's data and there is no second lock to race.
+  const payrollAllowed = LOCAL_SETTLEMENT && (!status.registered || fresh);
+
   const unit = config?.unit ?? "";
 
   // What the worker actually takes home: the week's harvest netted against
@@ -114,6 +156,7 @@ export default function PaymentsPanel() {
   const totalKg = useMemo(() => rows.reduce((s, r) => s + r.kg, 0), [rows]);
 
   function openBulk() {
+    if (!payrollAllowed) return;
     setBulk(new Set(rows.map((r) => r.personId)));
   }
 
@@ -143,6 +186,10 @@ export default function PaymentsPanel() {
     // guard a future navigation or a deep link walks around, and what is
     // behind this one is thirty settlements and thirty payments.
     if (!LOCAL_SETTLEMENT) return;
+    // And the freshness gate, here as well as on the button, for the reason
+    // the line above gives: a guard that lives only in the render is a guard a
+    // deep link walks around.
+    if (!payrollAllowed) return;
     const run = Payments.runPayroll(
       selected.map((r) => r.personId),
       EPOCH_START,
@@ -176,6 +223,11 @@ export default function PaymentsPanel() {
   // a payment standing against an earning that no longer exists.
   function undoLastRun() {
     if (!lastRun) return;
+    // Behind the flag like the run it takes back. `lastRun` can only have been
+    // set by `runBulk`, which is already gated — but a guard that rests on
+    // that staying true is a guard that expires the first time somebody sets
+    // `lastRun` from somewhere else.
+    if (!LOCAL_SETTLEMENT) return;
     try {
       Payments.undoRun(lastRun.payments, lastRun.settlements, t("pay.undo"));
       setLastRun(null);
@@ -295,10 +347,39 @@ export default function PaymentsPanel() {
             */}
             {LOCAL_SETTLEMENT ? (
               <>
+                {/*
+                  §6.1 in the same shape `PayWorker` wears it: the sentence,
+                  and next to it the thing that actually unblocks it. What is
+                  NOT offered here is an advance — an advance is one person's
+                  and this is the whole crew — so it points at the rows below,
+                  which is where each person's advance already lives.
+                */}
+                {!payrollAllowed && (
+                  <View style={styles.gate}>
+                    <Text variant="titleSmall" style={styles.gateTitle}>
+                      {t("pay.needsSyncTitle")}
+                    </Text>
+                    <Text style={styles.gateBody}>{t("pay.needsSyncCrew")}</Text>
+                    <Button
+                      mode="contained"
+                      icon={checking ? undefined : "sync"}
+                      disabled={checking || status.busy}
+                      onPress={() => void syncNow().then(() => void ensureFresh().then(setFresh))}
+                      style={styles.gateButton}
+                    >
+                      {checking ? <ActivityIndicator size={16} /> : t("pay.syncFirst")}
+                    </Button>
+                    {status.pending > 0 && (
+                      <Text style={styles.dim}>
+                        {t("sync.notSentYet", { n: status.pending })}
+                      </Text>
+                    )}
+                  </View>
+                )}
                 <Button
                   mode="contained"
                   icon="cash-multiple"
-                  disabled={!rows.length}
+                  disabled={!rows.length || !payrollAllowed}
                   onPress={openBulk}
                   style={styles.payAll}
                   contentStyle={styles.tall}
@@ -374,7 +455,7 @@ export default function PaymentsPanel() {
                     right={() => (
                       <View style={styles.amountCell}>
                         <Text variant="titleSmall">{money(fromCents(netOf(r)))}</Text>
-                        <MaterialCommunityIcons name="chevron-right" size={18} color="#9aa39a" />
+                        <MaterialCommunityIcons name="chevron-right" size={18} color="#5a6b5c" />
                       </View>
                     )}
                   />
@@ -440,7 +521,7 @@ const styles = StyleSheet.create({
   movedNote: { marginTop: 12, lineHeight: 20 },
   weekBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   weekLabel: { alignItems: "center" },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   lots: { textAlign: "center", marginBottom: 8 },
   card: { marginBottom: 12 },
   total: { fontWeight: "800", color: "#1b5e20", marginVertical: 2 },
@@ -456,4 +537,16 @@ const styles = StyleSheet.create({
   creditAmount: { color: "#3949ab", fontWeight: "700", alignSelf: "center" },
   sheet: { maxHeight: 280, paddingHorizontal: 0 },
   checkLabel: { fontSize: 15 },
+  gate: {
+    backgroundColor: "#fff8e6",
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+    marginTop: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: "#f6b40e",
+  },
+  gateTitle: { fontWeight: "700", color: "#7a4f00" },
+  gateBody: { color: "#7a4f00", lineHeight: 19 },
+  gateButton: { borderRadius: 10, marginTop: 4 },
 });

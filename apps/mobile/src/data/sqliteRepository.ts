@@ -98,6 +98,7 @@ import type {
   PriceResponseRow,
   RealCost,
   RecentPickup,
+  TypicalLoad,
   OutboxEntry,
   Repository,
   ReportsRepo,
@@ -582,6 +583,31 @@ export function createSqliteRepository(
     },
 
     /**
+     * The correction that had no screen. See `PickupsRepo.setPerson`.
+     *
+     * `updatedAt` moves, so the outbox trigger queues the row and the server
+     * hears about the reassignment the same way it hears about a corrected
+     * weight — the wire projection sends `personId` as the worker's uuid, so
+     * this travels with no protocol change at all.
+     */
+    setPerson: (id, personId) => {
+      if (pickups.isSettled(id)) throw new Error("SETTLED");
+      // Checked here rather than trusted from the screen: the chip list only
+      // offers active workers, but a stale screen held open across a pull that
+      // removed somebody would offer one that is no longer there.
+      const person = db.getFirstSync<{ id: number }>(
+        "SELECT id FROM people WHERE id = ? AND deletedAt IS NULL",
+        [personId],
+      );
+      if (!person) throw new Error("NOPERSON");
+      const r = db.runSync(
+        "UPDATE pickups SET personId = ?, updatedAt = ? WHERE id = ?",
+        [personId, now(), id],
+      );
+      if (r.changes === 0) throw new Error("NOTFOUND");
+    },
+
+    /**
      * Logical, not physical. A row deleted for real after it had been pushed
      * comes straight back on the next pull: the server still has it and this
      * phone no longer holds anything that says it was cancelled. The tombstone
@@ -652,7 +678,7 @@ export function createSqliteRepository(
 
     recent: () =>
       db.getAllSync<RecentPickup>(
-        `SELECT pk.id, pk.weight, pk.date,
+        `SELECT pk.id, pk.weight, pk.date, pk.personId, pk.cropId,
                 COALESCE(pe.name || ' ' || pe.lastName, 'Unknown') AS person,
                 COALESCE(cr.name, 'Unknown') AS crop
          FROM pickups_live pk
@@ -661,6 +687,20 @@ export function createSqliteRepository(
          ORDER BY pk.date DESC LIMIT 50`,
         [],
       ),
+
+    // The same aggregate the `digit` rule compares against — this person's
+    // whole history, not a window — asked one person at a time and BEFORE the
+    // row is written. The rule downstream keeps its own copy of the arithmetic
+    // because it has to run over rows nobody is looking at; this one runs
+    // while somebody is still standing at the scale and can fix it.
+    typical: (personId): TypicalLoad => {
+      const r = db.getFirstSync<{ avgWeight: number | null; samples: number }>(
+        `SELECT AVG(weight) AS avgWeight, COUNT(*) AS samples
+           FROM pickups_live WHERE personId = ?`,
+        [personId],
+      );
+      return { avgWeight: r?.avgWeight ?? 0, samples: r?.samples ?? 0 };
+    },
   };
 
   // ---- Reports ---------------------------------------------------------
@@ -1648,10 +1688,17 @@ ${BALANCE_COLUMNS("l")}
 
     // Live lines only: this feeds the receipt, which must not list work that
     // was annulled.
+    // Joined to the weighing so the receipt can name the DAY. `LEFT`, and the
+    // day nullable with it: a settlement that came down the feed can hold
+    // lines this phone has no pickup row for, and a receipt that silently
+    // dropped those would under-declare what somebody earned.
     itemsOf: (settlementId): SettlementItem[] =>
       db.getAllSync<SettlementItem>(
-        `SELECT * FROM settlement_items
-          WHERE settlementId = ? AND voidedAt IS NULL ORDER BY week DESC, id`,
+        `SELECT si.*, pk.localDay AS localDay
+           FROM settlement_items si
+           LEFT JOIN pickups pk ON pk.id = si.pickupId
+          WHERE si.settlementId = ? AND si.voidedAt IS NULL
+          ORDER BY si.week DESC, pk.localDay DESC, si.id`,
         [settlementId],
       ),
 

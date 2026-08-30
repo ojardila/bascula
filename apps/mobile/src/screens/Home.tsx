@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
-import { Text, Card, Button, List, Divider, TouchableRipple } from "react-native-paper";
+import { Text, Card, Button, List, Divider, TouchableRipple, Snackbar } from "react-native-paper";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { TabParamList } from "../types";
-import { Reports, Pickups, Config, Payments, fromCents } from "../db";
+import { Reports, Pickups, Config, Payments, fromCents, type RecentPickup } from "../db";
 import { useT, formatDay } from "../i18n";
+import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
 
 type Props = BottomTabScreenProps<TabParamList, "Home">;
 
@@ -19,30 +20,30 @@ export default function Home({ navigation }: Props) {
   const [unit, setUnit] = useState("kg");
   const [cropLabel, setCropLabel] = useState("");
   const [pending, setPending] = useState({ cents: 0, people: 0 });
-  const [recent, setRecent] = useState<
-    { id: number; weight: number; date: string; person: string; crop: string }[]
-  >([]);
+  const [recent, setRecent] = useState<RecentPickup[]>([]);
+  // A weighing somebody has just realised is wrong. See `FixPickup`.
+  const [fixing, setFixing] = useState<FixablePickup | null>(null);
+  const [snack, setSnack] = useState("");
 
-  useFocusEffect(
-    useCallback(() => {
-      const tt = Reports.totals();
-      if (tt) setTotals(tt);
-      const d = Reports.today();
-      if (d) setToday(d);
-      const w = Reports.thisWeek();
-      if (w) setWeek(w);
-      const cfg = Config.get();
-      setUnit(cfg?.unit || "kg");
-      setCropLabel(cfg?.label || "");
-      setRecent(Pickups.recent().slice(0, 4));
-      // Everything still owed farm-wide, so Saturday's job is one tap away.
-      const owed = Payments.pendingAll(cfg?.costPerUnit ?? 0).filter((r) => r.amountCents > 0);
-      setPending({
-        cents: owed.reduce((sum, r) => sum + r.amountCents, 0),
-        people: owed.length,
-      });
-    }, []),
-  );
+  const load = useCallback(() => {
+    const tt = Reports.totals();
+    if (tt) setTotals(tt);
+    const d = Reports.today();
+    if (d) setToday(d);
+    const w = Reports.thisWeek();
+    if (w) setWeek(w);
+    const cfg = Config.get();
+    setUnit(cfg?.unit || "kg");
+    setCropLabel(cfg?.label || "");
+    setRecent(Pickups.recent().slice(0, 4));
+    // Everything still owed farm-wide, so Saturday's job is one tap away.
+    const owed = Payments.pendingAll(cfg?.costPerUnit ?? 0).filter((r) => r.amountCents > 0);
+    setPending({
+      cents: owed.reduce((sum, r) => sum + r.amountCents, 0),
+      people: owed.length,
+    });
+  }, []);
+  useFocusEffect(load);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -114,7 +115,7 @@ export default function Home({ navigation }: Props) {
                 {t("pay.people", { n: pending.people })}
               </Text>
             </View>
-            <MaterialCommunityIcons name="chevron-right" size={22} color="#9aa39a" />
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#5a6b5c" />
           </Card.Content>
         </Card>
       )}
@@ -133,6 +134,10 @@ export default function Home({ navigation }: Props) {
       <Card style={styles.card} mode="elevated">
         <Card.Title
           title={t("home.recentActivity")}
+          // The rows became tappable in this sprint and a tappable row that
+          // looks like a label is a control nobody finds. Said once, above
+          // them, rather than four chevrons down the side.
+          subtitle={recent.length ? t("fix.hint") : undefined}
           left={(p) => <MaterialCommunityIcons {...p} name="history" size={24} color="#2e7d32" />}
         />
         <Card.Content style={{ paddingHorizontal: 0 }}>
@@ -143,15 +148,42 @@ export default function Home({ navigation }: Props) {
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
+                  // The only screen on which a weighing put on the wrong
+                  // person is ever seen again: it trips no rule, so the review
+                  // list never shows it.
+                  onPress={() => setFixing(fixableFrom(r))}
                   title={`${num(r.weight)} ${unit} · ${r.crop}`}
                   description={`${r.person} · ${formatDay(r.date, lang)}`}
                   left={(p) => <List.Icon {...p} icon="scale" />}
+                  right={(p) => (
+                    <MaterialCommunityIcons
+                      {...p}
+                      name="pencil-outline"
+                      size={18}
+                      color="#5a6b5c"
+                      style={styles.pencil}
+                    />
+                  )}
                 />
               </View>
             ))
           )}
         </Card.Content>
       </Card>
+
+      <FixPickup
+        pickup={fixing}
+        unit={unit}
+        onDismiss={() => setFixing(null)}
+        onDone={(message) => {
+          setFixing(null);
+          load();
+          setSnack(message);
+        }}
+      />
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
+        {snack}
+      </Snackbar>
     </ScrollView>
   );
 }
@@ -255,5 +287,6 @@ const styles = StyleSheet.create({
   ctaContent: { paddingVertical: 8 },
   ctaLabel: { fontSize: 16, fontWeight: "700" },
   card: { borderRadius: 16 },
-  empty: { opacity: 0.6, padding: 16 },
+  empty: { opacity: 0.75, padding: 16 },
+  pencil: { alignSelf: "center" },
 });

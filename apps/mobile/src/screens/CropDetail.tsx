@@ -195,7 +195,7 @@ export default function CropDetail({
                       style={{
                         color:
                           w.irl == null || w.comparableDays < 3
-                            ? "#9aa39a"
+                            ? "#5a6b5c"
                             : w.irl >= 1
                               ? "#1b5e20"
                               : "#8a5a00",
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: { fontWeight: "800" },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   note: { paddingHorizontal: 16, paddingTop: 10 },
   chart: { borderRadius: 12, marginLeft: -8 },
   empty: { opacity: 0.6, textAlign: "center", padding: 20 },

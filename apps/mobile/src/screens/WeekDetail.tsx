@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: { fontWeight: "800" },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   card: { marginBottom: 12 },
   chart: { borderRadius: 12, marginLeft: -16 },
   dayRow: {

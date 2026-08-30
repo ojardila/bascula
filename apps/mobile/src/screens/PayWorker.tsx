@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 12, paddingBottom: 32 },
   name: { fontWeight: "700" },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   card: { marginTop: 12 },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingVertical: 4 },
   div: { marginVertical: 8 },

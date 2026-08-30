@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { marginRight: 4 },
   summary: { gap: 2 },
-  dim: { opacity: 0.65 },
+  dim: { opacity: 0.78 },
   credit: { color: "#3949ab", fontWeight: "600" },
   negative: { color: "#8a5a00", fontWeight: "600" },
   save: { borderRadius: 12 },
