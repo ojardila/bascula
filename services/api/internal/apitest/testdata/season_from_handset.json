@@ -1,0 +1,759 @@
+{
+  "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+  "workers": [
+    {
+      "id": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "name": "Ana",
+      "lastName": "Rodríguez",
+      "documentType": "CC",
+      "docId": "Ana",
+      "tag": "Ana",
+      "createdAt": "2026-08-30T13:45:43.745Z",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "name": "Beto",
+      "lastName": "Rodríguez",
+      "documentType": "CC",
+      "docId": "Beto",
+      "tag": "Beto",
+      "createdAt": "2026-08-30T13:45:43.745Z",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "name": "Caro",
+      "lastName": "Rodríguez",
+      "documentType": "CC",
+      "docId": "Caro",
+      "tag": "Caro",
+      "createdAt": "2026-08-30T13:45:43.745Z",
+      "deletedAt": null
+    }
+  ],
+  "plots": [
+    {
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "name": "Lote El Alto",
+      "cropType": "Café",
+      "variety": "Castillo",
+      "areaHa": 2.5,
+      "deletedAt": null
+    }
+  ],
+  "weekPrices": [],
+  "workRecords": [
+    {
+      "id": "01a052eb-3e41-7006-9d28-8c6789126a8f",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-10T13:45:43.745Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7007-9e54-b13f13b2f010",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-10T13:45:43.745Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7008-b699-a8311f2bd421",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-10T13:45:43.745Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7009-af0a-a405f3f8482f",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-12T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700a-b573-46b41b9e1d56",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-12T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700b-9715-a41be3eda5c5",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-12T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700c-895c-35c99a5d0f76",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-14T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700d-b15f-e08881594c94",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-14T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700e-a13c-1069131781be",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-14T13:45:43.757Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-700f-a348-2e548f52f065",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 30,
+      "occurredAt": "2026-08-16T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7010-b66d-03831bd18b36",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 30,
+      "occurredAt": "2026-08-16T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7011-b2eb-4241010923da",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 30,
+      "occurredAt": "2026-08-16T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7012-8a5e-57e17d8bf5a1",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 35,
+      "occurredAt": "2026-08-18T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7013-bf3a-dfac693046e1",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 35,
+      "occurredAt": "2026-08-18T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7014-a068-b9ceaec833ff",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 35,
+      "occurredAt": "2026-08-18T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7015-8efd-d74504844c57",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 33,
+      "occurredAt": "2026-08-20T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7016-9ce4-5dfb15871de0",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 33,
+      "occurredAt": "2026-08-20T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7017-8ec8-3d3e2c495943",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 33,
+      "occurredAt": "2026-08-20T13:45:43.758Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7018-8cb0-48af3cc13105",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 31,
+      "occurredAt": "2026-08-22T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7019-a134-c6d2c5432fba",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 31,
+      "occurredAt": "2026-08-22T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701a-b5e9-2aa2cba3554d",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 31,
+      "occurredAt": "2026-08-22T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701b-9a70-a3854084ef75",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-24T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701c-a4e3-1ca4f95ab6f9",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-24T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701d-b7c6-6a8a2697b8cd",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 36,
+      "occurredAt": "2026-08-24T13:45:43.759Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701e-bf3a-fa2c991d43a2",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-26T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-701f-a04f-22fe08048a91",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-26T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7020-b300-bc67027d830d",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 34,
+      "occurredAt": "2026-08-26T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7021-8c92-cd1fcf317489",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-28T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7022-9c24-ce6ec1d54c42",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-28T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    },
+    {
+      "id": "01a052eb-3e41-7023-a5d5-78678c929cbc",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "cropId": "01a052eb-3e41-7002-aa72-9762ca1ed2c0",
+      "quantity": 32,
+      "occurredAt": "2026-08-28T13:45:43.760Z",
+      "note": null,
+      "deviceId": "bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+      "deletedAt": null
+    }
+  ],
+  "settlements": [
+    {
+      "id": "01a052eb-3e51-7000-aede-1b9ad04667c8",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "periodStart": "2026-08-10",
+      "periodEnd": "2026-08-30",
+      "grossCents": 26640000,
+      "status": "open",
+      "note": null,
+      "createdAt": "2026-08-30T13:45:43.761Z",
+      "voidedAt": null,
+      "items": [
+        {
+          "id": "01a052eb-3e51-7001-b55d-e3a193a0762c",
+          "payableId": "01a052eb-3e41-7006-9d28-8c6789126a8f",
+          "weekStart": "2026-08-10",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7002-9fea-a1a8fe79d034",
+          "payableId": "01a052eb-3e41-7009-af0a-a405f3f8482f",
+          "weekStart": "2026-08-10",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7003-a8dd-8ee3011527b4",
+          "payableId": "01a052eb-3e41-700c-895c-35c99a5d0f76",
+          "weekStart": "2026-08-10",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7004-885c-c227dd2ae2d9",
+          "payableId": "01a052eb-3e41-700f-a348-2e548f52f065",
+          "weekStart": "2026-08-10",
+          "quantity": 30,
+          "priceCents": 80000,
+          "amountCents": 2400000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7005-9a6b-7e3b1926813d",
+          "payableId": "01a052eb-3e41-7012-8a5e-57e17d8bf5a1",
+          "weekStart": "2026-08-17",
+          "quantity": 35,
+          "priceCents": 80000,
+          "amountCents": 2800000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7006-b4e8-94e61161b25a",
+          "payableId": "01a052eb-3e41-7015-8efd-d74504844c57",
+          "weekStart": "2026-08-17",
+          "quantity": 33,
+          "priceCents": 80000,
+          "amountCents": 2640000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7007-9c15-5c2902016eb0",
+          "payableId": "01a052eb-3e41-7018-8cb0-48af3cc13105",
+          "weekStart": "2026-08-17",
+          "quantity": 31,
+          "priceCents": 80000,
+          "amountCents": 2480000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7008-a15e-db377de86fa3",
+          "payableId": "01a052eb-3e41-701b-9a70-a3854084ef75",
+          "weekStart": "2026-08-24",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-7009-9565-82278579082c",
+          "payableId": "01a052eb-3e41-701e-bf3a-fa2c991d43a2",
+          "weekStart": "2026-08-24",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-700a-9b94-25a271c271b2",
+          "payableId": "01a052eb-3e41-7021-8c92-cd1fcf317489",
+          "weekStart": "2026-08-24",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        }
+      ]
+    },
+    {
+      "id": "01a052eb-3e51-700d-86bd-b1265356100e",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "periodStart": "2026-08-10",
+      "periodEnd": "2026-08-30",
+      "grossCents": 26640000,
+      "status": "open",
+      "note": null,
+      "createdAt": "2026-08-30T13:45:43.761Z",
+      "voidedAt": null,
+      "items": [
+        {
+          "id": "01a052eb-3e51-700e-ab83-4429f82fe45a",
+          "payableId": "01a052eb-3e41-7007-9e54-b13f13b2f010",
+          "weekStart": "2026-08-10",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e51-700f-abea-f936f9cb7300",
+          "payableId": "01a052eb-3e41-700a-b573-46b41b9e1d56",
+          "weekStart": "2026-08-10",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7000-9d3d-d3d77a1022f4",
+          "payableId": "01a052eb-3e41-700d-b15f-e08881594c94",
+          "weekStart": "2026-08-10",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7001-b8ad-7bcafdf8a136",
+          "payableId": "01a052eb-3e41-7010-b66d-03831bd18b36",
+          "weekStart": "2026-08-10",
+          "quantity": 30,
+          "priceCents": 80000,
+          "amountCents": 2400000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7002-8dc3-4bc65e2f7acd",
+          "payableId": "01a052eb-3e41-7013-bf3a-dfac693046e1",
+          "weekStart": "2026-08-17",
+          "quantity": 35,
+          "priceCents": 80000,
+          "amountCents": 2800000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7003-9d6e-da839b905abb",
+          "payableId": "01a052eb-3e41-7016-9ce4-5dfb15871de0",
+          "weekStart": "2026-08-17",
+          "quantity": 33,
+          "priceCents": 80000,
+          "amountCents": 2640000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7004-b338-ad57da34c7f6",
+          "payableId": "01a052eb-3e41-7019-a134-c6d2c5432fba",
+          "weekStart": "2026-08-17",
+          "quantity": 31,
+          "priceCents": 80000,
+          "amountCents": 2480000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7005-b87a-033d141dea98",
+          "payableId": "01a052eb-3e41-701c-a4e3-1ca4f95ab6f9",
+          "weekStart": "2026-08-24",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7006-bb54-b935ff051b8c",
+          "payableId": "01a052eb-3e41-701f-a04f-22fe08048a91",
+          "weekStart": "2026-08-24",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e52-7007-80bb-4e3712959ee7",
+          "payableId": "01a052eb-3e41-7022-9c24-ce6ec1d54c42",
+          "weekStart": "2026-08-24",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        }
+      ]
+    },
+    {
+      "id": "01a052eb-3e53-7001-8c91-74cacadea082",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "periodStart": "2026-08-10",
+      "periodEnd": "2026-08-30",
+      "grossCents": 26640000,
+      "status": "open",
+      "note": null,
+      "createdAt": "2026-08-30T13:45:43.763Z",
+      "voidedAt": null,
+      "items": [
+        {
+          "id": "01a052eb-3e53-7002-9f42-c3a7746cbc9c",
+          "payableId": "01a052eb-3e41-7008-b699-a8311f2bd421",
+          "weekStart": "2026-08-10",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7003-aef2-2cbb73e9980a",
+          "payableId": "01a052eb-3e41-700b-9715-a41be3eda5c5",
+          "weekStart": "2026-08-10",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7004-ac76-b1ae85f44780",
+          "payableId": "01a052eb-3e41-700e-a13c-1069131781be",
+          "weekStart": "2026-08-10",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7005-880f-dacc2c825aaf",
+          "payableId": "01a052eb-3e41-7011-b2eb-4241010923da",
+          "weekStart": "2026-08-10",
+          "quantity": 30,
+          "priceCents": 80000,
+          "amountCents": 2400000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7006-861e-c802cc11a454",
+          "payableId": "01a052eb-3e41-7014-a068-b9ceaec833ff",
+          "weekStart": "2026-08-17",
+          "quantity": 35,
+          "priceCents": 80000,
+          "amountCents": 2800000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7007-8b2d-e973c86a6552",
+          "payableId": "01a052eb-3e41-7017-8ec8-3d3e2c495943",
+          "weekStart": "2026-08-17",
+          "quantity": 33,
+          "priceCents": 80000,
+          "amountCents": 2640000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7008-9fa9-44baa98430e4",
+          "payableId": "01a052eb-3e41-701a-b5e9-2aa2cba3554d",
+          "weekStart": "2026-08-17",
+          "quantity": 31,
+          "priceCents": 80000,
+          "amountCents": 2480000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-7009-81a1-54d5dcf433e4",
+          "payableId": "01a052eb-3e41-701d-b7c6-6a8a2697b8cd",
+          "weekStart": "2026-08-24",
+          "quantity": 36,
+          "priceCents": 80000,
+          "amountCents": 2880000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-700a-aa11-dd070251dfc6",
+          "payableId": "01a052eb-3e41-7020-b300-bc67027d830d",
+          "weekStart": "2026-08-24",
+          "quantity": 34,
+          "priceCents": 80000,
+          "amountCents": 2720000,
+          "voidedAt": null
+        },
+        {
+          "id": "01a052eb-3e53-700b-8633-d37652c508d6",
+          "payableId": "01a052eb-3e41-7023-a5d5-78678c929cbc",
+          "weekStart": "2026-08-24",
+          "quantity": 32,
+          "priceCents": 80000,
+          "amountCents": 2560000,
+          "voidedAt": null
+        }
+      ]
+    }
+  ],
+  "ledger": [
+    {
+      "id": "01a052eb-3e50-7000-9d1e-9307beac2fe7",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "kind": "pago",
+      "amountCents": -500000,
+      "date": "2026-08-30",
+      "method": "efectivo",
+      "note": null,
+      "settlementId": null,
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.760Z"
+    },
+    {
+      "id": "01a052eb-3e51-700b-9631-d1a120968b60",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "kind": "devengo",
+      "amountCents": 26640000,
+      "date": "2026-08-30",
+      "method": null,
+      "note": null,
+      "settlementId": "01a052eb-3e51-7000-aede-1b9ad04667c8",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.761Z"
+    },
+    {
+      "id": "01a052eb-3e51-700c-b5e1-e70038e84467",
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "kind": "pago",
+      "amountCents": -26140000,
+      "date": "2026-08-30",
+      "method": "efectivo",
+      "note": null,
+      "settlementId": "01a052eb-3e51-7000-aede-1b9ad04667c8",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.761Z"
+    },
+    {
+      "id": "01a052eb-3e52-7008-971a-2285ae3767ab",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "kind": "devengo",
+      "amountCents": 26640000,
+      "date": "2026-08-30",
+      "method": null,
+      "note": null,
+      "settlementId": "01a052eb-3e51-700d-86bd-b1265356100e",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.762Z"
+    },
+    {
+      "id": "01a052eb-3e53-7000-9c03-68c0d71393c8",
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "kind": "pago",
+      "amountCents": -26640000,
+      "date": "2026-08-30",
+      "method": "efectivo",
+      "note": null,
+      "settlementId": "01a052eb-3e51-700d-86bd-b1265356100e",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.763Z"
+    },
+    {
+      "id": "01a052eb-3e53-700c-bf19-63ccbf7c89cb",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "kind": "devengo",
+      "amountCents": 26640000,
+      "date": "2026-08-30",
+      "method": null,
+      "note": null,
+      "settlementId": "01a052eb-3e53-7001-8c91-74cacadea082",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.763Z"
+    },
+    {
+      "id": "01a052eb-3e53-700d-b364-17ac75332164",
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "kind": "pago",
+      "amountCents": -26640000,
+      "date": "2026-08-30",
+      "method": "efectivo",
+      "note": null,
+      "settlementId": "01a052eb-3e53-7001-8c91-74cacadea082",
+      "reversesId": null,
+      "createdAt": "2026-08-30T13:45:43.763Z"
+    }
+  ],
+  "balances": [
+    {
+      "workerId": "01a052eb-3e41-7003-aab8-5b5f8b72f87b",
+      "balanceCents": 0
+    },
+    {
+      "workerId": "01a052eb-3e41-7004-a496-1a52bde4e990",
+      "balanceCents": 0
+    },
+    {
+      "workerId": "01a052eb-3e41-7005-9904-91b4fcddee92",
+      "balanceCents": 0
+    }
+  ]
+}
