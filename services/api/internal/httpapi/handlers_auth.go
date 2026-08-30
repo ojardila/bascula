@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
@@ -44,11 +44,17 @@ type signupRequest struct {
 // moment it exists — nobody at the platform approves it — but the owner cannot
 // open a session until the address is verified.
 //
-// This is the most exposed surface in the system, so it carries two limits: a
-// per-IP rate limit that survives a restart because it lives in Postgres, and
-// mandatory email verification. It carries no password check and no account
-// lookup the caller can observe — see the long note further down, and
-// handleCreateFarm, which is where the third limit went.
+// This is the most exposed surface in the system, so it carries three limits:
+// a rate limit per IP and one per address, both of which survive a restart
+// because they live in Postgres, and mandatory email verification. It carries
+// no password check and no account lookup the caller can observe — see the
+// long note further down, and handleCreateFarm, which is where the
+// farms-per-account cap went.
+//
+// The IP the two counters key on is the one established in buildRouter, which
+// is the socket's unless an operator named the proxies allowed to override it.
+// It is deliberately not read off a header here: a limit whose key the caller
+// chooses is not a limit.
 //
 // # What comes back, and what does not
 //
@@ -130,6 +136,28 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	if n >= s.cfg.SignupsPerIPPerHour {
 		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
 			"too many signups from this address, try again later"))
+		return
+	}
+
+	// And the same limit along the other axis, which is the one that still
+	// holds when the first is cheap to evade — a botnet, a carrier NAT pool,
+	// or a trusted-proxy range an operator wrote one CIDR too wide. The index
+	// this rides on, ix_signup_attempts_email, was created in migration 00002
+	// and until now nothing queried it.
+	//
+	// It counts attempts, never accounts, which is what keeps it out of the
+	// long argument below: an address with an account and an address without
+	// one hit this cap after exactly the same number of tries, so the 429
+	// discloses only that somebody has been hammering that address — which the
+	// person hammering it already knows.
+	byEmail, err := store.CountSignupAttemptsByEmail(r.Context(), tx, attempted, time.Hour)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if byEmail >= s.cfg.SignupsPerEmailPerHour {
+		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many signups for this address, try again later"))
 		return
 	}
 
@@ -816,15 +844,26 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// clientIP is the address the rate limit counts and signup_attempts records.
+//
+// It reads what the ClientIPFrom* middleware in buildRouter established and
+// asks no questions about how. That indirection is the fix: this function used
+// to parse r.RemoteAddr, which middleware.RealIP had already overwritten with
+// an attacker-supplied header, so the one place in the codebase that looks
+// like it is reading the socket was reading the request body's neighbour
+// instead. Whether a header may move the address is now one decision, taken
+// once, in Config.TrustedProxyCIDRs.
+//
+// The fallback is only reachable when RemoteAddr held nothing parseable as an
+// address, which for net/http means a listener that is not TCP. Writing to a
+// NOT NULL inet column beats failing a signup over it, and everything from
+// such a listener lands in the same bucket, which is the conservative way to
+// be wrong.
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil || host == "" {
-		if r.RemoteAddr != "" {
-			return r.RemoteAddr
-		}
-		return "127.0.0.1"
+	if ip := middleware.GetClientIP(r.Context()); ip != "" {
+		return ip
 	}
-	return host
+	return "127.0.0.1"
 }
 
 func newID() string {

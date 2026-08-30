@@ -63,10 +63,11 @@ run:
 	APP_ENV=development go run ./cmd/api
 
 # The same server, set up so the end-to-end suite in apps/web can run more than
-# once an hour. Signups are capped at 5 per IP by default, which is right in
-# production and useless on a laptop where a test run spends four of them.
+# once an hour. Signups are capped at 5 per IP and 5 per address by default,
+# which is right in production and useless on a laptop where a test run spends
+# four of them and a developer re-registering their own address spends the rest.
 dev:
-	APP_ENV=development PORT=$(PORT_DEV) SIGNUPS_PER_IP_PER_HOUR=1000 go run ./cmd/api
+	APP_ENV=development PORT=$(PORT_DEV) SIGNUPS_PER_IP_PER_HOUR=1000 SIGNUPS_PER_EMAIL_PER_HOUR=1000 go run ./cmd/api
 
 build:
 	go build -o bin/api ./cmd/api
