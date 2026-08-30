@@ -290,6 +290,8 @@ const es: Dict = {
   "pay.discardYes": "Sí, borrar",
   "pay.oneSide": "Esta liquidación queda en este teléfono. No la pague también en la web: le pagaría dos veces.",
   "pay.noCashN": "{n} sin saldo por entregar",
+  "pay.unpricedN": "{n} sin precio: no se liquidaron",
+  "pay.unpriced": "No hay precio para esas semanas. No se liquidó nada: pídele el precio al dueño y vuelve a intentar.",
   "pay.failedN": "{n} con error",
 
   // Performance
@@ -805,6 +807,8 @@ const en: Dict = {
   "pay.discardYes": "Yes, delete",
   "pay.oneSide": "This settlement stays on this phone. Do not also pay it on the web: that would pay twice.",
   "pay.noCashN": "{n} with nothing to hand over",
+  "pay.unpricedN": "{n} unpriced: not settled",
+  "pay.unpriced": "There is no price for those weeks. Nothing was settled: ask the owner for the price and try again.",
   "pay.failedN": "{n} failed",
 
   // Performance
@@ -1304,6 +1308,8 @@ const pt: Dict = {
   "pay.discardYes": "Sim, apagar",
   "pay.oneSide": "Esta liquidação fica neste telefone. Não pague também na web: pagaria duas vezes.",
   "pay.noCashN": "{n} sem saldo a entregar",
+  "pay.unpricedN": "{n} sem preço: não foram liquidados",
+  "pay.unpriced": "Não há preço para essas semanas. Nada foi liquidado: peça o preço ao dono e tente de novo.",
   "pay.failedN": "{n} com erro",
 
   // Performance

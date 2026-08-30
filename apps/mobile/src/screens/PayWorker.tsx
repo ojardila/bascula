@@ -17,6 +17,7 @@ import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/nativ
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
+import { UnpricedWeeks } from "../data/repository.ts";
 import {
   Config,
   People as PeopleDb,
@@ -180,7 +181,10 @@ export default function PayWorker() {
       setTimeout(() => navigation.goBack(), 900);
     } catch (e) {
       busy.current = false;
-      setSnack(t("pay.error"));
+      // «Ocurrió un error» would be the third wrong thing this screen could
+      // say about a missing price. Name it: the weeks are unpriced, the
+      // worker is owed for every kilo of them, and nothing was written.
+      setSnack(e instanceof UnpricedWeeks ? t("pay.unpriced") : t("pay.error"));
     }
   }
 

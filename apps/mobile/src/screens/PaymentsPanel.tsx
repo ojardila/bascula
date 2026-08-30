@@ -234,6 +234,9 @@ export default function PaymentsPanel() {
     load();
     const extra = [
       run.noCash ? t("pay.noCashN", { n: run.noCash }) : "",
+      // Named apart from noCash, and first, because it is the one that is not
+      // the worker's situation but the farm's: nobody priced those weeks.
+      run.unpriced ? t("pay.unpricedN", { n: run.unpriced }) : "",
       run.failed ? t("pay.failedN", { n: run.failed }) : "",
     ]
       .filter(Boolean)

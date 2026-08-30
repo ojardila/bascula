@@ -362,6 +362,26 @@ export interface SettleResult {
  * «Deshacer» could not reach — and the only way back was the ledger by hand
  * (`docs/diagramas/movil.md` §9.13).
  */
+/**
+ * Thrown by `settle` when there ARE pending weighings and every one of them
+ * priced at zero, because no usable price reached this phone for those weeks.
+ *
+ * Distinct from `settle` returning `null`, which means there was nothing
+ * pending in the first place. A gross of zero cannot be written either way --
+ * the ledger's CHECK refuses it -- so the only question is which of the two
+ * silences the phone reports, and they are not the same silence.
+ *
+ * `docs/auditorias.md`: not knowing is not zero.
+ */
+export class UnpricedWeeks extends Error {
+  readonly weeks: readonly string[];
+  constructor(weeks: readonly string[]) {
+    super(`no usable price for ${weeks.join(", ")}`);
+    this.name = "UnpricedWeeks";
+    this.weeks = weeks;
+  }
+}
+
 export interface PayrollRun {
   /** Workers who were settled and handed cash. */
   paid: number;
@@ -369,6 +389,17 @@ export interface PayrollRun {
   noCash: number;
   /** Workers whose settle or pay threw. The rest of the crew went on. */
   failed: number;
+  /**
+   * Workers who HAVE pending weighings that every one of them priced at zero,
+   * because no usable price reached this phone for those weeks.
+   *
+   * Counted apart from `noCash` on purpose. Both write nothing, but they mean
+   * opposite things to the person holding the handset: `noCash` says the
+   * advance already covered the week, and this says we do not know what the
+   * week was worth. Reporting the second as the first tells a farm that three
+   * workers drew their whole week in advances when they are owed for all of it.
+   */
+  unpriced: number;
   /** Every settlement created, in order. Undoable whether or not it was paid. */
   settlementIds: number[];
   /** Every payment created, in order. */

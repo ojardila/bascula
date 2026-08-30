@@ -61,6 +61,7 @@ import {
 } from "../schema.ts";
 import { buildSeasonExport } from "../sync/seasonExport.ts";
 import type { ImportRun, ImportRunInput } from "../sync/seasonImport.ts";
+import { UnpricedWeeks } from "./repository.ts";
 import type {
   AnomaliesRepo,
   Anomaly,
@@ -1349,9 +1350,18 @@ export function createSqliteRepository(
     settle: (personId, from, to, general, note): SettleResult | null => {
       const items = pendingItems(personId, from, to, general);
       const grossCents = items.reduce((s, i) => s + i.amountCents, 0);
-      // A zero gross would violate the ledger's CHECK and crash the payroll for
-      // the whole farm; it happens as soon as someone saves a cost of 0.
-      if (!items.length || grossCents <= 0) return null;
+      // Nothing pending. Honest silence: there is no week here to settle.
+      if (!items.length) return null;
+      // Pending weighings that all priced at zero is a DIFFERENT silence, and
+      // it used to share this return. A zero gross cannot be written -- the
+      // ledger's CHECK refuses it -- but returning null made the caller say
+      // «sin saldo por entregar», which everywhere else on this phone means
+      // the advance covered the week. It did not. No price reached us for
+      // these weeks, and the worker is owed for every kilo of them.
+      if (grossCents <= 0) {
+        const weeks = [...new Set(items.filter((i) => i.costPerUnitCents <= 0).map((i) => i.week))];
+        throw new UnpricedWeeks(weeks.sort());
+      }
       let settlementId = 0;
       let ledgerId = 0;
       // The real period is what the items cover, not the open-ended search
@@ -1420,6 +1430,7 @@ export function createSqliteRepository(
         paid: 0,
         noCash: 0,
         failed: 0,
+        unpriced: 0,
         settlementIds: [],
         paymentIds: [],
         paidCents: 0,
@@ -1456,7 +1467,14 @@ export function createSqliteRepository(
           );
           run.paidCents += owed;
           run.paid++;
-        } catch {
+        } catch (e) {
+          // A week nobody priced is not a failure of this worker's payroll --
+          // it is the same missing price for the whole crew, and saying so
+          // once is worth more than thirty identical errors.
+          if (e instanceof UnpricedWeeks) {
+            run.unpriced++;
+            continue;
+          }
           // Skip this worker, keep the rest of the payroll going. Whatever
           // was already recorded for them stays in the run, so a half-done
           // worker is still reachable from Deshacer.
