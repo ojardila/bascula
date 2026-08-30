@@ -276,7 +276,7 @@ suite(suiteName, () => {
 
     // Y nada escrito: la comprobación es una lectura, y por eso «no se liquida
     // a nadie» puede ser verdad y no una intención.
-    expect(await api.listSettlements()).toHaveLength(0);
+    expect((await api.listSettlements()).items).toHaveLength(0);
   }, 60_000);
 
   it("después de volver a mirar, liquida a la cuadrilla entera", async () => {
@@ -372,7 +372,7 @@ suite(suiteName, () => {
    */
   it("deshace la nómina entera y devuelve el trabajo a pendiente", async () => {
     // El asa que la pantalla habría acumulado en sus dos corridas.
-    const settlements = (await api.listSettlements()).map((s) => s.id);
+    const settlements = (await api.listSettlements()).items.map((s) => s.id);
     const payments: string[] = [];
     for (const id of workerIds.values()) {
       const ledger = await api.workerLedger(id);
@@ -392,8 +392,8 @@ suite(suiteName, () => {
 
     // Nada borrado: las liquidaciones quedan anuladas, no ausentes.
     const listed = await api.listSettlements();
-    expect(listed).toHaveLength(3);
-    expect(listed.every((s) => s.status === "void")).toBe(true);
+    expect(listed.items).toHaveLength(3);
+    expect(listed.items.every((s) => s.status === "void")).toBe(true);
 
     // Y lo que importa de verdad: anular soltó las labores, así que la semana
     // se puede volver a liquidar. Un deshacer que dejara el trabajo reclamado

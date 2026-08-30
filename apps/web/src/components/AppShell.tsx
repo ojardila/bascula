@@ -24,6 +24,7 @@ import PaymentsIcon from "@mui/icons-material/Payments";
 import InventoryIcon from "@mui/icons-material/Inventory2";
 import SettingsIcon from "@mui/icons-material/Settings";
 import HarvestIcon from "@mui/icons-material/Grass";
+import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
 import { useAuth } from "../auth/AuthContext";
 import { MODULES, can } from "../auth/permissions";
@@ -43,6 +44,7 @@ const ICONS: Record<string, ReactNode> = {
   receipt: <ReceiptIcon />,
   sell: <SellIcon />,
   payments: <PaymentsIcon />,
+  price: <PriceChangeIcon />,
   inventory: <InventoryIcon />,
   settings: <SettingsIcon />,
 };
@@ -89,15 +91,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                 primary={m.label}
                 slotProps={{ primary: { fontWeight: selected ? 700 : 500, fontSize: 14 } }}
               />
+              {/* «S4» no significa nada fuera de este equipo. Lo que la
+                  persona necesita saber de una entrada apagada es que todavía
+                  no está, no en qué sprint la pusimos. */}
               {future && (
-                <Chip size="small" label={`S${m.sprint}`} sx={{ height: 18, fontSize: 10 }} />
+                <Chip size="small" label="pronto" sx={{ height: 18, fontSize: 10 }} />
               )}
             </ListItemButton>
           );
           return future ? (
             <Tooltip
               key={m.key}
-              title={`Este módulo llega en el sprint ${m.sprint}.`}
+              title="Esta parte todavía no está lista. Llega en una próxima versión."
               placement="right"
             >
               <span>{item}</span>

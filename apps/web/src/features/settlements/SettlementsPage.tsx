@@ -63,7 +63,24 @@ export function SettlementsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
 
-  const { data, error, denied } = useAsync(() => api.listSettlements(), []);
+  const { data: list, error, denied } = useAsync(() => api.listSettlements(), []);
+  const data = list?.items ?? null;
+  /**
+   * ── «NO HAY» NO ES LO MISMO QUE «NO PUDE» ────────────────────────────
+   *
+   * Sin `GET /v1/settlements` esta lista se compone leyendo el libro de cada
+   * empleado, y esas lecturas fallan una a una. Los `catch` de
+   * `api.listSettlements` devolvían listas vacías, así que una caída llegaba
+   * aquí exactamente igual que una finca nueva — y la pantalla AFIRMABA, en
+   * presente y sobre la finca, que no se había liquidado nada nunca. Peor:
+   * imprimía la planilla en blanco, con su columna de firmas.
+   *
+   * Ahora los huecos vienen contados y la pantalla los dice, la lista se
+   * marca como incompleta, y el botón de imprimir se apaga: un papel que se
+   * firma no sale de una lectura que se sabe rota.
+   */
+  const holes = (list?.unreadableLedgers ?? 0) + (list?.unreadableSettlements ?? 0);
+  const incomplete = holes > 0;
 
   const rows = useMemo(() => {
     if (!data) return null;
@@ -161,12 +178,33 @@ export function SettlementsPage() {
         <Button
           startIcon={<PrintIcon />}
           variant="outlined"
-          disabled={!rows || rows.length === 0}
+          // Una planilla en blanco con columna de firmas, salida de una lectura
+          // que falló, es el peor papel que este producto puede imprimir.
+          disabled={!rows || rows.length === 0 || incomplete}
           onClick={printPayroll}
         >
           {filtered ? "Planilla (parcial)" : "Planilla"}
         </Button>
       </Stack>
+
+      {incomplete && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>Esta lista está incompleta.</strong>{" "}
+          {list!.unreadableLedgers > 0 &&
+            `No se pudo leer el libro de ${list!.unreadableLedgers} ${
+              list!.unreadableLedgers === 1 ? "empleado" : "empleados"
+            }, así que sus liquidaciones no aparecen. `}
+          {list!.unreadableSettlements > 0 &&
+            `${list!.unreadableSettlements} ${
+              list!.unreadableSettlements === 1
+                ? "liquidación no se pudo consultar"
+                : "liquidaciones no se pudieron consultar"
+            }. `}
+          Las cifras de abajo son de lo que sí se pudo leer, y la planilla no se puede
+          imprimir hasta que la lista esté entera: un papel que se firma no sale de una
+          lectura rota.
+        </Alert>
+      )}
 
       {filtered && rows !== null && (
         <Alert
@@ -268,6 +306,9 @@ export function SettlementsPage() {
             </TableRow>
           </TableHead>
           <TableBody>
+            {/* Las cuatro ramas del módulo de cosecha, aquí: cargando,
+                falló, filtro sin resultados, y vacío de verdad. La cuarta es
+                la única que puede afirmar algo sobre la finca. */}
             {rows === null && (
               <TableRow>
                 <TableCell colSpan={6} sx={{ color: "text.secondary" }}>
@@ -278,9 +319,11 @@ export function SettlementsPage() {
             {rows?.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} sx={{ color: "text.secondary" }}>
-                  {data?.length === 0
-                    ? "Todavía no se ha liquidado nada en esta finca."
-                    : "Ninguna liquidación coincide con el filtro."}
+                  {data?.length !== 0
+                    ? "Ninguna liquidación coincide con el filtro."
+                    : incomplete
+                      ? "No se encontró ninguna liquidación en lo que sí se pudo leer. No quiere decir que no las haya: parte de la consulta falló."
+                      : "Todavía no se ha liquidado nada en esta finca."}
                 </TableCell>
               </TableRow>
             )}

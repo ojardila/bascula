@@ -148,9 +148,22 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
             money(-after),
           )}</strong>.</div>`;
 
+  /**
+   * EL NÚMERO, ARRIBA Y LEGIBLE.
+   *
+   * Encabezaba este recibo un UUID de 36 caracteres, que es el número que el
+   * dueño leería por teléfono si alguien reclama. Ahora arriba va la forma
+   * corta —ocho dígitos en dos bloques— y el id entero sigue en el pie, en
+   * letra pequeña, para quien tenga que buscarlo en el libro.
+   */
+  const receiptLine = `<div class="who"><div class="nm">Recibo N.º ${esc(
+    payment.receiptNumber,
+  )}</div></div>`;
+
   return documentShell(
     `Recibo de pago · ${r.worker.name} ${r.worker.lastName}`,
     `${headerHtml({ farmName: r.farmName, date: payment.date }, "Recibo de pago")}
+     ${receiptLine}
      ${whoHtml(r.worker)}
      ${table}
      ${hasProvisionalLines(r.lines) ? PROVISIONAL_NOTE : ""}
@@ -163,7 +176,9 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
        <div>Firma del empleado</div>
        <div>Firma por la finca</div>
      </div>
-     <p class="foot"><span>Recibo ${esc(payment.receiptNumber)}</span>
+     <p class="foot"><span>Recibo N.º ${esc(payment.receiptNumber)} · movimiento ${esc(
+       payment.id,
+     )}</span>
        <span>${esc(formatDate(payment.date))}</span></p>`,
   );
 }

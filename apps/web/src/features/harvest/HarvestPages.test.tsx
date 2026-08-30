@@ -73,6 +73,7 @@ function totals(over: Partial<WireReportTotals> = {}): WireReportTotals {
     valueCents: null,
     recordsWithoutValue: 0,
     valueIsEstimate: false,
+    recordsSpanningWeeks: 0,
     ...over,
   };
 }

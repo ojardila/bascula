@@ -82,6 +82,7 @@ import {
 import { invalidateRefs, loadRefs } from "./refs";
 import { mondayOf } from "../lib/dates";
 import { uuidv7 } from "../lib/uuid";
+import { shortReceiptNumber } from "../lib/receipt";
 import type {
   Activity,
   ActivityInput,
@@ -117,6 +118,7 @@ import type {
   SaleInput,
   Settlement,
   SettlementSummary,
+  SettlementList,
   StockLevel,
   StockMove,
   StockMoveInput,
@@ -1120,7 +1122,7 @@ export const api = {
    * Both fan-outs are parallel, which is why this is still not something to
    * call from the dashboard even on the slow path.
    */
-  listSettlements: async (): Promise<SettlementSummary[]> => {
+  listSettlements: async (): Promise<SettlementList> => {
     const workers = await api.listWorkers({ status: "all" });
     const names = new Map(workers.map((w) => [w.id, `${w.name} ${w.lastName}`.trim()]));
 
@@ -1128,9 +1130,13 @@ export const api = {
     // server's own ordering.
     try {
       const res = await http.get<WireList<WireSettlement>>("/v1/settlements");
-      return items(res)
-        .map((s) => toSettlementSummary(s, names))
-        .sort(byNewestFirst);
+      return {
+        items: items(res)
+          .map((s) => toSettlementSummary(s, names))
+          .sort(byNewestFirst),
+        unreadableLedgers: 0,
+        unreadableSettlements: 0,
+      };
     } catch (e) {
       // 405 today, 404 if the route is renamed. Anything else — a 403, an
       // expired session — is a real failure and must not be papered over by a
@@ -1138,12 +1144,31 @@ export const api = {
       if (!(e instanceof ApiError) || (e.status !== 404 && e.status !== 405)) throw e;
     }
 
+    /**
+     * ── LOS HUECOS DEL ABANICO, CONTADOS ─────────────────────────────
+     *
+     * Estos dos `catch` devolvían una lista vacía y un null, y la pantalla no
+     * tenía forma de distinguir «esta finca no ha liquidado nada» de «no pude
+     * leer los libros». Con los ledgers caídos, `/liquidaciones` afirmaba
+     * «Todavía no se ha liquidado nada en esta finca» — una frase sobre la
+     * finca, no sobre la petición — e imprimía una planilla en blanco con
+     * columna de firmas.
+     *
+     * Tragarse el fallo sigue siendo lo correcto: una liquidación ilegible no
+     * puede esconder las otras veintinueve. Lo que faltaba era CONTAR los
+     * huecos y devolverlos, para que la pantalla pueda decir de cuántos es la
+     * lista que está enseñando.
+     */
+    let unreadableLedgers = 0;
     const ledgers = await Promise.all(
       workers.map((w) =>
         http
           .get<WireList<WireLedgerEntry>>(`/v1/workers/${w.id}/ledger`)
           .then((r) => items(r))
-          .catch(() => [] as WireLedgerEntry[]),
+          .catch(() => {
+            unreadableLedgers += 1;
+            return [] as WireLedgerEntry[];
+          }),
       ),
     );
 
@@ -1154,15 +1179,23 @@ export const api = {
       }
     }
 
+    let unreadableSettlements = 0;
     const settled = await Promise.all(
       [...ids].map((id) =>
-        http.get<WireSettlement>(`/v1/settlements/${id}`).catch(() => null),
+        http.get<WireSettlement>(`/v1/settlements/${id}`).catch(() => {
+          unreadableSettlements += 1;
+          return null;
+        }),
       ),
     );
-    return settled
-      .filter((s): s is WireSettlement => s !== null)
-      .map((s) => toSettlementSummary(s, names))
-      .sort(byNewestFirst);
+    return {
+      items: settled
+        .filter((s): s is WireSettlement => s !== null)
+        .map((s) => toSettlementSummary(s, names))
+        .sort(byNewestFirst),
+      unreadableLedgers,
+      unreadableSettlements,
+    };
   },
 
   /**
@@ -1252,9 +1285,11 @@ export const api = {
       // handed over, which is the absolute value.
       amountCents: Math.abs(entry.amountCents),
       method: body.method,
-      // The API issues no receipt numbers. The screen prints the movement id,
-      // which is at least something a person can quote back to us.
-      receiptNumber: entry.id,
+      // The API issues no receipt numbers, so this is the movement id written
+      // for a person: eight digits in two blocks, dictable over the phone. The
+      // whole id still goes in the small print of the paper. See
+      // `lib/receipt.ts`.
+      receiptNumber: shortReceiptNumber(entry.id),
       balanceBeforeCents: before.balanceCents,
       balanceAfterCents: after.balanceCents,
       date: day(entry.date),
@@ -1277,7 +1312,7 @@ export const api = {
       workerId: entry.workerId,
       amountCents: Math.abs(entry.amountCents),
       method: body.method,
-      receiptNumber: entry.id,
+      receiptNumber: shortReceiptNumber(entry.id),
       balanceBeforeCents: after.balanceCents + Math.abs(entry.amountCents),
       balanceAfterCents: after.balanceCents,
       date: day(entry.date),

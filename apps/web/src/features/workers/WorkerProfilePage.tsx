@@ -34,6 +34,8 @@ import { useAuth } from "../../auth/AuthContext";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
+import { OwedFigure, owedDirection } from "./OwedFigure";
+import { totalOwedCents, type Owed } from "./owed";
 import type { LedgerKind } from "../../api/types";
 
 const KIND_LABEL: Record<LedgerKind, string> = {
@@ -57,7 +59,18 @@ export function WorkerProfilePage() {
   if (!data) return null;
 
   const { worker, balance, workRecords, pendingCents, ledger, notes } = data;
-  const inFavour = balance.balanceCents >= 0;
+  /**
+   * La única definición de «lo que se le debe» del proyecto, en `owed.ts`.
+   * `pendingIsEstimate` sale de las propias labores sin liquidar: en esta
+   * finca casi todas se pagan al precio de la semana, y una cifra que todavía
+   * se puede mover no puede parecerse a una que ya no.
+   */
+  const owed: Owed = {
+    balanceCents: balance.balanceCents,
+    pendingCents,
+    pendingIsEstimate: workRecords.some((r) => !r.settled && r.amountIsEstimate),
+  };
+  const inFavour = (totalOwedCents(owed) ?? balance.balanceCents) >= 0;
 
   return (
     <Box>
@@ -119,8 +132,10 @@ export function WorkerProfilePage() {
                   </Button>
                 )}
                 {/* The button exists from Sprint 1; the section it writes into
-                    is Sprint 2 work. Disabled and labelled beats absent. */}
-                <Tooltip title="Las anotaciones llegan en el sprint 2.">
+                    is later work. Disabled and labelled beats absent — but the
+                    label a user reads must not name our sprint numbers. */}
+                <Tooltip title="Todavía no se pueden escribir anotaciones desde aquí.">
+
                   <span>
                     <Button variant="outlined" startIcon={<NoteAddIcon />} disabled>
                       Agregar anotación
@@ -133,41 +148,64 @@ export function WorkerProfilePage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 5 }}>
+          {/* ── LA CIFRA POR LA QUE PREGUNTÓ ─────────────────────────────
+              Antes aquí gritaba el saldo del libro —$184.500— y lo pendiente
+              de liquidar iba en letra chica debajo, así que la respuesta a
+              «¿cuánto le debo?» ($338.100) sólo existía dentro de la pantalla
+              de pagar. Quien quería SABER sin PAGAR nunca la veía, y las
+              otras tres pantallas decían otras tres cosas.
+
+              Ahora arriba va el total y debajo, en pequeño, las dos mitades
+              de las que sale. La suma la hace `owed.ts`, que es el único
+              sitio del proyecto donde está escrita. */}
           <Card sx={{ bgcolor: inFavour ? "#eaf3e8" : "#fdecea" }}>
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                Saldo pendiente
+                Lo que se le debe hoy
               </Typography>
-              <Money cents={Math.abs(balance.balanceCents)} variant="big" />
+              <OwedFigure owed={owed} variant="big" align="flex-start" />
               <Typography variant="body2" color="text.secondary">
-                {inFavour ? "a favor del empleado" : "que el empleado le debe a la finca"}
+                {owedDirection(owed) ?? "no se pudo establecer"}
               </Typography>
+
               <Divider sx={{ my: 1.5 }} />
-              <Stack direction="row" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">
-                  Pendiente de liquidar
-                </Typography>
-                {/* "—", not "$0". The figure comes from a request of its own,
-                    and when it fails a zero says this person is square with
-                    the farm — which is the one thing this line must never say
-                    by accident. */}
-                {pendingCents === null ? (
-                  <Tooltip title="No se pudo consultar lo pendiente de liquidar. No es cero.">
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "text.disabled", fontWeight: 600, cursor: "help" }}
-                      aria-label="No se pudo consultar lo pendiente de liquidar. No es cero."
-                    >
-                      —
-                    </Typography>
-                  </Tooltip>
-                ) : (
-                  <Money cents={pendingCents} variant="small" />
-                )}
+
+              {/* El desglose, con los dos nombres que el resto de la consola
+                  usa, para que nadie tenga que adivinar cuál de las dos
+                  mitades es «Pendiente de liquidar». */}
+              <Stack spacing={0.5}>
+                <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                  <Typography variant="body2" color="text.secondary">
+                    Ya liquidado (saldo del libro)
+                  </Typography>
+                  <Money cents={balance.balanceCents} variant="small" />
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                  <Typography variant="body2" color="text.secondary">
+                    Pendiente de liquidar
+                  </Typography>
+                  {/* "—", not "$0". The figure comes from a request of its own,
+                      and when it fails a zero says this person is square with
+                      the farm — which is the one thing this line must never say
+                      by accident. */}
+                  {pendingCents === null ? (
+                    <Tooltip title="No se pudo consultar lo pendiente de liquidar. No es cero.">
+                      <Typography
+                        variant="body2"
+                        sx={{ color: "text.disabled", fontWeight: 600, cursor: "help" }}
+                        aria-label="No se pudo consultar lo pendiente de liquidar. No es cero."
+                      >
+                        —
+                      </Typography>
+                    </Tooltip>
+                  ) : (
+                    <Money cents={pendingCents} variant="small" />
+                  )}
+                </Stack>
               </Stack>
-              <Typography variant="caption" color="text.secondary">
-                Trabajo hecho que todavía no es un devengo. Se suma al saldo cuando se
-                liquida.
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                Lo pendiente es trabajo hecho que todavía no es un devengo. Se le entrega
+                igual: liquidar es el papel, no la deuda.
               </Typography>
               {balance.lastMovementOn && (
                 <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>

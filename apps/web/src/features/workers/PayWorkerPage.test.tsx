@@ -79,6 +79,54 @@ function repriceWeek(monday: string, priceCents: number) {
   else t.weekPrices.push({ weekStart: monday, priceCents });
 }
 
+/**
+ * ── PAGAR YA NO ES UN CLIC ───────────────────────────────────────────────
+ *
+ * Entregar $338.100 era un botón verde, irreversible y sin preguntar, mientras
+ * dar de baja a un empleado —que se deshace— tenía diálogo rojo. Ahora el
+ * botón dice «Revisar y pagar» y no escribe nada: abre la confirmación que
+ * lista las labores con su importe, igual que la nómina de cuadrilla. El
+ * botón que escribe está dentro, y estos ayudantes son el camino que ahora
+ * recorre cualquiera que pague.
+ */
+async function confirmDialog() {
+  const title = await screen.findByText(/^Entregar \$/);
+  return title.closest('[role="dialog"]') as HTMLElement;
+}
+
+/**
+ * MUI deja el diálogo montado —y `aria-modal`— durante los 195 ms de la
+ * animación de cierre, así que sin esto la siguiente consulta sobre la página
+ * no ve nada: el modal que se está yendo sigue tapando el documento.
+ */
+async function confirmDialogGone() {
+  await waitFor(() =>
+    expect(screen.queryByText(/^Entregar \$/)).not.toBeInTheDocument(),
+  );
+}
+
+/** Revisar y firmar el pago total. */
+async function payTotal(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /Revisar y pagar/ }));
+  const dialog = await confirmDialog();
+  await user.click(within(dialog).getByRole("button", { name: /^Pagar \$/ }));
+  await confirmDialogGone();
+}
+
+/** Revisar y firmar un pago parcial, el del cuadro de la derecha. */
+async function payPartial(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Revisar" }));
+  const dialog = await confirmDialog();
+  await user.click(within(dialog).getByRole("button", { name: /^Pagar \$/ }));
+  await confirmDialogGone();
+}
+
+/** El diálogo de la carrera, buscado por su título y no por ser «el» diálogo. */
+async function driftDialog() {
+  const title = await screen.findByText("El total cambió mientras revisaba");
+  return title.closest('[role="dialog"]') as HTMLElement;
+}
+
 describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
   it("no muestra un error: muestra la diferencia y por qué", async () => {
     const user = userEvent.setup();
@@ -91,10 +139,9 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
     // …and now the owner raises the week from $800 to $840 a kilo.
     repriceWeek("2026-08-24", 84_000);
 
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
 
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("El total cambió mientras revisaba")).toBeInTheDocument();
+    const dialog = await driftDialog();
 
     // The sentence the owner asked for, with both figures in it, the week
     // named, and the price it moved between. The arithmetic is the server's:
@@ -130,9 +177,9 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
     renderPay();
     await screen.findByText("$153.600");
     repriceWeek("2026-08-24", 84_000);
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await driftDialog();
     const buttons = within(dialog)
       .getAllByRole("button")
       .map((b) => b.textContent);
@@ -142,7 +189,7 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
     // one the next approval will carry.
     await user.click(within(dialog).getByRole("button", { name: "Volver a revisar" }));
     expect(await screen.findByText("$156.780")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   }, 20000);
 
   it("y después de volver a mirar, la cifra nueva sí se puede aprobar", async () => {
@@ -150,20 +197,19 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
     renderPay();
     await screen.findByText("$153.600");
     repriceWeek("2026-08-24", 84_000);
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
     await user.click(
-      within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "Volver a revisar",
-      }),
+      within(await driftDialog()).getByRole("button", { name: "Volver a revisar" }),
     );
     await screen.findByText("$156.780");
 
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
 
     // The receipt, which is the proof the settlement and the payment both went
     // through at the figure that was actually approved.
-    const receipt = await screen.findByRole("dialog");
-    expect(within(receipt).getByText("Pago registrado")).toBeInTheDocument();
+    const receipt = (await screen.findByText("Pago registrado")).closest(
+      '[role="dialog"]',
+    ) as HTMLElement;
     expect(within(receipt).getByRole("button", { name: /Imprimir recibo/ })).toBeInTheDocument();
   }, 20000);
 });
@@ -240,7 +286,11 @@ describe("un doble clic no puede pagar dos veces", () => {
      * thing between $10.000 and $20.000 is the guard on this screen.
      */
     await user.type(screen.getByLabelText("Valor"), "10000");
-    const button = screen.getByRole("button", { name: "Pagar" });
+    // El botón que escribe vive ahora dentro de la confirmación. La guarda que
+    // se está probando —el ref síncrono de `useWriteOnce`— sigue estando en la
+    // misma llamada, así que el doble clic se dispara donde de verdad ocurre.
+    await user.click(screen.getByRole("button", { name: "Revisar" }));
+    const button = within(await confirmDialog()).getByRole("button", { name: /^Pagar \$/ });
     // Two events, one task. No await, no re-render in between — which is
     // precisely why `disabled={busy}` never saw the second one.
     await act(async () => {
@@ -278,9 +328,9 @@ describe("un doble clic no puede pagar dos veces", () => {
     renderPay();
     await payAgainstBalanceOnly(user);
 
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
     await waitFor(() => expect(ids).toHaveLength(1));
-    await user.click(screen.getByRole("button", { name: /Pago total/ }));
+    await payTotal(user);
     await waitFor(() => expect(ids).toHaveLength(2));
 
     expect(ids[0]).toBe(ids[1]);
@@ -311,14 +361,45 @@ describe("un doble clic no puede pagar dos veces", () => {
 
     const amount = screen.getByLabelText("Valor");
     await user.type(amount, "1000");
-    await user.click(screen.getByRole("button", { name: "Pagar" }));
+    await payPartial(user);
     await waitFor(() => expect(ids).toHaveLength(1));
 
     await user.clear(amount);
     await user.type(amount, "2000");
-    await user.click(screen.getByRole("button", { name: "Pagar" }));
+    await payPartial(user);
     await waitFor(() => expect(ids).toHaveLength(2));
 
     expect(ids[0]).not.toBe(ids[1]);
+  }, 20000);
+});
+
+/**
+ * ── LOS ANTICIPOS, DEL LADO QUE SON ──────────────────────────────────────
+ *
+ * El recuadro «Deudas y anticipos» pintaba `cents={-d.amountCents}`, así que
+ * plata que la persona YA RECIBIÓ salía «+ $45.000» en verde, con signo más —
+ * mientras la misma línea, en el historial del perfil, salía en rojo con
+ * menos. Dos pantallas, dos signos, un solo movimiento del libro. Y como son
+ * asientos que ya están dentro del saldo, seguían apareciendo idénticos
+ * después de pagar todo y quedar en $0, leídos como una deuda que el pago no
+ * borró.
+ */
+describe("los anticipos y las deducciones", () => {
+  it("se muestran como lo que son: plata ya entregada, en negativo", async () => {
+    renderPay();
+    const card = (await screen.findByText("Anticipos y deudas ya descontados")).closest(
+      ".MuiCardContent-root",
+    ) as HTMLElement;
+
+    // El anticipo sembrado de María: $50.000 que ya recibió.
+    expect(within(card).getByText("− $50.000")).toBeInTheDocument();
+    expect(within(card).queryByText("+ $50.000")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("dice que ya están restados del saldo, para que no se cuenten dos veces", async () => {
+    renderPay();
+    expect(
+      await screen.findByText(/ya está restada del saldo/),
+    ).toBeInTheDocument();
   }, 20000);
 });

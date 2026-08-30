@@ -470,9 +470,37 @@ export function isSettled(t: Tenant, payableId: string): boolean {
   return liveClaim(t, payableId) !== null;
 }
 
-/** The wire projection of a work record: `settled` is derived, never stored. */
+/**
+ * The wire projection of a work record: `settled` is derived, never stored.
+ *
+ * AND SO IS THE MONEY, for the rows the week still prices. `estimatedAmountCents`
+ * is documented as "what it is worth TODAY", and `pending()` twenty lines below
+ * recomputes it from `weekPriceOf` on every read — but this projection was
+ * echoing the number the row was seeded with. So the moment the owner changed a
+ * week's price, `/v1/workers/{id}/payables` moved and `/v1/work-records` did
+ * not, and the console had two answers for one week's picking again: the
+ * employee's profile one figure, the list of labores another.
+ *
+ * That is not mock-only cosmetics. The screens that read the list — the
+ * dashboard, `/labores`, the employee list — are exactly the ones this sprint
+ * made agree with each other, and a mock that cannot change a price without
+ * splitting them cannot be used to check that they agree.
+ *
+ * The rule is the one `pending()` uses, unchanged: a record whose price is
+ * frozen (settled, or written with an explicit rate) keeps it; a `weekly_price`
+ * record that no live settlement claims is worth quantity x this week's price.
+ */
 export function projectWorkRecord(t: Tenant, r: MockWorkRecord): WireWorkRecord {
-  return { ...r, settled: isSettled(t, r.id) };
+  const settled = isSettled(t, r.id);
+  const stillOnTheWeek = !settled && r.rateSource === "weekly_price" && r.rateCents === null;
+  if (!stillOnTheWeek) return { ...r, settled };
+  const rateCents = weekPriceOf(t, dayOf(r.weekStart));
+  return {
+    ...r,
+    settled,
+    estimatedAmountCents: amountCents(Number(r.quantity), rateCents),
+    amountIsEstimate: true,
+  };
 }
 
 /**

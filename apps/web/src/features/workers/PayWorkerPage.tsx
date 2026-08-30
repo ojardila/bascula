@@ -39,7 +39,7 @@
  *   a synchronous ref that stops click two, and an id minted once per approved
  *   figure. See `lib/writeOnce.ts`.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, Dialog, DialogActions,
@@ -54,7 +54,7 @@ import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
-import { formatDateRange, formatDayLong } from "../../lib/dates";
+import { formatDate, formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { useAuth } from "../../auth/AuthContext";
@@ -99,6 +99,32 @@ export function PayWorkerPage() {
    * offered reloads what is owed.
    */
   const [changed, setChanged] = useState<GrossChange | null>(null);
+  /**
+   * ── VER ANTES DE FIRMAR ──────────────────────────────────────────────
+   *
+   * Pagar $338.100 era un clic, irreversible y sin preguntar, mientras dar de
+   * baja a un empleado —que se deshace con otro clic— tenía diálogo rojo. El
+   * único rojo de la consola guardaba lo reversible.
+   *
+   * El patrón correcto ya estaba escrito en la nómina de cuadrilla, que el
+   * evaluador llamó la mejor pantalla de la aplicación: un botón que dice
+   * «Revisar y…» —así que al pulsarlo no pasa nada todavía— y una
+   * confirmación que vuelve a listar cada línea con su importe. El pago
+   * individual lo copia, y a propósito no en rojo: el rojo de esta consola es
+   * para los conflictos, y pagarle a alguien no es un error.
+   */
+  const [confirming, setConfirming] = useState<{ amountCents: number; alsoAdvance: number } | null>(
+    null,
+  );
+  /**
+   * Lo último que se confirmó, para que el diálogo no se despida diciendo
+   * «Entregar $0». MUI lo mantiene montado durante la animación de cierre, y
+   * `confirming?.amountCents ?? 0` pintaba un cero justo mientras se va —
+   * exactamente el tipo de cifra fantasma que este sprint está quitando.
+   */
+  const lastConfirm = useRef<{ amountCents: number; alsoAdvance: number } | null>(null);
+  if (confirming) lastConfirm.current = confirming;
+  const shownConfirm = confirming ?? lastConfirm.current;
 
   if (denied) return <PermissionDenied moduleName="pagar a un empleado" />;
   if (error) return <Alert severity="error">{error}</Alert>;
@@ -121,6 +147,7 @@ export function PayWorkerPage() {
   }
 
   async function pay(amountCents: number, alsoAdvance = 0) {
+    setConfirming(null);
     // The lines behind the figure, captured at the moment of approval. They go
     // with the request so that a refusal can say WHAT moved and not just that
     // something did.
@@ -333,8 +360,22 @@ export function PayWorkerPage() {
 
           <Card>
             <CardContent>
-              <Typography variant="h3" gutterBottom>
-                Deudas y anticipos
+              {/* ── ANTICIPOS Y DEDUCCIONES: DOS ERRORES EN TRES LÍNEAS ─────
+                  1. `cents={-d.amountCents}` daba la vuelta al signo, así que
+                     plata que la persona YA RECIBIÓ salía «+ $45.000» en
+                     verde — y la misma línea, en el historial del perfil,
+                     salía en rojo con menos. El libro guarda un anticipo en
+                     negativo porque eso es lo que es; aquí se muestra tal
+                     cual, y las dos pantallas dicen por fin lo mismo.
+                  2. El título prometía algo pendiente. Estas filas son
+                     movimientos del libro que YA ESTÁN dentro del saldo de
+                     arriba, así que seguían apareciendo iguales después de
+                     pagar todo y quedar en $0 — leído como una deuda que el
+                     pago no borró. El encabezado y el pie lo dicen ahora. */}
+              <Typography variant="h3">Anticipos y deudas ya descontados</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Plata que {worker.name} ya recibió, o que le debe a la finca. No se suma
+                aquí: <strong>ya está restada del saldo</strong> de la derecha.
               </Typography>
               <Table size="small">
                 <TableHead>
@@ -348,16 +389,16 @@ export function PayWorkerPage() {
                   {payables.debts.map((d) => (
                     <TableRow key={d.id}>
                       <TableCell>{d.concept}</TableCell>
-                      <TableCell>{d.date}</TableCell>
+                      <TableCell>{formatDate(d.date)}</TableCell>
                       <TableCell align="right">
-                        <Money cents={-d.amountCents} signed colored />
+                        <Money cents={d.amountCents} signed colored />
                       </TableCell>
                     </TableRow>
                   ))}
                   {payables.debts.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={3} sx={{ color: "text.secondary" }}>
-                        Sin deudas ni anticipos.
+                        Sin anticipos ni deudas.
                       </TableCell>
                     </TableRow>
                   )}
@@ -405,15 +446,17 @@ export function PayWorkerPage() {
                 <MenuItem value="otro">Otro</MenuItem>
               </TextField>
 
+              {/* «Revisar y…», como en la nómina: el botón no escribe nada,
+                  abre la lista de lo que se va a firmar. */}
               <Button
                 variant="contained"
                 fullWidth
                 size="large"
                 disabled={busy || !!changed || toPayCents <= 0}
-                onClick={() => pay(toPayCents)}
+                onClick={() => setConfirming({ amountCents: toPayCents, alsoAdvance: 0 })}
                 sx={{ mb: 2 }}
               >
-                Pago total · {formatMoney(toPayCents)}
+                Revisar y pagar · {formatMoney(toPayCents)}
               </Button>
 
               <Typography variant="overline" color="text.secondary">
@@ -436,10 +479,12 @@ export function PayWorkerPage() {
                 <Button
                   variant="outlined"
                   disabled={busy || !!changed || partialCents === null || partialCents <= 0}
-                  onClick={() => pay(partialCents as number)}
+                  onClick={() =>
+                    setConfirming({ amountCents: partialCents as number, alsoAdvance: 0 })
+                  }
                   sx={{ height: 56 }}
                 >
-                  Pagar
+                  Revisar
                 </Button>
               </Stack>
 
@@ -451,6 +496,117 @@ export function PayWorkerPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* ── VER ANTES DE FIRMAR ───────────────────────────────────────────
+          El mismo diálogo de la nómina de cuadrilla, para una persona: vuelve
+          a listar cada línea con su importe, dice qué se escribe, y sólo
+          entonces hay un botón que escribe. Sin rojo: el rojo de esta consola
+          es para conflictos, y esto no es un error, es la operación. */}
+      <Dialog
+        open={confirming !== null}
+        onClose={() => setConfirming(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Entregar {formatMoney(shownConfirm?.amountCents ?? 0)} a {worker.name} {worker.lastName}
+        </DialogTitle>
+        <DialogContent dividers>
+          <DialogContentText component="div" sx={{ mb: 2 }}>
+            {payables.workRecords.length > 0 && checked.size > 0 ? (
+              <>
+                Esto liquida las labores de abajo —les fija el precio— y escribe el pago
+                en el libro.
+              </>
+            ) : (
+              <>Esto escribe el pago en el libro, contra el saldo que ya está escrito.</>
+            )}{" "}
+            <strong>Un pago no se edita ni se borra</strong>: si queda mal, se corrige con
+            un reverso, que es otro asiento.
+          </DialogContentText>
+
+          {checked.size > 0 && (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Actividad</TableCell>
+                  <TableCell>Fecha</TableCell>
+                  <TableCell align="right">Cantidad</TableCell>
+                  <TableCell align="right">Valor</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {payables.workRecords
+                  .filter((w) => checked.has(w.id))
+                  .map((w) => (
+                    <TableRow key={w.id}>
+                      <TableCell>{w.activityName}</TableCell>
+                      <TableCell>{formatDateRange(w.dateFrom, w.dateTo)}</TableCell>
+                      <TableCell align="right">
+                        {w.unitLabel ? `${formatQuantity(w.quantity)} ${w.unitLabel}` : "contrato"}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Money cents={w.amountCents} variant="small" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          )}
+
+          <Divider sx={{ my: 2 }} />
+          <Stack spacing={0.5}>
+            <Stack direction="row" justifyContent="space-between">
+              <Typography variant="body2" color="text.secondary">
+                Saldo ya escrito en el libro
+              </Typography>
+              <Money cents={balance.balanceCents} variant="small" />
+            </Stack>
+            <Stack direction="row" justifyContent="space-between">
+              <Typography variant="body2" color="text.secondary">
+                Labores que se liquidan ahora
+              </Typography>
+              <Money cents={selectedCents} variant="small" />
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+              <Typography variant="h3">Se entrega</Typography>
+              <Money cents={shownConfirm?.amountCents ?? 0} variant="big" />
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              En {method}.
+            </Typography>
+          </Stack>
+
+          {/* Un pago parcial deja saldo. Decirlo aquí evita que alguien crea
+              que acaba de dejar a la persona a paz y salvo. */}
+          {shownConfirm !== null && shownConfirm.amountCents < toPayCents && (
+            <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+              Es un pago parcial. Después de esto quedan{" "}
+              <strong>{formatMoney(toPayCents - shownConfirm.amountCents)}</strong> a favor de{" "}
+              {worker.name}.
+            </Alert>
+          )}
+
+          {payables.workRecords.some((w) => checked.has(w.id) && w.rateSource === "weekly_price") && (
+            <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
+              Parte de esto está al precio de la semana. Liquidar es lo que lo fija: a
+              partir de aquí deja de ser estimado.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button color="inherit" onClick={() => setConfirming(null)}>
+            Ahora no
+          </Button>
+          <Button
+            variant="contained"
+            disabled={busy}
+            onClick={() => confirming && pay(confirming.amountCents, confirming.alsoAdvance)}
+          >
+            {busy ? "Registrando…" : `Pagar ${formatMoney(shownConfirm?.amountCents ?? 0)}`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── THE FIGURE MOVED ──────────────────────────────────────────────
           Not an error box. An error box says "something went wrong" and offers
@@ -601,7 +757,12 @@ export function PayWorkerPage() {
         <DialogTitle>Pago registrado</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
-            <Chip label={`Recibo #${receipt?.payment.receiptNumber}`} sx={{ alignSelf: "flex-start" }} />
+            {/* El número que se dicta por teléfono, no el UUID del movimiento.
+                Ver `lib/receipt.ts`. */}
+            <Chip
+              label={`Recibo N.º ${receipt?.payment.receiptNumber}`}
+              sx={{ alignSelf: "flex-start", fontWeight: 700 }}
+            />
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Pagado</Typography>
               <Money cents={receipt?.payment.amountCents ?? 0} />

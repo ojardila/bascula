@@ -39,7 +39,7 @@ import { sentenceFor, type Formatters } from "../src/api/grossChange";
 import { ApiError } from "../src/api/errors";
 import { getTokens, http, setTokens } from "../src/api/client";
 import { invalidateRefs } from "../src/api/refs";
-import { formatDayLong } from "../src/lib/dates";
+import { formatDayLong, mondayOf } from "../src/lib/dates";
 import { formatMoney } from "../src/lib/money";
 import { uuidv7 } from "../src/lib/uuid";
 import { areaHaOf, asGeometry, ringProblem, type Geometry } from "../src/lib/geo";
@@ -486,7 +486,11 @@ suite(suiteName, () => {
    */
   it("la liquidación queda listada, con su periodo y sus líneas", async () => {
     const list = await api.listSettlements().catch((e) => explain(e, "listar liquidaciones"));
-    const mine = list.filter((s) => s.workerId === workerId);
+    // `listSettlements` devuelve la lista CON SUS HUECOS declarados: sin
+    // `GET /v1/settlements` se compone leyendo el libro de cada empleado, y
+    // una lectura caída ya no se puede confundir con una finca sin liquidar.
+    expect(list.unreadableLedgers + list.unreadableSettlements).toBe(0);
+    const mine = list.items.filter((s) => s.workerId === workerId);
     expect(mine).toHaveLength(1);
     expect(mine[0].grossCents).toBe(5_080_000);
     expect(mine[0].status).toBe("open");
@@ -587,6 +591,132 @@ suite(suiteName, () => {
   /* ------------------------------------------------------------------ */
   /* El candado de la liquidación                                        */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * ── EL PRECIO DEL KILO DE LA SEMANA, CONTRA EL SERVIDOR DE VERDAD ──────
+   *
+   * `PUT /v1/prices/weeks/{monday}` estaba en el cliente desde el sprint 1 y
+   * ninguna pantalla lo llamaba, así que esta prueba tampoco existía: el
+   * único `PUT` del producto que mueve plata ya escrita no se había ejercido
+   * nunca contra un Postgres. Ahora hay una pantalla que lo llama, y lo que
+   * hay que probar contra la API real no es que el `PUT` conteste 200 — es la
+   * consecuencia, que es la que cuesta dinero:
+   *
+   *   fijar el precio de una semana REPRECIA la recolección de esa semana que
+   *   todavía no se ha liquidado, y NO toca la que ya se liquidó.
+   *
+   * Corre sobre trabajadora, actividad y lote propios, por lo mismo que el
+   * bloque de abajo: mover el precio de la semana bajo Rosa reescribiría todas
+   * las cifras que los comentarios de este fichero citan a mano.
+   */
+  describe("el precio del kilo de la semana", () => {
+    let priceWorkerId = "";
+    let weeklyActivityId = "";
+    let monday = "";
+
+    beforeAll(async () => {
+      const worker = await api
+        .createWorker({
+          id: uuidv7(),
+          name: "Aurora",
+          lastName: "Cardona",
+          documentType: "CC",
+          documentNumber: `8${Date.now()}`.slice(0, 10),
+          phone: "",
+          country: "Colombia",
+        })
+        .catch((e) => explain(e, "contratar para la prueba del precio"));
+      priceWorkerId = worker.id;
+
+      // Una actividad cuyo precio LO PONE LA SEMANA: es la única clase de
+      // labor que un cambio de precio semanal puede mover.
+      const activity = await api
+        .createActivity({
+          id: uuidv7(),
+          name: `Recolección semanal E2E ${Date.now()}`,
+          category: "cosecha",
+          payMode: "work_unit",
+          workUnit: "kg",
+          rateSource: "weekly_price",
+          defaultRateCents: null,
+          validFrom: "2020-01-01",
+        })
+        .catch((e) => explain(e, "crear la actividad al precio de la semana"));
+      weeklyActivityId = activity.id;
+      monday = mondayOf(today());
+    });
+
+    it("se puede fijar, que es lo que ninguna pantalla sabía hacer", async () => {
+      const set = await api
+        .setWeekPrice(monday, PRICE_PER_KG)
+        .catch((e) => explain(e, "fijar el precio de la semana"));
+      expect(set.costPerUnitCents).toBe(PRICE_PER_KG);
+
+      const read = await api
+        .weekPrice(monday)
+        .catch((e) => explain(e, "releer el precio de la semana"));
+      expect(read.costPerUnitCents).toBe(PRICE_PER_KG);
+      expect(read.monday).toBe(monday);
+    });
+
+    it("y lo que vale la recolección sin liquidar sale de él", async () => {
+      const record = await api
+        .createWorkRecord({
+          id: uuidv7(),
+          workerId: priceWorkerId,
+          activityId: weeklyActivityId,
+          plotIds: [plotId],
+          plotCropIds: [],
+          dateFrom: today(),
+          dateTo: today(),
+          quantity: 50,
+        })
+        .catch((e) => explain(e, "registrar la labor al precio de la semana"));
+
+      // 50 kg x $800. Y no está congelado: es lo que valdría hoy.
+      expect(record.amountIsEstimate).toBe(true);
+      const payables = await api.workerPayables(priceWorkerId);
+      expect(payables.grossCents).toBe(4_000_000);
+    });
+
+    /**
+     * LA CONSECUENCIA. Subir el kilo de $800 a $900 sube lo que la finca le
+     * debe a quien recogió esa semana y todavía no ha cobrado — que es
+     * exactamente para lo que existe el precio semanal, y exactamente por lo
+     * que la pantalla lo dice antes de guardarlo.
+     */
+    it("subirlo reprecia lo que todavía no se ha liquidado", async () => {
+      await api.setWeekPrice(monday, 90_000).catch((e) => explain(e, "subir el precio"));
+
+      const payables = await api.workerPayables(priceWorkerId);
+      // 50 kg x $900.
+      expect(payables.grossCents).toBe(4_500_000);
+      // Y sigue siendo un estimado: liquidar es lo que lo fija.
+      expect(payables.workRecords[0].rateSource).toBe("weekly_price");
+    });
+
+    /** Y lo que YA se liquidó conserva su precio: ése es el trato de liquidar. */
+    it("pero no toca lo que ya se liquidó", async () => {
+      const payables = await api.workerPayables(priceWorkerId);
+      const ids = payables.workRecords.map((w) => w.id);
+      const approved = await api.previewSettlement(priceWorkerId, ids);
+      await api
+        .settle(priceWorkerId, ids, {
+          expectedGrossCents: approved.grossCents,
+          expectedLines: approved.lines,
+          id: uuidv7(),
+        })
+        .catch((e) => explain(e, "liquidar al precio nuevo"));
+
+      const balanceBefore = await api.workerBalance(priceWorkerId);
+      expect(balanceBefore.balanceCents).toBe(4_500_000);
+
+      // El precio baja después de liquidar, y el devengo no se mueve.
+      await api.setWeekPrice(monday, 50_000).catch((e) => explain(e, "bajar el precio"));
+      const balanceAfter = await api.workerBalance(priceWorkerId);
+      expect(balanceAfter.balanceCents).toBe(4_500_000);
+    });
+  });
 
   /**
    * These two run on a worker of their OWN, hired here, and deliberately after

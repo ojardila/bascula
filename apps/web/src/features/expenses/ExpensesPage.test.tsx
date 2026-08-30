@@ -131,7 +131,7 @@ describe("the list", () => {
   it("shows the total the server summed, not the one the browser could add up", async () => {
     renderExpenses();
     // Four live expenses in the seed: 1.250.000 + 180.000 + 420.000 + 350.000.
-    expect(await screen.findByText(/4 gasto\(s\), por un total de/)).toBeInTheDocument();
+    expect(await screen.findByText(/4 gastos, por un total de/)).toBeInTheDocument();
     expect(screen.getByText("$2.200.000")).toBeInTheDocument();
   }, 20000);
 

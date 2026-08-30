@@ -3,6 +3,7 @@ import {
   Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, Typography,
 } from "@mui/material";
 import PeopleIcon from "@mui/icons-material/People";
+import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
@@ -129,6 +130,36 @@ export function ConfigPage() {
           </Grid>
         )}
 
+        {/* El precio del kilo tiene su propia pantalla —es un hecho semanal
+            con fecha, no un ajuste— pero quien viene a Configuración a
+            buscarlo tiene razón en buscarlo aquí, así que aquí está la
+            puerta. Que no esté en dos sitios: está en uno, señalado desde
+            los dos. */}
+        {can("config.prices") && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  Precio del kilo
+                </Typography>
+                <Typography color="text.secondary" sx={{ mb: 2 }}>
+                  Lo que la finca paga por kilo recogido, semana por semana. Es el mismo
+                  precio que usa el teléfono y el que se le fija a la recolección cuando
+                  usted liquida.
+                </Typography>
+                <Button
+                  component={RouterLink}
+                  to="/precio-semana"
+                  variant="outlined"
+                  startIcon={<PriceChangeIcon />}
+                >
+                  Fijar el precio de la semana
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>
             <CardContent>
@@ -137,7 +168,7 @@ export function ConfigPage() {
               </Typography>
               <Stack spacing={1.5} sx={{ mt: 2 }}>
                 {[
-                  ["Precios de trabajo con historial", "en Actividades"],
+                  ["Precios por actividad con historial", "en Actividades"],
                   ["Dispositivos y sesiones", "más adelante"],
                   ["Bitácora de auditoría", "más adelante"],
                 ].map(([k, v]) => (

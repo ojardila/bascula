@@ -23,6 +23,7 @@ import SwapVertIcon from "@mui/icons-material/SwapVert";
 import UndoIcon from "@mui/icons-material/Undo";
 import LabelIcon from "@mui/icons-material/Label";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import { TableState } from "../../components/TableState";
 import { PermissionDenied } from "../../components/Guards";
 import { ProductFormDialog } from "./ProductFormDialog";
 import { StockMoveDialog } from "./StockMoveDialog";
@@ -32,6 +33,7 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { formatQuantity } from "../../lib/money";
+import { unitLabel } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
 import { formatSignedQty } from "../../lib/stock";
 import {
@@ -54,8 +56,21 @@ export function InventoryPage() {
     () => api.listProducts({ status, q: search || undefined }),
     [status, search, reloadTick],
   );
-  const { data: levels } = useAsync(() => api.stockLevels(), [reloadTick]);
-  const { data: moves } = useAsync(() => api.listStockMoves({ limit: 200 }), [reloadTick]);
+  /**
+   * Los dos errores se capturan, y eso es el arreglo entero de estas dos
+   * pestañas: sin ellos, una consulta caída dejaba `levels` y `moves` en null
+   * para siempre, `(levels ?? []).map(...)` no pintaba ninguna fila, y la
+   * pantalla quedaba en encabezados con nada debajo — que se lee como una
+   * bodega vacía. Ver `components/TableState.tsx`.
+   */
+  const { data: levels, error: levelsError, denied: levelsDenied } = useAsync(
+    () => api.stockLevels(),
+    [reloadTick],
+  );
+  const { data: moves, error: movesError, denied: movesDenied } = useAsync(
+    () => api.listStockMoves({ limit: 200 }),
+    [reloadTick],
+  );
   const { data: categories } = useAsync(() => api.productCategories(), []);
   const { data: units } = useAsync(() => api.storageUnits(), []);
   const { data: warehouses } = useAsync(() => api.warehouses(), [reloadTick]);
@@ -106,7 +121,9 @@ export function InventoryPage() {
           <Tooltip title="Suma de los movimientos registrados. No se escribe a mano.">
             <Stack alignItems="flex-end">
               <Typography sx={{ fontWeight: 600 }}>
-                {formatQuantity(p.stock)} {p.storageUnit}
+                {/* «16 Bulto» era el catálogo tal cual, con su mayúscula y en
+                    singular. Ver `lib/plural.ts`. */}
+                {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 de los movimientos
@@ -176,6 +193,10 @@ export function InventoryPage() {
           onStatusFilterChange={setStatus}
           onCreate={can("products.write") ? () => setEditing(null) : undefined}
           createLabel="Nuevo producto"
+          /* La fila entera, no sólo el ⋮ de 30 px sin etiqueta que había
+             que acertar. La misma acción, con un blanco veinte veces
+             mayor. */
+          onRowClick={can("products.write") ? (p) => setEditing(p) : undefined}
           onEdit={can("products.write") ? (p) => setEditing(p) : undefined}
           extraActions={
             writable
@@ -262,18 +283,19 @@ export function InventoryPage() {
                         sx={{ fontWeight: 600 }}
                         color={l.qty < 0 ? "error.main" : undefined}
                       >
-                        {formatQuantity(l.qty)} {l.storageUnit}
+                        {formatQuantity(l.qty)} {unitLabel(l.qty, l.storageUnit)}
                       </Typography>
                     </TableCell>
                   </TableRow>
                 ))}
-                {levels !== null && levels.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3} sx={{ color: "text.secondary", py: 4 }}>
-                      Ninguna bodega tiene existencias todavía.
-                    </TableCell>
-                  </TableRow>
-                )}
+                <TableState
+                  colSpan={3}
+                  rows={levels}
+                  error={levelsError}
+                  denied={levelsDenied}
+                  subject="las existencias"
+                  emptyText="Ninguna bodega tiene existencias todavía."
+                />
               </TableBody>
             </Table>
           </CardContent>
@@ -368,22 +390,25 @@ export function InventoryPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {moves !== null && moves.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} sx={{ color: "text.secondary", py: 4 }}>
-                      Todavía no hay movimientos registrados.
-                      {writable && (
-                        <Button
-                          startIcon={<AddIcon />}
-                          sx={{ ml: 1 }}
-                          onClick={() => setMovingFor(null)}
-                        >
-                          Registrar el primero
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )}
+                <TableState
+                  colSpan={6}
+                  rows={moves}
+                  error={movesError}
+                  denied={movesDenied}
+                  subject="los movimientos"
+                  emptyText="Todavía no hay movimientos registrados."
+                  emptyAction={
+                    writable ? (
+                      <Button
+                        startIcon={<AddIcon />}
+                        sx={{ ml: 1 }}
+                        onClick={() => setMovingFor(null)}
+                      >
+                        Registrar el primero
+                      </Button>
+                    ) : undefined
+                  }
+                />
               </TableBody>
             </Table>
           </CardContent>

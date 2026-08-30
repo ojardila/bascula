@@ -80,9 +80,16 @@ describe("the seeded farm renders what the wireframes promise", () => {
   it("shows a worker's balance derived from the ledger, to the peso", async () => {
     renderApp("/empleados/0192f3a0-0006-7000-8000-000000000001");
     expect(await screen.findByText(/María/)).toBeInTheDocument();
+    /**
+     * LA MISMA CIFRA QUE LA PANTALLA DE PAGAR. El perfil gritaba $184.500 —el
+     * libro— y dejaba lo pendiente en letra chica, así que la respuesta a
+     * «¿cuánto le debo?» sólo existía dentro de «pagar». Ahora arriba va el
+     * total y las dos mitades quedan debajo, con sus nombres.
+     */
+    expect(screen.getByText("$338.100")).toBeInTheDocument();
+    expect(screen.getByText("a favor del empleado")).toBeInTheDocument();
     // $184.500 is the sum of the six seeded ledger rows, not a stored total.
     expect(screen.getByText("$184.500")).toBeInTheDocument();
-    expect(screen.getByText("a favor del empleado")).toBeInTheDocument();
     // And the pending work is shown apart: it is not a devengo yet.
     expect(screen.getAllByText("$153.600").length).toBeGreaterThan(0);
   }, 20000);
@@ -94,9 +101,10 @@ describe("the seeded farm renders what the wireframes promise", () => {
     expect(screen.getByText("$30.800")).toBeInTheDocument();
     expect(screen.getByText("$32.800")).toBeInTheDocument();
     expect(screen.getByText("$90.000")).toBeInTheDocument();
-    // balance 184.500 + pending 153.600
+    // balance 184.500 + pending 153.600 — y el botón dice «revisar», porque
+    // pulsarlo ya no escribe nada: abre la lista de lo que se va a firmar.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Pago total · \$338\.100/ })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: /Revisar y pagar · \$338\.100/ })).toBeEnabled(),
     );
   }, 20000);
 

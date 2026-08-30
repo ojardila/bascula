@@ -38,8 +38,9 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { formatQuantity, parseQuantityInput } from "../../lib/money";
+import { unitLabel } from "../../lib/plural";
 import { reasonNeedsDirection, signedQty, stockAfter } from "../../lib/stock";
-import { todayInFarm } from "../../lib/dates";
+import { todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
 import {
   STOCK_REASON_LABEL, type CatalogItem, type LabelBatch, type Plot, type Product,
@@ -275,10 +276,15 @@ export function StockMoveDialog({
           {/* The number they were going to type, arrived at the other way. */}
           {chosen && available !== null && signed !== null && (
             <Alert severity="info" icon={false}>
-              Hoy hay <strong>{formatQuantity(available)} {chosen.storageUnit}</strong> en{" "}
+              Hoy hay{" "}
+              <strong>
+                {formatQuantity(available)} {unitLabel(available, chosen.storageUnit)}
+              </strong>{" "}
+              en{" "}
               {warehouse?.name}. Después de este movimiento quedan{" "}
               <strong>
-                {formatQuantity(stockAfter(available, signed))} {chosen.storageUnit}
+                {formatQuantity(stockAfter(available, signed))}{" "}
+                {unitLabel(stockAfter(available, signed), chosen.storageUnit)}
               </strong>
               .
             </Alert>
@@ -341,7 +347,7 @@ export function StockMoveDialog({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
+              slotProps={DATE_FIELD_PROPS}
               fullWidth
             />
             <TextField
@@ -358,7 +364,7 @@ export function StockMoveDialog({
           {signed !== null && signed > 0 && (
             <FormControlLabel
               control={<Switch checked={labels} onChange={(e) => setLabels(e.target.checked)} />}
-              label="Imprimir stickers de identificación (RSP-025)"
+              label="Imprimir stickers de identificación"
             />
           )}
         </Stack>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Alert, Box, Chip, Stack, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
+import { Alert, Box, Chip, Link, Stack, Tooltip, Typography } from "@mui/material";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Money } from "../../components/Money";
@@ -13,10 +14,16 @@ import type { Activity } from "../../api/types";
 /** Categories come from the farm's catalogue, so they are only capitalised. */
 const titleCase = (s: string) => (s ? s[0].toLocaleUpperCase("es") + s.slice(1) : s);
 
+/**
+ * En la finca esto se dice a destajo y al jornal. «Unidad de trabajo» y
+ * «unidad de tiempo» son nombres de columna, y *destajo* —la palabra con la
+ * que se paga la recolección en Colombia— no aparecía en ningún sitio del
+ * producto. Los valores guardados no cambian; sólo cómo se leen.
+ */
 const PAY_MODE_LABEL: Record<string, string> = {
-  contract: "Contrato",
-  time_unit: "Unidad de tiempo",
-  work_unit: "Unidad de trabajo",
+  contract: "Por contrato",
+  time_unit: "Al jornal",
+  work_unit: "A destajo",
 };
 
 export function ActivitiesPage() {
@@ -68,8 +75,17 @@ export function ActivitiesPage() {
           a.rateSource === "weekly_price" ? (
             // Not a price of the activity at all: it comes from the week, and
             // it is frozen at settlement. Saying "$800" here would be a lie
-            // with a number in it.
-            <Chip size="small" color="warning" variant="outlined" label="precio semanal" />
+            // with a number in it. Now it also says where the price DOES live,
+            // which is the question somebody reading this cell is asking.
+            <Tooltip title="Lo pone el precio del kilo de la semana. Se cambia en «Precio del kilo».">
+              <Chip
+                size="small"
+                color="warning"
+                variant="outlined"
+                label="precio de la semana"
+                sx={{ cursor: "help" }}
+              />
+            </Tooltip>
           ) : a.defaultRateCents === undefined ? (
             "—"
           ) : (
@@ -136,11 +152,22 @@ export function ActivitiesPage() {
         }
         emptyTitle="Todavía no hay actividades"
         emptyBody="Una actividad es un tipo de trabajo con su forma de pago: recolección por kilos, guadañada por jornal, siembra por contrato."
+        onRowClick={can("activities.write") ? (a) => setEditing(a) : undefined}
         footer={
           <>
             El precio de una actividad tiene <strong>historial por fechas</strong>: al
             cambiarlo se agrega una vigencia nueva y las labores anteriores conservan el
             precio que estaba vigente en su fecha.
+            {/* El letrero que faltaba: aquí es donde la gente venía a buscar el
+                kilo de la semana, y se iba habiendo cambiado otra cosa. */}
+            <Box sx={{ mt: 0.5 }}>
+              El <strong>precio del kilo de la semana</strong> no se pone aquí: se pone
+              semana por semana en{" "}
+              <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+                Precio del kilo
+              </Link>
+              .
+            </Box>
           </>
         }
       />

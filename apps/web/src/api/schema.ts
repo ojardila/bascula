@@ -2220,6 +2220,16 @@ export interface paths {
          *     lot that was picked every week. The span is this crop's own, so a plot
          *     picked for three weeks of a six-month season does not come back as
          *     twenty empty rows.
+         *
+         *     THE HEADER COVERS THE SAME WEEKS AS `byWeek`, AND SAYS SO. Every figure
+         *     outside `byWeek` — records, kilos, value, pickers, days, `firstOn`,
+         *     `lastOn`, `kgPerHa` — is summed over exactly the weeks returned, and
+         *     `coveredFrom`/`coveredTo` are that window. It used to be summed over the
+         *     crop's ENTIRE history whatever `weeks` said, so `?weeks=4` answered with
+         *     a header worth two seasons sitting on top of four weeks of rows, with
+         *     nothing anywhere to tell the two apart. `partialWindow` says whether
+         *     `weeks` cut older weeks off, so a total is never read as the whole crop
+         *     unless it is one.
          */
         get: operations["reportCrop"];
         put?: never;
@@ -2510,6 +2520,19 @@ export interface paths {
          *
          *     The owner's alone, and Money. It writes a year of settlements and a year
          *     of ledger in one act.
+         *
+         *     **The body may be large and slow, and this route alone is allowed to
+         *     be.** The cap is 64 MB — a season is on the order of 55 000 rows, about
+         *     12 MB of JSON, and the 1 MB body every other route accepts would refuse
+         *     it outright. The TIME is the part that has to be said out loud, because
+         *     it is not visible in this document anywhere else: the server's global
+         *     read timeout is 30 seconds and covers the body, which cuts a 12 MB
+         *     upload off on any farm connection. This route extends its own
+         *     connection's deadline instead — up to 25 minutes in total, and only
+         *     while the upload keeps making progress, so a client that stops sending
+         *     for a minute is dropped rather than being granted the rest of the
+         *     budget. Nothing else in the API has that patience, and nothing else
+         *     should.
          */
         post: operations["importSeason"];
         delete?: never;
@@ -2564,7 +2587,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -3597,11 +3620,36 @@ export interface components {
             workerId: string;
             /**
              * Format: date-time
-             * @description The period actually covered — the Monday of the earliest payable
-             *     taken in — not the window the caller asked over.
+             * @description The period actually COVERED — the Monday of the earliest payable
+             *     taken in — not the window the caller asked over. A caller settling
+             *     `from=1970-01-01` means "everything outstanding", and 1970 on the
+             *     receipt would be nonsense.
              */
             periodStart: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description The `to` the caller ASKED for. Not the last day covered, and not
+             *     the symmetric twin of `periodStart` — the two ends of this range
+             *     mean different things, deliberately, and this is the one place that
+             *     says so.
+             *
+             *     The reason they differ is the reason `periodStart` moves at all: a
+             *     settlement's start is pulled forward to the earliest payable
+             *     because the alternative is a receipt dated 1970. Nothing does the
+             *     same to the end. `to` is a question about the future of the period
+             *     — "settle everything up to this date" — and the answer is the same
+             *     whether or not the last week in it happened to have a weighing. A
+             *     period that shrank to its last payable would say a settlement run
+             *     to the end of August covered only to the 22nd, which is not what
+             *     was asked, not what was paid, and not what the person holding the
+             *     receipt was told.
+             *
+             *     So: `periodStart` is covered, `periodEnd` is requested, and
+             *     `periodEnd >= periodStart` is all the database enforces because it
+             *     is all that holds. The season import fills both ends from the
+             *     handset, which had already decided the same way — a divergence here
+             *     would be silent, which is why it is written down on both sides.
+             */
             periodEnd: string;
             /** Format: int64 */
             grossCents: number;
@@ -3626,9 +3674,15 @@ export interface components {
             /** Format: uuid */
             workerId: string;
             workerName: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description The period actually covered. See Settlement.periodStart.
+             */
             periodStart: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description The range that was ASKED for. See Settlement.periodEnd.
+             */
             periodEnd: string;
             /** Format: int64 */
             grossCents: number;
@@ -4129,6 +4183,27 @@ export interface components {
              *     than what it has paid. The two must never look alike.
              */
             valueIsEstimate: boolean;
+            /**
+             * @description Records in this row whose work carries on past the week the row
+             *     files them under, and the third admission of the same kind as
+             *     `recordsNotInKg` and `recordsWithoutValue`.
+             *
+             *     A work record has a start day and an end day, and a range is legal:
+             *     a contract cleared over five days is ONE record, priced once.
+             *     `weekStart` is derived from the start day alone, so the whole of a
+             *     Saturday-to-Wednesday labour is credited to the week that Saturday
+             *     falls in and none of it to the week that got three of its five
+             *     days. There is no per-day split anywhere in the schema, because
+             *     nobody recorded one, and dividing the quantity evenly across the
+             *     span would be inventing data.
+             *
+             *     So the attribution stays where the evidence puts it — all of it on
+             *     the first week — and this count travels beside the figure. A week
+             *     whose kilos include a labour that ran into the next week says so,
+             *     and a reader comparing two weeks knows which one borrowed from the
+             *     other. Zero is the ordinary case and means what it says.
+             */
+            recordsSpanningWeeks: number;
         };
         ReportWeek: components["schemas"]["ReportTotals"] & {
             /** Format: date */
@@ -4271,6 +4346,29 @@ export interface components {
              *     crop — which is why the count is sent rather than a silent split.
              */
             sharedRecords: number;
+            /** @description The cap the caller asked for, echoed back. */
+            weeks: number;
+            /**
+             * Format: date
+             * @description The Monday of the oldest week in `byWeek` — and the start of
+             *     the window EVERY figure above is summed over. Null when the
+             *     crop has no weighings at all: there is no window over nothing.
+             */
+            coveredFrom: string | null;
+            /**
+             * Format: date
+             * @description The Sunday of the newest week in `byWeek`.
+             */
+            coveredTo: string | null;
+            /**
+             * @description True when `weeks` cut something off — when this crop has weeks
+             *     older than `coveredFrom` that are not being shown. It is the
+             *     difference between "this crop produced eight tonnes" and "this
+             *     crop produced eight tonnes in the twelve weeks you asked for",
+             *     and a header that cannot say which is a header that will be
+             *     read as the first.
+             */
+            partialWindow: boolean;
             /** @description The evolution, newest first. */
             byWeek: components["schemas"]["ReportCropWeek"][];
         };
@@ -4755,9 +4853,22 @@ export interface components {
                 id: string;
                 /** Format: uuid */
                 workerId: string;
-                /** Format: date */
+                /**
+                 * Format: date
+                 * @description The period the handset's settlement actually covered. Kept as
+                 *     the handset wrote it — this endpoint remaps nothing.
+                 */
                 periodStart: string;
-                /** Format: date */
+                /**
+                 * Format: date
+                 * @description The range the handset was ASKED for, not the last day it
+                 *     covered. Same meaning as Settlement.periodEnd, and the reason
+                 *     it is spelt out here too: this is the one place both ends
+                 *     arrive from another database, and a client that filled it
+                 *     with "the last payable's week" would put a different fact in
+                 *     the column from every settlement created on the server, with
+                 *     nothing failing and nobody noticing.
+                 */
                 periodEnd: string;
                 /** Format: int64 */
                 grossCents: number;
@@ -4879,7 +4990,23 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description FORBIDDEN — the permission table refused this role. */
+        /**
+         * @description FORBIDDEN — the permission table refused this role.
+         *
+         *     Two other codes arrive with this status and mean something the client
+         *     must handle differently, because neither is about the role at all:
+         *
+         *     * FARM_SUSPENDED — the platform has suspended this farm. Checked on
+         *       EVERY request, not at the next login, so a token minted a minute
+         *       before the suspension stops working on the next call.
+         *     * MEMBERSHIP_REVOKED — this account has been taken off this farm. Same
+         *       check, same round trip, same reason: the access token carries the
+         *       farm as a signed claim and lives fifteen minutes, so removal that
+         *       only stopped the NEXT session left the current one alone for a
+         *       quarter of an hour. The screen should say so and send the person
+         *       back to the farm picker; the refresh token was revoked at the same
+         *       time, so there is no session to recover here.
+         */
         Forbidden: {
             headers: {
                 [name: string]: unknown;

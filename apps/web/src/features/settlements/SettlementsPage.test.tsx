@@ -111,9 +111,14 @@ describe("las liquidaciones de la finca", () => {
     // The fan-out is held open so the loading state is observable rather than
     // raced for. On a real farm it is several round trips and this state is
     // what somebody actually looks at for a second.
+    // 400 ms y no 50: con la suite entera corriendo, los 50 se agotaban
+    // mientras `findByText` hacía su primer sondeo y la carga se perdía entre
+    // una aserción y la siguiente. Un fallo intermitente en una prueba sobre
+    // «no inventes una cifra mientras cargas» es peor que inútil: enseña a
+    // volver a lanzarla.
     server.use(
       http.get("*/v1/settlements", async () => {
-        await delay(50);
+        await delay(400);
         return HttpResponse.json({ items: [], total: 0 });
       }),
     );
@@ -126,6 +131,52 @@ describe("las liquidaciones de la finca", () => {
     expect(
       screen.getByText("Reuniendo las liquidaciones de cada empleado…"),
     ).toBeInTheDocument();
+  }, 20000);
+});
+
+/**
+ * ── «NO HAY» NO ES LO MISMO QUE «NO PUDE» ────────────────────────────────
+ *
+ * Sin `GET /v1/settlements`, esta lista se compone leyendo el libro de cada
+ * empleado, y `api.listSettlements` se tragaba cada fallo con un
+ * `.catch(() => [])`. Con los libros caídos, la pantalla llegaba a AFIRMAR, en
+ * presente y sobre la finca, que «todavía no se ha liquidado nada en esta
+ * finca» — y ofrecía imprimir la planilla, en blanco, con su columna de
+ * firmas. Es la frase que convierte una caída de red en una declaración sobre
+ * el negocio de otra persona.
+ */
+describe("cuando parte de la consulta falla", () => {
+  /** Fuerza el abanico (405) y tumba los libros. */
+  function fanOutWithBrokenLedgers() {
+    server.use(
+      http.get("*/v1/settlements", () =>
+        HttpResponse.json({ error: { code: "NOT_FOUND", message: "no" } }, { status: 405 }),
+      ),
+      http.get("*/v1/workers/:id/ledger", () =>
+        HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+      ),
+    );
+  }
+
+  it("no afirma que la finca no ha liquidado nada", async () => {
+    fanOutWithBrokenLedgers();
+    renderAt("/liquidaciones");
+
+    expect(await screen.findByText(/Esta lista está incompleta/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Todavía no se ha liquidado nada en esta finca."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/No quiere decir que no las haya: parte de la consulta falló/),
+    ).toBeInTheDocument();
+  }, 20000);
+
+  it("y no deja imprimir una planilla en blanco", async () => {
+    fanOutWithBrokenLedgers();
+    renderAt("/liquidaciones");
+    await screen.findByText(/Esta lista está incompleta/);
+    // Un papel que se firma no sale de una lectura que se sabe rota.
+    expect(screen.getByRole("button", { name: /Planilla/ })).toBeDisabled();
   }, 20000);
 });
 

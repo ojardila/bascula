@@ -164,7 +164,7 @@ describe("el total de cantidades", () => {
     renderSales();
     // The seeded farm sells one product, so there is one unit and the total is
     // meaningful — and it is named rather than called "unidades".
-    const footer = await screen.findByText(/venta\(s\) sin anular/);
+    const footer = await screen.findByText(/ventas? sin anular/);
     expect(footer).not.toHaveTextContent("unidades");
   }, 20000);
 
@@ -196,7 +196,7 @@ describe("el total de cantidades", () => {
       ),
     );
     renderSales();
-    const footer = await screen.findByText(/venta\(s\) sin anular/);
+    const footer = await screen.findByText(/ventas? sin anular/);
     // No total at all rather than a wrong one. The pesos still add up.
     expect(footer).not.toHaveTextContent("412");
     expect(footer).not.toHaveTextContent("unidades");
@@ -227,14 +227,14 @@ describe("cuando el servidor no responde", () => {
     // The refusal is shown…
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     // …and nothing claims to know how many sales there were, or for how much.
-    expect(screen.queryByText(/venta\(s\) sin anular/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ventas? sin anular/)).not.toBeInTheDocument();
     expect(screen.queryByText("$0")).not.toBeInTheDocument();
   }, 20000);
 
   /** …and the footer is still there when the list actually loaded. */
   it("pero sí lo pone cuando la lista cargó", async () => {
     renderSales();
-    expect(await screen.findByText(/venta\(s\) sin anular/)).toBeInTheDocument();
+    expect(await screen.findByText(/ventas? sin anular/)).toBeInTheDocument();
   }, 20000);
 });
 

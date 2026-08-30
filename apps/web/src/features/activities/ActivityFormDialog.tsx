@@ -10,11 +10,13 @@
  * can create the activity and cannot decide what it pays.
  */
 import { useEffect, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Autocomplete, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  Link, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
+import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -83,6 +85,15 @@ export function ActivityFormDialog({
   const rateCents = parseMoneyInput(rate);
   // Only work_unit can take its price from the week; a jornal has no week.
   const canBeWeekly = payMode === "work_unit";
+  /**
+   * En una actividad que ya existe, la forma de pago y el origen del precio no
+   * se tocan. No es una decisión de esta pantalla: el servidor los rechaza y
+   * `api.updateActivity` ni siquiera los manda, porque las labores escritas
+   * están clavadas a (activityId, payScheme) por una clave compuesta. Lo que
+   * había antes era peor que un candado: dos interruptores que se movían en
+   * pantalla y no cambiaban nada en el servidor.
+   */
+  const locked = activity !== null;
 
   async function save() {
     const e: Record<string, string> = {};
@@ -114,8 +125,26 @@ export function ActivityFormDialog({
         defaultRateCents: useWeekly ? null : rateCents,
         validFrom,
       };
-      if (activity) await api.updateActivity(activity.id, body);
-      else await api.createActivity(body);
+      if (activity) {
+        await api.updateActivity(activity.id, body);
+        /**
+         * ── EL PRECIO QUE SE ESCRIBÍA EN EL AIRE ────────────────────────
+         *
+         * `updateActivity` sólo manda `name` y `category` — a propósito: el
+         * esquema de pago está clavado a las labores ya escritas. Pero la
+         * casilla de precio seguía editable y su ayuda prometía «al cambiarlo
+         * se guarda una vigencia nueva», y no se guardaba ninguna: se escribía
+         * un número, se pulsaba Guardar, no fallaba nada y no cambiaba nada.
+         *
+         * El precio SÍ se puede cambiar, por su propia ruta, que abre una
+         * vigencia nueva y deja las labores anteriores con el precio de su
+         * fecha. Es la llamada que faltaba.
+         */
+        const changed = !useWeekly && rateCents !== null && rateCents !== activity.defaultRateCents;
+        if (changed && canSetRate) await api.setActivityRate(activity.id, rateCents, validFrom);
+      } else {
+        await api.createActivity(body);
+      }
     }).catch((err: unknown) => {
       setError(messageFor(err));
       return { ran: false } as const;
@@ -159,18 +188,24 @@ export function ActivityFormDialog({
 
           <div>
             <Typography variant="overline" color="text.secondary" component="div">
-              Forma de pago
+              Cómo se paga este trabajo
             </Typography>
+            {/* «Unidad de trabajo» y «unidad de tiempo» son nombres de columna
+                de base de datos. En una finca cafetera eso se dice a destajo y
+                al jornal, y «destajo» —la palabra con la que se paga la
+                recolección en Colombia— no aparecía en ningún sitio del
+                producto. Los valores que se guardan no cambian. */}
             <ToggleButtonGroup
               exclusive
               value={payMode}
               onChange={(_, v) => v && setPayMode(v as PayMode)}
               size="small"
+              disabled={locked}
               sx={{ mt: 0.5, flexWrap: "wrap" }}
             >
-              <ToggleButton value="work_unit">Unidad de trabajo</ToggleButton>
-              <ToggleButton value="time_unit">Unidad de tiempo</ToggleButton>
-              <ToggleButton value="contract">Contrato</ToggleButton>
+              <ToggleButton value="work_unit">A destajo · por kilo</ToggleButton>
+              <ToggleButton value="time_unit">Al jornal · por día</ToggleButton>
+              <ToggleButton value="contract">Por contrato</ToggleButton>
             </ToggleButtonGroup>
           </div>
 
@@ -209,15 +244,65 @@ export function ActivityFormDialog({
           )}
 
           {canBeWeekly && (
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={weekly ? "weekly" : "fixed"}
-              onChange={(_, v) => v && setWeekly(v === "weekly")}
-            >
-              <ToggleButton value="fixed">Precio fijo</ToggleButton>
-              <ToggleButton value="weekly">Precio de la semana</ToggleButton>
-            </ToggleButtonGroup>
+            <div>
+              <Typography variant="overline" color="text.secondary" component="div">
+                De dónde sale el precio
+              </Typography>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={weekly ? "weekly" : "fixed"}
+                onChange={(_, v) => v && setWeekly(v === "weekly")}
+                disabled={locked}
+                sx={{ mt: 0.5, flexWrap: "wrap" }}
+              >
+                <ToggleButton value="weekly">Lo pone el precio de la semana</ToggleButton>
+                <ToggleButton value="fixed">Precio fijo de esta actividad</ToggleButton>
+              </ToggleButtonGroup>
+            </div>
+          )}
+
+          {/* ── LA TRAMPA, CERRADA ────────────────────────────────────────
+              Quien buscaba dónde subir el kilo de la semana llegaba aquí,
+              pulsaba «Precio fijo» —porque ahí sí sale una casilla de
+              precio—, escribía 900 y guardaba, creyendo que había subido el
+              precio de la semana. Lo que hacía era cambiar la FORMA DE PAGO
+              de toda la recolección de la finca y desconectarla del precio
+              semanal que el teléfono sigue usando. Nada lo avisaba.
+
+              Dos cosas lo cierran. Una: en una actividad que ya existe el
+              interruptor no se toca, porque el servidor tampoco lo deja —
+              `updateActivity` sólo manda nombre y categoría, y las labores ya
+              escritas están clavadas a (activityId, payScheme) por una clave
+              compuesta. Antes el interruptor se movía en pantalla y no pasaba
+              nada, que es peor que no dejarlo mover: la persona se va creyendo
+              que cambió algo. Y dos: el aviso dice, con el enlace puesto,
+              dónde está de verdad el precio del kilo de la semana. */}
+          {locked && (
+            <Alert severity="info" variant="outlined">
+              La forma de pago y el origen del precio <strong>no se cambian</strong> en una
+              actividad que ya existe: las labores ya registradas quedaron pagadas con
+              esas reglas y reescribirlas cambiaría plata del pasado. Si esta actividad
+              debe pagarse de otra forma, cree una actividad nueva y dé de baja ésta.
+            </Alert>
+          )}
+
+          {/* Y el aviso serio en el otro lado del interruptor: en una
+              actividad NUEVA sí se puede elegir, y elegir «precio fijo» para
+              la recolección es exactamente lo que desconecta la finca del
+              precio semanal. Se dice antes de guardar, no después. */}
+          {!locked && canBeWeekly && !weekly && (
+            <Alert severity="warning">
+              <strong>Este precio no es el del kilo de la semana.</strong> Con precio fijo,
+              esta actividad se paga siempre a lo que usted escriba abajo y{" "}
+              <strong>deja de seguir el precio semanal</strong> que usa el teléfono. Para
+              la recolección de café eso casi nunca es lo que se quiere: el kilo de la
+              semana se pone en{" "}
+              <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+                Precio del kilo
+              </Link>
+              .
+            </Alert>
           )}
 
           {weekly && canBeWeekly ? (
@@ -225,6 +310,14 @@ export function ActivityFormDialog({
               El precio lo pone la semana, igual que en el teléfono. Se congela al
               liquidar, no al registrar la labor, y por eso una labor de esta
               actividad tiene que ser de <strong>un solo día</strong>.
+              <Box sx={{ mt: 1 }}>
+                <strong>Aquí no se cambia el precio del kilo.</strong> Ese se pone semana
+                por semana en{" "}
+                <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+                  Precio del kilo
+                </Link>
+                .
+              </Box>
             </Alert>
           ) : (
             <TextField
@@ -259,7 +352,7 @@ export function ActivityFormDialog({
               onChange={(e) => setValidFrom(e.target.value)}
               size="medium"
               fullWidth
-              slotProps={{ inputLabel: { shrink: true } }}
+              slotProps={DATE_FIELD_PROPS}
               helperText="Las labores anteriores conservan el precio de su fecha."
             />
           )}

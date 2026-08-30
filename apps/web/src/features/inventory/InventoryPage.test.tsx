@@ -17,6 +17,8 @@ import { AuthProvider } from "../../auth/AuthContext";
 import { setTokens } from "../../api/client";
 import { theme } from "../../theme";
 import { resetDb, FARM_ID } from "../../mocks/db";
+import { http, HttpResponse } from "msw";
+import { server } from "../../mocks/node";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
 
@@ -60,7 +62,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     renderInventory();
     expect(await screen.findByText("Café pergamino seco")).toBeInTheDocument();
     // 40 in, 12 sold, 5 consumed, 5 back from the voided sale.
-    expect(screen.getByText("28 Bulto")).toBeInTheDocument();
+    expect(screen.getByText("28 bultos")).toBeInTheDocument();
     expect(screen.getAllByText("de los movimientos").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Las existencias no son un dato que se escriba/),
@@ -102,11 +104,11 @@ describe("existencias are derived, and the interface never offers to set them", 
     // other way round: 28 today, 38 after a harvest of 10.
     expect(await within(dialog).findByText(/Después de este movimiento quedan/))
       .toBeInTheDocument();
-    expect(within(dialog).getByText("38 Bulto")).toBeInTheDocument();
+    expect(within(dialog).getByText("38 bultos")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
 
-    await waitFor(() => expect(screen.getByText("38 Bulto")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("38 bultos")).toBeInTheDocument());
   }, 30000);
 
   it("puts the sign on the movement from the reason, not from the person", async () => {
@@ -125,9 +127,9 @@ describe("existencias are derived, and the interface never offers to set them", 
     // A POSITIVE number typed, for a reason that takes product out.
     await user.type(within(dialog).getByLabelText(/^Cantidad/), "3");
 
-    expect(within(dialog).getByText("25 Bulto")).toBeInTheDocument();
+    expect(within(dialog).getByText("25 bultos")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
-    await waitFor(() => expect(screen.getByText("25 Bulto")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("25 bultos")).toBeInTheDocument());
   }, 30000);
 
   it("asks before letting a movement take the bodega below zero, and takes the answer", async () => {
@@ -155,7 +157,7 @@ describe("existencias are derived, and the interface never offers to set them", 
       within(dialog).getByRole("checkbox", { name: /Regístrelo de todos modos/ }),
     );
     await user.click(within(dialog).getByRole("button", { name: "Registrar movimiento" }));
-    await waitFor(() => expect(screen.getByText("-12 Bulto")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("-12 bultos")).toBeInTheDocument());
   }, 30000);
 
   it("will not take an adjustment without an explanation", async () => {
@@ -221,5 +223,54 @@ describe("the levels tab", () => {
     expect(await screen.findByText(/Cada línea es una suma de movimientos/))
       .toBeInTheDocument();
     expect(screen.getAllByText("Bodega principal").length).toBeGreaterThan(0);
+  }, 20000);
+});
+
+/**
+ * ── UNA TABLA VACÍA NO ES UNA BODEGA VACÍA ───────────────────────────────
+ *
+ * Estas dos pestañas leían `{(levels ?? []).map(...)}` y no capturaban el
+ * error, así que una consulta caída dejaba los encabezados puestos y nada
+ * debajo, sin una palabra. Quien lo mira concluye lo único que se puede
+ * concluir de una tabla vacía: que no hay nada. Ver `components/TableState`.
+ */
+describe("cuando la consulta falla", () => {
+  const down = (path: string) =>
+    http.get(path, () =>
+      HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+    );
+
+  it("las existencias lo dicen, en vez de quedarse en blanco", async () => {
+    const user = userEvent.setup();
+    server.use(down("*/v1/stock"));
+    renderInventory();
+    await screen.findByText("Café pergamino seco");
+    await user.click(screen.getByRole("tab", { name: "Existencias por bodega" }));
+
+    expect(
+      await screen.findByText("No se pudieron consultar las existencias."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/vacía porque falló la consulta, no porque no haya nada/),
+    ).toBeInTheDocument();
+    // Y NO la frase que afirma algo sobre la bodega.
+    expect(
+      screen.queryByText("Ninguna bodega tiene existencias todavía."),
+    ).not.toBeInTheDocument();
+  }, 20000);
+
+  it("los movimientos también", async () => {
+    const user = userEvent.setup();
+    server.use(down("*/v1/stock/moves"));
+    renderInventory();
+    await screen.findByText("Café pergamino seco");
+    await user.click(screen.getByRole("tab", { name: "Movimientos" }));
+
+    expect(
+      await screen.findByText("No se pudieron consultar los movimientos."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Todavía no hay movimientos registrados."),
+    ).not.toBeInTheDocument();
   }, 20000);
 });

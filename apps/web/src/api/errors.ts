@@ -104,6 +104,10 @@ export const ERROR_MESSAGES: Record<string, string> = {
   FARM_SUSPENDED:
     "La finca está suspendida: puede consultar, pero no registrar ni modificar nada. Escríbanos para reactivarla.",
   FORBIDDEN: "Su usuario no tiene permiso para esta parte del sistema.",
+  // Somebody was taken off this farm while their session was still open. It is
+  // not a password problem and saying so would send them to change one.
+  MEMBERSHIP_REVOKED:
+    "Su acceso a esta finca fue retirado. Si cree que es un error, hable con el dueño de la finca; no es problema de su contraseña.",
   // The server's loud failure when the tenant was never established. It is a
   // 500 and it is a bug on our side of the wire, not something the user did.
   TENANT_NOT_SET:
@@ -150,6 +154,36 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda " +
     "con dos cuentas y el saldo se parte en dos.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
+  // Anular una liquidación no es lo mismo que soltarla: soltar es la
+  // reparación de una que YA está anulada y se quedó agarrando las labores.
+  SETTLEMENT_NOT_VOID:
+    "Esa liquidación está vigente, y sus líneas son justo lo que impide que una pesada se pague dos veces. Anúlela primero.",
+  NOTHING_TO_RELEASE:
+    "Esa liquidación no tiene ninguna labor agarrada ni ningún reverso pendiente: no hay nada que soltar. Puede que sea otro documento el que está buscando.",
+  // El que ve un dueño cuando se quita a sí mismo. Sin traducir llegaba a la
+  // pantalla en inglés, y es de los peores en los que quedarse a oscuras: la
+  // finca se queda sin nadie que pueda fijar precios ni invitar usuarios.
+  LAST_OWNER:
+    "La finca se quedaría sin dueño. Nombre primero a otro dueño y después quítese usted.",
+  // La pantalla de pagar y la nómina lo atrapan antes y enseñan la
+  // diferencia; esto es para que el código nunca salga pelado si llega por
+  // otra puerta.
+  GROSS_CHANGED:
+    "El total cambió mientras usted revisaba. No se registró nada. Vuelva a mirar el detalle y apruebe la cifra nueva.",
+
+  /* -- sincronización con el teléfono -------------------------------- */
+  // Los cuatro de sync. Los levanta el teléfono, pero cualquiera puede
+  // llegar aquí por una pantalla compartida, y un código en inglés en medio
+  // de una pantalla en español es exactamente lo que hace que alguien crea
+  // que rompió algo.
+  CURSOR_TOO_OLD:
+    "El teléfono lleva demasiado tiempo sin sincronizar y ya no se puede saber qué se perdió. Tiene que sincronizar desde el principio.",
+  SCHEMA_TOO_OLD:
+    "La aplicación del teléfono está desactualizada y el servidor no entiende sus datos. Actualícela antes de sincronizar.",
+  REPLAY_REQUIRED:
+    "Esa sincronización venía de otro usuario o de otra sesión y no se puede continuar. Hay que sincronizar desde el principio.",
+  IMPORT_MISMATCH:
+    "Los saldos que envió el teléfono no coinciden con los que salen del libro. No se registró nada: hay que revisar las diferencias antes de importar.",
 
   /* -- inventory, sales and expenses --------------------------------- */
   // The warehouse said no. `details.available` and `details.requested` carry

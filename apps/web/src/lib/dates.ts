@@ -165,3 +165,24 @@ export function weekTag(monday: string, today: string): string | null {
   if (monday === addDays(parseDay(current), -7).toISOString().slice(0, 10)) return "Semana pasada";
   return null;
 }
+
+/**
+ * ── LOS CAMPOS DE FECHA, EN CASTELLANO ───────────────────────────────────
+ *
+ * Los campos para escribir pedían `mm/dd/aaaa`, que es el orden
+ * estadounidense: un caficultor que escribe el 3 de agosto como 03/08 acaba
+ * registrando el 8 de marzo, y la labor se va a otra semana — a otro precio.
+ *
+ * SER HONESTOS CON LO QUE ESTO ARREGLA Y LO QUE NO. El formato de un
+ * `<input type="date">` no lo decide la página: lo decide el navegador.
+ * Firefox y Safari miran el idioma del elemento, y con esto pasan a
+ * `dd/mm/aaaa`. Chrome mira el idioma con el que está configurado el
+ * navegador y no hace caso, así que ahí sigue dependiendo del equipo. La
+ * alternativa real es un campo propio con su calendario, que es trabajo de
+ * verdad y no cabía en este sprint; esto es la mitad que sí cabía, en un solo
+ * sitio para que ese día haya un solo sitio que cambiar.
+ */
+export const DATE_FIELD_PROPS = {
+  inputLabel: { shrink: true },
+  htmlInput: { lang: "es-CO" },
+} as const;

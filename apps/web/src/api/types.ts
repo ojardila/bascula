@@ -669,6 +669,26 @@ export interface SettlementSummary {
   voidedAt: string | null;
 }
 
+/**
+ * La lista de liquidaciones, CON SUS HUECOS.
+ *
+ * Sin `GET /v1/settlements` la lista se compone leyendo el libro de cada
+ * empleado, y esas lecturas pueden fallar una a una. Devolver sólo el array
+ * dejaba a la pantalla sin forma de distinguir «esta finca no ha liquidado
+ * nada» de «no pude leer los libros» — y afirmaba lo primero, con una planilla
+ * en blanco detrás.
+ *
+ * Los dos contadores son cero cuando la ruta de colección contestó, que es el
+ * caso en el que no hay abanico y no hay huecos que declarar.
+ */
+export interface SettlementList {
+  items: SettlementSummary[];
+  /** Empleados cuyo libro no se pudo leer: sus liquidaciones faltan. */
+  unreadableLedgers: number;
+  /** Liquidaciones encontradas en un libro que después no se pudieron leer. */
+  unreadableSettlements: number;
+}
+
 export interface Settlement extends SettlementSummary {
   /** The frozen lines: what was settled, at the price it was settled at. */
   lines: PayableLine[];
@@ -682,7 +702,12 @@ export interface Payment {
   /** Positive: what was handed over. The ledger stores it negative. */
   amountCents: number;
   method: PayMethod;
-  /** The movement id: the API issues no receipt numbers. */
+  /**
+   * The movement id written for a person — `3F7A-91C2` — because the API
+   * issues no receipt numbers and a 36-character UUID is not something anybody
+   * dictates over the phone. The whole id is `id`, above, and goes in the
+   * small print of the paper. See `lib/receipt.ts`.
+   */
   receiptNumber: string;
   balanceBeforeCents: number;
   balanceAfterCents: number;

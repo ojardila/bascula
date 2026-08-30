@@ -25,6 +25,7 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { formatMoney } from "../../lib/money";
+import { count } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
 import type { Expense } from "../../api/types";
 
@@ -119,6 +120,10 @@ export function ExpensesPage() {
         onStatusFilterChange={setStatus}
         onCreate={can("expenses.write") ? () => setEditing(null) : undefined}
         createLabel="Registrar gasto"
+        /* La fila entera, no sólo el ⋮ de 30 px sin etiqueta que había
+           que acertar. La misma acción, con un blanco veinte veces
+           mayor. */
+        onRowClick={can("expenses.write") ? (e) => setEditing(e) : undefined}
         onEdit={can("expenses.write") ? (e) => setEditing(e) : undefined}
         onDeactivate={
           can("expenses.write")
@@ -149,7 +154,7 @@ export function ExpensesPage() {
         footer={
           data ? (
             <>
-              {data.count} gasto(s), por un total de{" "}
+              {count(data.count, "gasto", "gastos")}, por un total de{" "}
               <strong>{formatMoney(data.totalCents)}</strong>. Cada uno está cargado a una
               actividad o a un lote, así que este total se puede desglosar por completo.
             </>

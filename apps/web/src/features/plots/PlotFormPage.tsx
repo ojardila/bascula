@@ -27,11 +27,13 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
 import { api } from "../../api/endpoints";
+import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { areaHaOfRing, asGeometry, openRing, outerRings, type PolygonGeometry } from "../../lib/geo";
 import { formatArea } from "../../lib/money";
+import { departmentMismatch } from "./municipalities";
 import type { CatalogItem, PlotInput } from "../../api/types";
 
 const DEPARTMENTS = [
@@ -70,7 +72,17 @@ export function PlotFormPage() {
   const [plotId] = useState(() => id ?? uuidv7());
   const [name, setName] = useState("");
   const [areaHa, setAreaHa] = useState("");
-  const [department, setDepartment] = useState("Caldas");
+  /**
+   * VACÍO, no «Caldas».
+   *
+   * Venía puesto, así que el formulario aceptó sin decir nada «Caldas ·
+   * Pitalito» —Pitalito es del Huila— y el lote quedó guardado en el
+   * departamento equivocado. Nadie se equivoca escribiendo el municipio; se
+   * equivoca no tocando un campo que ya parecía correcto. Un valor por defecto
+   * en un dato que sólo la persona sabe es una respuesta que da el programa y
+   * firma el usuario.
+   */
+  const [department, setDepartment] = useState("");
   const [municipality, setMunicipality] = useState("");
   const [cropTypes, setCropTypes] = useState<CatalogItem[]>([]);
   const [varieties, setVarieties] = useState<CatalogItem[]>([]);
@@ -179,6 +191,9 @@ export function PlotFormPage() {
     return Number.isFinite(n) ? n : NaN;
   }, [areaHa]);
 
+  /** El aviso del municipio que no es de ese departamento. Null casi siempre. */
+  const mismatch = departmentMismatch(department, municipality);
+
   function validateStep1(): boolean {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Escriba el nombre del lote.";
@@ -186,6 +201,7 @@ export function PlotFormPage() {
     if (!areaHa.trim()) e.areaHa = "Escriba la superficie en hectáreas.";
     else if (Number.isNaN(parsedArea)) e.areaHa = "Escriba un número, por ejemplo 4,20.";
     else if (parsedArea <= 0) e.areaHa = "La superficie tiene que ser mayor que cero.";
+    if (!department.trim()) e.department = "Elija el departamento.";
     if (!municipality.trim()) e.municipality = "Escriba el municipio.";
     setFields(e);
     return Object.keys(e).length === 0;
@@ -326,10 +342,15 @@ export function PlotFormPage() {
                         label="Departamento"
                         value={department}
                         onChange={(e) => setDepartment(e.target.value)}
+                        error={!!fields.department}
+                        helperText={fields.department}
                         size="medium"
                         fullWidth
                         required
                       >
+                        <MenuItem value="" disabled>
+                          Elija el departamento
+                        </MenuItem>
                         {DEPARTMENTS.map((d) => (
                           <MenuItem key={d} value={d}>
                             {d}
@@ -343,7 +364,18 @@ export function PlotFormPage() {
                         value={municipality}
                         onChange={(e) => setMunicipality(e.target.value)}
                         error={!!fields.municipality}
-                        helperText={fields.municipality}
+                        /**
+                         * Avisa, no bloquea. `departmentMismatch` sólo habla
+                         * de los municipios que conoce con certeza, así que un
+                         * falso positivo es imposible; y quien está parado en
+                         * la finca sabe dónde está mejor que una tabla.
+                         */
+                        helperText={fields.municipality ?? mismatch ?? " "}
+                        slotProps={
+                          mismatch && !fields.municipality
+                            ? { formHelperText: { sx: { color: "warning.dark" } } }
+                            : undefined
+                        }
                         size="medium"
                         fullWidth
                         required
@@ -485,7 +517,7 @@ export function PlotFormPage() {
                       }
                       size="medium"
                       fullWidth
-                      slotProps={{ inputLabel: { shrink: true } }}
+                      slotProps={DATE_FIELD_PROPS}
                     />
                   </Grid>
                   <Grid size={{ xs: 1, sm: 0.5 }}>

@@ -7,6 +7,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PhotoField } from "./PhotoField";
 import { api } from "../../api/endpoints";
+import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -325,7 +326,7 @@ export function WorkerFormPage() {
                   onChange={(e) => setStartedAt(e.target.value)}
                   size="medium"
                   fullWidth
-                  slotProps={{ inputLabel: { shrink: true } }}
+                  slotProps={DATE_FIELD_PROPS}
                 />
               </Stack>
             </CardContent>
@@ -333,13 +334,17 @@ export function WorkerFormPage() {
 
           {/* RSP-004 also asks for a cross-farm background check before saving.
               That is the registry service, and `docs/decisiones.md` keeps it
-              out of this sprint — deliberately, not by omission. Saying so
-              here is cheaper than the owner wondering where it went. */}
-          <Alert severity="info" sx={{ mt: 2 }}>
-            La consulta del historial en otras fincas (RSP-009) no entra en este
-            sprint: es un servicio aparte con reglas de habeas data propias. El alta
-            del empleado nunca dependerá de esa consulta.
-          </Alert>
+              out of this sprint — deliberately, not by omission.
+              ── Y ESO NO ES ASUNTO DE QUIEN LLENA ESTA FICHA ─────────────
+              Aquí había un recuadro que decía «la consulta del historial en
+              otras fincas (RSP-009) no entra en este sprint: es un servicio
+              aparte con reglas de habeas data propias». Tres cosas que sólo
+              significan algo dentro del equipo —un código de ticket, la
+              palabra sprint y un término jurídico— en el formulario con el
+              que se contrata a un recolector. Quien lo lee no aprende nada
+              que pueda usar; aprende que la pantalla no está escrita para
+              él. La decisión sigue documentada donde se toman las
+              decisiones, que es este comentario y `docs/decisiones.md`. */}
         </Grid>
       </Grid>
 

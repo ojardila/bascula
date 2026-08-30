@@ -197,6 +197,20 @@ export const MODULES: ModuleDef[] = [
   { key: "plots", label: "Parcelas", path: "/parcelas", action: "plots.read", sprint: 1, available: true, icon: "terrain" },
   { key: "workers", label: "Empleados", path: "/empleados", action: "workers.read", sprint: 1, available: true, icon: "people" },
   { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
+  /**
+   * EL PRECIO DEL KILO DE LA SEMANA, con su propia entrada.
+   *
+   * No estaba en ninguna parte: el `PUT` existía en el cliente y ninguna
+   * pantalla lo llamaba. Quien lo buscaba terminaba en Actividades pulsando
+   * «Precio fijo», que cambia la forma de pago de toda la recolección — otra
+   * cosa, y sin aviso. Un campo escondido dentro de Configuración habría
+   * dejado la misma trampa en pie; esto está donde se busca, junto a
+   * Actividades, y se llama como lo llama el caficultor.
+   *
+   * `config.prices` es del dueño solo, igual que `prices.write` en el
+   * servidor. Un administrador corre la finca y no decide cuánto vale el kilo.
+   */
+  { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price" },
   { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" },
   // Sprint 5 gave settling a screen of its own. Making one still happens
   // inside "pagar empleado" — that is where the figure is approved — but the

@@ -903,6 +903,12 @@ export interface WireReportTotals {
   recordsWithoutValue: number;
   /** True while some of the value still rides on the week's price. */
   valueIsEstimate: boolean;
+  /**
+   * Records that run across more than one week. They are counted whole in the
+   * first week they touch — splitting them would be inventing — so a total that
+   * includes them is not exactly the week's work, and this says how many.
+   */
+  recordsSpanningWeeks: number;
 }
 
 /** Always `harvest`: work paid by the unit of work, never the week's payroll. */
@@ -989,6 +995,15 @@ export interface WireReportCropWeek extends WireReportTotals {
 export interface WireReportCrop extends WireReportTotals {
   scope: WireReportScope;
   plotCropId: Uuid;
+  /**
+   * How many weeks the header actually covers, and which days. The header used
+   * to be all-time whatever was asked for, so a request for four weeks showed
+   * the whole history beside four weekly rows.
+   */
+  weeks: number;
+  coveredFrom: DayISO;
+  coveredTo: DayISO;
+  partialWindow: boolean;
   /** Crop, variety and plot, as a person would say it. */
   label: string;
   pickers: number;

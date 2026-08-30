@@ -3,6 +3,7 @@ import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
+import { DATE_FIELD_PROPS } from "../../lib/dates";
 import { messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -100,7 +101,7 @@ export function RegisterDebtDialog({
             onChange={(e) => setDate(e.target.value)}
             size="medium"
             fullWidth
-            slotProps={{ inputLabel: { shrink: true } }}
+            slotProps={DATE_FIELD_PROPS}
           />
         </Stack>
       </DialogContent>

@@ -14,6 +14,7 @@ import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
 import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
+import { WeekPricePage } from "./features/prices/WeekPricePage";
 import { CrewPayrollPage } from "./features/payroll/CrewPayrollPage";
 import { SettlementsPage } from "./features/settlements/SettlementsPage";
 import { SettlementDetailPage } from "./features/settlements/SettlementDetailPage";
@@ -180,6 +181,21 @@ function Shell() {
           element={
             <RequirePermission action="activities.read" moduleName="ver las actividades">
               <ActivitiesPage />
+            </RequirePermission>
+          }
+        />
+
+        {/* El precio del kilo de la semana. `PUT /v1/prices/weeks/{monday}`
+            estaba en el cliente desde el sprint 1 y ninguna pantalla lo
+            llamaba: la consola sabía leer el precio y no fijarlo, que es la
+            tarea más corriente del dueño en cosecha. `config.prices` es del
+            dueño solo, igual que en la matriz de roles y que en el servidor
+            (`prices.write`). */}
+        <Route
+          path="precio-semana"
+          element={
+            <RequirePermission action="config.prices" moduleName="fijar el precio de la semana">
+              <WeekPricePage />
             </RequirePermission>
           }
         />

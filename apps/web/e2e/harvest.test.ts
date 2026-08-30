@@ -433,7 +433,7 @@ suite(suiteName, () => {
       if (w.valueCents === null) expect(valueState(w).kind).toBe("unknown");
     }
     const empty = { records: 0, kg: null, recordsNotInKg: 0, valueCents: null,
-      recordsWithoutValue: 0, valueIsEstimate: false };
+      recordsWithoutValue: 0, valueIsEstimate: false, recordsSpanningWeeks: 0 };
     expect(kgState(empty).kind).toBe("unknown");
     expect(valueState(empty).kind).toBe("unknown");
   }, 60_000);

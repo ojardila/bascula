@@ -98,6 +98,7 @@ export function foldTotals(rows: Totals[]): Totals {
     recordsNotInKg: 0,
     valueCents: null,
     recordsWithoutValue: 0,
+    recordsSpanningWeeks: 0,
     valueIsEstimate: false,
   };
   for (const r of rows) {
@@ -146,6 +147,8 @@ export function totalsOfRecords(records: RecordLike[]): Totals {
     // claim that nothing was picked.
     kg: inKg.length > 0 ? inKg.reduce((a, r) => a + r.quantity, 0) : null,
     recordsNotInKg: records.length - inKg.length,
+    // Records here are already one week's worth, so none of them straddles.
+    recordsSpanningWeeks: 0,
     // Null rather than 0 for an empty list, for the same reason. With rows,
     // `estimatedAmountCents` is always a number on the wire — the server
     // computes it — so there is no per-row hole to declare here.
@@ -166,4 +169,5 @@ export const NO_TOTALS: Totals = {
   valueCents: null,
   recordsWithoutValue: 0,
   valueIsEstimate: false,
+  recordsSpanningWeeks: 0,
 };

@@ -23,7 +23,7 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { formatMonday, mondayOf, todayInFarm } from "../../lib/dates";
+import { formatMonday, mondayOf, todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
 import { parseMoneyInput } from "../../lib/money";
 import {
   emptyDraft, estimateCents, forcesSingleDay, needsQuantity, needsRateField,
@@ -430,7 +430,7 @@ export function WorkRecordFormPage() {
                 size="medium"
                 fullWidth
                 required
-                slotProps={{ inputLabel: { shrink: true } }}
+                slotProps={DATE_FIELD_PROPS}
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 3 }}>
@@ -449,7 +449,7 @@ export function WorkRecordFormPage() {
                 }
                 size="medium"
                 fullWidth
-                slotProps={{ inputLabel: { shrink: true } }}
+                slotProps={DATE_FIELD_PROPS}
               />
             </Grid>
             <Grid size={12}>

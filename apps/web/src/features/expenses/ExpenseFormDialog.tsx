@@ -40,7 +40,7 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { parseMoneyInput } from "../../lib/money";
-import { todayInFarm } from "../../lib/dates";
+import { todayInFarm, DATE_FIELD_PROPS } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
 import type { Activity, Expense, ExpenseInput, ExpenseTarget, Plot } from "../../api/types";
 
@@ -157,7 +157,7 @@ export function ExpenseFormDialog({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
+              slotProps={DATE_FIELD_PROPS}
               fullWidth
             />
           </Stack>

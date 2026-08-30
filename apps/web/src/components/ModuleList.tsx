@@ -247,7 +247,7 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                     <Typography color="text.secondary" sx={{ mb: 2 }}>
                       {searching
                         ? "Pruebe con otro nombre, o cambie el filtro de estado."
-                        : (emptyBody ?? `Cree la primera ${singular} para empezar.`)}
+                        : (emptyBody ?? "Use el botón de arriba para crear el primero.")}
                     </Typography>
                     {!searching && onCreate && (
                       <Button variant="outlined" startIcon={<AddIcon />} onClick={onCreate}>
@@ -335,10 +335,18 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
       <ConfirmDialog
         open={!!confirming}
         busy={busy}
+        /**
+         * Sin artículo: `singular === "parcela" ? "la" : "el"` escribía «¿Dar
+         * de baja el actividad?», porque el género de un sustantivo no se
+         * deduce de una lista de un elemento. El nombre propio se lee mejor
+         * de todos modos — es el que la persona está mirando en la fila.
+         */
         title={
-          confirming?.kind === "off"
-            ? `¿Dar de baja ${singular === "parcela" ? "la" : "el"} ${singular}?`
-            : `¿Reactivar ${singular === "parcela" ? "la" : "el"} ${singular}?`
+          confirming
+            ? `${confirming.kind === "off" ? "¿Dar de baja" : "¿Reactivar"} «${getName(
+                confirming.row,
+              )}»?`
+            : ""
         }
         body={
           confirming?.kind === "off"
@@ -346,7 +354,20 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
             : `«${confirming ? getName(confirming.row) : ""}» vuelve a estar disponible en las listas y en los formularios.`
         }
         confirmLabel={confirming?.kind === "off" ? "Dar de baja" : "Reactivar"}
-        destructive={confirming?.kind === "off"}
+        /**
+         * ── EL ROJO ERA PARA LO REVERSIBLE ─────────────────────────────
+         *
+         * Dar de baja se deshace con «Reactivar», que está en el mismo menú.
+         * Pagar $338.100 no se deshace: queda escrito en el libro. Y hasta
+         * este sprint el único botón rojo de la consola guardaba el primero
+         * mientras el segundo era un clic verde.
+         *
+         * El rojo se queda para lo que no tiene vuelta —anular una
+         * liquidación— y esto pregunta en el tono que le corresponde: sigue
+         * habiendo diálogo, porque una lista que cambia sola tampoco está
+         * bien, pero ya no grita.
+         */
+        destructive={false}
         onConfirm={runConfirmed}
         onCancel={() => setConfirming(null)}
       />

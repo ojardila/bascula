@@ -14,13 +14,38 @@
  * It renders nothing at all in real mode. A permanent "you are talking to the
  * real server" strip would be noise, and noise is what teaches people to stop
  * reading strips.
+ *
+ * ── LO QUE SE FUE DE AQUÍ, Y POR QUÉ ─────────────────────────────────────
+ *
+ * Decía, en el techo de todas las páginas: «ponga VITE_USE_MOCKS=false en
+ * .env.development». Eso es una instrucción para quien tiene el repositorio
+ * clonado, y estaba escrita en la pantalla de un caficultor de 62 años que
+ * usa WhatsApp y poco más. Junto con el aviso de sincronización se comían 520
+ * de los primeros 844 píxeles de un celular.
+ *
+ * El hecho que sí es suyo —lo que ve aquí no es su finca, y no se guarda— se
+ * queda, en una línea. La variable de entorno y el fichero están en el README
+ * y en la consola del navegador, que es donde vive quien los necesita: nadie
+ * edita un `.env` desde el teléfono con el que está mirando esta pantalla.
  */
+import { useEffect } from "react";
 import { Alert, Box } from "@mui/material";
 import ScienceIcon from "@mui/icons-material/Science";
 import { apiMode } from "../api/mode";
 
 export function ApiModeBanner() {
   const mode = apiMode();
+
+  // Para quien SÍ lo necesita, y donde lo va a mirar. Una vez por carga.
+  useEffect(() => {
+    if (mode.mocks) {
+      console.info(
+        "[báscula] Datos simulados. Para hablar con el servidor real, " +
+          "ponga VITE_USE_MOCKS=false en .env.development y reinicie `npm run dev`.",
+      );
+    }
+  }, [mode.mocks]);
+
   if (!mode.mocks) return null;
 
   return (
@@ -36,14 +61,13 @@ export function ApiModeBanner() {
         bgcolor: "#eef4ff",
         py: 0.25,
         "& .MuiAlert-message": { py: 0.5 },
+        "& .MuiAlert-icon": { py: 0.75 },
       }}
     >
       <Box component="span" sx={{ fontWeight: 700 }}>
-        Datos simulados.
+        Datos de prueba.
       </Box>{" "}
-      Nada de lo que registre aquí llega al servidor y todo se pierde al recargar.
-      Para usar la finca de verdad, ponga <code>VITE_USE_MOCKS=false</code> en{" "}
-      <code>.env.development</code>.
+      Ésta no es su finca: nada de lo que registre aquí se guarda.
     </Alert>
   );
 }

@@ -24,6 +24,7 @@ import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { useAuth } from "../../auth/AuthContext";
 import { formatMoney, formatQuantity } from "../../lib/money";
+import { count, unitLabel } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
 import type { Sale } from "../../api/types";
 
@@ -181,9 +182,11 @@ export function SalesPage() {
         footer={
           sales ? (
             <>
-              {sales.items.filter((s) => !s.voided).length} venta(s) sin anular, por un total
+              {count(liveSales.length, "venta sin anular", "ventas sin anular")}, por un total
               de <strong>{formatMoney(total)}</strong>
-              {totalQty > 0 && oneUnit && <> ({formatQuantity(totalQty)} {oneUnit})</>}. Cada venta descuenta
+              {totalQty > 0 && oneUnit && (
+                <> ({formatQuantity(totalQty)} {unitLabel(totalQty, oneUnit)})</>
+              )}. Cada venta descuenta
               el producto de su bodega; anularla lo devuelve con un movimiento de reverso.
             </>
           ) : null
