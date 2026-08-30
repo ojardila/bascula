@@ -24,6 +24,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  migrations:
+    name: migration order (no install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      # Needs history, not a shallow clone: the check compares what this
+      # branch adds against the versions already on master.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: nothing added may sit at or below master's high-water mark
+        run: |
+          git fetch --quiet origin master
+          ./scripts/check-migrations.sh origin/master
+
   money:
     name: money rules (no install)
     runs-on: ubuntu-latest

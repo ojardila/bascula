@@ -213,3 +213,56 @@ And the server mock **was not idempotent by identifier**, even though its own
 header promised it was. It was more permissive than production, so the failure
 could not be reproduced against it. A mock that departs from the server in the
 direction of letting more through is not a safety net: it is a blindfold.
+
+## What outside contributors found that we did not
+
+Seven security PRs arrived from someone with no stake in our assumptions, and
+they landed on the two places our own audits were structurally unable to reach.
+
+### A counter that records refusals feeds itself
+
+It appeared twice, in two unrelated PRs, and neither author saw it as the same
+bug. The signup limiter writes its attempt row before the cap is consulted, so
+a request already refused with 429 still counts toward the next refusal. Five
+unauthenticated requests an hour, from any address, keep a chosen email
+permanently unable to register. The login limiter proposed in another PR had
+the identical shape: ten wrong guesses at a known owner's address, then the
+owner's **correct** password, and the door says 429. Forty requests an hour
+hold a farm's owner out of their own payroll.
+
+The rule that generalises: **a rate limiter whose counter is fed by its own
+refusals is a denial-of-service primitive aimed at the account it protects.**
+Count what actually reached the check, or count only genuine failures, and
+prefer a delay over a hard block on any axis an attacker chooses freely.
+
+### The audit read the function; the request took another path
+
+We had convinced ourselves that `clientIP` did not trust `X-Forwarded-For`.
+Reading the function, that is true — it parses `r.RemoteAddr` and nothing else.
+Reading the request, it is false: `server.go` runs `middleware.RealIP`, which
+has already overwritten `RemoteAddr` from the header before `clientIP` is ever
+called. chi ships that middleware marked `Deprecated:` for exactly this reason.
+
+**A function's guarantee is only worth what the chain in front of it leaves
+intact.** Nothing in the code we read was wrong. We read the wrong span.
+
+### An unused migration number is not free
+
+Master ran to `00021` with no `00020` on file. Two independent branches then
+picked `00020`, because it looked available. `store/migrate.go` calls
+`goose.UpContext` without `WithAllowMissing`, so a database already carrying
+history refuses to migrate at all:
+
+```
+goose up: error: found 1 missing migrations before current version 21:
+         version 20: 00020_week_prices_are_money.sql
+```
+
+The suite cannot catch it. Every run migrates a fresh scratch database, where
+ordering is never violated — so the first database to say no is production's.
+Git shows no conflict either: the two branches touch different filenames.
+
+`scripts/check-migrations.sh` now runs in CI and refuses anything at or below
+master's high-water mark, gaps included. It is the class of fault where the
+cost of the check is three seconds and the cost of the miss is every deployed
+site refusing to boot.
