@@ -1068,3 +1068,124 @@ test("paidAgainst does not reach across workers", () => {
 
   assert.equal(repo.payments.paidAgainst(sa.settlementId), 0);
 });
+
+// ---- «Gente con posición, no gente activa» — §9.11 ----------------------
+
+test("el ranking sigue sumando lo mismo que la finca cuando alguien se va, y lo dice", () => {
+  // The dilemma `movil.md` §9.11 left open: excluding removed workers made
+  // the ranking stop adding up to the farm total printed above it, and
+  // including them silently made a name in a list read as somebody still
+  // here.
+  //
+  // The server had the same argument on `ListBalances` and settled it: «the
+  // rule is not "active people" but "people with a position"», plus an
+  // `active` column so the caller renders the difference. A picker with kilos
+  // has a position. So nothing is filtered and the row carries the mark.
+  const stays = aWorker("Ana");
+  const goes = aWorker("Juan");
+  const plot = aPlot();
+  const retired = aPlot("Lote viejo");
+
+  repo.pickups.add({ personId: stays, cropId: plot, weight: 30, date: at(2) });
+  repo.pickups.add({ personId: goes, cropId: retired, weight: 20, date: at(2) });
+
+  repo.people.remove(goes);
+  repo.crops.remove(retired);
+
+  const farmKg = repo.reports.totals()!.kg;
+  assert.equal(farmKg, 50);
+
+  const byWorker = repo.reports.byWorker(800);
+  assert.equal(
+    byWorker.reduce((s, r) => s + r.kg, 0),
+    farmKg,
+    "el ranking por recolector suma la finca entera",
+  );
+  assert.equal(byWorker.find((r) => r.id === stays)!.active, 1);
+  assert.equal(byWorker.find((r) => r.id === goes)!.active, 0, "marcado, no escondido");
+
+  // And the crop tab of the same card, which used to filter and therefore did
+  // NOT add up — two tabs of one card contradicting each other, with the
+  // kilos of a real harvest in the gap.
+  const byCrop = repo.reports.byCrop(800);
+  assert.equal(
+    byCrop.reduce((s, r) => s + r.kg, 0),
+    farmKg,
+    "y el de cultivo también",
+  );
+  assert.equal(byCrop.find((r) => r.id === retired)!.active, 0);
+
+  // The lots listed under each week are the same list, so they add up to the
+  // week they sit under.
+  const lots = repo.weekCrops();
+  assert.equal(lots.reduce((s, l) => s + l.kg, 0), farmKg);
+  assert.ok(lots.some((l) => l.active === 0));
+
+  // What does NOT change: the counts on the front page are still the active
+  // list, because "cuánta gente hay" has one honest answer.
+  assert.equal(repo.reports.totals()!.people, 1);
+  assert.equal(repo.reports.totals()!.crops, 1);
+});
+
+// ---- §9.4 and §9.5: written once, checked as once ----------------------
+
+test("el desglose del saldo es el mismo por las dos puertas", () => {
+  // §9.4. `BALANCE_SQL` and the payroll screen's own list carried the sign
+  // table twice, and only one of the two was covered. The copies are gone;
+  // this is what would notice if one came back.
+  const p = aWorker("Ana");
+  aPlot();
+  repo.pickups.add({ personId: p, cropId: 1, weight: 50, date: at(3) });
+  settleAll(p);
+  repo.payments.advance(p, money(3000), "adelanto");
+  repo.payments.deduct(p, money(1000), "herramienta");
+  repo.payments.pay(p, money(5000), { method: "efectivo" });
+
+  const one = repo.payments.balance(p);
+  const inList = repo.payments.balances().find((b) => b.personId === p)!;
+
+  assert.equal(inList.earnedCents, one.earnedCents);
+  assert.equal(inList.paidCents, one.paidCents);
+  assert.equal(inList.deductedCents, one.deductedCents);
+  assert.equal(inList.balanceCents, one.balanceCents);
+  assert.equal(inList.lastMovementAt, one.lastMovementAt);
+});
+
+test("el valor de la cosecha es una sola cifra, mírese por donde se mire", () => {
+  // §9.5. The value was derived two ways — row by row in SQL, and week by
+  // week in a JS loop that cost a query per week — and the comment on
+  // `byCrop` records what a divergence cost the last time: «the same lote was
+  // worth two different amounts». The loop is gone.
+  const ana = aWorker("Ana");
+  const beto = aWorker("Beto");
+  const uno = aPlot("Lote 1");
+  const dos = aPlot("Lote 2");
+
+  repo.pickups.add({ personId: ana, cropId: uno, weight: 50, date: at(9) });
+  repo.pickups.add({ personId: beto, cropId: dos, weight: 30, date: at(9) });
+  repo.pickups.add({ personId: ana, cropId: dos, weight: 20, date: at(2) });
+
+  // Two weeks at two different prices, so a general-price shortcut cannot
+  // pass by accident.
+  const weeks = repo.reports.byWeek().map((w) => w.label);
+  repo.overrides.set(weeks[0]!, 900);
+  repo.overrides.set(weeks[1]!, 700);
+
+  const total = repo.totalPayout(800);
+  const sumWorkers = repo.reports.byWorker(800).reduce((s, r) => s + r.value, 0);
+  const sumCrops = repo.reports.byCrop(800).reduce((s, r) => s + r.value, 0);
+  const perWorker =
+    repo.workerReports.payout(ana, 800) + repo.workerReports.payout(beto, 800);
+  const perCrop = repo.cropReports.value(uno, 800) + repo.cropReports.value(dos, 800);
+
+  for (const [what, v] of [
+    ["por recolector", sumWorkers],
+    ["por lote", sumCrops],
+    ["recolector a recolector", perWorker],
+    ["lote a lote", perCrop],
+  ] as const)
+    assert.equal(v, total, `${what} da otra cifra que el total de la finca`);
+
+  // And it is the real arithmetic, not zero on both sides.
+  assert.ok(total > 0);
+});

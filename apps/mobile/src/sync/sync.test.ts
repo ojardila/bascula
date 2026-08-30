@@ -1011,3 +1011,267 @@ test("el saldo recibido no se guarda cuando el teléfono no está a la par", asy
   );
   db.close();
 });
+
+// ---- The two codes that retried for ever, sprint 8 ----------------------
+
+test("un documento que ya es de alguien retirado deja de reintentarse y pide una persona", async () => {
+  // `EMPLOYEE_EXISTS_DELETED`, checked against the API rather than assumed.
+  //
+  // The reading last sprint was that decision 8 would sort this out on the
+  // next attempt, because a worker off the books who does new work is put back
+  // on. It does not. `handleCreateWorker` looks the document up with
+  // `FindDeletedByDocument` BEFORE inserting, and that lookup answers the same
+  // way for ever; decision 8's `ReactivateForWork` is reached only from a work
+  // record, and never from a worker. So this envelope retried, and every
+  // weighing queued behind that worker retried with it, until somebody looked
+  // at a chip that never went down.
+  const { repo } = aPhone();
+  const person = aWorker(repo);
+
+  const refusing = new FakeServer({
+    refuse: {
+      worker: {
+        code: "EMPLOYEE_EXISTS_DELETED",
+        message: "a worker with that document is on this farm, deactivated",
+        details: {
+          employeeId: "0192e2aa-0000-7000-8000-000000000001",
+          name: "Ana",
+          lastName: "Rodríguez R.",
+          deletedAt: "2026-07-01T10:00:00Z",
+        },
+      },
+    },
+  });
+
+  const report = await engineFor(repo, refusing).sync({ force: true });
+
+  assert.equal(report.conflicts, 1, "una tarjeta, no un reintento");
+  assert.equal(repo.sync.pendingCount(), 0, "y sale de la cola en vez de girar en ella");
+
+  const card = repo.sync.conflicts().find((c) => c.kind === "worker-exists-deleted");
+  assert.ok(card, "con su tarjeta");
+  assert.equal(card!.payload.person, "Ana Rodríguez");
+  assert.equal(card!.payload.serverName, "Ana Rodríguez R.", "los dos nombres, para comparar");
+  assert.equal(card!.payload.serverWorkerId, "0192e2aa-0000-7000-8000-000000000001");
+
+  // And nothing merged the two people. The phone's worker is untouched, with
+  // its own uuid: joining them is a decision for whoever knows them both, on
+  // the screen where restoring the old file is a button.
+  assert.equal(repo.people.byId(person)?.name, "Ana");
+
+  // A second run does not raise a second card for the same problem.
+  await engineFor(repo, refusing).sync({ force: true });
+  assert.equal(
+    repo.sync.conflicts().filter((c) => c.kind === "worker-exists-deleted").length,
+    1,
+  );
+});
+
+test("una liquidación cuya cifra se movió no se reenvía sola, y la tarjeta dice qué se movió", async () => {
+  // `GROSS_CHANGED`. The envelope carries the gross this phone computed, so
+  // resending it asks the same question and gets the same answer for ever.
+  //
+  // The card reads the server's own `payableIdsProvided`. That flag is the
+  // difference between «entraron dos pesadas» and «no se le dijo al servidor
+  // qué estabas viendo», and showing the first when it is the second is how a
+  // screen blames a reprice for a late weighing.
+  const { repo } = aPhone();
+  const person = aWorker(repo);
+  repo.payments.advance(person, 5_000_00, "anticipo");
+
+  const refusing = new FakeServer({
+    refuse: {
+      ledgerEntry: {
+        code: "GROSS_CHANGED",
+        message: "the settlement no longer adds up to the figure the caller was shown",
+        details: {
+          expectedCents: 1_187_500,
+          actualCents: 1_265_000,
+          addedPayableIds: ["0192e2aa-0000-7000-8000-00000000000a"],
+          removedPayableIds: [],
+          weeksInSettlement: [{ weekStart: "2026-08-24", priceCents: 95_000 }],
+          payableIdsProvided: true,
+        },
+      },
+    },
+  });
+
+  const report = await engineFor(repo, refusing).sync({ force: true });
+
+  assert.equal(report.conflicts, 1);
+  assert.equal(repo.sync.pendingCount(), 0, "no se queda girando en la cola");
+
+  const card = repo.sync.conflicts().find((c) => c.kind === "gross-changed");
+  assert.ok(card);
+  assert.equal(card!.payload.expectedCents, 1_187_500);
+  assert.equal(card!.payload.actualCents, 1_265_000);
+  assert.equal(card!.payload.addedCount, 1);
+  assert.equal(card!.payload.removedCount, 0);
+  assert.equal(card!.payload.explained, true);
+});
+
+test("sin payableIds el servidor no sabe qué se movió, y la tarjeta no se lo inventa", async () => {
+  const { repo } = aPhone();
+  const person = aWorker(repo);
+  repo.payments.advance(person, 5_000_00, "anticipo");
+
+  const refusing = new FakeServer({
+    refuse: {
+      ledgerEntry: {
+        code: "GROSS_CHANGED",
+        message: "the settlement no longer adds up",
+        details: {
+          expectedCents: 1_187_500,
+          actualCents: 1_265_000,
+          // The server's own words: empty lists here mean «no se nos dijo qué
+          // estabas viendo», never «no se movió nada».
+          addedPayableIds: [],
+          removedPayableIds: [],
+          payableIdsProvided: false,
+        },
+      },
+    },
+  });
+
+  await engineFor(repo, refusing).sync({ force: true });
+  const card = repo.sync.conflicts().find((c) => c.kind === "gross-changed");
+  assert.ok(card);
+  assert.equal(card!.payload.explained, false, "y la pantalla lo dice así");
+});
+
+// ---- El caso mixto -----------------------------------------------------
+
+test("un jornal que baja dentro de una liquidación se puede medir, no adivinar", async () => {
+  // The mixed case of §2.2, closed.
+  //
+  // `composeSettlement` on the server «sends the header WITH ITS LINES,
+  // always», and `composeWorkRecord` returns nothing for anything that is not
+  // paid by the unit of work. So a settlement covering a week in which the
+  // worker also did a jornal arrives with a `grossCents` bigger than the lines
+  // this phone can resolve — and that difference IS «lo que el teléfono no
+  // puede desglosar», in cents, measured off a document the server issued.
+  //
+  // Before this it was inferred from whether the phone's own balance happened
+  // to be zero, which put every worker with BOTH kinds of work in the wrong
+  // bucket and reported their ordinary payroll as a calculation bug.
+  const { db, repo } = aPhone();
+  const person = aWorker(repo);
+  const plot = aPlot(repo);
+  const workerUuid = uuidOf(db, "people", person);
+  const cropUuid = uuidOf(db, "crops", plot);
+
+  const server = new FakeServer();
+  const pesadaUuid = "0192e2aa-0000-7000-8000-0000000000a1";
+  const jornalUuid = "0192e2aa-0000-7000-8000-0000000000a2";
+  const pesadaCents = 4_000_00;
+  const jornalCents = 12_000_00;
+
+  server.changes = [
+    // The weighing behind the first line. The jornal behind the second never
+    // comes down — that is §2.2, and it is the whole point.
+    {
+      seq: 1,
+      entity: "workRecord",
+      row: {
+        id: pesadaUuid,
+        workerId: workerUuid,
+        cropId: cropUuid,
+        quantity: 50,
+        occurredAt: "2026-08-25T14:00:00.000Z",
+        note: null,
+        deletedAt: null,
+      },
+    },
+    {
+      seq: 2,
+      entity: "settlement",
+      row: {
+        id: "0192e2aa-0000-7000-8000-0000000000b1",
+        workerId: workerUuid,
+        periodStart: "2026-08-24",
+        periodEnd: "2026-08-30",
+        grossCents: pesadaCents + jornalCents,
+        status: "open",
+        note: null,
+        createdAt: "2026-08-30T10:00:00.000Z",
+        voidedAt: null,
+        items: [
+          {
+            id: "0192e2aa-0000-7000-8000-0000000000c1",
+            payableId: pesadaUuid,
+            weekStart: "2026-08-24",
+            quantity: 50,
+            priceCents: 800,
+            amountCents: pesadaCents,
+            voidedAt: null,
+          },
+          {
+            id: "0192e2aa-0000-7000-8000-0000000000c2",
+            payableId: jornalUuid,
+            weekStart: "2026-08-24",
+            quantity: 2,
+            priceCents: 600_000,
+            amountCents: jornalCents,
+            voidedAt: null,
+          },
+        ],
+      },
+    },
+  ];
+
+  // §3.4's horizon: a settlement and the `devengo` it posts are two rows of
+  // the feed, and the second can be held back for the next poll. In that
+  // window the phone is short by exactly the part of the document it cannot
+  // break down — which is the one moment where crying "bug" would be wrong.
+  server.balances = [{ workerId: workerUuid, balanceCents: jornalCents }];
+
+  const report = await engineFor(repo, server).sync({ force: true });
+  assert.equal(report.ok, true, report.error?.message ?? "");
+
+  // The jornal line was dropped — there is no weighing to hang it on — and the
+  // document kept its own gross.
+  assert.ok(report.applied!.orphans >= 1, "la línea del jornal no se pudo colgar de nada");
+
+  const measured = repo.sync
+    .balanceChecksums()
+    .find((r) => r.uuid === workerUuid)!;
+  assert.equal(
+    measured.unitemisableCents,
+    jornalCents,
+    "y lo que no se pudo desglosar se puede decir al centavo",
+  );
+
+  // So the card is «el teléfono sabe menos», not «las dos implementaciones no
+  // cuadran» — which is the distinction that could not be made before.
+  const card = repo.sync.conflicts().find((c) => c.kind === "balance-not-itemisable");
+  assert.ok(card, "la tarjeta correcta");
+  assert.equal(card!.payload.unitemisableCents, jornalCents);
+  assert.equal(
+    repo.sync.conflicts().filter((c) => c.kind === "balance-mismatch").length,
+    0,
+    "y no se acusa de un fallo de cálculo a una nómina normal",
+  );
+  db.close();
+});
+
+test("una diferencia mayor de la que el teléfono puede justificar sigue siendo un fallo", async () => {
+  // The other half, and the reason the rule is «covered by», not «there is
+  // some». A peso more than the documents account for is the part that
+  // matters, and it stays a mismatch.
+  const { db, repo } = aPhone();
+  const person = aWorker(repo);
+  const uuid = uuidOf(db, "people", person);
+  repo.payments.advance(person, 10_000_00, "anticipo");
+
+  const server = new FakeServer();
+  server.balances = [{ workerId: uuid, balanceCents: -9_999_99 }];
+  const report = await engineFor(repo, server).sync({ force: true });
+
+  assert.equal(report.mismatched, 1);
+  assert.ok(repo.sync.conflicts().some((c) => c.kind === "balance-mismatch"));
+  assert.equal(
+    repo.sync.conflicts().filter((c) => c.kind === "balance-not-itemisable").length,
+    0,
+  );
+  db.close();
+});

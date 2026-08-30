@@ -180,9 +180,10 @@ func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFa
 }
 
 // SetFarmStatus suspends a farm or brings it back. Suspension is not a delete:
-// the rows stay, the sessions stop. handleLogin and handleRefresh both refuse a
-// suspended farm with FARM_SUSPENDED, so the effect reaches a phone as soon as
-// its 15-minute access token runs out.
+// the rows stay, the sessions stop. Login and refresh refuse a suspended farm,
+// and so does tenant.setContext on every authenticated request — which is what
+// closed the quarter of an hour a live access token used to buy a farm that had
+// just been suspended.
 func SetFarmStatus(ctx context.Context, tx pgx.Tx, farmID, status string) (*AdminFarm, error) {
 	var f AdminFarm
 	err := tx.QueryRow(ctx, `

@@ -179,10 +179,87 @@ const totalsCols = `count(*)::int,
 	count(*) FILTER (WHERE h.value_minor IS NULL)::int,
 	coalesce(bool_or(h.value_is_estimate), false)`
 
+// totalsColsOuter is totalsCols for a query that LEFT JOINs the weighings onto
+// something else — a calendar of weeks, in practice.
+//
+// The difference is `count(*)` against `count(h.id)`, and it is not a detail. A
+// left join produces one all-NULL row for a week with no work, and `count(*)`
+// counts it: the week would report ONE record with no kilos and no value, which
+// is a weighing nobody made. Every filtered count is guarded the same way, so a
+// week with nothing in it reports zero records — a real zero, beside a NULL for
+// the kilos, which is the pair this file insists on everywhere else.
+const totalsColsOuter = `count(h.id)::int,
+	sum(h.kg)::float8,
+	count(*) FILTER (WHERE h.id IS NOT NULL AND h.kg IS NULL)::int,
+	sum(h.value_minor)::bigint,
+	count(*) FILTER (WHERE h.id IS NOT NULL AND h.value_minor IS NULL)::int,
+	coalesce(bool_or(h.value_is_estimate), false)`
+
 func (t *Totals) scanTargets() []any {
 	return []any{&t.Records, &t.Kg, &t.RecordsNotInKg,
 		&t.ValueCents, &t.RecordsWithoutValue, &t.ValueIsEstimate}
 }
+
+// weekSeriesCTE is the calendar a weekly report is drawn on: every Monday from
+// the first week with work to the last, WITH THE EMPTY ONES IN IT.
+//
+// # Why a report cannot be a GROUP BY
+//
+// `GROUP BY week_start` produces a row per week that HAS work, which sounds like
+// the same thing and is not. A week in which nobody picked simply vanishes, and
+// the two rows either side of the hole become neighbours: the list shows them
+// adjacent, a chart draws a straight line over the gap, and the harvest reading
+// compares them as consecutive weeks. A season that stopped for a fortnight of
+// rain and restarted reads as a season that never stopped — and the number that
+// falls out of that comparison is the one an owner uses to decide whether to
+// move his crew off the plot.
+//
+// The empty week comes back with `records: 0` and `kg: null`, and the pairing is
+// the point. Zero records is a fact: nothing was written down that week. Null
+// kilos is the honest consequence: whether nobody picked or nobody recorded it
+// is not something this database can tell, and a 0.0 there would be the reading
+// silently choosing one of the two — which, through ReadHarvest, would
+// manufacture a 100% drop and end somebody's season on paper.
+//
+// # Where the calendar starts and stops
+//
+// At the farm's own data, clamped by whatever window the caller asked for. Weeks
+// are never invented outside the span of what was recorded: a caller asking
+// `from=1900-01-01` wants their season, not four thousand empty Mondays ahead of
+// it, and the LIMIT would then push the real weeks off the end of the list.
+//
+// It takes $1 and $2 like every other statement here — the inclusive local-day
+// window, either of which may be NULL — and GREATEST/LEAST do the clamping,
+// because in Postgres they ignore NULL inputs, which is exactly "unbounded".
+const weekSeriesCTE = `
+span AS (
+  SELECT GREATEST(week_start($1::date), (SELECT min(week_start) FROM harvest)) AS lo,
+         LEAST(week_start($2::date),    (SELECT max(week_start) FROM harvest)) AS hi
+),
+series AS (
+  SELECT gs::date AS week_start
+    FROM span, generate_series(span.lo::timestamp, span.hi::timestamp,
+                               interval '7 day') gs
+   WHERE span.lo IS NOT NULL AND span.hi IS NOT NULL
+)`
+
+// weekWindowCols reports WHAT PART of each week the row actually covers.
+//
+// A request for three days of a week used to come back as `weekStart:
+// 2026-08-03, finished: true`, carrying a tenth of the week's kilos, with
+// nothing anywhere saying that only three days had been counted. Printed beside
+// full weeks it is not a small error: it is a week that appears to have
+// collapsed.
+//
+// So every row carries the interval it summed and whether that interval is the
+// whole Monday-to-Sunday week. `partialWindow` is about the QUESTION being
+// truncated, and it is a different fact from `finished`, which is about the week
+// still running — a row can be either, both or neither, and a client that
+// conflated them would badge the wrong ones.
+const weekWindowCols = `GREATEST(s.week_start, $1::date) AS covered_from,
+	LEAST(s.week_start + 6, $2::date)  AS covered_to,
+	(GREATEST(s.week_start, $1::date) > s.week_start
+	 OR LEAST(s.week_start + 6, $2::date) < s.week_start + 6) AS partial_window`
 
 // add folds one row into a running total. It is how a grid's row totals,
 // column totals and grand total are all derived from the same cells, so they
@@ -234,21 +311,50 @@ type ReportWeek struct {
 	// with a finished one and the harvest reading drops it; a list that did
 	// not mark it would invite the same mistake by eye.
 	Finished bool `json:"finished"`
+
+	// CoveredFrom and CoveredTo are the days this row actually summed: the
+	// week, narrowed by the window the caller asked for. PartialWindow says
+	// they are not the whole week.
+	//
+	// Without them a three-day question came back looking exactly like a
+	// seven-day answer — same weekStart, same `finished: true`, a tenth of the
+	// kilos — and next to full weeks that reads as a collapse rather than as a
+	// shorter question.
+	CoveredFrom   domain.Day `json:"coveredFrom"`
+	CoveredTo     domain.Day `json:"coveredTo"`
+	PartialWindow bool       `json:"partialWindow"`
 }
 
 const reportWeeksSQL = `
-WITH ` + boundsCTE + `, ` + harvestCTE + `
-SELECT h.week_start, ` + totalsCols + `,
+WITH ` + boundsCTE + `, ` + harvestCTE + `, ` + weekSeriesCTE + `
+SELECT s.week_start, ` + totalsColsOuter + `,
        count(DISTINCT h.employee_id)::int AS pickers,
        count(DISTINCT h.local_day)::int   AS days,
-       max(h.week_price_minor)            AS price_minor,
-       coalesce(bool_and(h.week_start < (SELECT this_week FROM bounds)), false) AS finished
-  FROM harvest h
- GROUP BY h.week_start
- ORDER BY h.week_start DESC
+       COALESCE(max(h.week_price_minor),
+                (SELECT wp.price_minor FROM week_prices wp
+                  WHERE wp.farm_id = current_farm() AND wp.week_start = s.week_start),
+                (SELECT fc.price_minor FROM farm_config fc
+                  WHERE fc.farm_id = current_farm())) AS price_minor,
+       (s.week_start < (SELECT this_week FROM bounds)) AS finished,
+       ` + weekWindowCols + `
+  FROM series s
+  LEFT JOIN harvest h ON h.week_start = s.week_start
+ GROUP BY s.week_start
+ ORDER BY s.week_start DESC
  LIMIT $3`
 
-// ReportWeeks lists the weeks with their kilos and their value, newest first.
+// ReportWeeks lists the weeks with their kilos and their value, newest first —
+// every week between the first and the last, including the ones nobody worked.
+//
+// A week with no work is a row with `records: 0` and `kg: null`, not an absence.
+// See weekSeriesCTE: an absence is what let a chart draw a straight line over a
+// fortnight of rain and let the season reading compare two weeks that are not
+// consecutive.
+//
+// The price of an empty week is still the price of that week. It comes from
+// week_prices, or the farm's standing price, rather than from the weighings that
+// are not there — a week nobody picked had a price all the same, and a null
+// there would be a second absence pretending to be a fact.
 func ReportWeeks(ctx context.Context, tx pgx.Tx, from, to *time.Time, limit int) ([]ReportWeek, error) {
 	rows, err := tx.Query(ctx, reportWeeksSQL, from, to, limit)
 	if err != nil {
@@ -260,7 +366,8 @@ func ReportWeeks(ctx context.Context, tx pgx.Tx, from, to *time.Time, limit int)
 	for rows.Next() {
 		var w ReportWeek
 		targets := append([]any{&w.WeekStart.Time}, w.Totals.scanTargets()...)
-		targets = append(targets, &w.Pickers, &w.Days, &w.PriceCents, &w.Finished)
+		targets = append(targets, &w.Pickers, &w.Days, &w.PriceCents, &w.Finished,
+			&w.CoveredFrom.Time, &w.CoveredTo.Time, &w.PartialWindow)
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
@@ -573,16 +680,39 @@ SELECT ` + totalsCols + `,
   JOIN work_record_plot_crops c ON c.work_record_id = h.id AND c.plot_crop_id = $3
   LEFT JOIN crop_link cl ON cl.work_record_id = h.id`
 
+// cropWeeksSQL draws one crop's weeks on the same calendar the farm's list uses,
+// and for the same reason: a lot that yielded nothing for a fortnight has to
+// look like a lot that yielded nothing for a fortnight, not like a lot that was
+// picked every week.
+//
+// The crop narrowing moves into a CTE of its own so that the span — where the
+// series starts and stops — is THIS CROP's first and last week, and not the
+// farm's. Otherwise a plot picked for three weeks of a six-month season would
+// come back as twenty-odd empty rows with three real ones buried in them.
 const cropWeeksSQL = `
-WITH ` + boundsCTE + `, ` + harvestCTE + `
-SELECT h.week_start, ` + totalsCols + `,
+WITH ` + boundsCTE + `, ` + harvestCTE + `,
+crop_harvest AS (
+  SELECT h.* FROM harvest h
+    JOIN work_record_plot_crops c ON c.work_record_id = h.id AND c.plot_crop_id = $3
+),
+span AS (
+  SELECT GREATEST(week_start($1::date), (SELECT min(week_start) FROM crop_harvest)) AS lo,
+         LEAST(week_start($2::date),    (SELECT max(week_start) FROM crop_harvest)) AS hi
+),
+series AS (
+  SELECT gs::date AS week_start
+    FROM span, generate_series(span.lo::timestamp, span.hi::timestamp,
+                               interval '7 day') gs
+   WHERE span.lo IS NOT NULL AND span.hi IS NOT NULL
+)
+SELECT s.week_start, ` + totalsColsOuter + `,
        count(DISTINCT h.employee_id)::int AS pickers,
        count(DISTINCT h.local_day)::int   AS days,
-       coalesce(bool_and(h.week_start < (SELECT this_week FROM bounds)), false) AS finished
-  FROM harvest h
-  JOIN work_record_plot_crops c ON c.work_record_id = h.id AND c.plot_crop_id = $3
- GROUP BY h.week_start
- ORDER BY h.week_start DESC
+       (s.week_start < (SELECT this_week FROM bounds)) AS finished
+  FROM series s
+  LEFT JOIN crop_harvest h ON h.week_start = s.week_start
+ GROUP BY s.week_start
+ ORDER BY s.week_start DESC
  LIMIT $4`
 
 // ReportCrop answers for one crop. The crop is confirmed to be ours FIRST:
@@ -1117,22 +1247,49 @@ type HarvestCurve struct {
 	CurrentWeek domain.Day          `json:"currentWeek"`
 	Weeks       []domain.WeekTotal  `json:"weeks"`
 	Shape       domain.HarvestShape `json:"shape"`
-	// WeeksWithoutKilos counts weeks in the series that could not be expressed
-	// in kilos and were therefore left out of the reading. A reading taken over
-	// a series with holes in it is not the same reading, and the number of
-	// holes is the only way to know.
+	// WeeksWithoutKilos counts weeks that HAD work and whose kilos could not be
+	// established — every weighing in them was taken in a unit with no
+	// conversion. They are in the series and out of the reading.
 	WeeksWithoutKilos int `json:"weeksWithoutKilos"`
+	// WeeksWithoutRecords counts weeks in which nothing was recorded at all.
+	//
+	// It is a separate number from the one above and not a refinement of it,
+	// because the two are different facts and a client may want to say
+	// different things about them: "we could not price what you weighed" is a
+	// unit that needs a kg_factor, and "there is nothing here" is a fortnight
+	// nobody picked, or nobody wrote down.
+	//
+	// It used to be neither, because the week was not in the series at all: the
+	// list skipped it, weeksWithoutKilos counted 0, and the curve joined the
+	// weeks either side of it into a straight line. A hole that reports itself
+	// as no holes is the exact shape of error this whole file is written
+	// against.
+	WeeksWithoutRecords int `json:"weeksWithoutRecords"`
 }
 
 const harvestCurveSQL = `
-WITH ` + boundsCTE + `, ` + harvestCTE + `
-SELECT h.week_start, sum(h.kg)::float8 AS kg
-  FROM harvest h
- WHERE ($3::uuid IS NULL OR EXISTS (
-         SELECT 1 FROM work_record_plot_crops c
-          WHERE c.work_record_id = h.id AND c.plot_crop_id = $3))
- GROUP BY h.week_start
- ORDER BY h.week_start DESC
+WITH ` + boundsCTE + `, ` + harvestCTE + `,
+sel AS (
+  SELECT h.* FROM harvest h
+   WHERE ($3::uuid IS NULL OR EXISTS (
+           SELECT 1 FROM work_record_plot_crops c
+            WHERE c.work_record_id = h.id AND c.plot_crop_id = $3))
+),
+span AS (
+  SELECT GREATEST(week_start($1::date), (SELECT min(week_start) FROM sel)) AS lo,
+         LEAST(week_start($2::date),    (SELECT max(week_start) FROM sel)) AS hi
+),
+series AS (
+  SELECT gs::date AS week_start
+    FROM span, generate_series(span.lo::timestamp, span.hi::timestamp,
+                               interval '7 day') gs
+   WHERE span.lo IS NOT NULL AND span.hi IS NOT NULL
+)
+SELECT s.week_start, sum(h.kg)::float8 AS kg, count(h.id)::int AS records
+  FROM series s
+  LEFT JOIN sel h ON h.week_start = s.week_start
+ GROUP BY s.week_start
+ ORDER BY s.week_start DESC
  LIMIT $4`
 
 // ReportHarvestCurve reads the shape of the harvest: where the peak was, how
@@ -1152,11 +1309,14 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 	for rows.Next() {
 		var w domain.WeekTotal
 		var monday time.Time
-		if err := rows.Scan(&monday, &w.Kg); err != nil {
+		if err := rows.Scan(&monday, &w.Kg, &w.Records); err != nil {
 			return nil, err
 		}
 		w.WeekStart = monday.Format("2006-01-02")
-		if w.Kg == nil {
+		switch {
+		case w.Records == 0:
+			out.WeeksWithoutRecords++
+		case w.Kg == nil:
 			out.WeeksWithoutKilos++
 		}
 		out.Weeks = append(out.Weeks, w)

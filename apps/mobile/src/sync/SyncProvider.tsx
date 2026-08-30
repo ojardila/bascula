@@ -70,6 +70,17 @@ export interface SyncStatus {
   stillBehind: boolean;
   /** How far behind the server said this phone was, at the last handshake. §3.1. */
   behind: number;
+  /**
+   * The last run had to read the farm from the beginning: this phone's cursor
+   * was older than the 180 days the feed retains.
+   *
+   * Nothing is wrong and nobody is asked — every apply is an upsert by uuid,
+   * so re-reading is expensive and harmless. What is NOT harmless is saying
+   * nothing: the next handshake's `behind` becomes the whole season, and a
+   * counter that jumps from eleven to forty thousand with no sentence beside
+   * it reads as the phone having lost everything.
+   */
+  bootstrapped: boolean;
 }
 
 interface SyncContextValue {
@@ -111,6 +122,7 @@ const SyncContext = createContext<SyncContextValue>({
     skipped: [],
     stillBehind: false,
     behind: 0,
+    bootstrapped: false,
   },
   register: async () => {
     throw new Error("no provider");
@@ -153,7 +165,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // server's answer at handshake time and goes stale the moment the pull
   // starts, so persisting it would be storing a number that lies after a
   // restart.
-  const [behind, setBehind] = useState({ stillBehind: false, count: 0 });
+  const [behind, setBehind] = useState({
+    stillBehind: false,
+    count: 0,
+    bootstrapped: false,
+  });
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
@@ -253,6 +269,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       skipped,
       stillBehind: behind.stillBehind,
       behind: behind.count,
+      bootstrapped: behind.bootstrapped,
     };
   }, [session, busy, skipped, tick, behind]);
 
@@ -263,7 +280,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       try {
         const report = await engineFor().sync({ force });
         setSkipped(report.skipped);
-        setBehind({ stillBehind: report.stillBehind, count: report.behind });
+        setBehind({
+          stillBehind: report.stillBehind,
+          count: report.behind,
+          bootstrapped: report.bootstrapped,
+        });
         return report;
       } finally {
         setBusy(false);

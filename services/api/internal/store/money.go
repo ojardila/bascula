@@ -755,6 +755,255 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, revers
 }
 
 // ---------------------------------------------------------------------------
+// Releasing a settlement that is void and still claims a weighing
+// ---------------------------------------------------------------------------
+
+// SettlementRelease is the record of one repair. See migration 00016 for why
+// it is a row and not a psql session at midnight.
+type SettlementRelease struct {
+	ID            string    `json:"id"`
+	SettlementID  string    `json:"settlementId"`
+	ItemsReleased int       `json:"itemsReleased"`
+	PayableIDs    []string  `json:"payableIds"`
+	ReversedCents int64     `json:"reversedCents"`
+	Reason        string    `json:"reason"`
+	ReleasedBy    *string   `json:"releasedBy"`
+	At            time.Time `json:"at"`
+	// VoidedAt is the settlement's own, copied so the record carries the
+	// distance between the void and its repair without a second lookup.
+	VoidedAt *time.Time `json:"settlementVoidedAt"`
+}
+
+// Unqualified on purpose: the same list has to serve a SELECT and a RETURNING,
+// and RETURNING has no table alias to hang a prefix on.
+const releaseCols = `id::text, settlement_id::text, items_released,
+	array(SELECT p::text FROM unnest(payable_ids) p), reversed_minor,
+	reason, released_by::text, at,
+	(SELECT s.voided_at FROM settlements s WHERE s.id = settlement_id)`
+
+func scanRelease(row pgx.Row) (*SettlementRelease, error) {
+	var r SettlementRelease
+	if err := row.Scan(&r.ID, &r.SettlementID, &r.ItemsReleased, &r.PayableIDs,
+		&r.ReversedCents, &r.Reason, &r.ReleasedBy, &r.At, &r.VoidedAt); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// FindSettlementRelease returns a release by the id the caller gave it.
+func FindSettlementRelease(ctx context.Context, tx pgx.Tx, id string) (*SettlementRelease, error) {
+	out, err := scanRelease(tx.QueryRow(ctx,
+		`SELECT `+releaseCols+` FROM settlement_releases WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return out, err
+}
+
+// ListSettlementReleases is the repairs done to one settlement, newest first.
+// A settlement can only really be released once — the second call has nothing
+// left to free — but the list is a list because an audit that can only ever
+// show one row is an audit somebody will eventually trim to fit.
+func ListSettlementReleases(ctx context.Context, tx pgx.Tx, settlementID string) ([]SettlementRelease, error) {
+	rows, err := tx.Query(ctx,
+		`SELECT `+releaseCols+` FROM settlement_releases
+		  WHERE settlement_id = $1 ORDER BY at DESC`, settlementID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SettlementRelease{}
+	for rows.Next() {
+		r, err := scanRelease(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+// ReleaseSettlement frees the payables a VOID settlement is still holding, and
+// finishes the void that left them held.
+//
+// # What it does, in the order it matters
+//
+// The settlement must already be void. That precondition is the whole safety
+// of this route: a LIVE settlement's lines are the lock that stops the same
+// weighing being paid twice, and a route that could cut them would be a second
+// door to double payment with `release` written on it. Voiding is the way to
+// undo a live settlement, and it already exists.
+//
+// Given a void settlement, two things can be left behind, and the shape the
+// import used to create had both:
+//
+//  1. lines with no voided_at, each holding its payable under
+//     ux_items_payable_live so the weighing can never be settled again;
+//  2. a `devengo` in the ledger with no reversal against it, so the worker is
+//     still credited for a document that was cancelled.
+//
+// VoidSettlement does both together and refuses to run twice. This does the
+// same two things for the settlement it refuses to touch, which is why it is a
+// route and not a script: it is the second half of a void that stopped early.
+//
+// # Idempotency
+//
+// `releaseID` is the caller's key, exactly as `reversalID` is on the void. With
+// it, a resend answers with the record that already exists and writes nothing.
+// Without it there is no way to tell a retry from a second repair, and the
+// second repair of an already-repaired settlement is refused as
+// NOTHING_TO_RELEASE — correctly, because by then there is nothing to release.
+func ReleaseSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, releaseID,
+	reason, releasedBy string, on *time.Time) (*SettlementRelease, bool, error) {
+
+	// First, before anything is derived or locked: the key. Same position and
+	// same reason as in Settle — a retry finds the work already done, and a
+	// check that ran later would answer NOTHING_TO_RELEASE to a caller whose
+	// first attempt succeeded and whose connection dropped.
+	if releaseID != "" {
+		existing, err := FindSettlementRelease(ctx, tx, releaseID)
+		if err != nil {
+			return nil, false, err
+		}
+		if existing != nil {
+			if existing.SettlementID != settlementID {
+				return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
+					"that id already names the release of a different settlement")
+			}
+			return existing, false, nil
+		}
+	}
+
+	var status, employeeID string
+	if err := tx.QueryRow(ctx,
+		`SELECT status::text, employee_id::text FROM settlements WHERE id = $1 FOR UPDATE`,
+		settlementID).Scan(&status, &employeeID); err != nil {
+		return nil, false, err
+	}
+	if status != "void" {
+		return nil, false, domain.Conflict(domain.CodeSettlementNotVoid,
+			"that settlement is not void; its lines are the lock that stops a "+
+				"weighing being paid twice, and the way to undo a live settlement "+
+				"is to void it")
+	}
+
+	// Every decision about this person's money, serialised for the rest of the
+	// transaction. This writes a reversal, which moves a balance, so it takes
+	// the same lock a payment does — see addLedgerEntry on why locking only the
+	// readers of a balance leaves the door open.
+	if err := LockEmployeeForMoney(ctx, tx, employeeID); err != nil {
+		return nil, false, err
+	}
+
+	rows, err := tx.Query(ctx, `
+		UPDATE settlement_items SET voided_at = now()
+		 WHERE settlement_id = $1 AND voided_at IS NULL
+		 RETURNING payable_id::text`, settlementID)
+	if err != nil {
+		return nil, false, err
+	}
+	freed := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, false, err
+		}
+		freed = append(freed, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	// The other half a stopped void leaves behind. Same statement VoidSettlement
+	// uses, so the two cannot drift: a devengo of this settlement with nothing
+	// reversing it.
+	reversed, err := reverseUnreversedEarnings(ctx, tx, farmID, settlementID, releasedBy, on)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(freed) == 0 && reversed == 0 {
+		return nil, false, domain.Conflict(domain.CodeNothingToRelease,
+			"that settlement holds no payable and owes no reversal; there is "+
+				"nothing trapped behind it")
+	}
+
+	if releaseID == "" {
+		releaseID = uuid.NewString()
+	}
+	out, err := scanRelease(tx.QueryRow(ctx, `
+		INSERT INTO settlement_releases
+			(id, farm_id, settlement_id, items_released, payable_ids, reversed_minor,
+			 reason, released_by)
+		VALUES ($1, $2, $3, $4, $5::uuid[], $6, $7, $8)
+		RETURNING `+releaseCols,
+		releaseID, farmID, settlementID, len(freed), freed, reversed,
+		reason, nilUUID(releasedBy)))
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
+}
+
+// reverseUnreversedEarnings cancels every `devengo` of a settlement that has
+// no reversal against it, and answers with how much it cancelled. It is the
+// body of VoidSettlement's last loop, lifted so the release runs the same code
+// rather than a second copy of it that agrees today.
+func reverseUnreversedEarnings(ctx context.Context, tx pgx.Tx, farmID, settlementID,
+	createdBy string, on *time.Time) (int64, error) {
+
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, employee_id::text, amount_minor
+		  FROM ledger
+		 WHERE settlement_id = $1 AND kind = 'devengo'
+		   AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = ledger.id)`,
+		settlementID)
+	if err != nil {
+		return 0, err
+	}
+	type entry struct {
+		id, employeeID string
+		amount         int64
+	}
+	var toReverse []entry
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.id, &e.employeeID, &e.amount); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		toReverse = append(toReverse, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(toReverse) == 0 {
+		return 0, nil
+	}
+
+	day, err := dayOrToday(ctx, tx, on)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, e := range toReverse {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
+			                    settlement_id, reverses_id, created_by)
+			VALUES ($1, $2, $3, 'reverso', $4, $5, $6, $7, $8)`,
+			uuid.NewString(), farmID, e.employeeID, -e.amount, day, settlementID,
+			e.id, nilUUID(createdBy)); err != nil {
+			return 0, err
+		}
+		total += e.amount
+	}
+	return total, nil
+}
+
+// ---------------------------------------------------------------------------
 // The ledger
 // ---------------------------------------------------------------------------
 

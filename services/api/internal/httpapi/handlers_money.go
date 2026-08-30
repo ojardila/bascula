@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -387,6 +388,80 @@ func (s *Server) handleVoidSettlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, settlement)
+}
+
+// handleReleaseSettlement is the way out of a void settlement that is still
+// holding a weighing.
+//
+// # Why this route exists
+//
+// The fix to the season import closed the door that CREATED that shape — an
+// imported settlement with status `void` whose lines never got a voidedAt —
+// and nothing could open the ones already in the field. VoidSettlement leaves
+// with 409 SETTLEMENT_ALREADY_VOID before it looks at a line; the partial
+// unique index holds the payable while the line lives; and DELETE is revoked
+// from the application role on both tables. The pesada was worked, is
+// unpayable, and does not appear in any pending list, because the lock says it
+// is already claimed.
+//
+// # Who may call it
+//
+// The owner, and only the owner, which is stricter than the void beside it.
+// Releasing a payable puts money back into circulation: the weighing becomes
+// payable again and the next settlement pays it. That is a repair of the
+// farm's own books rather than a day's administration, it is the same shape as
+// the season import — the other route that writes payroll nobody watched
+// happen — and it is rare enough that needing the owner costs nothing.
+//
+// # And it is recorded
+//
+// `reason` is required and cannot be blank, and the row it writes is
+// append-only. An operation that moves money and leaves no trace is the one
+// thing this schema refuses everywhere else.
+func (s *Server) handleReleaseSettlement(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		// ID names the release and is therefore the key a resend is
+		// recognised by, exactly as the reversal's id is on a void.
+		ID     string `json:"id"`
+		Reason string `json:"reason"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(body.Reason) == "" {
+		writeError(w, r, domain.BadRequest(
+			"reason is required: this frees a weighing a settlement was holding "+
+				"and the record of why is the point of the route"))
+		return
+	}
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	farmID, err := tenant.FarmID(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	p, _ := auth.PrincipalFrom(r.Context())
+
+	settlementID := chi.URLParam(r, "id")
+	release, created, err := store.ReleaseSettlement(r.Context(), tx, farmID,
+		settlementID, body.ID, strings.TrimSpace(body.Reason), p.UserID, nil)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	settlement, err := store.GetSettlement(r.Context(), tx, settlementID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, createdStatus(created), map[string]any{
+		"release": release, "settlement": settlement,
+	})
 }
 
 // ---------------------------------------------------------------------------

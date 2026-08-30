@@ -23,6 +23,23 @@ export interface ReceiptData {
   farmLabel: string;
   unit: string;
   lines: ReceiptLine[];
+  /**
+   * The settlement's OWN gross, as the document says it — not the sum of the
+   * lines above.
+   *
+   * They are the same figure for a settlement this phone wrote. They are NOT
+   * the same figure for one that came down the feed covering a week in which
+   * the worker also did a jornal: `composeSettlement` sends the header with
+   * every line, `composeWorkRecord` filters out everything that is not paid by
+   * the unit of work (§2.2), and so `syncStore.applySettlement` drops those
+   * lines as orphans. The document then holds more money than the lines this
+   * phone can print for it.
+   *
+   * Adding the lines up was therefore a receipt that under-declared what the
+   * worker earned, on paper, with a signature line under it. Undefined for a
+   * caller that has no document to quote — then the lines are all there is.
+   */
+  grossCents?: number;
   /** Signed cents: positive is the farm owing, negative an outstanding advance. */
   balanceCents: number;
   paidCents: number;
@@ -45,7 +62,10 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
 
   // Newest week first, the way the worker remembers the season.
   const lines = [...r.lines].sort((a, b) => (a.week < b.week ? 1 : -1));
-  const grossCents = lines.reduce((s, l) => s + l.amountCents, 0);
+  const itemisedCents = lines.reduce((s, l) => s + l.amountCents, 0);
+  // The document wins over the lines. See `grossCents` above.
+  const grossCents = r.grossCents ?? itemisedCents;
+  const otherCents = grossCents - itemisedCents;
   const kg = lines.reduce((s, l) => s + l.weight, 0);
 
   const rows = lines
@@ -57,6 +77,16 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
       </tr>`,
     )
     .join("");
+
+  // The part of the document this phone holds no line for. Named rather than
+  // silently folded into the total: a worker checking a receipt against what
+  // they remember picking has to be able to see that the extra money is not a
+  // weighing they have forgotten.
+  const other =
+    otherCents !== 0
+      ? `<tr class="other"><td colspan="2">${esc(t("pay.otherWork"))}</td>
+           <td class="n">${esc(cents(otherCents, lang))}</td></tr>`
+      : "";
 
   const balance =
     r.balanceCents > 0
@@ -103,6 +133,9 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
   .bal td { border-bottom: none; padding-top: 2.5mm; color: #3949ab;
             font-weight: 600; }
   .bal.owes td { color: #8a5a00; }
+  /* Work this handset holds no line for. Part of the arithmetic, so it sits
+     inside the table and above the total, not in a footnote nobody reads. */
+  .other td { font-style: italic; }
 
   /* What the worker is taking home, set apart from the arithmetic above it. */
   .paid { margin-top: 5mm; border: 2px solid #2e7d32; border-radius: 2mm;
@@ -141,6 +174,7 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
     </thead>
     <tbody>
       ${rows}
+      ${other}
       <tr class="tot">
         <td>${esc(t("week.total"))}</td>
         <td class="n">${esc(formatNumber(kg, lang))} ${esc(r.unit)}</td>

@@ -195,6 +195,25 @@ export default function SyncStatus() {
           </Card>
         )}
 
+        {/*
+          §3.4. The phone's cursor was older than the feed still retains — 180
+          days — so the transport re-read the farm from the beginning on its
+          own. Nothing was lost and nobody is being asked to decide anything;
+          the card exists because the alternative is silence, and the next
+          handshake will report this phone as tens of thousands of changes
+          behind. A counter that appears to have gone backwards, with no
+          sentence beside it, is how a pesador concludes the phone lost the
+          season.
+        */}
+        {status.bootstrapped && (
+          <Card mode="outlined" style={styles.card}>
+            <Card.Title title={t("sync.bootstrapTitle")} />
+            <Card.Content>
+              <Text style={styles.body}>{t("sync.bootstrapBody")}</Text>
+            </Card.Content>
+          </Card>
+        )}
+
         {/* What this token was not allowed to read. A weigher's pull comes
             back without the money, correctly — and the screen has to say so
             rather than let them believe the phone is up to date. */}
@@ -346,6 +365,76 @@ function ConflictCard({
               onPress={() => onResolve(conflict, "reported", t("conflict.reported"))}
             >
               {t("conflict.report")}
+            </Button>
+          </Card.Actions>
+        </Card>
+      );
+
+    // §5.6. The document this phone typed already belongs to somebody the farm
+    // took off the payroll. Two buttons at most, and neither of them merges
+    // anybody: the card exists so a person who knows both names can decide.
+    case "worker-exists-deleted":
+      return (
+        <Card mode="elevated" style={styles.card}>
+          <Card.Content>
+            <Text variant="titleSmall">{person}</Text>
+            <Text style={styles.body}>
+              {t("conflict.workerExistsDeleted", {
+                name: String(p.serverName ?? t("sync.someone")),
+              })}
+            </Text>
+          </Card.Content>
+          <Card.Actions>
+            {conflict.personId !== null && (
+              <Button onPress={() => onOpenWorker(conflict.personId!)}>
+                {t("conflict.seeHistory")}
+              </Button>
+            )}
+            <Button
+              mode="contained-tonal"
+              onPress={() => onResolve(conflict, "acknowledged", t("conflict.closed"))}
+            >
+              {t("conflict.understood")}
+            </Button>
+          </Card.Actions>
+        </Card>
+      );
+
+    // §5.5. The gross moved between the preview and the write, and the server
+    // wrote nothing. Whether the difference has an explanation is the server's
+    // own `payableIdsProvided`, and the card says which of the two it is
+    // rather than blaming a reprice for a late weighing.
+    case "gross-changed":
+      return (
+        <Card mode="elevated" style={[styles.card, styles.red]}>
+          <Card.Content>
+            <Text variant="titleSmall">{person}</Text>
+            <Text style={styles.body}>
+              {t("conflict.grossChanged", {
+                expected: money(fromCents(Number(p.expectedCents ?? 0))),
+                actual: money(fromCents(Number(p.actualCents ?? 0))),
+              })}
+            </Text>
+            <Text style={styles.dim}>
+              {p.explained
+                ? t("conflict.grossChangedWhy", {
+                    added: Number(p.addedCount ?? 0),
+                    removed: Number(p.removedCount ?? 0),
+                  })
+                : t("conflict.grossChangedUnknown")}
+            </Text>
+          </Card.Content>
+          <Card.Actions>
+            {conflict.personId !== null && (
+              <Button onPress={() => onOpenWorker(conflict.personId!)}>
+                {t("conflict.seeHistory")}
+              </Button>
+            )}
+            <Button
+              mode="contained-tonal"
+              onPress={() => onResolve(conflict, "acknowledged", t("conflict.closed"))}
+            >
+              {t("conflict.understood")}
             </Button>
           </Card.Actions>
         </Card>

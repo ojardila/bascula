@@ -54,8 +54,12 @@ export default function Reports() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [totals, setTotals] = useState({ pickups: 0, kg: 0, people: 0, crops: 0 });
   const [grouping, setGrouping] = useState<Grouping>("week");
-  const [rows, setRows] = useState<{ label: string; kg: number; id?: number; value?: number }[]>([]);
-  const [lotsByWeek, setLotsByWeek] = useState<Record<string, { crop: string; kg: number }[]>>({});
+  const [rows, setRows] = useState<
+    { label: string; kg: number; id?: number; value?: number; active?: number }[]
+  >([]);
+  const [lotsByWeek, setLotsByWeek] = useState<
+    Record<string, { crop: string; kg: number; active: number }[]>
+  >({});
   const [config, setConfig] = useState<CropConfig>({
     cropType: "cafe",
     label: "Café",
@@ -77,9 +81,9 @@ export default function Reports() {
       setPayout(totalPayout(c ? c.costPerUnit : 0));
       setRows(reportBy(grouping, c?.costPerUnit ?? 0));
       if (grouping === "week") {
-        const map: Record<string, { crop: string; kg: number }[]> = {};
+        const map: Record<string, { crop: string; kg: number; active: number }[]> = {};
         for (const wc of weekCrops()) {
-          (map[wc.week] ??= []).push({ crop: wc.crop, kg: wc.kg });
+          (map[wc.week] ??= []).push({ crop: wc.crop, kg: wc.kg, active: wc.active });
         }
         setLotsByWeek(map);
       }
@@ -201,6 +205,17 @@ export default function Reports() {
                     <View style={styles.barLabel}>
                       <Text variant="labelLarge" numberOfLines={1}>
                         {grouping === "week" ? formatWeekRange(b.label, lang) : b.label}
+                        {/* Removed from the farm's list, but the kilos stay —
+                            otherwise this ranking stops adding up to the total
+                            four centimetres above it. The server's
+                            `ListBalances` settled the same argument the same
+                            way and added `active` for exactly this line. */}
+                        {b.active === 0 && (
+                          <Text variant="labelSmall" style={styles.inactive}>
+                            {"  "}
+                            {t("reports.inactive")}
+                          </Text>
+                        )}
                       </Text>
                       {grouping === "week" && (
                         <Text variant="labelSmall" style={styles.weekNo} numberOfLines={1}>
@@ -250,7 +265,9 @@ export default function Reports() {
                         </Text>
                         {lots.map((l) => (
                           <Text key={l.crop} variant="labelSmall" style={styles.lot}>
-                            {l.crop} · {num(l.kg)} {unit}
+                            {l.crop}
+                            {l.active === 0 ? ` (${t("reports.inactive")})` : ""} ·{" "}
+                            {num(l.kg)} {unit}
                           </Text>
                         ))}
                       </View>
@@ -344,6 +361,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   lotsLabel: { opacity: 0.5 },
+  inactive: { opacity: 0.55, fontStyle: "italic" },
   lot: {
     opacity: 0.75,
     backgroundColor: "rgba(46,125,50,0.08)",

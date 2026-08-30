@@ -63,8 +63,31 @@ export interface SyncStore {
    */
   applyPull(changes: readonly PullChange[]): AppliedCounts;
 
-  /** Every worker's uuid and balance, for the §3.3 checksum comparison. */
-  balanceChecksums(): { uuid: string; personId: number; name: string; balanceCents: number }[];
+  /**
+   * Every worker's uuid and balance, for the §3.3 checksum comparison — plus
+   * the one figure that tells the two kinds of disagreement apart.
+   *
+   * `unitemisableCents` is measured, not guessed: for every live settlement
+   * this phone holds, the document's own `grossCents` minus the live lines it
+   * managed to store. Those two are equal for anything this phone wrote. They
+   * differ for a settlement that came down the feed covering a week in which
+   * the worker also did a jornal — the header travels whole (`composeSettlement`
+   * "sends the header WITH ITS LINES, always"), the work records behind the
+   * jornal lines do not (`composeWorkRecord` filters everything that is not
+   * `unidad_trabajo`), and `applySettlement` drops those lines as orphans.
+   *
+   * That difference is exactly «lo que el teléfono no puede desglosar», in
+   * cents, per worker, derived from documents the server itself issued. It is
+   * what §2.2 previously had to be inferred from — badly — by asking whether
+   * the phone's own balance happened to be zero.
+   */
+  balanceChecksums(): {
+    uuid: string;
+    personId: number;
+    name: string;
+    balanceCents: number;
+    unitemisableCents: number;
+  }[];
 
   /** Decision 7 and §2.2: keep what the server said, and what we derived then. */
   recordServerBalances(
@@ -627,13 +650,25 @@ export function createSyncStore(db: SqlDatabase, deps: SyncStoreDeps): SyncStore
       personId: number;
       name: string;
       balanceCents: number;
+      unitemisableCents: number;
     }>(
+      // Correlated subqueries rather than two joins: a LEFT JOIN to the ledger
+      // AND to the settlements would multiply one against the other and every
+      // figure here would be a number of movements times a number of
+      // documents. It is the balance; it does not get to be approximately
+      // right.
       `SELECT pe.uuid AS uuid, pe.id AS personId,
               COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
-              COALESCE(SUM(l.amountCents), 0) AS balanceCents
-         FROM people pe LEFT JOIN ledger l ON l.personId = pe.id
-        WHERE pe.uuid IS NOT NULL
-        GROUP BY pe.id`,
+              COALESCE((SELECT SUM(l.amountCents) FROM ledger l
+                         WHERE l.personId = pe.id), 0) AS balanceCents,
+              COALESCE((SELECT SUM(s.grossCents - COALESCE(
+                          (SELECT SUM(si.amountCents) FROM settlement_items si
+                            WHERE si.settlementId = s.id AND si.voidedAt IS NULL), 0))
+                          FROM settlements s
+                         WHERE s.personId = pe.id AND s.status = 'open'), 0)
+                AS unitemisableCents
+         FROM people pe
+        WHERE pe.uuid IS NOT NULL`,
       [],
     );
 

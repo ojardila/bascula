@@ -64,6 +64,14 @@ export interface SyncReport {
    */
   behind: number;
   skipped: { what: string; reason: string }[];
+  /**
+   * The cursor had fallen off the feed and the phone read the farm from the
+   * beginning. §3.4's retention is 180 days, so this is a handset that was out
+   * of signal for half a year, and the next handshake's `behind` will be the
+   * whole season rather than the eleven changes it was before. Carried up so
+   * the screen can say that in a sentence.
+   */
+  bootstrapped: boolean;
   error: { code: string; message: string } | null;
   handshake: Handshake | null;
 }
@@ -148,6 +156,7 @@ export class SyncEngine {
       stillBehind: false,
       behind: 0,
       skipped: [],
+      bootstrapped: false,
       error: { code, message },
       handshake: null,
     };
@@ -164,6 +173,7 @@ export class SyncEngine {
       stillBehind: false,
       behind: 0,
       skipped: [],
+      bootstrapped: false,
       error: null,
       handshake: null,
     };
@@ -503,6 +513,60 @@ export class SyncEngine {
       return;
     }
 
+    if (code === "EMPLOYEE_EXISTS_DELETED") {
+      // §5.6. Somebody with this document is already on the farm, deactivated.
+      // The card names the person as THIS phone typed them and says where the
+      // fix is, because it is not here: restoring the existing file is a
+      // button on the web, and joining the two by hand from a handset would be
+      // merging a ledger nobody on this screen can see.
+      const details = result.error?.details ?? {};
+      this.repo.sync.raiseConflict({
+        kind: "worker-exists-deleted",
+        entity: entry.entity,
+        entityUuid: entry.entityUuid,
+        personId: person?.id ?? null,
+        payload: {
+          person: person?.name ?? null,
+          // Who the server says already holds the document, so the two names
+          // can be compared before anybody decides they are one person.
+          serverName:
+            [details.name, details.lastName].filter(Boolean).join(" ") || null,
+          serverWorkerId: details.employeeId ?? null,
+          deletedAt: details.deletedAt ?? null,
+        },
+      });
+      return;
+    }
+
+    if (code === "GROSS_CHANGED") {
+      // §5.5. The figure moved between the preview somebody approved and the
+      // moment it reached the server; nothing was written. `details` says what
+      // moved, and the two lists are only meaningful when this client named
+      // the set it saw — `payableIdsProvided` is the server's own way of
+      // saying "we were not told what you were shown", which is not the same
+      // as "nothing moved" and must not be shown as if it were.
+      const details = result.error?.details ?? {};
+      this.repo.sync.raiseConflict({
+        kind: "gross-changed",
+        entity: entry.entity,
+        entityUuid: entry.entityUuid,
+        personId: person?.id ?? null,
+        payload: {
+          person: person?.name ?? null,
+          expectedCents: details.expectedCents ?? null,
+          actualCents: details.actualCents ?? null,
+          addedCount: Array.isArray(details.addedPayableIds)
+            ? details.addedPayableIds.length
+            : 0,
+          removedCount: Array.isArray(details.removedPayableIds)
+            ? details.removedPayableIds.length
+            : 0,
+          explained: details.payableIdsProvided === true,
+        },
+      });
+      return;
+    }
+
     if (code === "IDEMPOTENCY_KEY_REUSED") {
       this.repo.sync.raiseConflict({
         kind: "diverged",
@@ -562,6 +626,7 @@ export class SyncEngine {
     for (let page = 0; page < this.maxPages; page++) {
       const res = await this.transport.pull({ cursor, limit: this.pullLimit });
       if (res.skipped?.length) report.skipped = res.skipped;
+      if (res.bootstrapped) report.bootstrapped = true;
 
       const counts = this.repo.sync.applyPull(res.changes);
       counts.reactivated += this.reactivateFromPull(res.changes);
@@ -660,19 +725,34 @@ export class SyncEngine {
       if (!mine) continue;
       if (mine.balanceCents === s.balanceCents) continue;
 
-      // A phone that has never recorded a movement for this worker is not
-      // disagreeing with the server, it simply has none of the work —
-      // jornales and contracts do not come down (§2.2).
+      // The mixed case, closed — and closed by measuring instead of guessing.
       //
-      // KNOWN LIMIT, and it is written down rather than guessed at: a worker
-      // with BOTH weighings and jornales lands in the other branch and is
-      // reported as a calculation bug, because two totals are not enough to
-      // tell "the phone knows less" from "the two implementations disagree".
-      // The feed would have to carry the shape of what it filtered out for
-      // this to be decidable, and inventing a rule here would either cry wolf
-      // on every mixed worker or bury a real divergence in the noise. Neither
-      // is ours to choose: it is somebody's pay.
-      const partial = mine.balanceCents === 0;
+      // It used to read `mine.balanceCents === 0`: a phone with no movements
+      // at all was "knowing less", anything else was "the two implementations
+      // disagree". That put the worker who did BOTH weighings and jornales in
+      // the second bucket and reported somebody's ordinary payroll as a
+      // calculation bug, because two totals cannot tell those apart.
+      //
+      // They can now, and the evidence was already on the phone rather than
+      // needing a new field on the wire. The feed sends a settlement WHOLE —
+      // header and every line — while filtering the work records behind the
+      // lines that are not paid by the unit of work (§2.2). So a document
+      // whose `grossCents` exceeds the lines this phone could store is a
+      // document with jornal money in it, and the excess is exactly how much.
+      //
+      // The test is EXACT and not "some of it": when the gap is, to the cent,
+      // the money this phone holds a document for and no lines for, the phone
+      // is behind on detail and not wrong on arithmetic. A peso either way and
+      // it stays a mismatch, because the part that is not accounted for is the
+      // part that matters, and a rule that swallowed it would be the burying
+      // half of the choice §2.2 refused to make.
+      //
+      // It is reachable and it is not rare: a settlement and the `devengo` it
+      // posts are two rows of the feed, and §3.4's horizon can let the first
+      // through while holding the second for the next poll. In that window the
+      // phone is short by exactly the document it cannot break down.
+      const gap = s.balanceCents - mine.balanceCents;
+      const partial = mine.unitemisableCents > 0 && gap === mine.unitemisableCents;
 
       mismatched++;
       this.repo.sync.raiseConflict({
@@ -684,6 +764,9 @@ export class SyncEngine {
           person: mine.name,
           localCents: mine.balanceCents,
           serverCents: s.balanceCents,
+          // What of the difference this phone can account for, so the card
+          // says «de los cuales X son jornales» rather than only a total.
+          unitemisableCents: mine.unitemisableCents,
           at: this.now().toISOString(),
         },
       });

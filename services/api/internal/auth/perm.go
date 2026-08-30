@@ -47,6 +47,11 @@ const (
 	ActionFarmRead  Action = "farm.read"
 	ActionFarmWrite Action = "farm.write"
 
+	// Adding another farm to an account that already exists. It used to be the
+	// second half of the public signup, where it could only ask for a password
+	// and so turned the registration form into a password oracle.
+	ActionFarmsCreate Action = "farms.create"
+
 	// The super-admin console. Decision 2 shrank it to what it still needs:
 	// see the farms, suspend one, and nothing else. It never reads a worker,
 	// a work record or a peso of anybody's money.
@@ -71,6 +76,7 @@ const (
 	ActionSettlementsRead    Action = "settlements.read"
 	ActionSettlementsWrite   Action = "settlements.write"
 	ActionSettlementsVoid    Action = "settlements.void"
+	ActionSettlementsRelease Action = "settlements.release"
 	ActionPendingRead        Action = "pending.read"
 	ActionBalancesRead       Action = "balances.read"
 	ActionLedgerRead         Action = "ledger.read"
@@ -202,6 +208,15 @@ var Matrix = map[Action]Rule{
 	ActionFarmRead:  {Roles: everyone},
 	ActionFarmWrite: {Roles: owners},
 
+	// Every role, and it is not an oversight. Owning a farm is a property of
+	// the ACCOUNT and not of the role it holds on somebody else's farm: a
+	// weigher who wants a farm of his own would otherwise have to register a
+	// second email address to get one, which teaches the habit the cap exists
+	// to discourage. What bounds it is MaxFarmsPerEmail, counted per account.
+	//
+	// Not Money: it creates an empty farm and reads nothing of this one.
+	ActionFarmsCreate: {Roles: everyone},
+
 	ActionAdminFarmsRead:  {Roles: everyone, Superadmin: true, Money: true},
 	ActionAdminFarmsWrite: {Roles: everyone, Superadmin: true, Money: true},
 
@@ -229,6 +244,15 @@ var Matrix = map[Action]Rule{
 	ActionSettlementsRead:    {Roles: admins, Money: true},
 	ActionSettlementsWrite:   {Roles: admins, Money: true},
 	ActionSettlementsVoid:    {Roles: admins, Money: true},
+
+	// The release is the owner's alone, which is one notch stricter than the
+	// void beside it, and deliberately so. Voiding cancels a document; this
+	// frees a weighing that a cancelled document was still holding, which puts
+	// money back into circulation — the pesada becomes payable again and the
+	// next settlement pays it. It is a repair of the farm's books rather than a
+	// day's administration, it is the same shape as ActionImportSeason, and it
+	// is rare enough that needing the owner costs a farm nothing.
+	ActionSettlementsRelease: {Roles: owners, Money: true},
 	ActionPendingRead:        {Roles: admins, Money: true},
 	ActionBalancesRead:       {Roles: admins, Money: true},
 	ActionLedgerRead:         {Roles: admins, Money: true},

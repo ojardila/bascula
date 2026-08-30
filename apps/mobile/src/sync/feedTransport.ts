@@ -357,12 +357,18 @@ export class FeedTransport implements SyncTransport {
   async pull(input: { cursor: string | null; limit: number }): Promise<PullResult> {
     const from = seqOf(input.cursor);
     let res: PullResponse;
+    let bootstrapped = false;
     try {
       res = await this.http.request<PullResponse>("/v1/sync/pull", {
         query: { cursor: from, limit: Math.min(500, input.limit) },
       });
     } catch (e) {
       if (!(e instanceof ApiError) || e.code !== "CURSOR_TOO_OLD") throw e;
+      // Handled here, and now SAID. The re-read is not a decision anybody
+      // makes, but a farm whose phone is about to download its whole season
+      // deserves the sentence rather than a `behind` counter that leaps from
+      // eleven to forty thousand between one run and the next.
+      bootstrapped = true;
       res = await this.http.request<PullResponse>("/v1/sync/pull", {
         query: { cursor: 0, limit: Math.min(500, input.limit) },
       });
@@ -399,6 +405,7 @@ export class FeedTransport implements SyncTransport {
       more: !!res.more,
       balances: res.balances,
       skipped,
+      bootstrapped,
     };
   }
 }

@@ -37,6 +37,12 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/farm", auth.ActionFarmRead, s.handleGetFarm},
 		{http.MethodPut, "/v1/farm", auth.ActionFarmWrite, s.handleUpdateFarm},
 
+		// Another farm for an account that already exists. This is the half of
+		// the public signup that could not stay public: proving ownership of an
+		// address with a password, on an endpoint that issues no session, is a
+		// place to test guesses. A session is that proof.
+		{http.MethodPost, "/v1/farms", auth.ActionFarmsCreate, s.handleCreateFarm},
+
 		// The super-admin console, and all of it. Decision 2 made the public
 		// signup the front door and left this with two jobs.
 		{http.MethodGet, "/v1/admin/farms", auth.ActionAdminFarmsRead, s.handleListAdminFarms},
@@ -141,6 +147,11 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/settlements", auth.ActionSettlementsWrite, s.handleCreateSettlement},
 		{http.MethodGet, "/v1/settlements/{id}", auth.ActionSettlementsRead, s.handleGetSettlement},
 		{http.MethodPost, "/v1/settlements/{id}/void", auth.ActionSettlementsVoid, s.handleVoidSettlement},
+		// The way out of a void settlement that still claims a weighing. The
+		// import no longer creates that shape; nothing could open the ones
+		// already in the field, and a pesada held by a document that can never
+		// pay it is somebody's day of picking, trapped for ever.
+		{http.MethodPost, "/v1/settlements/{id}/release", auth.ActionSettlementsRelease, s.handleReleaseSettlement},
 		{http.MethodPost, "/v1/payments", auth.ActionLedgerPayment, s.handlePayment},
 		{http.MethodPost, "/v1/advances", auth.ActionLedgerAdvance, s.handleAdvance},
 		{http.MethodPost, "/v1/deductions", auth.ActionLedgerDeduction, s.handleDeduction},

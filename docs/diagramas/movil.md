@@ -167,294 +167,236 @@ Dos funciones SQL generan todas las agrupaciones temporales (`schema.ts:87-90`):
 
 ## 2. Diagrama de clases / módulos
 
-`db.ts` no exporta clases sino **objetos-namespace** con métodos. El diagrama
-los representa como clases con `<<module>>`; no hay instanciación ni herencia
-en ninguna parte del código.
+**Reescrito en el sprint 8.** Lo que describía esta sección —un `db.ts` de
+1.488 líneas que abría `bascula.db` a nivel de módulo y exportaba quince
+objetos-namespace— dejó de existir hace tres sprints. `db.ts` son hoy 100
+líneas de cableado: abre la única conexión, construye un `Repository` y
+reexporta los mismos nombres que las pantallas siempre importaron. Toda la
+lógica está en `data/sqliteRepository.ts`, que **recibe** un adaptador en vez
+de abrir una conexión —que es exactamente lo que pedía la §9.2 de este mismo
+documento— y por eso hay pruebas de `settle`, `pay`, `void`, `undo` y de cada
+migración donde no había ninguna.
+
+La forma sigue siendo la misma: no hay clases con herencia en ninguna parte.
+`Repository` es una interfaz de objetos-namespace, y lo que el diagrama llama
+clases son módulos, puertos y contratos — el estereotipo de cada caja lo dice.
 
 ```mermaid
 classDiagram
     direction LR
 
+    class shared {
+        <<package>>
+        money_ts toCents, fromCents, LEDGER_SIGN, signedAmount
+        time_ts dayInZone, weekInZone, EPOCH_START
+        format_ts formatMoney, formatNumber, formatDay, formatWeekRange
+        enums_ts LEDGER_KINDS, PAY_METHODS, ROLES
+        uuid_ts uuidV7, isUuidV7
+        harvest_ts readHarvest
+    }
+
     class schema_ts {
         <<sql>>
-        BASE_SCHEMA
-        PAYMENTS_SCHEMA
-        BALANCE_SQL
-        PENDING_SQL
-        INDEX_SQL
-        RULE_IMPOSSIBLE_SQL
-        RULE_DUPLICATE_SQL
-        RULE_DIGIT_SQL
-        RULE_OUTLIER_SQL
-        RULE_FUTURE_SQL
-        EXPORT_PICKUPS_SQL
-        EXPORT_LEDGER_SQL
-        EXPORT_BALANCES_SQL
-        WEEK_BY_DAY_SQL
-        WEEK_BY_WORKER_SQL
-        WEEK_GRID_SQL
-        WEEK_GRID_DAY_SQL
-        WEEK_PLOTS_SQL
-        DAY_OF(col) string
-        WEEK_OF(col) string
+        BASE_SCHEMA, PAYMENTS_SCHEMA
+        OUTBOX_SCHEMA, SYNC_STATE_SCHEMA
+        CONFLICTS_SCHEMA, REACTIVATIONS_SCHEMA
+        SERVER_BALANCES_SCHEMA, IMPORT_RUNS_SCHEMA
+        BALANCE_COLUMNS(l), BALANCE_SQL
+        HARVEST_VALUE_EXPR, HARVEST_VALUE_SQL(where)
+        PENDING_SQL, PAID_AGAINST_SQL, PAID_IN_RANGE_SQL
+        INDEX_SQL y las cinco RULE_
+        las WEEK_ y las EXPORT_
+        outboxTriggersSql(tables), uuidIndexesSql(tables)
+        DAY_OF(col), WEEK_OF(col)
+    }
+
+    class repository_ts {
+        <<interface>>
+        +init() void
+        +people PeopleRepo
+        +crops CropsRepo
+        +pickups PickupsRepo
+        +payments PaymentsRepo
+        +reports ReportsRepo
+        +workerReports WorkerReportsRepo
+        +cropReports CropReportsRepo
+        +weekReports WeekReportsRepo
+        +performance PerformanceRepo
+        +anomalies AnomaliesRepo
+        +config ConfigRepo
+        +prefs PrefsRepo
+        +overrides OverridesRepo
+        +export ExportRepo
+        +demo DemoRepo
+        +sync SyncRepo
+        +weekCrops(), reportBy(), totalPayout()
+        +costForWeek(), costCentsForWeek()
+    }
+
+    class sqliteRepository_ts {
+        <<module>>
+        +createSqliteRepository(db, opts) Repository
+        -pendingItems(personId, from, to, general)
+        -addEntry(entry) number
+        -voidSettlementHere(settlementId, note) void
+        -requireConfirmation(token) void
+    }
+
+    class SqlDatabase {
+        <<port>>
+        getAllSync(sql, params)
+        getFirstSync(sql, params)
+        runSync(sql, params)
+        execSync(sql)
+        withTransactionSync(fn)
     }
 
     class db_ts {
         <<module>>
-        -db SQLiteDatabase
-        +initDb() void
-        -migrate() void
-        -mondayOfLegacyWeek(label) string
-        -now() string
-        +today() string
-        +toCents(amount) number
-        +fromCents(cents) number
-        +costForWeek(week, general) number
-        +totalPayout(general) number
-        +reportBy(g, general) Row
-        +weekCrops() List~WeekCrop~
-        -pendingItems(personId, from, to, general) List~PendingItem~
-        -addEntry(entry) number
-        -requirePositive(cents) void
+        +rawDb SQLiteDatabase
+        +repository Repository
+        +People, Crops, Pickups, Payments, y el resto
+        +initDb(), today(), toCents(), fromCents()
     }
 
-    class People {
+    class nodeSqlite_ts {
+        <<adapter>>
+        +nodeSqlite(DatabaseSync) SqlDatabase
+    }
+
+    class syncStore_ts {
+        <<module>>
+        +state(), saveState(patch)
+        +pending(limit), pendingCount(), ack(sent)
+        +applyPull(changes) AppliedCounts
+        +balanceChecksums() List~Checksum~
+        +recordServerBalances(rows, at)
+        +raiseConflict(c), resolveConflict(id, how)
+        +reactivate(cause), reactivations(personId)
+        +wireRow(entity, uuid), personByUuid(uuid)
+    }
+
+    class migrations {
+        <<module>>
+        +migrateToV6(db) uuid, outbox, disparadores
+        +migrateToV7(db) localDay, week, deletedAt, cents
+    }
+
+    class protocol_ts {
+        <<contract>>
+        Handshake, SyncOp, OpResult, PullChange
+        dispositionOf(result) Disposition
+        backoffMs(attempt) number
+        SyncTransport
+    }
+
+    class engine_ts {
+        <<module>>
+        +sync(opts) SyncReport
+        -drainOutbox(report) number
+        -drainPull(report) AppliedCounts
+        -checkBalances(report) number
+        -raise(op, entry, result) void
+    }
+
+    class FeedTransport {
         <<object>>
-        +all() List~Person~
-        +byId(id) Person
-        +byTag(tag) Person
-        +add(p) RunResult
-        +remove(id) RunResult
+        +handshake(), push(), pull()
+        habla los tres verbos de v1 sync
     }
 
-    class Crops {
+    class RestTransport {
         <<object>>
-        +all() List~Crop~
-        +byId(id) Crop
-        +add(c) RunResult
-        +remove(id) RunResult
+        +handshake(), push(), pull()
+        el apano sobre rutas REST corrientes
     }
 
-    class Pickups {
-        <<object>>
-        +isSettled(id) boolean
-        +setWeight(id, weight) void
-        +remove(id) void
-        +add(p) RunResult
-        +recent() List~RecentRow~
+    class seasonImport_ts {
+        <<module>>
+        +preview(), run()
+        sube la temporada entera
     }
 
-    class Payments {
-        <<object>>
-        +preview(personId, from, to, general) SettlementPreview
-        +settle(personId, from, to, general, note) SettleResult
-        +voidSettlement(settlementId, note) void
-        +pay(personId, amountCents, opts) number
-        +advance(personId, amountCents, note) number
-        +deduct(personId, amountCents, note) number
-        +adjust(personId, signedCents, note) number
-        +reverse(ledgerId, note) number
-        +undoRun(paymentIds, settlementIds, note) void
-        +balance(personId) Balance
-        +balances() List~BalanceRow~
-        +history(personId, limit) List~LedgerEntry~
-        +settlements(personId) List~Settlement~
-        +itemsOf(settlementId) List~SettlementItem~
-        +itemsOfAll(settlementId) List~SettlementItem~
-        +pendingAll(general, upTo) List~PendingRow~
-        +farmTotals() FarmTotals
-    }
-
-    class Performance {
-        <<object>>
-        +crew(sinceDays) List~WorkerPerf~
-        +plots(sinceDays) List~PlotPerf~
-        +priceResponse(general, weeks) List~PriceRow~
-        +realCost(general) RealCost
-    }
-
-    class Anomalies {
-        <<object>>
-        +all(maxWeight) List~Anomaly~
-    }
-
-    class Reports {
-        <<object>>
-        +totals() Totals
-        +today() DayTotal
-        +thisWeek() WeekTotal
-        +byWeek() List~Bar~
-        +byWorker(general) List~Bar~
-        +byCrop(general) List~Bar~
-    }
-
-    class WorkerReports {
-        <<object>>
-        +stats(personId) WorkerStats
-        +byWeek(personId) List~Bar~
-        +byCrop(personId) List~Bar~
-        +recent(personId) List~RecentRow~
-        +payout(personId, general) number
-    }
-
-    class CropReports {
-        <<object>>
-        +stats(cropId) CropStats
-        +byWeek(cropId) List~Bar~
-        +byWorker(cropId, sinceDays) List~CropWorker~
-        +recent(cropId) List~RecentRow~
-        +value(cropId, general) number
-    }
-
-    class WeekReports {
-        <<object>>
-        +byDay(monday) List~DayRow~
-        +byWorker(monday) List~WorkerRow~
-        +grid(monday) List~GridCell~
-        +gridByDay(monday) List~GridCell~
-        +plots(monday) List~PlotRow~
-    }
-
-    class Config {
-        <<object>>
-        +get() CropConfig
-        +save(c) RunResult
-    }
-
-    class Prefs {
-        <<object>>
-        +getLang() AppLang
-        +setLang(l) RunResult
-    }
-
-    class Overrides {
-        <<object>>
-        +all() List~CostOverride~
-        +set(week, costPerUnit) RunResult
-        +remove(id) RunResult
-    }
-
-    class Export {
-        <<object>>
-        +pickups() List~Row~
-        +ledger() List~Row~
-        +balances() List~Row~
-    }
-
-    class Demo {
-        <<object>>
-        +clear() void
-        +seed() void
-    }
-
-    class format_ts {
+    class explain_ts {
         <<pure>>
-        +formatMoney(amount, lang) string
-        +formatNumber(value, lang) string
-        +formatDay(value, lang) string
-        +formatWeekRange(mondayISO, lang, now) string
-        +mondayOf(date) string
-        +weekNumber(mondayISO) number
-        +parseDay(iso) Date
-        +addDays(d, n) Date
+        +codeOf(lastError) string
+        +explainSyncError(lastError) SyncErrorExplanation
     }
 
-    class harvest_ts {
+    class puros {
         <<pure>>
-        +readHarvest(weeks, currentMonday, dropThreshold) HarvestShape
+        csv_ts csvField, csvRow, csvDocument
+        receiptHtml_ts receiptHtml, payrollHtml
+        receipt_ts buildReceipt
+        strings_ts translate, weekTag
+        i18n_tsx useT y el proveedor
     }
 
-    class csv_ts {
-        <<pure>>
-        +csvField(value) string
-        +csvRow(values) string
-        +csvDocument(header, rows) string
-    }
-
-    class receiptHtml_ts {
-        <<pure>>
-        +receiptHtml(data, lang) string
-        +payrollHtml(rows, opts, lang) string
-        -esc(s) string
-    }
-
-    class receipt_ts {
-        <<pure>>
-        +buildReceipt(input, lang) string
-    }
-
-    class strings_ts {
-        <<pure>>
-        +translate(lang, key, vars) string
-        +weekTag(mondayISO, lang, now) string
-    }
-
-    db_ts ..> schema_ts : importa 18 constantes SQL
-    db_ts *-- People
-    db_ts *-- Crops
-    db_ts *-- Pickups
-    db_ts *-- Payments
-    db_ts *-- Performance
-    db_ts *-- Anomalies
-    db_ts *-- Reports
-    db_ts *-- WorkerReports
-    db_ts *-- CropReports
-    db_ts *-- WeekReports
-    db_ts *-- Config
-    db_ts *-- Prefs
-    db_ts *-- Overrides
-    db_ts *-- Export
-    db_ts *-- Demo
-
-    Payments ..> schema_ts : BALANCE_SQL y PENDING_SQL
-    Anomalies ..> schema_ts : las cinco RULE_
-    Performance ..> schema_ts : INDEX_SQL
-    WeekReports ..> schema_ts : WEEK_
-    Export ..> schema_ts : EXPORT_
-
-    receipt_ts ..> db_ts : fromCents, Balance, SettlementItem
-    receipt_ts ..> format_ts : formato de dinero y fechas
-    receipt_ts ..> strings_ts : translate
-    receiptHtml_ts ..> format_ts : formato
-    receiptHtml_ts ..> strings_ts : translate
+    db_ts ..> sqliteRepository_ts : createSqliteRepository(rawDb)
+    db_ts ..> repository_ts : reexporta los nombres de siempre
+    sqliteRepository_ts ..|> repository_ts : implementa
+    sqliteRepository_ts ..> SqlDatabase : recibe, no abre
+    sqliteRepository_ts ..> schema_ts : el SQL, sin retipearlo
+    sqliteRepository_ts ..> syncStore_ts : compone sync
+    sqliteRepository_ts ..> migrations : init()
+    nodeSqlite_ts ..|> SqlDatabase : el adaptador de las pruebas
+    syncStore_ts ..> schema_ts
+    engine_ts ..> repository_ts : sync y payments
+    engine_ts ..> protocol_ts : dispositionOf, backoffMs
+    FeedTransport ..|> protocol_ts : SyncTransport
+    RestTransport ..|> protocol_ts : SyncTransport
+    seasonImport_ts ..> repository_ts
+    sqliteRepository_ts ..> shared : dinero, día y semana
+    engine_ts ..> shared : EPOCH_START
+    puros ..> shared : formato y enums
 ```
 
-> `csv_ts` y `harvest_ts` no aparecen conectados a propósito: **no importan
-> nada** de la capa de datos. Las pantallas les pasan las filas ya leídas
-> (`Settings.tsx:119`, `CropDetail.tsx:91`).
+> `csv.ts` y `harvest.ts` siguen sin conocer la base: las pantallas les pasan
+> las filas ya leídas.
 
 ### Dirección real de las dependencias
 
-Lo importante del diagrama es lo que **no** hay:
+Lo importante sigue siendo lo que **no** hay, y la lista es más corta que
+antes porque el motivo por el que era larga se arregló:
 
-- `schema.ts` no importa nada. Es SQL puro y por eso es lo único de la capa de
-  datos que las pruebas pueden ejecutar directamente
-  (`ledger.test.ts`, `review.test.ts`, `week.test.ts`, `performance.test.ts`
-  abren un `DatabaseSync(":memory:")` y le aplican `BASE_SCHEMA` +
-  `PAYMENTS_SCHEMA`).
-- `format.ts`, `harvest.ts`, `csv.ts`, `strings.ts` y `receiptHtml.ts` son
-  **puros**: no importan `db.ts` ni React. `receiptHtml.ts` sólo depende de
-  `format.ts` y `strings.ts` (`receiptHtml.ts:1-3`).
-- La única flecha que sube desde un módulo puro hacia la base es
-  `receipt.ts → db.ts` (`receipt.ts:3`), y sólo para `fromCents` y dos tipos.
-- `harvest.ts` y `csv.ts` no conocen la base en absoluto: las pantallas les
-  pasan los datos ya leídos (`CropDetail.tsx:91`, `Settings.tsx:119`).
+- **`schema.ts` no importa nada.** Sigue siendo SQL puro, y ahora lo ejecutan
+  tanto las suites que abren un `DatabaseSync(":memory:")` a mano
+  (`ledger.test.ts`, `review.test.ts`, `week.test.ts`, `performance.test.ts`)
+  como las que pasan por el repositorio real.
+- **`sqliteRepository.ts` no abre ninguna conexión.** La recibe como
+  `SqlDatabase`, que es un puerto de cinco métodos. `db.ts` le pasa
+  `expo-sqlite`; `nodeSqlite.ts` le pasa `node:sqlite`. Esa única inversión es
+  lo que convirtió las ocho suites de `schema.ts` en `repository.test.ts`,
+  `migration.test.ts`, `sync.test.ts` y `seasonImport.test.ts`, que ejercitan
+  **el mismo código que corre el teléfono**.
+- **La única flecha que sube de un módulo puro a la base sigue siendo
+  `receipt.ts → db.ts`**, y sólo por `fromCents` y dos tipos.
+- **El motor de sincronización no conoce HTTP.** `engine.ts` habla
+  `SyncTransport`, y las dos implementaciones —el feed y el apaño REST— son
+  intercambiables. Ese corte se pagó solo cuando el servidor estrenó
+  `/v1/sync/*`: un fichero nuevo y ni una línea en el motor, en el buzón, en
+  las tarjetas ni en las pantallas.
+- **`packages/shared` es la frontera con el servidor.** El dinero, el día, la
+  semana y los conjuntos cerrados viven ahí porque una divergencia entre el
+  teléfono, la API y la web cuesta dinero. El SQL **no** está ahí a propósito:
+  lo que se comparte es el comportamiento, fijado por los casos de oro.
 
 ### Quién consume qué
 
 | Módulo de datos | Pantallas |
 |---|---|
-| `Reports`, `Pickups.recent`, `Payments.pendingAll` | `Home.tsx:25-45` |
+| `Reports`, `Pickups.recent`, `Payments.pendingAll` | `Home.tsx` |
 | `People`, `Payments.*` | `People.tsx`, `PaymentsPanel.tsx`, `Account.tsx`, `PayWorker.tsx`, `Adjust.tsx` |
-| `Pickups.add` | `RegisterPickup.tsx:36` |
-| `Pickups.setWeight` / `Pickups.remove` | `PerformancePanel.tsx:314,331` |
-| `Performance`, `Anomalies` | `PerformancePanel.tsx:62-66` |
-| `WorkerReports` | `WorkerDetail.tsx:55-59` |
-| `CropReports` + `harvest.ts` | `CropDetail.tsx:77-91` |
-| `WeekReports` | `WeekDetail.tsx`, `PaymentsPanel.tsx:222` |
+| `Pickups.add` | `RegisterPickup.tsx` |
+| `Pickups.setWeight` / `Pickups.remove` | `PerformancePanel.tsx` |
+| `Performance`, `Anomalies` | `PerformancePanel.tsx` |
+| `WorkerReports` + `Payments.fullBalance` | `WorkerDetail.tsx` |
+| `CropReports` + `harvest.ts` | `CropDetail.tsx` |
+| `WeekReports` | `WeekDetail.tsx`, `PaymentsPanel.tsx` |
 | `Config`, `Overrides`, `Export`, `Demo` + `csv.ts` | `Settings.tsx` |
-| `receiptHtml.payrollHtml` | `PaymentsPanel.tsx:225-244` |
-| `receiptHtml.receiptHtml` + `receipt.buildReceipt` | `Account.tsx:95-164` |
+| `receiptHtml.payrollHtml` | `PaymentsPanel.tsx` |
+| `receiptHtml.receiptHtml` + `receipt.buildReceipt` | `Account.tsx` |
+| `Sync` + `SyncProvider` + `explain.ts` | `SyncStatus.tsx`, `SyncSetup.tsx`, `SeasonImport.tsx`, `SyncChip.tsx` |
 
 ---
 
@@ -976,251 +918,185 @@ meses (`db.ts:628-630`). `toCents` / `fromCents` en `db.ts:694-695`.
 
 ## 9. Deuda técnica y límites conocidos
 
-Ordenados por lo que más duele. Los tres primeros son defectos, no decisiones.
+**Reescrita en el sprint 8, y esa es la parte importante.** Esta sección se
+convirtió en la lista de trabajo del equipo del teléfono, y describía un
+`db.ts` de 1.488 líneas que dejó de existir hace tres sprints: mentía en lo
+único para lo que servía. Todos los números de línea de la versión anterior
+apuntaban a un fichero borrado.
 
-### 9.1 Bug: `Payments.undoRun` no puede funcionar — transacción anidada
+Lo que queda abajo se leyó contra el código de hoy, punto por punto. Se
+conservan los números de la numeración original —9.1 a 9.16— porque otros
+documentos y varios comentarios del código los citan; lo que cambia es el
+estado de cada uno.
 
-`undoRun` (`db.ts:953-964`) abre `db.withTransactionSync` y dentro llama a
-`Payments.voidSettlement` (`db.ts:834`), **que abre otra**. Pero
-`withTransactionSync` de expo-sqlite es literalmente
-`BEGIN` / `task()` / `COMMIT`, con `ROLLBACK` en el `catch`, **sin savepoints**
-(`node_modules/expo-sqlite/build/SQLiteDatabase.js:270-280`).
+### Lo que ya está cerrado
 
-La traza es:
-
-1. `undoRun` ejecuta `BEGIN`, reversa los pagos correctamente.
-2. Llega a `voidSettlement`, que ejecuta `BEGIN` de nuevo → SQLite lanza
-   *«cannot start a transaction within a transaction»*.
-3. El `catch` **interno** ejecuta `ROLLBACK`, que revierte la transacción
-   **externa** — incluidos los reversos de pago recién escritos — y relanza.
-4. El `catch` externo intenta otro `ROLLBACK` sin transacción activa.
-
-Resultado: el botón **Deshacer** del pago masivo
-(`PaymentsPanel.tsx:183-201`) nunca funciona en el único caso en que se usa,
-que es cuando hay liquidaciones que anular — o sea, siempre. La pantalla lo
-absorbe mostrando `pay.error` y conservando `lastRun` para reintentar, y el
-reintento vuelve a fallar igual. El comentario de `db.ts:949-952` describe
-exactamente la garantía que el código no consigue dar.
-
-Arreglo: extraer el cuerpo de `voidSettlement` a una función privada sin
-transacción y que tanto el método público como `undoRun` la compongan; o usar
-`SAVEPOINT` en lugar de `BEGIN` anidado.
-
-**Está sin detectar porque no hay forma de probarlo:** las ocho suites de
-pruebas ejercitan `schema.ts` bajo `node:sqlite`, nunca `db.ts`. Ninguna toca
-`undoRun` ni `voidSettlement`.
-
-### 9.2 La conexión es un singleton de módulo
-
-`const db = SQLite.openDatabaseSync("bascula.db")` en `db.ts:52`, a nivel de
-módulo, evaluado al importar. Consecuencias:
-
-- No se puede inyectar otra conexión, ni abrir una en memoria, ni testear nada
-  de `db.ts`. Por eso las pruebas tuvieron que quedarse en `schema.ts` y por
-  eso el bug 9.1 sobrevivió.
-- **`db.ts` no es reutilizable por la API.** Es lo único de la capa de datos
-  que no se puede portar: `schema.ts` ya corre bajo `node:sqlite` tal cual.
-
-Lo que hay que extraer para que la API reutilice esta lógica: convertir
-`db.ts` en una fábrica que reciba un adaptador con `getAllSync`, `getFirstSync`,
-`runSync`, `execSync` y `withTransactionSync`. Los objetos exportados quedan
-igual; sólo cambia de dónde sale `db`.
-
-### 9.3 Los pagos no apuntan a su liquidación
-
-`Payments.pay` escribe `settlementId: null` (`db.ts:874`), igual que `advance`,
-`deduct` y `adjust`. Sólo el `devengo` y el `reverso` llevan el vínculo.
-
-Por eso el recibo tiene que **adivinar** qué se pagó, filtrando el ledger por
-fecha: `r.kind === 'pago' && r.date >= settlement.periodStart`
-(`Account.tsx:100-102` y `:138-141`) y `h.date >= monday` en la planilla
-(`PaymentsPanel.tsx:211`). Como `periodStart` es el lunes de la semana más
-antigua **sin liquidar** — que con semanas atrasadas puede irse meses atrás —,
-el recibo puede sumar pagos que pertenecían a liquidaciones anteriores y
-sobredeclarar lo entregado.
-
-Arreglo barato y compatible: pasar `settlementId` en `Payments.pay` cuando el
-pago nace de una liquidación. La columna ya existe y el índice `ix_ledger_sett`
-también (`schema.ts:81`).
-
-### 9.4 El saldo está implementado dos veces
-
-`BALANCE_SQL` (`schema.ts:97-109`) y una copia manual dentro de
-`Payments.balances` (`db.ts:987-995`). La tabla de signos por `kind` —lo más
-delicado del sistema— vive duplicada, y sólo una de las dos copias está
-cubierta por pruebas.
-
-### 9.5 El valor cosechado también está implementado dos veces
-
-- En **JS con N+1**: `totalPayout` (`db.ts:619-625`) y `WorkerReports.payout`
-  (`db.ts:382-389`) agrupan por semana y llaman `costForWeek` fila a fila; cada
-  llamada es un `SELECT` (`db.ts:468-474`).
-- En **SQL de un tiro**: `Reports.byWorker` / `byCrop` (`db.ts:305,320`) y
-  `CropReports.value` (`db.ts:1415-1423`) hacen
-  `SUM(weight * COALESCE(o.costPerUnit, ?))` con `LEFT JOIN cost_overrides`.
-
-El comentario de `db.ts:313-315` cuenta que ya divergieron una vez: «multiplicar
-el total por el coste general en una pantalla y por los precios semanales en
-otra hacía que el mismo lote valiera dos cantidades distintas». La segunda
-implementación sigue viva.
-
-### 9.6 Lo que no escala
-
-| Punto | Coste | Dónde |
+| # | Era | Cómo se cerró |
 |---|---|---|
-| `Anomalies.all()` | **cinco escaneos de `pickups` completa**, sin ventana temporal ni `LIMIT`, en el hilo de JS, en cada foco de la pantalla. `RULE_DUPLICATE_SQL` es un self-join. | `db.ts:1299-1339`, `PerformancePanel.tsx:65` |
-| `printPayroll` | `Payments.history` + `People.byId` **por trabajador**: 2N consultas. | `PaymentsPanel.tsx:206-234` |
-| `costForWeek` | Una consulta por semana, llamada desde bucles en `pendingItems`, `pendingAll`, `priceResponse`, `totalPayout` y `payout`. | `db.ts:468` |
-| `Payments.history` | `LIMIT 200` por defecto, `LIMIT 50` en la planilla: **la historia se trunca en silencio**. Con una temporada larga la planilla dejará de ver pagos. | `db.ts:1002-1006`, `PaymentsPanel.tsx:209` |
-| `Pickups.recent` | `ORDER BY pk.date DESC LIMIT 50` sin índice sobre `pickups(date)`. No hay **ningún** índice en `pickups`. | `db.ts:254-269`, `schema.ts:18-22` |
+| **9.1** | `undoRun` abría una transacción dentro de otra y el botón *Deshacer* nunca funcionó | El cuerpo de anular vive en `voidSettlementHere`, **sin** transacción propia; `voidSettlement` y `undoRun` lo componen. Con pruebas: `repository.test.ts` deshace una nómina entera. |
+| **9.2** | La conexión era un `openDatabaseSync` a nivel de módulo, así que nada de `db.ts` se podía probar | `createSqliteRepository(db)` recibe un puerto `SqlDatabase` de cinco métodos. `db.ts` le pasa expo-sqlite, `nodeSqlite.ts` le pasa `node:sqlite`, y las suites ejercitan el mismo código que corre el teléfono. |
+| **9.3** | Los pagos no apuntaban a su liquidación y el recibo **adivinaba** filtrando por fecha | `payments.pay` acepta `settlementId` y `PAID_AGAINST_SQL` lo consulta. Dejó de ser una conjetura. |
+| **9.4** | El saldo estaba implementado dos veces, y sólo una cubierta por pruebas | `BALANCE_COLUMNS(alias)` en `schema.ts`. **Eran tres**, no dos: `BALANCE_SQL`, la lista de la pantalla de nómina y el resumen del `seasonExport` —la cifra que `POST /v1/import/season` cuadra al centavo antes de escribir un año de nómina—. Una prueba compara las dos puertas. |
+| **9.5** | El valor cosechado estaba implementado dos veces, una de ellas con N+1 | `HARVEST_VALUE_EXPR` / `HARVEST_VALUE_SQL(where)`. `totalPayout` y `workerReports.payout` dejaron de agrupar por semana en un bucle de JavaScript con una consulta por semana. Una prueba fija que las cinco puertas dan la misma cifra. |
+| **9.7** | Nada se podía sincronizar: claves locales, sin metadatos, sin `farmId`, sin borrado suave en `pickups` | UUIDv7 en cada tabla que viaja, buzón con disparadores, `farmId` en `config` con guardia, `pickups.deletedAt` y la vista `pickups_live`. §3 de `sincronizacion.md` corre encima de esto. |
+| **9.8** | La zona horaria era la del teléfono, y cambiarla recategorizaba semanas ya liquidadas | La finca manda: `adoptTimezone` la toma del handshake, `localDay` y `week` están materializados, y `dayInZone`/`weekInZone` viven en `packages/shared`. |
+| **9.10** | `setWeight` validaba el peso y `add` no validaba nada | Una sola guardia, las dos puertas. |
+| **9.11** | El borrado suave se aplicaba de forma inconsistente | Cerrado en el sprint 8 con **la regla del servidor**: «gente con posición, no gente activa». Los conteos de portada cuentan la lista activa; los rankings no filtran a nadie —si filtraran dejarían de sumar el total de la finca que se enseña justo encima— y traen `active` para que la fila lo diga. `reports.byCrop` y `weekCrops` **sí** filtraban, así que la pestaña de cultivos no cuadraba con la de recolectores: dos pestañas de una misma tarjeta contradiciéndose. |
+| **9.13** | La secuencia liquidar → releer saldo → pagar estaba escrita dos veces dentro de React | `payments.runPayroll` y `payments.undoRun`. Las pantallas presentan. |
 
-El comentario de `db.ts:1320-1327` documenta que una versión anterior de la
-regla `outlier` tardaba **once segundos** con una temporada de datos; se
-resolvió, pero el resto de las reglas conserva la forma de escaneo completo.
+### 9.6 Lo que no escala — muy reducido, no cerrado
 
-### 9.7 Nada de esto se puede sincronizar todavía
+Ya no está: `pickups` tiene índices (`ix_pickups_date`, `ix_pickups_dup`), las
+cinco reglas de anomalías tienen ventana temporal y `LIMIT`, la planilla dejó
+de hacer 2N consultas, y el N+1 de `costForWeek` desapareció con la 9.5.
 
-- **Todas las claves primarias son `INTEGER AUTOINCREMENT` locales.** Dos
-  teléfonos generan los mismos ids para personas distintas. No hay UUID en
-  ninguna tabla.
-- **No hay metadatos de sincronización**: ni `updatedAt`, ni versión de fila,
-  ni tabla de cambios pendientes. `createdAt` existe pero nunca se actualiza.
-- **No hay `farmId` ni `tenantId` en ninguna tabla.** `config` es literalmente
-  una fila única, `CHECK (id = 1)` (`schema.ts:24`). El esquema es
-  monoinquilino por construcción.
-- **`pickups` no tiene `deletedAt`**: se borra de verdad (`db.ts:246`), a
-  diferencia de `people` y `crops`. Un borrado duro no se puede replicar hacia
-  atrás.
+Sigue estando:
 
-`docs/arquitectura-api.md` ya asume UUIDv7 generados en el cliente; ese es el
-salto que falta.
+- **`payments.history` trunca en silencio.** `LIMIT 200` por defecto. Con una
+  temporada larga la historia de un trabajador deja de verse entera y nada lo
+  dice.
+- **La ventana de anomalías es una decisión de producto disfrazada de límite
+  técnico.** Lo que cae fuera de la ventana no se revisa nunca.
 
-### 9.8 La zona horaria es la del teléfono, no la de la finca
+### 9.9 Integridad referencial incompleta — abierta, y esta vez evaluada
 
-`pickups.date` se guarda como instante UTC (`RegisterPickup.tsx:40`) y **todas**
-las agregaciones lo reinterpretan con `'localtime'`, que en SQLite significa la
-zona del dispositivo. Cambiar la zona del teléfono —o llevarlo de viaje—
-recategoriza días y semanas históricas, incluidas las que ya se liquidaron. El
-diseño de la API ya lo corrige exigiendo `farms.timezone` obligatoria.
+Sigue igual: `pickups.personId`, `pickups.cropId` y `settlement_items.pickupId`
+no tienen `FOREIGN KEY` (`schema.ts`), aunque `PRAGMA foreign_keys` está
+activo y sí protege `settlements.personId`, `ledger.personId`,
+`settlement_items.settlementId` y `ledger.settlementId`.
 
-Hay un parche parcial ya aplicado en `today()` (`db.ts:176-180`), que compone
-la fecha local a mano en vez de cortar un ISO, precisamente porque un pago
-hecho un domingo por la tarde en Bogotá salía fechado mañana.
+**No se arregló a propósito, y conviene que quede escrito por qué.** SQLite no
+tiene `ALTER TABLE ADD FOREIGN KEY`: añadirla exige el rodeo de doce pasos
+—crear la tabla nueva, copiar, borrar, renombrar— sobre `pickups`, que es la
+tabla que más crece, en el teléfono que guarda la única copia de la temporada
+de una finca, en plena cosecha. El riesgo de esa migración es mayor que el del
+defecto que corrige.
 
-### 9.9 Integridad referencial incompleta
+Lo que sí hay entretanto: cada lectura pasa por `LEFT JOIN` + `COALESCE`, así
+que un huérfano se ve como `'Unknown'` en vez de desaparecer, y `applyPull`
+cuenta los huérfanos que llegan del feed. Cuándo hacerlo: fuera de cosecha, con
+la temporada ya subida al servidor (§8), que es cuando existe una segunda
+copia.
 
-`PRAGMA foreign_keys = ON` está activo (`schema.ts:7`), pero:
+### 9.12 El rango de liquidación — medio cerrada, y la otra mitad es una pregunta de contrato
 
-- `pickups.personId` y `pickups.cropId` **no tienen `FOREIGN KEY`**
-  (`schema.ts:18-22`).
-- `settlement_items.pickupId` tampoco (`schema.ts:51`).
+Cerrado: `EPOCH_START` y `endOfWeek` están una sola vez, en
+`packages/shared`, en vez de duplicados en las dos pantallas de pago; y
+`periodStart` ya **no** es el rango pedido sino el que las líneas cubren de
+verdad.
 
-De ahí que todas las consultas usen `LEFT JOIN` + `COALESCE(..., '?')` o
-`'Unknown'`. Sólo `settlements.personId`, `ledger.personId`,
-`settlement_items.settlementId` y `ledger.settlementId` están protegidas. El
-comentario de `db.ts:480-481` en `Demo.clear` confirma que la restricción sí
-muerde donde existe: hay que borrar los hijos primero.
+Abierto: `settlements.periodEnd` guarda el `to` **sin recortar**, así que puede
+quedar fechado en el futuro mientras el `devengo` sí se recorta a hoy. La
+lectura anterior era que esto es un defecto del teléfono. Comprobado contra la
+API, no lo es del todo:
 
-### 9.10 Validación asimétrica de la pesada
+- El servidor hace **exactamente lo mismo**: `store.Settle` escribe
+  `PeriodEnd: to`, el rango pedido.
+- `openapi.yaml` documenta el significado de `periodStart` —«el período
+  realmente cubierto, no la ventana sobre la que preguntó el llamador»— y **no
+  dice nada** del de `periodEnd`.
+- La migración sólo comprueba `period_end >= period_start`.
 
-`Pickups.setWeight` valida finitud y signo y lanza `BADWEIGHT` (`db.ts:235`).
-`Pickups.add` no valida nada (`db.ts:249-253`). La única barrera al crear es
-`valid` en la interfaz (`RegisterPickup.tsx:26`). Un peso absurdo entra sin
-resistencia y sólo lo caza después la regla `impossible` con su umbral
-configurable de 120 kg (`db.ts:1299`).
+Es decir: los dos lados escriben lo mismo en esa columna, y `POST
+/v1/import/season` mete los dos en la misma tabla. Recortarlo sólo en el
+teléfono no arreglaría nada; crearía una divergencia en una columna de dinero.
+**Es una pregunta para quien lleva la API: ¿`periodEnd` es el rango pedido o el
+cubierto?** Hasta que se responda, el teléfono hace lo que hace el servidor,
+que es la única propiedad que aquí importa.
 
-### 9.11 El borrado suave se aplica de forma inconsistente
+### 9.14 Superficie de API sin consumidor y sin interfaz — abierta
 
-| Consulta | ¿Filtra borrados? |
-|---|---|
-| `People.all`, `Crops.all` | Sí (`db.ts:186`, `db.ts:208`) |
-| `Reports.totals` | **No** — `SELECT COUNT(*) FROM people` y `FROM crops` cuentan los borrados (`db.ts:283-284`), y ese número es el que enseña `Home` |
-| `Reports.byWorker` | **No** filtra trabajadores borrados (`db.ts:303-311`) |
-| `Reports.byCrop`, `weekCrops`, `Performance.plots` | Sí filtran lotes borrados (`db.ts:325`, `db.ts:337`, `db.ts:1226`) |
-| `Payments.balances` | **No**, y a propósito: marca `inactive` en lugar de excluir (`db.ts:986`) |
+- `payments.farmTotals()` — ninguna pantalla la llama.
+- `payments.itemsOfAll()` — ninguna la llama, pese a existir para poder
+  auditar líneas anuladas.
+- `payments.adjust()` — el `kind = 'ajuste'` está en el `CHECK`, en el desglose
+  y en el icono de la cuenta, pero **no hay pantalla que lo cree**:
+  `Adjust.tsx` sólo escribe `anticipo` y `deduccion`.
+- `payments.reverse()` — sólo se alcanza desde `undoRun`. Ya no está roto
+  (9.1), pero sigue sin haber forma de reversar un movimiento suelto.
 
-La de `Payments.balances` es una decisión razonada; las otras parecen olvidos.
+Ya no está en la lista `people.byTag`, que `PeopleAdd` usa para avisar de un
+carné repetido.
 
-### 9.12 El rango de liquidación es ficticio
+### 9.15 Riesgos de operación — reducidos
 
-Ambas pantallas pasan `"1970-01-01"` como `from`:
-`PayWorker.tsx:100` y `PaymentsPanel.tsx:146`. La constante mágica está
-duplicada, igual que el helper `endOfWeek`, definido dos veces idéntico
-(`PayWorker.tsx:30-31` y `PaymentsPanel.tsx:46-47`). En la práctica sólo
-importa `to`, y `PENDING_SQL` sigue evaluando un `BETWEEN` que nunca excluye
-nada.
+Cerrados: `Demo.clear` y `Demo.seed` exigen teclear el nombre de la finca
+—`seed` empieza por borrar, así que guardar sólo el botón que da más miedo
+dejaba el agujero donde estaba—; el comentario obsoleto sobre la clave de
+semana desapareció con el fichero que lo contenía; y ya hay una salida de
+datos que no es un CSV compartido a mano: `POST /v1/import/season` sube la
+temporada entera y la cuadra al centavo antes de escribir nada.
 
-Además, `settlements.periodEnd` guarda ese `to` **sin recortar**, así que puede
-quedar fechado en el futuro, mientras el `devengo` sí se recorta a hoy
-(`db.ts:790-791`, `db.ts:796`). El documento y su asiento pueden discrepar de
-fecha.
+Sigue estando:
 
-### 9.13 La lógica de negocio del pago vive en los componentes
+- **Una finca que todavía no ha hecho la mudanza del §8 no tiene copia de
+  seguridad automática.** Si se pierde el teléfono, se pierde el registro.
+- **Concurrencia**: en un teléfono con JavaScript síncrono no hay carrera
+  posible; en la API multiusuario sí, y la red real es el índice
+  `ux_items_pickup_live`. No es deuda de este lado.
 
-La secuencia *liquidar → releer saldo → pagar lo que diga el ledger* está
-escrita **dos veces**, con matices distintos:
+### 9.17 Lo que la pantalla de sincronización todavía no sabe contar
 
-- `PayWorker.confirm` (`PayWorker.tsx:94-122`), con modos total/parcial.
-- `PaymentsPanel.runBulk` (`PaymentsPanel.tsx:137-178`), con recuento de
-  fallos y registro de `lastRun`.
+Nuevo, del sprint 8. `explain.ts` cubre cada código que `protocol.ts` nombra y
+una prueba lo obliga, así que ningún error llega como cadena cruda. Lo que
+falta no son errores, son **estados**:
 
-Junto con el candado `busy`, el neteo del anticipo y la elección del método de
-pago, todo eso es regla de negocio dentro de React. Para que la API lo reutilice
-hay que extraer un `Payments.settleAndPay(personId, upTo, mode, amountCents)`
-a `db.ts` y dejar en las pantallas sólo la presentación.
+- **`AppliedCounts` no llega a ninguna pantalla.** El motor cuenta
+  `workers`, `crops`, `pickups`, `prices`, `settlements`, `ledger`, `orphans`,
+  `frozen`, `skippedPending` y `reactivated`, y ninguna de esas cifras se
+  enseña. Una pasada que bajó cuatro mil cambios se ve igual que una que no
+  bajó ninguno.
+- **`orphans` ya no significa una sola cosa**, y por eso no se puede enseñar
+  tal cual. Mezcla «llegó una fila cuyo padre todavía no ha llegado» —que se
+  resuelve solo en la siguiente pasada— con «la línea de un jornal que este
+  teléfono no puede colgar de ninguna pesada» —que es permanente y correcta
+  (§2.2)—. Separarlas es trabajo, no una etiqueta.
+- **La espera del backoff es invisible.** `sync_state.retryAt` y `attempts` se
+  guardan y no se enseñan nunca; `engine.idleReport("BACKOFF")` no llega a
+  `saveState`, así que la rama `sync.errBackoff` de `explain.ts` no es
+  alcanzable desde la pantalla. El botón *Sincronizar* fuerza la pasada, así
+  que nadie se queda bloqueado — pero la pantalla no sabe decir «no está
+  parado, está esperando».
+- **`behind` envejece dentro de la propia pasada.** Es la respuesta del
+  handshake al **empezar**; después de drenar veinte páginas la pantalla sigue
+  enseñando el número de antes. En un teléfono que lleva semanas sin señal eso
+  se lee como que no avanza.
 
-### 9.14 Superficie de API sin consumidor y sin interfaz
-
-- `Payments.farmTotals` (`db.ts:1071`) — **ninguna pantalla la llama**.
-- `Payments.itemsOfAll` (`db.ts:1023`) — ninguna pantalla la llama, pese a que
-  su comentario dice que existe para poder auditar líneas anuladas.
-- `Payments.adjust` (`db.ts:910`) — el `kind = 'ajuste'` está en el `CHECK`, en
-  el desglose y en el icono de `Account.tsx:37`, pero **no hay pantalla que lo
-  cree**. `Adjust.tsx` sólo escribe `anticipo` y `deduccion`.
-- `Payments.reverse` (`db.ts:926`) — sólo se alcanza desde `undoRun`, que está
-  roto (9.1). No hay forma de reversar un movimiento suelto desde la interfaz.
-- `People.byTag` (`db.ts:190`) — la columna `tag` es el carné del trabajador y
-  se muestra, pero nadie busca por ella. Es el gancho que quedó para un lector
-  de código de barras.
-
-### 9.15 Riesgos de operación
-
-- **`Demo.clear` y `Demo.seed` están en el código de producción** y son
-  alcanzables desde Ajustes (`Settings.tsx:347,359`). `Demo.clear` borra
-  `ledger`, `settlement_items`, `settlements`, `pickups`, `crops`, `people` y
-  `cost_overrides` de la finca real.
-- **La única salida de datos es CSV compartido a mano** (`Settings.tsx:105-128`,
-  tres ficheros: pesadas, movimientos y saldos). No hay copia de seguridad
-  automática. El comentario de `csv.ts:3-6` lo dice sin rodeos: si el teléfono
-  se pierde, se pierde el registro de lo que todos recogieron y de lo que la
-  finca les debe.
-- **Comentario obsoleto que induce a error**: `db.ts:447` documenta
-  `week: string; // matches the byWeek() label, e.g. "2026-W33"`. Desde
-  `user_version = 2` la clave es el lunes `YYYY-MM-DD`. Ya está señalado en
-  `docs/arquitectura-api.md`.
-- **Concurrencia**: `pendingItems` lee y después `settle` escribe, sin bloqueo
-  entre las dos operaciones, y `withTransactionSync` emite un `BEGIN` diferido.
-  En un teléfono con JavaScript síncrono no hay carrera posible; en la API
-  multiusuario sí, y la única red real será el índice
-  `ux_items_pickup_live`.
+Cerrado en el sprint 8: `CURSOR_TOO_OLD` ya no es silencioso. `feedTransport`
+lo sigue resolviendo solo —releer desde cero es la única respuesta correcta y
+no hay nada que preguntar—, pero ahora lo **dice**: `PullResult.bootstrapped`
+sube hasta una tarjeta que explica que el teléfono está bajando la temporada
+otra vez y que no se perdió nada. Sin eso, el `behind` del siguiente handshake
+salta de once a la temporada entera y un contador que parece haber ido para
+atrás es como alguien concluye que el teléfono perdió la cosecha.
 
 ### 9.16 Lo que sí está listo para reutilizar
 
-Como contrapeso, esto se puede portar a la API **sin tocar una línea**:
-
-- **`schema.ts` entero.** Ya corre bajo `node:sqlite` en cuatro suites de
-  pruebas. El SQL de dinero, las cinco reglas de anomalías, el índice
-  comparativo y las consultas de semana están escritos en SQL estándar.
-- **`format.ts`, `harvest.ts`, `csv.ts`, `strings.ts`, `receiptHtml.ts`** —
-  puros, sin React y sin base de datos, con pruebas propias.
-- **La forma del ledger.** `docs/arquitectura-api.md` ya concluye que los seis
-  `kind` cubren igual una recolección de café, un jornal y un contrato de poda:
-  lo que hay que generalizar es lo que alimenta al ledger, no el ledger.
+- **`schema.ts` entero.** Corre bajo `node:sqlite` en las suites tal cual.
+- **`packages/shared`** ya es esto mismo, hecho: el dinero, el día, la semana,
+  los conjuntos cerrados y los uuid, con los casos de oro fijando el
+  comportamiento que no puede divergir.
+- **`csv.ts`, `receiptHtml.ts`, `receipt.ts`, `strings.ts`** — puros, sin React
+  y sin base de datos, con pruebas propias.
+- **`protocol.ts`**: el contrato del sync no conoce HTTP. Cambiar el apaño REST
+  por el feed real costó un fichero y ni una línea en el motor, en el buzón, en
+  las tarjetas ni en las pantallas, que es la propiedad para la que se separó.
+- **La forma del ledger.** Los seis `kind` cubren igual una recolección de
+  café, un jornal y un contrato de poda.
 - **El candado**: `UNIQUE(payable_id) WHERE voided_at IS NULL` es el mismo
   índice parcial con otro nombre de columna.
 
 ---
 
-*Generado leyendo `apps/mobile/src/db.ts` (1488 líneas),
-`apps/mobile/src/schema.ts` (287), `apps/mobile/App.tsx` y las 16 pantallas de
-`apps/mobile/src/screens/`, contra `docs/casos-de-uso.md`.*
+*Secciones 2 y 9 regeneradas en el sprint 8 leyendo `apps/mobile/src/db.ts`
+(100 líneas), `data/repository.ts`, `data/sqliteRepository.ts`,
+`data/syncStore.ts`, `schema.ts`, `sync/` y las 20 pantallas de
+`apps/mobile/src/screens/`, contra `services/api` y `docs/sincronizacion.md`.*
+
+*El resto del documento —§1 modelo de datos, §3 navegación, §4 a §7 los flujos
+y la máquina de estados, §8 el libro de eventos— **no** se tocó. La
+refactorización no lo invalidó: las tablas, las pantallas, la secuencia de una
+liquidación y los signos del ledger son los mismos. Lo que cambió de sitio fue
+el código que los ejecuta, y eso es lo que decían las secciones 2 y 9. Los
+números de línea que quedan en esas otras secciones apuntan, como antes, a los
+ficheros que las pantallas importan.*

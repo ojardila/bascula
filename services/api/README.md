@@ -125,8 +125,15 @@ trigger refuses it.
    moment it exists — nobody at the platform approves it — but the owner cannot
    open a session until the address is verified. Being the most exposed surface
    in the system, it carries a per-IP rate limit that lives in Postgres (so it
-   survives a restart), a cap on farms per email address, and mandatory
-   verification.
+   survives a restart) and mandatory verification.
+
+   It takes an address that has **no** account. One that already exists is
+   refused with 409 `EMAIL_TAKEN` on the address alone, and the password in the
+   body is never looked at — it used to be, and a wrong one answering 409 while
+   the right one answered 201 made the registration form a place to test
+   guesses without authenticating. Adding another farm to an account that
+   exists is `POST /v1/farms`, behind that account's own session, and the
+   farms-per-account cap lives there now.
 
 2. **Activity rates have a history.** `activity_pay_*` does not hold one loose
    price; it holds periods with a `valid_from`. A period runs until the next one

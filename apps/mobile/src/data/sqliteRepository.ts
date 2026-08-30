@@ -33,7 +33,10 @@ import {
   BASE_SCHEMA,
   PAYMENTS_SCHEMA,
   PICKUP_INDEXES_SQL,
+  BALANCE_COLUMNS,
   BALANCE_SQL,
+  HARVEST_VALUE_EXPR,
+  HARVEST_VALUE_SQL,
   PENDING_SQL,
   PAID_AGAINST_SQL,
   PAID_IN_RANGE_SQL,
@@ -699,11 +702,31 @@ export function createSqliteRepository(
          FROM pickups_live GROUP BY label ORDER BY label DESC LIMIT 12`,
         [],
       ),
+    /*
+     * `movil.md` §9.11 — and the rule comes from the server, which had the
+     * same argument and settled it.
+     *
+     * Excluding a removed worker was tried and taken back out: the rows stop
+     * adding up to the farm total that is printed four centimetres above them
+     * on the same screen, and nothing explains the missing kilos. Including
+     * them silently was no better — a name in a ranking reads as somebody who
+     * is still there.
+     *
+     * `ListBalances` closed it with «the rule is not "active people" but
+     * "people with a position"», and added an `active` column so the caller
+     * renders the difference rather than guessing at an absence. That is
+     * exactly this list: a picker with kilos HAS a position, whether or not
+     * they are still on the payroll, and this query cannot produce a row for
+     * anybody without kilos anyway — it groups out of `pickups_live`. So
+     * nothing is filtered, the total holds, and `active` carries the truth.
+     */
     byWorker: (general) =>
       db.getAllSync<ValuedGroup>(
         `SELECT COALESCE(pe.name || ' ' || pe.lastName, 'Unknown') AS label,
                 SUM(pk.weight) AS kg, pk.personId AS id,
-                SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
+                ${HARVEST_VALUE_EXPR} AS value,
+                CASE WHEN pe.id IS NULL OR pe.deletedAt IS NULL THEN 1 ELSE 0 END
+                  AS active
          FROM pickups_live pk
          LEFT JOIN people pe ON pe.id = pk.personId
          LEFT JOIN cost_overrides o
@@ -714,28 +737,39 @@ export function createSqliteRepository(
     // The value comes out of SQL with each week's price applied. Multiplying
     // the total by the general cost in one screen and by the weekly overrides
     // in another made the same plot worth two different amounts.
+    //
+    // The same rule as `byWorker` above, and it is a bug fix rather than a
+    // symmetry: this one DID filter `cr.deletedAt IS NULL`, so a farm that
+    // retired a lote mid-season saw the crop breakdown stop adding up to the
+    // farm total while the worker breakdown still did. Two tabs of one card
+    // contradicting each other, with the kilos of a real harvest in the gap.
     byCrop: (general) =>
       db.getAllSync<ValuedGroup>(
         `SELECT COALESCE(cr.name, 'Unknown') AS label, SUM(pk.weight) AS kg,
                 pk.cropId AS id,
-                SUM(pk.weight * COALESCE(o.costPerUnit, ?)) AS value
+                ${HARVEST_VALUE_EXPR} AS value,
+                CASE WHEN cr.id IS NULL OR cr.deletedAt IS NULL THEN 1 ELSE 0 END
+                  AS active
          FROM pickups_live pk
          LEFT JOIN crops cr ON cr.id = pk.cropId
          LEFT JOIN cost_overrides o
            ON o.week = pk.week
-         WHERE cr.deletedAt IS NULL
          GROUP BY pk.cropId ORDER BY kg DESC`,
         [general],
       ),
   };
 
   // Which crops (lotes) were harvested each week — powers the weekly breakdown.
+  // The lots listed under each week, and the same rule as `reports.byCrop`:
+  // a retired lote that was harvested that week still has kilos in it, and
+  // dropping it left the chips under a week summing to less than the week.
   const weekCrops = () =>
     db.getAllSync<WeekCropRow>(
       `SELECT pk.week AS week,
-              COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg
+              COALESCE(cr.name, 'Unknown') AS crop, SUM(pk.weight) AS kg,
+              CASE WHEN cr.id IS NULL OR cr.deletedAt IS NULL THEN 1 ELSE 0 END
+                AS active
        FROM pickups_live pk LEFT JOIN crops cr ON cr.id = pk.cropId
-       WHERE cr.deletedAt IS NULL
        GROUP BY week, pk.cropId ORDER BY week DESC, kg DESC`,
       [],
     );
@@ -772,15 +806,15 @@ export function createSqliteRepository(
          WHERE pk.personId = ? ORDER BY pk.date DESC LIMIT 50`,
         [personId],
       ),
-    // Payout for this worker applying weekly cost overrides.
-    payout: (personId, general) => {
-      const rows = db.getAllSync<{ week: string; kg: number }>(
-        `SELECT week AS week, SUM(weight) AS kg
-         FROM pickups_live WHERE personId = ? GROUP BY week`,
-        [personId],
-      );
-      return rows.reduce((s, r) => s + r.kg * costForWeek(r.week, general), 0);
-    },
+    // What this worker's harvest is worth, at the price in force each week.
+    // The same expression the farm-wide and per-lote figures use — §9.5. It
+    // used to be a query per week in a JS loop, which is both the N+1 of §9.6
+    // and the second implementation of §9.5.
+    payout: (personId, general) =>
+      db.getFirstSync<{ value: number }>(
+        HARVEST_VALUE_SQL("WHERE pk.personId = ?"),
+        [general, personId],
+      )?.value ?? 0,
   };
 
   function reportBy(g: Grouping, general: number) {
@@ -912,14 +946,13 @@ export function createSqliteRepository(
     return toCents(Number(o.costPerUnit ?? 0));
   }
 
-  // Total payout across all pickups, applying weekly overrides where present.
+  // What the whole farm's harvest is worth, at the price in force each week.
+  // One query, and the same one every other value on every other screen goes
+  // through — §9.5.
   function totalPayout(general: number): number {
-    const rows = db.getAllSync<{ week: string; kg: number }>(
-      `SELECT week AS week, SUM(weight) AS kg
-       FROM pickups_live GROUP BY week`,
-      [],
+    return (
+      db.getFirstSync<{ value: number }>(HARVEST_VALUE_SQL(), [general])?.value ?? 0
     );
-    return rows.reduce((sum, r) => sum + r.kg * costForWeek(r.week, general), 0);
   }
 
   // ---- Wiping the farm --------------------------------------------------
@@ -1579,15 +1612,7 @@ export function createSqliteRepository(
         `SELECT pe.id AS personId,
                 COALESCE(pe.name || ' ' || pe.lastName, '?') AS name,
                 CASE WHEN pe.deletedAt IS NULL THEN 0 ELSE 1 END AS inactive,
-                COALESCE(SUM(CASE WHEN l.kind = 'devengo' THEN l.amountCents
-                                  WHEN l.kind = 'reverso' AND l.amountCents < 0 THEN l.amountCents END),0)
-                  AS earnedCents,
-                COALESCE(-SUM(CASE WHEN l.kind IN ('pago','anticipo') THEN l.amountCents
-                                   WHEN l.kind = 'reverso' AND l.amountCents > 0 THEN l.amountCents END),0)
-                  AS paidCents,
-                COALESCE(-SUM(CASE WHEN l.kind = 'deduccion' THEN l.amountCents END),0) AS deductedCents,
-                COALESCE(SUM(l.amountCents),0) AS balanceCents,
-                MAX(l.date) AS lastMovementAt
+${BALANCE_COLUMNS("l")}
            FROM people pe LEFT JOIN ledger l ON l.personId = pe.id
           GROUP BY pe.id
           HAVING balanceCents <> 0 OR earnedCents <> 0
@@ -2002,11 +2027,7 @@ export function createSqliteRepository(
     // in one query instead of one lookup per week from JS.
     value: (cropId, general) =>
       db.getFirstSync<{ value: number }>(
-        `SELECT COALESCE(SUM(pk.weight * COALESCE(o.costPerUnit, ?)), 0) AS value
-           FROM pickups_live pk
-           LEFT JOIN cost_overrides o
-             ON o.week = pk.week
-          WHERE pk.cropId = ?`,
+        HARVEST_VALUE_SQL("WHERE pk.cropId = ?"),
         [general, cropId],
       )?.value ?? 0,
   };

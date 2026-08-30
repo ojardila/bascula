@@ -219,6 +219,17 @@ export interface LabelledKg {
 export interface ValuedGroup extends LabelledKg {
   id: number;
   value: number;
+  /**
+   * 1 while this worker or lote is still on the farm's active list.
+   *
+   * The server's `ListBalances` settled the same argument and this is its
+   * word: the rule is "people with a position, not people who are active", and
+   * `active` is what lets the caller render the difference instead of guessing
+   * at an absence. A removed picker's kilos stay in the ranking — they were
+   * harvested, and taking them out stops the list adding up to the farm total
+   * shown beside it — and the row says so.
+   */
+  active: number;
 }
 
 export interface WorkerStats {
@@ -240,6 +251,8 @@ export interface WeekCropRow {
   week: string;
   crop: string;
   kg: number;
+  /** 1 while the lote is still on the farm's active list. See `ValuedGroup`. */
+  active: number;
 }
 
 export interface BalanceRow extends Balance {
@@ -603,8 +616,23 @@ export interface SyncRepo {
    * arrives on the wire and is stored is the materialised balance this design
    * has refused three times; if the two disagree that is a bug between two
    * implementations of the same money, and it raises a card.
+   *
+   * `unitemisableCents` is what tells that bug apart from §2.2. It is the
+   * money in this worker's live settlements that the phone holds no LINE for:
+   * the document's own `grossCents` minus the lines it managed to store. A
+   * settlement written here always has the two equal; one that came down the
+   * feed for a week the worker also spent on a jornal does not, because the
+   * header travels whole and the work records behind the jornal lines are
+   * filtered out. Measured, from documents the server issued — not inferred
+   * from whether the phone's balance happened to be zero.
    */
-  balanceChecksums(): { uuid: string; personId: number; name: string; balanceCents: number }[];
+  balanceChecksums(): {
+    uuid: string;
+    personId: number;
+    name: string;
+    balanceCents: number;
+    unitemisableCents: number;
+  }[];
 
   /**
    * Keep what the server said each worker's balance was, and what this phone

@@ -127,6 +127,9 @@ const es: Dict = {
 
   // Weekly lots breakdown
   "reports.lots": "Lotes",
+  // Sigue en el ranking porque las arrobas se recogieron de verdad; la marca
+  // es para que un nombre en la lista no se lea como alguien que sigue aquí.
+  "reports.inactive": "retirado",
 
   // Worker detail
   "worker.performance": "Rendimiento",
@@ -191,6 +194,11 @@ const es: Dict = {
   "pay.willOwe": "Queda debiendo: {amount}",
   "pay.gross": "Recolección",
   "pay.totalWeek": "Total semana",
+  // The part of a settlement this phone holds no weighing for: a jornal or a
+  // contract registered on the web (§2.2). Named on the receipt instead of
+  // being added silently, because a worker checking the total against the
+  // weeks listed has to be able to see why it is bigger.
+  "pay.otherWork": "Otros trabajos (en la oficina)",
   "pay.payToday": "A pagar hoy",
   "pay.share": "Compartir comprobante",
   "pay.receipt": "Comprobante de pago",
@@ -368,6 +376,12 @@ const es: Dict = {
   "sync.wontRetry": "Esto no se arregla solo.",
   "sync.behindTitle": "Faltan cambios por recibir",
   "sync.behindBody": "Se bajó lo que cupo en esta pasada y quedan más en el servidor. Vuelve a sincronizar hasta que este aviso desaparezca; hasta entonces el teléfono no está al día y no se puede liquidar.",
+  // §3.4. El servidor guarda 180 días de cambios. Un teléfono que estuvo más
+  // tiempo sin señal no se puede poner al día por partes, así que se baja
+  // todo otra vez. No es un error y no se pierde nada — pero si no se dice,
+  // el contador de «faltan N» salta de once a la temporada entera.
+  "sync.bootstrapTitle": "Se está bajando todo de nuevo",
+  "sync.bootstrapBody": "Este teléfono pasó demasiado tiempo sin conectarse, así que está volviendo a bajar la temporada completa. No se perdió nada: lo que este teléfono tenía sigue aquí y lo que faltaba por enviar se envía igual. Puede tardar varias pasadas.",
   "sync.behindCount": "El servidor dice que faltan {n}.",
   "sync.chipBehind": "Faltan cambios por recibir",
   "sync.someone": "Alguien",
@@ -387,6 +401,18 @@ const es: Dict = {
   "conflict.readOnlyBody": "Los lotes y el precio de la semana se administran en la web. Esto no se envió y no se perdió: sigue en el teléfono.",
   "conflict.balanceMismatch": "El teléfono calcula {local} y el servidor {server}. Nadie cambió nada: hay que averiguar por qué no cuadran.",
   "conflict.notItemisable": "El saldo completo es {server}. El teléfono solo puede desglosar las pesadas; los jornales y contratos están en la web.",
+  // §5.6. Two names and one document. Nobody on this screen may join them:
+  // restaurar al que ya existe es un botón de la web, y unir dos fichas aquí
+  // sería unir un libro de movimientos que esta pantalla no puede ver.
+  "conflict.workerExistsDeleted":
+    "Ese documento ya es de {name}, que está retirado en esta finca. No se creó una segunda ficha: hay que reactivar la que ya existe desde la web.",
+  // §5.5. Se aprobó una cifra y al llegar al servidor era otra. No se escribió nada.
+  "conflict.grossChanged":
+    "Se aprobó {expected} y la liquidación ahora suma {actual}. No se guardó nada.",
+  "conflict.grossChangedWhy":
+    "Entraron {added} pesadas nuevas y salieron {removed}. Vuelve a liquidar con la cifra de ahora.",
+  "conflict.grossChangedUnknown":
+    "El servidor no puede decir qué cambió porque no se le dijo qué se estaba viendo. Vuelve a liquidar y revisa la cifra antes de confirmar.",
   "conflict.divergedTitle": "El mismo dato, distinto en los dos lados",
   "conflict.diverged": "Este dato ya había llegado al servidor con otro contenido. Nadie pisó nada: tu versión sigue en el teléfono y la del servidor sigue allí. Hay que mirar cuál es la buena.",
   "conflict.rejectedTitle": "El servidor no aceptó un cambio",
@@ -569,6 +595,7 @@ const en: Dict = {
   "settings.weekUpdated": "✅ Cost for {week} updated",
 
   "reports.lots": "Lots",
+  "reports.inactive": "removed",
 
   "worker.performance": "Performance",
   "worker.days": "Active days",
@@ -631,6 +658,7 @@ const en: Dict = {
   "pay.willOwe": "Still owed: {amount}",
   "pay.gross": "Harvest",
   "pay.totalWeek": "Week total",
+  "pay.otherWork": "Other work (kept in the office)",
   "pay.payToday": "To pay today",
   "pay.share": "Share receipt",
   "pay.receipt": "Payment receipt",
@@ -808,6 +836,8 @@ const en: Dict = {
   "sync.wontRetry": "This one does not fix itself.",
   "sync.behindTitle": "There are still changes to receive",
   "sync.behindBody": "This pass brought down as much as it could and the server still has more. Sync again until this notice goes away; until then the phone is not up to date and cannot settle.",
+  "sync.bootstrapTitle": "Downloading everything again",
+  "sync.bootstrapBody": "This phone went too long without connecting, so it is downloading the whole season again. Nothing was lost: what this phone had is still here, and anything still to send goes up all the same. It may take several passes.",
   "sync.behindCount": "The server says {n} are still missing.",
   "sync.chipBehind": "Changes still to receive",
   "sync.someone": "Someone",
@@ -827,6 +857,14 @@ const en: Dict = {
   "conflict.readOnlyBody": "Plots and the weekly price are administered on the web. This was not sent and was not lost: it is still on the phone.",
   "conflict.balanceMismatch": "The phone works out {local} and the server {server}. Nothing was changed: somebody has to find out why they disagree.",
   "conflict.notItemisable": "The full balance is {server}. The phone can only itemise weighings; day wages and contracts are on the web.",
+  "conflict.workerExistsDeleted":
+    "That document already belongs to {name}, who is deactivated on this farm. No second file was created: the existing one has to be restored from the web.",
+  "conflict.grossChanged":
+    "{expected} was approved and the settlement now adds up to {actual}. Nothing was saved.",
+  "conflict.grossChangedWhy":
+    "{added} weighings came in and {removed} left. Settle again with the figure as it stands now.",
+  "conflict.grossChangedUnknown":
+    "The server cannot say what changed, because it was not told what was on screen. Settle again and check the figure before confirming.",
   "conflict.divergedTitle": "The same row, different on each side",
   "conflict.diverged": "This row had already reached the server carrying different content. Nothing was overwritten: your version is still on the phone and the server's is still there. Somebody has to decide which is right.",
   "conflict.rejectedTitle": "The server refused a change",
@@ -1004,6 +1042,7 @@ const pt: Dict = {
   "settings.weekUpdated": "✅ Custo de {week} atualizado",
 
   "reports.lots": "Lotes",
+  "reports.inactive": "retirado",
 
   "worker.performance": "Desempenho",
   "worker.days": "Dias ativos",
@@ -1066,6 +1105,7 @@ const pt: Dict = {
   "pay.willOwe": "Fica devendo: {amount}",
   "pay.gross": "Colheita",
   "pay.totalWeek": "Total da semana",
+  "pay.otherWork": "Outros trabalhos (no escritório)",
   "pay.payToday": "A pagar hoje",
   "pay.share": "Compartilhar comprovante",
   "pay.receipt": "Comprovante de pagamento",
@@ -1243,6 +1283,8 @@ const pt: Dict = {
   "sync.wontRetry": "Isto não se resolve sozinho.",
   "sync.behindTitle": "Faltam mudanças para receber",
   "sync.behindBody": "Baixou o que coube nesta passada e ainda há mais no servidor. Sincronize de novo até este aviso sumir; até lá o telefone não está em dia e não dá para liquidar.",
+  "sync.bootstrapTitle": "Baixando tudo de novo",
+  "sync.bootstrapBody": "Este telefone passou tempo demais sem conectar, então está baixando a temporada inteira de novo. Nada foi perdido: o que este telefone tinha continua aqui, e o que faltava enviar é enviado do mesmo jeito. Pode levar várias passadas.",
   "sync.behindCount": "O servidor diz que faltam {n}.",
   "sync.chipBehind": "Faltam mudanças para receber",
   "sync.someone": "Alguém",
@@ -1262,6 +1304,14 @@ const pt: Dict = {
   "conflict.readOnlyBody": "Os lotes e o preço da semana são administrados na web. Isto não foi enviado e não se perdeu: continua no telefone.",
   "conflict.balanceMismatch": "O telefone calcula {local} e o servidor {server}. Ninguém mudou nada: é preciso descobrir por que não batem.",
   "conflict.notItemisable": "O saldo completo é {server}. O telefone só consegue detalhar as pesagens; as diárias e contratos estão na web.",
+  "conflict.workerExistsDeleted":
+    "Esse documento já é de {name}, que está desativado nesta fazenda. Não foi criada uma segunda ficha: é preciso reativar a que já existe pela web.",
+  "conflict.grossChanged":
+    "Foi aprovado {expected} e o acerto agora soma {actual}. Nada foi salvo.",
+  "conflict.grossChangedWhy":
+    "Entraram {added} pesagens novas e saíram {removed}. Faça o acerto de novo com o valor atual.",
+  "conflict.grossChangedUnknown":
+    "O servidor não consegue dizer o que mudou, porque não lhe disseram o que estava na tela. Faça o acerto de novo e confira o valor antes de confirmar.",
   "conflict.divergedTitle": "O mesmo dado, diferente dos dois lados",
   "conflict.diverged": "Este dado já tinha chegado ao servidor com outro conteúdo. Nada foi sobrescrito: a sua versão continua no telefone e a do servidor continua lá. Alguém tem que ver qual é a boa.",
   "conflict.rejectedTitle": "O servidor não aceitou uma mudança",

@@ -584,36 +584,65 @@ func TestACursorAheadOfTheFeedIsRefused(t *testing.T) {
 // The cap that never fired
 // ---------------------------------------------------------------------------
 
-// TestTheFarmsPerEmailCapIsActuallyApplied.
+// TestTheFarmsPerEmailCapMovedBehindASession.
 //
 // CountOwnedFarms runs against `memberships`, whose policy is
-// `farm_id = current_farm() OR user_id = current_user_id()`. At that point in a
-// signup NEITHER is set — there is no token, no farm id has been generated,
+// `farm_id = current_farm() OR user_id = current_user_id()`. Inside the public
+// signup NEITHER was set — there is no token, no farm id has been generated,
 // app.user_id is empty — so RLS answered every count with 0 and the cap never
-// once fired. It is the silent zero the README claims to have closed, sitting
+// once fired. It was the silent zero the README claims to have closed, sitting
 // inside the limit that guards the most exposed surface in the system.
-func TestTheFarmsPerEmailCapIsActuallyApplied(t *testing.T) {
+//
+// Sprint 8 moved the cap rather than repairing it in place, because the endpoint
+// it lived on could not be made safe: proving ownership of an existing address
+// with a password, on a route that issues no session, is a place to test
+// guesses. The cap now lives on POST /v1/farms, behind that account's own token,
+// where app.user_id comes from the tenant middleware and the count is a count of
+// real rows. What this test pins is that the cap fires there — see
+// TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession for the oracle
+// itself.
+func TestTheFarmsPerEmailCapMovedBehindASession(t *testing.T) {
 	h := requireDB(t)
 
 	email := "cap-" + uuid.NewString() + "@example.com"
 	const password = "contrasena-larga-1"
-	signup := func(name string) response {
-		return h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
-			"farm": map[string]any{"name": name, "timezone": "America/Bogota",
-				"currency": "COP", "priceCents": 100000},
-			"owner": map[string]any{"email": email, "name": "Duena", "password": password},
-		})
+
+	first := h.mustDo(t, http.MethodPost, "/v1/signup", "", map[string]any{
+		"farm": map[string]any{"name": "Finca 1", "timezone": "America/Bogota",
+			"currency": "COP", "priceCents": 100000},
+		"owner": map[string]any{"email": email, "name": "Duena", "password": password},
+	}, http.StatusCreated)
+	h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
+		map[string]any{"token": first.Body["verificationToken"]}, http.StatusOK)
+	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": email, "password": password,
+	}, http.StatusOK)
+	token, _ := login.Body["accessToken"].(string)
+
+	// The signup is no longer a way round it: the address is taken, whatever
+	// password comes with it.
+	again := h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
+		"farm": map[string]any{"name": "Finca 2", "timezone": "America/Bogota",
+			"currency": "COP", "priceCents": 100000},
+		"owner": map[string]any{"email": email, "name": "Duena", "password": password},
+	})
+	if again.code() != string(domain.CodeEmailTaken) {
+		t.Fatalf("a second farm through the public signup: got %d %s, want EMAIL_TAKEN",
+			again.Status, again.Raw)
 	}
 
-	// The harness caps at three.
-	for i := 1; i <= 3; i++ {
-		if res := signup("Finca " + strconv.Itoa(i)); res.Status != http.StatusCreated {
+	// The harness caps at three, and one exists.
+	for i := 2; i <= 3; i++ {
+		res := h.do(t, http.MethodPost, "/v1/farms", token, map[string]any{
+			"name": "Finca " + strconv.Itoa(i), "priceCents": 100000})
+		if res.Status != http.StatusCreated {
 			t.Fatalf("farm %d should still be allowed: %d %s", i, res.Status, res.Raw)
 		}
 	}
-	over := signup("Finca de más")
+	over := h.do(t, http.MethodPost, "/v1/farms", token, map[string]any{
+		"name": "Finca de mas", "priceCents": 100000})
 	if over.code() != string(domain.CodeFarmLimitReached) {
-		t.Fatalf("the fourth farm on one address: got %d %s, want FARM_LIMIT_REACHED",
+		t.Fatalf("the fourth farm on one account: got %d %s, want FARM_LIMIT_REACHED",
 			over.Status, over.Raw)
 	}
 }

@@ -239,6 +239,19 @@ export interface PullResult {
   more: boolean;
   balances?: { workerId: string; balanceCents: number }[];
   /**
+   * True when this page was read from the very beginning because the phone's
+   * cursor was older than the feed still retains (`CURSOR_TOO_OLD`).
+   *
+   * A transport handles that on its own — re-reading everything is the only
+   * correct answer and nobody is asked — but the phone must not stay silent
+   * about it. Retention is 180 days: a handset that fell off the feed is one
+   * that was out of signal for half a year, and the next handshake's `behind`
+   * jumps from a small number to the whole season with nothing to explain it.
+   * Reported so the status screen can say the sentence instead of showing a
+   * counter that appears to have gone backwards.
+   */
+  bootstrapped?: boolean;
+  /**
    * What this pull could not read, and why. A weigher's token is refused the
    * money routes by RLS, so their pull legitimately comes back without
    * settlements or ledger — and the status screen has to be able to say so
@@ -298,6 +311,38 @@ export function dispositionOf(result: OpResult): Disposition {
     // The server owns the lock and it is taken. §5.7a and §5.7b: the phone
     // keeps its change, shows it, and does not apply it.
     case "WORK_RECORD_SETTLED":
+      return "conflict";
+
+    // §5.6. This phone is trying to create a worker whose document already
+    // belongs to somebody the farm took off the payroll. The server refuses
+    // rather than open a second file for one person, because two files split
+    // a balance and nothing tells anybody.
+    //
+    // It was left on the default — retry — on the reading that decision 8
+    // would sort it out on the next attempt. Checked against the API, it will
+    // not. `handleCreateWorker` looks the document up with
+    // `FindDeletedByDocument` BEFORE it inserts, and that lookup answers the
+    // same way for ever; and decision 8's auto-reactivation
+    // (`store.ReactivateForWork`) is reached only from a work record, never
+    // from a worker. So this envelope retried once a minute until the season
+    // ended, and every weighing queued behind that worker retried with it.
+    //
+    // Conflict, therefore, and NOT a merge. Adopting the id the server names
+    // in `details.employeeId` would join this phone's new person to somebody
+    // else's ledger; whether they are the same human being is a decision for
+    // whoever knows them, on the screen where restoring them is a button.
+    case "EMPLOYEE_EXISTS_DELETED":
+      return "conflict";
+
+    // §5.5. The settlement no longer adds up to the figure that was approved:
+    // a weighing arrived late, or the week was repriced. The server wrote
+    // nothing.
+    //
+    // Also left on retry, and also wrong: the envelope carries the gross the
+    // phone computed, so resending it asks the same question and gets the same
+    // answer. It is the definition of a figure a person has to look at —
+    // §5.5's own words — and `details` names what moved.
+    case "GROSS_CHANGED":
       return "conflict";
 
     // A parent that has not arrived yet. One more batch, and if the parent is

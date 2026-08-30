@@ -119,11 +119,16 @@ func (s *Server) handleListAdminFarms(w http.ResponseWriter, r *http.Request) {
 
 // handleSetFarmStatus suspends a farm or brings it back.
 //
-// Suspension is not a delete and it is not immediate: login and refresh both
-// refuse a suspended farm, so a phone already holding an access token keeps
-// working until that token expires, at most fifteen minutes. That is the right
-// trade — a shorter token to make suspension instant would mean a refresh every
-// few minutes on a handset that spends the day without signal.
+// Suspension is not a delete, and it takes effect on the NEXT REQUEST.
+//
+// It used to take up to fifteen minutes, because login and refresh were the only
+// two doors that looked: an access token issued a minute before the suspension
+// kept working until it expired, and the farm went on settling, paying and
+// voiding for a quarter of an hour after somebody decided it must not. The check
+// lives in tenant.setContext now — in the round trip that pins the transaction to
+// the farm, so it costs nothing extra — and every authenticated route answers 403
+// FARM_SUSPENDED at once. The access token stays long, because the handset that
+// spends the day without signal is the one that would pay for a short one.
 func (s *Server) handleSetFarmStatus(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status string `json:"status"`

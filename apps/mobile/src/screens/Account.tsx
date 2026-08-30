@@ -135,6 +135,11 @@ export default function Account() {
               weight: i.weight,
               amountCents: i.amountCents,
             })),
+            // The document's own figure, not the sum of the lines above it.
+            // A settlement that came down the feed for a week the worker also
+            // spent on a jornal holds more than this phone can itemise, and
+            // the receipt used to declare only the part it could print.
+            grossCents: settlement.grossCents,
             balanceCents: credit,
             paidCents,
             date: today(),
@@ -166,6 +171,7 @@ export default function Account() {
         unit: cfg?.unit ?? "",
         monday: settlement?.periodStart ?? "",
         items,
+        grossCents: settlement?.grossCents,
         paidCents,
         balance: balance ?? {
           personId, earnedCents: 0, paidCents: 0, deductedCents: 0,

@@ -119,21 +119,73 @@ export const DAY_OF = (col: string) => `date(${col},'localtime')`;
 export const WEEK_OF = (col: string) => `date(${col},'localtime','-6 days','weekday 1')`;
 
 /**
+ * What a set of weighings is worth, written ONCE — `movil.md` §9.5.
+ *
+ * This existed twice: once as this expression, and once in JavaScript as
+ * "group by week, then multiply each week's kilos by that week's price in a
+ * loop". The comment on `reports.byCrop` records what that costs — «multiply
+ * the total by the general cost in one screen and by the weekly prices in
+ * another made the same lote worth two different amounts» — and the second
+ * implementation outlived the first fix. It also cost a `SELECT` per week, per
+ * screen, per focus.
+ *
+ * The two are not identical arithmetic: grouping first sums kilos and then
+ * multiplies, this multiplies each weighing and then sums, and in binary
+ * floating point those are different numbers. Neither of them decides an
+ * amount — every peso the farm hands over goes through `PENDING_SQL` and
+ * integer cents — but a farm reading two figures for one harvest has no way of
+ * knowing which of them is the report and which is the bug.
+ *
+ * `?` is the general price in pesos, the fallback for a week with no override.
+ * `pk` is `pickups_live` and `o` is `cost_overrides`, joined on the week.
+ */
+export const HARVEST_VALUE_EXPR = "SUM(pk.weight * COALESCE(o.costPerUnit, ?))";
+
+/** The whole query for one scope. `where` is a complete clause, or empty. */
+export const HARVEST_VALUE_SQL = (where = "") => `
+  SELECT COALESCE(${HARVEST_VALUE_EXPR}, 0) AS value
+    FROM pickups_live pk
+    LEFT JOIN cost_overrides o ON o.week = pk.week
+   ${where}`;
+
+/**
+ * The sign table, as SQL, written ONCE — `movil.md` §9.4.
+ *
+ * Which `kind` adds and which subtracts is the most delicate arithmetic in the
+ * app, and it used to be typed out three times: here, in
+ * `payments.balances()` (the payroll screen), and in the season export's farm
+ * summary — the figure `POST /v1/import/season` reconciles to the cent before
+ * it will write a year of payroll. Three copies, one of them covered by tests.
+ * Nothing had diverged yet; the reason to fix it is that the day one of them
+ * does, the symptom is a farm's whole season refused with `IMPORT_MISMATCH`,
+ * or a payroll screen quietly disagreeing with the worker's own receipt.
+ *
+ * `l` is the alias the ledger carries in the caller's query — the bare table
+ * name where there is no alias. The columns come out with the names
+ * `Balance`, `BalanceRow` and the export summary all already use.
+ *
+ * Reversals are told apart by SIGN and not by what they point at: reversing an
+ * earning is negative, reversing a payment positive. That is the one rule a
+ * re-typing gets wrong, because it looks like it should be a join.
+ */
+export const BALANCE_COLUMNS = (l = "ledger") => `
+         COALESCE(SUM(CASE WHEN ${l}.kind = 'devengo' THEN ${l}.amountCents
+                           WHEN ${l}.kind = 'reverso' AND ${l}.amountCents < 0 THEN ${l}.amountCents END),0)
+           AS earnedCents,
+         COALESCE(-SUM(CASE WHEN ${l}.kind IN ('pago','anticipo') THEN ${l}.amountCents
+                            WHEN ${l}.kind = 'reverso' AND ${l}.amountCents > 0 THEN ${l}.amountCents END),0)
+           AS paidCents,
+         COALESCE(-SUM(CASE WHEN ${l}.kind = 'deduccion' THEN ${l}.amountCents END),0) AS deductedCents,
+         COALESCE(SUM(${l}.amountCents),0) AS balanceCents,
+         MAX(${l}.date) AS lastMovementAt`;
+
+/**
  * One worker's position, straight from the ledger. Positive means the farm
- * owes them, so a positive balance is their credit. Reversals are told apart
- * by sign: reversing an earning is negative, reversing a payment positive.
+ * owes them, so a positive balance is their credit.
  */
 export const BALANCE_SQL = `
   SELECT ? AS personId,
-         COALESCE(SUM(CASE WHEN kind = 'devengo' THEN amountCents
-                           WHEN kind = 'reverso' AND amountCents < 0 THEN amountCents END),0)
-           AS earnedCents,
-         COALESCE(-SUM(CASE WHEN kind IN ('pago','anticipo') THEN amountCents
-                            WHEN kind = 'reverso' AND amountCents > 0 THEN amountCents END),0)
-           AS paidCents,
-         COALESCE(-SUM(CASE WHEN kind = 'deduccion' THEN amountCents END),0) AS deductedCents,
-         COALESCE(SUM(amountCents),0) AS balanceCents,
-         MAX(date) AS lastMovementAt
+${BALANCE_COLUMNS("ledger")}
     FROM ledger WHERE personId = ?
 `;
 

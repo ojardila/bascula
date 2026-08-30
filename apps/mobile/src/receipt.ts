@@ -8,6 +8,14 @@ export interface ReceiptInput {
   unit: string;
   monday: string;
   items: Pick<SettlementItem, "week" | "weight" | "amountCents">[];
+  /**
+   * The settlement's own gross. Not the sum of `items` when the document came
+   * down the feed covering a week the worker also spent on a jornal: the
+   * header travels whole, the lines that are not paid by the unit of work do
+   * not (§2.2), and adding up what is left declares less than the worker
+   * earned. See `receiptHtml.ReceiptData.grossCents`.
+   */
+  grossCents?: number;
   paidCents: number;
   balance: Balance;
   date: string; // YYYY-MM-DD
@@ -43,8 +51,18 @@ export function buildReceipt(r: ReceiptInput, lang: Lang): string {
     );
   }
 
-  const grossCents = r.items.reduce((s, i) => s + i.amountCents, 0);
-  if (grouped.size > 1) {
+  const itemisedCents = r.items.reduce((s, i) => s + i.amountCents, 0);
+  const grossCents = r.grossCents ?? itemisedCents;
+  const otherCents = grossCents - itemisedCents;
+
+  // The money in this document that this phone holds no weighing for. It goes
+  // on its own line, above the total, so the worker can see that the figure is
+  // bigger than the weeks listed for a reason and not by mistake.
+  if (otherCents !== 0) {
+    L.push(`${t("pay.otherWork")}  ${formatMoney(fromCents(otherCents), lang)}`);
+  }
+
+  if (grouped.size > 1 || otherCents !== 0) {
     L.push("");
     L.push(`${t("pay.totalWeek")}: ${formatMoney(fromCents(grossCents), lang)}`);
   }

@@ -93,12 +93,39 @@ func (s *Server) handleSyncHandshake(w http.ResponseWriter, r *http.Request) {
 			WithDetails(map[string]any{"cursor": body.Cursor, "serverCursor": cursor}))
 		return
 	}
-	behind, err := store.SyncBehind(r.Context(), tx, body.Cursor)
+	p, _ := auth.PrincipalFrom(r.Context())
+
+	// Who is holding this cursor, and is it the same reader the feed served it
+	// to? See store/sync_readers.go. The handshake only LOOKS: clearing an order
+	// here would let a handset talk its way out of a replay without receiving a
+	// single row, and the purge instruction that travels with the order would go
+	// with it.
+	device, err := readerDevice(r, body.DeviceID, p)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	p, _ := auth.PrincipalFrom(r.Context())
+	replay, err := store.SyncReaderInspect(r.Context(), tx, p.UserID, device, p.Role, body.Cursor)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	// `behind` is counted from where the handset will actually resume, and that
+	// is the whole point of counting it here. A phone that owes a replay resumes
+	// at 0, so measuring its distance from a cursor it is about to abandon would
+	// put "up to date" on the status chip of §7.1 in front of somebody whose book
+	// has a hole in it — which is the finding this registry exists to close,
+	// reappearing one field to the left.
+	from := body.Cursor
+	if replay.Required {
+		from = 0
+	}
+	behind, err := store.SyncBehind(r.Context(), tx, from)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 
 	// `capabilities` is not courtesy. It is what turns buttons off in an app
 	// already in a farm's pocket, without shipping a new build the day §10
@@ -114,6 +141,10 @@ func (s *Server) handleSyncHandshake(w http.ResponseWriter, r *http.Request) {
 		"cursor":     cursor,
 		"behind":     behind,
 		"role":       p.Role,
+		// Never absent and never null: a handset that cannot tell "no replay
+		// owed" from "the server did not say" has to guess, and the safe guess
+		// is the expensive one. `required: false` is the ordinary answer.
+		"replay": replay,
 		"capabilities": map[string]any{
 			// Decision 5: the phone stops settling without signal. Cash in the
 			// field is an `anticipo`, which claims no payable, takes no lock,
@@ -145,6 +176,35 @@ func (s *Server) handleSyncHandshake(w http.ResponseWriter, r *http.Request) {
 			"moneyReadOnly": farm.MoneyReadOnly != nil && *farm.MoneyReadOnly,
 		},
 	})
+}
+
+// readerDevice resolves which handset a sync request speaks for.
+//
+// The device is not decoration here: it is half the key of the reader registry
+// (store/sync_readers.go), and the half that stops one person's laptop
+// convincing the server that their handset has received a change. A caller that
+// names none is the account's unnamed client, which is a reader like any other
+// and not an unknown.
+//
+// A deviceId that is not a uuid is a 400 rather than a silent fallback. Falling
+// back would file that handset under the unnamed reader, where it would share a
+// cursor with every other client of the same account — the exact confusion this
+// key exists to prevent, arrived at by being helpful.
+func readerDevice(r *http.Request, named string, p *auth.Principal) (string, error) {
+	if named != "" {
+		if _, err := uuid.Parse(named); err != nil {
+			return "", domain.BadRequest(
+				"deviceId is a uuid: it is what tells one handset's cursor from another's")
+		}
+		return named, nil
+	}
+	fromToken := ""
+	if p != nil && p.DeviceID != "" {
+		if _, err := uuid.Parse(p.DeviceID); err == nil {
+			fromToken = p.DeviceID
+		}
+	}
+	return store.SyncReaderDevice("", fromToken), nil
 }
 
 // handleSyncPull is the feed. One number in, the changes after it out.
@@ -207,13 +267,80 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p, _ := auth.PrincipalFrom(r.Context())
+
+	// The third refusal, and it belongs after the other two: a cursor that is
+	// older than the feed or ahead of it is wrong for reasons that have nothing
+	// to do with who is holding it, and answering REPLAY_REQUIRED to a handset
+	// at maxint64 would hide a different fault behind this one.
+	//
+	// This one is about WHO. The pull skips rows by role and consumes their seq
+	// anyway — it must, or a weigher's cursor would stop at the first payroll of
+	// the season — and that skip is permanent, because sync_log has one row per
+	// write and no second event ever comes. So a cursor served to a weigher is
+	// not a cursor an administrator may resume from, and this is where that is
+	// said out loud instead of being answered with an empty batch.
+	device, err := readerDevice(r, r.URL.Query().Get("deviceId"), p)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	replay, err := store.SyncReaderCheck(r.Context(), tx, p.UserID, device, p.Role, cursor)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if replay.Required {
+		// The order has to SURVIVE this response, and this response is a 409,
+		// which the tenant middleware rolls back. Everything this transaction
+		// has written up to here is the order itself — the pull has read and
+		// nothing else — which is exactly the obligation KeepChanges puts on
+		// its caller.
+		//
+		// Without it the order would be recomputed on every attempt, which
+		// sounds equivalent and is not: `purgeMoney` is raised by a comparison
+		// that only holds while the reader is unregistered, and the pull that
+		// PERFORMS the replay arrives at cursor 0, where that comparison no
+		// longer fires. The handset would replay and keep the previous holder's
+		// payroll on it.
+		tenant.KeepChanges(r.Context())
+		writeError(w, r, domain.Conflict(domain.CodeReplayRequired,
+			"this handset's cursor was served under a different role or to a "+
+				"different session; pull again from cursor 0").
+			WithDetails(map[string]any{
+				"cursor": cursor, "replayFrom": 0, "reason": replay.Reason,
+				"purgeMoney": replay.PurgeMoney, "previousRole": replay.PreviousRole,
+				"role": p.Role,
+			}))
+		return
+	}
+
 	changes, next, more, err := store.SyncChanges(r.Context(), tx, cursor, int(limit), p.Role)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
+	// What was served, recorded against the role that served it. This is the
+	// only endpoint entitled to write that down, because it is the only one that
+	// hands over a change.
+	if err := store.SyncReaderAdvance(r.Context(), tx, p.UserID, device, p.Role, next); err != nil {
+		writeError(w, r, err)
+		return
+	}
 
 	out := map[string]any{"changes": changes, "cursor": next, "more": more}
+
+	// A replay that was owed and is being performed by this very request. The
+	// handset is receiving the whole feed again from 0, so this is the moment —
+	// and the only moment — at which `purgeMoney` is both safe and meaningful:
+	// what it drops is about to arrive again, minus whatever this role may not
+	// see.
+	if replay.Owed() && cursor == 0 {
+		from := int64(0)
+		out["replay"] = store.ReplayOrder{
+			Required: true, FromCursor: &from, Reason: replay.Reason,
+			PurgeMoney: replay.PurgeMoney, PreviousRole: replay.PreviousRole,
+		}
+	}
 
 	// The balances checksum travels only in the last batch, when the handset
 	// is already up to date — comparing a total against a half-applied feed

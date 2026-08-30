@@ -211,6 +211,19 @@ test("un CURSOR_TOO_OLD se relee desde cero en vez de saltarse el hueco", async 
   assert.match(calls[0]!.url, /cursor=12/);
   assert.match(calls[1]!.url, /cursor=0/);
   assert.equal(res.cursor, "149006");
+
+  // And it SAYS so. Re-reading everything is not a decision anybody makes,
+  // but staying quiet about it means the next handshake reports this phone as
+  // the whole season behind with nothing to explain the jump — and a counter
+  // that appears to have gone backwards is how somebody concludes the phone
+  // lost the harvest.
+  assert.equal(res.bootstrapped, true);
+});
+
+test("una pasada normal no dice que se haya bajado todo de nuevo", async () => {
+  const { transport } = fakeApi();
+  const res = await transport.pull({ cursor: "12", limit: 500 });
+  assert.equal(res.bootstrapped, false);
 });
 
 // ---- The push ----------------------------------------------------------

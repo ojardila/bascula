@@ -45,14 +45,30 @@ const (
 	CodePayableAlreadyClaimed Code = "PAYABLE_ALREADY_CLAIMED"
 	CodeSettlementAlreadyVoid Code = "SETTLEMENT_ALREADY_VOID"
 	CodeAlreadyReversed       Code = "ALREADY_REVERSED"
-	CodeNothingToSettle       Code = "NOTHING_TO_SETTLE"
-	CodeAmountExceedsBalance  Code = "AMOUNT_EXCEEDS_BALANCE"
-	CodeInvalidGeometry       Code = "INVALID_GEOMETRY"
-	CodePlotHasActiveCrops    Code = "PLOT_HAS_ACTIVE_CROPS"
-	CodeNoRateInForce         Code = "NO_RATE_IN_FORCE"
-	CodeRangeNeedsFrozenRate  Code = "RANGE_NEEDS_FROZEN_RATE"
-	CodeDuplicateDocument     Code = "DUPLICATE_DOCUMENT"
-	CodeDuplicateName         Code = "DUPLICATE_NAME"
+
+	// The two answers of POST /v1/settlements/{id}/release, which exists
+	// because a void settlement that still claims a weighing had no way out.
+	//
+	// SETTLEMENT_NOT_VOID refuses the release of a LIVE settlement, and that
+	// refusal is the whole safety of the route: a live settlement's lines are
+	// the lock that stops the same weighing being paid twice, so a route that
+	// could cut them would be a second door to double payment. The way to undo
+	// a live settlement is to void it.
+	//
+	// NOTHING_TO_RELEASE is the answer to a settlement that holds no payable
+	// and owes no reversal. It is a 409 rather than a cheerful 200 because a
+	// repair that repaired nothing is not a success: somebody is looking at
+	// the wrong document, and telling them it worked sends them away.
+	CodeSettlementNotVoid    Code = "SETTLEMENT_NOT_VOID"
+	CodeNothingToRelease     Code = "NOTHING_TO_RELEASE"
+	CodeNothingToSettle      Code = "NOTHING_TO_SETTLE"
+	CodeAmountExceedsBalance Code = "AMOUNT_EXCEEDS_BALANCE"
+	CodeInvalidGeometry      Code = "INVALID_GEOMETRY"
+	CodePlotHasActiveCrops   Code = "PLOT_HAS_ACTIVE_CROPS"
+	CodeNoRateInForce        Code = "NO_RATE_IN_FORCE"
+	CodeRangeNeedsFrozenRate Code = "RANGE_NEEDS_FROZEN_RATE"
+	CodeDuplicateDocument    Code = "DUPLICATE_DOCUMENT"
+	CodeDuplicateName        Code = "DUPLICATE_NAME"
 
 	// LAST_OWNER refuses the change that would leave a farm with nobody who
 	// can administer it. A farm with no owner cannot be repaired from inside
@@ -92,6 +108,27 @@ const (
 	// columns. It must update before it pushes a single byte.
 	CodeCursorTooOld Code = "CURSOR_TOO_OLD"
 	CodeSchemaTooOld Code = "SCHEMA_TOO_OLD"
+
+	// REPLAY_REQUIRED is the third one, and it comes from the same family of
+	// failure as CURSOR_TOO_OLD: a cursor that cannot honestly be answered
+	// incrementally.
+	//
+	// The pull skips a change the caller's role may not see and STILL consumes
+	// its seq — it has to, or a weigher's cursor would stop at the first
+	// payroll of the season. That skip is permanent: sync_log gets one row per
+	// write and the ledger's trigger is AFTER INSERT on an append-only table,
+	// so a row passed over is never announced again. Promote that weigher, or
+	// hand his handset to the foreman, and the new role holds a book with holes
+	// in it while the server answers `behind: 0`.
+	//
+	// So the server keeps a registry of who consumed the feed — see migration
+	// 00017 — and when the reader's role is not the role its cursor was served
+	// under, this is the answer. `details` carries `replayFrom` (0, which the
+	// backfill makes a complete bootstrap), `reason`, and `purgeMoney`: whether
+	// the handset must also drop the settlements and ledger movements it is
+	// holding, because they were downloaded by somebody else or by a role this
+	// one no longer has. It never asks the handset to drop its outbox.
+	CodeReplayRequired Code = "REPLAY_REQUIRED"
 
 	// IMPORT_MISMATCH aborts a season import whose reconciliation did not come
 	// out to the cent (§8 phase 3). Half an imported payroll is worse than no
@@ -139,12 +176,13 @@ func AllCodes() []Code {
 		CodeFarmLimitReached, CodeFarmSuspended,
 
 		CodeWorkRecordSettled, CodePayableAlreadyClaimed, CodeSettlementAlreadyVoid,
-		CodeAlreadyReversed, CodeNothingToSettle, CodeAmountExceedsBalance,
+		CodeAlreadyReversed, CodeSettlementNotVoid, CodeNothingToRelease,
+		CodeNothingToSettle, CodeAmountExceedsBalance,
 		CodeInvalidGeometry, CodePlotHasActiveCrops, CodeNoRateInForce,
 		CodeRangeNeedsFrozenRate, CodeDuplicateDocument, CodeDuplicateName,
 		CodeLastOwner,
 		CodeGrossChanged, CodeEmployeeExistsDeleted,
-		CodeCursorTooOld, CodeSchemaTooOld, CodeImportMismatch,
+		CodeCursorTooOld, CodeSchemaTooOld, CodeReplayRequired, CodeImportMismatch,
 		CodeIdempotencyKeyReused,
 
 		CodeInsufficientStock, CodeSaleAlreadyVoid, CodeExpenseTargetInvalid,

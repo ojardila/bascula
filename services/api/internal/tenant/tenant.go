@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -176,12 +177,44 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal) error {
 	// Read it back through the very function the policies call. A misspelled
 	// GUC name would otherwise turn every query into an empty result set, and
 	// an empty worker list is indistinguishable from a brand new farm.
+	//
+	// The farm's status comes back in the SAME round trip, because it has to be
+	// checked on every request and a suspension that costs a second query would
+	// be a suspension somebody optimises away. See below.
 	var got *string
-	if err := tx.QueryRow(ctx, `SELECT current_farm()::text`).Scan(&got); err != nil {
+	var suspendedAt *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT current_farm()::text,
+		       (SELECT f.suspended_at FROM farms f WHERE f.id = current_farm())`).
+		Scan(&got, &suspendedAt); err != nil {
 		return domain.Internal("could not read back the tenant context").WithCause(err)
 	}
 	if got == nil || *got != p.FarmID {
 		return domain.TenantNotSet().WithCause(fmt.Errorf("app.farm_id did not take"))
+	}
+
+	// A suspended farm stops HERE, on every request, and not at the next login.
+	//
+	// Login and refresh already refuse a suspended farm, and for fifteen minutes
+	// that was the whole of it: an access token issued a minute before the
+	// suspension kept working until it expired, so the farm went on settling,
+	// paying and voiding for a quarter of an hour after somebody decided it must
+	// not. Suspension is the platform's only lever, and a lever with a
+	// fifteen-minute delay is not one — that window is longer than a payroll run.
+	//
+	// The alternative everybody reaches for first is a shorter access token, and
+	// it is wrong for this system specifically: the handset that spends the day
+	// without signal would then be refreshing every few minutes it cannot reach
+	// the server. The token stays long and the check moves here, where the
+	// transaction is already open and the round trip is already being made.
+	//
+	// The platform administrator is exempt, and only the platform
+	// administrator: the console's token is pinned to a farm like everybody
+	// else's, and suspending that farm would lock the person holding the lever
+	// out of the room it is in. A farm role, however senior, is not exempt.
+	if suspendedAt != nil && !p.Superadmin {
+		return domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
+			"that farm is suspended")
 	}
 	return nil
 }
