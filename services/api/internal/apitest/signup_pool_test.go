@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
 // TestConcurrentSignupsDoNotExhaustThePool is the failure tenant.go warns
@@ -19,7 +21,11 @@ import (
 func TestConcurrentSignupsDoNotExhaustThePool(t *testing.T) {
 	h := requireDB(t)
 
-	n := 13 // store.OrdinaryConns + store.MaxImportsAtOnce
+	// Not a literal. The claim this test makes is EXACT — that the pool's whole
+	// capacity is what thirteen unauthenticated requests take — so it has to
+	// keep being the capacity when somebody changes the capacity. A comment
+	// saying 13 is a comment; this is the number.
+	n := store.OrdinaryConns + store.MaxImportsAtOnce
 	res := h.fireConcurrently(n, 20*time.Second, func(i int) (string, string, string, any) {
 		return "POST", "/v1/signup", "", map[string]any{
 			"farm": map[string]any{"name": fmt.Sprintf("Finca %d", i), "priceCents": 1000},
