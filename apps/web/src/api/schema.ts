@@ -416,6 +416,18 @@ export interface paths {
          *     Removing your OWN access is refused: it logs you out of the farm you
          *     are administering with no way back in from inside the product, and the
          *     request can arrive without the dialog that would have warned you.
+         *
+         *     Removing somebody SENIOR to you is refused too, by rule 2: this door
+         *     cuts the sessions along with the membership, so an administrator who
+         *     could reach an owner here would not be asking for a role change to be
+         *     argued about later. Equal ranks may remove each other, which is what
+         *     makes "another administrator does that" a real answer.
+         *
+         *     Removing the platform's own account is refused with 409 CONFLICT. Its
+         *     membership is what its token is pinned to, and login answers an account
+         *     with no memberships "that account belongs to no farm" — the farm
+         *     holding the only one would be ending the platform administrator, not
+         *     removing a member.
          */
         delete: operations["removeUser"];
         options?: never;
@@ -425,12 +437,19 @@ export interface paths {
          * @description The only field is `role`. Setting the role somebody already has is a
          *     200 and writes nothing.
          *
-         *     Refused by rule 2 when you would be raising your OWN role, or granting
-         *     one above your own. Refused by rule 1 with 409 LAST_OWNER when the
-         *     change would take the owner role off the last owner: the count is taken
-         *     with the rows locked, inside the same transaction, so two
-         *     administrators demoting the last two owners at the same moment cannot
-         *     both read "there are two" and both succeed.
+         *     Refused by rule 2 when you would be raising your OWN role, when you
+         *     would be granting one above your own, and when the PERSON you are
+         *     addressing holds a role above your own: an administrator cannot make an
+         *     owner and cannot unmake one either, which are the same rule read in the
+         *     two directions. Equal ranks may act on each other — an owner demotes
+         *     another owner, an administrator removes another administrator — because
+         *     that peer is the remedy the self-checks offer.
+         *
+         *     Refused by rule 1 with 409 LAST_OWNER when the change would take the
+         *     owner role off the last owner: the count is taken with the rows locked,
+         *     inside the same transaction, so two administrators demoting the last
+         *     two owners at the same moment cannot both read "there are two" and both
+         *     succeed.
          *
          *     A user of another farm is 404. That is the boundary, not a courtesy:
          *     `users` has no RLS, and this route reaches the account through the
@@ -5811,11 +5830,23 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /**
+             * @description FORBIDDEN — the permission table refused this role, or rule 2 did:
+             *     you cannot take the access of somebody above your own role away.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             /**
              * @description LAST_OWNER — this farm would be left with no owner. Or CONFLICT —
-             *     you cannot remove your own access.
+             *     you cannot remove your own access, and you cannot remove the
+             *     platform's own account.
              */
             409: {
                 headers: {
@@ -5858,8 +5889,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /**
              * @description FORBIDDEN — the permission table refused this role, or rule 2 did:
-             *     you cannot raise your own role, and you cannot grant one above your
-             *     own.
+             *     you cannot raise your own role, you cannot grant one above your
+             *     own, and you cannot change the role of somebody above your own.
              */
             403: {
                 headers: {

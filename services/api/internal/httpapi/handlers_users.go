@@ -37,9 +37,18 @@ import (
 //     and make the first one an owner too. The self-check without the grant
 //     check is a lock on a door with no wall beside it.
 //
-// Both are checked here rather than in the database, deliberately: their error
-// messages are part of what the screen has to say, and "the last owner cannot
-// be removed" is a sentence, not a constraint name.
+//     The same wall has to stand on the other side of the door, and for a long
+//     time it did not: NOBODY CHANGES THE ROLE OR REMOVES THE ACCESS OF
+//     SOMEBODY SENIOR TO THEM. An administrator who cannot make an owner but
+//     can unmake one has the farm anyway — he demotes both owners to weigher,
+//     which grants nothing above his own role and so walked straight past the
+//     grant check, or deletes their memberships, which grants nothing at all.
+//     Their sessions die with the membership and the senior role is left with
+//     nobody in it. Seniority a junior can take away is not seniority.
+//
+// All of these are checked here rather than in the database, deliberately:
+// their error messages are part of what the screen has to say, and "the last
+// owner cannot be removed" is a sentence, not a constraint name.
 
 // roleRank orders the three farm roles. It is the only place seniority is
 // written down as a number, and it exists for rule 2: "above your own" needs an
@@ -74,6 +83,33 @@ func mayGrant(caller *auth.Principal, role domain.Role) error {
 	if caller == nil || roleRank(role) > roleRank(caller.Role) {
 		return domain.Forbidden(
 			"you cannot give somebody a role above your own; an owner does that")
+	}
+	return nil
+}
+
+// mayActOn is rule 2's downward half: it looks at the person, where mayGrant
+// looks only at the role being handed out. Both doors need it, and for the
+// same reason — PATCH {"role":"weigher"} aimed at an owner grants nothing
+// above the caller's own role, and DELETE grants nothing at all, so the grant
+// check has no opinion about either and used to wave both through.
+//
+// EQUAL RANKS ARE ALLOWED, and that is a decision rather than an oversight.
+// The two self-checks in this file answer the person they refuse with "another
+// administrator does that": a peer is the remedy the product offers, and a
+// rule that forbade peers would make that sentence a lie. It would also leave
+// rule 1 with no way out — nothing outranks an owner, so an owner could then
+// be demoted or removed by nobody at all, and "name another owner first" would
+// name a second person neither of whom can ever be taken back off.
+//
+// The platform flag grants no exemption here in either direction. The console
+// is a different room: auth.Matrix gives the super-admin the farm list and
+// nothing else, and inside a farm they hold a membership like everybody else
+// and act with the role it carries.
+func mayActOn(caller *auth.Principal, target domain.Role) error {
+	if caller == nil || roleRank(target) > roleRank(caller.Role) {
+		return domain.Forbidden(
+			"you cannot change the access of somebody whose role is above your own; " +
+				"an owner does that")
 	}
 	return nil
 }
@@ -276,6 +312,15 @@ func (s *Server) handleUpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// Rule 2 downwards, and it comes before the no-op shortcut below rather
+	// than after it: an administrator has no business addressing an owner's
+	// membership at all, and answering 200 with the owner's row for the PATCH
+	// that happens to change nothing would make the refusal depend on what the
+	// caller guessed the role already was.
+	if err := mayActOn(caller, target.Role); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if target.Role == role {
 		writeJSON(w, http.StatusOK, target)
 		return
@@ -340,6 +385,20 @@ func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rule 2 downwards, before anything is read or written. This is the door
+	// where the old gap cost most: the membership goes and the refresh tokens
+	// go with it in the same transaction, so an administrator deleting an
+	// owner was not asking for a role change he might argue about later — he
+	// was ending that owner's sessions on the spot.
+	//
+	// It stands ahead of the owner count on purpose. To an administrator, "this
+	// farm would be left with no owner; name another owner first" is not the
+	// truth: naming another owner would not let him remove this one either.
+	if err := mayActOn(caller, target.Role); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
 	// Removing your own access logs you out of the farm you are administering,
 	// with no way back in from inside the product. It is refused rather than
 	// confirmed by a dialog, because the request can arrive without one.
@@ -349,6 +408,42 @@ func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The platform administrator's membership is not this farm's to delete.
+	//
+	// tenant.setContext already exempts them from the revocation cut for a
+	// reason it states there: "their token is pinned to a farm like everybody
+	// else's, and an owner of that farm removing them would lock the lever
+	// holder out of the room the lever is in." That exemption saves the access
+	// token in their hand and nothing more. Login is where it runs out —
+	// an account with no memberships is answered "that account belongs to no
+	// farm", and the session it would have issued is what the console is
+	// reached with. So the farm that holds the only membership of the platform
+	// administrator can end the platform administrator, permanently, and the
+	// only fix is somebody with database access. Rule 1 above calls exactly
+	// that outcome unacceptable one farm down.
+	//
+	// It is refused in plain words rather than by a mute 403, because the
+	// person reading it is an owner who will otherwise think the console is
+	// broken, and because the fact disclosed — that this account is ours — is
+	// one they can already infer from an account they did not create sitting
+	// in their own member list.
+	//
+	// PATCH needs no such rule: the console's actions are open to every farm
+	// role once the platform flag is present (see auth.Matrix), so a demotion
+	// costs the platform administrator nothing but a fresh token.
+	if target.IsSuperadmin {
+		writeError(w, r, domain.Conflict(domain.CodeConflict,
+			"that account belongs to the platform and cannot be removed here; "+
+				"ask support to detach it"))
+		return
+	}
+
+	// Rule 1. The rank check above already makes this door hard to reach: only
+	// an owner may remove an owner, and if there is just one owner left she IS
+	// the target, which the self-check refuses first. It stays because rule 1
+	// is not a consequence of rule 2 and must not start depending on it — the
+	// day a fourth role or a support impersonation lands, this is the line
+	// that still says a farm keeps an owner.
 	if target.Role == domain.RoleOwner {
 		owners, err := store.CountFarmOwners(r.Context(), tx)
 		if err != nil {

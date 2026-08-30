@@ -422,11 +422,22 @@ func TestUserManagement(t *testing.T) {
 			t.Fatalf("demoting the last owner: got %d %s, want 409 LAST_OWNER",
 				demote.Status, demote.Raw)
 		}
-		// Same rule on the other door.
+		// Same outcome on the other door, by a different rule. The
+		// administrator asking this used to be answered LAST_OWNER; rule 2
+		// now stops him one line earlier, for being junior to the person he
+		// is removing, and the owner count is never read. LAST_OWNER on the
+		// DELETE door is left unreachable on purpose — the only caller who
+		// could pass the rank check against the last owner is that owner
+		// herself, and she is refused for removing her own access.
 		remove := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.AdminToken, nil)
-		if remove.Status != http.StatusConflict || remove.code() != string(domain.CodeLastOwner) {
-			t.Fatalf("removing the last owner: got %d %s, want 409 LAST_OWNER",
-				remove.Status, remove.Raw)
+		if remove.Status != http.StatusForbidden {
+			t.Fatalf("removing the last owner as an administrator: got %d, want "+
+				"403: %s", remove.Status, remove.Raw)
+		}
+		self := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.OwnerToken, nil)
+		if self.Status != http.StatusConflict {
+			t.Fatalf("the last owner removing herself: got %d, want 409: %s",
+				self.Status, self.Raw)
 		}
 	})
 
