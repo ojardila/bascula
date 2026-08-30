@@ -9,6 +9,13 @@
 #
 # ADMIN_DATABASE_URL owns the schema. DATABASE_URL is the application role,
 # which has no BYPASSRLS — that is the whole point of having two.
+#
+# `run` and `dev` say APP_ENV=development out loud, and they have to. The
+# server treats an unset APP_ENV as production and refuses to boot without a
+# JWT_SECRET, because the alternative — the old default — was a deployment
+# that inherited the development posture from a line nobody wrote. A Makefile
+# is the right place for that word: it is checked in, it is read, and it is
+# not what a container runs.
 
 SHELL := /bin/bash
 
@@ -53,13 +60,13 @@ test-verbose:
 	TEST_ADMIN_DATABASE_URL="$(ADMIN_DATABASE_URL)" go test -v ./...
 
 run:
-	go run ./cmd/api
+	APP_ENV=development go run ./cmd/api
 
 # The same server, set up so the end-to-end suite in apps/web can run more than
 # once an hour. Signups are capped at 5 per IP by default, which is right in
 # production and useless on a laptop where a test run spends four of them.
 dev:
-	PORT=$(PORT_DEV) SIGNUPS_PER_IP_PER_HOUR=1000 go run ./cmd/api
+	APP_ENV=development PORT=$(PORT_DEV) SIGNUPS_PER_IP_PER_HOUR=1000 go run ./cmd/api
 
 build:
 	go build -o bin/api ./cmd/api

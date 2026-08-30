@@ -11,6 +11,24 @@ make run       # serve on :8080
 
 `GET /health` answers without touching the database.
 
+## What the server refuses to start without
+
+**An unset `APP_ENV` means production.** It used to mean development, which put
+the check "`JWT_SECRET` is required outside development" behind the same
+variable whose absence should have fired it — a process started with no
+environment signed its access tokens with a constant committed to this
+repository. Development is now one word you have to say (`APP_ENV=development`,
+which `make run` and `make dev` do), and everything else is production:
+
+- `JWT_SECRET` — required, minimum 32 bytes (HS256, RFC 7518 §3.2). Generate it
+  with `openssl rand -base64 48`. The old built-in development key is refused
+  in every environment, development included: it is public.
+- `UPLOAD_DIR` — required, and it must survive a restart and be shared by every
+  replica.
+
+In development both are optional: the signing key is generated at random on
+every boot, so a token from one process is worth nothing to the next.
+
 ## What is built
 
 Sprints 1 and 2: auth and open signup, workers, plots with their crops,
