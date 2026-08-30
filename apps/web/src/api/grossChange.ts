@@ -302,9 +302,9 @@ export function reasonsFor(change: GrossChange, fmt: Formatters): string[] {
 /**
  * The whole sentence, the way the owner asked for it:
  *
- *   «Cuando abrió esta pantalla eran $148.400; ahora son $151.200 porque
- *    entraron dos pesadas más.»
- *   «…porque el precio de la semana del 24 de agosto pasó de $800 a $850.»
+ *   "Cuando abrió esta pantalla eran $148.400; ahora son $151.200 porque
+ *    entraron dos pesadas más."
+ *   "…porque el precio de la semana del 24 de agosto pasó de $800 a $850."
  */
 export function sentenceFor(change: GrossChange, fmt: Formatters): string {
   const reasons = reasonsFor(change, fmt);

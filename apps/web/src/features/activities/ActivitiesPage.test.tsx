@@ -1,20 +1,20 @@
 /**
- * ── LA TRAMPA DEL «PRECIO FIJO» ──────────────────────────────────────────
+ * ── THE "PRECIO FIJO" TRAP ───────────────────────────────────────────────
  *
- * No había en toda la consola dónde poner el precio del kilo de la semana. Un
- * dueño que lo buscaba llegaba aquí, pulsaba «Precio fijo» —porque ahí sí
- * aparece una casilla de precio—, escribía 900, guardaba, y se iba creyendo
- * que había subido el precio de la semana.
+ * Nowhere in the whole console could you set the week's price per kilo. An
+ * owner looking for it landed here, hit "Precio fijo" — because that is where
+ * a price box does appear — typed 900, saved, and walked away believing they
+ * had raised the week's price.
  *
- * Lo que en realidad hacía ese interruptor era cambiar la FORMA DE PAGO de
- * toda la recolección de la finca y desconectarla del precio semanal que el
- * teléfono sigue usando. Y sobre una actividad que ya existe no hacía ni eso:
- * `api.updateActivity` sólo manda nombre y categoría, así que el interruptor
- * se movía en pantalla y no cambiaba nada en el servidor — que es peor,
- * porque la persona se va convencida de haber cambiado algo.
+ * What that switch actually did was change the PAY MODE for all of the farm's
+ * coffee picking and cut it loose from the weekly price the phone still uses.
+ * And on an activity that already exists it did not even do that:
+ * `api.updateActivity` only sends name and category, so the switch moved on
+ * screen and changed nothing on the server — which is worse, because the
+ * person leaves convinced they changed something.
  *
- * Estas pruebas fijan las dos mitades del arreglo: el candado con su
- * explicación, y el letrero que dice dónde está de verdad el precio del kilo.
+ * These tests pin down both halves of the fix: the lock with its explanation,
+ * and the sign that says where the price per kilo really lives.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
@@ -52,8 +52,8 @@ beforeEach(() => {
   });
 });
 
-describe("la lista de actividades", () => {
-  it("dice, donde la gente vino a buscarlo, dónde está el precio del kilo", async () => {
+describe("the activity list", () => {
+  it("says where the price per kilo lives, right where people came looking for it", async () => {
     renderActivities();
     await screen.findByText("Recolección de café");
     expect(
@@ -65,8 +65,8 @@ describe("la lista de actividades", () => {
     );
   }, 20000);
 
-  /** «Unidad de trabajo» es el nombre de una columna. En la finca es destajo. */
-  it("nombra las formas de pago como se nombran en la finca", async () => {
+  /** "Unidad de trabajo" is a column name. On the farm it is piece rate. */
+  it("names the pay modes the way the farm names them", async () => {
     renderActivities();
     await screen.findByText("Recolección de café");
     expect(screen.getAllByText("A destajo").length).toBeGreaterThan(0);
@@ -74,19 +74,19 @@ describe("la lista de actividades", () => {
   }, 20000);
 });
 
-describe("modificar una actividad que ya existe", () => {
-  async function openRecoleccion(user: ReturnType<typeof userEvent.setup>) {
+describe("editing an activity that already exists", () => {
+  async function openPicking(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByText("Recolección de café");
     await user.click(screen.getByText("Recolección de café"));
     return screen.findByRole("dialog");
   }
 
-  it("no deja mover el interruptor que decide cómo se paga", async () => {
+  it("will not let the switch that decides how the work is paid be moved", async () => {
     const user = userEvent.setup();
     renderActivities();
-    const dialog = await openRecoleccion(user);
+    const dialog = await openPicking(user);
 
-    // La recolección de esta finca se paga al precio de la semana.
+    // This farm's picking is paid at the week's price.
     const weekly = within(dialog).getByRole("button", {
       name: "Lo pone el precio de la semana",
     });
@@ -97,19 +97,19 @@ describe("modificar una actividad que ya existe", () => {
     expect(within(dialog).getByRole("button", { name: /A destajo/ })).toBeDisabled();
   }, 20000);
 
-  it("y explica por qué, en vez de dejarlo mudo", async () => {
+  it("and explains why, instead of leaving it mute", async () => {
     const user = userEvent.setup();
     renderActivities();
-    const dialog = await openRecoleccion(user);
+    const dialog = await openPicking(user);
     expect(
       within(dialog).getByText(/las labores ya registradas quedaron pagadas con esas reglas/),
     ).toBeInTheDocument();
   }, 20000);
 
-  it("manda al sitio donde sí se cambia el precio del kilo", async () => {
+  it("sends you to the place where the price per kilo really is changed", async () => {
     const user = userEvent.setup();
     renderActivities();
-    const dialog = await openRecoleccion(user);
+    const dialog = await openPicking(user);
     expect(
       within(dialog).getByText(/Aquí no se cambia el precio del kilo/),
     ).toBeInTheDocument();
@@ -120,19 +120,19 @@ describe("modificar una actividad que ya existe", () => {
   }, 20000);
 });
 
-describe("crear una actividad nueva", () => {
+describe("creating a new activity", () => {
   /**
-   * Aquí el interruptor SÍ se puede mover, porque todavía no hay ninguna labor
-   * pagada con esas reglas. Y es justo donde hace falta el aviso.
+   * Here the switch CAN be moved, because no work item has been paid under
+   * those rules yet. And this is exactly where the warning is needed.
    */
-  it("avisa, en serio, de lo que hace «precio fijo» en la recolección", async () => {
+  it("warns, for real, about what a fixed price does to coffee picking", async () => {
     const user = userEvent.setup();
     renderActivities();
     await screen.findByText("Recolección de café");
     await user.click(screen.getByRole("button", { name: /Nueva actividad/ }));
     const dialog = await screen.findByRole("dialog");
 
-    // Una actividad nueva nace con precio fijo, que es el aviso puesto.
+    // A new activity is born on a fixed price, which is the warning in place.
     expect(
       within(dialog).getByText(/Este precio no es el del kilo de la semana/),
     ).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe("crear una actividad nueva", () => {
       within(dialog).getByText(/deja de seguir el precio semanal/),
     ).toBeInTheDocument();
 
-    // Y al elegir el precio de la semana, el aviso sobra y se va.
+    // And once the week's price is chosen the warning is moot and goes away.
     await user.click(
       within(dialog).getByRole("button", { name: "Lo pone el precio de la semana" }),
     );

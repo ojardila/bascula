@@ -159,28 +159,28 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda " +
     "con dos cuentas y el saldo se parte en dos.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
-  // Anular una liquidación no es lo mismo que soltarla: soltar es la
-  // reparación de una que YA está anulada y se quedó agarrando las labores.
+  // Voiding a settlement is not the same as releasing it: releasing repairs
+  // one that is ALREADY void and stayed holding on to the work items.
   SETTLEMENT_NOT_VOID:
     "Esa liquidación está vigente, y sus líneas son justo lo que impide que una pesada se pague dos veces. Anúlela primero.",
   NOTHING_TO_RELEASE:
     "Esa liquidación no tiene ninguna labor agarrada ni ningún reverso pendiente: no hay nada que soltar. Puede que sea otro documento el que está buscando.",
-  // El que ve un dueño cuando se quita a sí mismo. Sin traducir llegaba a la
-  // pantalla en inglés, y es de los peores en los que quedarse a oscuras: la
-  // finca se queda sin nadie que pueda fijar precios ni invitar usuarios.
+  // What an owner sees when they take themselves off the farm. Untranslated
+  // it reached the screen in English, and it is one of the worst ones to be
+  // left in the dark on: the farm ends up with nobody who can set prices or
+  // invite users.
   LAST_OWNER:
     "La finca se quedaría sin dueño. Nombre primero a otro dueño y después quítese usted.",
-  // La pantalla de pagar y la nómina lo atrapan antes y enseñan la
-  // diferencia; esto es para que el código nunca salga pelado si llega por
-  // otra puerta.
+  // The payment screen and the payroll catch this one earlier and show what
+  // moved; this is here so the code is never displayed bare if it arrives
+  // through some other door.
   GROSS_CHANGED:
     "El total cambió mientras usted revisaba. No se registró nada. Vuelva a mirar el detalle y apruebe la cifra nueva.",
 
-  /* -- sincronización con el teléfono -------------------------------- */
-  // Los cuatro de sync. Los levanta el teléfono, pero cualquiera puede
-  // llegar aquí por una pantalla compartida, y un código en inglés en medio
-  // de una pantalla en español es exactamente lo que hace que alguien crea
-  // que rompió algo.
+  /* -- syncing with the phone ---------------------------------------- */
+  // The four sync ones. The phone raises them, but anybody can land here
+  // through a shared screen, and an English code in the middle of a Spanish
+  // screen is exactly what makes somebody think they broke something.
   CURSOR_TOO_OLD:
     "El teléfono lleva demasiado tiempo sin sincronizar y ya no se puede saber qué se perdió. Tiene que sincronizar desde el principio.",
   SCHEMA_TOO_OLD:

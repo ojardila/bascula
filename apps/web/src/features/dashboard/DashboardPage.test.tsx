@@ -1,5 +1,5 @@
 /**
- * EL TABLERO, CUANDO NO SABE.
+ * THE DASHBOARD, WHEN IT DOES NOT KNOW.
  *
  * This screen has carried a function called `Unknown` since Sprint 1, with a
  * comment explaining that a "$0" here "makes a failed request
@@ -62,8 +62,8 @@ beforeEach(() => {
   });
 });
 
-describe("cuando una petición se cae", () => {
-  it("los kilos de la semana dicen «—», no «0 kg»", async () => {
+describe("when a request goes down", () => {
+  it('the week\'s kilos say "—", not "0 kg"', async () => {
     server.use(down("*/v1/work-records"));
     renderDashboard();
 
@@ -79,7 +79,7 @@ describe("cuando una petición se cae", () => {
     expect(kg).toHaveTextContent("no se pudo consultar");
   }, 20000);
 
-  it("los lotes activos dicen «—», no «0»", async () => {
+  it('the active plots say "—", not "0"', async () => {
     server.use(down("*/v1/plots"));
     renderDashboard();
 
@@ -92,8 +92,8 @@ describe("cuando una petición se cae", () => {
   }, 20000);
 });
 
-describe("lo provisional no se muestra como definitivo", () => {
-  it("marca «Pendiente de liquidar» como provisional", async () => {
+describe("what is provisional is not shown as final", () => {
+  it('labels "Pendiente de liquidar" as provisional', async () => {
     renderDashboard();
     const money = tile("Pendiente de liquidar");
     // The figure is shown — hiding it would be worse — but it is labelled.
@@ -101,7 +101,7 @@ describe("lo provisional no se muestra como definitivo", () => {
   }, 20000);
 
   /** …and it is not a decoration stapled to every figure. */
-  it("no marca lo que ya está congelado", async () => {
+  it("does not label what is already frozen", async () => {
     server.use(
       http.get("*/v1/work-records", () =>
         HttpResponse.json({

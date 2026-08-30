@@ -27,7 +27,7 @@ describe("useWriteOnce", () => {
    * click live. React has not re-rendered, so anything driven by `useState`
    * still reads its old value; the ref does not.
    */
-  it("suelta la segunda llamada hecha en la misma tarea síncrona", async () => {
+  it("drops the second call made in the same synchronous task", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const gate = deferred<string>();
     let calls = 0;
@@ -59,7 +59,7 @@ describe("useWriteOnce", () => {
    * and the server's `ON CONFLICT (id) DO NOTHING` answers with the row it
    * already has instead of writing a second payment.
    */
-  it("reintenta con el mismo id después de un fallo", async () => {
+  it("retries with the same id after a failure", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const ids: string[] = [];
 
@@ -67,7 +67,7 @@ describe("useWriteOnce", () => {
       await result.current
         .run("pago|1000", async (mint) => {
           ids.push(mint("payment"));
-          throw new Error("se cayó la red");
+          throw new Error("the network dropped");
         })
         .catch(() => {});
     });
@@ -88,7 +88,7 @@ describe("useWriteOnce", () => {
    * an idempotency key that outlives its fact is a way to lose money in the
    * other direction.
    */
-  it("después de un éxito, el mismo importe es un pago nuevo con id nuevo", async () => {
+  it("after a success, the same amount is a new payment with a new id", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const ids: string[] = [];
     const record = async (mint: (slot?: string) => string) => {
@@ -108,7 +108,7 @@ describe("useWriteOnce", () => {
 
   /** A different approved figure is a different fact and must never inherit
    *  the previous id — the server would answer it with the previous payment. */
-  it("un importe distinto es otra intención y otro id", async () => {
+  it("a different amount is a different intent and a different id", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const ids: string[] = [];
 
@@ -116,13 +116,13 @@ describe("useWriteOnce", () => {
       await result.current
         .run("pago|1000", async (mint) => {
           ids.push(mint("payment"));
-          throw new Error("no");
+          throw new Error("failed");
         })
         .catch(() => {});
       await result.current
         .run("pago|1200", async (mint) => {
           ids.push(mint("payment"));
-          throw new Error("no");
+          throw new Error("failed");
         })
         .catch(() => {});
     });
@@ -132,7 +132,7 @@ describe("useWriteOnce", () => {
 
   /** Slots let one intent write more than one resource — a payment plus the
    *  advance for the excess — each stable on its own. */
-  it("cada recurso de una intención tiene su propio id estable", async () => {
+  it("each resource of one intent gets its own stable id", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const seen: string[][] = [];
 
@@ -141,7 +141,7 @@ describe("useWriteOnce", () => {
         await result.current
           .run("pago|1000", async (mint) => {
             seen.push([mint("payment"), mint("advance")]);
-            throw new Error("no");
+            throw new Error("failed");
           })
           .catch(() => {});
       });
@@ -153,7 +153,7 @@ describe("useWriteOnce", () => {
 
   /** `retire` is for the failure that kills the approved figure rather than
    *  inviting a retry: the gross moved, so the next attempt is a new fact. */
-  it("retire() descarta el id de una cifra que ya no se puede reintentar", async () => {
+  it("retire() discards the id of a figure that can no longer be retried", async () => {
     const { result } = renderHook(() => useWriteOnce());
     const ids: string[] = [];
 
@@ -161,14 +161,14 @@ describe("useWriteOnce", () => {
       await result.current
         .run("pago|1000", async (mint) => {
           ids.push(mint("payment"));
-          throw new Error("cambió el bruto");
+          throw new Error("the gross moved");
         })
         .catch(() => {});
       result.current.retire("pago|1000");
       await result.current
         .run("pago|1000", async (mint) => {
           ids.push(mint("payment"));
-          throw new Error("otra vez");
+          throw new Error("again");
         })
         .catch(() => {});
     });
@@ -177,7 +177,7 @@ describe("useWriteOnce", () => {
   });
 
   /** A failure releases the gate; otherwise one bad request locks the screen. */
-  it("un fallo libera el candado", async () => {
+  it("a failure releases the gate", async () => {
     const { result } = renderHook(() => useWriteOnce());
     let calls = 0;
 
@@ -185,7 +185,7 @@ describe("useWriteOnce", () => {
       await result.current
         .run("pago|1000", async () => {
           calls += 1;
-          throw new Error("no");
+          throw new Error("failed");
         })
         .catch(() => {});
     });
@@ -193,7 +193,7 @@ describe("useWriteOnce", () => {
       await result.current
         .run("pago|1000", async () => {
           calls += 1;
-          throw new Error("no");
+          throw new Error("failed");
         })
         .catch(() => {});
     });

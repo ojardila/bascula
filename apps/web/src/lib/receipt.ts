@@ -1,28 +1,29 @@
 /**
- * EL NÚMERO QUE EL DUEÑO LEERÍA EN VOZ ALTA SI ALGUIEN RECLAMA.
+ * THE NUMBER THE OWNER WOULD READ OUT LOUD IF SOMEBODY DISPUTES A PAYMENT.
  *
- * La API no emite números de recibo, así que la consola imprimía el id del
- * movimiento — un UUID de 36 caracteres — encabezando el recibo de pago. Es
- * exactamente el dato que se va a usar cuando haya un reclamo: alguien llama,
- * lee el recibo por teléfono y del otro lado lo apuntan. Nadie dicta
- * «0192f3a0-0009-7000-8000-000000000003» sin equivocarse, y quien lo intenta
- * concluye, con razón, que el papel no es para él.
+ * The API does not issue receipt numbers, so the console printed the movement
+ * id — a 36-character UUID — at the head of the payment receipt. That is
+ * exactly the piece of data that gets used when there is a dispute: somebody
+ * calls, reads the receipt out over the phone, and the other end writes it
+ * down. Nobody dictates "0192f3a0-0009-7000-8000-000000000003" without a
+ * mistake, and whoever tries concludes, rightly, that the paper is not meant
+ * for them.
  *
- * Así que el recibo se encabeza con los ocho últimos dígitos del id, en dos
- * bloques de cuatro y en mayúsculas: `3F7A-91C2`. Se dicta de una vez, se
- * apunta a mano, y se busca — el id completo va igual en el pie del papel, en
- * letra pequeña, porque es lo que un soporte necesita y no es lo que el dueño
- * lee.
+ * So the receipt is headed with the last eight digits of the id, in two blocks
+ * of four and in upper case: `3F7A-91C2`. It is dictated in one go, written
+ * down by hand, and searched for — the full id still goes in the footer of the
+ * paper, in small type, because that is what support needs and not what the
+ * owner reads.
  *
- * NO ES UN CONSECUTIVO y no se pretende que lo sea. Un consecutivo por finca
- * es una columna del servidor y una decisión suya; inventarlo aquí daría dos
- * recibos «N.º 14» en cuanto dos dispositivos escriban a la vez. Esto es el
- * mismo identificador, escrito para una persona. El día que la API emita
- * consecutivos, esta función se borra y `receiptNumber` viene del servidor.
+ * IT IS NOT A SEQUENCE NUMBER and does not pretend to be. A per-farm sequence
+ * is a server column and the server's decision; inventing one here would give
+ * two receipts numbered "N.º 14" the moment two devices write at once. This is
+ * the same identifier, written for a person. The day the API issues sequence
+ * numbers, this function is deleted and `receiptNumber` comes from the server.
  *
- * Los UUIDv7 comparten prefijo (van ordenados por tiempo) y no cola: los
- * últimos dígitos son la parte aleatoria, que es justo la que distingue dos
- * pagos de la misma tarde.
+ * UUIDv7s share a prefix (they are ordered by time) and not a tail: the last
+ * digits are the random part, which is precisely what tells two payments from
+ * the same afternoon apart.
  */
 
 /** `0192f3a0-…-8000-00000000ab3f` -> `0000-AB3F`. */

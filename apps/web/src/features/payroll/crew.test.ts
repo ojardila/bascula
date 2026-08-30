@@ -1,11 +1,12 @@
 /**
- * LA ARITMÉTICA DE LA NÓMINA DE CUADRILLA, sin pantalla.
+ * THE ARITHMETIC OF CREW PAYROLL, with no screen.
  *
- * Lo que se prueba aquí es lo que decide si sale plata y cuánta: cuándo una
- * cifra aprobada dejó de ser válida, cuándo NO —que es la mitad que se olvida—
- * y qué confiesa el papel. `CrewPayrollPage.test.tsx` prueba el camino entero
- * contra el servidor simulado; esto prueba las reglas sobre números planos,
- * que es donde se pueden escribir los casos raros sin montar una finca.
+ * What is tested here is what decides whether cash goes out and how much: when
+ * an approved figure stopped being valid, when it did NOT —which is the half
+ * people forget— and what the paper owns up to. `CrewPayrollPage.test.tsx`
+ * exercises the whole path against the mock server; this exercises the rules
+ * over plain numbers, which is where the odd cases can be written down without
+ * standing up a farm.
  */
 import { describe, expect, it } from "vitest";
 import { line, sentenceFor } from "../../api/grossChange";
@@ -21,7 +22,7 @@ import type { PayableLine, Payables, Uuid } from "../../api/types";
 
 const FMT = { money: formatMoney, week: formatDayLong };
 
-/** Lo pendiente de una persona, con el bruto que el servidor devolvería. */
+/** One person's outstanding work, with the gross the server would return. */
 function payables(lines: PayableLine[]): Payables {
   const grossCents = lines.reduce((a, l) => a + l.amountCents, 0);
   return { workRecords: lines, debts: [], grossCents, balanceCents: 0, totalCents: grossCents };
@@ -41,7 +42,7 @@ function approval(lines: PayableLine[], over: Partial<SettleApproval> = {}): Set
   };
 }
 
-/** Una pesada al precio de la semana: la única clase de línea que se re-precia. */
+/** A weigh-in at the week's price: the only kind of line that gets re-priced. */
 const weighed = (id: string, kg: number, rateCents: number): PayableLine =>
   line(id as Uuid, Math.round(kg * rateCents), {
     quantity: kg,
@@ -50,19 +51,19 @@ const weighed = (id: string, kg: number, rateCents: number): PayableLine =>
     unitLabel: "kg",
   });
 
-describe("la guarda de la carrera, persona a persona dentro del grupo", () => {
-  it("no dice nada cuando nada se movió", () => {
+describe("the race guard, person by person inside the group", () => {
+  it("says nothing when nothing moved", () => {
     const lines = [weighed("a", 38.5, 80_000), weighed("b", 41, 80_000)];
     expect(driftOf(approval(lines), payables(lines))).toBeNull();
   });
 
   /**
-   * El caso que de verdad muerde a esta finca: las pesadas se pagan al precio
-   * de la semana, que no está fijado hasta que se liquida. El dueño sube el
-   * precio desde el teléfono y los MISMOS ids valen otra cosa, sin que aparezca
-   * ni desaparezca una fila.
+   * The case that really bites this farm: weigh-ins are paid at the week's
+   * price, which is not fixed until you settle. The owner raises the price
+   * from the phone and the SAME ids are worth something else, without a single
+   * row appearing or disappearing.
    */
-  it("ve un cambio de precio de la semana y lo nombra", () => {
+  it("sees a change in the week's price and names it", () => {
     const approved = [weighed("a", 38.5, 80_000), weighed("b", 41, 80_000)];
     const now = [weighed("a", 38.5, 84_000), weighed("b", 41, 84_000)];
 
@@ -71,26 +72,26 @@ describe("la guarda de la carrera, persona a persona dentro del grupo", () => {
     expect(drift!.beforeCents).toBe(6_360_000);
     expect(drift!.afterCents).toBe(6_678_000);
     expect(drift!.deltaCents).toBe(318_000);
-    // La misma frase que la pantalla de una persona, palabra por palabra.
+    // The same sentence as the single-person screen, word for word.
     expect(sentenceFor(drift!, FMT)).toContain(
       "el precio de la semana del 24 de agosto pasó de $800 a $840",
     );
   });
 
   /**
-   * LA MITAD QUE SE OLVIDA. Una pesada tardía NO cambia la cifra que se firma:
-   * la liquidación nombra sus `payableIds` y la nueva simplemente no está
-   * dentro. Bloquear aquí sería gritar «cambió» cada sábado por la tarde, que
-   * es cuando el pesador más registra — y una guarda que grita siempre es una
-   * guarda que se aprende a ignorar.
+   * THE HALF PEOPLE FORGET. A late weigh-in does NOT change the figure being
+   * signed: the settlement names its `payableIds` and the new one simply is
+   * not inside. Blocking here would mean shouting "it changed" every Saturday
+   * afternoon, which is when the weigher records most — and a guard that
+   * always shouts is a guard people learn to ignore.
    */
-  it("NO bloquea porque haya llegado trabajo nuevo", () => {
+  it("does NOT block just because new work arrived", () => {
     const approved = [weighed("a", 38.5, 80_000)];
     const now = [...approved, weighed("c", 12, 80_000)];
     expect(driftOf(approval(approved), payables(now))).toBeNull();
   });
 
-  it("sí bloquea cuando una labor aprobada dejó de estar pendiente", () => {
+  it("does block when an approved work item stopped being outstanding", () => {
     const approved = [weighed("a", 38.5, 80_000), weighed("b", 41, 80_000)];
     const now = [approved[0]];
 
@@ -101,7 +102,7 @@ describe("la guarda de la carrera, persona a persona dentro del grupo", () => {
     expect(sentenceFor(drift!, FMT)).toContain("salió una pesada de la liquidación");
   });
 
-  it("y cuando todo desapareció, la cifra de ahora es cero y se dice", () => {
+  it("and when everything vanished, the figure now is zero and it says so", () => {
     const approved = [weighed("a", 38.5, 80_000)];
     const drift = driftOf(approval(approved), payables([]));
     expect(drift!.afterCents).toBe(0);
@@ -109,8 +110,8 @@ describe("la guarda de la carrera, persona a persona dentro del grupo", () => {
   });
 });
 
-describe("por qué no entró alguien, dicho para quien tiene la plata en la mano", () => {
-  it("nombra el bruto movido, la labor ya reclamada y el saldo que bajó", () => {
+describe("why somebody did not get in, said for whoever holds the cash", () => {
+  it("names the moved gross, the already-claimed work item and the dropped balance", () => {
     expect(
       reasonOf(
         new ApiError(409, {
@@ -130,14 +131,14 @@ describe("por qué no entró alguien, dicho para quien tiene la plata en la mano
     ).toContain("El saldo bajó");
   });
 
-  /** Nunca se inventa una causa: un fallo de red se cuenta como fallo de red. */
-  it("no inventa una causa para lo que no la tiene", () => {
+  /** A cause is never invented: a network failure is reported as a network failure. */
+  it("does not invent a cause for something that has none", () => {
     expect(reasonOf(new Error("boom"))).not.toContain("bruto");
   });
 });
 
 /* ------------------------------------------------------------------ */
-/* El papel                                                            */
+/* The paper                                                           */
 /* ------------------------------------------------------------------ */
 
 const row = (name: string, over: Partial<RunRow> = {}): RunRow => ({
@@ -166,16 +167,16 @@ const run = (rows: RunRow[], over: Partial<PayrollRun> = {}): PayrollRun => ({
   ...over,
 });
 
-describe("la planilla confiesa su alcance", () => {
-  it("una corrida de la cuadrilla entera no se declara parcial", () => {
+describe("the payroll sheet owns up to its scope", () => {
+  it("a run over the whole crew does not declare itself partial", () => {
     const r = run([row("María"), row("Jhon"), row("Luz")]);
     expect(runIsPartial(r)).toBe(false);
     expect(payrollScopeOf(r).filters).toEqual([]);
     expect(payrollTitleOf(r)).toBe("Planilla de liquidación de cuadrilla");
   });
 
-  /** La mordida de `SettlementsPage`, heredada. */
-  it("dice que había un filtro puesto", () => {
+  /** The bite `SettlementsPage` took out of us, inherited. */
+  it("says there was a filter on", () => {
     const r = run([row("Rosa")], {
       scope: { filters: ["empleado contiene «Rosa»"], crewSize: 1, crewTotalCents: 1_000_000 },
     });
@@ -184,10 +185,10 @@ describe("la planilla confiesa su alcance", () => {
   });
 
   /**
-   * Y la forma que sólo tiene esta pantalla, y que es MÁS fácil de hacer sin
-   * darse cuenta que escribir en un buscador: destildar a cuatro de treinta.
+   * And the way only this screen has, the one that is EASIER to do without
+   * noticing than typing into a search box: unticking four out of thirty.
    */
-  it("dice a cuánta gente se destildó, aunque no hubiera filtro", () => {
+  it("says how many people were unticked, even with no filter at all", () => {
     const r = run([row("María")], {
       scope: { filters: [], crewSize: 30, crewTotalCents: 30_000_000 },
     });
@@ -195,7 +196,7 @@ describe("la planilla confiesa su alcance", () => {
     expect(runIsPartial(r)).toBe(true);
   });
 
-  it("nombra uno por uno a quien no entró, con su motivo", () => {
+  it("names one by one whoever did not get in, with their reason", () => {
     const r = run([
       row("María"),
       row("Jhon", { status: "refused", reason: "El saldo bajó y el pago aprobado ya no cabe." }),
@@ -208,20 +209,20 @@ describe("la planilla confiesa su alcance", () => {
   });
 
   /**
-   * Un renglón con una firma al lado, para alguien a quien no se le entregó
-   * nada, es una invitación a firmarlo.
+   * A line with a signature box next to it, for somebody who was handed
+   * nothing, is an invitation to sign it.
    */
-  it("sólo lleva renglón quien entró", () => {
+  it("only whoever got in gets a line", () => {
     const r = run([row("María"), row("Jhon", { status: "refused", reason: "x" })]);
     expect(payrollRowsOf(r).map((x) => x.name)).toEqual(["María"]);
   });
 
-  /** Ningún cero que signifique «no sé»: el saldo posterior aún no se ha leído. */
-  it("no inventa un saldo posterior en la planilla de liquidación", () => {
+  /** No zero that means "I don't know": the later balance has not been read yet. */
+  it("does not invent a later balance on the settlement sheet", () => {
     expect(payrollRowsOf(run([row("María")]))[0].balanceCents).toBeNull();
   });
 
-  it("y sí lo lleva en la de pago, con lo entregado", () => {
+  it("and does carry one on the payment sheet, next to what was handed over", () => {
     const r = run(
       [row("María", { paidCents: 2_000_000, balanceAfterCents: 0, paymentId: "p1" as Uuid })],
       { step: "pay" },
@@ -233,8 +234,8 @@ describe("la planilla confiesa su alcance", () => {
   });
 });
 
-describe("lo que una corrida deja para deshacer", () => {
-  it("recoge los pagos y las liquidaciones de todas las corridas", () => {
+describe("what a run leaves behind to be undone", () => {
+  it("collects the payments and the settlements from every run", () => {
     const settled = run([row("María"), row("Jhon")]);
     const paid = run(
       [
@@ -249,7 +250,7 @@ describe("lo que una corrida deja para deshacer", () => {
     expect(undoIsEmpty(handle)).toBe(false);
   });
 
-  it("no ofrece deshacer lo que no se escribió", () => {
+  it("does not offer to undo what was never written", () => {
     const r = run([row("María", { status: "refused", settlementId: null, reason: "x" })]);
     expect(undoIsEmpty(undoHandleOf([r]))).toBe(true);
     expect(isComplete(r.rows)).toBe(false);

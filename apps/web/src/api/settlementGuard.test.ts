@@ -48,7 +48,7 @@ beforeEach(() => {
  * for María, so every "nothing was written" assertion is a delta on this and
  * not a claim that the ledger is empty.
  */
-async function devengos(): Promise<number> {
+async function accruals(): Promise<number> {
   const ledger = await api.workerLedger(WORKER);
   return ledger.filter((e) => e.kind === "devengo").length;
 }
@@ -62,8 +62,8 @@ function countSettlementPosts(): { n: () => number } {
   return { n: () => n };
 }
 
-describe("el candado de la liquidación", () => {
-  it("liquida cuando la cifra aprobada sigue siendo la cifra", async () => {
+describe("the settlement lock", () => {
+  it("settles when the approved figure is still the figure", async () => {
     const approved = await api.previewSettlement(WORKER);
     expect(approved.grossCents).toBeGreaterThan(0);
 
@@ -77,9 +77,9 @@ describe("el candado de la liquidación", () => {
 
   /* -- the server checks --------------------------------------------- */
 
-  it("un servidor que valida contesta 409 y no escribe nada", async () => {
+  it("a server that checks answers 409 and writes nothing", async () => {
     const posts = countSettlementPosts();
-    const before = await devengos();
+    const before = await accruals();
     const earnedBefore = (await api.workerBalance(WORKER)).earnedCents;
     const approved = await api.previewSettlement(WORKER);
 
@@ -103,11 +103,11 @@ describe("el candado de la liquidación", () => {
     // movements for this worker, so the assertion is on the DELTA: a
     // settlement writes exactly one `devengo`, and there is no new one.
     expect(posts.n()).toBe(1);
-    expect(await devengos()).toBe(before);
+    expect(await accruals()).toBe(before);
     expect((await api.workerBalance(WORKER)).earnedCents).toBe(earnedBefore);
   });
 
-  it("y la negativa trae las dos cifras y el motivo", async () => {
+  it("and the refusal carries both figures and the reason", async () => {
     const approved = await api.previewSettlement(WORKER);
     const ids = approved.lines.map((l) => l.id);
     const gone = approved.lines[0];
@@ -142,7 +142,7 @@ describe("el candado de la liquidación", () => {
     expect(change.repriced).toEqual([]);
   });
 
-  it("una pesada tardía no entra: nombrar el conjunto quita la carrera", async () => {
+  it("a late weigh-in does not get in: naming the set removes the race", async () => {
     const approved = await api.previewSettlement(WORKER);
     const ids = approved.lines.map((l) => l.id);
 
@@ -167,7 +167,7 @@ describe("el candado de la liquidación", () => {
 
   /* -- no way round it ----------------------------------------------- */
 
-  it("no hay forma de liquidar sin decir qué cifra se aprobó", async () => {
+  it("there is no way to settle without saying which figure was approved", async () => {
     const approved = await api.previewSettlement(WORKER);
     await expect(
       // The shape a "reintentar" button would have to produce to skip the
@@ -188,9 +188,9 @@ describe("el candado de la liquidación", () => {
     ).rejects.toThrow(/expectedGrossCents/);
   });
 
-  it("pagar liquida primero, y una cifra vieja no paga nada", async () => {
+  it("paying settles first, and a stale figure pays nothing", async () => {
     const posts = countSettlementPosts();
-    const before = await devengos();
+    const before = await accruals();
     const paymentsBefore = (await api.workerLedger(WORKER)).filter(
       (e) => e.kind === "pago",
     ).length;
@@ -212,7 +212,7 @@ describe("el candado de la liquidación", () => {
     // Neither the settlement nor the payment landed. Both are asserted: a
     // guard that refused the settlement and paid anyway would post money
     // against a balance that does not include the work.
-    expect(await devengos()).toBe(before);
+    expect(await accruals()).toBe(before);
     const after = await api.workerLedger(WORKER);
     expect(after.filter((e) => e.kind === "pago")).toHaveLength(paymentsBefore);
   });

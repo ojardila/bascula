@@ -1,98 +1,100 @@
 /**
- * LA NÓMINA DE CUADRILLA, sin la pantalla.
+ * CREW PAYROLL, without the screen.
  *
- * El sábado la finca no paga a una persona: paga a treinta, en fila, con la
- * plata contada encima de la mesa. El teléfono sabía hacerlo (`PaymentsPanel`
- * y `Payments.runPayroll`); la consola sólo sabía pagar de uno en uno
- * (`PayWorkerPage`). `docs/simplificacion.md` §2.1 lo dice sin rodeos: la
- * nómina de cuadrilla "se muda a la web — y en la web no existe todavía", y
- * hasta que exista no se le puede quitar al teléfono. Esto es la mitad
- * comprobable de esa mudanza; `CrewPayrollPage.tsx` es la otra.
+ * On Saturday the farm does not pay one person: it pays thirty, in a line,
+ * with the cash counted out on the table. The phone knew how to do it
+ * (`PaymentsPanel` and `Payments.runPayroll`); the console only knew how to
+ * pay them one at a time (`PayWorkerPage`). `docs/simplificacion.md` §2.1 says
+ * it without hedging: crew payroll "moves to the web — and on the web it does
+ * not exist yet", and until it exists it cannot be taken away from the phone.
+ * This is the testable half of that move; `CrewPayrollPage.tsx` is the other.
  *
- * Está separado de la pantalla por un motivo concreto y no por gusto: lo que
- * hay aquí es dinero repartido entre N personas, y quiero poder probarlo sin
- * renderizar nada. Las cuatro decisiones que cuestan plata están todas en este
- * fichero.
+ * It is kept apart from the screen for a concrete reason and not out of taste:
+ * what lives here is money split among N people, and I want to be able to test
+ * it without rendering anything. The four decisions that cost money are all in
+ * this file.
  *
- * ── 1. DOS PASOS, NO UNO ─────────────────────────────────────────────────
+ * ── 1. TWO STEPS, NOT ONE ────────────────────────────────────────────────
  *
- * El teléfono liquida y paga en un solo acto porque el pesador está en el lote
- * con el efectivo en la mano y no hay un segundo momento. Quien usa la consola
- * está sentado en un computador, y ahí los dos actos son distintos:
+ * The phone settles and pays in a single act because the weigher is out in the
+ * plot with the cash in his hand and there is no second moment. Whoever uses
+ * the console is sitting at a computer, and there the two acts are different:
  *
- *   LIQUIDAR   congela el trabajo de la semana al precio de la semana. Es el
- *              paso con carrera —el precio y las pesadas se mueven— y es el
- *              que necesita `expectedGrossCents`.
- *   PAGAR      entrega la plata contra un saldo que ya está escrito en el
- *              libro. Aquí no hay bruto que se mueva: sólo puede moverlo otro
- *              movimiento (un anticipo, una deducción, otro pago).
+ *   SETTLE   freezes the week's work at the week's price. This is the step
+ *            with a race in it —the price and the weigh-ins move— and the one
+ *            that needs `expectedGrossCents`.
+ *   PAY      hands over the cash against a balance already written in the
+ *            ledger. There is no gross here that can move: only another
+ *            movement can move it (an advance, a deduction, another payment).
  *
- * Separarlos compra tres cosas que en un solo acto no se tienen:
+ * Splitting them buys three things a single act does not give you:
  *
- *   a. **La planilla se imprime sobre cifras definitivas.** Después de
- *      liquidar no queda ni una línea `weekly_price` sin fijar, así que el
- *      papel que la gente firma no lleva ninguna cifra provisional. En un solo
- *      acto el papel sale del mismo botón que la escritura y nadie lo lee
- *      antes.
- *   b. **No todo el que cobró trabajó, ni todo el que trabajó aparece.** El
- *      sábado falta gente. Liquidar a los treinta y pagar a los veintiséis que
- *      llegaron es la operación real; en un solo acto habría que registrar el
- *      pago de cuatro personas que no han recibido nada.
- *   c. **El paso caro es reversible por separado.** Anular una liquidación
- *      suelta las labores; reversar un pago devuelve el saldo. Con los dos
- *      pegados, deshacer siempre deshace las dos cosas.
+ *   a. **The payroll sheet prints off final figures.** After settling there is
+ *      not one `weekly_price` line left unfixed, so the paper people sign
+ *      carries no provisional figure. In a single act the paper comes out of
+ *      the same button as the write and nobody reads it first.
+ *   b. **Not everyone who got paid worked, nor does everyone who worked show
+ *      up.** People are missing on Saturday. Settling thirty and paying the
+ *      twenty-six who came is the real operation; in a single act you would
+ *      have to record a payment for four people who received nothing.
+ *   c. **The expensive step can be reversed on its own.** Voiding a settlement
+ *      releases the work items; reversing a payment gives the balance back.
+ *      Glued together, undoing always undoes both.
  *
- * Y el costo de separarlos —el estado a medias, "liquidado y sin pagar"— se
- * paga con una propiedad que hace falta de todos modos: **este módulo no
- * guarda ese estado, lo lee**. Un trabajador liquidado y sin pagar es
- * exactamente uno con saldo a favor y sin labores pendientes, y eso se deduce
- * del servidor en cada carga. No hay media nómina invisible; hay una lista que
- * el paso 2 vuelve a mostrar sola, aunque se cierre el navegador.
+ * And the cost of splitting them —the half-done state, "settled and unpaid"—
+ * is paid for by a property that is needed anyway: **this module does not
+ * store that state, it reads it**. A worker who is settled and unpaid is
+ * exactly one with a credit balance and no outstanding work items, and that is
+ * derived from the server on every load. There is no invisible half payroll;
+ * there is a list that step 2 shows again by itself, even if the browser is
+ * closed.
  *
- * ── 2. LA GUARDA DE LA CARRERA, PARA UN GRUPO ────────────────────────────
+ * ── 2. THE RACE GUARD, FOR A GROUP ───────────────────────────────────────
  *
- * Para una persona ya existe: `expectedGrossCents` + `payableIds`, y el
- * servidor devuelve 409 GROSS_CHANGED sin escribir nada (`api/grossChange.ts`).
- * Para treinta hay que decidir qué significa "no pagar a nadie".
+ * For one person it already exists: `expectedGrossCents` + `payableIds`, and
+ * the server answers 409 GROSS_CHANGED without writing anything
+ * (`api/grossChange.ts`). For thirty, somebody has to decide what "pay nobody"
+ * means.
  *
- * **La aprobación es de todo o nada; la escritura no puede serlo.** No existe
- * una transacción HTTP que abarque treinta liquidaciones, y fingir que sí la
- * hay sería peor que no tenerla. Así que:
+ * **Approval is all or nothing; the writing cannot be.** There is no HTTP
+ * transaction that spans thirty settlements, and pretending there is would be
+ * worse than not having one. So:
  *
- *   ANTES de escribir   `checkSettleRun` vuelve a leer lo pendiente de TODOS
- *                       los aprobados y compara. Si a UNO le cambió el bruto,
- *                       no se escribe nada de nadie y la pantalla dice de
- *                       quién y qué se movió. Esto es la parte de todo o nada,
- *                       y es la que importa, porque es donde está el 99 % de
- *                       las carreras: minutos de alguien mirando la pantalla.
- *   DURANTE la escritura  `runSettlements` va persona a persona y **se detiene
- *                       en el primer rechazo**. El servidor sigue teniendo la
- *                       última palabra —cada llamada lleva su
- *                       `expectedGrossCents`— y si dice que no, el mundo se
- *                       movió en los milisegundos de la corrida: seguir
- *                       firmando cifras sería firmar a ciegas.
- *   DESPUÉS             queda un parte exacto: quién entró, quién no y por
- *                       qué, y un deshacer para lo que sí entró.
+ *   BEFORE writing   `checkSettleRun` re-reads what is outstanding for ALL the
+ *                    approved people and compares. If ONE person's gross
+ *                    moved, nothing is written for anybody and the screen says
+ *                    whose and what moved. This is the all-or-nothing part,
+ *                    and it is the part that matters, because it is where 99%
+ *                    of the races are: minutes of somebody looking at a screen.
+ *   DURING writing   `runSettlements` goes person by person and **stops at the
+ *                    first refusal**. The server still has the last word
+ *                    —every call carries its own `expectedGrossCents`— and if
+ *                    it says no, the world moved within the milliseconds of
+ *                    the run: going on signing figures would be signing blind.
+ *   AFTER            an exact report is left: who got in, who did not and why,
+ *                    and an undo for what did.
  *
- * Lo que NO bloquea, y hay que decirlo porque es la tentación: que a alguien
- * le entre una pesada nueva. La liquidación nombra los `payableIds` que se
- * aprobaron, así que una pesada que llegó después simplemente no está dentro y
- * queda pendiente para la próxima. Bloquear por eso sería gritar «cambió» cada
- * vez que el pesador registra algo un sábado por la tarde, que es justo cuando
- * más registra. Se avisa (`arrivals`) y no se bloquea.
+ * What it does NOT block, and this has to be said because it is the
+ * temptation: a new weigh-in landing on somebody. The settlement names the
+ * `payableIds` that were approved, so a weigh-in that arrived afterwards
+ * simply is not inside it and stays outstanding for next time. Blocking on
+ * that would mean shouting "it changed" every time the weigher records
+ * something on a Saturday afternoon, which is exactly when he records most.
+ * It is announced (`arrivals`), not blocked.
  *
- * ── 3. NINGÚN CERO QUE SIGNIFIQUE «NO SÉ» ────────────────────────────────
+ * ── 3. NO ZERO THAT MEANS "I DON'T KNOW" ─────────────────────────────────
  *
- * `CrewMember.payables` y `CrewMember.balance` son `null` cuando no se
- * pudieron leer, y ese null viaja hasta el render. Un empleado cuyo pendiente
- * no se pudo leer no se puede marcar: no se aprueba lo que no se ha visto.
+ * `CrewMember.payables` and `CrewMember.balance` are `null` when they could
+ * not be read, and that null travels all the way to the render. An employee
+ * whose outstanding work could not be read cannot be ticked: you do not
+ * approve what you have not seen.
  *
- * ── 4. EL DESHACER ───────────────────────────────────────────────────────
+ * ── 4. THE UNDO ──────────────────────────────────────────────────────────
  *
- * `undoRun`, con el orden del teléfono y por su mismo motivo: primero se
- * reversan los pagos y después se anulan las liquidaciones, porque anular
- * escribe su propio reverso del devengo y al revés quedaría un pago en pie
- * contra un devengo que ya no existe.
+ * `undoRun`, in the phone's order and for the phone's reason: the payments are
+ * reversed first and the settlements voided after, because voiding writes its
+ * own reversal of the accrual, and the other way round would leave a payment
+ * standing against an accrual that no longer exists.
  */
 import { api, grossChangeOf } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -114,42 +116,42 @@ import type { MintId } from "../../lib/writeOnce";
 import type { PayrollRow, PayrollScope } from "../documents/documents";
 
 /* ------------------------------------------------------------------ */
-/* La cuadrilla                                                        */
+/* The crew                                                            */
 /* ------------------------------------------------------------------ */
 
 /**
- * Un empleado con lo que la finca sabe de él hoy.
+ * One employee, with what the farm knows about them today.
  *
- * `payables` y `balance` son nulos cuando la lectura falló, NUNCA cero. Un
- * cero aquí diría "no debe nada", que es una afirmación, y lo que ocurrió fue
- * que no se pudo preguntar.
+ * `payables` and `balance` are null when the read failed, NEVER zero. A zero
+ * here would say "owes nothing", which is an assertion, and what actually
+ * happened is that we could not ask.
  */
 export interface CrewMember {
   worker: Worker;
-  /** "Nombre Apellido", ya compuesto: la tabla y el papel lo piden igual. */
+  /** "First Last", already composed: the table and the paper want it the same. */
   name: string;
   payables: Payables | null;
   balance: Balance | null;
-  /** Por qué no se pudo leer, cuando no se pudo. */
+  /** Why it could not be read, when it could not. */
   failure: string | null;
 }
 
 const fullName = (w: Worker) => `${w.name} ${w.lastName}`.trim();
 
 /**
- * La cuadrilla entera, en una lectura.
+ * The whole crew, in one read.
  *
- * Un `GET /v1/balances` para todos y un `GET /v1/workers/{id}/payables` por
- * cabeza. El abanico es deliberado y no hay ruta que lo evite: lo pendiente es
- * por trabajador y tiene que venir de la misma consulta que va a correr la
- * liquidación, o la pantalla y la escritura discreparían — que es exactamente
- * el fallo que `expectedGrossCents` existe para atrapar, y no tiene sentido
- * provocarlo aquí para ahorrar peticiones.
+ * One `GET /v1/balances` for everybody and one `GET /v1/workers/{id}/payables`
+ * per head. The fan-out is deliberate and no route avoids it: what is
+ * outstanding is per worker and has to come from the same query the settlement
+ * will run against, or the screen and the write would disagree — which is
+ * exactly the failure `expectedGrossCents` exists to catch, and there is no
+ * sense in causing it here to save requests.
  *
- * Un fallo por trabajador NO tumba la pantalla: esa fila queda ilegible y las
- * demás siguen siendo pagables. Un fallo de `/v1/balances` deja todos los
- * saldos en null, y entonces el paso 2 no se puede aprobar — que es lo
- * correcto: no se entrega plata contra un saldo que no se pudo leer.
+ * One worker failing does NOT take the screen down: that row becomes
+ * unreadable and the rest stay payable. A failure of `/v1/balances` leaves
+ * every balance null, and then step 2 cannot be approved — which is right: you
+ * do not hand over cash against a balance you could not read.
  */
 export async function loadCrew(): Promise<CrewMember[]> {
   const [workers, balances] = await Promise.all([
@@ -184,12 +186,12 @@ export async function loadCrew(): Promise<CrewMember[]> {
 }
 
 /**
- * El saldo del libro, de las dos rutas que lo derivan.
+ * The ledger balance, from either of the two routes that derive it.
  *
- * `/v1/balances` y `/v1/workers/{id}/payables` calculan el mismo `SUM` sobre
- * el mismo libro; tomar la segunda cuando la primera no llegó no es mezclar
- * dos números, es el mismo número por otra puerta. Null cuando no hay ninguna
- * de las dos, y entonces la fila no se puede aprobar.
+ * `/v1/balances` and `/v1/workers/{id}/payables` compute the same `SUM` over
+ * the same ledger; taking the second when the first never arrived is not
+ * mixing two numbers, it is the same number through another door. Null when
+ * neither is there, and then the row cannot be approved.
  */
 export function balanceCentsOf(m: CrewMember): number | null {
   if (m.balance) return m.balance.balanceCents;
@@ -198,31 +200,31 @@ export function balanceCentsOf(m: CrewMember): number | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* Paso 1 — liquidar                                                   */
+/* Step 1 — settle                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Lo que una persona aporta a la corrida, tal y como se leyó en pantalla. */
+/** What one person contributes to the run, exactly as it was read on screen. */
 export interface SettleApproval {
   workerId: Uuid;
   name: string;
   documentNumber: string | null;
   /**
-   * LA CIFRA DEL SERVIDOR (`payables.grossCents`), no una suma nuestra sobre
-   * la tabla. Sumar aquí sería una segunda implementación del precio, y el día
-   * que cambie una regla de redondeo las dos discreparían — y la que se
-   * escribe es la del servidor.
+   * THE SERVER'S FIGURE (`payables.grossCents`), not a sum of our own over the
+   * table. Adding it up here would be a second implementation of the pricing,
+   * and the day a rounding rule changes the two would disagree — and the one
+   * that gets written is the server's.
    */
   grossCents: number;
-  /** Kilos (o arrobas, o canastillas). Null cuando nada se pagó por peso. */
+  /** Kilos (or arrobas, or crates). Null when nothing was paid by weight. */
   quantity: number | null;
-  /** La unidad de esos kilos, para el encabezado del papel. */
+  /** The unit those kilos are in, for the heading on the paper. */
   unitLabel: string | null;
   payableIds: Uuid[];
-  /** Las líneas que hacen esa cifra: sin ellas no se puede decir QUÉ cambió. */
+  /** The lines behind that figure: without them we cannot say WHAT changed. */
   lines: PayableLine[];
 }
 
-/** Null cuando esta persona no tiene nada pendiente que liquidar. */
+/** Null when this person has nothing outstanding to settle. */
 export function settleApprovalOf(m: CrewMember): SettleApproval | null {
   const lines = m.payables?.workRecords ?? [];
   if (!m.payables || lines.length === 0) return null;
@@ -239,24 +241,24 @@ export function settleApprovalOf(m: CrewMember): SettleApproval | null {
   };
 }
 
-/** True cuando alguna línea sigue al precio de la semana: provisional, no firme. */
+/** True when some line is still at the week's price: provisional, not firm. */
 export const hasProvisional = (a: SettleApproval): boolean =>
   a.lines.some((l) => l.rateSource === "weekly_price");
 
-/** Lo mismo que le pasa a una persona, con nombre encima. */
+/** The same thing that happens to one person, with a name on top. */
 export interface CrewDrift extends GrossChange {
   workerId: Uuid;
   name: string;
 }
 
-/** Trabajo que llegó después de cargar la pantalla. No bloquea; se avisa. */
+/** Work that landed after the screen loaded. Does not block; is announced. */
 export interface Arrival {
   workerId: Uuid;
   name: string;
   lines: PayableLine[];
 }
 
-/** Alguien de quien no se pudo confirmar la cifra. Bloquea. */
+/** Somebody whose figure could not be confirmed. Blocks. */
 export interface Unreadable {
   workerId: Uuid;
   name: string;
@@ -264,11 +266,11 @@ export interface Unreadable {
 }
 
 export interface CrewCheck {
-  /** Si trae uno solo, no se escribe nada de nadie. */
+  /** If it carries even one, nothing is written for anybody. */
   drifts: CrewDrift[];
-  /** Tampoco se escribe si hay alguno: no se aprueba lo que no se pudo leer. */
+  /** Nothing is written for these either: you do not approve what you could not read. */
   unreadable: Unreadable[];
-  /** Informativo. */
+  /** Informational. */
   arrivals: Arrival[];
 }
 
@@ -276,19 +278,18 @@ export const checkPassed = (c: CrewCheck): boolean =>
   c.drifts.length === 0 && c.unreadable.length === 0;
 
 /**
- * Volver a mirar lo de una persona y decir si se movió.
+ * Look again at one person's figures and say whether they moved.
  *
- * Lo que se compara es LA CIFRA QUE SE VA A FIRMAR: la suma de los
- * `payableIds` aprobados, a como estén valorados ahora. Una pesada nueva no
- * entra en esa suma —la liquidación nombra su conjunto— y por eso no es
- * diferencia. Una pesada aprobada que desapareció sí, y un precio de semana
- * que se movió también.
+ * What gets compared is THE FIGURE THAT IS ABOUT TO BE SIGNED: the sum of the
+ * approved `payableIds`, priced as they stand now. A new weigh-in is not in
+ * that sum —the settlement names its own set— and so it is not a difference.
+ * An approved weigh-in that vanished is, and a week's price that moved is too.
  *
- * La explicación la arma `explainGrossChange`, el mismo código que traduce el
- * 409 del servidor en la pantalla de una persona. Aquí se le da de comer un
- * `ServerGrossDetails` construido en local, para que la frase que lee el
- * usuario sea literalmente la misma en los dos sitios y no dos redacciones que
- * se parecen.
+ * The explanation is built by `explainGrossChange`, the same code that turns
+ * the server's 409 into words on the single-person screen. Here it is fed a
+ * `ServerGrossDetails` assembled locally, so that the sentence the user reads
+ * is literally the same in both places rather than two similar-looking
+ * wordings.
  */
 export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
   const freshById = new Map(fresh.workRecords.map((l) => [l.id, l] as const));
@@ -298,8 +299,8 @@ export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
     survivors.length === a.payableIds.length &&
     fresh.workRecords.length === a.payableIds.length;
 
-  // Si el conjunto es idéntico, la cifra que vale es la del servidor, no una
-  // suma nuestra. Sólo cuando ya no lo es hay que recomponerla línea a línea.
+  // If the set is identical, the figure that counts is the server's, not a sum
+  // of our own. Only once it is not do we have to rebuild it line by line.
   const actualCents = sameSet
     ? fresh.grossCents
     : survivors.reduce((s, id) => s + (freshById.get(id)?.amountCents ?? 0), 0);
@@ -307,12 +308,11 @@ export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
   if (actualCents === a.grossCents && survivors.length === a.payableIds.length) return null;
 
   /**
-   * El precio de cada semana, AHORA, leído de las líneas frescas. El servidor
-   * manda esto en su 409; aquí se deduce de lo pendiente, que es la misma
-   * fuente. `explainGrossChange` sólo reporta una semana cuando ese precio
-   * difiere del que llevaban las líneas aprobadas — es una comparación, no una
-   * lectura, y por eso una pesada tardía no se anuncia como un cambio de
-   * precio.
+   * Each week's price, NOW, read off the fresh lines. The server sends this in
+   * its 409; here it is derived from what is outstanding, which is the same
+   * source. `explainGrossChange` only reports a week when that price differs
+   * from the one the approved lines carried — it is a comparison, not a read,
+   * and that is why a late weigh-in is never announced as a price change.
    */
   const priceNow = new Map<DayISO, number>();
   for (const l of fresh.workRecords) {
@@ -324,7 +324,7 @@ export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
     actualCents,
     addedPayableIds: fresh.workRecords.filter((l) => !approved.has(l.id)).map((l) => l.id),
     removedPayableIds: a.payableIds.filter((id) => !freshById.has(id)),
-    // Aquí SIEMPRE se sabe qué se aprobó: lo aprobó esta misma pantalla.
+    // Here we ALWAYS know what was approved: this very screen approved it.
     payableIdsProvided: true,
     weeksInSettlement: [...priceNow].map(([weekStart, priceCents]) => ({
       weekStart,
@@ -340,10 +340,10 @@ export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
 }
 
 /**
- * La comprobación del grupo, justo antes de escribir. No escribe nada.
+ * The group check, right before writing. Writes nothing.
  *
- * Una lectura por persona, en paralelo. Es lo que cuesta poder decir «no se
- * pagó a nadie» y ser cierto.
+ * One read per person, in parallel. That is what it costs to be able to say
+ * "nobody was paid" and have it be true.
  */
 export async function checkSettleRun(approvals: SettleApproval[]): Promise<CrewCheck> {
   const out: CrewCheck = { drifts: [], unreadable: [], arrivals: [] };
@@ -376,12 +376,12 @@ export async function checkSettleRun(approvals: SettleApproval[]): Promise<CrewC
 }
 
 /* ------------------------------------------------------------------ */
-/* Paso 2 — pagar                                                      */
+/* Step 2 — pay                                                        */
 /* ------------------------------------------------------------------ */
 
 /**
- * Lo que se le entrega a una persona: el saldo que el libro dice que se le
- * debe, leído en pantalla y vuelto a comprobar antes de escribir.
+ * What gets handed to one person: the balance the ledger says they are owed,
+ * read on screen and checked again before writing.
  */
 export interface PayApproval {
   workerId: Uuid;
@@ -390,7 +390,7 @@ export interface PayApproval {
   amountCents: number;
 }
 
-/** Null cuando no hay saldo a favor, o cuando no se pudo leer. */
+/** Null when there is no credit balance, or when it could not be read. */
 export function payApprovalOf(m: CrewMember): PayApproval | null {
   const cents = balanceCentsOf(m);
   if (cents === null || cents <= 0) return null;
@@ -419,18 +419,20 @@ export const payCheckPassed = (c: PayCheck): boolean =>
   c.drifts.length === 0 && c.unreadable.length === 0;
 
 /**
- * La misma guarda, aplicada al otro número.
+ * The same guard, applied to the other number.
  *
- * Después de liquidar no hay bruto que se mueva: lo que puede haber cambiado
- * es el saldo, y sólo por otro movimiento —un anticipo entregado en el lote,
- * una deducción, un pago hecho desde el teléfono—. Si el saldo de UNO no es el
- * que se aprobó, no se le paga a nadie: entregar $300.000 aprobados sobre un
- * saldo que ya bajó a $120.000 es exactamente el sobrepago que
- * `AMOUNT_EXCEEDS_BALANCE` atrapa de a uno, dicho antes y para todos.
+ * After settling there is no gross left to move: what may have changed is the
+ * balance, and only through another movement —an advance handed over out in
+ * the plot, a deduction, a payment made from the phone. If ONE person's
+ * balance is not the one that was approved, nobody gets paid: handing over an
+ * approved $300.000 against a balance that has already dropped to $120.000 is
+ * exactly the overpayment `AMOUNT_EXCEEDS_BALANCE` catches one at a time, said
+ * earlier and for everybody.
  *
- * Un saldo que SUBIÓ tampoco pasa callando. Pagar de menos no pierde plata,
- * pero manda a la persona a casa con la cuenta abierta y sin que nadie se lo
- * haya dicho — y el que firma la planilla firma un número que ya no es el suyo.
+ * A balance that went UP does not pass in silence either. Underpaying loses no
+ * money, but it sends the person home with the account still open and nobody
+ * having told them — and whoever signs the payroll sheet signs a number that
+ * is no longer theirs.
  */
 export async function checkPayRun(approvals: PayApproval[]): Promise<PayCheck> {
   const out: PayCheck = { drifts: [], unreadable: [] };
@@ -466,40 +468,40 @@ export async function checkPayRun(approvals: PayApproval[]): Promise<PayCheck> {
 }
 
 /* ------------------------------------------------------------------ */
-/* La corrida                                                          */
+/* The run                                                             */
 /* ------------------------------------------------------------------ */
 
 export type RunStatus = "done" | "refused" | "skipped";
 
 /**
- * Una línea del parte. Sirve para los dos pasos porque el papel también es el
- * mismo: quién, cuántos kilos, cuánto, y una firma.
+ * One line of the report. It serves both steps because the paper is the same
+ * too: who, how many kilos, how much, and a signature.
  */
 export interface RunRow {
   workerId: Uuid;
   name: string;
   documentNumber: string | null;
   quantity: number | null;
-  /** Sólo en el paso de liquidar. */
+  /** Only in the settle step. */
   grossCents: number | null;
-  /** Sólo en el paso de pagar. */
+  /** Only in the pay step. */
   paidCents: number | null;
-  /** Lo que el libro dice después del pago. Null cuando no se llegó a pagar. */
+  /** What the ledger says after the payment. Null when it never got paid. */
   balanceAfterCents: number | null;
   status: RunStatus;
   settlementId: Uuid | null;
   paymentId: Uuid | null;
-  /** Por qué no entró, en castellano. Null cuando entró. */
+  /** Why they did not get in, in Spanish for the reader. Null when they did. */
   reason: string | null;
 }
 
-/** Lo que el filtro y las casillas dejaron fuera. Va a la pantalla Y al papel. */
+/** What the filter and the tickboxes left out. Goes to the screen AND the paper. */
 export interface RunScope {
-  /** Una frase por filtro activo, ya en castellano. */
+  /** One sentence per active filter, already in Spanish for the reader. */
   filters: string[];
-  /** Cuánta gente había antes de filtrar y destildar. */
+  /** How many people there were before filtering and unticking. */
   crewSize: number;
-  /** Cuánto sumaba esa cuadrilla entera. */
+  /** What that whole crew added up to. */
   crewTotalCents: number;
 }
 
@@ -508,27 +510,27 @@ export interface PayrollRun {
   rows: RunRow[];
   scope: RunScope;
   method: PayMethod | null;
-  /** ISO. Sólo para ordenar y para el papel. */
+  /** ISO. Only for ordering and for the paper. */
   at: string;
-  /** False cuando se detuvo a mitad: hay filas `refused` o `skipped`. */
+  /** False when it stopped halfway: there are `refused` or `skipped` rows. */
   complete: boolean;
   unitLabel: string | null;
 }
 
 /**
- * La corrida se detuvo a mitad.
+ * The run stopped halfway.
  *
- * Se lanza DENTRO de `useWriteOnce.run` a propósito. `run` retira los ids
- * cuando la función termina bien —la próxima nómina igual a esta es una nómina
- * nueva y no puede confundirse con un reintento—, pero una corrida a medias
- * necesita justo lo contrario: que los ids sobrevivan, para que «Reintentar»
- * vuelva a mandar los mismos y el servidor conteste con lo que ya escribió
- * (`ON CONFLICT (id) DO NOTHING`) en vez de escribirlo dos veces. Lanzar es la
- * única forma de decirle a `run` que esto no fue un final.
+ * It is thrown INSIDE `useWriteOnce.run` on purpose. `run` retires the ids
+ * when the function finishes cleanly —the next payroll identical to this one
+ * is a new payroll and must not be mistaken for a retry— but a half-finished
+ * run needs exactly the opposite: the ids must survive, so that "Reintentar"
+ * sends the same ones again and the server answers with what it already wrote
+ * (`ON CONFLICT (id) DO NOTHING`) instead of writing it twice. Throwing is the
+ * only way to tell `run` that this was not an ending.
  */
 export class RunIncomplete extends Error {
   constructor(readonly rows: RunRow[]) {
-    super("La nómina no se completó");
+    super("The payroll run did not complete");
     this.name = "RunIncomplete";
   }
 }
@@ -552,12 +554,12 @@ const baseRow = (
 });
 
 /**
- * Por qué se rechazó, dicho para alguien que está de pie con plata en la mano.
+ * Why it was refused, said for somebody standing there with cash in hand.
  *
- * Los tres códigos que importan tienen nombre propio; el resto cae en el
- * mensaje general de `errors.ts`, que ya está traducido. Lo que no se hace
- * nunca es inventar una causa: `messageFor` de un fallo de red dice que fue la
- * red, y eso es lo que hay que leer.
+ * The three codes that matter get their own wording; everything else falls
+ * through to the general message in `errors.ts`, which is already phrased for
+ * a reader. What is never done is inventing a cause: `messageFor` on a network
+ * failure says it was the network, and that is what should be read.
  */
 export function reasonOf(e: unknown): string {
   const change = grossChangeOf(e);
@@ -579,16 +581,16 @@ export function reasonOf(e: unknown): string {
 }
 
 /**
- * Liquidar, persona a persona, deteniéndose en el primer rechazo.
+ * Settle, person by person, stopping at the first refusal.
  *
- * Secuencial y no en paralelo, y no es por cortesía con el servidor: en
- * paralelo no existe "el primero que falla", y treinta escrituras que salieron
- * a la vez no se pueden dejar de hacer. En serie hay un punto de parada en
- * cada iteración, y el parte puede decir la verdad: éstas entraron, ésta se
- * rechazó, éstas ni se intentaron.
+ * Sequential and not parallel, and not out of politeness to the server: in
+ * parallel there is no such thing as "the first one that fails", and thirty
+ * writes that already left cannot be un-sent. In series there is a stopping
+ * point at every iteration, and the report can tell the truth: these got in,
+ * this one was refused, these were never attempted.
  *
- * Cada `id` viene de `mint`, que es estable por intención: reintentar la misma
- * corrida reenvía los mismos ids y el servidor contesta con lo que ya escribió.
+ * Every `id` comes from `mint`, which is stable by intent: retrying the same
+ * run resends the same ids and the server answers with what it already wrote.
  */
 export async function runSettlements(
   approvals: SettleApproval[],
@@ -606,7 +608,7 @@ export async function runSettlements(
         expectedGrossCents: a.grossCents,
         expectedLines: a.lines,
         note,
-        id: mint(`liquidacion:${a.workerId}`),
+        id: mint(`settlement:${a.workerId}`),
       });
       rows[i] = { ...rows[i], status: "done", settlementId: s.id, grossCents: s.grossCents };
     } catch (e) {
@@ -618,11 +620,11 @@ export async function runSettlements(
 }
 
 /**
- * Pagar, con la misma forma.
+ * Pay, in the same shape.
  *
- * `api.createPayment` sin `payableIds`: aquí no se liquida nada, se entrega
- * contra un saldo que el paso 1 ya escribió. Es lo que hace que este paso no
- * tenga carrera de bruto y que su única guarda sea la del saldo.
+ * `api.createPayment` with no `payableIds`: nothing is settled here, cash is
+ * handed over against a balance step 1 already wrote. That is what makes this
+ * step free of a gross race and leaves the balance as its only guard.
  */
 export async function runPayments(
   approvals: PayApproval[],
@@ -636,7 +638,7 @@ export async function runPayments(
     const a = approvals[i];
     try {
       const p = await api.createPayment({
-        id: mint(`pago:${a.workerId}`),
+        id: mint(`payment:${a.workerId}`),
         workerId: a.workerId,
         amountCents: a.amountCents,
         method,
@@ -660,10 +662,10 @@ export async function runPayments(
 export const isComplete = (rows: RunRow[]): boolean => rows.every((r) => r.status === "done");
 
 /* ------------------------------------------------------------------ */
-/* Deshacer                                                            */
+/* Undo                                                                */
 /* ------------------------------------------------------------------ */
 
-/** Lo que una nómina lanzada dejó escrito, y por tanto lo que se puede quitar. */
+/** What a launched payroll left written, and therefore what can be taken back. */
 export interface UndoHandle {
   payments: Uuid[];
   settlements: Uuid[];
@@ -672,7 +674,7 @@ export interface UndoHandle {
 export interface UndoResult {
   paymentsReversed: number;
   settlementsVoided: number;
-  /** Las que ya estaban deshechas. No son fallos: son un reintento que llegó. */
+  /** The ones already undone. Not failures: they are a retry that arrived. */
   alreadyUndone: number;
   failures: string[];
 }
@@ -681,22 +683,22 @@ export const undoIsEmpty = (h: UndoHandle | null): boolean =>
   !h || (h.payments.length === 0 && h.settlements.length === 0);
 
 /**
- * Deshacer la nómina: primero los pagos, después las liquidaciones.
+ * Undo the payroll: the payments first, the settlements after.
  *
- * El orden es el del teléfono (`PaymentsPanel.undoLastRun`) y por su mismo
- * motivo: anular una liquidación escribe su propio reverso del devengo, así
- * que hacerlo al revés dejaría un pago en pie contra un devengo que ya no
- * existe — un saldo negativo que nadie sabe explicar.
+ * The order is the phone's (`PaymentsPanel.undoLastRun`) and for the phone's
+ * reason: voiding a settlement writes its own reversal of the accrual, so
+ * doing it the other way round would leave a payment standing against an
+ * accrual that no longer exists — a negative balance nobody can explain.
  *
- * No se detiene en el primer fallo, y ésta es la excepción a la regla de
- * arriba: aquí no se está firmando nada nuevo, se está retirando. Dejar la
- * mitad de los pagos en pie porque el séptimo dio error de red es peor que
- * seguir y decir cuáles quedaron.
+ * It does NOT stop at the first failure, and this is the exception to the rule
+ * above: nothing new is being signed here, something is being taken back.
+ * Leaving half the payments standing because the seventh hit a network error
+ * is worse than carrying on and saying which ones are left.
  *
- * Lo ya deshecho —409 ALREADY_REVERSED, SETTLEMENT_ALREADY_VOID— se cuenta
- * aparte y no como fallo: es exactamente lo que contesta un segundo intento
- * del mismo deshacer, y llamarlo error mandaría a alguien a arreglar algo que
- * ya está bien.
+ * What was already undone —409 ALREADY_REVERSED, SETTLEMENT_ALREADY_VOID— is
+ * counted separately and not as a failure: it is exactly what a second attempt
+ * at the same undo answers, and calling it an error would send somebody off to
+ * fix something that is already fine.
  */
 export async function undoRun(
   handle: UndoHandle,
@@ -722,7 +724,7 @@ export async function undoRun(
 
   for (const id of handle.settlements) {
     try {
-      await api.voidSettlement(id, mint(`anulacion:${id}`));
+      await api.voidSettlement(id, mint(`void:${id}`));
       out.settlementsVoided++;
     } catch (e) {
       if (e instanceof ApiError && e.code === "SETTLEMENT_ALREADY_VOID") out.alreadyUndone++;
@@ -732,7 +734,7 @@ export async function undoRun(
   return out;
 }
 
-/** Lo escrito por una corrida, listo para deshacerse. */
+/** What a run wrote, ready to be undone. */
 export function undoHandleOf(runs: PayrollRun[]): UndoHandle {
   const payments: Uuid[] = [];
   const settlements: Uuid[] = [];
@@ -746,16 +748,16 @@ export function undoHandleOf(runs: PayrollRun[]): UndoHandle {
 }
 
 /* ------------------------------------------------------------------ */
-/* El papel                                                            */
+/* The paper                                                           */
 /* ------------------------------------------------------------------ */
 
 /**
- * Sólo las filas que ENTRARON llevan renglón en la planilla.
+ * Only the rows that GOT IN get a line on the payroll sheet.
  *
- * Es la hoja que se firma. Un renglón con una firma al lado para alguien a
- * quien no se le entregó nada es una invitación a firmarlo. Quien no entró se
- * nombra arriba y abajo, en el alcance, que es donde se lee y no donde se
- * firma.
+ * This is the sheet people sign. A line with a signature box next to it, for
+ * somebody who was handed nothing, is an invitation to sign it. Whoever did
+ * not get in is named above and below, in the scope, which is where you read
+ * and not where you sign.
  */
 export function payrollRowsOf(run: PayrollRun): PayrollRow[] {
   return run.rows
@@ -765,8 +767,8 @@ export function payrollRowsOf(run: PayrollRun): PayrollRow[] {
       documentNumber: r.documentNumber,
       quantity: r.quantity,
       grossCents: r.grossCents ?? r.paidCents ?? 0,
-      // Null, no cero: en el paso de liquidar todavía no se ha leído ningún
-      // saldo posterior, y un "$0" ahí diría "queda a paz y salvo".
+      // Null, not zero: in the settle step no later balance has been read yet,
+      // and a "$0" there would say "square with everybody".
       balanceCents: r.balanceAfterCents,
       paidCents: r.paidCents,
       status: "open" as const,
@@ -774,21 +776,20 @@ export function payrollRowsOf(run: PayrollRun): PayrollRow[] {
 }
 
 /**
- * QUÉ TIENE QUE CONFESAR ESTE PAPEL.
+ * WHAT THIS PAPER HAS TO OWN UP TO.
  *
- * La planilla de liquidaciones ya nos mordió una vez: con un filtro puesto,
- * salía con el membrete de la finca, la fecha de hoy y una columna de firmas,
- * y en ninguna parte decía que era el resultado de una búsqueda
- * (`documents.ts`, `PayrollScope`). Aquí hay dos formas de acotar y las dos
- * cuentan:
+ * The settlements sheet bit us once already: with a filter on, it came out
+ * with the farm's letterhead, today's date and a column of signatures, and
+ * nowhere did it say it was the result of a search (`documents.ts`,
+ * `PayrollScope`). Here there are two ways to narrow it down and both count:
  *
- *   el buscador       lo mismo de siempre;
- *   las casillas      destildar a cuatro personas de treinta produce una
- *                     planilla igual de parcial, y es MÁS fácil de hacer sin
- *                     darse cuenta que escribir en un buscador.
+ *   the search box    the same as always;
+ *   the tickboxes     unticking four people out of thirty produces just as
+ *                     partial a sheet, and it is EASIER to do without
+ *                     noticing than typing into a search box.
  *
- * Y una tercera, que sólo tiene esta pantalla: quien no entró porque la
- * corrida se detuvo. Se nombra, uno por uno, con su motivo.
+ * And a third one that only this screen has: whoever did not get in because
+ * the run stopped. They are named, one by one, with their reason.
  */
 export function payrollScopeOf(run: PayrollRun): PayrollScope {
   const filters = [...run.scope.filters];
@@ -814,13 +815,13 @@ export function payrollScopeOf(run: PayrollRun): PayrollScope {
 
   return {
     filters,
-    // Cuántas líneas habría tenido la planilla completa de esta cuadrilla.
+    // How many lines the complete sheet for this crew would have had.
     totalRows: run.scope.crewSize,
     totalGrossCents: run.scope.crewTotalCents,
   };
 }
 
-/** True cuando el papel tiene que declararse parcial. */
+/** True when the paper has to declare itself partial. */
 export const runIsPartial = (run: PayrollRun): boolean =>
   payrollScopeOf(run).filters.length > 0;
 

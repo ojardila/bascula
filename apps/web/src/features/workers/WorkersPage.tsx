@@ -1,18 +1,18 @@
 /**
- * LA LISTA DE EMPLEADOS.
+ * THE EMPLOYEE LIST.
  *
- * La columna de la derecha decía «—» en todas las filas y sumaba «Total a
- * favor: $0», mientras el tablero decía $334.500 y el perfil de una sola
- * persona decía $184.500. La causa era mecánica: la columna leía
- * `w.balanceCents`, y `GET /v1/workers` nunca ha enviado ese campo. Un
- * `undefined` se pintaba como guion en cada fila y como cero en el pie.
+ * The right-hand column said "—" on every row and added up to "Total a favor:
+ * $0", while the dashboard said $334.500 and a single person's profile said
+ * $184.500. The cause was mechanical: the column read `w.balanceCents`, and
+ * `GET /v1/workers` has never sent that field. An `undefined` was painted as
+ * a dash on every row and as a zero in the footer.
  *
- * Ahora la cifra sale de donde sale en todas las demás pantallas —
- * `features/workers/owed.ts` — y de dos lecturas que esta pantalla puede
- * hacer en paralelo: `/v1/balances` para el libro y `/v1/work-records` para lo
- * que falta liquidar. Dos peticiones, no una por empleado: aquí la cifra se
- * lee, no se firma. Donde se firma —la nómina— se sigue leyendo `payables`
- * cabeza por cabeza, que es la consulta que corre la liquidación.
+ * Now the figure comes from where it comes from on every other screen —
+ * `features/workers/owed.ts` — and out of two reads this screen can do in
+ * parallel: `/v1/balances` for the ledger and `/v1/work-records` for what is
+ * left to settle. Two requests, not one per employee: here the figure is
+ * read, not signed. Where it is signed —payroll— `payables` is still read
+ * head by head, which is the query the settlement runs.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -28,7 +28,7 @@ import { formatDate } from "../../lib/dates";
 import { OwedFigure } from "./OwedFigure";
 import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
-import { EMPLEADO, PROVISIONAL_INCLUDES } from "../../lib/vocab";
+import { EMPLOYEE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 export function WorkersPage() {
   const navigate = useNavigate();
@@ -49,14 +49,14 @@ export function WorkersPage() {
   const money = can("money.read");
 
   /**
-   * Las dos mitades de la cuenta, cada una con su propio fallo, en una sola
-   * carga para que «todavía no llegó» y «no se pudo» sean estados distintos:
-   * mientras `ledger` es null la pantalla está cargando; cuando llega, cada
-   * mitad puede venir en null y eso ya significa «falló».
+   * The two halves of the account, each with its own failure, in a single
+   * load so that "hasn't arrived yet" and "couldn't be done" are distinct
+   * states: while `ledger` is null the screen is loading; once it arrives,
+   * each half may come back null, and that already means "it failed".
    *
-   * `.catch(() => null)` y no `?? []`: una lista vacía diría «nadie tiene
-   * saldo», que es una afirmación sobre la finca. El null viaja hasta la
-   * celda, que escribe un guion con su motivo.
+   * `.catch(() => null)` and not `?? []`: an empty list would say "nobody has
+   * a balance", which is an assertion about the farm. The null travels all
+   * the way to the cell, which writes a dash with its reason.
    */
   const { data: ledger } = useAsync(async () => {
     if (!money) return { balances: null, records: null, read: false };
@@ -78,7 +78,7 @@ export function WorkersPage() {
     const base: Column<Worker>[] = [
       {
         key: "name",
-        header: EMPLEADO.One,
+        header: EMPLOYEE.One,
         render: (w) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar src={w.photoUrl ?? undefined} sx={{ width: 36, height: 36 }}>
@@ -126,18 +126,18 @@ export function WorkersPage() {
       });
     }
     return base;
-    // `accountOf` cierra sobre `ledger` y `accounts`, que son las dependencias
-    // reales de la celda.
+    // `accountOf` closes over `ledger` and `accounts`, which are the cell's
+    // real dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [full, money, ledger, accounts]);
 
   if (denied) return <PermissionDenied moduleName="ver los empleados" />;
 
   /**
-   * El pie suma exactamente lo que dicen las filas, con la misma función que
-   * usa el tablero. Los saldos negativos —un anticipo que alguien carga— no
-   * se restan de lo que la finca debe: la plata que hay que contar el sábado
-   * no baja porque alguien deba.
+   * The footer adds up exactly what the rows say, with the same function the
+   * dashboard uses. Negative balances —an advance somebody is carrying— are
+   * not subtracted from what the farm owes: the cash to be counted out on
+   * Saturday does not go down because somebody is in debt.
    */
   const farmOwes = sumOwedToFarmWorkers((data ?? []).map(accountOf));
 
@@ -149,9 +149,9 @@ export function WorkersPage() {
         </Alert>
       )}
       <ModuleList<Worker>
-        title={EMPLEADO.Many}
-        singular={EMPLEADO.one}
-        plural={EMPLEADO.many}
+        title={EMPLOYEE.Many}
+        singular={EMPLOYEE.one}
+        plural={EMPLOYEE.many}
         rows={data}
         error={error}
         columns={columns}
@@ -163,13 +163,13 @@ export function WorkersPage() {
         searchPlaceholder="Buscar por nombre o identificación"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workers.write") ? () => navigate(`${EMPLEADO.path}/nuevo`) : undefined}
-        createLabel={`Nuevo ${EMPLEADO.one}`}
-        onRowClick={can("workers.profile") ? (w) => navigate(`${EMPLEADO.path}/${w.id}`) : undefined}
-        onEdit={can("workers.write") ? (w) => navigate(`${EMPLEADO.path}/${w.id}/editar`) : undefined}
+        onCreate={can("workers.write") ? () => navigate(`${EMPLOYEE.path}/nuevo`) : undefined}
+        createLabel={`Nuevo ${EMPLOYEE.one}`}
+        onRowClick={can("workers.profile") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}`) : undefined}
+        onEdit={can("workers.write") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}/editar`) : undefined}
         extraActions={
           can("money.pay")
-            ? (w) => [{ label: "Pagar empleado", onClick: () => navigate(`${EMPLEADO.path}/${w.id}/pagar`) }]
+            ? (w) => [{ label: "Pagar empleado", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
             : undefined
         }
         onDeactivate={
@@ -215,8 +215,9 @@ export function WorkersPage() {
                 )}
                 {farmOwes.isEstimate && ` (${PROVISIONAL_INCLUDES})`}
               </span>
-              {/* La suma dice de cuántos es. Un total con gente fuera, sin
-                  decirlo, es la misma mentira que arreglamos arriba. */}
+              {/* The sum says how many people it covers. A total with people
+                  left out of it, unannounced, is the same lie we fixed
+                  above. */}
               {ledger !== null && farmOwes.unreadable > 0 && (
                 <Box component="span" sx={{ color: "warning.dark" }}>
                   {farmOwes.unreadable === 1

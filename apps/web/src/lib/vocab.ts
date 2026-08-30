@@ -1,90 +1,91 @@
 /**
- * ── EL VOCABULARIO ───────────────────────────────────────────────────────
+ * ── THE VOCABULARY ───────────────────────────────────────────────────────
  *
- * Un término, un sitio donde se decide.
+ * One term, one place where it is decided.
  *
- * Este fichero existe porque «parcela» estaba escrita a mano en treinta y siete
- * sitios y «lote» —la misma tierra— en otros tantos, incluido el primer campo
- * del formulario que crea una parcela. El producto se contradecía a sí mismo, y
- * arreglarlo era una cacería. Ahora es una línea.
+ * This file exists because "parcela" was hand-written in thirty-seven places
+ * and "lote" —the same piece of land— in about as many, including the first
+ * field of the form that creates one. The product contradicted itself, and
+ * fixing that was a manhunt. Now it is one line.
  *
- * QUÉ ENTRA AQUÍ. Las palabras que nombran una COSA del oficio y que aparecen
- * en más de una pantalla: la tierra, la persona, la forma de pago, el estado de
- * una cifra, los tipos de asiento del libro. No entran las frases: una frase se
- * escribe donde se lee, y `features/harvest/text.ts` ya es el sitio de las
- * frases de cosecha.
+ * WHAT BELONGS HERE. The words that name a THING of the trade and that show up
+ * on more than one screen: the land, the person, the way someone is paid, the
+ * state of a figure, the entry kinds of the ledger. Sentences do not belong:
+ * a sentence is written where it is read, and `features/harvest/text.ts` is
+ * already the place for the harvest sentences.
  *
- * LA REGLA QUE MANDA SOBRE TODAS. **Un comprobante viejo y uno nuevo tienen que
- * leerse como el mismo documento.** Lo que se imprime —recibo de pago,
- * liquidación, planilla, en `features/documents/documents.ts`— cambia con
- * muchísimo más cuidado que lo que sólo se ve en pantalla: la pregunta no es
- * «¿es la mejor palabra?» sino «¿vale la pena que dos recibos del mismo año no
- * se parezcan?». Cada constante de aquí dice si sale en papel y qué se decidió.
+ * THE RULE THAT OUTRANKS THE REST. **An old receipt and a new one have to read
+ * as the same document.** What gets printed —payment receipt, settlement,
+ * payroll sheet, in `features/documents/documents.ts`— changes with far more
+ * care than what is only seen on screen: the question is not "is this the best
+ * word?" but "is it worth it that two receipts from the same year don't look
+ * alike?". Every constant here says whether it goes on paper and what was
+ * decided.
  *
- * LO QUE NO SE TOCA, porque lo eligió alguien que sabe del oficio: liquidar,
+ * WHAT NOBODY TOUCHES, because someone who knows the trade chose it: liquidar,
  * jornal, cuadrilla, planilla, pesada, anticipo, bruto, bodega, lata, saldo a
- * favor. Están bien.
+ * favor. They are right.
  *
- * Y hay una prueba —`vocab.test.ts`— que lee el código fuente y falla si
- * alguien vuelve a escribir a mano una de las palabras que este fichero jubiló.
+ * And there is a test —`vocab.test.ts`— that reads the source and fails if
+ * anyone hand-writes one of the words this file retired.
  */
 import type { LedgerKind, PayMode, TimeUnit } from "../api/types";
 
 /* ------------------------------------------------------------------ */
-/* 1. LA TIERRA — «lote», nunca «parcela»                              */
+/* 1. THE LAND — "lote", never "parcela"                               */
 /* ------------------------------------------------------------------ */
 
 /**
- * El teléfono dice «lote» en todas sus pantallas y en su recibo impreso, y no
- * conoce la palabra «parcela»: `grep -i parcela apps/mobile/src` no devuelve
- * nada. La consola decía «Parcelas» en el menú y «Nombre del lote» en el primer
- * campo del formulario que las crea.
+ * The phone says "lote" on every one of its screens and on its printed
+ * receipt, and does not know the word "parcela": `grep -i parcela
+ * apps/mobile/src` returns nothing. The console said "Parcelas" in the menu
+ * and "Nombre del lote" in the first field of the form that creates them.
  *
- * NO SALE EN PAPEL. Los tres documentos no nombran la tierra en ninguna
- * cabecera, columna ni firma, así que este cambio no le cuesta nada al archivo:
- * un recibo de 2026 y uno de 2027 siguen siendo idénticos. Por eso es el
- * primero de la lista.
+ * IT DOES NOT GO ON PAPER. None of the three documents names the land in any
+ * header, column or signature line, so this change costs the archive nothing:
+ * a receipt from 2026 and one from 2027 stay identical. That is why it is
+ * first on the list.
  *
- * El identificador en el código sigue siendo `plot` —es la palabra del servidor
- * (`/v1/plots`, `plots.read`) y cambiarla sería otro sprint y ninguna mejora
- * para quien usa esto.
+ * The identifier in the code is still `plot` —it is the server's word
+ * (`/v1/plots`, `plots.read`) and changing it would be another sprint and no
+ * improvement at all for whoever uses this.
  */
-export const LOTE = {
+export const PLOT = {
   one: "lote",
   many: "lotes",
   One: "Lote",
   Many: "Lotes",
-  /** La ruta. `/parcelas` redirige aquí para no romper lo que esté guardado. */
+  /** The route. `/parcelas` redirects here so saved links keep working. */
   path: "/lotes",
 } as const;
 
 /* ------------------------------------------------------------------ */
-/* 2. LA PERSONA — «empleado» en la consola                            */
+/* 2. THE PERSON — "empleado" in the console                           */
 /* ------------------------------------------------------------------ */
 
 /**
- * LA CONSOLA DICE «EMPLEADO»; EL TELÉFONO DICE «RECOLECTOR». Los dos imprimen:
- * el papel de aquí firma «Firma del empleado» y el del teléfono «Firma del
- * recolector».
+ * THE CONSOLE SAYS "EMPLEADO"; THE PHONE SAYS "RECOLECTOR". Both of them
+ * print it: the paper here signs "Firma del empleado" and the phone's signs
+ * "Firma del recolector".
  *
- * Gana **empleado**, por dos razones y en ese orden:
+ * **empleado** wins, for two reasons and in that order:
  *
- *   1. Ya está impreso en los tres documentos de la consola —la línea de firma
- *      del recibo y de la liquidación, y la columna «Empleado» de la planilla.
- *      Cambiarlo hace que dos recibos del mismo año no se parezcan, que es
- *      exactamente lo que la regla prohíbe.
- *   2. Es el único de los dos que es cierto. La consola administra guadañadores,
- *      jornaleros y mayordomos que no recogen café ni un día del año, y
- *      llamarle «recolector» a un guadañador en su propio recibo es un error de
- *      hecho. El teléfono sólo ve pesadas, así que allí «recolector» es la
- *      palabra correcta y se queda.
+ *   1. It is already printed on all three of the console's documents —the
+ *      signature line of the receipt and of the settlement, and the "Empleado"
+ *      column of the payroll sheet. Changing it makes two receipts from the
+ *      same year not look alike, which is exactly what the rule forbids.
+ *   2. It is the only one of the two that is true. The console administers
+ *      brushcutter operators, day labourers and foremen who do not pick coffee
+ *      a single day of the year, and calling a brushcutter operator a
+ *      "recolector" on his own receipt is an error of fact. The phone only
+ *      ever sees weigh-ins, so there "recolector" is the right word and it
+ *      stays.
  *
- * Y «recolector» se queda también en la consola donde de verdad significa
- * *quien recogió* —las columnas y los conteos del módulo de Cosecha—, porque
- * ahí nombra un papel en esa semana, no el registro de la persona. Ver
- * `RECOLECTOR`.
+ * And "recolector" also stays in the console wherever it genuinely means
+ * *whoever picked* —the columns and counts of the Harvest module— because
+ * there it names a role in that week, not the person's record. See `PICKER`.
  */
-export const EMPLEADO = {
+export const EMPLOYEE = {
   one: "empleado",
   many: "empleados",
   One: "Empleado",
@@ -93,12 +94,12 @@ export const EMPLEADO = {
 } as const;
 
 /**
- * Quien recogió. NO es sinónimo de empleado: es lo que hizo esa semana.
+ * Whoever picked. NOT a synonym for employee: it is what they did that week.
  *
- * Sólo se usa en Cosecha, donde la fila de una tabla es «kilos que recogió esta
- * persona» y llamarla «empleado» perdería justo lo que la tabla mide.
+ * Used only in Harvest, where a table row is "kilos this person picked" and
+ * calling it "empleado" would lose exactly what the table measures.
  */
-export const RECOLECTOR = {
+export const PICKER = {
   one: "recolector",
   many: "recolectores",
   One: "Recolector",
@@ -106,20 +107,20 @@ export const RECOLECTOR = {
 } as const;
 
 /* ------------------------------------------------------------------ */
-/* 3. CÓMO SE LE PAGA A LA GENTE                                       */
+/* 3. HOW PEOPLE GET PAID                                              */
 /* ------------------------------------------------------------------ */
 
 /**
- * Los dos botones que deciden cómo se le paga a una persona se llamaban
- * «Unidad de trabajo» y «Unidad de tiempo», que son nombres de columna de base
- * de datos. Nadie en una finca dice «esta actividad se paga por unidad de
- * trabajo»: dice **a destajo**, **por kilo**, **al jornal**, **por contrato**.
+ * The two buttons that decide how a person is paid were called "Unidad de
+ * trabajo" and "Unidad de tiempo", which are database column names. Nobody on
+ * a farm says "this activity is paid by unit of work": they say **a destajo**,
+ * **por kilo**, **al jornal**, **por contrato**.
  *
- * *Destajo* es la palabra con la que se paga la recolección de café en
- * Colombia y no aparecía ni una vez en el producto.
+ * *Destajo* is the word coffee picking is paid by in Colombia, and it did not
+ * appear once in the product.
  *
- * NO SALE EN PAPEL: los documentos imprimen el nombre de la actividad y su
- * unidad («kg»), nunca la forma de pago. Cambio gratis para el archivo.
+ * IT DOES NOT GO ON PAPER: the documents print the activity's name and its
+ * unit ("kg"), never the pay mode. A free change for the archive.
  */
 export const PAY_MODE_LABEL: Record<PayMode, string> = {
   work_unit: "A destajo",
@@ -127,21 +128,21 @@ export const PAY_MODE_LABEL: Record<PayMode, string> = {
   contract: "Por contrato",
 };
 
-/** Lo mismo, con el ejemplo pegado, para el botón que hay que entender. */
+/** The same, with the example attached, for the button that has to land. */
 export const PAY_MODE_CHOICE: Record<PayMode, string> = {
   work_unit: "A destajo · por kilo",
   time_unit: "Al jornal · por día",
   contract: "Por contrato",
 };
 
-/** Una frase, para donde hace falta explicarlo dentro de un texto. */
+/** A sentence, for where it has to be explained inside running text. */
 export const PAY_MODE_SENTENCE: Record<PayMode, string> = {
   work_unit: "se paga a destajo: por lo que la persona haga",
   time_unit: "se paga al jornal: por el tiempo que la persona esté",
   contract: "se paga por contrato: un total acordado de antemano",
 };
 
-/** «jornales», «semanas»… lo que se cuenta cuando se paga al tiempo. */
+/** "jornales", "semanas"… what gets counted when the pay is by time. */
 export const TIME_UNIT_LABEL: Record<TimeUnit, string> = {
   jornal: "Jornal (día)",
   semanal: "Semanal",
@@ -151,63 +152,64 @@ export const TIME_UNIT_LABEL: Record<TimeUnit, string> = {
 };
 
 /* ------------------------------------------------------------------ */
-/* 4. LA CIFRA QUE TODAVÍA PUEDE MOVERSE — «provisional»               */
+/* 4. THE FIGURE THAT CAN STILL MOVE — "provisional"                   */
 /* ------------------------------------------------------------------ */
 
 /**
- * Un mismo estado tenía tres nombres, uno por pantalla: **provisional** en el
- * papel, **estimado** en el tablero y en los perfiles, y **precio de la
- * semana** en Actividades y en el detalle de una liquidación. Son lo mismo: la
- * plata todavía no está decidida porque el precio del kilo de esa semana no se
- * ha fijado.
+ * One single state had three names, one per screen: **provisional** on the
+ * paper, **estimado** on the dashboard and in the profiles, and **precio de la
+ * semana** in Activities and in a settlement's detail. They are the same
+ * thing: the money is not settled yet because that week's price per kilo has
+ * not been fixed.
  *
- * GANA «PROVISIONAL», Y GANA PORQUE YA ESTÁ EN EL PAPEL: el bloque ámbar de un
- * recibo dice PROVISIONAL en letra grande y `docs/sincronizacion.md` lo pide
- * así. Elegir cualquier otro habría obligado a cambiar los tres documentos.
- * Además es la palabra que el teléfono ya usa para su saldo sin confirmar
- * (`pay.provisional`), así que las dos mitades del producto quedan diciendo lo
- * mismo sin tocar una línea impresa.
+ * "PROVISIONAL" WINS, AND IT WINS BECAUSE IT IS ALREADY ON THE PAPER: the
+ * amber block of a receipt says PROVISIONAL in large type and
+ * `docs/sincronizacion.md` asks for it that way. Choosing any of the others
+ * would have forced a change to all three documents. It is also the word the
+ * phone already uses for its unconfirmed balance (`pay.provisional`), so both
+ * halves of the product end up saying the same thing without touching a
+ * printed line.
  *
- * «El precio de la semana» sigue existiendo — pero como el nombre del PRECIO,
- * que es una cosa real que el dueño fija los lunes, no como el nombre del
- * estado de una cifra.
+ * "El precio de la semana" still exists — but as the name of the PRICE, which
+ * is a real thing the owner fixes on Mondays, not as the name of the state of
+ * a figure.
  */
 export const PROVISIONAL = "provisional";
 
-/** La nota que va pegada a una cifra que todavía puede moverse. */
+/** The note that rides along with a figure that can still move. */
 export const PROVISIONAL_NOTE = "provisional · al precio de la semana";
 
-/** Lo mismo dentro de una frase: «… incluye provisional al precio de la semana». */
+/** The same inside a sentence: "… incluye provisional al precio de la semana". */
 export const PROVISIONAL_INCLUDES = "incluye provisional, al precio de la semana";
 
-/** Por qué puede moverse. Va de tooltip o de pie, nunca sola. */
+/** Why it can move. Goes in a tooltip or a footnote, never on its own. */
 export const PROVISIONAL_WHY =
   "Provisional quiere decir que el precio del kilo de esa semana todavía no está " +
   "fijado. Al fijarlo, la cifra se congela y deja de moverse.";
 
 /* ------------------------------------------------------------------ */
-/* 5. EL LIBRO — sin contaduría ni programación en la pantalla         */
+/* 5. THE LEDGER — no accountancy, no programming, on screen           */
 /* ------------------------------------------------------------------ */
 
 /**
- * `devengo` y `reverso` son los nombres de dos `kind` del libro. El primero es
- * de contaduría, el segundo de programación, y ninguno de los dos lo dice nadie
- * en una finca. En pantalla pasan a ser **ganado** y **corrección** — «lo que
- * se ganó» y «se corrigió», sustantivados para que la columna «Tipo» no mezcle
- * frases con sustantivos.
+ * `devengo` and `reverso` are the names of two ledger `kind`s. The first is
+ * accountancy, the second is programming, and nobody on a farm says either. On
+ * screen they become **ganado** and **corrección** — "what was earned" and
+ * "it was corrected", turned into nouns so the "Tipo" column does not mix
+ * sentences with nouns.
  *
- * `deduccion` pasa a **descuento**, que es como lo dice el teléfono y como lo
- * dice la finca.
+ * `deduccion` becomes **descuento**, which is how the phone says it and how
+ * the farm says it.
  *
- * EL PAPEL NO CAMBIA, Y ES UNA DECISIÓN, NO UN OLVIDO. `devengo` y `reverso`
- * salen impresos en un solo sitio: el bloque rojo de una liquidación ANULADA,
- * cuyo trabajo entero es cuadrarse contra el libro tres semanas después. Ahí
- * las palabras del libro son las correctas, y una liquidación anulada de 2026 y
- * otra de 2027 tienen que ser el mismo documento. Lo que sí se hizo fue atar
- * las dos mitades: la pantalla que anula dice, en la misma frase, que a eso el
- * libro y el papel lo llaman «reverso», para que quien tenga el papel en la
- * mano encuentre la palabra. Ninguna cabecera, columna, total ni línea de firma
- * se movió.
+ * THE PAPER DOES NOT CHANGE, AND THAT IS A DECISION, NOT AN OVERSIGHT.
+ * `devengo` and `reverso` are printed in exactly one place: the red block of a
+ * VOIDED settlement, whose entire job is to be reconciled against the ledger
+ * three weeks later. There the ledger's words are the right ones, and a voided
+ * settlement from 2026 and one from 2027 have to be the same document. What
+ * was done instead was to tie the two halves together: the screen that voids
+ * says, in the same sentence, that the ledger and the paper call this a
+ * "reverso", so whoever is holding the paper can find the word. Not one
+ * header, column, total or signature line moved.
  */
 export const LEDGER_KIND_LABEL: Record<LedgerKind, string> = {
   devengo: "ganado",
@@ -218,53 +220,54 @@ export const LEDGER_KIND_LABEL: Record<LedgerKind, string> = {
   reverso: "corrección",
 };
 
-/** El asiento que deshace otro, dicho entero y con su nombre de papel al lado. */
-export const CORRECCION_GLOSS =
+/** The entry that undoes another, said in full and with its paper name beside it. */
+export const CORRECTION_GLOSS =
   "una corrección: un asiento contrario que deshace el anterior y deja ver qué " +
   "pasó y cuándo. En el libro y en el papel se llama «reverso».";
 
 /**
- * Lo que se ganó y ya quedó escrito, frente a lo que se ganó y todavía no.
+ * What was earned and is already written down, against what was earned and is
+ * not yet.
  *
- * La frase que sustituye a «todavía no es un devengo». Dice lo mismo sin pedir
- * que el lector sepa contaduría.
+ * The sentence that replaces "todavía no es un devengo". It says the same
+ * thing without asking the reader to know accountancy.
  */
 export const NOT_YET_EARNED =
   "trabajo hecho que todavía no está liquidado, así que aún no aparece en el saldo";
 
 /* ------------------------------------------------------------------ */
-/* 6. LA BODEGA — entradas y salidas, no un extracto bancario          */
+/* 6. THE STORE — things in and things out, not a bank statement       */
 /* ------------------------------------------------------------------ */
 
 /**
- * «Movimientos» es la palabra de un extracto de banco. En una bodega lo que
- * pasa son **entradas y salidas**, y así se dice.
+ * "Movimientos" is a bank-statement word. In a store what happens is **things
+ * coming in and going out**, and that is how it is said.
  *
- * NO SALE EN PAPEL: ningún documento impreso habla de la bodega.
+ * IT DOES NOT GO ON PAPER: no printed document mentions the store.
  *
- * «Saldo a favor» —que sí suena a banco— se queda: es palabra de finca, el
- * teléfono la imprime en su recibo y significa exactamente lo que dice.
+ * "Saldo a favor" —which does sound like a bank— stays: it is a farm word,
+ * the phone prints it on its receipt, and it means exactly what it says.
  */
 export const STOCK_MOVE = {
   one: "entrada o salida",
   many: "entradas y salidas",
   One: "Entrada o salida",
   Many: "Entradas y salidas",
-  /** Para las frases: «la suma de las entradas y salidas». */
+  /** For sentences: "la suma de las entradas y salidas". */
   ofThem: "las entradas y salidas",
 } as const;
 
 /* ------------------------------------------------------------------ */
-/* 7. LO LIQUIDADO — «bruto» se queda, «(vigentes)» no                 */
+/* 7. WHAT WAS SETTLED — "bruto" stays, "(vigentes)" does not          */
 /* ------------------------------------------------------------------ */
 
 /**
- * «Bruto liquidado» está impreso en la liquidación y en la planilla, y «bruto»
- * es palabra de finca. Se queda tal cual.
+ * "Bruto liquidado" is printed on the settlement and on the payroll sheet, and
+ * "bruto" is a farm word. It stays exactly as it is.
  *
- * Lo que no era palabra de nadie es el paréntesis: «(vigentes)» es un estado de
- * fila de base de datos. Lo que quiere decir es que las liquidaciones anuladas
- * no se cuentan, y eso se puede decir así.
+ * What was nobody's word was the parenthesis: "(vigentes)" is a database row
+ * state. What it means is that voided settlements are not counted, and that
+ * can simply be said.
  */
 export const GROSS_SETTLED = "Bruto liquidado";
 export const GROSS_SETTLED_LIVE = "Bruto liquidado (sin las anuladas)";

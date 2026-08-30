@@ -42,8 +42,8 @@ function details(over: Partial<ServerGrossDetails>): ServerGrossDetails {
   };
 }
 
-describe("lo que el servidor manda", () => {
-  it("se lee tal cual, con los dos números y las dos listas", () => {
+describe("what the server sends", () => {
+  it("is read as-is, with both figures and both lists", () => {
     const d = readGrossDetails({
       expectedCents: 14_840_000,
       actualCents: 15_120_000,
@@ -58,7 +58,7 @@ describe("lo que el servidor manda", () => {
     expect(d.weeksInSettlement).toEqual([{ weekStart: "2026-08-24", priceCents: 85_000 }]);
   });
 
-  it("rechaza una cifra que no sea centavos enteros", () => {
+  it("refuses a figure that is not whole cents", () => {
     // It is about to be shown to somebody as pesos in a dialog whose entire
     // purpose is to state the right number. Coercing it would be the one place
     // a wrong figure could not be caught.
@@ -67,7 +67,7 @@ describe("lo que el servidor manda", () => {
     expect(readGrossDetails({})).toBeNull();
   });
 
-  it("lee un payableIdsProvided ausente como false, que es el lado seguro", () => {
+  it("reads a missing payableIdsProvided as false, which is the safe side", () => {
     const d = readGrossDetails({ expectedCents: 1, actualCents: 2 })!;
     // Reading it as true would let a screen state "nothing was added" on the
     // strength of two lists the server never filled in.
@@ -75,11 +75,11 @@ describe("lo que el servidor manda", () => {
   });
 });
 
-describe("cuando entraron pesadas", () => {
+describe("when weigh-ins arrived", () => {
   const approved = [line("1", 8_000_000), line("2", 6_840_000)];
   const fresh = [...approved, line("3", 140_000), line("4", 140_000)];
 
-  it("las nombra, y no culpa al precio de la semana", () => {
+  it("names them, and does not blame the week's price", () => {
     const change = explainGrossChange(
       details({ addedPayableIds: ["3", "4"] }),
       approved,
@@ -98,20 +98,20 @@ describe("cuando entraron pesadas", () => {
     );
   });
 
-  it("un día de poda es una labor, no una pesada", () => {
-    const podaFresh = [
+  it("a day of pruning is a work item, not a weigh-in", () => {
+    const pruningFresh = [
       ...approved,
       line("3", 280_000, { unitLabel: null, activityName: "Poda" }),
     ];
     const change = explainGrossChange(
       details({ addedPayableIds: ["3"] }),
       approved,
-      podaFresh,
+      pruningFresh,
     );
     expect(reasonsFor(change, FMT)).toEqual(["entró una labor más"]);
   });
 
-  it("cuenta los ids, no las filas que pudo resolver", () => {
+  it("counts the ids, not the rows it managed to resolve", () => {
     // A payable that was deleted outright resolves to no line at all. Counting
     // the table instead of the ids would under-report what moved the figure.
     const change = explainGrossChange(
@@ -124,13 +124,13 @@ describe("cuando entraron pesadas", () => {
   });
 });
 
-describe("cuando cambió el precio de la semana", () => {
+describe("when the week's price changed", () => {
   const approved = [
     line("1", 8_000_000, { rateCents: 80_000, rateSource: "weekly_price" }),
     line("2", 6_840_000, { rateCents: 80_000, rateSource: "weekly_price" }),
   ];
 
-  it("dice qué semana y de cuánto a cuánto", () => {
+  it("says which week, and from how much to how much", () => {
     const change = explainGrossChange(
       details({
         actualCents: 15_582_000,
@@ -148,12 +148,12 @@ describe("cuando cambió el precio de la semana", () => {
     );
   });
 
-  it("ignora una semana cuyo precio no se movió", () => {
+  it("ignores a week whose price did not move", () => {
     const change = explainGrossChange(details({}), approved, approved);
     expect(change.repriced).toEqual([]);
   });
 
-  it("ignora una línea cuyo precio se congeló al registrarla", () => {
+  it("ignores a line whose rate was frozen when it was recorded", () => {
     // A frozen rate cannot have been moved by a weekly price, so a week whose
     // only lines are frozen is not a reprice no matter what the price is now.
     const frozen = [line("1", 8_000_000, { rateCents: 80_000, rateSource: "fixed" })];
@@ -166,8 +166,8 @@ describe("cuando cambió el precio de la semana", () => {
   });
 });
 
-describe("cuando el servidor no supo qué se vio", () => {
-  it("no dice «no cambió nada»: dice que no se pudo establecer", () => {
+describe("when the server did not know what was on screen", () => {
+  it("does not say \"nothing changed\": it says the cause could not be established", () => {
     const change = explainGrossChange(
       details({ payableIdsProvided: false }),
       [],
@@ -180,8 +180,8 @@ describe("cuando el servidor no supo qué se vio", () => {
   });
 });
 
-describe("dos motivos a la vez", () => {
-  it("se unen en una frase, no en una lista", () => {
+describe("two reasons at once", () => {
+  it("are joined into one sentence, not a list", () => {
     const approved = [
       line("1", 5_000_000, { rateCents: 50_000, rateSource: "weekly_price" }),
       line("2", 5_000_000, { rateCents: 50_000, rateSource: "weekly_price" }),

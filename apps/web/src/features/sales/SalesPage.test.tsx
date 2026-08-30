@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 describe("a sale is product leaving a warehouse", () => {
-  it("records it and takes the product out of the bodega", async () => {
+  it("records it and takes the product out of the warehouse", async () => {
     const user = userEvent.setup();
     const before = (await api.listProducts()).find((p) => p.id === PERGAMINO)!;
     expect(before.stock).toBe(28);
@@ -109,7 +109,7 @@ describe("a sale is product leaving a warehouse", () => {
 });
 
 /**
- * ── «UNIDADES» NO ES UNA UNIDAD ────────────────────────────────────────
+ * ── "UNIDADES" IS NOT A UNIT ───────────────────────────────────────────
  *
  * A sale's quantity is in its PRODUCT'S storage unit. The footer added every
  * sale's quantity together and called the result "N unidades", so twelve
@@ -118,7 +118,7 @@ describe("a sale is product leaving a warehouse", () => {
  * Pesos add up across products; bultos and kilos do not.
  */
 /**
- * ── UNA CONSULTA CAÍDA NO ES UNA BODEGA VACÍA ──────────────────────────
+ * ── A FAILED QUERY IS NOT AN EMPTY WAREHOUSE ───────────────────────────
  *
  * `SaleFormDialog` took `levels: StockLevel[]` and the page handed it
  * `levels ?? []`. With `/v1/stock/levels` down, that empty array said every
@@ -130,8 +130,8 @@ describe("a sale is product leaving a warehouse", () => {
  * That is the part that makes it worth a test: the false zero does not merely
  * misinform, it talks somebody into disabling a check.
  */
-describe("cuando no se pueden consultar las existencias", () => {
-  it("no inventa una bodega vacía ni empuja a saltarse la comprobación", async () => {
+describe("when the stock levels cannot be read", () => {
+  it("does not invent an empty warehouse, nor push anybody into skipping the check", async () => {
     const user = userEvent.setup();
     server.use(
       http.get("*/v1/stock", () =>
@@ -159,8 +159,8 @@ describe("cuando no se pueden consultar las existencias", () => {
   }, 20000);
 });
 
-describe("el total de cantidades", () => {
-  it("solo aparece cuando todas las ventas están en la misma unidad", async () => {
+describe("the quantity total", () => {
+  it("only appears when every sale is measured in the same unit", async () => {
     renderSales();
     // The seeded farm sells one product, so there is one unit and the total is
     // meaningful — and it is named rather than called "unidades".
@@ -168,7 +168,7 @@ describe("el total de cantidades", () => {
     expect(footer).not.toHaveTextContent("unidades");
   }, 20000);
 
-  it("y desaparece en cuanto se mezclan", async () => {
+  it("and disappears the moment units are mixed", async () => {
     server.use(
       http.get("*/v1/sales", () =>
         HttpResponse.json({
@@ -205,7 +205,7 @@ describe("el total de cantidades", () => {
 });
 
 /**
- * ── UN PIE QUE CONTRADICE A LA ALERTA QUE TIENE ENCIMA ──────────────────
+ * ── A FOOTER THAT CONTRADICTS THE ALERT ABOVE IT ───────────────────────
  *
  * With the server unreachable this card showed "No se pudo contactar el
  * servidor" and, immediately below it, "0 venta(s) sin anular, por un total de
@@ -215,8 +215,8 @@ describe("el total de cantidades", () => {
  * `rows ?? []` and `sales?.totalCents ?? 0` are where both zeros came from.
  * They are fine for arithmetic and fatal for a sentence.
  */
-describe("cuando el servidor no responde", () => {
-  it("no pone un total de $0 debajo del error", async () => {
+describe("when the server does not answer", () => {
+  it("does not put a $0 total underneath the error", async () => {
     server.use(
       http.get("*/v1/sales", () =>
         HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
@@ -232,14 +232,14 @@ describe("cuando el servidor no responde", () => {
   }, 20000);
 
   /** …and the footer is still there when the list actually loaded. */
-  it("pero sí lo pone cuando la lista cargó", async () => {
+  it("but does put it there once the list has loaded", async () => {
     renderSales();
     expect(await screen.findByText(/ventas? sin anular/)).toBeInTheDocument();
   }, 20000);
 });
 
 describe("undoing a sale", () => {
-  it("anula rather than deletes, and puts the product back", async () => {
+  it("voids rather than deletes, and puts the product back", async () => {
     const user = userEvent.setup();
     renderSales();
     await screen.findByText("Café pergamino seco");

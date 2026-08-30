@@ -17,7 +17,7 @@ import { formatDate, formatDateRange } from "../../lib/dates";
 import { PermissionDenied } from "../../components/Guards";
 import { formatArea } from "../../lib/money";
 import { asGeometry } from "../../lib/geo";
-import { LOTE } from "../../lib/vocab";
+import { PLOT } from "../../lib/vocab";
 
 export function PlotDetailPage() {
   const { id = "" } = useParams();
@@ -44,11 +44,11 @@ export function PlotDetailPage() {
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate(LOTE.path)}
+        onClick={() => navigate(PLOT.path)}
         color="inherit"
         sx={{ mb: 1 }}
       >
-        {LOTE.Many}
+        {PLOT.Many}
       </Button>
 
       <Stack
@@ -71,7 +71,7 @@ export function PlotDetailPage() {
           <Button
             variant="outlined"
             startIcon={<EditIcon />}
-            onClick={() => navigate(`${LOTE.path}/${plot.id}/editar`)}
+            onClick={() => navigate(`${PLOT.path}/${plot.id}/editar`)}
           >
             Editar
           </Button>
@@ -149,7 +149,7 @@ export function PlotDetailPage() {
                   <Button
                     size="small"
                     startIcon={<MapIcon />}
-                    onClick={() => navigate(`${LOTE.path}/${plot.id}/mapa`)}
+                    onClick={() => navigate(`${PLOT.path}/${plot.id}/mapa`)}
                   >
                     {boundary ? "Editar el polígono" : "Dibujar el polígono"}
                   </Button>

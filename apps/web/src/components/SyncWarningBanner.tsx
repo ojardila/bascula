@@ -13,19 +13,19 @@
  * desde un solo lado") rather than just the fact, because a warning a person
  * cannot act on is a warning they learn to scroll past.
  *
- * ── POR QUÉ AHORA CABE EN UNA LÍNEA ──────────────────────────────────────
+ * ── WHY IT NOW FITS ON ONE LINE ──────────────────────────────────────────
  *
- * Porque medía cuatro. Este aviso y el de datos simulados se comían 520 de
- * los primeros 844 píxeles de un celular, EN TODAS LAS PÁGINAS: quien abría la
- * consola desde el teléfono veía dos cajas de texto y tenía que desplazarse
- * para llegar al título de la pantalla que pidió. Un aviso permanente que tapa
- * el contenido no se lee más; se aprende a saltar, y entonces deja de avisar
- * el día que importa.
+ * Because it used to be four. This warning and the mock-data one ate 520 of a
+ * phone's first 844 pixels, ON EVERY PAGE: whoever opened the console from
+ * their phone saw two boxes of text and had to scroll to reach the title of
+ * the screen they asked for. A permanent warning that covers the content is
+ * not read more; it is learned around, and then it stops warning on the day
+ * that matters.
  *
- * Así que lo que queda arriba es LA INSTRUCCIÓN —«pague desde un solo lado»—
- * en una línea, y el porqué se despliega. Nada se ha quitado: la explicación
- * entera sigue estando, a un toque, y el aviso sigue sin poderse cerrar.
- * Responder primero y explicar después.
+ * So what stays up top is THE INSTRUCTION —"pague desde un solo lado"— on one
+ * line, and the why unfolds. Nothing was removed: the whole explanation is
+ * still there, one tap away, and the warning still cannot be closed. Answer
+ * first, explain second.
  *
  * It comes down the day sync reaches production. Delete this component then;
  * do not make it dismissible in the meantime.

@@ -58,11 +58,11 @@ export function InventoryPage() {
     [status, search, reloadTick],
   );
   /**
-   * Los dos errores se capturan, y eso es el arreglo entero de estas dos
-   * pestañas: sin ellos, una consulta caída dejaba `levels` y `moves` en null
-   * para siempre, `(levels ?? []).map(...)` no pintaba ninguna fila, y la
-   * pantalla quedaba en encabezados con nada debajo — que se lee como una
-   * bodega vacía. Ver `components/TableState.tsx`.
+   * Both errors are caught, and that is the entire fix for these two tabs:
+   * without them a failed query left `levels` and `moves` null forever,
+   * `(levels ?? []).map(...)` drew no rows at all, and the screen was left as
+   * headers with nothing under them — which reads as an empty warehouse. See
+   * `components/TableState.tsx`.
    */
   const { data: levels, error: levelsError, denied: levelsDenied } = useAsync(
     () => api.stockLevels(),
@@ -122,8 +122,8 @@ export function InventoryPage() {
           <Tooltip title="Suma de las entradas y salidas registradas. No se escribe a mano.">
             <Stack alignItems="flex-end">
               <Typography sx={{ fontWeight: 600 }}>
-                {/* «16 Bulto» era el catálogo tal cual, con su mayúscula y en
-                    singular. Ver `lib/plural.ts`. */}
+                {/* "16 Bulto" was the catalogue value as-is, capitalised and
+                    singular. See `lib/plural.ts`. */}
                 {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -194,9 +194,8 @@ export function InventoryPage() {
           onStatusFilterChange={setStatus}
           onCreate={can("products.write") ? () => setEditing(null) : undefined}
           createLabel="Nuevo producto"
-          /* La fila entera, no sólo el ⋮ de 30 px sin etiqueta que había
-             que acertar. La misma acción, con un blanco veinte veces
-             mayor. */
+          /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
+             The same action, with a target twenty times bigger. */
           onRowClick={can("products.write") ? (p) => setEditing(p) : undefined}
           onEdit={can("products.write") ? (p) => setEditing(p) : undefined}
           extraActions={
@@ -300,10 +299,11 @@ export function InventoryPage() {
                 />
               </TableBody>
             </Table>
-            {/* La lista viene cortada por `STOCK_MOVES_PAGE` desde que existe,
-                y la pantalla no lo decía: una bodega con más de doscientos
-                asientos enseñaba los doscientos últimos como si fueran todos.
-                `/cosecha` ya lo dice bien; esto es lo mismo, aquí. */}
+            {/* The list has been cut off at `STOCK_MOVES_PAGE` since it
+                existed, and the screen never said so: a warehouse with more
+                than two hundred entries showed the last two hundred as though
+                they were all of them. `/cosecha` already says this properly;
+                this is the same thing, here. */}
             {(moves ?? []).length >= STOCK_MOVES_PAGE && (
               <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
                 Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
@@ -423,10 +423,11 @@ export function InventoryPage() {
                 />
               </TableBody>
             </Table>
-            {/* La lista viene cortada por `STOCK_MOVES_PAGE` desde que existe,
-                y la pantalla no lo decía: una bodega con más de doscientos
-                asientos enseñaba los doscientos últimos como si fueran todos.
-                `/cosecha` ya lo dice bien; esto es lo mismo, aquí. */}
+            {/* The list has been cut off at `STOCK_MOVES_PAGE` since it
+                existed, and the screen never said so: a warehouse with more
+                than two hundred entries showed the last two hundred as though
+                they were all of them. `/cosecha` already says this properly;
+                this is the same thing, here. */}
             {(moves ?? []).length >= STOCK_MOVES_PAGE && (
               <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
                 Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.

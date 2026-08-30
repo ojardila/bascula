@@ -1,5 +1,5 @@
 /**
- * The gastos module, with `expense_target` under test from the interface side.
+ * The expenses module, with `expense_target` under test from the interface side.
  *
  * The constraint is
  *
@@ -43,7 +43,7 @@ beforeEach(() => {
   });
 });
 
-describe("a gasto is charged to one thing, and the form cannot say otherwise", () => {
+describe("an expense is charged to one thing, and the form cannot say otherwise", () => {
   it("offers activity OR lot, never both at once", async () => {
     const user = userEvent.setup();
     renderExpenses();
@@ -66,7 +66,7 @@ describe("a gasto is charged to one thing, and the form cannot say otherwise", (
     expect(within(dialog).queryByRole("combobox", { name: /^Actividad/ })).not.toBeInTheDocument();
   }, 20000);
 
-  it("has no way to charge a gasto to nothing", async () => {
+  it("has no way to charge an expense to nothing", async () => {
     const user = userEvent.setup();
     renderExpenses();
     await screen.findByText("Abono para el lote El Alto");
@@ -136,14 +136,15 @@ describe("the list", () => {
   }, 20000);
 
   /**
-   * ── EL PIE HABLABA DE OTRA LISTA ─────────────────────────────────────
+   * ── THE FOOTER WAS TALKING ABOUT A DIFFERENT LIST ────────────────────
    *
-   * `count` y `totalCents` cuentan sólo las filas vivas — decisión correcta
-   * para un total de plata gastada — pero el pie los leía como si fueran los
-   * de la tabla. Con el filtro en «Inactivas» se veían las filas dadas de baja
-   * y, debajo, «0 gastos, por un total de $0» en la misma frase.
+   * `count` and `totalCents` count only the live rows — the right decision
+   * for a total of money spent — but the footer read them as though they were
+   * the table's. With the filter on "Inactivas" you saw the rows taken out of
+   * service and, underneath, "0 gastos, por un total de $0" in the same
+   * sentence.
    */
-  it("no dice «0 gastos» debajo de una tabla con gastos", async () => {
+  it("does not say zero expenses under a table full of expenses", async () => {
     const user = userEvent.setup();
     renderExpenses();
     await screen.findByText("Abono para el lote El Alto");
@@ -152,11 +153,11 @@ describe("the list", () => {
 
     expect(screen.queryByText(/0 gastos/)).not.toBeInTheDocument();
     expect(screen.getByText(/1 gasto en esta lista/)).toBeInTheDocument();
-    // Y dice por qué no hay total, que es la pregunta que deja el filtro.
+    // And it says why there is no total, which is the question the filter leaves.
     expect(screen.getByText(/no hay total/)).toBeInTheDocument();
   }, 20000);
 
-  it("y con «Todas» separa lo que se ve de lo que suma", async () => {
+  it("and under the all filter, separates what is shown from what is summed", async () => {
     const user = userEvent.setup();
     renderExpenses();
     await screen.findByText("Abono para el lote El Alto");
@@ -169,13 +170,13 @@ describe("the list", () => {
   }, 20000);
 
   /**
-   * ── CINCUENTA CENTAVOS QUE NADIE ESCRIBIÓ ────────────────────────────
+   * ── FIFTY CENTS NOBODY TYPED ─────────────────────────────────────────
    *
-   * El diálogo abría la casilla del valor con `Math.round(cents / 100)`, así
-   * que un gasto de $125,50 salía como «126». Entrar a cambiarle la nota y
-   * guardar mandaba 12600 en vez de 12550 sin que nadie tocara el valor.
+   * The dialog filled the amount box with `Math.round(cents / 100)`, so a
+   * $125,50 expense came out as "126". Going in to change its note and saving
+   * sent 12600 instead of 12550 without anybody touching the amount.
    */
-  it("no le redondea los centavos a un gasto que sólo se abrió para leerlo", async () => {
+  it("does not round the cents off an expense that was only opened to read it", async () => {
     const user = userEvent.setup();
     resetDb();
     const t = tenantOf(FARM_ID)!;
@@ -191,7 +192,7 @@ describe("the list", () => {
     expect(tenantOf(FARM_ID)!.expenses[0].amountCents).toBe(12550);
   }, 20000);
 
-  it("keeps a gasto that was taken out of service, rather than deleting it", async () => {
+  it("keeps an expense that was taken out of service, rather than deleting it", async () => {
     const user = userEvent.setup();
     renderExpenses();
     await screen.findByText("Abono para el lote El Alto");

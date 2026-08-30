@@ -1,50 +1,50 @@
 /**
- * «Caldas · Pitalito». Pitalito es del Huila, y el formulario lo aceptó sin
- * decir nada porque el departamento venía puesto de fábrica.
+ * "Caldas · Pitalito". Pitalito is in Huila, and the form accepted it without
+ * a word because the department came prefilled from the factory.
  *
- * Lo que se prueba aquí es sobre todo lo que la tabla NO hace: no se queja de
- * los municipios que no conoce —que son la mayoría del país— y no se pronuncia
- * sobre los nombres que existen en dos departamentos. Una tabla parcial que
- * acusa es peor que ninguna tabla.
+ * What is tested here is mostly what the table does NOT do: it does not
+ * complain about municipalities it does not know —most of the country— and it
+ * takes no position on names that exist in two departments. A partial table
+ * that accuses is worse than no table at all.
  */
 import { describe, expect, it } from "vitest";
 import { departmentMismatch, departmentOfMunicipality } from "./municipalities";
 
-describe("el municipio que no es de ese departamento", () => {
-  it("lo dice, con el departamento verdadero", () => {
+describe("the municipality that is not in that department", () => {
+  it("says so, and names the real department", () => {
     const msg = departmentMismatch("Caldas", "Pitalito");
     expect(msg).toContain("Huila");
     expect(msg).toContain("Pitalito");
   });
 
-  it("se calla cuando el par es correcto", () => {
+  it("stays quiet when the pair is right", () => {
     expect(departmentMismatch("Caldas", "Chinchiná")).toBeNull();
     expect(departmentMismatch("Huila", "Pitalito")).toBeNull();
   });
 
-  it("no distingue tildes ni mayúsculas", () => {
+  it("does not care about accents or capitals", () => {
     expect(departmentMismatch("Caldas", "chinchina")).toBeNull();
     expect(departmentMismatch("Caldas", "PITALITO")).toContain("Huila");
   });
 
-  /** La mitad del país no está en esta tabla, y de ésos no se dice nada. */
-  it("se calla de lo que no conoce", () => {
+  /** Half the country is not in this table, and about those it says nothing. */
+  it("stays quiet about what it does not know", () => {
     expect(departmentMismatch("Caldas", "Vereda La Nubia")).toBeNull();
     expect(departmentOfMunicipality("Puerto Carreño")).toBeNull();
   });
 
   /**
-   * «Palestina» es de Caldas y también del Huila. De ésos no se puede afirmar
-   * nada, así que no se afirma: acertar la mitad de las veces es peor que
-   * callarse, porque enseña a no leer el aviso.
+   * "Palestina" is in Caldas and also in Huila. About those nothing can be
+   * claimed, so nothing is: being right half the time is worse than staying
+   * quiet, because it teaches people not to read the warning.
    */
-  it("se calla de los nombres que están en dos departamentos", () => {
+  it("stays quiet about names that live in two departments", () => {
     expect(departmentOfMunicipality("Palestina")).toBeNull();
     expect(departmentMismatch("Caldas", "Palestina")).toBeNull();
     expect(departmentMismatch("Huila", "Palestina")).toBeNull();
   });
 
-  it("se calla mientras el formulario está a medio llenar", () => {
+  it("stays quiet while the form is only half filled in", () => {
     expect(departmentMismatch("", "Pitalito")).toBeNull();
     expect(departmentMismatch("Caldas", "")).toBeNull();
   });

@@ -21,7 +21,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PlotBoundaryEditor, type MapNeighbour } from "./PlotBoundaryEditor";
 import { AreaComparison } from "./AreaComparison";
-import { LOTE } from "../../lib/vocab";
+import { PLOT } from "../../lib/vocab";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -109,7 +109,7 @@ export function PlotMapPage() {
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate(`${LOTE.path}/${plot.id}`)}
+        onClick={() => navigate(`${PLOT.path}/${plot.id}`)}
         color="inherit"
         sx={{ mb: 1 }}
       >
@@ -172,7 +172,7 @@ export function PlotMapPage() {
 
       {!readOnly && (
         <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
-          <Button color="inherit" onClick={() => navigate(`${LOTE.path}/${plot.id}`)}>
+          <Button color="inherit" onClick={() => navigate(`${PLOT.path}/${plot.id}`)}>
             {dirty ? "Salir sin guardar" : "Volver"}
           </Button>
           <Button variant="contained" onClick={save} disabled={!dirty || saving}>

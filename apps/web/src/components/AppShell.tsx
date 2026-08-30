@@ -91,9 +91,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 primary={m.label}
                 slotProps={{ primary: { fontWeight: selected ? 700 : 500, fontSize: 14 } }}
               />
-              {/* «S4» no significa nada fuera de este equipo. Lo que la
-                  persona necesita saber de una entrada apagada es que todavía
-                  no está, no en qué sprint la pusimos. */}
+              {/* "S4" means nothing outside this team. What a person needs to
+                  know about a greyed-out entry is that it is not here yet,
+                  not which sprint we scheduled it in. */}
               {future && (
                 <Chip size="small" label="pronto" sx={{ height: 18, fontSize: 10 }} />
               )}

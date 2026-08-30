@@ -1,67 +1,68 @@
 /**
- * ── UNA SOLA RESPUESTA A «¿CUÁNTO LE DEBO?» ──────────────────────────────
+ * ── ONE SINGLE ANSWER TO "HOW MUCH DO I OWE THEM?" ───────────────────────
  *
- * Tres pantallas daban tres cifras para la misma persona y el mismo día:
+ * Three screens gave three figures for the same person on the same day:
  *
- *   el perfil          $184.500 en el tipo más grande — sólo el libro; lo
- *                      pendiente de liquidar iba en letra chica más abajo
- *   la lista           «—» en cada fila y «Total a favor: $0», porque
- *                      `/v1/workers` nunca ha enviado un `balanceCents`
- *   el tablero         $334.500 — la suma de los libros, sin lo pendiente
- *   la pantalla de pagar   $338.100 — la única correcta, y sólo visible para
- *                      quien ya decidió pagar
+ *   the profile        $184.500 in the largest type — the ledger only; what
+ *                      was still to be settled went in small print below
+ *   the list           "—" on every row and "Total a favor: $0", because
+ *                      `/v1/workers` has never sent a `balanceCents`
+ *   the dashboard      $334.500 — the sum of the ledgers, without the
+ *                      outstanding work
+ *   the pay screen     $338.100 — the only correct one, and visible only to
+ *                      somebody who had already decided to pay
  *
- * Para quien no programa, eso no es un bug: es el programa mintiendo. Y
- * después de eso no le cree a ninguna cifra. Así que la respuesta se calcula
- * en un solo sitio —éste— y todas las pantallas la muestran igual, con el
- * desglose debajo en pequeño.
+ * To a person who does not write software that is not a bug: it is the
+ * program lying. And after that they believe no figure at all. So the answer
+ * is worked out in one place —this one— and every screen shows it the same
+ * way, with the breakdown small underneath.
  *
- * ── QUÉ ES «LO QUE SE LE DEBE» ───────────────────────────────────────────
+ * ── WHAT "WHAT THEY ARE OWED" MEANS ──────────────────────────────────────
  *
- *   saldo del libro    devengos menos pagos. Lo que ya está escrito.
- *   + pendiente        trabajo hecho que todavía no se ha liquidado. No es un
- *                      devengo todavía, pero la finca lo debe igual: el
- *                      caficultor que pregunta «cuánto le debo a Rosa» está
- *                      preguntando por la plata que va a entregar, no por el
- *                      estado documental de esa plata.
+ *   ledger balance     accruals minus payments. What is already written down.
+ *   + outstanding      work done that has not been settled yet. It is not an
+ *                      accrual yet, but the farm owes it just the same: the
+ *                      grower asking "how much do I owe Rosa" is asking about
+ *                      the cash they are about to hand over, not about the
+ *                      paperwork status of that cash.
  *
- * Y esa suma es exactamente lo que la pantalla de pagar escribe:
- * `toPayCents = balance.balanceCents + selectedCents`, que es también el
- * `totalCents` que manda `/v1/workers/{id}/payables`. No hay una cuarta
- * definición aquí; hay una sola, con nombre.
+ * And that sum is exactly what the pay screen writes:
+ * `toPayCents = balance.balanceCents + selectedCents`, which is also the
+ * `totalCents` that `/v1/workers/{id}/payables` sends. There is no fourth
+ * definition here; there is one, and it has a name.
  *
- * ── NINGÚN CERO QUE SIGNIFIQUE «NO SÉ» ───────────────────────────────────
+ * ── NO ZERO THAT MEANS "I DON'T KNOW" ────────────────────────────────────
  *
- * Es la regla que ya gobierna `harvest/totals.ts`, y por eso este fichero se
- * le parece tanto: `OwedState` no tiene miembro numérico en el caso
- * `unknown`, así que una pantalla no puede imprimir por descuido un cero que
- * significa «no pude preguntar». Un cero es una afirmación —«está a paz y
- * salvo»— y es justo la que no se puede hacer por accidente.
+ * This is the rule that already governs `harvest/totals.ts`, which is why
+ * this file looks so much like it: `OwedState` has no numeric member in the
+ * `unknown` case, so a screen cannot carelessly print a zero that means "I
+ * couldn't ask". A zero is an assertion —"they are square with everybody"—
+ * and it is precisely the one that must not be made by accident.
  *
- * El caso `partial` merece su propia explicación: lo pendiente nunca es
- * negativo, así que cuando el libro se leyó y lo pendiente no, el saldo es un
- * PISO válido. Decir «al menos $184.500» informa más que un guion, y no
- * miente.
+ * The `partial` case deserves its own explanation: outstanding work is never
+ * negative, so when the ledger was read and the outstanding work was not, the
+ * balance is a valid FLOOR. Saying "at least $184.500" tells you more than a
+ * dash does, and it does not lie.
  */
 import type { Uuid } from "../../api/types";
 
-/** Lo que la finca sabe hoy de la cuenta de una persona. */
+/** What the farm knows today about one person's account. */
 export interface Owed {
   /**
-   * El libro: devengos menos pagos, tal como lo deriva el servidor. Positivo
-   * es la finca debiendo; negativo es un anticipo que la persona carga.
-   * `null` es «no se pudo leer», nunca cero.
+   * The ledger: accruals minus payments, as the server derives it. Positive
+   * is the farm owing; negative is an advance the person is carrying.
+   * `null` means "could not be read", never zero.
    */
   balanceCents: number | null;
   /**
-   * Trabajo hecho que todavía no se ha liquidado. Siempre >= 0. `null` es «no
-   * se pudo leer».
+   * Work done that has not been settled yet. Always >= 0. `null` means "could
+   * not be read".
    */
   pendingCents: number | null;
   /**
-   * Parte de lo pendiente se paga al precio de la semana, que todavía se
-   * puede mover. La cifra se muestra igual —esconderla sería peor— pero
-   * marcada.
+   * Part of the outstanding work is paid at the week's price, which can still
+   * move. The figure is shown all the same —hiding it would be worse— but
+   * flagged.
    */
   pendingIsEstimate: boolean;
 }
@@ -73,10 +74,10 @@ export const NOTHING_KNOWN: Owed = {
 };
 
 /**
- * La cifra, con la procedencia que la finca merece.
+ * The figure, with the provenance the farm deserves.
  *
- * Deliberadamente sin número en `unknown`: no hay nada que renderizar por
- * error.
+ * Deliberately without a number in `unknown`: there is nothing to render by
+ * mistake.
  */
 export type OwedState =
   | { kind: "unknown"; reason: string }
@@ -110,33 +111,33 @@ export function owedState(o: Owed): OwedState {
   };
 }
 
-/** El total cuando se puede afirmar, y `null` cuando no. Para sumar filas. */
+/** The total when it can be asserted, `null` when it cannot. For summing rows. */
 export function totalOwedCents(o: Owed): number | null {
   const s = owedState(o);
   return s.kind === "known" ? s.cents : null;
 }
 
 /**
- * Sumar personas.
+ * Adding people up.
  *
- * Propaga los huecos igual que `foldTotals`: si de una persona no se pudo leer
- * el libro, el total de la finca es desconocido para esa parte, y decirlo es
- * lo único honesto. `unreadable` cuenta a cuántas les pasó, para que la
- * pantalla pueda escribir «de N personas» en vez de un asterisco.
+ * Propagates the holes the way `foldTotals` does: if one person's ledger
+ * could not be read, the farm's total is unknown for that part, and saying so
+ * is the only honest option. `unreadable` counts how many it happened to, so
+ * the screen can write "of N people" instead of an asterisk.
  */
 export interface OwedSum {
-  /** Lo que sí se pudo afirmar entero. Null si de alguien faltó una mitad. */
+  /** What could be asserted in full. Null if anybody was missing a half. */
   cents: number | null;
   /**
-   * El PISO: lo mismo, contando también a quienes sólo se les pudo leer el
-   * libro. Sirve para decir «al menos $X» en vez de un guion cuando lo que
-   * falló fue lo pendiente, que sólo puede sumar. Null cuando no se pudo leer
-   * absolutamente nada.
+   * The FLOOR: the same, also counting those whose ledger alone could be
+   * read. It lets us say "at least $X" instead of a dash when what failed was
+   * the outstanding work, which can only add. Null when absolutely nothing
+   * could be read.
    */
   floorCents: number | null;
-  /** Cuántas personas entraron enteras en `cents`. */
+  /** How many people went into `cents` whole. */
   counted: number;
-  /** Cuántas quedaron fuera porque su cuenta no se pudo leer entera. */
+  /** How many were left out because their account could not be read whole. */
   unreadable: number;
   isEstimate: boolean;
 }
@@ -163,19 +164,20 @@ export function sumOwed(rows: Owed[]): OwedSum {
     counted += 1;
     if (s.isEstimate) isEstimate = true;
   }
-  // Una sola cuenta a medias vuelve incierto el total de la finca, aunque las
-  // demás se hayan leído: el piso sigue siendo útil y el total ya no lo es.
+  // A single half-read account makes the farm's total uncertain, even if all
+  // the others came through: the floor is still useful and the total no
+  // longer is.
   if (unreadable > 0) cents = null;
   return { cents, floorCents, counted, unreadable, isEstimate };
 }
 
 /**
- * Sólo lo que la finca debe hacia afuera.
+ * Only what the farm owes outwards.
  *
- * Un anticipo deja a alguien con saldo negativo, y restarlo de lo que la finca
- * les debe a los demás daría una cifra que no es la plata que hay que contar
- * el sábado. Por eso los negativos entran como cero en el total de la finca —
- * y NO se ocultan: la fila de esa persona sigue diciendo lo suyo.
+ * An advance leaves somebody with a negative balance, and subtracting it from
+ * what the farm owes everybody else would give a figure that is not the cash
+ * to be counted out on Saturday. So negatives go into the farm's total as
+ * zero — and are NOT hidden: that person's own row still says what it says.
  */
 export function sumOwedToFarmWorkers(rows: Owed[]): OwedSum {
   return sumOwed(
@@ -188,10 +190,10 @@ export function sumOwedToFarmWorkers(rows: Owed[]): OwedSum {
 }
 
 /* ------------------------------------------------------------------ */
-/* Armar el mapa de la finca a partir de lo que ya se sabe leer        */
+/* Building the farm's map out of reads we already know how to do     */
 /* ------------------------------------------------------------------ */
 
-/** Lo mínimo que hace falta de una labor para saber si está pendiente. */
+/** The least we need from a work item to tell whether it is outstanding. */
 export interface PendingRecordLike {
   workerId: Uuid;
   settled: boolean;
@@ -199,25 +201,26 @@ export interface PendingRecordLike {
   amountIsEstimate: boolean;
 }
 
-/** Lo mínimo que hace falta de un saldo. */
+/** The least we need from a balance. */
 export interface BalanceLike {
   workerId: Uuid;
   balanceCents: number;
 }
 
 /**
- * La cuenta de cada persona, de dos lecturas que las pantallas de lista ya
- * podían hacer: `/v1/balances` (una) y `/v1/work-records` (una).
+ * Everybody's account, out of two reads the list screens could already do:
+ * `/v1/balances` (one) and `/v1/work-records` (one).
  *
- * NO es un abanico de `/v1/workers/{id}/payables` por cabeza. Ese abanico es
- * lo correcto en la nómina —donde la cifra se va a FIRMAR y tiene que salir de
- * la misma consulta que corre la liquidación— y sería treinta peticiones cada
- * vez que alguien abre la lista de empleados. Aquí la cifra se lee, no se
- * firma, y `estimatedAmountCents` es el mismo número que `payables` suma: el
- * servidor lo calcula con la misma regla en las dos rutas.
+ * This is NOT a fan-out of `/v1/workers/{id}/payables`, one per head. That
+ * fan-out is the right thing in payroll —where the figure is about to be
+ * SIGNED and has to come out of the same query the settlement runs— and it
+ * would be thirty requests every time somebody opens the employee list. Here
+ * the figure is read, not signed, and `estimatedAmountCents` is the same
+ * number `payables` adds up: the server computes it with the same rule on
+ * both routes.
  *
- * `balances` o `records` en `null` significa que esa lectura falló, y entonces
- * la mitad correspondiente de cada cuenta queda en `null` — no en cero.
+ * `balances` or `records` being `null` means that read failed, and then the
+ * matching half of every account stays `null` — not zero.
  */
 export function owedByWorker(
   balances: BalanceLike[] | null,
@@ -250,7 +253,7 @@ export function owedByWorker(
   return out;
 }
 
-/** La cuenta de una persona que no aparece en ninguna de las dos lecturas. */
+/** The account of a person who shows up in neither of the two reads. */
 export function owedOf(
   map: Map<Uuid, Owed>,
   workerId: Uuid,
@@ -259,9 +262,9 @@ export function owedOf(
 ): Owed {
   return (
     map.get(workerId) ?? {
-      // Sin fila en `/v1/balances` y con la lectura buena, el libro de esa
-      // persona está en cero de verdad: no tiene un solo movimiento. Lo mismo
-      // con las labores. Éste es el único cero que este fichero afirma.
+      // No row in `/v1/balances` and a read that went through means that
+      // person's ledger really is at zero: not one entry in it. Same with the
+      // work items. This is the only zero this file asserts.
       balanceCents: balancesRead ? 0 : null,
       pendingCents: recordsRead ? 0 : null,
       pendingIsEstimate: false,

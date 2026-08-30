@@ -559,14 +559,14 @@ describe("the mock is the server", () => {
  * The two rules the interface is built on top of, and which this file's job is
  * to make impossible to build against by accident:
  *
- *   EXISTENCIAS ARE DERIVED. There is no stock column, no route that sets a
+ *   STOCK LEVELS ARE DERIVED. There is no stock column, no route that sets a
  *   quantity, and no way to edit a movement. The number on the screen is a
  *   SUM, every time.
  *
- *   A GASTO IS CHARGED TO ONE THING. An activity, or a plot/crop. Not both and
+ *   AN EXPENSE IS CHARGED TO ONE THING. An activity, or a plot/crop. Not both and
  *   not neither — `expense_target` counts the two and demands exactly 1.
  */
-describe("productos, existencias, ventas y gastos", () => {
+describe("products, stock, sales and expenses", () => {
   const CATEGORY_RAW = "0192f3a0-000e-7000-8000-000000000001";
   const UNIT_BULTO = "0192f3a0-000f-7000-8000-000000000001";
   const MAIN_STORE = "0192f3a0-0010-7000-8000-000000000001";
@@ -635,7 +635,7 @@ describe("productos, existencias, ventas y gastos", () => {
     expect(patched.body.stock).toBe(16);
   });
 
-  it("reads existencias per warehouse, and hides the pairs that net to zero", async () => {
+  it("reads stock per warehouse, and hides the pairs that net to zero", async () => {
     const levels = await get("/v1/stock", OWNER);
     expect(levels.status).toBe(200);
     // WAS `{items}`. The envelope carries the sum of what it lists.

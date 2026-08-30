@@ -16,30 +16,30 @@ import { formatPeriod, formatWeekRange } from "./dates";
 const TODAY = new Date("2026-08-29T12:00:00Z");
 
 describe("formatPeriod", () => {
-  it("no llama semana a un periodo de un año", () => {
+  it("does not call a year-long period a week", () => {
     // The real figure off the running server.
     expect(formatPeriod("2026-08-24", "2027-08-29", TODAY)).toBe("24 ago 2026 – 29 ago 2027");
     // …which is precisely what the old call produced, and it is wrong.
     expect(formatWeekRange("2026-08-24", TODAY)).toBe("24–30 ago");
   });
 
-  it("sí dice «24–30 ago» cuando de verdad es esa semana", () => {
+  it("does say \"24–30 ago\" when it really is that week", () => {
     expect(formatPeriod("2026-08-24", "2026-08-30", TODAY)).toBe("24–30 ago");
   });
 
-  it("un solo día es un día, no una semana", () => {
+  it("a single day is a day, not a week", () => {
     expect(formatPeriod("2026-08-24", "2026-08-24", TODAY)).toBe("24/08/2026");
   });
 
-  it("dentro del mismo mes, sin repetir el mes", () => {
+  it("within one month, without naming the month twice", () => {
     expect(formatPeriod("2026-08-03", "2026-08-14", TODAY)).toBe("3–14 ago");
   });
 
-  it("cruzando de mes, nombra los dos", () => {
+  it("crossing a month, it names both", () => {
     expect(formatPeriod("2026-07-27", "2026-08-14", TODAY)).toBe("27 jul – 14 ago");
   });
 
-  it("cruzando de año, pone los años", () => {
+  it("crossing a year, it prints the years", () => {
     expect(formatPeriod("2026-12-28", "2027-01-10", TODAY)).toBe("28 dic 2026 – 10 ene 2027");
   });
 });

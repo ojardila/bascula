@@ -1,18 +1,18 @@
 /**
- * EL CAMPO QUE NO EXISTÍA.
+ * THE FIELD THAT DID NOT EXIST.
  *
- * `PUT /v1/prices/weeks/{monday}` estaba en el cliente desde el sprint 1 y
- * ninguna pantalla lo llamaba: la consola sabía LEER el precio del kilo de la
- * semana y no sabía FIJARLO. Es la tarea más corriente del dueño de una finca
- * cafetera en cosecha, y era imposible desde aquí.
+ * `PUT /v1/prices/weeks/{monday}` had been in the client since sprint 1 and no
+ * screen called it: the console knew how to READ the week's price per kilo and
+ * did not know how to SET it. It is the most ordinary task a coffee farm owner
+ * has during harvest, and from here it was impossible.
  *
- * Lo que se prueba, en este orden:
+ * What is tested, in this order:
  *
- *   1. que el campo existe y que guardar llega al servidor;
- *   2. que antes de guardar se dice QUÉ se mueve — porque cambiar el precio
- *      de una semana reprecia toda su recolección sin liquidar;
- *   3. que el botón no escribe: abre la confirmación, y desde ahí se puede
- *      salir sin haber cambiado nada.
+ *   1. that the field exists and that saving reaches the server;
+ *   2. that before saving it says WHAT moves — because changing a week's price
+ *      reprices all of that week's unsettled picking;
+ *   3. that the button does not write: it opens the confirmation, and you can
+ *      leave from there without having changed anything.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -28,7 +28,7 @@ import * as db from "../../mocks/db";
 import { mondayOf, todayInFarm } from "../../lib/dates";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
-/** El pesador, que no decide lo que vale un kilo. */
+/** The weigher, who does not decide what a kilo is worth. */
 const WEIGHER = "0192f3a0-0001-7000-8000-000000000003";
 
 function renderPrices() {
@@ -62,27 +62,27 @@ beforeEach(() => {
   signIn(OWNER);
 });
 
-describe("fijar el precio del kilo de la semana", () => {
-  it("enseña lo que se está pagando hoy", async () => {
+describe("setting the week's price per kilo", () => {
+  it("shows what is being paid today", async () => {
     renderPrices();
-    // La finca sembrada paga $800 el kilo. Sale arriba en grande y otra vez en
-    // la tabla de las últimas semanas, que es el historial.
+    // The seeded farm pays $800 a kilo. It shows large at the top and again in
+    // the table of recent weeks, which is the history.
     expect((await screen.findAllByText("$800")).length).toBeGreaterThan(0);
     expect(screen.getByText("por kilo")).toBeInTheDocument();
   }, 20000);
 
-  it("guarda el precio nuevo, y sólo después de que alguien lo confirme", async () => {
+  it("saves the new price, and only after somebody confirms it", async () => {
     const user = userEvent.setup();
     renderPrices();
     await screen.findAllByText("$800");
 
     await user.type(screen.getByLabelText(/Precio nuevo por kilo/), "900");
 
-    // «Revisar y fijar» no escribe nada: abre la lista de lo que se movería.
+    // "Revisar y fijar" writes nothing: it opens the list of what would move.
     await user.click(screen.getByRole("button", { name: /Revisar y fijar/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Estaba en/)).toBeInTheDocument();
-    // Abrir el diálogo no escribe: la finca sigue en los $800 sembrados.
+    // Opening the dialog does not write: the farm is still on the seeded $800.
     expect(priceOf(thisMonday())).toBe(80_000);
 
     await user.click(within(dialog).getByRole("button", { name: /^Fijar en \$900$/ }));
@@ -94,16 +94,16 @@ describe("fijar el precio del kilo de la semana", () => {
   }, 20000);
 
   /**
-   * La confirmación no es un «¿está seguro?». Dice cuánta recolección sin
-   * liquidar cambia de valor y de cuánto a cuánto, que es lo que la persona
-   * necesita para decidir. Es el mismo patrón de la nómina de cuadrilla.
+   * The confirmation is not an "are you sure?". It says how much unsettled
+   * picking changes value and from how much to how much, which is what the
+   * person needs in order to decide. Same pattern as the crew payroll.
    */
-  it("dice qué se mueve antes de moverlo", async () => {
+  it("says what moves before it moves it", async () => {
     const user = userEvent.setup();
     renderPrices();
     await screen.findAllByText("$800");
 
-    // Lo que hay sin liquidar en la semana en curso, dicho fuera del diálogo.
+    // What is unsettled in the current week, said outside the dialog.
     expect(
       await screen.findByText(/labores de recolección/, { exact: false }),
     ).toBeInTheDocument();
@@ -112,15 +112,15 @@ describe("fijar el precio del kilo de la semana", () => {
     await user.click(screen.getByRole("button", { name: /Revisar y fijar/ }));
 
     const dialog = await screen.findByRole("dialog");
-    // Al doble de precio, lo pendiente de la semana vale el doble, y la
-    // diferencia se enseña con su signo.
+    // At double the price, the week's outstanding work is worth double, and
+    // the difference is shown with its sign.
     expect(within(dialog).getByText("Diferencia")).toBeInTheDocument();
     expect(within(dialog).getByText(/Con el precio nuevo/)).toBeInTheDocument();
-    // Y lo que ya se liquidó no se toca: ése es el trato de liquidar.
+    // And what is already settled is not touched: that is the deal of settling.
     expect(within(dialog).getByText(/no se ha liquidado/)).toBeInTheDocument();
   }, 20000);
 
-  it("«Ahora no» deja el precio como estaba", async () => {
+  it('"Ahora no" leaves the price as it was', async () => {
     const user = userEvent.setup();
     renderPrices();
     await screen.findAllByText("$800");
@@ -133,7 +133,7 @@ describe("fijar el precio del kilo de la semana", () => {
     expect(priceOf(thisMonday())).toBe(80_000);
   }, 20000);
 
-  it("no acepta un precio que no es un precio", async () => {
+  it("does not accept a price that is not a price", async () => {
     const user = userEvent.setup();
     renderPrices();
     await screen.findAllByText("$800");
@@ -145,8 +145,8 @@ describe("fijar el precio del kilo de la semana", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   }, 20000);
 
-  /** `config.prices` es del dueño. Un pesador no decide lo que vale un kilo. */
-  it("el pesador no entra", async () => {
+  /** `config.prices` is the owner's. A weigher does not price a kilo. */
+  it("the weigher does not get in", async () => {
     signIn(WEIGHER);
     renderPrices();
     expect(

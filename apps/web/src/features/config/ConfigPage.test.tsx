@@ -1,5 +1,5 @@
 /**
- * «ESTADO: ACTIVE» — en inglés, y además inventado.
+ * "ESTADO: ACTIVE" — in English, and made up on top of that.
  *
  * The chip read the farm status off the SESSION. `/v1/me` reports no farm
  * lifecycle at all — the payload is id, name, timezone and currency — so
@@ -53,15 +53,15 @@ beforeEach(() => {
   });
 });
 
-describe("el estado de la finca", () => {
-  it("se escribe en español y sale de /v1/farm", async () => {
+describe("the farm status", () => {
+  it("is written in Spanish and comes from /v1/farm", async () => {
     renderConfig();
     await waitFor(() => expect(statusRow()).toHaveTextContent("Activa"));
     // The raw enum was what the screen printed before.
     expect(statusRow()).not.toHaveTextContent("active");
   }, 20000);
 
-  it("dice «—» mientras no se sepa, en vez de suponer que está activa", async () => {
+  it("shows an em dash while the status is unknown, instead of assuming the farm is active", async () => {
     server.use(
       http.get("*/v1/farm", () =>
         HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
@@ -73,7 +73,7 @@ describe("el estado de la finca", () => {
     expect(statusRow()).not.toHaveTextContent("Activa");
   }, 20000);
 
-  it("y dice «Suspendida» cuando lo está", async () => {
+  it("and shows Suspendida when the farm is suspended", async () => {
     server.use(
       http.get("*/v1/farm", () =>
         HttpResponse.json({

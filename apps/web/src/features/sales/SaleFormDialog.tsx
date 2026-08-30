@@ -1,5 +1,5 @@
 /**
- * RSP-027: producto, cantidad, valor, cliente, foto del comprobante.
+ * RSP-027: product, quantity, amount, customer, photo of the receipt.
  *
  * TWO THINGS THIS FORM KNOWS THAT THE USE CASE DOES NOT SAY.
  *

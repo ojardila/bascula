@@ -336,10 +336,10 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         open={!!confirming}
         busy={busy}
         /**
-         * Sin artículo: `singular === "labor" ? "la" : "el"` escribía «¿Dar
-         * de baja el actividad?», porque el género de un sustantivo no se
-         * deduce de una lista de un elemento. El nombre propio se lee mejor
-         * de todos modos — es el que la persona está mirando en la fila.
+         * No article: `singular === "labor" ? "la" : "el"` was writing "¿Dar
+         * de baja el actividad?", because the gender of a noun cannot be
+         * deduced from a one-item list. The proper name reads better anyway
+         * — it is the one the person is looking at in the row.
          */
         title={
           confirming
@@ -355,17 +355,17 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         }
         confirmLabel={confirming?.kind === "off" ? "Dar de baja" : "Reactivar"}
         /**
-         * ── EL ROJO ERA PARA LO REVERSIBLE ─────────────────────────────
+         * ── RED WAS BEING SPENT ON THE REVERSIBLE THING ────────────────
          *
-         * Dar de baja se deshace con «Reactivar», que está en el mismo menú.
-         * Pagar $338.100 no se deshace: queda escrito en el libro. Y hasta
-         * este sprint el único botón rojo de la consola guardaba el primero
-         * mientras el segundo era un clic verde.
+         * Taking a row out of service is undone with "Reactivar", which is in
+         * the same menu. Paying $338.100 is not undone: it is written into
+         * the ledger. And until this sprint the console's only red button was
+         * guarding the first while the second was a green click.
          *
-         * El rojo se queda para lo que no tiene vuelta —anular una
-         * liquidación— y esto pregunta en el tono que le corresponde: sigue
-         * habiendo diálogo, porque una lista que cambia sola tampoco está
-         * bien, pero ya no grita.
+         * Red is kept for what has no way back —voiding a settlement— and
+         * this asks in the tone it deserves: there is still a dialog, because
+         * a list that changes on its own is not right either, but it no
+         * longer shouts.
          */
         destructive={false}
         onConfirm={runConfirmed}

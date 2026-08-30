@@ -7,7 +7,7 @@ import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { formatArea } from "../../lib/money";
-import { LOTE } from "../../lib/vocab";
+import { PLOT } from "../../lib/vocab";
 import type { Plot } from "../../api/types";
 
 export function PlotsPage() {
@@ -119,9 +119,9 @@ export function PlotsPage() {
         </Alert>
       )}
       <ModuleList<Plot>
-        title={LOTE.Many}
-        singular={LOTE.one}
-        plural={LOTE.many}
+        title={PLOT.Many}
+        singular={PLOT.one}
+        plural={PLOT.many}
         rows={data}
         error={error}
         columns={columns}
@@ -133,10 +133,10 @@ export function PlotsPage() {
         searchPlaceholder="Buscar por nombre o municipio"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("plots.write") ? () => navigate(`${LOTE.path}/nuevo`) : undefined}
-        createLabel={`Nuevo ${LOTE.one}`}
-        onRowClick={(p) => navigate(`${LOTE.path}/${p.id}`)}
-        onEdit={can("plots.write") ? (p) => navigate(`${LOTE.path}/${p.id}/editar`) : undefined}
+        onCreate={can("plots.write") ? () => navigate(`${PLOT.path}/nuevo`) : undefined}
+        createLabel={`Nuevo ${PLOT.one}`}
+        onRowClick={(p) => navigate(`${PLOT.path}/${p.id}`)}
+        onEdit={can("plots.write") ? (p) => navigate(`${PLOT.path}/${p.id}/editar`) : undefined}
         onDeactivate={
           can("plots.delete")
             ? async (p) => {
@@ -157,11 +157,11 @@ export function PlotsPage() {
               }
             : undefined
         }
-        emptyTitle={`Todavía no hay ${LOTE.many}`}
+        emptyTitle={`Todavía no hay ${PLOT.many}`}
         emptyBody="Un lote es un pedazo de tierra con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre él."
         footer={
           data
-            ? `${data.length} ${data.length === 1 ? LOTE.one : LOTE.many} · ` +
+            ? `${data.length} ${data.length === 1 ? PLOT.one : PLOT.many} · ` +
               `${formatArea(totalHa)} ha declaradas` +
               (undeclared > 0
                 ? ` · ${undeclared} sin superficie declarada, que no está en ese total`

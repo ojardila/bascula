@@ -80,14 +80,14 @@ function repriceWeek(monday: string, priceCents: number) {
 }
 
 /**
- * ── PAGAR YA NO ES UN CLIC ───────────────────────────────────────────────
+ * ── PAYING IS NO LONGER ONE CLICK ────────────────────────────────────────
  *
- * Entregar $338.100 era un botón verde, irreversible y sin preguntar, mientras
- * dar de baja a un empleado —que se deshace— tenía diálogo rojo. Ahora el
- * botón dice «Revisar y pagar» y no escribe nada: abre la confirmación que
- * lista las labores con su importe, igual que la nómina de cuadrilla. El
- * botón que escribe está dentro, y estos ayudantes son el camino que ahora
- * recorre cualquiera que pague.
+ * Handing over $338.100 was a green button, irreversible and without asking,
+ * while deactivating an employee —which can be undone— got a red dialog. Now
+ * the button says "Revisar y pagar" and writes nothing: it opens the
+ * confirmation listing the work items with their amounts, the same as crew
+ * payroll. The button that writes is inside it, and these helpers are the
+ * path anybody paying now walks.
  */
 async function confirmDialog() {
   const title = await screen.findByText(/^Entregar \$/);
@@ -95,9 +95,9 @@ async function confirmDialog() {
 }
 
 /**
- * MUI deja el diálogo montado —y `aria-modal`— durante los 195 ms de la
- * animación de cierre, así que sin esto la siguiente consulta sobre la página
- * no ve nada: el modal que se está yendo sigue tapando el documento.
+ * MUI leaves the dialog mounted —and `aria-modal`— for the 195 ms of the
+ * closing animation, so without this the next query over the page sees
+ * nothing: the modal on its way out is still covering the document.
  */
 async function confirmDialogGone() {
   await waitFor(() =>
@@ -105,7 +105,7 @@ async function confirmDialogGone() {
   );
 }
 
-/** Revisar y firmar el pago total. */
+/** Review and sign the payment in full. */
 async function payTotal(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /Revisar y pagar/ }));
   const dialog = await confirmDialog();
@@ -113,7 +113,7 @@ async function payTotal(user: ReturnType<typeof userEvent.setup>) {
   await confirmDialogGone();
 }
 
-/** Revisar y firmar un pago parcial, el del cuadro de la derecha. */
+/** Review and sign a partial payment, the one in the box on the right. */
 async function payPartial(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Revisar" }));
   const dialog = await confirmDialog();
@@ -121,14 +121,14 @@ async function payPartial(user: ReturnType<typeof userEvent.setup>) {
   await confirmDialogGone();
 }
 
-/** El diálogo de la carrera, buscado por su título y no por ser «el» diálogo. */
+/** The race dialog, found by its title rather than by being "the" dialog. */
 async function driftDialog() {
   const title = await screen.findByText("El total cambió mientras revisaba");
   return title.closest('[role="dialog"]') as HTMLElement;
 }
 
-describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
-  it("no muestra un error: muestra la diferencia y por qué", async () => {
+describe("when the gross changes between looking at it and approving it", () => {
+  it("shows no error: it shows the difference and why", async () => {
     const user = userEvent.setup();
     renderPay();
 
@@ -172,7 +172,7 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
    * re-send the approval the person has already been told is stale — the whole
    * bug, behind one more click.
    */
-  it("la única salida es volver a mirar, nunca un reintentar", async () => {
+  it("the only way out is to look again, never a retry", async () => {
     const user = userEvent.setup();
     renderPay();
     await screen.findByText("$153.600");
@@ -192,7 +192,7 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   }, 20000);
 
-  it("y después de volver a mirar, la cifra nueva sí se puede aprobar", async () => {
+  it("and after looking again, the new figure can be approved", async () => {
     const user = userEvent.setup();
     renderPay();
     await screen.findByText("$153.600");
@@ -214,8 +214,8 @@ describe("cuando el bruto cambia entre mirarlo y aprobarlo", () => {
   }, 20000);
 });
 
-describe("lo estimado no se muestra como definitivo", () => {
-  it("marca las labores que se pagan al precio de la semana", async () => {
+describe("a provisional figure is not shown as a final one", () => {
+  it("flags the work items that are paid at the week's price", async () => {
     renderPay();
     await screen.findByText("Labores pendientes de liquidar");
     // The seeded farm prices its picking by the week, so these rows are not
@@ -228,14 +228,14 @@ describe("lo estimado no se muestra como definitivo", () => {
 });
 
 /**
- * ── EL DOBLE CLIC ────────────────────────────────────────────────────────
+ * ── THE DOUBLE CLICK ─────────────────────────────────────────────────────
  *
  * The auditor's finding, staged the way it happened: two clicks, no wait
  * between them, on a payment against the BALANCE alone. That last part is the
- * whole shape of the bug. When labores are ticked, the settlement's
+ * whole shape of the bug. When work items are ticked, the settlement's
  * anti-double-pay lock catches the second attempt (201 then 409, one payment)
  * — so every test that existed passed while the common case, paying off a
- * saldo, went through twice for double the money.
+ * balance, went through twice for double the money.
  *
  * THE CLICKS ARE DISPATCHED NATIVELY, and that is not fussiness. `userEvent`
  * awaits between actions and `fireEvent` wraps each call in `act()`; both give
@@ -245,8 +245,8 @@ describe("lo estimado no se muestra como definitivo", () => {
  * synchronous block reproduce what the browser actually did — verified: the
  * handler ran twice with the button still enabled.
  */
-describe("un doble clic no puede pagar dos veces", () => {
-  /** Untick every pending labor, leaving a payment against the pure balance. */
+describe("a double click cannot pay twice", () => {
+  /** Untick every outstanding work item, leaving a payment against the pure balance. */
   async function payAgainstBalanceOnly(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByText("Labores pendientes de liquidar");
     const boxes = screen
@@ -264,7 +264,7 @@ describe("un doble clic no puede pagar dos veces", () => {
       .reduce((a, e) => a + Math.abs(e.amountCents), 0);
   }
 
-  it("registra un solo pago y entrega una sola vez la plata", async () => {
+  it("records one payment and hands over the cash once", async () => {
     const user = userEvent.setup();
     renderPay();
     await payAgainstBalanceOnly(user);
@@ -286,9 +286,9 @@ describe("un doble clic no puede pagar dos veces", () => {
      * thing between $10.000 and $20.000 is the guard on this screen.
      */
     await user.type(screen.getByLabelText("Valor"), "10000");
-    // El botón que escribe vive ahora dentro de la confirmación. La guarda que
-    // se está probando —el ref síncrono de `useWriteOnce`— sigue estando en la
-    // misma llamada, así que el doble clic se dispara donde de verdad ocurre.
+    // The button that writes now lives inside the confirmation. The guard
+    // under test —`useWriteOnce`'s synchronous ref— is still on the same
+    // call, so the double click is fired where it really happens.
     await user.click(screen.getByRole("button", { name: "Revisar" }));
     const button = within(await confirmDialog()).getByRole("button", { name: /^Pagar \$/ });
     // Two events, one task. No await, no re-render in between — which is
@@ -311,7 +311,7 @@ describe("un doble clic no puede pagar dos veces", () => {
    * the call, which is what this app did, made every retry a new payment and
    * left the server's idempotency-by-id switched off.
    */
-  it("el reintento lleva el mismo id, así la idempotencia del servidor sí actúa", async () => {
+  it("the retry carries the same id, so the server's idempotency actually fires", async () => {
     const user = userEvent.setup();
     const ids: string[] = [];
     server.use(
@@ -337,12 +337,12 @@ describe("un doble clic no puede pagar dos veces", () => {
   }, 20000);
 
   /**
-   * Corrigiendo el importe, en cambio, es OTRO hecho. Reusing the id there
-   * would be the same bug pointing the other way: the server would answer the
-   * $12.000 request with the $10.000 payment it already has, and the screen
-   * would print a receipt for money that was never handed over.
+   * Correcting the amount, on the other hand, is a DIFFERENT fact. Reusing the
+   * id there would be the same bug pointing the other way: the server would
+   * answer the $12.000 request with the $10.000 payment it already has, and
+   * the screen would print a receipt for money that was never handed over.
    */
-  it("cambiar el importe sí es un pago distinto", async () => {
+  it("changing the amount really is a different payment", async () => {
     const user = userEvent.setup();
     const ids: string[] = [];
     server.use(
@@ -374,29 +374,29 @@ describe("un doble clic no puede pagar dos veces", () => {
 });
 
 /**
- * ── LOS ANTICIPOS, DEL LADO QUE SON ──────────────────────────────────────
+ * ── ADVANCES, ON THE SIDE THEY ACTUALLY BELONG ───────────────────────────
  *
- * El recuadro «Deudas y anticipos» pintaba `cents={-d.amountCents}`, así que
- * plata que la persona YA RECIBIÓ salía «+ $45.000» en verde, con signo más —
- * mientras la misma línea, en el historial del perfil, salía en rojo con
- * menos. Dos pantallas, dos signos, un solo movimiento del libro. Y como son
- * asientos que ya están dentro del saldo, seguían apareciendo idénticos
- * después de pagar todo y quedar en $0, leídos como una deuda que el pago no
- * borró.
+ * The "Deudas y anticipos" box painted `cents={-d.amountCents}`, so cash the
+ * person had ALREADY RECEIVED came out as "+ $45.000" in green, with a plus
+ * sign — while the same line, in the profile's history, came out in red with
+ * a minus. Two screens, two signs, one single ledger entry. And since these
+ * are entries already inside the balance, they went on looking identical
+ * after everything was paid off and the balance was $0, reading as a debt the
+ * payment had not cleared.
  */
-describe("los anticipos y las deducciones", () => {
-  it("se muestran como lo que son: plata ya entregada, en negativo", async () => {
+describe("advances and deductions", () => {
+  it("are shown as what they are: cash already handed over, negative", async () => {
     renderPay();
     const card = (await screen.findByText("Anticipos y deudas ya descontados")).closest(
       ".MuiCardContent-root",
     ) as HTMLElement;
 
-    // El anticipo sembrado de María: $50.000 que ya recibió.
+    // María's seeded advance: $50.000 she has already received.
     expect(within(card).getByText("− $50.000")).toBeInTheDocument();
     expect(within(card).queryByText("+ $50.000")).not.toBeInTheDocument();
   }, 20000);
 
-  it("dice que ya están restados del saldo, para que no se cuenten dos veces", async () => {
+  it("says they are already subtracted from the balance, so they are not counted twice", async () => {
     renderPay();
     expect(
       await screen.findByText(/ya está restada del saldo/),

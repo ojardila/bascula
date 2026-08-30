@@ -70,8 +70,8 @@ beforeEach(() => {
   });
 });
 
-describe("una cédula que ya existe en alguien inactivo", () => {
-  it("no deja al usuario atascado: ofrece reactivar, y dice por qué", async () => {
+describe("an ID number that already belongs to somebody deactivated", () => {
+  it("does not leave the user stuck: it offers to reactivate, and says why", async () => {
     const gone = deactivateSomeone();
     const user = userEvent.setup();
     renderForm();
@@ -88,7 +88,7 @@ describe("una cédula que ya existe en alguien inactivo", () => {
     expect(screen.getByRole("button", { name: "Reactivar" })).toBeInTheDocument();
   }, 20000);
 
-  it("y reactivar lleva a la ficha de esa persona, sin crear una segunda", async () => {
+  it("and reactivating goes to that person's file, without creating a second one", async () => {
     const gone = deactivateSomeone();
     const user = userEvent.setup();
     renderForm();

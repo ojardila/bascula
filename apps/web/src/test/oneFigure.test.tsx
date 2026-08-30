@@ -1,21 +1,21 @@
 /**
- * ── UNA SOLA CIFRA, EN LAS CUATRO PANTALLAS ──────────────────────────────
+ * ── ONE FIGURE, ON ALL FOUR SCREENS ──────────────────────────────────────
  *
- * El hallazgo que más daño hacía de toda la revisión, y el que no es un fallo
- * de una pantalla sino de todas a la vez. Para la misma persona y el mismo día
- * la consola decía:
+ * The most damaging finding in the whole review, and the one that is not a bug
+ * in a screen but in all of them at once. For the same person on the same day
+ * the console said:
  *
- *   el perfil          $184.500, en el tipo más grande de la pantalla
- *   la lista           «—» en cada fila, y «Total a favor: $0» en el pie
- *   el tablero         $334.500
- *   pagar empleado     $338.100 — la única correcta, y sólo visible para quien
- *                      ya había decidido pagar
+ *   the profile        $184.500, in the largest type on the screen
+ *   the list           "—" on every row, and "Total a favor: $0" in the footer
+ *   the dashboard      $334.500
+ *   pay employee       $338.100 — the only correct one, and visible only to
+ *                      somebody who had already decided to pay
  *
- * «Mientras tres pantallas den tres números, no le va a creer a ninguno.» Por
- * eso esta prueba no vive junto a ninguna de ellas: lo que afirma no es de una
- * pantalla, es que las cuatro leen `features/workers/owed.ts` y no cada una su
- * propia suma. Si alguien vuelve a sumar por su cuenta en cualquiera de las
- * cuatro, es aquí donde se rompe.
+ * "While three screens give three numbers, they will not believe any of them."
+ * That is why this test does not live next to any one of them: what it asserts
+ * does not belong to a screen, it is that all four read
+ * `features/workers/owed.ts` and not each one its own sum. If anybody adds
+ * their own total in any of the four again, this is where it breaks.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -35,7 +35,7 @@ import { formatMoney } from "../lib/money";
 import { owedByWorker, sumOwedToFarmWorkers, totalOwedCents } from "../features/workers/owed";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
-/** María: saldo en el libro y tres labores sin liquidar. */
+/** María: a balance in the ledger and three unsettled pieces of work. */
 const MARIA = "0192f3a0-0006-7000-8000-000000000001";
 
 function renderAt(path: string) {
@@ -66,10 +66,10 @@ beforeEach(() => {
 });
 
 /**
- * Lo que la finca le debe a María, leído del servidor por la misma puerta que
- * usa la liquidación: `payables.totalCents` es `balanceCents + grossCents`.
- * Nada de esto se calcula en la prueba, para que la prueba no pueda estar de
- * acuerdo consigo misma y en desacuerdo con el producto.
+ * What the farm owes María, read off the server through the same door
+ * settlement uses: `payables.totalCents` is `balanceCents + grossCents`. None
+ * of it is computed in the test, so the test cannot agree with itself and
+ * disagree with the product.
  */
 async function owedToMaria(): Promise<number> {
   const [balance, payables] = await Promise.all([
@@ -88,13 +88,13 @@ async function owedByTheFarm(): Promise<number> {
   return sum.cents!;
 }
 
-describe("«¿cuánto le debo?» tiene una sola respuesta", () => {
-  it("el perfil enseña el total arriba, y sus dos mitades debajo", async () => {
+describe("\"how much do I owe them?\" has exactly one answer", () => {
+  it("shows the total at the top of the profile, and its two halves below", async () => {
     const total = await owedToMaria();
     renderAt(`/empleados/${MARIA}`);
     await screen.findByText(/Restrepo Ospina/);
 
-    // La cifra grande es el total, no el saldo del libro.
+    // The big figure is the total, not the ledger balance.
     const card = (await screen.findByText("Lo que se le debe hoy")).closest(
       ".MuiCardContent-root",
     ) as HTMLElement;
@@ -102,13 +102,14 @@ describe("«¿cuánto le debo?» tiene una sola respuesta", () => {
       expect(within(card).getByText(formatMoney(total))).toBeInTheDocument(),
     );
 
-    // Y el desglose sigue estando, con los dos nombres que usa el resto de la
-    // consola. Responder primero y explicar después, no al revés.
+    // And the breakdown is still there, under the two names the rest of the
+    // console uses. Answer first and explain afterwards, not the other way
+    // round.
     expect(within(card).getByText("Ya liquidado (saldo del libro)")).toBeInTheDocument();
     expect(within(card).getByText("Pendiente de liquidar")).toBeInTheDocument();
   }, 20000);
 
-  it("la pantalla de pagar dice exactamente lo mismo", async () => {
+  it("says exactly the same thing on the payment screen", async () => {
     const total = await owedToMaria();
     renderAt(`/empleados/${MARIA}/pagar`);
     await waitFor(() =>
@@ -118,7 +119,7 @@ describe("«¿cuánto le debo?» tiene una sola respuesta", () => {
     );
   }, 20000);
 
-  it("la lista de empleados ya no dice «—» ni suma cero", async () => {
+  it("no longer shows \"—\" on the employee list, nor adds up to zero", async () => {
     const total = await owedToMaria();
     const farm = await owedByTheFarm();
     renderAt("/empleados");
@@ -126,13 +127,13 @@ describe("«¿cuánto le debo?» tiene una sola respuesta", () => {
     const row = (await screen.findByText("María Restrepo Ospina")).closest(
       "tr",
     ) as HTMLElement;
-    // La columna leía `w.balanceCents`, que `GET /v1/workers` nunca ha enviado:
-    // un `undefined` por fila, pintado como guion, y sumado como cero.
+    // The column read `w.balanceCents`, which `GET /v1/workers` has never
+    // sent: an `undefined` per row, painted as a dash, and summed as a zero.
     await waitFor(() => expect(within(row).getByText(formatMoney(total))).toBeInTheDocument());
     expect(await screen.findByText(formatMoney(farm))).toBeInTheDocument();
   }, 20000);
 
-  it("y el tablero suma esa misma cifra, no sólo los libros", async () => {
+  it("adds up that same figure on the dashboard, not just the ledgers", async () => {
     const farm = await owedByTheFarm();
     renderAt("/tablero");
     const tile = (await screen.findByText("Lo que la finca les debe a los empleados")).closest(
@@ -142,12 +143,12 @@ describe("«¿cuánto le debo?» tiene una sola respuesta", () => {
   }, 20000);
 
   /**
-   * Y la propiedad que hace que todo lo anterior valga algo: la cifra de la
-   * finca CONTIENE la de la persona. Antes no: el tablero sumaba sólo los
-   * libros, así que las labores sin liquidar de María estaban en su perfil y
-   * en ninguna otra parte.
+   * And the property that makes everything above worth anything: the farm's
+   * figure CONTAINS the person's. It did not before — the dashboard summed
+   * only the ledgers, so María's unsettled work was on her profile and
+   * nowhere else.
    */
-  it("el total de la finca incluye lo pendiente de cada persona", async () => {
+  it("includes each person's pending work in the farm total", async () => {
     const [balances, records] = await Promise.all([
       api.listBalances(),
       api.listWorkRecords({ status: "active" }),

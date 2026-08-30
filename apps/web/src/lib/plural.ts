@@ -1,44 +1,44 @@
 /**
- * PLURALES DE PERSONA, NO DE MÁQUINA.
+ * PLURALS WRITTEN BY A PERSON, NOT BY A MACHINE.
  *
- * «1 venta(s) sin anular». «16 Bulto». Un paréntesis con una ese dentro es la
- * forma que tiene un programa de decirle a quien lo lee que no valía la pena
- * escribirle una frase, y de un producto que se toma el trabajo de distinguir
- * «no es cero, es que no sé» chirría especialmente.
+ * "1 venta(s) sin anular". "16 Bulto". A parenthesis with an s inside it is
+ * how a program tells whoever is reading that writing them a sentence was not
+ * worth the trouble, and coming from a product that goes out of its way to
+ * distinguish "this is not zero, this is I don't know", it grates especially.
  *
- * Dos funciones y nada más, porque el español no necesita una biblioteca para
- * esto: los sustantivos van a mano —son doce en toda la consola— y las
- * unidades siguen una regla que se puede escribir.
+ * Two functions and nothing more, because Spanish does not need a library for
+ * this: the nouns are done by hand —there are twelve in the whole console—
+ * and the units follow a rule you can write down.
  */
 
-/** «1 venta» · «3 ventas». El nombre en plural se da a mano. */
+/** "1 venta" · "3 ventas". The plural noun is supplied by hand. */
 export function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Sólo la palabra, sin el número. */
+/** Just the word, without the number. */
 export function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
 /**
- * SÍMBOLOS QUE NO SE PLURALIZAN.
+ * SYMBOLS THAT DO NOT TAKE A PLURAL.
  *
- * «kg» son kilogramos en singular y en plural: un símbolo de unidad no lleva
- * ese, y «16 kgs» delata a quien lo escribió. Los nombres —bulto, arroba,
- * canasta— sí, porque son sustantivos comunes.
+ * "kg" is kilograms in the singular and in the plural: a unit symbol takes no
+ * s, and "16 kgs" gives away whoever wrote it. The names —bulto, arroba,
+ * canasta— do take one, because they are ordinary nouns.
  */
 const SYMBOLS = new Set(["kg", "g", "mg", "t", "l", "ml", "cc", "m", "cm", "km", "m2", "ha", "@"]);
 
 /**
- * La unidad como la diría un caficultor: en minúscula y concordando con el
- * número. «16 Bulto» -> «16 bultos»; «1 arroba» se queda; «38,5 kg» también.
+ * The unit as a coffee farmer would say it: lower case and agreeing with the
+ * number. "16 Bulto" -> "16 bultos"; "1 arroba" stays; so does "38,5 kg".
  *
- * La regla del plural es la del español y llega hasta donde llega: vocal
- * final, ese; consonante, «es». Cubre las unidades del catálogo —bulto,
- * arroba, canasta, caja, lata, saco, costal— y falla, como falla el español,
- * con las palabras raras. Cuando el catálogo de la finca traiga una de ésas, la
- * unidad es un dato de la finca y no de este fichero.
+ * The plural rule is the Spanish one and it reaches as far as it reaches:
+ * final vowel, add s; consonant, add "es". It covers the catalogue's units
+ * —bulto, arroba, canasta, caja, lata, saco, costal— and it fails, the way
+ * Spanish itself fails, on the odd words. When the farm's catalogue brings one
+ * of those, the unit is the farm's data and not this file's.
  */
 export function unitLabel(n: number, unit: string | null | undefined): string {
   if (!unit) return "";

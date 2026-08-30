@@ -57,8 +57,8 @@ beforeEach(() => {
   });
 });
 
-describe("las liquidaciones de la finca", () => {
-  it("las encuentra, con el periodo que de verdad cubren", async () => {
+describe("the farm's settlements", () => {
+  it("finds them, with the period they actually cover", async () => {
     renderAt("/liquidaciones");
     // Seeded: Édinson's, $150.000.
     expect(await screen.findByText("Édinson Marín Ríos")).toBeInTheDocument();
@@ -85,16 +85,16 @@ describe("las liquidaciones de la finca", () => {
    * `itemCount` instead. The console counted `items.length`, so every
    * settlement in the farm read LÍNEAS: 0, including ones with five.
    */
-  it("cuenta las líneas con itemCount, no con un array que llega vacío", async () => {
+  it("counts the lines with itemCount, not with an array that arrives empty", async () => {
     renderAt("/liquidaciones");
     const row = (await screen.findByText("Édinson Marín Ríos")).closest("tr")!;
     const cells = within(row).getAllByRole("cell");
-    // Empleado, Periodo, Registrada, Líneas, Bruto, Estado.
+    // Empleado, Periodo, Registrada, Líneas, Bruto, Estado — the column order.
     expect(cells[3]).toHaveTextContent("1");
     expect(cells[3]).not.toHaveTextContent("0");
   }, 20000);
 
-  it("encuentra también una liquidación hecha hace un momento", async () => {
+  it("also finds a settlement made a moment ago", async () => {
     const approved = await api.previewSettlement(MARIA);
     await api.settle(
       MARIA,
@@ -107,15 +107,15 @@ describe("las liquidaciones de la finca", () => {
     expect(screen.getByText("$153.600")).toBeInTheDocument();
   }, 20000);
 
-  it("no inventa un total mientras carga", async () => {
+  it("does not invent a total while loading", async () => {
     // The fan-out is held open so the loading state is observable rather than
     // raced for. On a real farm it is several round trips and this state is
     // what somebody actually looks at for a second.
-    // 400 ms y no 50: con la suite entera corriendo, los 50 se agotaban
-    // mientras `findByText` hacía su primer sondeo y la carga se perdía entre
-    // una aserción y la siguiente. Un fallo intermitente en una prueba sobre
-    // «no inventes una cifra mientras cargas» es peor que inútil: enseña a
-    // volver a lanzarla.
+    // 400 ms and not 50: with the whole suite running, the 50 ran out while
+    // `findByText` was taking its first poll, and the loading state was lost
+    // between one assertion and the next. A flaky failure in a test about
+    // "don't invent a figure while loading" is worse than useless: it teaches
+    // people to re-run it.
     server.use(
       http.get("*/v1/settlements", async () => {
         await delay(400);
@@ -135,18 +135,18 @@ describe("las liquidaciones de la finca", () => {
 });
 
 /**
- * ── «NO HAY» NO ES LO MISMO QUE «NO PUDE» ────────────────────────────────
+ * ── "THERE ARE NONE" IS NOT "I COULDN'T ASK" ─────────────────────────────
  *
- * Sin `GET /v1/settlements`, esta lista se compone leyendo el libro de cada
- * empleado, y `api.listSettlements` se tragaba cada fallo con un
- * `.catch(() => [])`. Con los libros caídos, la pantalla llegaba a AFIRMAR, en
- * presente y sobre la finca, que «todavía no se ha liquidado nada en esta
- * finca» — y ofrecía imprimir la planilla, en blanco, con su columna de
- * firmas. Es la frase que convierte una caída de red en una declaración sobre
- * el negocio de otra persona.
+ * Without `GET /v1/settlements`, this list is assembled by reading every
+ * employee's ledger, and `api.listSettlements` swallowed each failure with a
+ * `.catch(() => [])`. With the ledgers down, the screen went as far as
+ * ASSERTING, in the present tense and about the farm, that "todavía no se ha
+ * liquidado nada en esta finca" — and offered to print the payroll sheet,
+ * blank, signature column and all. That is the sentence that turns a network
+ * outage into a statement about somebody else's business.
  */
-describe("cuando parte de la consulta falla", () => {
-  /** Fuerza el abanico (405) y tumba los libros. */
+describe("when part of the query fails", () => {
+  /** Forces the fan-out (405) and knocks the ledgers over. */
   function fanOutWithBrokenLedgers() {
     server.use(
       http.get("*/v1/settlements", () =>
@@ -158,7 +158,7 @@ describe("cuando parte de la consulta falla", () => {
     );
   }
 
-  it("no afirma que la finca no ha liquidado nada", async () => {
+  it("does not assert that the farm has settled nothing", async () => {
     fanOutWithBrokenLedgers();
     renderAt("/liquidaciones");
 
@@ -171,17 +171,17 @@ describe("cuando parte de la consulta falla", () => {
     ).toBeInTheDocument();
   }, 20000);
 
-  it("y no deja imprimir una planilla en blanco", async () => {
+  it("and does not let a blank payroll sheet be printed", async () => {
     fanOutWithBrokenLedgers();
     renderAt("/liquidaciones");
     await screen.findByText(/Esta lista está incompleta/);
-    // Un papel que se firma no sale de una lectura que se sabe rota.
+    // Paper that gets signed does not come out of a read we know is broken.
     expect(screen.getByRole("button", { name: /Planilla/ })).toBeDisabled();
   }, 20000);
 });
 
 /**
- * ── EL FILTRO, EN LA PANTALLA Y EN EL PAPEL ──────────────────────────────
+ * ── THE FILTER, ON THE SCREEN AND ON THE PAPER ───────────────────────────
  *
  * Everything on this screen is a sum over the filtered rows, under labels that
  * read as facts about the farm. The document is worse: it comes out with the
@@ -189,7 +189,7 @@ describe("cuando parte de la consulta falla", () => {
  * a search result. Both halves are asserted here, because fixing only the
  * screen would leave the sheet that actually gets signed still lying.
  */
-describe("cuando hay un filtro puesto", () => {
+describe("when a filter is in place", () => {
   /** Intercepts what `printDocument` was handed, without opening a frame. */
   function capturePrintedHtml(): { get: () => string } {
     let html = "";
@@ -214,7 +214,7 @@ describe("cuando hay un filtro puesto", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("lo dice en pantalla y ofrece quitarlo", async () => {
+  it("says so on screen and offers to clear it", async () => {
     const user = userEvent.setup();
     renderAt("/liquidaciones");
     await screen.findByText("Édinson Marín Ríos");
@@ -232,7 +232,7 @@ describe("cuando hay un filtro puesto", () => {
     expect(screen.queryByText(/Está viendo/)).not.toBeInTheDocument();
   }, 20000);
 
-  it("y la planilla impresa lo dice también", async () => {
+  it("and the printed payroll sheet says so too", async () => {
     const user = userEvent.setup();
     renderAt("/liquidaciones");
     await screen.findByText("Édinson Marín Ríos");
@@ -251,8 +251,8 @@ describe("cuando hay un filtro puesto", () => {
   }, 20000);
 });
 
-describe("una liquidación por dentro", () => {
-  it("muestra las líneas al precio al que se congelaron", async () => {
+describe("a settlement from the inside", () => {
+  it("shows the lines at the price they were frozen at", async () => {
     renderAt(`/liquidaciones/${SEEDED}`);
     await screen.findByText(/Liquidación de Édinson/);
     // $50.000 a contract, x3 = $150.000. The rate is the one the settlement
@@ -267,7 +267,7 @@ describe("una liquidación por dentro", () => {
    * "Imprimir" — it is under its own heading, and the confirmation says the
    * consequence out loud.
    */
-  it("anular está aparte, y la confirmación dice que es definitivo", async () => {
+  it("voiding sits apart, and the confirmation says it is final", async () => {
     const user = userEvent.setup();
     renderAt(`/liquidaciones/${SEEDED}`);
     await screen.findByText("Anular esta liquidación");
@@ -287,7 +287,7 @@ describe("una liquidación por dentro", () => {
     expect(screen.queryByText("Anular esta liquidación")).not.toBeInTheDocument();
   }, 20000);
 
-  it("la anulada sigue en la lista, no desaparece", async () => {
+  it("the voided one stays in the list, it does not disappear", async () => {
     await api.voidSettlement(SEEDED);
     renderAt("/liquidaciones");
     expect(await screen.findByText("Édinson Marín Ríos")).toBeInTheDocument();

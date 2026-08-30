@@ -1,5 +1,5 @@
 /**
- * LAS LIQUIDACIONES DE LA FINCA.
+ * THE FARM'S SETTLEMENTS.
  *
  * Until this sprint, settling lived entirely inside "pagar empleado": you
  * could make one and never see it again. The sidebar has carried a disabled
@@ -9,18 +9,18 @@
  *
  * What it answers, which nothing else did:
  *
- *   cuáles hay      every settlement the farm has made, newest first
- *   de quién        the worker's name, joined — never a UUID
- *   de qué periodo  the period ACTUALLY covered — BOTH ends of it. It starts
- *                   at the Monday of the earliest payable rather than the
- *                   window the client asked over, and it is frequently not a
- *                   week: the running farm's settlements span from August 2026
- *                   to August 2027
- *   cuánto          the gross, and what is still owed after it
- *   cuáles están anuladas   voided ones are LISTED, struck through, with the
- *                   date — never filtered out, because the ledger carries the
- *                   reversal and a list that hides the settlement cannot be
- *                   reconciled against it
+ *   which ones exist  every settlement the farm has made, newest first
+ *   whose             the worker's name, joined — never a UUID
+ *   what period       the period ACTUALLY covered — BOTH ends of it. It starts
+ *                     at the Monday of the earliest payable rather than the
+ *                     window the client asked over, and it is frequently not a
+ *                     week: the running farm's settlements span from August
+ *                     2026 to August 2027
+ *   how much          the gross, and what is still owed after it
+ *   which are voided  voided ones are LISTED, struck through, with the date —
+ *                     never filtered out, because the ledger carries the
+ *                     reversal and a list that hides the settlement cannot be
+ *                     reconciled against it
  *
  * `GET /v1/settlements` exists now and answers in one request;
  * `api.listSettlements` still keeps a fan-out behind it for an older server
@@ -67,18 +67,18 @@ export function SettlementsPage() {
   const { data: list, error, denied } = useAsync(() => api.listSettlements(), []);
   const data = list?.items ?? null;
   /**
-   * ── «NO HAY» NO ES LO MISMO QUE «NO PUDE» ────────────────────────────
+   * ── "THERE ARE NONE" IS NOT "I COULDN'T ASK" ─────────────────────────
    *
-   * Sin `GET /v1/settlements` esta lista se compone leyendo el libro de cada
-   * empleado, y esas lecturas fallan una a una. Los `catch` de
-   * `api.listSettlements` devolvían listas vacías, así que una caída llegaba
-   * aquí exactamente igual que una finca nueva — y la pantalla AFIRMABA, en
-   * presente y sobre la finca, que no se había liquidado nada nunca. Peor:
-   * imprimía la planilla en blanco, con su columna de firmas.
+   * Without `GET /v1/settlements` this list is assembled by reading every
+   * employee's ledger, and those reads fail one at a time. The `catch`es in
+   * `api.listSettlements` returned empty lists, so an outage arrived here
+   * looking exactly like a brand-new farm — and the screen ASSERTED, in the
+   * present tense and about the farm, that nothing had ever been settled.
+   * Worse: it printed the payroll sheet blank, signature column and all.
    *
-   * Ahora los huecos vienen contados y la pantalla los dice, la lista se
-   * marca como incompleta, y el botón de imprimir se apaga: un papel que se
-   * firma no sale de una lectura que se sabe rota.
+   * Now the holes come back counted and the screen says so, the list is
+   * marked incomplete, and the print button goes dark: paper that gets
+   * signed does not come out of a read we know is broken.
    */
   const holes = (list?.unreadableLedgers ?? 0) + (list?.unreadableSettlements ?? 0);
   const incomplete = holes > 0;
@@ -180,8 +180,8 @@ export function SettlementsPage() {
         <Button
           startIcon={<PrintIcon />}
           variant="outlined"
-          // Una planilla en blanco con columna de firmas, salida de una lectura
-          // que falló, es el peor papel que este producto puede imprimir.
+          // A blank payroll sheet with a signature column, out of a read that
+          // failed, is the worst paper this product can print.
           disabled={!rows || rows.length === 0 || incomplete}
           onClick={printPayroll}
         >
@@ -238,9 +238,9 @@ export function SettlementsPage() {
           <Card variant="outlined">
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                {/* Decía «(vigentes)», que es un estado de fila de base de
-                    datos. Lo que quiere decir es que las anuladas no cuentan,
-                    y eso se puede decir así. `lib/vocab.ts`. */}
+                {/* This said "(vigentes)", which is a database row status.
+                    What it means is that voided ones do not count, and that
+                    can just be said. `lib/vocab.ts`. */}
                 {filtered ? GROSS_SETTLED_LIVE_FILTERED : GROSS_SETTLED_LIVE}
               </Typography>
               {/* No figure at all until the list has loaded. A "$0" while a
@@ -311,9 +311,9 @@ export function SettlementsPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {/* Las cuatro ramas del módulo de cosecha, aquí: cargando,
-                falló, filtro sin resultados, y vacío de verdad. La cuarta es
-                la única que puede afirmar algo sobre la finca. */}
+            {/* The harvest module's four branches, here: loading, failed,
+                filter with no matches, and genuinely empty. The fourth is the
+                only one allowed to assert anything about the farm. */}
             {rows === null && (
               <TableRow>
                 <TableCell colSpan={6} sx={{ color: "text.secondary" }}>

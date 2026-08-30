@@ -327,16 +327,16 @@ export function WorkerFormPage() {
           {/* RSP-004 also asks for a cross-farm background check before saving.
               That is the registry service, and `docs/decisiones.md` keeps it
               out of this sprint — deliberately, not by omission.
-              ── Y ESO NO ES ASUNTO DE QUIEN LLENA ESTA FICHA ─────────────
-              Aquí había un recuadro que decía «la consulta del historial en
-              otras fincas (RSP-009) no entra en este sprint: es un servicio
-              aparte con reglas de habeas data propias». Tres cosas que sólo
-              significan algo dentro del equipo —un código de ticket, la
-              palabra sprint y un término jurídico— en el formulario con el
-              que se contrata a un recolector. Quien lo lee no aprende nada
-              que pueda usar; aprende que la pantalla no está escrita para
-              él. La decisión sigue documentada donde se toman las
-              decisiones, que es este comentario y `docs/decisiones.md`. */}
+              ── AND NONE OF THAT IS THE BUSINESS OF WHOEVER FILLS THIS IN ─
+              There used to be a callout here saying "the cross-farm history
+              check (RSP-009) is not in this sprint: it is a separate service
+              with habeas data rules of its own". Three things that mean
+              something only inside the team — a ticket code, the word sprint
+              and a legal term — sitting in the form you use to hire a picker.
+              Whoever reads it learns nothing they can use; they learn that the
+              screen was not written for them. The decision stays documented
+              where decisions get made, which is this comment and
+              `docs/decisiones.md`. */}
         </Grid>
       </Grid>
 

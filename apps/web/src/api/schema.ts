@@ -409,7 +409,7 @@ export interface paths {
          *     whose handset is the reason for removing them.
          *
          *     It is a real DELETE and the only one in this service, which does not
-         *     contradict "eliminar nunca borra": what is removed is a permission, not
+         *     contradict "delete never deletes": what is removed is a permission, not
          *     a person. The account, its other farms and everything it ever wrote
          *     here stay where they were.
          *
@@ -971,7 +971,7 @@ export interface paths {
         /**
          * Activity categories
          * @description None of the catalogues is a Postgres enum. Every use case that mentions
-         *     them says a farm may invent a value ("con opción de crear una nueva"),
+         *     them says a farm may invent a value ("with the option to create a new one"),
          *     and a closed type would make each invented value an ALTER TYPE in
          *     production. A new farm is seeded with siembra, mantenimiento and
          *     cosecha; anything it adds afterwards is exactly as valid.
@@ -1446,7 +1446,7 @@ export interface paths {
          *     could undo it: `POST /v1/settlements/{id}/void` answers 409
          *     SETTLEMENT_ALREADY_VOID before it looks at a line, the partial unique
          *     index holds each payable while its line lives, and DELETE is revoked
-         *     from the application role on both tables. The pesada was worked, cannot
+         *     from the application role on both tables. The weighing was worked, cannot
          *     be paid, and appears in no pending list — because the lock says it is
          *     already claimed.
          *
@@ -1661,13 +1661,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Bodegas
+         * Warehouses
          * @description A warehouse is a name and a row. What is in one is not on it: ask
          *     `/v1/stock?warehouseId=...`, which sums the movements.
          */
         get: operations["listWarehouses"];
         put?: never;
-        /** Add a bodega */
+        /** Add a warehouse */
         post: operations["createWarehouse"];
         delete?: never;
         options?: never;
@@ -1683,7 +1683,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List products with their existencias
+         * List products with their stock on hand
          * @description RSP-018: grouped by category, with the units on hand. `stock` on every
          *     row is a SUM over that product's movements across every warehouse,
          *     computed now — never a column.
@@ -1694,7 +1694,7 @@ export interface paths {
          * Register a product
          * @description RSP-019. `category` and `storageUnit` may be sent as names instead of
          *     ids, and a name that is not in the catalogue yet is added to it rather
-         *     than rejected — that is the "con opción de crear" button.
+         *     than rejected — that is the "with the option to create one" button.
          *
          *     Idempotent by (farm_id, id): a retry answers 200 with the product.
          */
@@ -1720,7 +1720,7 @@ export interface paths {
         post?: never;
         /**
          * Take a product out of the catalogue
-         * @description RSP-021: eliminar deja el producto inactivo. Its movements stay exactly
+         * @description RSP-021: deleting leaves the product inactive. Its movements stay exactly
          *     where they are — they are facts, and a product leaving the catalogue
          *     does not un-harvest last week's coffee.
          */
@@ -1742,7 +1742,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Existencias, by product and warehouse
+         * Stock on hand, by product and warehouse
          * @description A SUM over stock_moves. Narrowing by `productId` or `warehouseId`
          *     confirms the id belongs to this farm BEFORE it sums: a sum over
          *     somebody else's product returns 0, and "there are none in that
@@ -1788,7 +1788,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The movements existencias are derived from */
+        /** The movements stock on hand is derived from */
         get: operations["listStockMoves"];
         put?: never;
         /**
@@ -1881,11 +1881,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Clientes */
+        /** Customers */
         get: operations["listCustomers"];
         put?: never;
         /**
-         * Add a cliente
+         * Add a customer
          * @description Idempotent by (farm_id, lower(name)) and answers 200, like every other
          *     picker here: the sales screen must not be able to produce two
          *     "Cooperativa" that are different rows.
@@ -3814,7 +3814,7 @@ export interface components {
             /** @enum {string} */
             status?: "active" | "inactive";
         };
-        /** @description One derived line of the existencias screen. */
+        /** @description One derived line of the stock-on-hand screen. */
         StockLevel: {
             /** Format: uuid */
             productId: string;

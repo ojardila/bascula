@@ -1,29 +1,30 @@
 /**
- * ── UN MUNICIPIO QUE NO ES DE ESE DEPARTAMENTO ───────────────────────────
+ * ── A MUNICIPALITY THAT IS NOT IN THAT DEPARTMENT ────────────────────────
  *
- * El formulario de lote traía «Caldas» puesto de fábrica y el municipio era
- * texto libre, así que aceptó sin decir nada «Caldas · Pitalito». Pitalito es
- * del Huila. Nadie se equivoca escribiendo Pitalito: se equivoca no tocando el
- * departamento, porque ya venía puesto y parecía correcto.
+ * The plot form came with "Caldas" filled in from the factory and the
+ * municipality was free text, so it silently accepted "Caldas · Pitalito".
+ * Pitalito is in Huila. Nobody gets Pitalito wrong by typing it: they get it
+ * wrong by not touching the department, because it was already filled in and
+ * looked right.
  *
- * Dos arreglos, y éste es el segundo. El primero está en el formulario: el
- * departamento ya no viene puesto, hay que elegirlo.
+ * Two fixes, and this is the second. The first is in the form: the department
+ * no longer comes prefilled, you have to choose it.
  *
- * ── ESTA TABLA ES DELIBERADAMENTE PARCIAL, Y SÓLO AVISA ──────────────────
+ * ── THIS TABLE IS DELIBERATELY PARTIAL, AND ONLY WARNS ───────────────────
  *
- * Colombia tiene 1.100 municipios y esto no es un padrón. Son los municipios
- * cafeteros que la finca de al lado nombraría, y existe para una sola cosa:
- * cuando alguien escribe uno que ESTÁ en la tabla bajo un departamento que no
- * es el suyo, decirlo. Nunca bloquea y nunca se queja de un nombre que no
- * conoce, que es la mitad del país.
+ * Colombia has 1,100 municipalities and this is not a register. These are the
+ * coffee-growing municipalities the farm next door would name, and it exists
+ * for exactly one thing: when somebody types one that IS in the table under a
+ * department that is not its own, say so. It never blocks and never complains
+ * about a name it does not know, which is half the country.
  *
- * Esa asimetría es lo que la hace segura de tener a medias: un falso positivo
- * es imposible —sólo habla de nombres que conoce— y un falso negativo es un
- * municipio del que sencillamente no dice nada, que es exactamente lo que
- * pasaba antes con todos.
+ * That asymmetry is what makes it safe to have only half of: a false positive
+ * is impossible —it only speaks about names it knows— and a false negative is
+ * a municipality it simply says nothing about, which is exactly what used to
+ * happen with all of them.
  */
 
-/** Municipio -> departamento. Las claves van sin tildes y en minúscula. */
+/** Municipality -> department. Keys are lowercased and stripped of accents. */
 const BY_MUNICIPALITY: Record<string, string> = {};
 
 const TABLE: Record<string, string[]> = {
@@ -79,16 +80,16 @@ const TABLE: Record<string, string[]> = {
 };
 
 /**
- * NOMBRES QUE ESTÁN EN DOS DEPARTAMENTOS DE VERDAD.
+ * NAMES THAT GENUINELY BELONG TO TWO DEPARTMENTS.
  *
- * «Palestina» es de Caldas y también del Huila; «Balboa», de Risaralda y del
- * Cauca; «Risaralda» es un municipio de Caldas y un departamento. De ésos no
- * se puede decir nada, así que no se dice: se sacan de la tabla en vez de
- * inventar una regla que acertaría la mitad de las veces.
+ * "Palestina" is in Caldas and also in Huila; "Balboa" in Risaralda and in
+ * Cauca; "Risaralda" is both a municipality of Caldas and a department. About
+ * those nothing can be said, so nothing is: they are pulled out of the table
+ * instead of inventing a rule that would be right half the time.
  */
 const AMBIGUOUS = new Set(["palestina", "balboa", "risaralda", "colon", "argelia", "san jose"]);
 
-/** Sin tildes y en minúscula, para que «Chinchiná» y «chinchina» sean lo mismo. */
+/** Lowercased and unaccented, so "Chinchiná" and "chinchina" are the same. */
 export function foldName(s: string): string {
   return s
     .trim()
@@ -101,8 +102,8 @@ for (const [department, towns] of Object.entries(TABLE)) {
   for (const town of towns) {
     const key = foldName(town);
     if (AMBIGUOUS.has(key)) continue;
-    // Un nombre que aparece dos veces sin estar en AMBIGUOUS es un error de
-    // esta tabla, no del usuario: se calla en vez de acusar a nadie.
+    // A name that shows up twice without being in AMBIGUOUS is a bug in this
+    // table, not the user's: it goes quiet rather than accusing anybody.
     if (key in BY_MUNICIPALITY && BY_MUNICIPALITY[key] !== department) {
       AMBIGUOUS.add(key);
       delete BY_MUNICIPALITY[key];
@@ -113,17 +114,17 @@ for (const [department, towns] of Object.entries(TABLE)) {
 }
 
 /**
- * El departamento al que pertenece ese municipio, cuando la tabla lo sabe con
- * certeza. `null` para todo lo demás — que es la mayoría del país, y está bien.
+ * The department that municipality belongs to, when the table knows for
+ * certain. `null` for everything else — most of the country, and that is fine.
  */
 export function departmentOfMunicipality(municipality: string): string | null {
   return BY_MUNICIPALITY[foldName(municipality)] ?? null;
 }
 
 /**
- * `null` cuando no hay nada que decir. Un texto cuando el municipio escrito
- * pertenece, con certeza, a otro departamento. Nunca impide guardar: quien
- * está parado en la finca sabe dónde está mejor que esta tabla.
+ * `null` when there is nothing to say. A sentence when the municipality typed
+ * belongs, for certain, to another department. It never stops a save: whoever
+ * is standing on the farm knows where they are better than this table does.
  */
 export function departmentMismatch(
   department: string,

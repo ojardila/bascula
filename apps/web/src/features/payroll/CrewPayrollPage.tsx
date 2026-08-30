@@ -1,42 +1,42 @@
 /**
- * LA NÓMINA DE CUADRILLA. La pantalla donde más plata se mueve de un golpe.
+ * CREW PAYROLL. The screen where the most money moves in one go.
  *
- * El razonamiento de producto —por qué dos pasos, cómo se resuelve la carrera
- * para un grupo, por qué el deshacer va en ese orden— está escrito en
- * `crew.ts`, que es donde vive la lógica y donde se puede probar sin
- * renderizar. Aquí queda lo que es de la pantalla, y son cinco cosas:
+ * The product reasoning —why two steps, how the race is resolved for a group,
+ * why the undo runs in that order— is written down in `crew.ts`, which is
+ * where the logic lives and where it can be tested without rendering. What is
+ * left here is what belongs to the screen, and it is five things:
  *
- *  1. **Ver antes de firmar.** La tabla enseña quién cobra y cuánto; cada fila
- *     se abre y enseña POR QUÉ —actividad, fecha, cantidad y precio por
- *     unidad, línea por línea— y abajo está el total de la finca. El diálogo
- *     de confirmación vuelve a listar a todo el mundo con su importe: nadie
- *     pulsa un botón que reparte dos millones de pesos habiendo visto sólo un
+ *  1. **See it before you sign it.** The table shows who is getting paid and
+ *     how much; every row opens up and shows WHY —activity, date, quantity and
+ *     price per unit, line by line— and the farm's total sits underneath. The
+ *     confirmation dialog lists everybody again with their amount: nobody
+ *     presses a button that hands out two million pesos having seen only a
  *     total.
  *
- *  2. **La guarda de la carrera.** `checkSettleRun` / `checkPayRun` corren
- *     ANTES de escribir nada. Si a uno solo le cambió la cifra, no se escribe
- *     de nadie y el diálogo dice de quién y qué se movió, con la misma frase
- *     que la pantalla de una persona (`grossChange.sentenceFor`). Igual que
- *     allí, la única salida es «Volver a revisar»: no hay reintentar, porque
- *     un reintentar reenvía la aprobación caducada.
+ *  2. **The race guard.** `checkSettleRun` / `checkPayRun` run BEFORE anything
+ *     is written. If a single person's figure changed, nothing is written for
+ *     anybody and the dialog says whose and what moved, in the same sentence
+ *     as the single-person screen (`grossChange.sentenceFor`). Just as there,
+ *     the only way out is "Volver a revisar": there is no retry, because a
+ *     retry would resend the expired approval.
  *
- *  3. **El doble clic.** `useWriteOnce` desde la primera línea. Una nómina de
- *     cuadrilla lanzada dos veces es el peor caso posible de ese fallo: no son
- *     $10.000 de más, son treinta pagos. El `intent` nombra la corrida entera
- *     —paso, personas e importe— así que dos clics producen la misma cadena y
- *     por tanto los mismos ids, y cambiar la selección produce otra.
+ *  3. **The double click.** `useWriteOnce` from the very first line. A crew
+ *     payroll fired twice is the worst possible case of that bug: it is not
+ *     $10.000 too much, it is thirty payments. The `intent` names the whole
+ *     run —step, people and amount— so two clicks produce the same string and
+ *     therefore the same ids, and changing the selection produces another.
  *
- *  4. **El deshacer.** Un botón que dice exactamente qué va a deshacer antes
- *     de hacerlo, y exactamente qué deshizo después.
+ *  4. **The undo.** A button that says exactly what it is about to undo before
+ *     it does it, and exactly what it undid afterwards.
  *
- *  5. **El papel.** La planilla con su columna de firmas — y si había un
- *     filtro puesto, o si se destildó a alguien, o si alguien no entró, el
- *     papel lo dice arriba y abajo. Es la mordida de `SettlementsPage`, que
- *     aquí tiene dos formas más de ocurrir.
+ *  5. **The paper.** The payroll sheet with its column of signatures — and if
+ *     a filter was on, or somebody was unticked, or somebody did not get in,
+ *     the paper says so top and bottom. It is the bite `SettlementsPage` took
+ *     out of us, which here has two more ways to happen.
  *
- * El aviso de sincronización de `AppShell` se queda encima de todo esto
- * mientras la mudanza no esté hecha: hoy esta pantalla y el `PaymentsPanel`
- * del teléfono pueden pagarle a la misma persona la misma semana.
+ * The sync warning from `AppShell` stays on top of all this while the move is
+ * unfinished: today this screen and the phone's `PaymentsPanel` can both pay
+ * the same person in the same week.
  */
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -60,7 +60,7 @@ import { messageFor } from "../../api/errors";
 import { sentenceFor } from "../../api/grossChange";
 import { formatDate, formatDateRange, formatDayLong, todayInFarm } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
-import { CORRECCION_GLOSS } from "../../lib/vocab";
+import { CORRECTION_GLOSS } from "../../lib/vocab";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { PayMethod, Uuid } from "../../api/types";
@@ -73,7 +73,7 @@ import {
   type RunRow, type RunScope, type SettleApproval, type UndoResult,
 } from "./crew";
 
-/** Cómo escribe las cifras y las fechas la explicación de la diferencia. */
+/** How the difference explanation writes its figures and dates. */
 const FMT = { money: formatMoney, week: formatDayLong };
 
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
@@ -86,7 +86,7 @@ export function CrewPayrollPage() {
   const { data, error, denied, reload } = useAsync(() => loadCrew(), []);
 
   const [search, setSearch] = useState("");
-  /** Quién quedó destildado. Por omisión entra toda la cuadrilla. */
+  /** Who got unticked. By default the whole crew is in. */
   const [outOfSettle, setOutOfSettle] = useState<Set<Uuid>>(new Set());
   const [outOfPay, setOutOfPay] = useState<Set<Uuid>>(new Set());
   const [open, setOpen] = useState<Set<Uuid>>(new Set());
@@ -94,10 +94,10 @@ export function CrewPayrollPage() {
 
   const [confirm, setConfirm] = useState<Step | null>(null);
   /**
-   * En qué va la corrida. Un solo estado y no dos, porque comprobar y escribir
-   * son tramos del MISMO acto: mientras cualquiera de los dos está en marcha
-   * no se puede lanzar otra nómina, y dos banderas independientes acaban
-   * dejando un hueco entre ellas.
+   * How far the run has got. One state and not two, because checking and
+   * writing are stretches of the SAME act: while either one is under way no
+   * other payroll can be fired, and two independent flags end up leaving a gap
+   * between them.
    */
   const [phase, setPhase] = useState<"checking" | Step | null>(null);
   const [settleDrift, setSettleDrift] = useState<CrewCheck | null>(null);
@@ -114,7 +114,7 @@ export function CrewPayrollPage() {
 
   const crew: CrewMember[] = useMemo(() => data ?? [], [data]);
 
-  /** LA CUADRILLA ENTERA, antes de filtrar y antes de destildar. */
+  /** THE WHOLE CREW, before filtering and before unticking. */
   const allSettle = useMemo(
     () => crew.map(settleApprovalOf).filter((a): a is SettleApproval => a !== null),
     [crew],
@@ -137,7 +137,7 @@ export function CrewPayrollPage() {
   const unitLabel = pickedSettle.find((a) => a.unitLabel)?.unitLabel ?? null;
   const anyProvisional = pickedSettle.some(hasProvisional);
 
-  /** Empleados cuyo pendiente no se pudo leer. No se pueden aprobar. */
+  /** Employees whose outstanding work could not be read. Cannot be approved. */
   const unreadable = crew.filter((m) => m.failure !== null);
 
   const undoHandle = undoHandleOf(runs);
@@ -147,7 +147,7 @@ export function CrewPayrollPage() {
   if (denied) return <PermissionDenied moduleName="correr la nómina" />;
   if (error) return <Alert severity="error">{error}</Alert>;
 
-  /** El alcance que se congela con la aprobación: lo que el papel confesará. */
+  /** The scope frozen with the approval: what the paper will own up to. */
   function scopeOf(step: Step): RunScope {
     const filters: string[] = [];
     if (search.trim() !== "") filters.push(`empleado contiene «${search.trim()}»`);
@@ -163,7 +163,7 @@ export function CrewPayrollPage() {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Paso 1 — liquidar                                                 */
+  /* Step 1 — settle                                                   */
   /* ---------------------------------------------------------------- */
 
   async function doSettle() {
@@ -171,13 +171,13 @@ export function CrewPayrollPage() {
     if (approvals.length === 0) return;
 
     /**
-     * El hecho que se escribe, nombrado por todo de lo que depende. Dos clics
-     * producen la misma cadena y por tanto los mismos ids; cambiar a quién se
-     * le paga o cuánto produce otra, y entonces es otra nómina y no un
-     * reintento que el servidor pueda tragarse.
+     * The fact being written, named by everything it depends on. Two clicks
+     * produce the same string and therefore the same ids; changing who gets
+     * paid or how much produces another one, and then it is a different
+     * payroll and not a retry the server could swallow.
      */
     const intent = [
-      "nomina-liquidar",
+      "payroll-settle",
       approvals.map((a) => `${a.workerId}:${a.grossCents}`).sort().join("+"),
     ].join("|");
 
@@ -186,23 +186,23 @@ export function CrewPayrollPage() {
     const scope = scopeOf("settle");
 
     /**
-     * LA COMPROBACIÓN VA DENTRO DE `runOnce`, y ésta es la parte que tiene
-     * truco. La tentación es dejarla fuera —es una lectura, no una escritura,
-     * y no hay nada que proteger mientras lee—. Pero el candado que para el
-     * segundo clic es síncrono y vive DENTRO de `run`: si la comprobación
-     * queda delante, los dos clics pasan por ella, y basta con que la primera
-     * corrida termine antes de que vuelva la lectura del segundo clic para que
-     * haya dos nóminas. Es improbable y es exactamente la clase de improbable
-     * que un sábado con mala conexión ocurre. Dentro, el segundo clic no llega
-     * ni a preguntar.
+     * THE CHECK GOES INSIDE `runOnce`, and this is the part with a trick in
+     * it. The temptation is to leave it outside —it is a read, not a write,
+     * and there is nothing to protect while it reads. But the latch that stops
+     * the second click is synchronous and lives INSIDE `run`: if the check
+     * sits in front, both clicks go through it, and all it takes is for the
+     * first run to finish before the second click's read comes back and there
+     * are two payrolls. It is unlikely, and it is exactly the kind of unlikely
+     * that happens on a Saturday with a bad connection. Inside, the second
+     * click never even gets to ask.
      */
     const outcome = await runOnce(intent, async (mint) => {
       setPhase("checking");
       const check = await checkSettleRun(approvals);
       setArrivals(check.arrivals);
       if (!checkPassed(check)) {
-        // Nada escrito, y la cifra aprobada está muerta: retirar los ids hace
-        // que la próxima aprobación sea un hecho nuevo de punta a punta.
+        // Nothing written, and the approved figure is dead: retiring the ids
+        // makes the next approval a new fact from end to end.
         retire(intent);
         setSettleDrift(check);
         return null;
@@ -219,8 +219,8 @@ export function CrewPayrollPage() {
         complete: isComplete(rows),
         unitLabel,
       };
-      // Se detuvo a mitad: lanzar es lo que conserva los ids para que
-      // «Reintentar» sea un reintento de verdad. Ver `RunIncomplete`.
+      // It stopped halfway: throwing is what keeps the ids so that
+      // "Reintentar" is a real retry. See `RunIncomplete`.
       if (!run.complete) throw new RunIncomplete(rows);
       return run;
     }).catch((e: unknown) => {
@@ -246,9 +246,9 @@ export function CrewPayrollPage() {
 
     setPhase(null);
     setConfirm(null);
-    // `ran: false` es un segundo clic que se tragó el candado, o un fallo ya
-    // contado arriba. `value === null` es la diferencia, que ya está en
-    // pantalla. En ninguno de los dos casos hay corrida que apuntar.
+    // `ran: false` is a second click the latch swallowed, or a failure already
+    // reported above. `value === null` is the difference, which is already on
+    // screen. In neither case is there a run to record.
     if (!outcome.ran || outcome.value === null) return;
     const finished = outcome.value;
     setRuns((prev) => [...prev, finished]);
@@ -257,7 +257,7 @@ export function CrewPayrollPage() {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Paso 2 — pagar                                                    */
+  /* Step 2 — pay                                                      */
   /* ---------------------------------------------------------------- */
 
   async function doPay() {
@@ -265,7 +265,7 @@ export function CrewPayrollPage() {
     if (approvals.length === 0) return;
 
     const intent = [
-      "nomina-pagar",
+      "payroll-pay",
       method,
       approvals.map((a) => `${a.workerId}:${a.amountCents}`).sort().join("+"),
     ].join("|");
@@ -327,14 +327,14 @@ export function CrewPayrollPage() {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Deshacer                                                          */
+  /* Undo                                                              */
   /* ---------------------------------------------------------------- */
 
   async function doUndo() {
     setAskUndo(false);
     setRunError(null);
     const intent = [
-      "nomina-deshacer",
+      "payroll-undo",
       undoHandle.payments.join("+"),
       undoHandle.settlements.join("+"),
     ].join("|");
@@ -348,15 +348,16 @@ export function CrewPayrollPage() {
 
     if (!outcome.ran) return;
     setUndone(outcome.value);
-    // Lo que quedó por deshacer sigue en pie; lo demás ya no existe. Volver a
-    // dejar el asa completa ofrecería deshacer otra vez lo ya deshecho, y eso
-    // contesta 409 y parece un fallo. Se conserva sólo si algo falló.
+    // Whatever is left to undo still stands; the rest no longer exists.
+    // Putting the whole handle back would offer to undo what is already undone,
+    // and that answers 409 and looks like a failure. Keep it only if something
+    // failed.
     if (outcome.value.failures.length === 0) setRuns([]);
     reload();
   }
 
   /* ---------------------------------------------------------------- */
-  /* El papel                                                          */
+  /* The paper                                                         */
   /* ---------------------------------------------------------------- */
 
   function printRun(run: PayrollRun) {
@@ -373,7 +374,7 @@ export function CrewPayrollPage() {
     if (!ok) setRunError("No se pudo abrir la impresión. Revise el navegador.");
   }
 
-  /** Lo que el diálogo de confirmación lista, sin importar de qué paso venga. */
+  /** What the confirmation dialog lists, whichever step it came from. */
   const confirmRows =
     confirm === "settle"
       ? pickedSettle.map((a) => ({
@@ -505,7 +506,7 @@ export function CrewPayrollPage() {
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
-      {/* ── PASO 1 ─────────────────────────────────────────────────── */}
+      {/* ── STEP 1 ─────────────────────────────────────────────────── */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Stack
@@ -607,7 +608,7 @@ export function CrewPayrollPage() {
                           : `${formatQuantity(a.quantity)} ${a.unitLabel ?? ""}`}
                       </TableCell>
                       <TableCell align="right">
-                        {/* Null es null. Un "$0" aquí diría "no se le debe nada". */}
+                        {/* Null is null. A "$0" here would say "owed nothing". */}
                         {balance === null ? (
                           <Typography variant="body2" color="text.secondary">
                             no se pudo leer
@@ -708,7 +709,7 @@ export function CrewPayrollPage() {
         </CardContent>
       </Card>
 
-      {/* ── PASO 2 ─────────────────────────────────────────────────── */}
+      {/* ── STEP 2 ─────────────────────────────────────────────────── */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Stack
@@ -819,7 +820,7 @@ export function CrewPayrollPage() {
         </CardContent>
       </Card>
 
-      {/* ── EL PARTE ───────────────────────────────────────────────── */}
+      {/* ── THE REPORT ─────────────────────────────────────────────── */}
       {runs.map((run, i) => (
         <RunReport
           key={`${run.step}-${run.at}-${i}`}
@@ -861,7 +862,7 @@ export function CrewPayrollPage() {
         </Card>
       )}
 
-      {/* ── CONFIRMAR: VER ANTES DE FIRMAR ─────────────────────────── */}
+      {/* ── CONFIRM: SEE IT BEFORE YOU SIGN IT ─────────────────────── */}
       <Dialog
         open={confirm !== null}
         onClose={() => setConfirm(null)}
@@ -885,7 +886,7 @@ export function CrewPayrollPage() {
               <>
                 Esto escribe un pago por persona en el libro. Los pagos{" "}
                 <strong>no se editan</strong>: si queda mal, se corrige con{" "}
-                {CORRECCION_GLOSS}
+                {CORRECTION_GLOSS}
               </>
             )}
           </DialogContentText>
@@ -989,7 +990,7 @@ export function CrewPayrollPage() {
         }}
       />
 
-      {/* ── DESHACER: DECIR QUÉ VA A DESHACER ANTES DE HACERLO ─────── */}
+      {/* ── UNDO: SAY WHAT IT WILL UNDO BEFORE DOING IT ────────────── */}
       <Dialog open={askUndo} onClose={() => setAskUndo(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Deshacer la nómina</DialogTitle>
         <DialogContent>
@@ -1023,7 +1024,7 @@ export function CrewPayrollPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/* El parte de la corrida                                              */
+/* The run report                                                      */
 /* ------------------------------------------------------------------ */
 
 const STATUS_LABEL: Record<RunRow["status"], string> = {
@@ -1125,8 +1126,9 @@ function RunReport({
                 </TableCell>
                 {run.step === "pay" && (
                   <TableCell align="right">
-                    {/* Null cuando no se llegó a escribir: no hay saldo posterior
-                        que leer, y un "$0" diría que quedó a paz y salvo. */}
+                    {/* Null when the write never happened: there is no later
+                        balance to read, and a "$0" would say they went home
+                        square with everybody. */}
                     {r.balanceAfterCents === null ? (
                       "—"
                     ) : (
@@ -1163,17 +1165,17 @@ function RunReport({
 }
 
 /* ------------------------------------------------------------------ */
-/* Las diferencias                                                     */
+/* The differences                                                     */
 /* ------------------------------------------------------------------ */
 
 /**
- * No es una caja de error, por lo mismo que en `PayWorkerPage`: lo que pasó no
- * es que algo fallara, es que la finca debe otra cosa, y quien firma tiene que
- * ver la nueva antes de aprobarla.
+ * This is not an error box, for the same reason as in `PayWorkerPage`: what
+ * happened is not that something failed, it is that the farm owes a different
+ * amount, and whoever signs has to see the new one before approving it.
  *
- * `onClose` no está cableado y la tecla de escape está desactivada: todas las
- * salidas pasan por «Volver a revisar», que tira la aprobación caducada y
- * vuelve a leer. Desde aquí no hay ningún camino a una escritura.
+ * `onClose` is not wired up and the escape key is disabled: every way out goes
+ * through "Volver a revisar", which throws away the expired approval and reads
+ * again. From here there is no path at all to a write.
  */
 function SettleDriftDialog({
   check,

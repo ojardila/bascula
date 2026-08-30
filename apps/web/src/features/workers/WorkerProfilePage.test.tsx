@@ -1,5 +1,6 @@
 /**
- * EL PERFIL DEL EMPLEADO, CUANDO NO SABE — y cuando lo que sabe es provisional.
+ * THE EMPLOYEE PROFILE, WHEN IT DOES NOT KNOW — and when what it knows is
+ * provisional.
  *
  * "Pendiente de liquidar" does not come from `/v1/workers/{id}/profile`. It is
  * a second request, `/v1/workers/{id}/payables`, fired in parallel and caught
@@ -52,8 +53,8 @@ beforeEach(() => {
   });
 });
 
-describe("cuando no se pueden consultar los pendientes", () => {
-  it("dice «—» y lo explica, en vez de un $0 que parece paz y salvo", async () => {
+describe("when the outstanding work cannot be read", () => {
+  it("says \"—\" and explains it, instead of a $0 that looks like being square", async () => {
     server.use(
       http.get("*/v1/workers/:id/payables", () =>
         HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
@@ -77,7 +78,7 @@ describe("cuando no se pueden consultar los pendientes", () => {
     expect(screen.getByText("Historial financiero")).toBeInTheDocument();
   }, 20000);
 
-  it("y cuando sí se puede, muestra la cifra", async () => {
+  it("and when it can be read, it shows the figure", async () => {
     renderProfile();
     await screen.findByText(/Restrepo Ospina/);
     await waitFor(() =>
@@ -89,8 +90,8 @@ describe("cuando no se pueden consultar los pendientes", () => {
   }, 20000);
 });
 
-describe("lo provisional no se muestra como definitivo", () => {
-  it("marca las labores que todavía se pagan al precio de la semana", async () => {
+describe("a provisional figure is not shown as a final one", () => {
+  it("flags the work items that are still paid at the week's price", async () => {
     renderProfile();
     const table = (await screen.findByText("Labores")).closest(".MuiCardContent-root")!;
     // The seeded farm prices its picking by the week, so these rows are not
@@ -103,22 +104,22 @@ describe("lo provisional no se muestra como definitivo", () => {
 });
 
 /**
- * ── UNA TABLA QUE DECÍA SER TODO Y ERA UNA PÁGINA ────────────────────────
+ * ── A TABLE THAT CLAIMED TO BE EVERYTHING AND WAS ONE PAGE ───────────────
  *
- * `/v1/workers/{id}/profile` corta el libro por `?limit` —cincuenta por
- * defecto en el servidor— y la respuesta no lleva ni el tope ni el total. La
- * consola pintaba lo que llegara bajo el título «Historial financiero», así
- * que a quien lleva dos temporadas en la finca se le enseñaba media cuenta sin
- * una palabra. Es de la misma familia que el resto de la auditoría: una
- * pantalla afirmando más de lo que sabe.
+ * `/v1/workers/{id}/profile` cuts the ledger at `?limit` —fifty by default on
+ * the server— and the response carries neither the cap nor the total. The
+ * console painted whatever arrived under the title "Historial financiero", so
+ * somebody two seasons into the farm was shown half their account without a
+ * word. It is the same family as the rest of the audit: a screen asserting
+ * more than it knows.
  */
-describe("el historial no finge ser más largo de lo que es", () => {
-  it("avisa, con el número, cuando el libro viene cortado", async () => {
+describe("the history does not pretend to be longer than it is", () => {
+  it("warns, with the number, when the ledger comes back truncated", async () => {
     const t = db.tenantOf(db.FARM_ID)!;
     const one = t.ledger.find((l) => l.workerId === MARIA)!;
-    // Sesenta asientos: más que el tope que pide la pantalla.
+    // Sixty entries: more than the cap the screen asks for.
     for (let i = 0; i < 60; i++) {
-      t.ledger.push({ ...one, id: `${one.id}-relleno-${i}` });
+      t.ledger.push({ ...one, id: `${one.id}-filler-${i}` });
     }
     renderProfile();
     expect(
@@ -126,7 +127,7 @@ describe("el historial no finge ser más largo de lo que es", () => {
     ).toBeInTheDocument();
   }, 20000);
 
-  it("y no lo dice cuando de verdad están todos", async () => {
+  it("and does not say it when they really are all there", async () => {
     renderProfile();
     await screen.findByText("Historial financiero");
     await waitFor(() =>

@@ -33,7 +33,7 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { areaHaOfRing, asGeometry, openRing, outerRings, type PolygonGeometry } from "../../lib/geo";
 import { formatArea } from "../../lib/money";
 import { departmentMismatch } from "./municipalities";
-import { LOTE } from "../../lib/vocab";
+import { PLOT } from "../../lib/vocab";
 import type { CatalogItem, PlotInput } from "../../api/types";
 import { DateField } from "../../components/DateField";
 
@@ -74,14 +74,14 @@ export function PlotFormPage() {
   const [name, setName] = useState("");
   const [areaHa, setAreaHa] = useState("");
   /**
-   * VACÍO, no «Caldas».
+   * EMPTY, not "Caldas".
    *
-   * Venía puesto, así que el formulario aceptó sin decir nada «Caldas ·
-   * Pitalito» —Pitalito es del Huila— y el lote quedó guardado en el
-   * departamento equivocado. Nadie se equivoca escribiendo el municipio; se
-   * equivoca no tocando un campo que ya parecía correcto. Un valor por defecto
-   * en un dato que sólo la persona sabe es una respuesta que da el programa y
-   * firma el usuario.
+   * It used to come prefilled, so the form silently accepted "Caldas ·
+   * Pitalito" —Pitalito is in Huila— and the plot was saved under the wrong
+   * department. Nobody gets the municipality wrong by typing it; they get it
+   * wrong by not touching a field that already looked right. A default on a
+   * fact only the person knows is an answer the program gives and the user
+   * signs.
    */
   const [department, setDepartment] = useState("");
   const [municipality, setMunicipality] = useState("");
@@ -192,7 +192,7 @@ export function PlotFormPage() {
     return Number.isFinite(n) ? n : NaN;
   }, [areaHa]);
 
-  /** El aviso del municipio que no es de ese departamento. Null casi siempre. */
+  /** The warning about a municipality in another department. Almost always null. */
   const mismatch = departmentMismatch(department, municipality);
 
   function validateStep1(): boolean {
@@ -275,21 +275,21 @@ export function PlotFormPage() {
       return { ran: false } as const;
     });
     if (!outcome.ran) return;
-    navigate(`${LOTE.path}/${outcome.value.id}`, { replace: true });
+    navigate(`${PLOT.path}/${outcome.value.id}`, { replace: true });
   }
 
   return (
     <Box>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate(LOTE.path)}
+        onClick={() => navigate(PLOT.path)}
         sx={{ mb: 1 }}
         color="inherit"
       >
-        {LOTE.Many}
+        {PLOT.Many}
       </Button>
       <Typography variant="h1" gutterBottom>
-        {editing ? `Modificar ${LOTE.one}` : `Nuevo ${LOTE.one}`}
+        {editing ? `Modificar ${PLOT.one}` : `Nuevo ${PLOT.one}`}
       </Typography>
 
       <Stepper activeStep={step} sx={{ maxWidth: 520, my: 3 }}>
@@ -366,10 +366,11 @@ export function PlotFormPage() {
                         onChange={(e) => setMunicipality(e.target.value)}
                         error={!!fields.municipality}
                         /**
-                         * Avisa, no bloquea. `departmentMismatch` sólo habla
-                         * de los municipios que conoce con certeza, así que un
-                         * falso positivo es imposible; y quien está parado en
-                         * la finca sabe dónde está mejor que una tabla.
+                         * It warns, it does not block. `departmentMismatch`
+                         * speaks only about municipalities it knows for
+                         * certain, so a false positive is impossible; and
+                         * whoever is standing on the farm knows where they
+                         * are better than a table does.
                          */
                         helperText={fields.municipality ?? mismatch ?? " "}
                         slotProps={
@@ -564,7 +565,7 @@ export function PlotFormPage() {
         )}
         {step === 1 && (
           <Button variant="contained" onClick={save} disabled={busy}>
-            {busy ? "Guardando…" : `Guardar ${LOTE.one}`}
+            {busy ? "Guardando…" : `Guardar ${PLOT.one}`}
           </Button>
         )}
       </Stack>

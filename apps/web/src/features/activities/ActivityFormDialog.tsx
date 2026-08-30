@@ -63,9 +63,9 @@ export function ActivityFormDialog({
       setWorkUnit(activity.workUnit ?? "kg");
       setTimeUnit(activity.timeUnit ?? "jornal");
       setWeekly(activity.rateSource === "weekly_price");
-      // El mismo redondeo callado que el de los gastos, y aquí sobre el
-      // precio de una actividad: abrir y guardar movía los centavos de todo lo
-      // que se liquide después. Ver `lib/money.ts`.
+      // The same silent rounding as in expenses, and here it lands on an
+      // activity's price: opening and saving shifted the cents of everything
+      // settled afterwards. See `lib/money.ts`.
       setRate(
         activity.defaultRateCents === undefined
           ? ""
@@ -87,12 +87,12 @@ export function ActivityFormDialog({
   // Only work_unit can take its price from the week; a jornal has no week.
   const canBeWeekly = payMode === "work_unit";
   /**
-   * En una actividad que ya existe, la forma de pago y el origen del precio no
-   * se tocan. No es una decisión de esta pantalla: el servidor los rechaza y
-   * `api.updateActivity` ni siquiera los manda, porque las labores escritas
-   * están clavadas a (activityId, payScheme) por una clave compuesta. Lo que
-   * había antes era peor que un candado: dos interruptores que se movían en
-   * pantalla y no cambiaban nada en el servidor.
+   * On an activity that already exists, the pay mode and the price source are
+   * not touched. That is not this screen's decision: the server rejects them
+   * and `api.updateActivity` does not even send them, because the work items
+   * already written are nailed to (activityId, payScheme) by a composite key.
+   * What was here before was worse than a lock: two switches that moved on
+   * screen and changed nothing on the server.
    */
   const locked = activity !== null;
 
@@ -129,17 +129,17 @@ export function ActivityFormDialog({
       if (activity) {
         await api.updateActivity(activity.id, body);
         /**
-         * ── EL PRECIO QUE SE ESCRIBÍA EN EL AIRE ────────────────────────
+         * ── THE PRICE THAT WAS WRITTEN INTO THIN AIR ────────────────────
          *
-         * `updateActivity` sólo manda `name` y `category` — a propósito: el
-         * esquema de pago está clavado a las labores ya escritas. Pero la
-         * casilla de precio seguía editable y su ayuda prometía «al cambiarlo
-         * se guarda una vigencia nueva», y no se guardaba ninguna: se escribía
-         * un número, se pulsaba Guardar, no fallaba nada y no cambiaba nada.
+         * `updateActivity` only sends `name` and `category` — deliberately:
+         * the pay scheme is nailed to the work items already written. But the
+         * price box stayed editable and its helper text promised "changing it
+         * saves a new effective period", and none was saved: you typed a
+         * number, hit Save, nothing failed and nothing changed.
          *
-         * El precio SÍ se puede cambiar, por su propia ruta, que abre una
-         * vigencia nueva y deja las labores anteriores con el precio de su
-         * fecha. Es la llamada que faltaba.
+         * The price CAN be changed, through its own call, which opens a new
+         * effective period and leaves earlier work items on the price of
+         * their own date. That is the call that was missing.
          */
         const changed = !useWeekly && rateCents !== null && rateCents !== activity.defaultRateCents;
         if (changed && canSetRate) await api.setActivityRate(activity.id, rateCents, validFrom);
@@ -191,10 +191,10 @@ export function ActivityFormDialog({
             <Typography variant="overline" color="text.secondary" component="div">
               Cómo se paga este trabajo
             </Typography>
-            {/* Los dos botones que deciden CÓMO SE LE PAGA A LA GENTE se
-                llamaban «Unidad de trabajo» y «Unidad de tiempo», que son
-                nombres de columna de base de datos. Las palabras están en
-                `lib/vocab.ts`; los valores que se guardan no cambian. */}
+            {/* The two buttons that decide HOW PEOPLE GET PAID used to be
+                called "Unidad de trabajo" and "Unidad de tiempo", which are
+                database column names. The words live in `lib/vocab.ts`; the
+                values that get stored do not change. */}
             <ToggleButtonGroup
               exclusive
               value={payMode}
@@ -262,22 +262,23 @@ export function ActivityFormDialog({
             </div>
           )}
 
-          {/* ── LA TRAMPA, CERRADA ────────────────────────────────────────
-              Quien buscaba dónde subir el kilo de la semana llegaba aquí,
-              pulsaba «Precio fijo» —porque ahí sí sale una casilla de
-              precio—, escribía 900 y guardaba, creyendo que había subido el
-              precio de la semana. Lo que hacía era cambiar la FORMA DE PAGO
-              de toda la recolección de la finca y desconectarla del precio
-              semanal que el teléfono sigue usando. Nada lo avisaba.
+          {/* ── THE TRAP, SHUT ────────────────────────────────────────────
+              Anyone hunting for where to raise the week's price per kilo
+              landed here, hit "Precio fijo" — because that is where a price
+              box does appear — typed 900 and saved, believing they had raised
+              the week's price. What they did was change the PAY MODE for all
+              of the farm's coffee picking and cut it loose from the weekly
+              price the phone still uses. Nothing warned them.
 
-              Dos cosas lo cierran. Una: en una actividad que ya existe el
-              interruptor no se toca, porque el servidor tampoco lo deja —
-              `updateActivity` sólo manda nombre y categoría, y las labores ya
-              escritas están clavadas a (activityId, payScheme) por una clave
-              compuesta. Antes el interruptor se movía en pantalla y no pasaba
-              nada, que es peor que no dejarlo mover: la persona se va creyendo
-              que cambió algo. Y dos: el aviso dice, con el enlace puesto,
-              dónde está de verdad el precio del kilo de la semana. */}
+              Two things shut it. One: on an activity that already exists the
+              switch cannot be moved, because the server will not have it
+              either — `updateActivity` only sends name and category, and the
+              work items already written are nailed to (activityId, payScheme)
+              by a composite key. Before, the switch moved on screen and
+              nothing happened, which is worse than not letting it move: the
+              person walks away believing they changed something. And two: the
+              warning says, with the link right there, where the week's price
+              per kilo actually lives. */}
           {locked && (
             <Alert severity="info" variant="outlined">
               La forma de pago y el origen del precio <strong>no se cambian</strong> en una
@@ -287,10 +288,10 @@ export function ActivityFormDialog({
             </Alert>
           )}
 
-          {/* Y el aviso serio en el otro lado del interruptor: en una
-              actividad NUEVA sí se puede elegir, y elegir «precio fijo» para
-              la recolección es exactamente lo que desconecta la finca del
-              precio semanal. Se dice antes de guardar, no después. */}
+          {/* And the serious warning on the other side of the switch: on a
+              NEW activity you can choose, and choosing a fixed price for
+              coffee picking is exactly what cuts the farm loose from the
+              weekly price. Say it before saving, not after. */}
           {!locked && canBeWeekly && !weekly && (
             <Alert severity="warning">
               <strong>Este precio no es el del kilo de la semana.</strong> Con precio fijo,

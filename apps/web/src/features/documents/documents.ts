@@ -10,7 +10,7 @@
  * Three of them, because the console needs one the phone does not:
  *
  *   paymentReceiptHtml   what a worker takes away after being paid. RSP-008.
- *   settlementHtml       the liquidación itself, line by line, at the prices
+ *   settlementHtml       the settlement itself, line by line, at the prices
  *                        it froze. This is the document that settles an
  *                        argument three weeks later, and it is the one the
  *                        phone has no screen for.
@@ -94,7 +94,7 @@ function lineRows(lines: PayableLine[]): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* RSP-008 — el recibo de pago                                         */
+/* RSP-008 — the pay receipt                                          */
 /* ------------------------------------------------------------------ */
 
 export interface ReceiptInput {
@@ -149,12 +149,13 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
           )}</strong>.</div>`;
 
   /**
-   * EL NÚMERO, ARRIBA Y LEGIBLE.
+   * THE NUMBER, AT THE TOP AND READABLE.
    *
-   * Encabezaba este recibo un UUID de 36 caracteres, que es el número que el
-   * dueño leería por teléfono si alguien reclama. Ahora arriba va la forma
-   * corta —ocho dígitos en dos bloques— y el id entero sigue en el pie, en
-   * letra pequeña, para quien tenga que buscarlo en el libro.
+   * This receipt used to be headed by a 36-character UUID — the number the
+   * owner would read out over the phone if somebody disputes a payment. The
+   * short form goes at the top now, eight digits in two blocks, and the whole
+   * id stays in the footer in small type for whoever has to find it in the
+   * ledger.
    */
   const receiptLine = `<div class="who"><div class="nm">Recibo N.º ${esc(
     payment.receiptNumber,
@@ -184,7 +185,7 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* La liquidación                                                      */
+/* The settlement                                                     */
 /* ------------------------------------------------------------------ */
 
 export interface SettlementDocInput {
@@ -263,7 +264,7 @@ export function settlementHtml(input: SettlementDocInput): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* La planilla de nómina                                               */
+/* The payroll sheet                                                  */
 /* ------------------------------------------------------------------ */
 
 export interface PayrollRow {

@@ -14,7 +14,7 @@ import { mondayOf, todayInFarm, formatMonday } from "../../lib/dates";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
 import { owedByWorker, sumOwedToFarmWorkers } from "../workers/owed";
-import { LOTE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
+import { PLOT, PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 /**
  * The farm at a glance. Deliberately four figures and not twelve: the useful
@@ -44,13 +44,13 @@ function Unknown() {
 }
 
 /**
- * Y lo que muestra MIENTRAS TANTO, que es otra cosa.
+ * And what it shows IN THE MEANTIME, which is a different thing again.
  *
- * «El tablero dice $0 mientras carga» era literal: `(balances ?? [])` suma
- * cero antes de que llegue nada, así que la primera cifra que ve el dueño
- * cada mañana es un cero que dura lo que dure la red — y en una finca eso
- * dura. Un guion tampoco sirve aquí: el guion significa «no se pudo», y
- * todavía se puede. Tres estados, tres dibujos.
+ * "The dashboard says $0 while it loads" was literal: `(balances ?? [])` adds
+ * up to zero before anything arrives, so the first figure the owner sees every
+ * morning is a zero that lasts as long as the network does — and on a farm
+ * that is a while. A dash is no good here either: a dash means "could not",
+ * and we still can. Three states, three drawings.
  */
 function Loading() {
   return (
@@ -84,16 +84,16 @@ export function DashboardPage() {
   );
 
   /**
-   * ── LA CIFRA QUE TIENE QUE COINCIDIR CON LAS OTRAS TRES ──────────────
+   * ── THE FIGURE THAT HAS TO AGREE WITH THE OTHER THREE ────────────────
    *
-   * Este tile decía $334.500 —la suma de los libros— mientras la pantalla de
-   * pagar decía $338.100 para la misma finca, porque el trabajo hecho y sin
-   * liquidar no estaba dentro. La finca lo debe igual: liquidar es el papel,
-   * no la deuda.
+   * This tile said $334.500 —the sum of the ledgers— while the pay screen said
+   * $338.100 for the same farm, because work done and not yet settled was not
+   * in it. The farm owes it just the same: settling is the paperwork, not the
+   * debt.
    *
-   * La suma la hace `features/workers/owed.ts`, que es también lo que suma la
-   * lista de empleados y lo que muestra cada perfil. Una definición, tres
-   * pantallas — y no al revés.
+   * The sum is done by `features/workers/owed.ts`, which is also what adds up
+   * the employee list and what each profile shows. One definition, three
+   * screens — and not the other way round.
    */
   const accounts = owedByWorker(balances, records);
   const farmOwes = sumOwedToFarmWorkers([...accounts.values()]);
@@ -118,10 +118,10 @@ export function DashboardPage() {
     {
       label: "Lo que la finca les debe a los empleados",
       /**
-       * Cuando lo que falla es `/v1/work-records`, el libro sí se leyó y ese
-       * saldo es un PISO válido — lo pendiente sólo puede sumar. Un guion ahí
-       * escondería una cifra que sí se sabe; un total limpio mentiría. Se
-       * escribe el piso y se dice que lo es.
+       * When the thing that failed is `/v1/work-records`, the ledger WAS read
+       * and that balance is a valid FLOOR — what is outstanding can only add
+       * to it. A dash there would hide a figure we do know; a clean total
+       * would lie. We print the floor and say that is what it is.
        */
       value: balancesLoading || recordsLoading ? (
         <Loading />
@@ -179,7 +179,7 @@ export function DashboardPage() {
       to: "/labores",
     },
     {
-      label: `${LOTE.Many} activos`,
+      label: `${PLOT.Many} activos`,
       // "0 lotes activos" is a statement about a farm, and a farm with no
       // lots does not exist. `plots?.length ?? 0` made it out of a failed GET.
       value: plotsLoading ? (
@@ -197,7 +197,7 @@ export function DashboardPage() {
         ? "no se pudo consultar"
         : `${formatArea(totalHa)} ha declaradas` +
           (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
-      to: LOTE.path,
+      to: PLOT.path,
     },
   ];
 
@@ -243,8 +243,8 @@ export function DashboardPage() {
             <Button variant="outlined" startIcon={<GroupsIcon />} onClick={() => navigate("/empleados/nuevo")}>
               Nuevo empleado
             </Button>
-            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate(`${LOTE.path}/nuevo`)}>
-              Nuevo {LOTE.one}
+            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate(`${PLOT.path}/nuevo`)}>
+              Nuevo {PLOT.one}
             </Button>
           </Stack>
         </CardContent>

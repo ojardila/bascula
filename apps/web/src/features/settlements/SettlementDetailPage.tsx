@@ -1,5 +1,5 @@
 /**
- * ONE LIQUIDACIÓN, LINE BY LINE.
+ * ONE SETTLEMENT, LINE BY LINE.
  *
  * `docs/diagramas/web.md` §SG_liq calls this "liquidación · líneas congeladas",
  * and *congeladas* is the whole point: these rows carry the price they were
@@ -41,7 +41,7 @@ import { formatQuantity } from "../../lib/money";
 import { settlementHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { CORRECCION_GLOSS, PROVISIONAL } from "../../lib/vocab";
+import { CORRECTION_GLOSS, PROVISIONAL } from "../../lib/vocab";
 
 export function SettlementDetailPage() {
   const { id = "" } = useParams();
@@ -269,7 +269,7 @@ export function SettlementDetailPage() {
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               Anular suelta las labores para que puedan volver a liquidarse y cancela lo
-              que se había ganado con {CORRECCION_GLOSS} No borra nada y{" "}
+              que se había ganado con {CORRECTION_GLOSS} No borra nada y{" "}
               <strong>no se puede deshacer</strong>: una liquidación anulada no vuelve a
               quedar vigente.
             </Typography>
@@ -291,7 +291,7 @@ export function SettlementDetailPage() {
         body={
           `Se van a soltar ${data.lines.length} ` +
           `${data.lines.length === 1 ? "labor" : "labores"} y se va a cancelar lo que ` +
-          `${data.workerName} había ganado, con ${CORRECCION_GLOSS} Anular es ` +
+          `${data.workerName} había ganado, con ${CORRECTION_GLOSS} Anular es ` +
           `definitivo: una liquidación anulada nunca vuelve a quedar vigente.`
         }
         confirmLabel="Sí, anular"

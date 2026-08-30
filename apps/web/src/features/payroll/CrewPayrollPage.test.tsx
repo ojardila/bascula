@@ -1,17 +1,17 @@
 /**
- * LA NÓMINA DE CUADRILLA, DE PUNTA A PUNTA.
+ * CREW PAYROLL, END TO END.
  *
- * `crew.test.ts` prueba las reglas sobre números planos. Esto prueba lo otro,
- * que es lo que de verdad se firma un sábado: la pantalla, la aprobación, las
- * escrituras contra el servidor simulado y el libro que queda después. Nada
- * está sustituido en la capa del cliente — lo que se ejerce es el camino
- * entero, igual que en `PayWorkerPage.test.tsx`.
+ * `crew.test.ts` exercises the rules over plain numbers. This exercises the
+ * other thing, which is what actually gets signed on a Saturday: the screen,
+ * the approval, the writes against the mock server and the ledger left behind.
+ * Nothing is stubbed out in the client layer — what is exercised is the whole
+ * path, just as in `PayWorkerPage.test.tsx`.
  *
- * La finca sembrada tiene tres personas con trabajo pendiente (María $153.600,
- * Luz Dary $49.000, Jhon Fredy $41.840) y una cuarta, Édinson, ya liquidada y
- * sin pagar, con $150.000 de saldo. Esa cuarta persona no es decorado: es el
- * estado a medias que la pantalla tiene que saber leer del servidor sin haberlo
- * guardado en ninguna parte.
+ * The seeded farm has three people with outstanding work (María $153.600, Luz
+ * Dary $49.000, Jhon Fredy $41.840) and a fourth, Édinson, already settled and
+ * unpaid, with a $150.000 balance. That fourth person is not scenery: he is
+ * the half-done state the screen has to be able to read back off the server
+ * without ever having stored it anywhere.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
@@ -51,7 +51,7 @@ beforeEach(() => {
   });
 });
 
-/** El dueño sube el precio de la semana desde el teléfono, en la otra sala. */
+/** The owner raises the week's price from the phone, in the next room. */
 function repriceWeek(monday: string, priceCents: number) {
   const t = db.tenantOf(db.FARM_ID)!;
   const existing = t.weekPrices.find((p) => p.weekStart === monday);
@@ -64,7 +64,7 @@ const liveSettlements = () => tenant().settlements.filter((s) => s.status === "o
 const payments = () => tenant().ledger.filter((e) => e.kind === "pago");
 const paidOut = () => payments().reduce((a, e) => a + Math.abs(e.amountCents), 0);
 
-/** Abrir el diálogo de confirmación del paso 1 y quedarse dentro de él. */
+/** Open step 1's confirmation dialog and stay inside it. */
 async function openSettleConfirm(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByText("1 · Liquidar la semana");
   await waitFor(() =>
@@ -76,41 +76,42 @@ async function openSettleConfirm(user: ReturnType<typeof userEvent.setup>) {
 
 /* ------------------------------------------------------------------ */
 
-describe("ver antes de firmar", () => {
-  it("enseña quién cobra, cuánto, por qué y el total de la finca", async () => {
+describe("see it before you sign it", () => {
+  it("shows who is getting paid, how much, why, and the farm's total", async () => {
     const user = userEvent.setup();
     renderPayroll();
 
     await screen.findByText("1 · Liquidar la semana");
-    // El total de la cuadrilla: 153.600 + 49.000 + 41.840.
+    // The crew's total: 153.600 + 49.000 + 41.840.
     expect(await screen.findByText("$244.440")).toBeInTheDocument();
     expect(screen.getByText(/3 personas/)).toBeInTheDocument();
 
-    // Y el POR QUÉ, que es lo que el teléfono nunca enseñó: kilos y precio,
-    // línea por línea, sin salir de la pantalla.
+    // And the WHY, which is what the phone never showed: kilos and price, line
+    // by line, without leaving the screen.
     await user.click(screen.getByRole("button", { name: /Ver el detalle de María/ }));
-    // Sus dos pesadas van al precio de la semana; la guadañada lleva el suyo.
+    // Her two weigh-ins go at the week's price; the strimming carries its own.
     expect(await screen.findAllByText("$800 / kg")).toHaveLength(2);
     expect(screen.getByText("38,5 kg")).toBeInTheDocument();
     expect(screen.getByText("$45.000")).toBeInTheDocument();
   }, 30000);
 
   /**
-   * El estado a medias que el diseño de dos pasos crea — y que sólo es
-   * aceptable porque no se guarda: se deduce. Édinson está liquidado y sin
-   * pagar desde antes de que esta pantalla existiera, y aparece solo.
+   * The half-done state the two-step design creates — and which is only
+   * acceptable because it is not stored: it is derived. Édinson has been
+   * settled and unpaid since before this screen existed, and he shows up on
+   * his own.
    */
-  it("el paso 2 reconstruye del servidor a quien quedó liquidado y sin pagar", async () => {
+  it("step 2 rebuilds from the server whoever was left settled and unpaid", async () => {
     renderPayroll();
     const step2 = (await screen.findByText("2 · Pagar la nómina")).closest(".MuiCard-root")!;
     await waitFor(() =>
       expect(within(step2 as HTMLElement).getByText("Édinson Marín Ríos")).toBeInTheDocument(),
     );
-    // $150.000 de Édinson + $184.500 de María.
+    // Édinson's $150.000 + María's $184.500.
     expect(within(step2 as HTMLElement).getByText("$334.500")).toBeInTheDocument();
   }, 30000);
 
-  it("el diálogo vuelve a listar a todo el mundo con su importe antes de firmar", async () => {
+  it("the dialog lists everybody again with their amount before signing", async () => {
     const user = userEvent.setup();
     renderPayroll();
     const dialog = await openSettleConfirm(user);
@@ -121,25 +122,25 @@ describe("ver antes de firmar", () => {
     }
     expect(within(dialog).getByText("$153.600")).toBeInTheDocument();
     expect(within(dialog).getByText("$244.440")).toBeInTheDocument();
-    // Y dice qué NO hace, que es la mitad del valor de separar los dos pasos.
+    // And it says what it does NOT do, which is half the value of the split.
     expect(within(dialog).getByText(/No entrega plata todavía/)).toBeInTheDocument();
   }, 30000);
 });
 
 /* ------------------------------------------------------------------ */
 
-describe("la guarda de la carrera, aplicada a un grupo", () => {
+describe("the race guard, applied to a group", () => {
   /**
-   * A UNA persona le cambió el bruto. No se liquida a NADIE — ni siquiera a
-   * las dos cuyo precio no se movió — y la pantalla dice de quién y qué pasó.
+   * ONE person's gross changed. NOBODY gets settled — not even the two whose
+   * price did not move — and the screen says whose and what happened.
    */
-  it("si el bruto de uno cambió, no se escribe nada de nadie y se dice de quién", async () => {
+  it("if one person's gross changed, nothing is written for anybody and it says whose", async () => {
     const user = userEvent.setup();
     renderPayroll();
     const dialog = await openSettleConfirm(user);
 
-    // …y ahora el dueño sube la semana de $800 a $840 el kilo. Sólo María y
-    // Jhon Fredy tienen pesadas al precio de la semana.
+    // …and now the owner raises the week from $800 to $840 a kilo. Only María
+    // and Jhon Fredy have weigh-ins at the week's price.
     repriceWeek("2026-08-24", 84_000);
 
     const before = liveSettlements().length;
@@ -150,20 +151,20 @@ describe("la guarda de la carrera, aplicada a un grupo", () => {
       await screen.findByText(/No se liquidó a nadie, y no se pagó a nadie/),
     ).toBeInTheDocument();
 
-    // DE QUIÉN, y QUÉ cambió — con la misma frase que la pantalla de una sola
-    // persona, para que no haya dos redacciones del mismo hecho.
+    // WHOSE, and WHAT changed — in the same sentence as the single-person
+    // screen, so that there are never two wordings of the same fact.
     expect(
       await screen.findByText(
         /Cuando abrió esta pantalla eran \$153\.600; ahora son \$156\.780 porque el precio de la semana del 24 de agosto pasó de \$800 a \$840\./,
       ),
     ).toBeInTheDocument();
 
-    // Y ni una liquidación escrita: ni de María, ni de Luz Dary, a quien no le
-    // cambió nada. Eso es lo que significa "no pagar a nadie".
+    // And not one settlement written: not María's, not Luz Dary's, whose
+    // figures did not move at all. That is what "pay nobody" means.
     expect(liveSettlements().length).toBe(before);
   }, 30000);
 
-  it("la única salida es volver a mirar, nunca un reintentar", async () => {
+  it("the only way out is to look again, never a retry", async () => {
     const user = userEvent.setup();
     renderPayroll();
     const dialog = await openSettleConfirm(user);
@@ -177,16 +178,17 @@ describe("la guarda de la carrera, aplicada a un grupo", () => {
     ]);
 
     await user.click(within(box).getByRole("button", { name: "Volver a revisar" }));
-    // Y vuelve con la cifra nueva, que es la que la próxima aprobación llevará.
+    // And it comes back with the new figure, the one the next approval carries.
     expect(await screen.findByText("$249.712")).toBeInTheDocument();
   }, 30000);
 
   /**
-   * LA MITAD QUE NO BLOQUEA. Una pesada tardía no cambia la cifra firmada — la
-   * liquidación nombra su conjunto — así que la nómina sale, y la pantalla
-   * avisa de que ese trabajo queda para la próxima en vez de callárselo.
+   * THE HALF THAT DOES NOT BLOCK. A late weigh-in does not change the figure
+   * being signed — the settlement names its own set — so the payroll goes
+   * out, and the screen says that work is left for next time instead of
+   * keeping quiet about it.
    */
-  it("una pesada que llega tarde no detiene la nómina, pero se avisa", async () => {
+  it("a weigh-in that lands late does not stop the payroll, but is announced", async () => {
     const user = userEvent.setup();
     renderPayroll();
     const dialog = await openSettleConfirm(user);
@@ -211,8 +213,8 @@ describe("la guarda de la carrera, aplicada a un grupo", () => {
     expect(screen.getByText(/No entra en esta corrida/)).toBeInTheDocument();
   }, 30000);
 
-  /** La misma idea sobre el otro número: después de liquidar, el saldo. */
-  it("si el saldo de uno cambió, no se paga a nadie", async () => {
+  /** The same idea over the other number: after settling, the balance. */
+  it("if one person's balance changed, nobody gets paid", async () => {
     const user = userEvent.setup();
     renderPayroll();
     await screen.findByText("2 · Pagar la nómina");
@@ -222,7 +224,7 @@ describe("la guarda de la carrera, aplicada a un grupo", () => {
     await user.click(screen.getByRole("button", { name: /Revisar y pagar/ }));
     const dialog = await screen.findByRole("dialog");
 
-    // Alguien le entregó un anticipo a Édinson en el lote mientras tanto.
+    // Somebody handed Édinson an advance out in the plot in the meantime.
     tenant().ledger.push({
       id: crypto.randomUUID(),
       workerId: tenant().workers[3].id,
@@ -248,17 +250,17 @@ describe("la guarda de la carrera, aplicada a un grupo", () => {
 /* ------------------------------------------------------------------ */
 
 /**
- * ── EL DOBLE CLIC, MULTIPLICADO POR TREINTA ─────────────────────────────
+ * ── THE DOUBLE CLICK, MULTIPLIED BY THIRTY ──────────────────────────────
  *
- * El hallazgo A1 sobre la pantalla de una persona costó $10.000 de más. El
- * mismo fallo aquí cuesta una nómina entera repetida. Los clics se despachan
- * nativamente, en el mismo macrotask, que es lo único que reproduce lo que
- * hace un ratón de verdad: `userEvent` espera entre acciones y `fireEvent`
- * envuelve cada llamada en `act()`, y las dos le dan a React un re-render
- * entre medias que un doble clic real no le da.
+ * Finding A1 on the single-person screen cost $10.000 too much. The same bug
+ * here costs a whole payroll run repeated. The clicks are dispatched natively,
+ * in the same macrotask, which is the only thing that reproduces what a real
+ * mouse does: `userEvent` waits between actions and `fireEvent` wraps each
+ * call in `act()`, and both hand React a re-render in between that a real
+ * double click never gives it.
  */
-describe("un doble clic no puede lanzar la nómina dos veces", () => {
-  it("liquida una sola vez, aunque la comprobación previa vaya por delante", async () => {
+describe("a double click cannot fire the payroll twice", () => {
+  it("settles once only, even with the pre-check running ahead of it", async () => {
     const user = userEvent.setup();
     renderPayroll();
     const dialog = await openSettleConfirm(user);
@@ -277,12 +279,12 @@ describe("un doble clic no puede lanzar la nómina dos veces", () => {
     });
 
     await screen.findByText("Liquidación de cuadrilla");
-    // Tres personas, tres liquidaciones. No seis.
+    // Three people, three settlements. Not six.
     expect(posts).toHaveLength(3);
     expect(liveSettlements().length).toBe(4);
   }, 30000);
 
-  it("y paga una sola vez", async () => {
+  it("and pays once only", async () => {
     const user = userEvent.setup();
     renderPayroll();
     await screen.findByText("2 · Pagar la nómina");
@@ -292,8 +294,8 @@ describe("un doble clic no puede lanzar la nómina dos veces", () => {
     await user.click(screen.getByRole("button", { name: /Revisar y pagar/ }));
     const dialog = await screen.findByRole("dialog");
 
-    // La finca sembrada ya tiene pagos hechos: lo que se mide es lo que ESTA
-    // corrida entrega, no el acumulado de la temporada.
+    // The seeded farm already has payments on it: what is measured is what
+    // THIS run hands over, not the season's running total.
     const before = paidOut();
     const posts: string[] = [];
     server.events.on("request:start", ({ request }) => {
@@ -310,15 +312,15 @@ describe("un doble clic no puede lanzar la nómina dos veces", () => {
 
     await screen.findByText("Nómina pagada");
     expect(posts).toHaveLength(2);
-    // $150.000 de Édinson + $184.500 de María, una sola vez.
+    // Édinson's $150.000 + María's $184.500, once only.
     expect(paidOut() - before).toBe(33_450_000);
   }, 30000);
 });
 
 /* ------------------------------------------------------------------ */
 
-describe("la corrida completa, y su parte", () => {
-  it("liquida, después paga, y el parte dice cuánto entregó a cada quien", async () => {
+describe("the complete run, and its report", () => {
+  it("settles, then pays, and the report says how much each person got", async () => {
     const user = userEvent.setup();
     const before = paidOut();
     renderPayroll();
@@ -328,7 +330,7 @@ describe("la corrida completa, y su parte", () => {
     await screen.findByText("Liquidación de cuadrilla");
     expect(liveSettlements().length).toBe(4);
 
-    // Ahora el paso 2 trae a los cuatro: los tres recién liquidados y Édinson.
+    // Now step 2 brings all four: the three just settled, and Édinson.
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Revisar y pagar · \$578\.940/ })).toBeEnabled(),
     );
@@ -343,15 +345,15 @@ describe("la corrida completa, y su parte", () => {
   }, 40000);
 
   /**
-   * Se detiene en el primer rechazo, a propósito, y lo que sí entró queda
-   * escrito, contado y deshacible. Un parte que dijera "falló" sin decir
-   * quiénes entraron dejaría a alguien contando efectivo contra nada.
+   * It stops at the first refusal, on purpose, and what did get in is left
+   * written, counted and undoable. A report that said "it failed" without
+   * saying who got in would leave somebody counting cash against nothing.
    */
-  it("se detiene en el primer rechazo y dice quién entró y quién no", async () => {
+  it("stops at the first refusal and says who got in and who did not", async () => {
     const user = userEvent.setup();
-    // Sólo la SEGUNDA escritura cae. Devolver `undefined` deja pasar la
-    // petición al manejador de siempre, así que la primera se escribe de
-    // verdad y la tercera ni se intenta.
+    // Only the SECOND write falls over. Returning `undefined` lets the request
+    // through to the usual handler, so the first is really written and the
+    // third is never attempted.
     let seen = 0;
     server.use(
       http.post("*/v1/settlements", () => {
@@ -376,15 +378,15 @@ describe("la corrida completa, y su parte", () => {
     expect(within(report).getByText("entró")).toBeInTheDocument();
     expect(within(report).getByText("no entró")).toBeInTheDocument();
     expect(within(report).getByText("sin intentar")).toBeInTheDocument();
-    // Y el papel lo confesará.
+    // And the paper will own up to it.
     expect(within(report).getByText(/PARCIAL/)).toBeInTheDocument();
   }, 40000);
 });
 
 /* ------------------------------------------------------------------ */
 
-describe("deshacer la nómina", () => {
-  it("reversa los pagos, anula las liquidaciones y dice qué deshizo", async () => {
+describe("undoing the payroll", () => {
+  it("reverses the payments, voids the settlements and says what it undid", async () => {
     const user = userEvent.setup();
     const before = paidOut();
     const seededPayments = payments().length;
@@ -403,9 +405,9 @@ describe("deshacer la nómina", () => {
     await screen.findByText("Nómina pagada");
     expect(paidOut() - before).toBe(57_894_000);
 
-    // Dice qué va a deshacer ANTES de hacerlo. `findBy` y no `getBy`: mientras
-    // el diálogo de pago se está cerrando, MUI deja el resto de la página en
-    // `aria-hidden` y las consultas por rol no la ven.
+    // It says what it will undo BEFORE doing it. `findBy` and not `getBy`:
+    // while the payment dialog is closing, MUI leaves the rest of the page
+    // `aria-hidden` and role queries cannot see it.
     await user.click(await screen.findByRole("button", { name: "Deshacer" }));
     const askBox = await screen.findByRole("dialog");
     expect(askBox.textContent).toContain(
@@ -413,14 +415,14 @@ describe("deshacer la nómina", () => {
     );
     await user.click(within(askBox).getByRole("button", { name: "Deshacer" }));
 
-    // Y qué deshizo después.
+    // And what it undid, afterwards.
     expect(await screen.findByText("Nómina deshecha")).toBeInTheDocument();
-    // Las tres de esta corrida quedan anuladas. La de Édinson, que ya existía
-    // antes y no es de esta nómina, sigue en pie: deshacer deshace LO QUE ESTA
-    // PANTALLA ESCRIBIÓ y nada más.
+    // The three from this run end up voided. Édinson's, which already existed
+    // beforehand and is not part of this payroll, still stands: undo undoes
+    // WHAT THIS SCREEN WROTE and nothing else.
     await waitFor(() => expect(liveSettlements()).toHaveLength(1));
 
-    // El libro: cada pago con su reverso, y ni una fila borrada.
+    // The ledger: every payment with its reversal, and not one row deleted.
     const ledger = tenant().ledger;
     const ours = ledger.filter((e) => e.kind === "pago").slice(seededPayments);
     expect(ours).toHaveLength(4);
@@ -432,8 +434,8 @@ describe("deshacer la nómina", () => {
 
 /* ------------------------------------------------------------------ */
 
-describe("el papel dice si estaba filtrado", () => {
-  it("una corrida sobre un filtro se marca parcial y nombra el filtro", async () => {
+describe("the paper says whether it was filtered", () => {
+  it("a run over a filter is marked partial and names the filter", async () => {
     const user = userEvent.setup();
     renderPayroll();
     await screen.findByText("1 · Liquidar la semana");
@@ -454,11 +456,11 @@ describe("el papel dice si estaba filtrado", () => {
     ) as HTMLElement;
     expect(report.textContent).toContain("Planilla (parcial)");
     expect(within(report).getByText(/empleado contiene «María»/)).toBeInTheDocument();
-    // Y la otra forma de acotar, la que sólo tiene esta pantalla.
+    // And the other way of narrowing it, the one only this screen has.
     expect(within(report).getByText(/se dejó fuera a 2 personas/)).toBeInTheDocument();
   }, 40000);
 
-  it("y destildar a alguien también parte la planilla, sin filtro ninguno", async () => {
+  it("and unticking somebody makes the sheet partial too, with no filter at all", async () => {
     const user = userEvent.setup();
     renderPayroll();
     await screen.findByText("1 · Liquidar la semana");

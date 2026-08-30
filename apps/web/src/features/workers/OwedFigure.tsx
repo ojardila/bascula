@@ -1,23 +1,24 @@
 /**
- * La cifra de «lo que se le debe», escrita igual en todas partes.
+ * The "what they are owed" figure, written the same way everywhere.
  *
- * Un componente y no cuatro `<Money>` sueltos, por lo mismo que
- * `harvest/Figures.tsx`: no acepta un número pelado. Recibe un `Owed`, que
- * sabe cuánto de sí mismo se pudo establecer, y decide solo si lo que
- * corresponde es una cifra, una cifra con «al menos», o un guion con su
- * motivo. Una pantalla no puede equivocarse en esto por prisa.
+ * One component rather than four loose `<Money>`s, for the same reason as
+ * `harvest/Figures.tsx`: it does not accept a bare number. It takes an `Owed`,
+ * which knows how much of itself could be established, and decides on its own
+ * whether what belongs there is a figure, a figure with an "al menos", or a
+ * dash with its reason. A screen must not be able to get this wrong in a
+ * hurry.
  *
- * RESPONDER PRIMERO Y EXPLICAR DESPUÉS. Arriba va el total —la cifra por la
- * que preguntó— y debajo, en pequeño, de dónde sale. Al revés, que es como
- * estaba el perfil, la cifra grande es la mitad de la respuesta y la otra
- * mitad se lee sólo si alguien baja la vista.
+ * ANSWER FIRST, EXPLAIN AFTERWARDS. The total goes on top —the figure they
+ * asked for— and underneath, small, where it comes from. The other way round,
+ * which is how the profile used to be, the big figure is half the answer and
+ * the other half is only read if somebody looks down.
  */
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { Money } from "../../components/Money";
 import { owedState, type Owed } from "./owed";
 import { PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
-/** Un guion que dice por qué. Igual que el de `harvest/Figures.tsx`. */
+/** A dash that says why. The same one as in `harvest/Figures.tsx`. */
 function Unknown({ reason, big }: { reason: string; big?: boolean }) {
   return (
     <Tooltip title={reason}>
@@ -39,9 +40,9 @@ function Unknown({ reason, big }: { reason: string; big?: boolean }) {
 }
 
 /**
- * El total. Positivo es lo que la finca le debe a la persona; negativo, lo que
- * la persona le debe a la finca — y en ese caso la cifra se escribe sin signo
- * con la frase al lado, porque nadie lee un menos como «me deben a mí».
+ * The total. Positive is what the farm owes the person; negative, what the
+ * person owes the farm — and in that case the figure is written unsigned with
+ * the phrase beside it, because nobody reads a minus sign as "they owe me".
  */
 export function OwedFigure({
   owed,
@@ -85,7 +86,7 @@ export function OwedFigure({
   );
 }
 
-/** «a favor del empleado» / «que el empleado le debe a la finca». */
+/** "a favor del empleado" / "que el empleado le debe a la finca". */
 export function owedDirection(owed: Owed, who = "el empleado"): string | null {
   const state = owedState(owed);
   if (state.kind === "unknown") return null;
@@ -96,12 +97,12 @@ export function owedDirection(owed: Owed, who = "el empleado"): string | null {
 const dePrefix = (who: string) => (who.startsWith("el ") ? `del ${who.slice(3)}` : `de ${who}`);
 
 /**
- * El desglose: las dos mitades de las que sale el total, en pequeño y debajo.
+ * The breakdown: the two halves the total comes out of, small and underneath.
  *
- * Las dos se escriben SIEMPRE, incluso cuando una es cero, porque la pregunta
- * que contestan no es «¿cuánto?» sino «¿de dónde sale?», y una línea que
- * desaparece deja al lector sin saber si es cero o si no existe. Un hueco de
- * lectura se escribe como hueco, no se omite.
+ * Both are ALWAYS written, even when one is zero, because the question they
+ * answer is not "how much?" but "where does it come from?", and a line that
+ * disappears leaves the reader unable to tell zero from missing. A hole in
+ * the reading is written as a hole; it is not omitted.
  */
 export function OwedBreakdown({
   owed,

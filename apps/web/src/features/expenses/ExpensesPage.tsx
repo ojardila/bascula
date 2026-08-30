@@ -120,9 +120,8 @@ export function ExpensesPage() {
         onStatusFilterChange={setStatus}
         onCreate={can("expenses.write") ? () => setEditing(null) : undefined}
         createLabel="Registrar gasto"
-        /* La fila entera, no sólo el ⋮ de 30 px sin etiqueta que había
-           que acertar. La misma acción, con un blanco veinte veces
-           mayor. */
+        /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
+           The same action, with a target twenty times bigger. */
         onRowClick={can("expenses.write") ? (e) => setEditing(e) : undefined}
         onEdit={can("expenses.write") ? (e) => setEditing(e) : undefined}
         onDeactivate={
@@ -152,22 +151,23 @@ export function ExpensesPage() {
         emptyTitle="Todavía no hay gastos"
         emptyBody="Registre el primero. Cada gasto se carga a una actividad o a un lote, para que después se pueda saber en qué se fue la plata."
         /**
-         * ── EL PIE DESCRIBÍA UN CONJUNTO DISTINTO DEL QUE SE VE ENCIMA ──
+         * ── THE FOOTER DESCRIBED A DIFFERENT SET FROM THE ONE ABOVE IT ──
          *
-         * `GET /v1/expenses` devuelve `items` según el filtro que se pidió, y
-         * `count`/`totalCents` contando SÓLO las filas vivas — así lo hace
-         * `handleListExpenses` y así lo hace el mock. Es la decisión correcta
-         * para el total: un gasto dado de baja no es plata que la finca gastó.
+         * `GET /v1/expenses` returns `items` for whichever filter was asked
+         * for, and `count`/`totalCents` counting ONLY the live rows — that is
+         * what `handleListExpenses` does and what the mock does. It is the
+         * right decision for the total: an expense taken out of service is
+         * not money the farm spent.
          *
-         * Lo que estaba mal era el pie, que leía ese `count` como si fuera el
-         * de la tabla. Con el filtro en «Inactivas» la pantalla enseñaba doce
-         * filas y debajo, en la misma frase, «0 gastos, por un total de $0».
-         * No es un redondeo: son dos conjuntos distintos con una sola
-         * etiqueta, que es exactamente lo que la auditoría vino encontrando
-         * pantalla por pantalla.
+         * What was wrong was the footer, which read that `count` as though it
+         * were the table's. With the filter on "Inactivas" the screen showed
+         * twelve rows and, underneath, in the same sentence, "0 gastos, por
+         * un total de $0". This is not a rounding error: it is two different
+         * sets under one label, which is exactly what the audit kept finding
+         * screen after screen.
          *
-         * Ahora el pie cuenta lo que hay encima y, cuando el total va de otra
-         * cosa, lo dice en la misma frase.
+         * The footer now counts what is above it and, when the total is about
+         * something else, says so in the same sentence.
          */
         footer={
           data ? (

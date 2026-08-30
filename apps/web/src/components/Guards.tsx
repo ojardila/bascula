@@ -1,9 +1,9 @@
 /**
  * Route guards.
  *
- * `RequirePermission` implements the convention every use case repeats: "al
- * entrar a cualquier módulo sin privilegios, el sistema notifica la carencia y
- * saca al usuario del módulo". It notifies first and then leaves — a silent
+ * `RequirePermission` implements the convention every use case repeats: on
+ * entering any module without the privileges for it, the system says what is
+ * missing and then takes the user out. It notifies first and then leaves — a silent
  * redirect looks like a broken link, and the person never learns that what
  * they need is a role change, not a different button.
  */

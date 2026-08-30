@@ -58,12 +58,12 @@ function hasNoExternalReference(html: string) {
   expect(html).not.toMatch(/url\(/);
 }
 
-describe("el recibo de pago (RSP-008)", () => {
-  it("no pide nada a la red", () => {
+describe("the pay receipt (RSP-008)", () => {
+  it("asks the network for nothing", () => {
     hasNoExternalReference(paymentReceiptHtml({ farmName: "La Esperanza", worker, payment, lines: settlement.lines }));
   });
 
-  it("dice «queda a paz y salvo» en vez de imprimir un $0", () => {
+  it("says the worker is square with everybody instead of printing a $0", () => {
     const html = paymentReceiptHtml({
       farmName: "La Esperanza",
       worker,
@@ -74,7 +74,7 @@ describe("el recibo de pago (RSP-008)", () => {
     expect(html).toContain("queda a paz y salvo");
   });
 
-  it("distingue lo que la finca debe de lo que el empleado debe", () => {
+  it("tells what the farm owes apart from what the employee owes", () => {
     const owed = paymentReceiptHtml({
       farmName: "La Esperanza",
       worker,
@@ -96,7 +96,7 @@ describe("el recibo de pago (RSP-008)", () => {
     expect(advance).toContain("$20.000");
   });
 
-  it("omite el documento cuando no hay, en vez de imprimir un guion", () => {
+  it("leaves the document number out when there is none, rather than printing a dash", () => {
     const html = paymentReceiptHtml({
       farmName: "La Esperanza",
       worker: { ...worker, documentNumber: "" },
@@ -106,7 +106,7 @@ describe("el recibo de pago (RSP-008)", () => {
     expect(html).not.toContain("Documento");
   });
 
-  it("escapa lo que escribió una persona", () => {
+  it("escapes anything a person typed", () => {
     const html = paymentReceiptHtml({
       farmName: '<script>alert("x")</script>',
       worker: { ...worker, name: "Ana & <b>" },
@@ -119,10 +119,10 @@ describe("el recibo de pago (RSP-008)", () => {
   });
 });
 
-describe("lo estimado no se imprime como definitivo", () => {
+describe("a provisional figure is not printed as a settled one", () => {
   const provisional = [line("1", 8_000_000, { rateSource: "weekly_price" })];
 
-  it("marca la línea y explica por qué, no sólo con un color", () => {
+  it("marks the row and explains why, not with a colour alone", () => {
     const html = paymentReceiptHtml({
       farmName: "La Esperanza",
       worker,
@@ -136,7 +136,7 @@ describe("lo estimado no se imprime como definitivo", () => {
     expect(html).toContain("todavía no está fijado");
   });
 
-  it("y no lo dice cuando todo está congelado", () => {
+  it("and says none of that when every price is already frozen", () => {
     const html = paymentReceiptHtml({
       farmName: "La Esperanza",
       worker,
@@ -147,8 +147,8 @@ describe("lo estimado no se imprime como definitivo", () => {
   });
 });
 
-describe("la liquidación", () => {
-  it("imprime aunque esté anulada, y lo dice", () => {
+describe("the settlement", () => {
+  it("prints even when it has been voided, and says so", () => {
     const html = settlementHtml({
       farmName: "La Esperanza",
       settlement: { ...settlement, status: "void", voidedAt: "2026-08-30T09:00:00Z" },
@@ -163,8 +163,8 @@ describe("la liquidación", () => {
   });
 });
 
-describe("la planilla", () => {
-  it("lista las anuladas tachadas en vez de esconderlas, y no las suma", () => {
+describe("the payroll sheet", () => {
+  it("lists voided settlements struck through instead of hiding them, and leaves them out of the total", () => {
     const html = payrollHtml({
       farmName: "La Esperanza",
       title: "Planilla de liquidaciones",
@@ -187,7 +187,7 @@ describe("la planilla", () => {
   });
 
   /**
-   * ── LA PLANILLA FIRMADA NO PUEDE SER EL RESULTADO DE UNA BÚSQUEDA ──────
+   * ── A SIGNED PAYROLL SHEET CANNOT BE A SEARCH RESULT ───────────────────
    *
    * The settlements screen prints the rows its filters left, which is right —
    * printing one crew's sheet is the point. What was wrong is that the paper
@@ -196,7 +196,7 @@ describe("la planilla", () => {
    * into a $335.280 one and the sheet gave no hint. It is the document that
    * gets filed and signed.
    */
-  it("dice en el papel que es parcial, y de qué filtro", () => {
+  it("says on the paper that it is partial, and which filter made it so", () => {
     const html = payrollHtml({
       farmName: "La Esperanza",
       title: "Planilla de liquidaciones (parcial)",
@@ -228,7 +228,7 @@ describe("la planilla", () => {
   });
 
   /** …and an unfiltered sheet carries none of that, because it needs none. */
-  it("no le pone advertencias a la planilla completa", () => {
+  it("puts no warnings on a sheet that is the whole list", () => {
     const html = payrollHtml({
       farmName: "La Esperanza",
       title: "Planilla de liquidaciones",
@@ -243,7 +243,7 @@ describe("la planilla", () => {
     expect(html).toContain("Bruto liquidado");
   });
 
-  it("imprime «—» donde no hay cantidad, nunca un cero", () => {
+  it("prints a dash where there is no quantity, never a zero", () => {
     const html = payrollHtml({
       farmName: "La Esperanza",
       title: "Planilla",

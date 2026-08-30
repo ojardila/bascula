@@ -34,12 +34,12 @@ import { ConfigPage } from "./features/config/ConfigPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 
 /**
- * `/parcelas/<id>/mapa` -> `/lotes/<id>/mapa`, con la cola intacta.
+ * `/parcelas/<id>/mapa` -> `/lotes/<id>/mapa`, with the tail intact.
  *
- * Renombrar la ruta es lo correcto —la barra de direcciones también es
- * producto— pero un enlace que alguien pasó por WhatsApp hace tres semanas no
- * tiene por qué morirse por eso. Es una redirección, no un alias: la barra
- * acaba diciendo «lotes».
+ * Renaming the route is the right call —the address bar is product too— but a
+ * link somebody passed around on WhatsApp three weeks ago has no business
+ * dying over it. This is a redirect, not an alias: the bar ends up saying
+ * "lotes".
  */
 function LegacyPlotRedirect() {
   const { pathname, search, hash } = useLocation();
@@ -62,12 +62,12 @@ function Shell() {
           }
         />
 
-        {/* LA TIERRA SE LLAMA «LOTE», TAMBIÉN EN LA BARRA DE DIRECCIONES.
-            El menú decía «Parcelas» y el primer campo del formulario que las
-            crea decía «Nombre del lote»; el teléfono no conoce más palabra que
-            «lote». Ver `lib/vocab.ts`. La ruta vieja sigue abajo, redirigiendo,
-            porque hay quien tiene `/parcelas` guardado en favoritos y una
-            palabra nueva no es motivo para romperle el enlace. */}
+        {/* THE LAND IS CALLED "lote", IN THE ADDRESS BAR TOO. The menu said
+            "Parcelas" and the first field of the form that creates them said
+            "Nombre del lote"; the phone knows no word but "lote". See
+            `lib/vocab.ts`. The old route is still below, redirecting, because
+            somebody out there has `/parcelas` bookmarked and a new word is no
+            reason to break their link. */}
         <Route
           path="lotes"
           element={
@@ -117,9 +117,9 @@ function Shell() {
             </RequirePermission>
           }
         />
-        {/* Lo que estuviera guardado sigue funcionando. `nueva` era femenino
-            porque la parcela lo era; el lote no, así que la ruta nueva es
-            `/lotes/nuevo` y la vieja la alcanza igual. */}
+        {/* Whatever was bookmarked keeps working. `nueva` was feminine because
+            "parcela" is; "lote" is not, so the new route is `/lotes/nuevo`
+            and the old one still reaches it. */}
         <Route path="parcelas" element={<Navigate to="/lotes" replace />} />
         <Route path="parcelas/nueva" element={<Navigate to="/lotes/nuevo" replace />} />
         <Route path="parcelas/*" element={<LegacyPlotRedirect />} />
@@ -165,7 +165,7 @@ function Shell() {
           }
         />
 
-        {/* La nómina de cuadrilla: liquidar y pagar a los treinta. It is
+        {/* The crew payroll: settling and paying all thirty of them. It is
             `money.pay` and not `money.read`, which also means a suspended farm
             does not see it at all — `money.pay` is a write action. Until this
             screen existed the console could only pay one worker per page, and
@@ -180,7 +180,7 @@ function Shell() {
           }
         />
 
-        {/* Liquidaciones. Settling still happens inside "pagar empleado" —
+        {/* Settlements. Settling still happens inside "pagar empleado" —
             that is where the decision is made — but the settlements themselves
             are now records the farm can look up, print and anull. Reading them
             is `money.read`; anulling is guarded inside the detail screen. */}
@@ -210,11 +210,11 @@ function Shell() {
           }
         />
 
-        {/* El precio del kilo de la semana. `PUT /v1/prices/weeks/{monday}`
-            estaba en el cliente desde el sprint 1 y ninguna pantalla lo
-            llamaba: la consola sabía leer el precio y no fijarlo, que es la
-            tarea más corriente del dueño en cosecha. `config.prices` es del
-            dueño solo, igual que en la matriz de roles y que en el servidor
+        {/* The week's price per kilo. `PUT /v1/prices/weeks/{monday}` had been
+            in the client since sprint 1 and no screen called it: the console
+            knew how to read the price and not how to set it, which is the
+            owner's most ordinary task during harvest. `config.prices` is the
+            owner's alone, as in the role matrix and on the server
             (`prices.write`). */}
         <Route
           path="precio-semana"
@@ -296,7 +296,7 @@ function Shell() {
             </RequirePermission>
           }
         />
-        {/* Gestión de usuarios. OWNER ONLY, and that is stricter than
+        {/* User management. OWNER ONLY, and that is stricter than
             `casos-de-uso.md` reads on its own: `docs/diagramas/sistema.md`
             §3.3 puts this in the owner column and not the administrator's, so
             an admin who reaches the URL is shown the door rather than a

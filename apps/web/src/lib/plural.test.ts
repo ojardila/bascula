@@ -1,12 +1,12 @@
 /**
- * «1 venta(s)». «16 Bulto». Dos formas de que un producto le diga a quien lo
- * lee que no valía la pena escribirle una frase.
+ * "1 venta(s)". "16 Bulto". Two ways for a product to tell whoever is reading
+ * that writing them a sentence was not worth the trouble.
  */
 import { describe, expect, it } from "vitest";
 import { count, plural, unitLabel } from "./plural";
 
-describe("sustantivos", () => {
-  it("concuerda con el número", () => {
+describe("nouns", () => {
+  it("agrees with the number", () => {
     expect(count(1, "venta", "ventas")).toBe("1 venta");
     expect(count(0, "venta", "ventas")).toBe("0 ventas");
     expect(count(4, "gasto", "gastos")).toBe("4 gastos");
@@ -15,26 +15,26 @@ describe("sustantivos", () => {
   });
 });
 
-describe("unidades", () => {
-  it("las escribe como las dice la finca", () => {
+describe("units", () => {
+  it("writes them the way the farm says them", () => {
     expect(unitLabel(16, "Bulto")).toBe("bultos");
     expect(unitLabel(1, "Bulto")).toBe("bulto");
     expect(unitLabel(3, "arroba")).toBe("arrobas");
     expect(unitLabel(2, "canasta")).toBe("canastas");
   });
 
-  /** Un símbolo de unidad no lleva ese: «16 kgs» delata a quien lo escribió. */
-  it("no pluraliza los símbolos", () => {
+  /** A unit symbol takes no s: "16 kgs" gives away whoever wrote it. */
+  it("does not pluralise symbols", () => {
     expect(unitLabel(38.5, "kg")).toBe("kg");
     expect(unitLabel(2, "ha")).toBe("ha");
     expect(unitLabel(1, "KG")).toBe("kg");
   });
 
-  it("añade «es» tras consonante", () => {
+  it("adds \"es\" after a consonant", () => {
     expect(unitLabel(2, "costal")).toBe("costales");
   });
 
-  it("de una unidad ausente no inventa nada", () => {
+  it("invents nothing when the unit is missing", () => {
     expect(unitLabel(2, null)).toBe("");
     expect(unitLabel(2, "  ")).toBe("");
   });

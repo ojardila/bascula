@@ -18,7 +18,7 @@ const base: Activity = {
 
 const weeklyPickup = base;
 const fixedPickup: Activity = { ...base, id: "act-2", rateSource: "fixed", workUnit: "canasta", defaultRateCents: 350000 };
-const jornal: Activity = {
+const dayRate: Activity = {
   ...base, id: "act-3", name: "Guadañada", category: "mantenimiento",
   payMode: "time_unit", workUnit: null, timeUnit: "jornal",
   rateSource: "fixed", defaultRateCents: 4500000,
@@ -44,21 +44,21 @@ function draft(over: Partial<WorkRecordDraft> = {}): WorkRecordDraft {
 describe("form shape per pay mode", () => {
   it("asks for a quantity except on a contract", () => {
     expect(needsQuantity(weeklyPickup)).toBe(true);
-    expect(needsQuantity(jornal)).toBe(true);
+    expect(needsQuantity(dayRate)).toBe(true);
     expect(needsQuantity(contract)).toBe(false);
   });
 
   it("hides the price field only when the week sets it", () => {
     expect(needsRateField(weeklyPickup)).toBe(false);
     expect(needsRateField(fixedPickup)).toBe(true);
-    expect(needsRateField(jornal)).toBe(true);
+    expect(needsRateField(dayRate)).toBe(true);
     expect(needsRateField(contract)).toBe(true);
   });
 
   it("names the quantity in the unit the person works in", () => {
     expect(quantityLabel(weeklyPickup)).toBe("kg");
     expect(quantityLabel(fixedPickup)).toBe("canasta");
-    expect(quantityLabel(jornal)).toBe("jornales");
+    expect(quantityLabel(dayRate)).toBe("jornales");
     expect(quantityLabel(contract)).toBe("");
   });
 });
@@ -67,11 +67,11 @@ describe("the single-day rule for weekly prices", () => {
   it("applies to weekly_price and to nothing else", () => {
     expect(forcesSingleDay(weeklyPickup)).toBe(true);
     expect(forcesSingleDay(fixedPickup)).toBe(false);
-    expect(forcesSingleDay(jornal)).toBe(false);
+    expect(forcesSingleDay(dayRate)).toBe(false);
   });
 
   it("collapses a range instead of rejecting it", () => {
-    // A jornal from Tuesday to Tuesday has no single Monday, so deriving a
+    // A day-rate stint from Tuesday to Tuesday has no single Monday, so deriving a
     // weekly price over a range is the ambiguity that mis-pays a week. The
     // web collapses and says so; it does not bounce the form.
     const r = validateWorkRecord(
@@ -87,7 +87,7 @@ describe("the single-day rule for weekly prices", () => {
   it("leaves a real range alone when the price is frozen on write", () => {
     const r = validateWorkRecord(
       draft({ activityId: "act-3", quantity: "2", dateFrom: "2026-08-24", dateTo: "2026-08-25" }),
-      jornal,
+      dayRate,
       "id-2",
     );
     expect(r.valid).toBe(true);
@@ -97,7 +97,7 @@ describe("the single-day rule for weekly prices", () => {
   it("rejects a range that runs backwards", () => {
     const r = validateWorkRecord(
       draft({ activityId: "act-3", quantity: "2", dateFrom: "2026-08-25", dateTo: "2026-08-24" }),
-      jornal,
+      dayRate,
       "id-3",
     );
     expect(r.valid).toBe(false);
@@ -117,7 +117,7 @@ describe("the price the client is allowed to send", () => {
   it("falls back to the activity's rate when the field is left alone", () => {
     const r = validateWorkRecord(
       draft({ activityId: "act-3", quantity: "2", rateCents: null }),
-      jornal,
+      dayRate,
       "id-5",
     );
     expect(r.input?.rateCents).toBe(4500000);
@@ -126,7 +126,7 @@ describe("the price the client is allowed to send", () => {
   it("refuses a rate of zero or less", () => {
     const r = validateWorkRecord(
       draft({ activityId: "act-3", quantity: "2", rateCents: 0 }),
-      jornal,
+      dayRate,
       "id-6",
     );
     expect(r.valid).toBe(false);
@@ -192,7 +192,7 @@ describe("the estimate shown next to the form", () => {
   });
 
   it("multiplies jornales by the frozen rate", () => {
-    expect(estimateCents(jornal, 2, 4500000)).toBe(9000000);
+    expect(estimateCents(dayRate, 2, 4500000)).toBe(9000000);
   });
 
   it("is the total itself for a contract, whatever the quantity", () => {

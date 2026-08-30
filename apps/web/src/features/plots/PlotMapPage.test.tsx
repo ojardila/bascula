@@ -179,7 +179,7 @@ describe("drawing a lot on the map", () => {
 });
 
 /**
- * ── UNA SUPERFICIE DESCONOCIDA NO ES CERO HECTÁREAS ────────────────────
+ * ── AN UNKNOWN AREA IS NOT ZERO HECTARES ───────────────────────────────
  *
  * `Plot.areaHa` is nullable in the contract — the owner may never have
  * declared one — and `toPlot` wrote `p.areaHa ?? 0`. That turned "no lo sé"
@@ -192,8 +192,8 @@ describe("drawing a lot on the map", () => {
  * written. The `?? 0` was destroying a distinction the component below it was
  * already built to draw.
  */
-describe("un lote sin superficie declarada", () => {
-  it("dice «—» y no entra en el total de la finca", async () => {
+describe("a plot with no declared area", () => {
+  it('says "—" and stays out of the farm total', async () => {
     server.use(
       http.get("*/v1/plots", () =>
         HttpResponse.json({

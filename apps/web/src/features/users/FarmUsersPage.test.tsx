@@ -1,5 +1,5 @@
 /**
- * Gestión de usuarios.
+ * Farm user management.
  *
  * Two things are worth testing here and neither of them is the form.
  *
@@ -59,14 +59,14 @@ beforeEach(() => {
   signIn(OWNER);
 });
 
-describe("quién puede repartir accesos", () => {
-  it("el dueño sí", async () => {
+describe("who may hand out access", () => {
+  it("the owner may", async () => {
     renderUsers();
     expect(await screen.findByText("Gloria Betancur")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Invitar a alguien/ })).toBeEnabled();
   }, 20000);
 
-  it("el administrador no, ni llegando por la URL", async () => {
+  it("the administrator may not, not even by typing the URL", async () => {
     signIn(ADMIN);
     renderUsers();
     expect(
@@ -76,18 +76,18 @@ describe("quién puede repartir accesos", () => {
   }, 20000);
 });
 
-describe("la lista", () => {
+describe("the list", () => {
   /**
-   * "NO LO SÉ" NO ES "NUNCA".
+   * "I DO NOT KNOW" IS NOT "NEVER".
    *
    * `store.ListFarmUsers` selects id, email, name, role, email_verified_at and
    * created_at. There is no last login in the query, so the key never arrives.
    * The screen used to read that absence as null and print "Nunca ha entrado"
-   * — which it showed to the owner while he was logged in reading it. An
+   * — which it showed to the owner while they were logged in reading it. An
    * unknown fact renders as "—"; "nunca" is a claim, and this app is not in a
    * position to make it.
    */
-  it("no inventa una última entrada que el servidor no manda", async () => {
+  it("does not invent a last sign-in the server never sent", async () => {
     renderUsers();
     const row = (await screen.findByText("Oscar Jaramillo")).closest("tr")!;
     expect(within(row).queryByText("Nunca ha entrado")).not.toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("la lista", () => {
   }, 20000);
 
   /** …and when the server DOES report it, both real answers still render. */
-  it("cuando sí lo manda, distingue una fecha de un «nunca»", async () => {
+  it("and when it does send one, tells a date apart from a never", async () => {
     server.use(
       http.get("*/v1/users", () =>
         HttpResponse.json({
@@ -127,7 +127,7 @@ describe("la lista", () => {
     expect(within(nunca).getByText("Nunca ha entrado")).toBeInTheDocument();
   }, 20000);
 
-  it("no deja cambiarle el rol al dueño ni a uno mismo", async () => {
+  it("will not let the owner's role be changed, nor your own", async () => {
     renderUsers();
     const row = (await screen.findByText("Oscar Jaramillo")).closest("tr")!;
     // The owner's row shows the role as text, with no control: a farm with no
@@ -139,8 +139,8 @@ describe("la lista", () => {
   }, 20000);
 });
 
-describe("invitar", () => {
-  it("crea la membresía con el rol elegido y la deja sin confirmar", async () => {
+describe("inviting somebody", () => {
+  it("creates the membership with the chosen role and leaves it unconfirmed", async () => {
     const user = userEvent.setup();
     renderUsers();
     await screen.findByText("Gloria Betancur");
@@ -185,7 +185,7 @@ describe("invitar", () => {
   }, 20000);
 
   /** The dialog must not close over the password on its own. */
-  it("no cierra sola sobre la contraseña", async () => {
+  it("does not close itself over the password", async () => {
     const user = userEvent.setup();
     renderUsers();
     await screen.findByText("Gloria Betancur");
@@ -204,7 +204,7 @@ describe("invitar", () => {
     expect(within(done).getByText(/temporal-/)).toBeInTheDocument();
   }, 20000);
 
-  it("quitar el acceso no borra a nadie, y lo dice", async () => {
+  it("removing access deletes nobody, and says so", async () => {
     const user = userEvent.setup();
     renderUsers();
     const row = (await screen.findByText("Gloria Betancur")).closest("tr")!;
@@ -223,8 +223,8 @@ describe("invitar", () => {
   }, 20000);
 });
 
-describe("cuando el servidor todavía no sirve la ruta", () => {
-  it("lo dice y nombra lo que espera, en vez de una tabla vacía", async () => {
+describe("when the server does not serve the route yet", () => {
+  it("says so and names what it is waiting for, instead of an empty table", async () => {
     // What the running server does today: `routes.go` has no `/v1/users`.
     server.use(
       http.get("*/v1/users", () =>

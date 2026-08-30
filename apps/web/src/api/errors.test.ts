@@ -1,20 +1,21 @@
 /**
- * OCHO CÓDIGOS LLEGABAN A LA PANTALLA EN INGLÉS.
+ * EIGHT CODES WERE REACHING THE SCREEN IN ENGLISH.
  *
- * Uno de ellos era `LAST_OWNER`: el que ve un dueño cuando intenta quitarse a
- * sí mismo. En medio de una consola en español, un código en mayúsculas y una
- * frase en inglés no dicen «esto no se puede»: dicen «usted rompió algo», que
- * es justo lo que este producto no puede permitirse decirle a alguien que ya
- * da por hecho que la culpa es suya.
+ * One of them was `LAST_OWNER`: what an owner sees when they try to take
+ * themselves off the farm. In the middle of a Spanish console, an uppercase
+ * code and an English sentence do not say "this cannot be done"; they say
+ * "you broke something", which is exactly what this product cannot afford to
+ * say to somebody who already assumes the fault is theirs.
  *
- * Traducirlos a mano fue la mitad del arreglo. Ésta es la otra: la tabla se
- * comprueba contra el contrato, así que el día que la API añada un código —y
- * lo hace cada sprint— la prueba lo nombra en vez de dejarlo salir a pantalla
- * en inglés hasta que alguien se tropiece con él.
+ * Translating them by hand was half the fix. This is the other half: the
+ * table is checked against the contract, so the day the API grows a code —and
+ * it does every sprint— the test names it instead of letting it reach the
+ * screen in English until somebody trips over it.
  *
- * Se lee `schema.ts` con `fs` en vez de importar el tipo porque `ErrorCode` es
- * un tipo y no un valor: no existe en tiempo de ejecución, y una prueba que
- * sólo comprueba tipos no falla, deja de compilar en otro sitio.
+ * `schema.ts` is read with `fs` rather than importing the type because
+ * `ErrorCode` is a type and not a value: it does not exist at runtime, and a
+ * test that only checks types does not fail, it stops compiling somewhere
+ * else.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -22,31 +23,32 @@ import { resolve } from "node:path";
 import { ERROR_MESSAGES, ApiError, messageFor } from "./errors";
 
 function contractCodes(): string[] {
-  // Desde la raíz del proyecto: bajo jsdom `import.meta.url` es una URL http y
-  // `fileURLToPath` la rechaza.
+  // From the project root: under jsdom `import.meta.url` is an http URL and
+  // `fileURLToPath` refuses it.
   const schema = readFileSync(resolve(process.cwd(), "src/api/schema.ts"), "utf8");
   const line = schema.match(/ErrorCode: ((?:"[A-Z_]+" \| )*"[A-Z_]+");/);
-  if (!line) throw new Error("no se encontró ErrorCode en schema.ts");
+  if (!line) throw new Error("ErrorCode not found in schema.ts");
   return line[1].split(" | ").map((s) => s.replace(/"/g, ""));
 }
 
-describe("la tabla de mensajes contra el contrato", () => {
-  it("tiene una frase en español para cada código que la API puede enviar", () => {
+describe("the message table against the contract", () => {
+  it("has a Spanish sentence for every code the API can send", () => {
     const missing = contractCodes().filter((c) => !(c in ERROR_MESSAGES));
     expect(missing).toEqual([]);
   });
 
-  it("y ninguna de esas frases está vacía", () => {
+  it("and none of those sentences is empty", () => {
     for (const code of contractCodes()) {
       expect(ERROR_MESSAGES[code].trim().length).toBeGreaterThan(10);
     }
   });
 
   /**
-   * El que el evaluador nombró: un dueño quitándose a sí mismo. Y la frase
-   * dice qué hacer, no sólo qué pasó — nombrar a otro dueño primero.
+   * The one the reviewer named: an owner taking themselves off the farm. And
+   * the sentence says what to do, not only what happened — name another owner
+   * first.
    */
-  it("el dueño que se quita a sí mismo lee español, y lee qué hacer", () => {
+  it("the owner who removes themselves reads Spanish, and reads what to do", () => {
     const e = new ApiError(409, {
       error: { code: "LAST_OWNER", message: "farm would be left with no owner" },
     });
@@ -55,8 +57,8 @@ describe("la tabla de mensajes contra el contrato", () => {
     expect(messageFor(e)).not.toContain("owner");
   });
 
-  /** Sin traducción, el texto del servidor se muestra en vez de tragarse. */
-  it("un código desconocido enseña lo que dijo el servidor, no una pantalla muda", () => {
+  /** With no translation, the server's text is shown rather than swallowed. */
+  it("an unknown code shows what the server said, not a mute screen", () => {
     const e = new ApiError(409, {
       error: { code: "SOMETHING_NEW", message: "algo pasó" },
     });

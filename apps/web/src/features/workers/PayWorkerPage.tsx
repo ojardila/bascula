@@ -57,7 +57,7 @@ import { ApiError, messageFor } from "../../api/errors";
 import { formatDate, formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { CORRECCION_GLOSS } from "../../lib/vocab";
+import { CORRECTION_GLOSS } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
 import { grossChangeOf } from "../../api/endpoints";
 import { sentenceFor, type GrossChange } from "../../api/grossChange";
@@ -101,27 +101,27 @@ export function PayWorkerPage() {
    */
   const [changed, setChanged] = useState<GrossChange | null>(null);
   /**
-   * ── VER ANTES DE FIRMAR ──────────────────────────────────────────────
+   * ── LOOK BEFORE YOU SIGN ─────────────────────────────────────────────
    *
-   * Pagar $338.100 era un clic, irreversible y sin preguntar, mientras dar de
-   * baja a un empleado —que se deshace con otro clic— tenía diálogo rojo. El
-   * único rojo de la consola guardaba lo reversible.
+   * Paying $338.100 was one click, irreversible and without asking, while
+   * deactivating an employee —undone with another click— got a red dialog.
+   * The console's only red was guarding the reversible thing.
    *
-   * El patrón correcto ya estaba escrito en la nómina de cuadrilla, que el
-   * evaluador llamó la mejor pantalla de la aplicación: un botón que dice
-   * «Revisar y…» —así que al pulsarlo no pasa nada todavía— y una
-   * confirmación que vuelve a listar cada línea con su importe. El pago
-   * individual lo copia, y a propósito no en rojo: el rojo de esta consola es
-   * para los conflictos, y pagarle a alguien no es un error.
+   * The right pattern was already written in crew payroll, which the reviewer
+   * called the best screen in the application: a button that says "Revisar
+   * y…" —so pressing it does nothing yet— and a confirmation that lists every
+   * line again with its amount. The individual payment copies it, and
+   * deliberately not in red: red in this console is for conflicts, and paying
+   * somebody is not a mistake.
    */
   const [confirming, setConfirming] = useState<{ amountCents: number; alsoAdvance: number } | null>(
     null,
   );
   /**
-   * Lo último que se confirmó, para que el diálogo no se despida diciendo
-   * «Entregar $0». MUI lo mantiene montado durante la animación de cierre, y
-   * `confirming?.amountCents ?? 0` pintaba un cero justo mientras se va —
-   * exactamente el tipo de cifra fantasma que este sprint está quitando.
+   * The last thing confirmed, so the dialog does not sign off saying
+   * "Entregar $0". MUI keeps it mounted through the closing animation, and
+   * `confirming?.amountCents ?? 0` painted a zero on the way out — exactly
+   * the kind of ghost figure this sprint is removing.
    */
   const lastConfirm = useRef<{ amountCents: number; alsoAdvance: number } | null>(null);
   if (confirming) lastConfirm.current = confirming;
@@ -155,7 +155,7 @@ export function PayWorkerPage() {
     const approved = payables.workRecords.filter((w) => checked.has(w.id));
     /**
      * The fact being written, named by everything it depends on: who, how
-     * much, by which method, out of which labores, plus the excess. Two clicks
+     * much, by which method, out of which work items, plus the excess. Two clicks
      * on the same button produce the same string and therefore the same ids —
      * a retry. Change the amount and the string changes, so the correction is
      * a new payment and cannot be swallowed by the server answering with the
@@ -361,18 +361,19 @@ export function PayWorkerPage() {
 
           <Card>
             <CardContent>
-              {/* ── ANTICIPOS Y DEDUCCIONES: DOS ERRORES EN TRES LÍNEAS ─────
-                  1. `cents={-d.amountCents}` daba la vuelta al signo, así que
-                     plata que la persona YA RECIBIÓ salía «+ $45.000» en
-                     verde — y la misma línea, en el historial del perfil,
-                     salía en rojo con menos. El libro guarda un anticipo en
-                     negativo porque eso es lo que es; aquí se muestra tal
-                     cual, y las dos pantallas dicen por fin lo mismo.
-                  2. El título prometía algo pendiente. Estas filas son
-                     movimientos del libro que YA ESTÁN dentro del saldo de
-                     arriba, así que seguían apareciendo iguales después de
-                     pagar todo y quedar en $0 — leído como una deuda que el
-                     pago no borró. El encabezado y el pie lo dicen ahora. */}
+              {/* ── ADVANCES AND DEDUCTIONS: TWO BUGS IN THREE LINES ────────
+                  1. `cents={-d.amountCents}` flipped the sign, so cash the
+                     person had ALREADY RECEIVED came out as "+ $45.000" in
+                     green — while the same line, in the profile's history,
+                     came out in red with a minus. The ledger stores an
+                     advance as negative because that is what it is; here it
+                     is shown as it is, and the two screens finally say the
+                     same thing.
+                  2. The title promised something outstanding. These rows are
+                     ledger entries ALREADY inside the balance above, so they
+                     went on looking the same after everything was paid off
+                     and the balance was $0 — read as a debt the payment had
+                     not cleared. The heading and the footer say so now. */}
               <Typography variant="h3">Anticipos y deudas ya descontados</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                 Plata que {worker.name} ya recibió, o que le debe a la finca. No se suma
@@ -447,8 +448,8 @@ export function PayWorkerPage() {
                 <MenuItem value="otro">Otro</MenuItem>
               </TextField>
 
-              {/* «Revisar y…», como en la nómina: el botón no escribe nada,
-                  abre la lista de lo que se va a firmar. */}
+              {/* "Revisar y…", as in payroll: the button writes nothing, it
+                  opens the list of what is about to be signed. */}
               <Button
                 variant="contained"
                 fullWidth
@@ -491,18 +492,18 @@ export function PayWorkerPage() {
 
               <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
                 El pago se registra en el libro y no se edita. Si queda mal, se corrige
-                con {CORRECCION_GLOSS}
+                con {CORRECTION_GLOSS}
               </Alert>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* ── VER ANTES DE FIRMAR ───────────────────────────────────────────
-          El mismo diálogo de la nómina de cuadrilla, para una persona: vuelve
-          a listar cada línea con su importe, dice qué se escribe, y sólo
-          entonces hay un botón que escribe. Sin rojo: el rojo de esta consola
-          es para conflictos, y esto no es un error, es la operación. */}
+      {/* ── LOOK BEFORE YOU SIGN ──────────────────────────────────────────
+          The crew payroll's dialog, for one person: it lists every line with
+          its amount again, says what is about to be written, and only then
+          offers a button that writes. No red: red in this console is for
+          conflicts, and this is not an error, it is the operation. */}
       <Dialog
         open={confirming !== null}
         onClose={() => setConfirming(null)}
@@ -523,7 +524,7 @@ export function PayWorkerPage() {
               <>Esto escribe el pago en el libro, contra el saldo que ya está escrito.</>
             )}{" "}
             <strong>Un pago no se edita ni se borra</strong>: si queda mal, se corrige con
-            {" "}{CORRECCION_GLOSS}
+            {" "}{CORRECTION_GLOSS}
           </DialogContentText>
 
           {checked.size > 0 && (
@@ -578,8 +579,8 @@ export function PayWorkerPage() {
             </Typography>
           </Stack>
 
-          {/* Un pago parcial deja saldo. Decirlo aquí evita que alguien crea
-              que acaba de dejar a la persona a paz y salvo. */}
+          {/* A partial payment leaves a balance behind. Saying so here stops
+              anybody believing they have just left the person square. */}
           {shownConfirm !== null && shownConfirm.amountCents < toPayCents && (
             <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
               Es un pago parcial. Después de esto quedan{" "}
@@ -758,8 +759,8 @@ export function PayWorkerPage() {
         <DialogTitle>Pago registrado</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
-            {/* El número que se dicta por teléfono, no el UUID del movimiento.
-                Ver `lib/receipt.ts`. */}
+            {/* The number you read out over the phone, not the entry's UUID.
+                See `lib/receipt.ts`. */}
             <Chip
               label={`Recibo N.º ${receipt?.payment.receiptNumber}`}
               sx={{ alignSelf: "flex-start", fontWeight: 700 }}

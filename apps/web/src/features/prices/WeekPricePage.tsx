@@ -1,34 +1,34 @@
 /**
- * ── EL PRECIO DEL KILO DE LA SEMANA ──────────────────────────────────────
+ * ── THE WEEK'S PRICE PER KILO ────────────────────────────────────────────
  *
- * `PUT /v1/prices/weeks/{monday}` existe en el cliente desde el sprint 1 y
- * NINGUNA pantalla lo llamaba. La consola sabía leer el precio de la semana —
- * el formulario de labores lo muestra, la cosecha lo usa, la liquidación lo
- * congela — y no sabía fijarlo. Es la tarea más corriente del dueño de una
- * finca cafetera en cosecha, y era imposible desde aquí.
+ * `PUT /v1/prices/weeks/{monday}` has existed in the client since sprint 1 and
+ * NO screen called it. The console knew how to read the week's price — the
+ * work-item form shows it, harvest uses it, settlement freezes it — and did
+ * not know how to set it. It is the most ordinary task a coffee farm owner has
+ * during harvest, and from here it was impossible.
  *
- * Y buscarlo tenía trampa. Quien iba a buscar el campo terminaba en
- * Actividades, pulsaba «Precio fijo» —donde sí aparece una casilla de
- * precio—, escribía 900 y guardaba. Eso no sube el precio de la semana:
- * cambia la FORMA DE PAGO de toda la recolección y la desconecta del precio
- * semanal que el teléfono sigue usando. Nadie avisaba. Esa trampa se cierra en
- * `ActivityFormDialog`; esto es la otra mitad: el campo, donde se busca.
+ * And looking for it was a trap. Whoever went hunting for the field ended up
+ * in Activities, pressed "Precio fijo" —which does have a price box— typed 900
+ * and saved. That does not raise the week's price: it changes the PAY MODE of
+ * all picking and disconnects it from the weekly price the phone still uses.
+ * Nothing warned them. That trap is closed in `ActivityFormDialog`; this is
+ * the other half: the field, where people look for it.
  *
- * ── POR QUÉ ESTA PANTALLA Y NO UN CAMPO EN CONFIGURACIÓN ─────────────────
+ * ── WHY A SCREEN AND NOT A FIELD IN SETTINGS ─────────────────────────────
  *
- * Porque el precio de la semana no es un ajuste, es un hecho semanal con
- * fecha. Tiene historial, se pone cada lunes, y cambiarlo mueve plata que
- * todavía no se ha liquidado. Un campo suelto entre la zona horaria y la
- * moneda no dice nada de eso.
+ * Because the week's price is not a setting, it is a weekly fact with a date.
+ * It has a history, it is set every Monday, and changing it moves money that
+ * has not been settled yet. A lone field between the timezone and the currency
+ * says none of that.
  *
- * ── LO QUE MUEVE, DICHO ANTES DE MOVERLO ─────────────────────────────────
+ * ── WHAT IT MOVES, SAID BEFORE IT MOVES ──────────────────────────────────
  *
- * Cambiar el precio de una semana reprecia TODA la recolección de esa semana
- * que no se haya liquidado todavía — es literalmente para lo que existe. Lo
- * que ya se liquidó no se toca: la liquidación congeló su precio, y ése es el
- * trato. Antes de escribir nada, esta pantalla dice cuántas labores se mueven
- * y de cuánto a cuánto, con el mismo patrón de la nómina de cuadrilla:
- * «Revisar y…», y una confirmación que enseña las cifras.
+ * Changing a week's price reprices ALL of that week's picking that has not
+ * been settled yet — that is literally what it exists for. What is already
+ * settled is not touched: the settlement froze its price, and that is the
+ * deal. Before writing anything, this screen says how many work items move
+ * and from how much to how much, with the same pattern as the crew payroll:
+ * "Revisar y…", and a confirmation that shows the figures.
  */
 import { useMemo, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
@@ -49,7 +49,7 @@ import { addDays, formatWeekRange, mondayOf, parseDay, todayInFarm, weekTag } fr
 import { amountCents, formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import type { WorkRecord } from "../../api/types";
 
-/** Cuántos lunes hacia atrás se ofrecen. Una cosecha se corrige, no se reescribe. */
+/** How many Mondays back we offer. A harvest is corrected, not rewritten. */
 const WEEKS_BACK = 8;
 
 const sundayOf = (monday: string) => addDays(parseDay(monday), 6).toISOString().slice(0, 10);
@@ -78,9 +78,9 @@ export function WeekPricePage() {
   const [tick, setTick] = useState(0);
 
   /**
-   * Una sola carga con las tres lecturas, para que «cargando» y «no se pudo»
-   * sean estados distintos y no un cero compartido. Las labores se piden sólo
-   * de la semana elegida: es lo único que un cambio de precio puede mover.
+   * One load with all three reads, so that "loading" and "could not" are
+   * distinct states and not a shared zero. Work items are asked for only for
+   * the chosen week: that is all a price change can move.
    */
   const { data, error, denied } = useAsync(async () => {
     const [price, farm, records] = await Promise.all([
@@ -93,7 +93,7 @@ export function WeekPricePage() {
     return { price, farm, records };
   }, [monday, tick]);
 
-  /** Los precios de las semanas anteriores, para la tabla de abajo. */
+  /** The previous weeks' prices, for the table below. */
   const { data: history } = useAsync(
     async () =>
       Promise.all(
@@ -111,16 +111,16 @@ export function WeekPricePage() {
   const currentCents = data?.price.costPerUnitCents ?? null;
   const basePriceCents = data?.farm?.priceCents ?? null;
   /**
-   * La API no dice si el precio vino de una fila propia de la semana o del
-   * precio base de la finca — `GET` devuelve `COALESCE(override, base)`. No se
-   * puede afirmar cuál es, así que la pantalla sólo señala la coincidencia,
-   * que es un hecho, en vez de inventar el origen.
+   * The API does not say whether the price came from the week's own row or
+   * from the farm's base price — `GET` returns `COALESCE(override, base)`.
+   * Which one it is cannot be asserted, so the screen only points out that
+   * they match, which is a fact, instead of inventing the origin.
    */
   const sameAsBase = currentCents !== null && basePriceCents !== null && currentCents === basePriceCents;
 
   const newCents = parseMoneyInput(draft);
 
-  /** La recolección de esa semana que todavía se paga al precio de la semana. */
+  /** That week's picking that is still paid at the week's price. */
   const movable: WorkRecord[] = (data?.records ?? []).filter(
     (r) => !r.settled && r.amountIsEstimate && r.unitLabel !== null,
   );
@@ -268,7 +268,7 @@ export function WeekPricePage() {
                 inputMode="numeric"
                 sx={{ minWidth: 220 }}
               />
-              {/* «Revisar y…»: el botón no escribe, enseña lo que se movería. */}
+              {/* "Revisar y…": the button does not write, it shows what would move. */}
               <Button
                 variant="contained"
                 size="large"
@@ -362,8 +362,8 @@ export function WeekPricePage() {
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    {/* Un guion, no un cero: «$0 por kilo» es una semana en la
-                        que la finca no pagaba nada, que no existe. */}
+                    {/* A dash, not a zero: "$0 por kilo" is a week in which
+                        the farm paid nothing, which does not exist. */}
                     {h.cents === null ? (
                       <Box component="span" sx={{ color: "text.disabled", fontWeight: 600 }}>
                         —
@@ -388,9 +388,9 @@ export function WeekPricePage() {
         </CardContent>
       </Card>
 
-      {/* ── VER ANTES DE FIRMAR ──────────────────────────────────────────
-          El mismo patrón de la nómina: la confirmación enseña la cifra vieja,
-          la nueva, la diferencia, y a cuánta recolección le cambia el valor. */}
+      {/* ── LOOK BEFORE YOU SIGN ─────────────────────────────────────────
+          The payroll's pattern again: the confirmation shows the old figure,
+          the new one, the difference, and how much picking it re-values. */}
       <Dialog open={confirming} onClose={() => setConfirming(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           Fijar el kilo de la semana del {formatWeekRange(monday)} en{" "}

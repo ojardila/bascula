@@ -57,7 +57,7 @@ beforeEach(() => {
   });
 });
 
-describe("existencias are derived, and the interface never offers to set them", () => {
+describe("stock on hand is derived, and the interface never offers to set it", () => {
   it("shows the stock next to each product and says where the number comes from", async () => {
     renderInventory();
     expect(await screen.findByText("Café pergamino seco")).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await waitFor(() => expect(screen.getByText("25 bultos")).toBeInTheDocument());
   }, 30000);
 
-  it("asks before letting a movement take the bodega below zero, and takes the answer", async () => {
+  it("asks before letting a movement take the warehouse below zero, and takes the answer", async () => {
     const user = userEvent.setup();
     renderInventory();
     await screen.findByText("Café pergamino seco");
@@ -144,7 +144,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     await user.click(within(dialog).getByRole("combobox", { name: /Producto/ }));
     await user.click(await screen.findByRole("option", { name: /Café pergamino seco/ }));
     await pickWarehouse(user, dialog);
-    // 28 in the bodega; this takes out 40.
+    // 28 in the warehouse; this takes out 40.
     await user.type(within(dialog).getByLabelText(/^Cantidad/), "40");
 
     expect(await within(dialog).findByText(/Queda en negativo/)).toBeInTheDocument();
@@ -152,7 +152,7 @@ describe("existencias are derived, and the interface never offers to set them", 
     expect(await within(dialog).findByText(/En esa bodega no hay tanto/)).toBeInTheDocument();
 
     // The guard exists because a keyboard makes typos; the override exists
-    // because a bodega whose opening balance was never entered is ordinary.
+    // because a warehouse whose opening balance was never entered is ordinary.
     await user.click(
       within(dialog).getByRole("checkbox", { name: /Regístrelo de todos modos/ }),
     );
@@ -227,20 +227,20 @@ describe("the levels tab", () => {
 });
 
 /**
- * ── UNA TABLA VACÍA NO ES UNA BODEGA VACÍA ───────────────────────────────
+ * ── AN EMPTY TABLE IS NOT AN EMPTY WAREHOUSE ─────────────────────────────
  *
- * Estas dos pestañas leían `{(levels ?? []).map(...)}` y no capturaban el
- * error, así que una consulta caída dejaba los encabezados puestos y nada
- * debajo, sin una palabra. Quien lo mira concluye lo único que se puede
- * concluir de una tabla vacía: que no hay nada. Ver `components/TableState`.
+ * These two tabs read `{(levels ?? []).map(...)}` and never caught the error,
+ * so a failed query left the headers standing and nothing underneath them,
+ * without a word. Whoever looks at that draws the only conclusion an empty
+ * table supports: there is nothing there. See `components/TableState`.
  */
-describe("cuando la consulta falla", () => {
+describe("when the query fails", () => {
   const down = (path: string) =>
     http.get(path, () =>
       HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
     );
 
-  it("las existencias lo dicen, en vez de quedarse en blanco", async () => {
+  it("the stock tab says so, instead of going blank", async () => {
     const user = userEvent.setup();
     server.use(down("*/v1/stock"));
     renderInventory();
@@ -253,13 +253,13 @@ describe("cuando la consulta falla", () => {
     expect(
       screen.getByText(/vacía porque falló la consulta, no porque no haya nada/),
     ).toBeInTheDocument();
-    // Y NO la frase que afirma algo sobre la bodega.
+    // And NOT the sentence that claims something about the warehouse.
     expect(
       screen.queryByText("Ninguna bodega tiene existencias todavía."),
     ).not.toBeInTheDocument();
   }, 20000);
 
-  it("las entradas y salidas también", async () => {
+  it("and so does the ins-and-outs tab", async () => {
     const user = userEvent.setup();
     server.use(down("*/v1/stock/moves"));
     renderInventory();

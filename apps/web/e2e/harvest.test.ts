@@ -58,15 +58,15 @@ async function serverIsUp(): Promise<boolean> {
 const up = await serverIsUp();
 if (!up) {
   console.error(
-    `\nPRUEBA DE COSECHA OMITIDA: no hay API en ${API_URL}.\n` +
-      `NO pasó — se saltó. Levántela con: cd services/api && make up && make migrate && make dev\n`,
+    `\nHARVEST TEST SKIPPED: no API at ${API_URL}.\n` +
+      `It did NOT pass — it was skipped. Start one with: cd services/api && make up && make migrate && make dev\n`,
   );
 }
 
 const suite = up ? describe : (describe.skip.bind(null) as unknown as typeof describe);
 const suiteName = up
-  ? "la cosecha contra la API real"
-  : `la cosecha contra la API real — OMITIDA, no hay servidor en ${API_URL}`;
+  ? "the harvest against the real API"
+  : `the harvest against the real API — SKIPPED, no server at ${API_URL}`;
 
 /** $800 a kilo for the early weeks, $900 once the season peaks. */
 const EARLY_PRICE = 80_000;
@@ -121,7 +121,7 @@ suite(suiteName, () => {
     invalidateRefs();
   });
 
-  it("abre una finca con dos lotes, cuatro recolectores y una actividad al precio de la semana", async () => {
+  it("opens a farm with two plots, four pickers and one activity at the week's price", async () => {
     const res = await api
       .signup({
         farm: {
@@ -132,11 +132,11 @@ suite(suiteName, () => {
         },
         owner: { email, name: "Dueña Cosecha", password },
       })
-      .catch((e) => explain(e, "registrar la finca"));
-    await api.verifyEmail(res.verificationToken!).catch((e) => explain(e, "confirmar el correo"));
-    await api.login({ email, password }).catch((e) => explain(e, "entrar"));
+      .catch((e) => explain(e, "signing the farm up"));
+    await api.verifyEmail(res.verificationToken!).catch((e) => explain(e, "confirming the email"));
+    await api.login({ email, password }).catch((e) => explain(e, "signing in"));
 
-    const cropType = await api.createCropType("Café").catch((e) => explain(e, "tipo de cultivo"));
+    const cropType = await api.createCropType("Café").catch((e) => explain(e, "crop type"));
 
     for (const [name, ref] of [
       ["La Cuchilla", "A"],
@@ -151,7 +151,7 @@ suite(suiteName, () => {
           areaHa: 2,
           crops: [{ id: uuidv7(), cropTypeId: cropType.id, varietyId: null, areaHa: 2, plantedAt: null }],
         })
-        .catch((e) => explain(e, `crear el lote ${name}`));
+        .catch((e) => explain(e, `creating plot ${name}`));
       if (ref === "A") {
         plotA = plot.id;
         cropA = plot.crops[0].id;
@@ -171,7 +171,7 @@ suite(suiteName, () => {
           documentNumber: `${Date.now()}${workerIds.length}`.slice(-10),
           phone: "3001234567",
         })
-        .catch((e) => explain(e, `contratar a ${name}`));
+        .catch((e) => explain(e, `hiring ${name}`));
       workerIds.push(w.id);
     }
 
@@ -188,7 +188,7 @@ suite(suiteName, () => {
         rateSource: "weekly_price",
         validFrom: "2020-01-01",
       })
-      .catch((e) => explain(e, "crear la actividad de recolección"));
+      .catch((e) => explain(e, "creating the picking activity"));
     activityId = activity.id;
 
     expect(activity.payMode).toBe("work_unit");
@@ -198,18 +198,18 @@ suite(suiteName, () => {
     expect(plotB).toBeTruthy();
   }, 60_000);
 
-  it("pone precio a cada semana de la temporada", async () => {
+  it("prices every week of the season", async () => {
     for (let i = 0; i < SEASON.length; i++) {
       const monday = mondayOfWeek(i);
       // The price rises once the season peaks, which is what a farm does when
       // the trees are loaded and pickers are scarce.
       const price = i >= 3 ? LATE_PRICE : EARLY_PRICE;
-      const set = await api.setWeekPrice(monday, price).catch((e) => explain(e, `precio de ${monday}`));
+      const set = await api.setWeekPrice(monday, price).catch((e) => explain(e, `price for ${monday}`));
       expect(set.costPerUnitCents).toBe(price);
     }
   }, 60_000);
 
-  it("registra la temporada: seis semanas, dos lotes, cuatro recolectores", async () => {
+  it("records the season: six weeks, two plots, four pickers", async () => {
     for (let i = 0; i < SEASON.length; i++) {
       const monday = mondayOfWeek(i);
       // Two working days a week, Monday and Wednesday, so the week detail has
@@ -239,7 +239,7 @@ suite(suiteName, () => {
               dateTo: day,
               quantity,
             })
-            .catch((e) => explain(e, `labor de la semana ${monday}`));
+            .catch((e) => explain(e, `work for the week of ${monday}`));
         }
       }
     }
@@ -248,7 +248,7 @@ suite(suiteName, () => {
 
   /* ---------------------------------------------------------------- */
 
-  it("lista las semanas con sus kilos, su valor y el precio de cada una", async () => {
+  it("lists the weeks with their kilos, their value and each one's price", async () => {
     const res = await reportWeeks({ limit: 12 });
     expect(res.scope).toBe("harvest");
 
@@ -278,7 +278,7 @@ suite(suiteName, () => {
     }
   }, 60_000);
 
-  it("lee la curva: el pico y el fin de temporada", async () => {
+  it("reads the curve: the peak and the end of the season", async () => {
     const curve = await reportHarvestCurve({ weeks: 12 });
     expect(curve.scope).toBe("harvest");
     expect(curve.plotCropId).toBeNull();
@@ -294,7 +294,7 @@ suite(suiteName, () => {
     expect(curve.weeksWithoutKilos).toBe(0);
   }, 60_000);
 
-  it("cuadra la semana por filas y por columnas, en las dos rejillas", async () => {
+  it("cross-foots the week by rows and by columns, in both grids", async () => {
     const detail = await reportWeek(mondayOfWeek(2));
     expect(detail.weekStart).toBe(mondayOfWeek(2));
     expect(detail.finished).toBe(true);
@@ -325,7 +325,7 @@ suite(suiteName, () => {
     expect(detail.byCrop.unattributed).toBeUndefined();
   }, 60_000);
 
-  it("responde 200 y dos rejillas vacías para una semana que nadie trabajó", async () => {
+  it("answers 200 and two empty grids for a week nobody worked", async () => {
     // A Monday well before the season. "Nobody picked that week" is a true
     // answer, not a 404.
     const quiet = addDays(parseDay(mondayOfWeek(0)), -70).toISOString().slice(0, 10);
@@ -337,7 +337,7 @@ suite(suiteName, () => {
     expect(detail.total.records).toBe(0);
   }, 60_000);
 
-  it("separa los dos cultivos y da el área y los kg por hectárea de cada uno", async () => {
+  it("separates the two crops and gives each one's area and kg per hectare", async () => {
     const a = await reportCrop(cropA, 12);
     const b = await reportCrop(cropB, 12);
 
@@ -361,7 +361,7 @@ suite(suiteName, () => {
     expect(a.sharedRecords).toBe(0);
   }, 60_000);
 
-  it("da índice a los cuatro y deja a cada uno fuera de su propia referencia", async () => {
+  it("gives all four an index and leaves each one out of their own benchmark", async () => {
     const perf = await reportPerformance(120);
     expect(perf.scope).toBe("harvest");
 
@@ -387,7 +387,7 @@ suite(suiteName, () => {
     }
   }, 60_000);
 
-  it("no ve anomalías en una temporada limpia, y sí en una pesada absurda", async () => {
+  it("sees no anomalies in a clean season, and one in an absurd weigh-in", async () => {
     const clean = await reportAnomalies({ days: 120 });
     expect(clean.scope).toBe("harvest");
     expect(clean.items).toEqual([]);
@@ -407,7 +407,7 @@ suite(suiteName, () => {
         dateTo: day,
         quantity: 900,
       })
-      .catch((e) => explain(e, "registrar la pesada absurda"));
+      .catch((e) => explain(e, "recording the absurd weigh-in"));
 
     const dirty = await reportAnomalies({ days: 120 });
     expect(dirty.items).toHaveLength(1);
@@ -423,7 +423,7 @@ suite(suiteName, () => {
     expect(sentence).not.toMatch(/impossible/);
   }, 90_000);
 
-  it("nunca convierte un nulo en un cero", async () => {
+  it("never turns a null into a zero", async () => {
     // The one property the whole module rests on, checked on real payloads:
     // wherever the server declined to establish a figure, the client's own
     // readers say "unknown" rather than handing back 0.

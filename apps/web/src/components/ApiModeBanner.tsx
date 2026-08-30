@@ -15,18 +15,18 @@
  * real server" strip would be noise, and noise is what teaches people to stop
  * reading strips.
  *
- * ── LO QUE SE FUE DE AQUÍ, Y POR QUÉ ─────────────────────────────────────
+ * ── WHAT LEFT THIS BANNER, AND WHY ───────────────────────────────────────
  *
- * Decía, en el techo de todas las páginas: «ponga VITE_USE_MOCKS=false en
- * .env.development». Eso es una instrucción para quien tiene el repositorio
- * clonado, y estaba escrita en la pantalla de un caficultor de 62 años que
- * usa WhatsApp y poco más. Junto con el aviso de sincronización se comían 520
- * de los primeros 844 píxeles de un celular.
+ * It used to say, across the top of every page: "ponga VITE_USE_MOCKS=false en
+ * .env.development". That is an instruction for somebody with the repository
+ * checked out, and it was written on the screen of a 62-year-old coffee farmer
+ * who uses WhatsApp and not much else. Together with the sync warning the two
+ * of them ate 520 of a phone's first 844 pixels.
  *
- * El hecho que sí es suyo —lo que ve aquí no es su finca, y no se guarda— se
- * queda, en una línea. La variable de entorno y el fichero están en el README
- * y en la consola del navegador, que es donde vive quien los necesita: nadie
- * edita un `.env` desde el teléfono con el que está mirando esta pantalla.
+ * The fact that IS his —what he is looking at is not his farm, and nothing is
+ * saved— stays, in one line. The environment variable and the file are in the
+ * README and in the browser console, which is where whoever needs them lives:
+ * nobody edits a `.env` from the phone they are reading this screen on.
  */
 import { useEffect } from "react";
 import { Alert, Box } from "@mui/material";
@@ -36,7 +36,7 @@ import { apiMode } from "../api/mode";
 export function ApiModeBanner() {
   const mode = apiMode();
 
-  // Para quien SÍ lo necesita, y donde lo va a mirar. Una vez por carga.
+  // For whoever DOES need it, where they will actually look. Once per load.
   useEffect(() => {
     if (mode.mocks) {
       console.info(

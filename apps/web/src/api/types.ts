@@ -138,8 +138,8 @@ export interface FarmUser {
    *
    * `/v1/users` is the third case today: the query behind it never selects a
    * last login. Collapsing that into `null` is what printed "Nunca ha entrado"
-   * next to the owner while he was reading the screen. 1 de enero de 1970
-   * would be a lie about a date; "nunca" is a lie about a person.
+   * next to the owner while they were reading the screen. 1 January 1970 would
+   * be a lie about a date; "nunca" is a lie about a person.
    */
   lastLoginAt?: string | null;
   createdAt: string | null;
@@ -448,17 +448,17 @@ export interface WorkerProfile {
   pendingCents: number | null;
   ledger: LedgerEntry[];
   /**
-   * CUÁNTOS ASIENTOS COMO MÁXIMO PIDIÓ ESTA PANTALLA.
+   * AT MOST HOW MANY ENTRIES THIS SCREEN ASKED FOR.
    *
-   * `/v1/workers/{id}/profile` corta el libro por `?limit` y responde con la
-   * página sin decir en ninguna parte que la cortó. Una tabla titulada
-   * «Historial financiero» que en realidad son los últimos cincuenta asientos,
-   * y no lo dice, es de la misma familia que el resto de hallazgos de la
-   * auditoría: una pantalla afirmando más de lo que sabe.
+   * `/v1/workers/{id}/profile` cuts the ledger at `?limit` and answers with
+   * the page without saying anywhere that it cut it. A table headed
+   * "Historial financiero" that is really the last fifty entries, and does not
+   * say so, belongs to the same family as the rest of the audit's findings: a
+   * screen claiming more than it knows.
    *
-   * Con el tope aquí, la pantalla puede comparar `ledger.length` contra él y
-   * avisar. Y pedirlo explícitamente en vez de heredar el `default` del
-   * servidor significa que el número que se enseña es el que se pidió.
+   * With the cap here, the screen can compare `ledger.length` against it and
+   * say so. And asking for it explicitly instead of inheriting the server's
+   * `default` means the number on screen is the number that was requested.
    */
   ledgerLimit: number;
   notes: WorkerNote[];
@@ -688,22 +688,22 @@ export interface SettlementSummary {
 }
 
 /**
- * La lista de liquidaciones, CON SUS HUECOS.
+ * The list of settlements, WITH ITS HOLES.
  *
- * Sin `GET /v1/settlements` la lista se compone leyendo el libro de cada
- * empleado, y esas lecturas pueden fallar una a una. Devolver sólo el array
- * dejaba a la pantalla sin forma de distinguir «esta finca no ha liquidado
- * nada» de «no pude leer los libros» — y afirmaba lo primero, con una planilla
- * en blanco detrás.
+ * Without `GET /v1/settlements` the list is assembled by reading every
+ * employee's ledger, and those reads can fail one at a time. Returning only
+ * the array left the screen with no way of telling "this farm has settled
+ * nothing" apart from "I could not read the ledgers" — and it asserted the
+ * first, with a blank payroll sheet behind it.
  *
- * Los dos contadores son cero cuando la ruta de colección contestó, que es el
- * caso en el que no hay abanico y no hay huecos que declarar.
+ * Both counters are zero when the collection route answered, which is the
+ * case where there is no fan-out and no holes to declare.
  */
 export interface SettlementList {
   items: SettlementSummary[];
-  /** Empleados cuyo libro no se pudo leer: sus liquidaciones faltan. */
+  /** Employees whose ledger could not be read: their settlements are missing. */
   unreadableLedgers: number;
-  /** Liquidaciones encontradas en un libro que después no se pudieron leer. */
+  /** Settlements found in a ledger that then could not be read. */
   unreadableSettlements: number;
 }
 

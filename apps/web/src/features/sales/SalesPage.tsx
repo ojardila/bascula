@@ -58,7 +58,7 @@ export function SalesPage() {
   const totalQty = sales?.totalQty ?? 0;
 
   /**
-   * ── «N UNIDADES» SUMABA COSAS QUE NO SON LA MISMA COSA ────────────────
+   * ── "N UNIDADES" WAS ADDING UP THINGS THAT ARE NOT THE SAME THING ────
    *
    * `totalQty` is a plain sum of every sale's `quantity`, and a quantity is in
    * ITS PRODUCT'S storage unit: bultos of parchment, kilos of cherry, cajas of

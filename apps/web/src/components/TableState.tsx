@@ -1,23 +1,23 @@
 /**
- * LAS CUATRO RAMAS DE UNA TABLA, EN UN SOLO SITIO.
+ * THE FOUR BRANCHES OF A TABLE, IN ONE PLACE.
  *
- * El módulo de cosecha ya las separa y las escribe una por una — sin permiso,
- * falló, cargando, vacío — y `ModuleList` también. Las tablas que no pasan por
- * ninguno de los dos no lo hacían: `{(levels ?? []).map(...)}` pinta los
- * encabezados y nada debajo cuando la petición falla, sin una palabra, y quien
- * lo mira concluye que la bodega está vacía. La liquidaciones llegaba más
- * lejos y AFIRMABA que la finca no había liquidado nunca nada.
+ * The harvest module already tells them apart and writes each one out — not
+ * allowed, failed, loading, empty — and so does `ModuleList`. The tables that
+ * go through neither did not: `{(levels ?? []).map(...)}` paints the headers
+ * and nothing underneath when the request fails, without a word, and whoever
+ * looks at it concludes the store is empty. The settlements table went further
+ * and CLAIMED the farm had never settled anything.
  *
- * La diferencia que este componente existe para conservar:
+ * The distinction this component exists to preserve:
  *
- *   cargando   todavía no se sabe. No se afirma nada.
- *   falló      se preguntó y no contestaron. NO ES CERO, y se dice.
- *   sin permiso  no es un fallo y no se reintenta.
- *   vacío      la única de las cuatro que puede afirmar algo sobre la finca.
+ *   loading      we do not know yet. Nothing is claimed.
+ *   failed       we asked and got no answer. IT IS NOT ZERO, and we say so.
+ *   not allowed  not a failure, and not something to retry.
+ *   empty        the only one of the four that may claim anything about the farm.
  *
- * Es una fila de tabla y no una pantalla completa a propósito: el resto de la
- * tabla —los encabezados, el pie, los filtros— sigue siendo útil mientras una
- * de sus fuentes no llega.
+ * It is a table row and not a whole screen on purpose: the rest of the table
+ * —the headers, the footer, the filters— stays useful while one of its sources
+ * has not arrived.
  */
 import type { ReactNode } from "react";
 import { Box, Stack, TableCell, TableRow, Typography } from "@mui/material";
@@ -26,15 +26,15 @@ import LockPersonIcon from "@mui/icons-material/LockPerson";
 
 interface Props {
   colSpan: number;
-  /** `null` mientras la petición está en el aire. */
+  /** `null` while the request is still in the air. */
   rows: unknown[] | null;
   error?: string | null;
   denied?: boolean;
-  /** «las existencias», «las entradas y salidas». Va dentro de las frases. */
+  /** "las existencias", "las entradas y salidas". Goes inside the sentences. */
   subject: string;
-  /** Lo que se dice cuando de verdad no hay nada. */
+  /** What we say when there really is nothing. */
   emptyText: ReactNode;
-  /** Un botón para crear el primero, cuando lo hay. */
+  /** A button to create the first one, where there is one. */
   emptyAction?: ReactNode;
 }
 
@@ -76,8 +76,8 @@ export function TableState({
               <Typography variant="body2" color="text.secondary">
                 {error}
               </Typography>
-              {/* La frase que hace falta decir en voz alta, porque una tabla
-                  vacía dice lo contrario sola. */}
+              {/* The sentence that has to be said out loud, because an empty
+                  table says the opposite all by itself. */}
               <Typography variant="body2" color="warning.dark">
                 Esta tabla está vacía porque falló la consulta, no porque no haya nada.
               </Typography>

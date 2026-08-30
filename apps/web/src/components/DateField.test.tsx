@@ -1,14 +1,14 @@
 /**
- * EL CAMPO DE FECHA, Y EL 3 DE AGOSTO QUE SE GUARDABA COMO EL 8 DE MARZO.
+ * THE DATE FIELD, AND THE 3RD OF AUGUST THAT GOT SAVED AS THE 8TH OF MARCH.
  *
- * El fallo que este componente cierra tiene un camino corto y caro: alguien
- * teclea 03/08 en un `<input type="date">` que pide `mm/dd/aaaa`, el navegador
- * guarda el 8 de marzo, la labor cae en otra semana y esa semana tiene otro
- * precio del kilo. La primera prueba de aquí abajo es exactamente ese caso.
+ * The bug this component closes has a short and expensive path: somebody types
+ * 03/08 into an `<input type="date">` that asks for `mm/dd/yyyy`, the browser
+ * saves March 8th, the work item falls in another week, and that week has a
+ * different price per kilo. The first test below is exactly that case.
  *
- * La segunda es la que de verdad importa para quien usa esto: que el campo
- * DIGA en letras lo que entendió. Aunque la máscara fallara, «lunes 3 de
- * agosto de 2026» debajo del campo no se puede malinterpretar.
+ * The second is the one that really matters to whoever uses this: that the
+ * field SAYS in words what it understood. Even if the mask failed, "lunes 3 de
+ * agosto de 2026" under the field cannot be misread.
  */
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
@@ -42,38 +42,39 @@ function Harness({ initial = "", onValue }: { initial?: string; onValue?: (v: st
 const field = () => screen.getByLabelText(/^Fecha/);
 const iso = () => screen.getByTestId("iso").textContent;
 
-describe("el día va primero, que es el fallo entero", () => {
-  it("03/08 es el 3 de agosto y no el 8 de marzo", async () => {
+describe("the day comes first, which is the whole bug", () => {
+  it("03/08 is the 3rd of August and not the 8th of March", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.type(field(), "03/08/2026");
     expect(iso()).toBe("2026-08-03");
   });
 
-  it("y lo dice en letras, para que nadie tenga que fiarse de la máscara", async () => {
+  it("and says it in words, so nobody has to trust the mask", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.type(field(), "03/08/2026");
     expect(screen.getByText("lunes 3 de agosto de 2026")).toBeInTheDocument();
   });
 
-  it("acepta lo que la gente teclea de verdad, no sólo la forma canónica", () => {
-    // El año de referencia es 2026 en los cuatro casos.
+  it("accepts what people really type, not only the canonical form", () => {
+    // The reference year is 2026 in all four cases.
     expect(parseTypedDay("29/8", 2026)).toBe("2026-08-29");
     expect(parseTypedDay("29/08/26", 2026)).toBe("2026-08-29");
     expect(parseTypedDay("29-8-2026", 2026)).toBe("2026-08-29");
     expect(parseTypedDay("29082026", 2026)).toBe("2026-08-29");
   });
 
-  it("y NO arregla por su cuenta una fecha que no existe", () => {
-    // Un 31 de febrero convertido en 28 sin decirlo es el mismo fallo con
-    // otro disfraz: el programa guardando algo distinto de lo que se escribió.
+  it("and does NOT quietly repair a date that does not exist", () => {
+    // A 31st of February turned into the 28th without saying so is the same
+    // bug in a different costume: the program saving something other than
+    // what was typed.
     expect(parseTypedDay("31/02/2026", 2026)).toBeNull();
     expect(parseTypedDay("29/13/2026", 2026)).toBeNull();
     expect(parseTypedDay("hola", 2026)).toBeNull();
   });
 
-  it("lo dice cuando no entendió, en vez de guardar cualquier cosa", async () => {
+  it("says so when it did not understand, instead of saving anything at all", async () => {
     const user = userEvent.setup();
     const onValue = vi.fn();
     render(<Harness onValue={onValue} />);
@@ -83,32 +84,32 @@ describe("el día va primero, que es el fallo entero", () => {
     expect(iso()).toBe("");
   });
 
-  it("al salir del campo completa lo que faltaba, para que no queden dudas del año", async () => {
+  it("on blur it fills in what was missing, so the year is beyond doubt", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.type(field(), "29/8");
     await user.tab();
-    // El año que se da por supuesto es el de hoy en la finca, no uno fijo:
-    // esta prueba tiene que seguir pasando el año que viene.
+    // The year it assumes is today's on the farm, not a hard-coded one: this
+    // test has to keep passing next year.
     const year = todayInFarm("America/Bogota").slice(0, 4);
     expect(field()).toHaveValue(`29/08/${year}`);
   });
 });
 
-describe("el calendario habla castellano", () => {
-  it("se abre con los meses escritos y la semana empezando en lunes", async () => {
+describe("the calendar speaks Spanish", () => {
+  it("opens with the months spelled out and the week starting on Monday", async () => {
     const user = userEvent.setup();
     render(<Harness initial="2026-08-29" />);
     await user.click(screen.getByRole("button", { name: /Abrir el calendario/ }));
 
     const cal = screen.getByRole("application", { name: "Calendario" });
     expect(within(cal).getByText("agosto de 2026")).toBeInTheDocument();
-    // L M X J V S D — y no S M T W T F S.
+    // L M X J V S D — and not S M T W T F S.
     expect(within(cal).getAllByText("L").length).toBeGreaterThan(0);
     expect(within(cal).getAllByText("X").length).toBeGreaterThan(0);
   });
 
-  it("elegir un día lo escribe en el campo y cierra", async () => {
+  it("picking a day writes it into the field and closes", async () => {
     const user = userEvent.setup();
     render(<Harness initial="2026-08-29" />);
     await user.click(screen.getByRole("button", { name: /Abrir el calendario/ }));
@@ -119,12 +120,12 @@ describe("el calendario habla castellano", () => {
     expect(field()).toHaveValue("12/08/2026");
   });
 
-  it("la rejilla son seis semanas completas, siempre, así el botón no se mueve", () => {
-    // Un mes que empieza en domingo y otro que empieza en lunes producen la
-    // misma altura. Si no, cambiar de mes desplaza el día que se iba a pulsar.
-    expect(monthGrid(2026, 1)).toHaveLength(42); // febrero de 2026
-    expect(monthGrid(2026, 10)).toHaveLength(42); // noviembre de 2026
-    expect(monthGrid(2026, 1)[0]).toBe("2026-01-26"); // un lunes
-    expect(monthGrid(2026, 10)[0]).toBe("2026-10-26"); // otro lunes
+  it("the grid is always six full weeks, so the button does not move", () => {
+    // A month starting on a Sunday and one starting on a Monday come out the
+    // same height. Otherwise changing month shifts the day about to be pressed.
+    expect(monthGrid(2026, 1)).toHaveLength(42); // February 2026
+    expect(monthGrid(2026, 10)).toHaveLength(42); // November 2026
+    expect(monthGrid(2026, 1)[0]).toBe("2026-01-26"); // a Monday
+    expect(monthGrid(2026, 10)[0]).toBe("2026-10-26"); // another Monday
   });
 });

@@ -1,27 +1,27 @@
 /**
- * LA PRUEBA QUE IMPIDE QUE EL VOCABULARIO VUELVA A DIVERGIR.
+ * THE TEST THAT KEEPS THE VOCABULARY FROM DRIFTING APART AGAIN.
  *
- * `vocab.ts` sirve de poco si mañana alguien escribe «Parcelas» a mano en una
- * pantalla nueva: en tres sprints estamos otra vez con dos palabras para la
- * misma tierra y una cacería por treinta y siete ficheros. Así que esta prueba
- * LEE EL CÓDIGO FUENTE, le quita los comentarios y falla si encuentra una de
- * las palabras jubiladas donde se puede leer.
+ * `vocab.ts` is worth little if tomorrow somebody hand-writes "Parcelas" on a
+ * new screen: three sprints later we are back to two words for the same piece
+ * of land and a manhunt through thirty-seven files. So this test READS THE
+ * SOURCE, strips the comments off it, and fails if it finds one of the retired
+ * words anywhere it can be read.
  *
- * POR QUÉ LEER FICHEROS Y NO RENDERIZAR PANTALLAS. Una prueba de render sólo ve
- * las pantallas que alguien se acordó de meter en ella, y el fallo que hay que
- * evitar es justamente el de la pantalla nueva que nadie añadió a la lista.
- * Esto ve todo lo que hay en `src/`, incluido lo que se escriba mañana.
+ * WHY READ FILES INSTEAD OF RENDERING SCREENS. A render test only sees the
+ * screens somebody remembered to put in it, and the failure worth preventing
+ * is precisely the new screen nobody added to the list. This sees everything
+ * under `src/`, including whatever gets written tomorrow.
  *
- * SE QUITAN LOS COMENTARIOS a propósito: este fichero y varios más EXPLICAN por
- * qué «parcela» se jubiló, y una prueba que prohibiera contar la historia
- * obligaría a borrar la razón del cambio junto con el cambio.
+ * THE COMMENTS ARE STRIPPED on purpose: this file and several others EXPLAIN
+ * why "parcela" was retired, and a test that banned telling the story would
+ * force the reason for the change to be deleted along with the change.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  EMPLEADO, GROSS_SETTLED, LEDGER_KIND_LABEL, LOTE, PAY_MODE_LABEL, PROVISIONAL,
-  RECOLECTOR,
+  EMPLOYEE, GROSS_SETTLED, LEDGER_KIND_LABEL, PLOT, PAY_MODE_LABEL, PROVISIONAL,
+  PICKER,
 } from "./vocab";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,13 +36,13 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Quita comentarios sin romper las cadenas.
+ * Strips comments without breaking strings.
  *
- * Un `replace` con una expresión regular se come la barra doble de
- * `"https://…"` y, al revés, da por cerrado un comentario que en realidad está
- * dentro de una plantilla. Así que esto recorre el texto carácter a carácter
- * llevando la cuenta de dónde está. Es la única forma de que la prueba no
- * mienta en ninguna de las dos direcciones.
+ * A `replace` with a regular expression eats the double slash of
+ * `"https://…"` and, the other way round, calls a comment closed when it is
+ * really inside a template literal. So this walks the text character by
+ * character keeping track of where it is. It is the only way the test does not
+ * lie in either direction.
  */
 function stripComments(src: string): string {
   let out = "";
@@ -64,12 +64,12 @@ function stripComments(src: string): string {
     }
     if (state === "block") {
       if (c === "*" && next === "/") { state = "code"; i += 2; continue; }
-      // Se conservan los saltos de línea para que el número de línea del
-      // mensaje de error siga siendo el del fichero de verdad.
+      // Newlines are kept so the line number in the error message is still
+      // the one in the real file.
       if (c === "\n") out += c;
       i++; continue;
     }
-    // Dentro de una cadena. `\` escapa lo que venga.
+    // Inside a string. `\` escapes whatever comes next.
     if (c === "\\") { out += src.slice(i, i + 2); i += 2; continue; }
     if (c === state) state = "code";
     out += c; i++;
@@ -79,7 +79,7 @@ function stripComments(src: string): string {
 
 interface Hit { file: string; line: number; text: string }
 
-/** Cada acierto de `pattern` en el código (sin comentarios) de `files`. */
+/** Every match of `pattern` in the code (comments stripped) of `files`. */
 function hits(files: string[], pattern: RegExp): Hit[] {
   const found: Hit[] = [];
   for (const file of files) {
@@ -100,7 +100,7 @@ const isTest = (f: string) => /\.test\.tsx?$/.test(f);
 const under = (...dirs: string[]) => (f: string) =>
   dirs.some((d) => f.includes(join(SRC, d) + "/"));
 
-/** Todo lo que una persona puede acabar leyendo: pantallas y sus ayudantes. */
+/** Everything a person can end up reading: screens and their helpers. */
 const PRODUCT = ALL.filter(
   (f) =>
     !isTest(f) &&
@@ -109,119 +109,118 @@ const PRODUCT = ALL.filter(
     !under("test")(f),
 );
 
-/** Sólo las pantallas. Aquí no cabe ni una palabra de contaduría. */
+/** The screens only. Not one word of accountancy fits here. */
 const SCREENS = PRODUCT.filter((f) => f.endsWith(".tsx"));
 
-describe("la tierra se llama «lote», en un solo sitio", () => {
-  it("nadie escribe «parcela» a mano en el producto", () => {
-    // El único fichero que puede nombrarla es el que la jubila, y está fuera
-    // de la lista. `App.tsx` la nombra sólo para redirigirla, y eso lo
-    // comprueba la prueba de abajo. Si esto falla: importe `LOTE` de
-    // `lib/vocab`.
+describe("the land is called \"lote\", in exactly one place", () => {
+  it("nobody hand-writes \"parcela\" anywhere in the product", () => {
+    // The only file allowed to name it is the one that retires it, and that
+    // one is off the list. `App.tsx` names it only to redirect it, which the
+    // test below checks. If this fails: import `PLOT` from `lib/vocab`.
     const offenders = hits(PRODUCT, /parcela/i).filter((h) => !h.file.endsWith("App.tsx"));
     expect(show(offenders)).toBe("");
   });
 
-  it("y en `App.tsx` sólo sobrevive para redirigir el enlace viejo", () => {
+  it("and in `App.tsx` it survives only to redirect the old link", () => {
     const inApp = hits(PRODUCT.filter((f) => f.endsWith("App.tsx")), /parcela/i);
     expect(inApp.length).toBeGreaterThan(0);
     for (const h of inApp) expect(h.text).toMatch(/Navigate|Redirect|replace\(/);
   });
 
-  it("ni la ruta vieja, salvo la redirección que no rompe lo guardado", () => {
+  it("nor the old route, except the redirect that keeps saved links working", () => {
     const offenders = hits(PRODUCT, /["'`]\/parcelas/).filter(
       (h) => !h.file.endsWith("App.tsx"),
     );
     expect(show(offenders)).toBe("");
   });
 
-  it("y `LOTE` dice lo que dice el teléfono", () => {
-    expect(LOTE.one).toBe("lote");
-    expect(LOTE.path).toBe("/lotes");
+  it("and `PLOT` says what the phone says", () => {
+    expect(PLOT.one).toBe("lote");
+    expect(PLOT.path).toBe("/lotes");
   });
 });
 
-describe("cómo se le paga a la gente se dice en el idioma del oficio", () => {
-  it("no queda ni una «unidad de trabajo» ni una «unidad de tiempo»", () => {
+describe("how people get paid is said in the language of the trade", () => {
+  it("not one \"unidad de trabajo\" or \"unidad de tiempo\" is left", () => {
     expect(show(hits(PRODUCT, /unidad(es)? de (trabajo|tiempo)/i))).toBe("");
   });
 
-  it("y «destajo» —como se paga el café— existe", () => {
+  it("and \"destajo\" —how coffee is paid for— exists", () => {
     expect(PAY_MODE_LABEL.work_unit).toMatch(/destajo/i);
     expect(PAY_MODE_LABEL.time_unit).toMatch(/jornal/i);
     expect(PAY_MODE_LABEL.contract).toMatch(/contrato/i);
   });
 });
 
-describe("una cifra que puede moverse se llama «provisional» y nada más", () => {
-  it("«estimado» no sobrevive en ninguna pantalla", () => {
+describe("a figure that can still move is called \"provisional\" and nothing else", () => {
+  it("\"estimado\" does not survive on any screen", () => {
     expect(show(hits(SCREENS, /\bestimad[oa]s?\b/i))).toBe("");
   });
 
-  it("y el papel ya la llamaba así, que es por lo que ganó", () => {
+  it("and the paper already called it that, which is why it won", () => {
     expect(PROVISIONAL).toBe("provisional");
     const paper = readFileSync(join(SRC, "features/documents/documents.ts"), "utf8");
     expect(paper).toContain("PROVISIONAL");
   });
 });
 
-describe("el libro no le habla al caficultor en contaduría", () => {
-  it("«devengo» y «reverso» no aparecen en ninguna pantalla", () => {
+describe("the ledger does not talk accountancy at the coffee farmer", () => {
+  it("\"devengo\" and \"reverso\" appear on no screen", () => {
     expect(show(hits(SCREENS, /\b(devengos?|reversos?)\b/i))).toBe("");
   });
 
-  it("los tipos de asiento están dichos en palabras de finca", () => {
+  it("the entry kinds are said in farm words", () => {
     expect(LEDGER_KIND_LABEL.devengo).toBe("ganado");
     expect(LEDGER_KIND_LABEL.reverso).toBe("corrección");
     expect(LEDGER_KIND_LABEL.deduccion).toBe("descuento");
   });
 });
 
-describe("la bodega no es un extracto bancario", () => {
-  it("en Inventario no quedan «movimientos»", () => {
+describe("the store is not a bank statement", () => {
+  it("no \"movimientos\" are left in Inventory", () => {
     const inventory = PRODUCT.filter(under("features/inventory"));
     expect(inventory.length).toBeGreaterThan(0);
     expect(show(hits(inventory, /movimientos?/i))).toBe("");
   });
 
-  it("pero «saldo a favor» y «bruto» se quedan: son palabras de finca", () => {
+  it("but \"saldo a favor\" and \"bruto\" stay: they are farm words", () => {
     expect(GROSS_SETTLED).toBe("Bruto liquidado");
-    expect(EMPLEADO.One).toBe("Empleado");
+    expect(EMPLOYEE.One).toBe("Empleado");
   });
 });
 
 /**
- * LAS DOS PALABRAS PARA LA MISMA PERSONA, Y POR QUÉ GANÓ «EMPLEADO».
+ * THE TWO WORDS FOR THE SAME PERSON, AND WHY "EMPLEADO" WON.
  *
- * La consola dice «empleado» y el teléfono «recolector», y los dos lo
- * imprimen. Gana el de la consola en la consola porque ya está en su papel —la
- * línea de firma y la columna de la planilla— y porque la consola administra
- * gente que no recoge café ni un día. Y «recolector» se queda en Cosecha, que
- * es donde de verdad significa *quien recogió*.
+ * The console says "empleado" and the phone says "recolector", and both of
+ * them print it. The console's word wins in the console because it is already
+ * on its paper —the signature line and the payroll sheet column— and because
+ * the console administers people who do not pick coffee a single day. And
+ * "recolector" stays in Harvest, which is where it genuinely means *whoever
+ * picked*.
  */
-describe("la persona se llama «empleado», y «recolector» sólo donde eso es lo que es", () => {
-  it("Cosecha sigue diciendo recolector: ahí es un papel, no un registro", () => {
-    expect(RECOLECTOR.Many).toBe("Recolectores");
+describe("the person is called \"empleado\", and \"recolector\" only where that is what they are", () => {
+  it("Harvest still says recolector: there it is a role, not a record", () => {
+    expect(PICKER.Many).toBe("Recolectores");
     const harvest = PRODUCT.filter(under("features/harvest"));
-    expect(hits(harvest, /RECOLECTOR\./).length).toBeGreaterThan(0);
+    expect(hits(harvest, /PICKER\./).length).toBeGreaterThan(0);
   });
 
-  it("y fuera de Cosecha nadie llama recolector a un empleado", () => {
+  it("and outside Harvest nobody calls an employee a recolector", () => {
     const elsewhere = SCREENS.filter((f) => !under("features/harvest")(f));
     expect(show(hits(elsewhere, /recolector/i))).toBe("");
   });
 });
 
 /**
- * EL PAPEL, PROTEGIDO POR SU PROPIA PRUEBA.
+ * THE PAPER, PROTECTED BY A TEST OF ITS OWN.
  *
- * Lo de arriba impide que la pantalla vuelva a hablar en contaduría. Esto
- * impide lo contrario: que un sprint de vocabulario le cambie a alguien las
- * palabras del comprobante que ya firmó. Si una de estas cadenas hay que
- * moverla, que sea una decisión con esta prueba delante y no un efecto
- * colateral de un `sed`.
+ * The above stops the screen from talking accountancy again. This stops the
+ * opposite: a vocabulary sprint changing the words on the receipt somebody
+ * already signed. If one of these strings has to move, let it be a decision
+ * taken with this test in front of you and not the side effect of a `sed`.
  */
-describe("lo que está impreso no se mueve por un sprint de palabras", () => {
+describe("what is printed does not move for a sprint about words", () => {
   const paper = readFileSync(join(SRC, "features/documents/documents.ts"), "utf8");
 
   it.each([
@@ -234,13 +233,14 @@ describe("lo que está impreso no se mueve por un sprint de palabras", () => {
     "PROVISIONAL",
     "PLANILLA PARCIAL",
     "Empleado",
-  ])("«%s» sigue en el papel", (word) => {
+  ])("\"%s\" is still on the paper", (word) => {
     expect(paper).toContain(word);
   });
 
-  it("y el bloque de una liquidación anulada conserva las palabras del libro", () => {
-    // Es el ÚNICO sitio impreso donde salen, y sale para cuadrarse contra el
-    // libro tres semanas después. Ver la nota de `LEDGER_KIND_LABEL`.
+  it("and a voided settlement's block keeps the ledger's own words", () => {
+    // It is the ONLY printed place they appear, and they appear there to be
+    // reconciled against the ledger three weeks later. See the note on
+    // `LEDGER_KIND_LABEL`.
     expect(paper).toContain("devengo");
     expect(paper).toContain("reverso");
   });

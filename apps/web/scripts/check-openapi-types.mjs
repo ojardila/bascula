@@ -43,17 +43,17 @@ try {
   spec = readFileSync(SPEC, "utf8");
 } catch {
   fail([
-    "NO ENCONTRAMOS EL CONTRATO",
+    "THE CONTRACT IS NOWHERE TO BE FOUND",
     "",
-    `Se esperaba: ${SPEC}`,
+    `Expected at: ${SPEC}`,
     "",
-    "Los tipos de la web se generan de ese archivo. Sin él no se puede",
-    "comprobar nada, y una comprobación que pasa sin comprobar es peor",
-    "que no tenerla.",
+    "The web app's types are generated from that file. Without it nothing",
+    "can be checked, and a check that passes without checking is worse",
+    "than no check at all.",
   ]);
 }
 if (!spec.includes("openapi:")) {
-  fail([`${SPEC} no parece un documento OpenAPI.`]);
+  fail([`${SPEC} does not look like an OpenAPI document.`]);
 }
 
 let committed;
@@ -61,11 +61,11 @@ try {
   committed = readFileSync(COMMITTED, "utf8");
 } catch {
   fail([
-    "FALTAN LOS TIPOS GENERADOS",
+    "THE GENERATED TYPES ARE MISSING",
     "",
-    `Se esperaba: ${COMMITTED}`,
+    `Expected at: ${COMMITTED}`,
     "",
-    "Genérelos con:    npm run types:api",
+    "Generate them with:    npm run types:api",
   ]);
 }
 
@@ -83,9 +83,9 @@ const cli = [
 
 if (!cli) {
   fail([
-    "FALTA openapi-typescript",
+    "openapi-typescript IS MISSING",
     "",
-    "Instale las dependencias de la web:",
+    "Install the web app's dependencies:",
     "",
     "    npm install --prefix apps/web --no-workspaces",
   ]);
@@ -98,22 +98,22 @@ try {
   const generated = readFileSync(fresh, "utf8");
   if (generated !== committed) {
     fail([
-      "LOS TIPOS GENERADOS ESTÁN DESACTUALIZADOS",
+      "THE GENERATED TYPES ARE STALE",
       "",
-      "services/api/openapi.yaml cambió y src/api/schema.ts no.",
+      "services/api/openapi.yaml changed and src/api/schema.ts did not.",
       "",
-      "Regénerelos y revise el diff — ese diff es el aviso de que el",
-      "contrato se movió:",
+      "Regenerate them and read the diff — that diff IS the notice that",
+      "the contract moved:",
       "",
       "    npm run types:api",
       "",
-      "Si al hacerlo falla la compilación en src/api/contract.assert.ts,",
-      "eso es exactamente lo que tiene que pasar: dice qué campo cambió",
-      "y en qué tipo de src/api/wire.ts hay que reflejarlo.",
+      "If that makes src/api/contract.assert.ts fail to compile, that is",
+      "exactly what is supposed to happen: it names the field that changed",
+      "and the type in src/api/wire.ts that has to reflect it.",
     ]);
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
 
-console.log("openapi: src/api/schema.ts está al día con services/api/openapi.yaml");
+console.log("openapi: src/api/schema.ts is up to date with services/api/openapi.yaml");

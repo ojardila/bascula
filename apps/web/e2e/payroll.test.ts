@@ -1,31 +1,30 @@
 /**
- * LA NÓMINA DE CUADRILLA, CONTRA EL SERVIDOR DE VERDAD.
+ * CREW PAYROLL, AGAINST THE REAL SERVER.
  *
- * `CrewPayrollPage.test.tsx` la prueba contra MSW, que sólo puede confirmar que
- * la web está de acuerdo con la idea que la web tiene de la API. Esto la corre
- * contra Go y Postgres, y por un motivo que no es de estilo: **la guarda de la
- * carrera para un grupo se apoya en que `/v1/workers/{id}/payables` vuelva a
- * valorar una pesada `weekly_price` al precio que la semana tiene AHORA**. Si
- * el servidor real no lo hiciera —si congelara el precio en el registro— la
- * comprobación previa jamás vería un cambio de precio, la pantalla diría que
- * todo está en orden y la única guarda que quedaría sería el 409 del servidor,
- * persona a persona, en mitad de la corrida. El simulacro no puede
- * desmentirlo; esto sí.
+ * `CrewPayrollPage.test.tsx` tests it against MSW, which can only confirm that
+ * the web app agrees with the web app's own idea of the API. This runs it
+ * against Go and Postgres, for a reason that is not stylistic: **the race
+ * guard for a group rests on `/v1/workers/{id}/payables` re-pricing a
+ * `weekly_price` weigh-in at the price the week has NOW**. If the real server
+ * did not do that — if it froze the price into the record — the pre-flight
+ * check would never see a price change, the screen would say everything is in
+ * order, and the only guard left would be the server's 409, person by person,
+ * halfway through the run. The fake server cannot disprove that; this can.
  *
- * El camino, que es el sábado entero:
+ * The path, which is the whole Saturday:
  *
- *     tres jornaleros, dos al precio de la semana y uno a precio fijo
- *     -> mirar la cuadrilla y aprobar el bruto
- *     -> el dueño sube el precio de la semana desde el teléfono
- *     -> la comprobación previa lo ve, dice DE QUIÉN, y no se liquida a nadie
- *     -> volver a mirar, liquidar a los tres
- *     -> alguien entrega un anticipo en el lote
- *     -> la comprobación previa del pago lo ve, y no se paga a nadie
- *     -> volver a mirar, pagar a los tres
- *     -> deshacer la nómina entera y comprobar que el trabajo vuelve a estar
- *        pendiente y el libro cuadra en cero
+ *     three hands, two at the week's price and one at a fixed price
+ *     -> look at the crew and approve the gross
+ *     -> the owner raises the week's price from the phone
+ *     -> the pre-flight check sees it, says WHOSE, and nobody is settled
+ *     -> look again, settle all three
+ *     -> somebody hands out an advance up at the plot
+ *     -> the payment pre-flight check sees it, and nobody is paid
+ *     -> look again, pay all three
+ *     -> undo the whole payroll and check that the work is pending again and
+ *        the ledger balances to zero
  *
- * CUANDO NO HAY SERVIDOR esta prueba se salta y lo dice. No pasa.
+ * WITH NO SERVER this test skips and says so. It does not pass.
  *
  *     npm run test:e2e
  */
@@ -61,20 +60,20 @@ async function serverIsUp(): Promise<boolean> {
 const up = await serverIsUp();
 if (!up) {
   console.error(
-    `\nPRUEBA DE NÓMINA OMITIDA: no hay API en ${API_URL}.\n` +
-      `NO pasó — se saltó. Levántela con: cd services/api && make up && make migrate && make dev\n`,
+    `\nPAYROLL TEST SKIPPED: no API at ${API_URL}.\n` +
+      `It did NOT pass — it was skipped. Start one with: cd services/api && make up && make migrate && make dev\n`,
   );
 }
 
 const suite = up ? describe : (describe.skip.bind(null) as unknown as typeof describe);
 const suiteName = up
-  ? "la nómina de cuadrilla contra la API real"
-  : `la nómina de cuadrilla contra la API real — OMITIDA, no hay servidor en ${API_URL}`;
+  ? "crew payroll against the real API"
+  : `crew payroll against the real API — SKIPPED, no server at ${API_URL}`;
 
-/** $800 el kilo, y $840 cuando el dueño sube la semana. */
+/** $800 a kilo, and $840 once the owner raises the week. */
 const PRICE = 80_000;
 const RAISED = 84_000;
-/** El jornal de la poda, a precio fijo: no se mueve cuando la semana sí. */
+/** A day's pruning, at a fixed price: it does not move when the week does. */
 const PRUNING = 500_000;
 
 const uniqueEmail = () => `nomina-${Date.now()}-${Math.floor(Math.random() * 1e4)}@bascula.test`;
@@ -82,16 +81,16 @@ const uniqueEmail = () => `nomina-${Date.now()}-${Math.floor(Math.random() * 1e4
 function explain(e: unknown, step: string): never {
   if (e instanceof ApiError) {
     throw new Error(
-      `${step}: HTTP ${e.status} ${e.code} — ${e.message}\ndetalles: ${JSON.stringify(e.details)}`,
+      `${step}: HTTP ${e.status} ${e.code} — ${e.message}\ndetails: ${JSON.stringify(e.details)}`,
     );
   }
   throw e;
 }
 
 /**
- * Un `mint` estable para toda la suite, que es lo que `useWriteOnce` da en el
- * navegador: el mismo hueco devuelve el mismo id siempre, así que un reintento
- * es un reintento y no una segunda escritura.
+ * A `mint` that is stable across the whole suite, which is what `useWriteOnce`
+ * gives you in the browser: the same slot always hands back the same id, so a
+ * retry is a retry and not a second write.
  */
 function stableMint(): MintId {
   const ids = new Map<string, string>();
@@ -124,7 +123,7 @@ suite(suiteName, () => {
     invalidateRefs();
   });
 
-  it("abre una finca con una cuadrilla de tres y dos actividades", async () => {
+  it("opens a farm with a crew of three and two activities", async () => {
     const res = await api
       .signup({
         farm: {
@@ -135,11 +134,11 @@ suite(suiteName, () => {
         },
         owner: { email, name: "Dueño Nómina", password },
       })
-      .catch((e) => explain(e, "registrar la finca"));
-    await api.verifyEmail(res.verificationToken!).catch((e) => explain(e, "confirmar el correo"));
-    await api.login({ email, password }).catch((e) => explain(e, "entrar"));
+      .catch((e) => explain(e, "signing the farm up"));
+    await api.verifyEmail(res.verificationToken!).catch((e) => explain(e, "confirming the email"));
+    await api.login({ email, password }).catch((e) => explain(e, "signing in"));
 
-    const cropType = await api.createCropType("Café").catch((e) => explain(e, "tipo de cultivo"));
+    const cropType = await api.createCropType("Café").catch((e) => explain(e, "crop type"));
     const plot = await api
       .createPlot({
         id: uuidv7(),
@@ -151,7 +150,7 @@ suite(suiteName, () => {
           { id: uuidv7(), cropTypeId: cropType.id, varietyId: null, areaHa: 2, plantedAt: null },
         ],
       })
-      .catch((e) => explain(e, "crear el lote"));
+      .catch((e) => explain(e, "creating the plot"));
     plotId = plot.id;
 
     for (const name of ["Rosa", "Aníbal", "Teresa"]) {
@@ -164,12 +163,12 @@ suite(suiteName, () => {
           documentNumber: `${Date.now()}${workerIds.size}`.slice(-10),
           phone: "3001234567",
         })
-        .catch((e) => explain(e, `contratar a ${name}`));
+        .catch((e) => explain(e, `hiring ${name}`));
       workerIds.set(name, w.id);
     }
 
-    // La recolección va al precio de la semana: es la que se puede mover bajo
-    // una pantalla abierta, y es la razón de ser de esta prueba.
+    // Picking goes at the week's price: it is the one that can move underneath
+    // an open screen, and it is the reason this test exists.
     pickingId = (
       await api
         .createActivity({
@@ -181,12 +180,12 @@ suite(suiteName, () => {
           rateSource: "weekly_price",
           validFrom: "2020-01-01",
         })
-        .catch((e) => explain(e, "crear la recolección"))
+        .catch((e) => explain(e, "creating the picking activity"))
     ).id;
 
-    // La poda lleva su precio congelado en el registro. Si la comprobación
-    // previa marcara también a Teresa cuando sube el kilo, estaría gritando de
-    // más — y una guarda que grita de más se ignora.
+    // Pruning carries its price frozen into the record. If the pre-flight
+    // check flagged Teresa too when the kilo goes up, it would be crying wolf
+    // — and a guard that cries wolf gets ignored.
     pruningId = (
       await api
         .createActivity({
@@ -198,14 +197,14 @@ suite(suiteName, () => {
           defaultRateCents: PRUNING,
           validFrom: "2020-01-01",
         })
-        .catch((e) => explain(e, "crear la poda"))
+        .catch((e) => explain(e, "creating the pruning activity"))
     ).id;
 
-    await api.setWeekPrice(monday, PRICE).catch((e) => explain(e, "precio de la semana"));
+    await api.setWeekPrice(monday, PRICE).catch((e) => explain(e, "the week's price"));
     expect(workerIds.size).toBe(3);
   }, 60_000);
 
-  it("registra la semana de la cuadrilla", async () => {
+  it("records the crew's week", async () => {
     const record = (worker: string, activityId: string, quantity: number) =>
       api
         .createWorkRecord({
@@ -218,49 +217,49 @@ suite(suiteName, () => {
           dateTo: today,
           quantity,
         })
-        .catch((e) => explain(e, `registrar la labor de ${worker}`));
+        .catch((e) => explain(e, `recording ${worker}'s work`));
 
     await record("Rosa", pickingId, 38.5);
     await record("Aníbal", pickingId, 25);
     await record("Teresa", pruningId, 2);
 
     const crew = await loadCrew();
-    // 38,5 x $800 = $30.800 · 25 x $800 = $20.000 · 2 jornales x $5.000 = $10.000
+    // 38.5 x $800 = $30,800 · 25 x $800 = $20,000 · 2 days x $5,000 = $10,000
     expect(settleApprovalOf(byName(crew, "Rosa"))!.grossCents).toBe(3_080_000);
     expect(settleApprovalOf(byName(crew, "Aníbal"))!.grossCents).toBe(2_000_000);
     expect(settleApprovalOf(byName(crew, "Teresa"))!.grossCents).toBe(1_000_000);
-    // Nadie tiene saldo todavía: el trabajo no es deuda hasta que se liquida.
+    // Nobody has a balance yet: work is not a debt until it is settled.
     for (const name of ["Rosa", "Aníbal", "Teresa"]) {
       expect(balanceCentsOf(byName(crew, name))).toBe(0);
     }
   }, 60_000);
 
   /**
-   * EL MOTIVO POR EL QUE ESTA SUITE EXISTE. El dueño sube el precio de la
-   * semana mientras la pantalla está abierta, y la comprobación previa —que no
-   * escribe nada— tiene que verlo. Contra el simulacro esto pasa por
-   * construcción; contra Postgres sólo pasa si el servidor de verdad vuelve a
-   * valorar lo pendiente al precio de ahora.
+   * THE REASON THIS SUITE EXISTS. The owner raises the week's price while the
+   * screen is open, and the pre-flight check — which writes nothing — has to
+   * see it. Against the fake server this passes by construction; against
+   * Postgres it only passes if the real server really does re-price what is
+   * pending at today's price.
    */
-  it("si el bruto de uno cambió, la comprobación previa lo ve y dice de quién", async () => {
+  it("sees a changed gross in the pre-flight check and says whose it is", async () => {
     const crew = await loadCrew();
     const approvals = crew
       .map(settleApprovalOf)
       .filter((a): a is SettleApproval => a !== null);
     expect(approvals).toHaveLength(3);
 
-    // Limpio antes de que nada se mueva.
+    // Clean before anything moves.
     expect(checkPassed(await checkSettleRun(approvals))).toBe(true);
 
-    // …y ahora el dueño sube la semana de $800 a $840, desde el teléfono.
-    await api.setWeekPrice(monday, RAISED).catch((e) => explain(e, "subir el precio"));
+    // …and now the owner raises the week from $800 to $840, from the phone.
+    await api.setWeekPrice(monday, RAISED).catch((e) => explain(e, "raising the price"));
 
     const check = await checkSettleRun(approvals);
     expect(checkPassed(check)).toBe(false);
     expect(check.unreadable).toHaveLength(0);
 
-    // DOS de tres, y son los dos que van al precio de la semana. Teresa lleva
-    // su jornal congelado y no aparece.
+    // TWO of three, and they are the two on the week's price. Teresa's day
+    // rate is frozen, so she does not show up.
     expect(check.drifts.map((d) => d.name).sort()).toEqual([
       "Aníbal Quintero",
       "Rosa Quintero",
@@ -268,18 +267,18 @@ suite(suiteName, () => {
 
     const rosa = check.drifts.find((d) => d.name === "Rosa Quintero")!;
     expect(rosa.beforeCents).toBe(3_080_000);
-    // 38,5 x $840 = $32.340, redondeado por el servidor y no por nosotros.
+    // 38.5 x $840 = $32,340, rounded by the server and not by us.
     expect(rosa.afterCents).toBe(3_234_000);
     expect(sentenceFor(rosa, FMT)).toContain(
       `el precio de la semana del ${formatDayLong(monday)} pasó de $800 a $840`,
     );
 
-    // Y nada escrito: la comprobación es una lectura, y por eso «no se liquida
-    // a nadie» puede ser verdad y no una intención.
+    // And nothing written: the check is a read, which is why "nobody gets
+    // settled" can be a fact and not an intention.
     expect((await api.listSettlements()).items).toHaveLength(0);
   }, 60_000);
 
-  it("después de volver a mirar, liquida a la cuadrilla entera", async () => {
+  it("settles the whole crew once it has been looked at again", async () => {
     const crew = await loadCrew();
     const approvals = crew
       .map(settleApprovalOf)
@@ -291,7 +290,7 @@ suite(suiteName, () => {
     expect(isComplete(rows)).toBe(true);
     expect(rows.every((r) => r.settlementId !== null)).toBe(true);
 
-    // $32.340 + $21.000 + $10.000 = $63.340, todo al precio nuevo.
+    // $32,340 + $21,000 + $10,000 = $63,340, all at the new price.
     const settled = rows.reduce((a, r) => a + (r.grossCents ?? 0), 0);
     expect(settled).toBe(6_334_000);
 
@@ -299,18 +298,18 @@ suite(suiteName, () => {
     expect(balanceCentsOf(byName(after, "Rosa"))).toBe(3_234_000);
     expect(balanceCentsOf(byName(after, "Aníbal"))).toBe(2_100_000);
     expect(balanceCentsOf(byName(after, "Teresa"))).toBe(1_000_000);
-    // Y ya no queda nada pendiente: liquidar es lo que reclama las labores.
+    // And nothing is pending any more: settling is what claims the work.
     expect(settleApprovalOf(byName(after, "Rosa"))).toBeNull();
   }, 60_000);
 
-  /** La misma guarda sobre el otro número, que es el único que puede moverse ya. */
-  it("si el saldo de uno cambió, no se paga a nadie", async () => {
+  /** The same guard over the other number, the only one that can still move. */
+  it("pays nobody when one person's balance has changed", async () => {
     const crew = await loadCrew();
     const approvals = crew.map(payApprovalOf).filter((a): a is PayApproval => a !== null);
     expect(approvals).toHaveLength(3);
     expect(payCheckPassed(await checkPayRun(approvals))).toBe(true);
 
-    // Alguien le entrega $5.000 de anticipo a Aníbal en el lote.
+    // Somebody hands Aníbal a $5,000 advance up at the plot.
     await api
       .createAdvance({
         id: uuidv7(),
@@ -330,17 +329,18 @@ suite(suiteName, () => {
     expect(check.drifts[0].deltaCents).toBe(-500_000);
   }, 60_000);
 
-  it("y con la cifra nueva paga a los tres, al centavo", async () => {
+  it("and pays all three to the cent once the figure is up to date", async () => {
     const crew = await loadCrew();
     const approvals = crew.map(payApprovalOf).filter((a): a is PayApproval => a !== null);
     expect(payCheckPassed(await checkPayRun(approvals))).toBe(true);
 
     const rows = await runPayments(approvals, "efectivo", stableMint(), "Nómina e2e");
     expect(isComplete(rows)).toBe(true);
-    // $32.340 + $16.000 + $10.000: el anticipo de Aníbal ya está descontado,
-    // porque el saldo lo trae descontado y aquí no se resta nada dos veces.
+    // $32,340 + $16,000 + $10,000: Aníbal's advance is already deducted,
+    // because the balance comes in with it deducted and nothing is subtracted
+    // twice here.
     expect(rows.reduce((a, r) => a + (r.paidCents ?? 0), 0)).toBe(5_834_000);
-    // Todo el mundo a paz y salvo, según el libro del servidor.
+    // Everybody square, according to the server's ledger.
     expect(rows.every((r) => r.balanceAfterCents === 0)).toBe(true);
 
     const after = await loadCrew();
@@ -349,8 +349,8 @@ suite(suiteName, () => {
       expect(payApprovalOf(byName(after, name))).toBeNull();
     }
 
-    // Y la planilla que se firma sale de esas cifras ya escritas: una línea por
-    // persona, con lo entregado y el saldo que queda.
+    // And the payroll sheet people sign comes off those written figures: one
+    // line per person, with what was handed over and the balance left.
     const run = {
       step: "pay" as const,
       rows,
@@ -365,13 +365,13 @@ suite(suiteName, () => {
   }, 60_000);
 
   /**
-   * Deshacer una nómina mal lanzada. Es lo que el teléfono tenía y la web no, y
-   * lo que hay que poder hacer un sábado a las cinco: reversar los pagos,
-   * anular las liquidaciones, y que el trabajo vuelva a estar pendiente para
-   * volverlo a hacer bien.
+   * Undoing a payroll run that went out wrong. It is what the phone had and
+   * the web app did not, and what you have to be able to do at five o'clock on
+   * a Saturday: reverse the payments, void the settlements, and get the work
+   * back to pending so it can be done again properly.
    */
-  it("deshace la nómina entera y devuelve el trabajo a pendiente", async () => {
-    // El asa que la pantalla habría acumulado en sus dos corridas.
+  it("undoes the whole payroll and puts the work back to pending", async () => {
+    // The handle the screen would have accumulated over its two runs.
     const settlements = (await api.listSettlements()).items.map((s) => s.id);
     const payments: string[] = [];
     for (const id of workerIds.values()) {
@@ -390,20 +390,20 @@ suite(suiteName, () => {
     expect(result.paymentsReversed).toBe(3);
     expect(result.settlementsVoided).toBe(3);
 
-    // Nada borrado: las liquidaciones quedan anuladas, no ausentes.
+    // Nothing deleted: the settlements end up voided, not absent.
     const listed = await api.listSettlements();
     expect(listed.items).toHaveLength(3);
     expect(listed.items.every((s) => s.status === "void")).toBe(true);
 
-    // Y lo que importa de verdad: anular soltó las labores, así que la semana
-    // se puede volver a liquidar. Un deshacer que dejara el trabajo reclamado
-    // sería un deshacer que no deja rehacer.
+    // And what really matters: voiding released the work, so the week can be
+    // settled again. An undo that left the work claimed would be an undo you
+    // cannot redo after.
     const crew = await loadCrew();
     expect(settleApprovalOf(byName(crew, "Rosa"))!.grossCents).toBe(3_234_000);
     expect(settleApprovalOf(byName(crew, "Teresa"))!.grossCents).toBe(1_000_000);
 
-    // El libro de Aníbal: devengo, anticipo, pago y sus dos reversos. Su saldo
-    // vuelve a ser el anticipo que sigue debiendo, en negativo.
+    // Aníbal's ledger: devengo, anticipo, pago and their two reversals. His
+    // balance goes back to the advance he still owes, in the negative.
     expect(balanceCentsOf(byName(crew, "Aníbal"))).toBe(-500_000);
     expect(balanceCentsOf(byName(crew, "Rosa"))).toBe(0);
   }, 60_000);

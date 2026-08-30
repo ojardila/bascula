@@ -5,8 +5,8 @@
  *       (activity_id IS NOT NULL)::int
  *       + (COALESCE(plot_id, plot_crop_id) IS NOT NULL)::int = 1)
  *
- * **A un gasto se le carga UNA cosa: o una actividad, o un lote. Ni las dos, ni
- * ninguna.** Neither is worse than it sounds — an expense charged to nothing
+ * **An expense is charged to ONE thing: either an activity or a plot. Never
+ * both, never neither.** Neither is worse than it sounds — an expense charged to nothing
  * shows up in the total and in no breakdown, and in March the difference
  * between the total and the sum of the parts is a number nobody can explain.
  * Both is worse still: it is counted twice.
@@ -62,9 +62,9 @@ export function ExpenseFormDialog({
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
   const [concept, setConcept] = useState(expense?.concept ?? "");
-  // `moneyInputValue` y no `Math.round(.../100)`: abrir un gasto de $125,50
-  // para cambiarle la nota y guardar le subía el valor a $126 sin que nadie
-  // tocara la casilla. Ver la nota de `lib/money.ts`.
+  // `moneyInputValue`, not `Math.round(.../100)`: opening a $125,50 expense
+  // to change its note and saving pushed the amount up to $126 without anybody
+  // touching the box. See the note in `lib/money.ts`.
   const [amount, setAmount] = useState(expense ? moneyInputValue(expense.amountCents) : "");
   const [date, setDate] = useState(expense?.date ?? today);
   const [target, setTarget] = useState<ExpenseTarget>(expense?.target ?? "activity");

@@ -112,23 +112,23 @@ export function parseMoneyInput(raw: string): Cents | null {
 }
 
 /**
- * LO QUE SE PONE EN UNA CASILLA DE PESOS QUE SE VA A EDITAR.
+ * WHAT GOES INTO A PESO BOX THAT IS ABOUT TO BE EDITED.
  *
- * `formatMoney` redondea al peso a propósito: en Colombia no se cotiza con
- * centavos y una pantalla llena de «,00» se lee peor. Pero los formularios de
- * modificar hacían lo mismo *dentro del campo*:
+ * `formatMoney` rounds to the peso on purpose: Colombia does not quote cents
+ * in the field and a screen full of ",00" reads worse. But the edit forms did
+ * the same thing *inside the field*:
  *
  *     String(Math.round(expense.amountCents / 100))
  *
- * Un gasto de $125.50 se abría con «126» en la casilla. Quien entraba a
- * corregir la NOTA y pulsaba Guardar mandaba 12600 en vez de 12550 sin haber
- * tocado el valor: cincuenta centavos que nadie escribió, en un registro que
- * después no cuadra contra la factura. Los mismos cincuenta centavos por los
- * que se arregló `packages/shared` cuando el teléfono redondeaba hacia abajo.
+ * An expense of $125.50 opened with "126" in the box. Anyone who came in to
+ * fix the NOTE and hit Save sent 12600 instead of 12550 without having touched
+ * the value: fifty cents nobody typed, in a record that afterwards does not
+ * reconcile against the invoice. The same fifty cents `packages/shared` was
+ * fixed for when the phone was rounding down.
  *
- * Esta función es la inversa exacta de `parseMoneyInput`: lo que sale de aquí,
- * metido allí, devuelve los mismos centavos. Los centavos sólo se escriben
- * cuando los hay, así que el caso corriente sigue viéndose «30800».
+ * This function is the exact inverse of `parseMoneyInput`: what comes out of
+ * here, fed back in there, returns the same cents. Cents are written only when
+ * there are any, so the ordinary case still reads "30800".
  */
 export function moneyInputValue(cents: Cents): string {
   const neg = cents < 0;

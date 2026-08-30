@@ -1,39 +1,39 @@
 /**
- * ── EL CAMPO DE FECHA, CON SU CALENDARIO EN CASTELLANO ───────────────────
+ * ── THE DATE FIELD, WITH ITS CALENDAR IN SPANISH ─────────────────────────
  *
- * `<input type="date">` pedía `mm/dd/aaaa`. Alguien escribe el 3 de agosto
- * como 03/08, el navegador lo guarda como el 8 de marzo, y la labor se va a
- * otra semana — a otro precio. Es el fallo de usabilidad con la relación más
- * directa entre un teclazo y la plata que alguien recibe.
+ * `<input type="date">` asked for `mm/dd/yyyy`. Somebody types August 3rd as
+ * 03/08, the browser saves March 8th, and the work item lands in another week
+ * — at another price. Of every usability bug in here, this is the one with
+ * the shortest path from a keystroke to the money somebody takes home.
  *
- * EL SPRINT PASADO SE HIZO LA MITAD: marcar el input como `es-CO`. Firefox y
- * Safari hacen caso; Chrome mira el idioma con el que está configurado el
- * navegador y no. Un arreglo que depende de qué navegador tenga la finca no es
- * un arreglo, es una lotería. Este componente es la otra mitad, y es la que
- * cierra el asunto: la máscara ya no la decide el navegador.
+ * LAST SPRINT DID HALF OF IT: tagging the input `es-CO`. Firefox and Safari
+ * obey; Chrome looks at the language the browser itself is configured in, and
+ * doesn't. A fix that depends on which browser the farm happens to have is not
+ * a fix, it is a lottery. This component is the other half, and it is the half
+ * that settles the matter: the browser no longer decides the mask.
  *
- * LAS TRES COSAS QUE HACE, EN ORDEN DE IMPORTANCIA:
+ * THE THREE THINGS IT DOES, IN ORDER OF IMPORTANCE:
  *
- *   1. **DICE EN LETRAS LO QUE ENTENDIÓ.** Debajo del campo, siempre:
- *      «sábado 29 de agosto de 2026». Esto es el arreglo de verdad. El
- *      problema reportado no era la máscara: era que quien escribe 29/08 *no
- *      sabe qué guardó*. Con la fecha escrita en palabras no hace falta
- *      confiar en la máscara, ni en el navegador, ni en la configuración del
- *      equipo — se lee y ya.
- *   2. Acepta lo que la gente teclea de verdad: 29/8, 29/08/26, 29-8-2026,
- *      29082026. Siempre día primero. Ver `parseTypedDay`.
- *   3. Un calendario, en castellano, con la semana empezando en lunes y los
- *      meses escritos, para quien prefiere señalar a teclear.
+ *   1. **IT SPELLS OUT WHAT IT UNDERSTOOD.** Under the field, always:
+ *      "sábado 29 de agosto de 2026". This is the real fix. The reported
+ *      problem was never the mask: it was that whoever types 29/08 *does not
+ *      know what they saved*. With the date written out in words there is no
+ *      need to trust the mask, or the browser, or how the machine is set up
+ *      — you read it and that is that.
+ *   2. It accepts what people really type: 29/8, 29/08/26, 29-8-2026,
+ *      29082026. Always day first. See `parseTypedDay`.
+ *   3. A calendar, in Spanish, with the week starting on Monday and the
+ *      months spelled out, for whoever would rather point than type.
  *
- * LO QUE NO HACE, A PROPÓSITO. No corrige por su cuenta. «31/02» no se
- * convierte en el 28: se marca como inválido y no se guarda nada. Una fecha
- * que el programa cambia sin decirlo es exactamente el fallo que venimos a
- * arreglar, con otro disfraz.
+ * WHAT IT DOES NOT DO, ON PURPOSE. It never corrects on its own. "31/02" does
+ * not turn into the 28th: it is marked invalid and nothing is saved. A date
+ * the program changes without saying so is exactly the bug we came here to
+ * fix, wearing a different costume.
  *
- * Y NO ES UNA DEPENDENCIA NUEVA. Un date picker de librería son cientos de
- * kilobytes sobre la conexión de una finca, y trae su propia idea de qué es un
- * día en qué huso horario — justo la decisión que `lib/dates.ts` ya toma y que
- * el resto del producto respeta.
+ * AND IT IS NOT A NEW DEPENDENCY. An off-the-shelf date picker is hundreds of
+ * kilobytes over a farm's connection, and it brings its own idea of what a day
+ * is in which timezone — precisely the decision `lib/dates.ts` already makes
+ * and the rest of the product respects.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -50,18 +50,18 @@ import { useAuth } from "../auth/AuthContext";
 
 export interface DateFieldProps {
   label: string;
-  /** `YYYY-MM-DD`, o "" cuando todavía no hay ninguna. */
+  /** `YYYY-MM-DD`, or "" when there is not one yet. */
   value: string;
-  /** Recibe `YYYY-MM-DD`, o "" si la persona vació el campo. */
+  /** Gets `YYYY-MM-DD`, or "" if the person emptied the field. */
   onChange: (iso: string) => void;
-  /** Se muestra en vez del eco cuando la pantalla tiene algo que decir. */
+  /** Shown in place of the echo when the screen has something to say. */
   helperText?: string;
   error?: boolean;
   required?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
   size?: "small" | "medium";
-  /** El día mínimo aceptado, `YYYY-MM-DD`. Sólo avisa; no bloquea el teclado. */
+  /** The earliest day accepted, `YYYY-MM-DD`. It only warns; it never blocks. */
   min?: string;
   max?: string;
   name?: string;
@@ -75,12 +75,12 @@ export function DateField({
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
   /**
-   * El texto es estado propio mientras se teclea.
+   * While somebody is typing, the text is state of its own.
    *
-   * Si el campo se redibujara desde `value` en cada tecla, escribir «2» de
-   * «29» dejaría el cursor detrás de un «02/…» que nadie pidió. El texto se
-   * resincroniza sólo cuando `value` cambia desde fuera — el calendario, un
-   * reset del formulario, la carga de un registro que se está editando.
+   * If the field redrew from `value` on every keystroke, typing the "2" of
+   * "29" would leave the cursor behind an "02/…" nobody asked for. The text
+   * resyncs only when `value` changes from outside — the calendar, a form
+   * reset, loading the record being edited.
    */
   const [text, setText] = useState(() => toTypedDay(value));
   const [open, setOpen] = useState(false);
@@ -104,7 +104,7 @@ export function DateField({
   function commit(next: string) {
     setText(next);
     const iso = next.trim() === "" ? "" : parseTypedDay(next, refYear);
-    if (iso === null) return; // Se sigue escribiendo. No se emite basura.
+    if (iso === null) return; // Still typing. Nothing half-formed goes out.
     lastEmitted.current = iso;
     onChange(iso);
   }
@@ -117,10 +117,10 @@ export function DateField({
   }
 
   /**
-   * EL ECO, que es la razón de ser de todo esto.
+   * THE ECHO, which is the whole reason this exists.
    *
-   * Ocupa el sitio del `helperText` sólo cuando la pantalla no tiene nada más
-   * urgente que decir: un error del formulario manda sobre el eco.
+   * It takes the `helperText` slot only when the screen has nothing more
+   * urgent to say: a form error outranks the echo.
    */
   const echo = helperText
     ? helperText
@@ -140,8 +140,9 @@ export function DateField({
         value={text}
         onChange={(e) => commit(e.target.value)}
         onBlur={() => {
-          // Al salir, lo entendido se escribe entero. Quien tecleó «29/8» ve
-          // «29/08/2026» y se queda sin dudas sobre el año.
+          // On the way out, what we understood is written in full. Whoever
+          // typed "29/8" sees "29/08/2026" and is left in no doubt about
+          // the year.
           if (typed) setText(toTypedDay(typed));
         }}
         error={!!error || invalid || outOfRange}
@@ -151,8 +152,8 @@ export function DateField({
         fullWidth={fullWidth}
         size={size}
         placeholder="dd/mm/aaaa"
-        // `numeric` y no `tel`: en un teléfono saca el teclado de números con
-        // la barra donde están la «/» y el punto.
+        // `numeric` and not `tel`: on a phone it brings up the number pad
+        // with the row that has the "/" and the dot.
         inputMode="numeric"
         autoComplete="off"
         ref={anchor}
@@ -191,7 +192,7 @@ export function DateField({
 }
 
 /* ------------------------------------------------------------------ */
-/* El calendario                                                       */
+/* The calendar                                                        */
 /* ------------------------------------------------------------------ */
 
 function Calendar({
@@ -234,8 +235,8 @@ function Calendar({
           <IconButton size="small" aria-label="Mes anterior" onClick={() => shift(-1)}>
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
-          {/* El mes escrito, no «08». El punto entero de esta pantalla es que
-              nadie tenga que traducir un número a un mes. */}
+          {/* The month spelled out, not "08". The whole point of this screen
+              is that nobody has to translate a number into a month. */}
           <Typography sx={{ fontWeight: 700, minWidth: 168, textAlign: "center" }}>
             {MONTH_NAMES[cursor.month]} de {cursor.year}
           </Typography>
@@ -271,9 +272,9 @@ function Calendar({
                   height: 36,
                   borderRadius: 1,
                   fontWeight: isSelected || isToday ? 700 : 400,
-                  // Fuera del mes se ven, pero apagados: la rejilla mantiene
-                  // seis semanas siempre, así que el botón que alguien va a
-                  // pulsar no se mueve al cambiar de mes.
+                  // Days outside the month still show, but dimmed: the grid
+                  // always keeps six weeks, so the button somebody is about
+                  // to press does not move when the month changes.
                   color: isSelected ? "primary.contrastText" : inMonth ? "text.primary" : "text.disabled",
                   bgcolor: isSelected ? "primary.main" : "transparent",
                   border: !isSelected && isToday ? 1 : 0,

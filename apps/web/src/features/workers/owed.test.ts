@@ -1,15 +1,15 @@
 /**
- * UNA SOLA RESPUESTA A «¿CUÁNTO LE DEBO?», Y SUS HUECOS.
+ * ONE SINGLE ANSWER TO "HOW MUCH DO I OWE THEM?", AND ITS HOLES.
  *
- * Estas pruebas no son de aritmética —sumar dos enteros no necesita prueba—
- * sino de lo que pasa cuando falta una de las dos mitades. Ése es el fallo que
- * este módulo existe para impedir: el perfil enseñaba $184.500, la lista «—» y
- * un total de $0, el tablero $334.500 y la pantalla de pagar $338.100. Cuatro
- * pantallas, cuatro cifras, y la única correcta escondida detrás de la
- * decisión de pagar.
+ * These tests are not about arithmetic —adding two integers needs no test—
+ * but about what happens when one of the two halves is missing. That is the
+ * failure this module exists to prevent: the profile showed $184.500, the
+ * list showed "—" and a total of $0, the dashboard $334.500 and the pay
+ * screen $338.100. Four screens, four figures, and the only correct one
+ * hidden behind the decision to pay.
  *
- * Lo que se afirma aquí es que ningún camino de este módulo devuelve un número
- * que signifique «no sé».
+ * What is asserted here is that no path through this module returns a number
+ * that means "I don't know".
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -28,89 +28,89 @@ const owed = (balanceCents: number | null, pendingCents: number | null, est = fa
   pendingIsEstimate: est,
 });
 
-describe("la cifra de una persona", () => {
-  it("es el libro más lo que falta liquidar — la misma que escribe «pagar»", () => {
-    // María, en la finca sembrada: saldo 184.500, pendiente 153.600.
+describe("one person's figure", () => {
+  it("is the ledger plus what is left to settle — the same one the pay screen writes", () => {
+    // María, on the seeded farm: balance 184.500, outstanding 153.600.
     const s = owedState(owed(184_500_00, 153_600_00));
     expect(s.kind).toBe("known");
     expect(s.kind === "known" && s.cents).toBe(338_100_00);
     expect(totalOwedCents(owed(184_500_00, 153_600_00))).toBe(338_100_00);
   });
 
-  it("marca la cifra cuando parte todavía se paga al precio de la semana", () => {
+  it("flags the figure when part of it is still paid at the week's price", () => {
     const s = owedState(owed(184_500_00, 153_600_00, true));
     expect(s.kind === "known" && s.isEstimate).toBe(true);
   });
 
-  /** Un estimado de cero pesos no tiene nada que se pueda mover. */
-  it("no marca como estimado lo que no tiene nada pendiente", () => {
+  /** An estimate of zero pesos has nothing in it that can move. */
+  it("does not flag as provisional what has nothing outstanding", () => {
     const s = owedState(owed(184_500_00, 0, true));
     expect(s.kind === "known" && s.isEstimate).toBe(false);
   });
 
-  it("sin el libro no hay total, y no hay número que pintar por error", () => {
+  it("without the ledger there is no total, and no number to paint by mistake", () => {
     const s = owedState(owed(null, 153_600_00));
     expect(s.kind).toBe("unknown");
-    // Lo que importa: el caso `unknown` NO tiene miembro numérico. Una pantalla
-    // no puede sacar de aquí un cero sin que TypeScript la pare.
+    // The point: the `unknown` case has NO numeric member. A screen cannot get
+    // a zero out of here without TypeScript stopping it.
     expect(Object.prototype.hasOwnProperty.call(s, "cents")).toBe(false);
     expect(totalOwedCents(owed(null, 153_600_00))).toBeNull();
   });
 
   /**
-   * Lo pendiente sólo puede SUMAR, así que el saldo es un piso legítimo. Decir
-   * «al menos $184.500» informa más que un guion y no miente.
+   * Outstanding work can only ADD, so the balance is a legitimate floor.
+   * Saying "at least $184.500" tells you more than a dash and does not lie.
    */
-  it("sin lo pendiente da un piso, no un guion y no un total", () => {
+  it("without the outstanding work it gives a floor, not a dash and not a total", () => {
     const s = owedState(owed(184_500_00, null));
     expect(s.kind).toBe("partial");
     expect(s.kind === "partial" && s.cents).toBe(184_500_00);
     expect(totalOwedCents(owed(184_500_00, null))).toBeNull();
   });
 
-  it("un saldo negativo es un anticipo que la persona carga, y se conserva", () => {
+  it("a negative balance is an advance the person is carrying, and it is kept", () => {
     const s = owedState(owed(-45_000_00, 0));
     expect(s.kind === "known" && s.cents).toBe(-45_000_00);
   });
 });
 
-describe("la cifra de la finca", () => {
-  it("suma sólo lo que se pudo establecer entero, y dice cuántos faltan", () => {
+describe("the farm's figure", () => {
+  it("adds up only what could be established whole, and says how many are missing", () => {
     const sum = sumOwed([owed(100_00, 50_00), owed(200_00, null), owed(null, null)]);
-    // Con una cuenta a medias, el TOTAL de la finca ya no se puede afirmar…
+    // With one half-read account the farm's TOTAL can no longer be asserted…
     expect(sum.cents).toBeNull();
-    // …pero el piso sí, y con él se puede escribir «al menos».
+    // …but the floor can, and with it we can write "at least".
     expect(sum.floorCents).toBe(350_00);
     expect(sum.counted).toBe(1);
     expect(sum.unreadable).toBe(2);
   });
 
-  it("cuando todo se leyó, el total es el total", () => {
+  it("when everything was read, the total is the total", () => {
     const sum = sumOwed([owed(100_00, 50_00), owed(200_00, 0)]);
     expect(sum.cents).toBe(350_00);
     expect(sum.unreadable).toBe(0);
   });
 
   /**
-   * La plata que hay que contar el sábado no baja porque alguien deba. Un
-   * anticipo se queda en la fila de esa persona y no se resta del total de la
-   * finca.
+   * The cash to be counted out on Saturday does not go down because somebody
+   * is in debt. An advance stays on that person's row and is not subtracted
+   * from the farm's total.
    */
-  it("no resta los anticipos de lo que la finca les debe a los demás", () => {
+  it("does not subtract advances from what the farm owes everybody else", () => {
     expect(sumOwedToFarmWorkers([owed(100_00, 0), owed(-40_00, 0)]).cents).toBe(100_00);
   });
 
-  it("de una finca sin nada leído no dice cero", () => {
+  it("does not say zero for a farm where nothing was read", () => {
     expect(sumOwed([owed(null, null)]).cents).toBeNull();
     expect(sumOwed([owed(null, null)]).floorCents).toBeNull();
   });
 });
 
-describe("armar las cuentas de las dos lecturas de lista", () => {
+describe("building the accounts out of the two list reads", () => {
   const W1 = "w1";
   const W2 = "w2";
 
-  it("junta el libro con lo que falta liquidar, por persona", () => {
+  it("joins the ledger with what is left to settle, person by person", () => {
     const map = owedByWorker(
       [{ workerId: W1, balanceCents: 100_00 }],
       [
@@ -119,15 +119,15 @@ describe("armar las cuentas de las dos lecturas de lista", () => {
         { workerId: W2, settled: false, estimatedAmountCents: 70_00, amountIsEstimate: false },
       ],
     );
-    // Lo ya liquidado no se cuenta dos veces: está dentro del saldo.
+    // What is already settled is not counted twice: it is inside the balance.
     expect(totalOwedCents(map.get(W1)!)).toBe(150_00);
     expect(map.get(W1)!.pendingIsEstimate).toBe(true);
-    // Sin fila en /v1/balances pero con la lectura buena, su libro está en cero
-    // de verdad: no tiene un solo movimiento.
+    // No row in /v1/balances but a read that went through means their ledger
+    // really is at zero: not one entry in it.
     expect(totalOwedCents(map.get(W2)!)).toBe(70_00);
   });
 
-  it("una lectura caída deja su mitad en null, nunca en cero", () => {
+  it("a read that fell over leaves its half null, never zero", () => {
     const noBalances = owedByWorker(null, [
       { workerId: W1, settled: false, estimatedAmountCents: 50_00, amountIsEstimate: false },
     ]);
@@ -139,10 +139,10 @@ describe("armar las cuentas de las dos lecturas de lista", () => {
     expect(owedState(noRecords.get(W1)!).kind).toBe("partial");
   });
 
-  it("de quien no aparece en ninguna lectura no se afirma nada", () => {
+  it("asserts nothing about somebody who shows up in neither read", () => {
     const map = owedByWorker(null, null);
-    expect(owedState(owedOf(map, "nadie", false, false)).kind).toBe("unknown");
-    // Y con las dos lecturas buenas, sí: ese empleado está en cero.
-    expect(totalOwedCents(owedOf(map, "nadie", true, true))).toBe(0);
+    expect(owedState(owedOf(map, "nobody", false, false)).kind).toBe("unknown");
+    // And with both reads good, it does: that employee is at zero.
+    expect(totalOwedCents(owedOf(map, "nobody", true, true))).toBe(0);
   });
 });

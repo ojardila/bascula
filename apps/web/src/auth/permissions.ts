@@ -14,7 +14,7 @@
  * one: with ten modules coming, a permission expressed as a condition inside a
  * component is a permission nobody can audit.
  */
-import { EMPLEADO, LOTE } from "../lib/vocab";
+import { EMPLOYEE, PLOT } from "../lib/vocab";
 import type { Role } from "../api/types";
 
 export type Action =
@@ -195,23 +195,24 @@ export const MODULES: ModuleDef[] = [
   // morning during the season — not filed behind Labores, where the picking was
   // effectively hidden until Sprint 4.
   { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" },
-  // «Lotes», no «Parcelas»: el menú y el primer campo del formulario decían
-  // cosas distintas de la misma tierra. `lib/vocab.ts` lo decide una sola vez.
-  { key: "plots", label: LOTE.Many, path: LOTE.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" },
-  { key: "workers", label: EMPLEADO.Many, path: EMPLEADO.path, action: "workers.read", sprint: 1, available: true, icon: "people" },
+  // "Lotes", not "Parcelas": the menu and the first field of the form said
+  // different things about the same land. `lib/vocab.ts` decides it once.
+  { key: "plots", label: PLOT.Many, path: PLOT.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" },
+  { key: "workers", label: EMPLOYEE.Many, path: EMPLOYEE.path, action: "workers.read", sprint: 1, available: true, icon: "people" },
   { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
   /**
-   * EL PRECIO DEL KILO DE LA SEMANA, con su propia entrada.
+   * THE WEEK'S PRICE PER KILO, with an entry of its own.
    *
-   * No estaba en ninguna parte: el `PUT` existía en el cliente y ninguna
-   * pantalla lo llamaba. Quien lo buscaba terminaba en Actividades pulsando
-   * «Precio fijo», que cambia la forma de pago de toda la recolección — otra
-   * cosa, y sin aviso. Un campo escondido dentro de Configuración habría
-   * dejado la misma trampa en pie; esto está donde se busca, junto a
-   * Actividades, y se llama como lo llama el caficultor.
+   * It was nowhere: the `PUT` existed in the client and no screen called it.
+   * Anybody looking for it ended up in Actividades pressing "Precio fijo",
+   * which changes the pay mode of all picking — a different thing, and with no
+   * warning. A field hidden inside Configuración would have left the same trap
+   * standing; this is where people look for it, next to Actividades, and it is
+   * called what a coffee farmer calls it.
    *
-   * `config.prices` es del dueño solo, igual que `prices.write` en el
-   * servidor. Un administrador corre la finca y no decide cuánto vale el kilo.
+   * `config.prices` is the owner's alone, just like `prices.write` on the
+   * server. An administrator runs the farm and does not decide what a kilo is
+   * worth.
    */
   { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price" },
   { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" },
@@ -220,7 +221,7 @@ export const MODULES: ModuleDef[] = [
   // settlements themselves are records now: which ones exist, whose, for which
   // week, and which are void. The action is `money.read` and not `money.pay`,
   // because looking at what was settled is a read.
-  // La nómina de cuadrilla. `money.pay` and not `money.read`: this entry is a
+  // The crew payroll. `money.pay` and not `money.read`: this entry is a
   // door to a write, and `money.pay` is in WRITE_ACTIONS, so a suspended farm
   // does not get offered a payroll it would be refused. It sits above
   // Liquidaciones because it is the Saturday screen and the settlements list

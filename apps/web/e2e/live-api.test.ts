@@ -22,7 +22,7 @@
  * balance is summed from the ledger on every read, on both sides, and the only
  * way this assertion passes is if the client, the wire format, the SQL and the
  * money rules all agree. It is deliberately arithmetic anybody can check by
- * hand — 38,5 kg and 25 kg at $800, less a $30.000 payment.
+ * hand — 38.5 kg and 25 kg at $800, less a $30,000 payment.
  *
  * WHEN THE SERVER IS NOT RUNNING this suite skips, and says so at the top of
  * its lungs with the command to run. It does not pass. A live-integration test
@@ -51,10 +51,10 @@ const API_URL = process.env.BASCULA_API_URL ?? "http://localhost:8099";
 
 const HOW_TO_START = `
 ┌──────────────────────────────────────────────────────────────────────────────
-│  PRUEBA DE EXTREMO A EXTREMO OMITIDA: no hay API en ${API_URL}
+│  END-TO-END TEST SKIPPED: no API at ${API_URL}
 │
-│  Esta prueba NO pasó. Se saltó porque no encontró el servidor.
-│  Para correrla, levante la API en otra terminal:
+│  This test did NOT pass. It was skipped because it found no server.
+│  To run it, start the API in another terminal:
 │
 │    cd services/api
 │    make up
@@ -63,11 +63,11 @@ const HOW_TO_START = `
 │      DATABASE_URL="postgres://bascula_api:bascula_api_dev@localhost:5433/bascula?sslmode=disable" \\
 │      go run ./cmd/api
 │
-│  Y vuelva a correr:   npm run test:e2e
+│  Then run again:   npm run test:e2e
 │
-│  SIGNUPS_PER_IP_PER_HOUR importa: por defecto son 5 registros por IP y por
-│  hora, guardados en Postgres, así que a la sexta corrida la prueba fallaría
-│  con RATE_LIMITED en vez de decir algo útil.
+│  SIGNUPS_PER_IP_PER_HOUR matters: the default is 5 signups per IP per hour,
+│  kept in Postgres, so on the sixth run the test would fail with
+│  RATE_LIMITED instead of saying anything useful.
 └──────────────────────────────────────────────────────────────────────────────
 `;
 
@@ -102,8 +102,8 @@ const suite = up
   : describe.skip.bind(null) as unknown as typeof describe;
 
 const suiteName = up
-  ? "la web contra la API real"
-  : `la web contra la API real — OMITIDA, no hay servidor en ${API_URL} (levántelo: cd services/api && make up && make migrate && PORT=8099 SIGNUPS_PER_IP_PER_HOUR=100 go run ./cmd/api)`;
+  ? "the web app against the real API"
+  : `the web app against the real API — SKIPPED, no server at ${API_URL} (start one: cd services/api && make up && make migrate && PORT=8099 SIGNUPS_PER_IP_PER_HOUR=100 go run ./cmd/api)`;
 
 /* ------------------------------------------------------------------ */
 
@@ -123,13 +123,13 @@ function explain(e: unknown, step: string): never {
   if (e instanceof ApiError) {
     if (e.code === "RATE_LIMITED") {
       throw new Error(
-        `${step}: el servidor limitó los registros por IP (5/hora por defecto).\n` +
-          `Reinicie la API con SIGNUPS_PER_IP_PER_HOUR=100 y vuelva a correr la prueba.`,
+        `${step}: the server rate-limited signups per IP (5/hour by default).\n` +
+          `Restart the API with SIGNUPS_PER_IP_PER_HOUR=100 and run the test again.`,
       );
     }
     throw new Error(
       `${step}: HTTP ${e.status} ${e.code} — ${e.message}\n` +
-        `detalles: ${JSON.stringify(e.details)}`,
+        `details: ${JSON.stringify(e.details)}`,
     );
   }
   throw e;
@@ -154,7 +154,7 @@ suite(suiteName, () => {
     invalidateRefs();
   });
 
-  it("registra una finca y devuelve el token de verificación en desarrollo", async () => {
+  it("registers a farm and hands back the verification token in development", async () => {
     const res = await api
       .signup({
         farm: {
@@ -165,7 +165,7 @@ suite(suiteName, () => {
         },
         owner: { email, name: "Dueña E2E", password },
       })
-      .catch((e) => explain(e, "registrar la finca"));
+      .catch((e) => explain(e, "signing the farm up"));
 
     // Signing up names nobody: the route answers identically whether or not
     // the address already has an account, so that a stranger cannot use it to
@@ -176,15 +176,15 @@ suite(suiteName, () => {
     // something else, and the rest of the suite cannot proceed.
     expect(
       res.verificationToken,
-      "el servidor no devolvió verificationToken: ¿está corriendo con APP_ENV=development?",
+      "the server sent no verificationToken: is it running with APP_ENV=development?",
     ).toBeTruthy();
 
     await api
       .verifyEmail(res.verificationToken!)
-      .catch((e) => explain(e, "confirmar el correo"));
+      .catch((e) => explain(e, "confirming the email"));
   });
 
-  it("no deja entrar antes de confirmar, y sí después", async () => {
+  it("refuses to let you in before confirming, and lets you in after", async () => {
     // The address is already verified by the previous step, so this checks the
     // other half of the pair: a wrong password is INVALID_CREDENTIALS and not
     // something vaguer.
@@ -194,9 +194,9 @@ suite(suiteName, () => {
 
     const session = await api
       .login({ email, password })
-      .catch((e) => explain(e, "entrar"));
+      .catch((e) => explain(e, "signing in"));
 
-    if ("choose" in session) throw new Error("no se esperaba elegir finca");
+    if ("choose" in session) throw new Error("did not expect a farm to choose from");
     expect(session.user.role).toBe("owner");
     expect(session.user.farm.name).toContain("Finca E2E");
     // 15 minutes. The transparent refresh in client.ts exists because of this
@@ -204,16 +204,16 @@ suite(suiteName, () => {
     expect(session.expiresIn).toBe(900);
   });
 
-  it("guarda la sesión donde una recarga la encuentra", () => {
-    // This is the whole mechanism behind "la sesión sobrevive a recargar la
-    // página": AuthProvider reads these on mount and asks /v1/me. If the
+  it("stores the session where a reload will find it", () => {
+    // This is the whole mechanism behind "the session survives a page
+    // reload": AuthProvider reads these on mount and asks /v1/me. If the
     // tokens are not here, the reload lands on the login screen.
     const stored = localStorage.getItem("bascula.tokens");
-    expect(stored, "la sesión no quedó guardada en localStorage").toBeTruthy();
+    expect(stored, "the session was not stored in localStorage").toBeTruthy();
     expect(JSON.parse(stored!).accessToken).toBe(getTokens()?.accessToken);
   });
 
-  it("contrata un trabajador y abre un lote", async () => {
+  it("hires a worker and opens a plot", async () => {
     const worker = await api
       .createWorker({
         id: uuidv7(),
@@ -223,14 +223,14 @@ suite(suiteName, () => {
         documentNumber: `10${Date.now() % 100000000}`,
         phone: "3001234567",
       })
-      .catch((e) => explain(e, "crear el trabajador"));
+      .catch((e) => explain(e, "creating the worker"));
     workerId = worker.id;
     expect(worker.name).toBe("Rosa");
     expect(worker.status).toBe("active");
 
     const cropType = await api
       .createCropType("Café")
-      .catch((e) => explain(e, "crear el tipo de cultivo"));
+      .catch((e) => explain(e, "creating the crop type"));
 
     const plot = await api
       .createPlot({
@@ -249,7 +249,7 @@ suite(suiteName, () => {
           },
         ],
       })
-      .catch((e) => explain(e, "crear el lote"));
+      .catch((e) => explain(e, "creating the plot"));
     plotId = plot.id;
     expect(plot.crops).toHaveLength(1);
     expect(plot.crops[0].cropTypeName).toBe("Café");
@@ -269,7 +269,7 @@ suite(suiteName, () => {
    * `lib/geo.ts` has to land on for the area shown while somebody is dragging
    * a corner to be the same area they get after pressing Guardar.
    */
-  it("guarda el polígono del lote, lo mide y avisa de los solapes", async () => {
+  it("stores the plot's polygon, measures it and warns about overlaps", async () => {
     const square = (west: number): Geometry => ({
       type: "Polygon",
       coordinates: [
@@ -286,7 +286,7 @@ suite(suiteName, () => {
     const drawn = square(-75.88);
     const { plot, overlaps } = await api
       .setPlotBoundary(plotId, drawn)
-      .catch((e) => explain(e, "guardar el polígono"));
+      .catch((e) => explain(e, "storing the polygon"));
 
     // GeoJSON in, GeoJSON out — and a MultiPolygon out, because ST_Multi
     // promotes on the way into the column. A client that assumes it gets back
@@ -294,7 +294,7 @@ suite(suiteName, () => {
     const stored = asGeometry(plot.boundary);
     expect(stored?.type).toBe("MultiPolygon");
 
-    // Both figures, always. The declared 2,5 ha is untouched.
+    // Both figures, always. The declared 2.5 ha is untouched.
     expect(plot.areaHa).toBe(2.5);
     expect(plot.computedAreaHa).toBeCloseTo(122.506, 2);
 
@@ -304,8 +304,9 @@ suite(suiteName, () => {
 
     expect(overlaps).toEqual([]);
 
-    // A second lot on top of the first: stored, and reported. A warning, never
-    // a refusal — two lots that touch are sometimes a terrace above a cafetal.
+    // A second plot on top of the first: stored, and reported. A warning,
+    // never a refusal — two plots that touch are sometimes one terrace above
+    // another on the same coffee slope.
     const neighbour = await api
       .createPlot({
         id: uuidv7(),
@@ -316,7 +317,7 @@ suite(suiteName, () => {
         crops: [],
         boundary: square(-75.875),
       })
-      .catch((e) => explain(e, "crear el lote solapado con su polígono"));
+      .catch((e) => explain(e, "creating the overlapping plot with its polygon"));
 
     // The boundary went in with the plot, in one write, and was measured.
     expect(asGeometry(neighbour.boundary)?.type).toBe("MultiPolygon");
@@ -324,7 +325,7 @@ suite(suiteName, () => {
 
     const again = await api
       .setPlotBoundary(neighbour.id, square(-75.875))
-      .catch((e) => explain(e, "reescribir el polígono del vecino"));
+      .catch((e) => explain(e, "rewriting the neighbour's polygon"));
     expect(again.overlaps.map((o) => o.name)).toContain(
       (await api.getPlot(plotId)).name,
     );
@@ -337,7 +338,7 @@ suite(suiteName, () => {
    * "Self-intersection[-75.875 5.665]" — which is our database talking. What a
    * person sees comes out of `ERROR_MESSAGES`, keyed by `code`.
    */
-  it("rechaza un polígono que se cruza a sí mismo, y lo dice en español", async () => {
+  it("rejects a self-crossing polygon, and says so in Spanish", async () => {
     const bowtie: Geometry = {
       type: "Polygon",
       coordinates: [
@@ -369,11 +370,11 @@ suite(suiteName, () => {
     expect(err.spanishMessage).not.toMatch(/Self-intersection/);
 
     // Refused means refused: the lot still has the square from the last test.
-    const after = await api.getPlot(plotId).catch((e) => explain(e, "releer el lote"));
+    const after = await api.getPlot(plotId).catch((e) => explain(e, "re-reading the plot"));
     expect(after.computedAreaHa).toBeCloseTo(122.506, 2);
   });
 
-  it("crea una actividad con precio fijo por kilo", async () => {
+  it("creates an activity with a fixed price per kilo", async () => {
     const activity = await api
       .createActivity({
         id: uuidv7(),
@@ -386,7 +387,7 @@ suite(suiteName, () => {
         // Well before the work, so the rate is in force on the day it is used.
         validFrom: "2020-01-01",
       })
-      .catch((e) => explain(e, "crear la actividad"));
+      .catch((e) => explain(e, "creating the activity"));
 
     activityId = activity.id;
     expect(activity.payMode).toBe("work_unit");
@@ -397,7 +398,7 @@ suite(suiteName, () => {
     expect(activity.workUnit).toBe("kg");
   });
 
-  it("registra dos labores y les calcula el valor", async () => {
+  it("records two pieces of work and prices them", async () => {
     const day = today();
 
     const first = await api
@@ -411,7 +412,7 @@ suite(suiteName, () => {
         dateTo: day,
         quantity: 38.5,
       })
-      .catch((e) => explain(e, "registrar la primera labor"));
+      .catch((e) => explain(e, "recording the first work record"));
 
     const second = await api
       .createWorkRecord({
@@ -424,11 +425,11 @@ suite(suiteName, () => {
         dateTo: day,
         quantity: 25,
       })
-      .catch((e) => explain(e, "registrar la segunda labor"));
+      .catch((e) => explain(e, "recording the second work record"));
 
     recordIds.push(first.id, second.id);
 
-    // 38,5 kg x $800 = $30.800. The same figure the wireframes quote, arrived
+    // 38.5 kg x $800 = $30,800. The same figure the wireframes quote, arrived
     // at by the server's round(quantity x rate) rather than by our arithmetic.
     expect(first.estimatedAmountCents).toBe(3_080_000);
     expect(second.estimatedAmountCents).toBe(2_000_000);
@@ -440,10 +441,10 @@ suite(suiteName, () => {
     expect(first.settled).toBe(false);
   });
 
-  it("muestra las dos labores como pendientes, y nada en el saldo todavía", async () => {
+  it("shows both work records as pending, and nothing in the balance yet", async () => {
     const payables = await api
       .workerPayables(workerId)
-      .catch((e) => explain(e, "consultar lo pendiente"));
+      .catch((e) => explain(e, "reading what is pending"));
 
     expect(payables.workRecords).toHaveLength(2);
     expect(payables.grossCents).toBe(5_080_000);
@@ -452,7 +453,7 @@ suite(suiteName, () => {
     expect(payables.totalCents).toBe(5_080_000);
   });
 
-  it("liquidar es lo que convierte el trabajo en plata debida", async () => {
+  it("settling is what turns work into money owed", async () => {
     const approved = await api.previewSettlement(workerId, recordIds);
     expect(approved.grossCents).toBe(5_080_000);
 
@@ -461,7 +462,7 @@ suite(suiteName, () => {
         expectedGrossCents: approved.grossCents,
         expectedLines: approved.lines,
       })
-      .catch((e) => explain(e, "liquidar"));
+      .catch((e) => explain(e, "settling"));
 
     expect(settlement.grossCents).toBe(5_080_000);
 
@@ -486,11 +487,12 @@ suite(suiteName, () => {
    * server — it answers 405 — so `listSettlements` composes the list out of
    * the ledgers; this proves the composition finds what was just written.
    */
-  it("la liquidación queda listada, con su periodo y sus líneas", async () => {
-    const list = await api.listSettlements().catch((e) => explain(e, "listar liquidaciones"));
-    // `listSettlements` devuelve la lista CON SUS HUECOS declarados: sin
-    // `GET /v1/settlements` se compone leyendo el libro de cada empleado, y
-    // una lectura caída ya no se puede confundir con una finca sin liquidar.
+  it("lists the settlement, with its period and its lines", async () => {
+    const list = await api.listSettlements().catch((e) => explain(e, "listing settlements"));
+    // `listSettlements` hands back the list WITH ITS HOLES declared: with no
+    // `GET /v1/settlements` it is composed by reading every employee's ledger,
+    // and a failed read can no longer be mistaken for a farm that has settled
+    // nothing.
     expect(list.unreadableLedgers + list.unreadableSettlements).toBe(0);
     const mine = list.items.filter((s) => s.workerId === workerId);
     expect(mine).toHaveLength(1);
@@ -507,7 +509,7 @@ suite(suiteName, () => {
     expect(detail.lines.every((l) => l.rateCents === PRICE_PER_KG)).toBe(true);
   });
 
-  it("no deja pagar más de lo que se debe", async () => {
+  it("refuses to pay more than is owed", async () => {
     // The guard against a typo on the payment screen. The client never sets
     // allowOverpayment: the excess is offered as an anticipo instead, so the
     // extra money keeps its correct name in the ledger.
@@ -527,12 +529,12 @@ suite(suiteName, () => {
     });
   });
 
-  it("paga una parte y deja el saldo a favor exacto", async () => {
+  it("pays part of it and leaves the exact balance owing", async () => {
     const receipt = await api
       .createPayment({
         id: uuidv7(),
         workerId,
-        amountCents: 3_000_000, // $30.000 of the $50.800 owed
+        amountCents: 3_000_000, // $30,000 of the $50,800 owed
         method: "efectivo",
         note: "Abono en efectivo",
       })
@@ -542,8 +544,8 @@ suite(suiteName, () => {
     expect(receipt.balanceBeforeCents).toBe(5_080_000);
     expect(receipt.balanceAfterCents).toBe(2_080_000);
 
-    // The assertion the whole suite exists for. $50.800 earned, $30.000 paid,
-    // $20.800 still owed — summed from the ledger by the server, read back
+    // The assertion the whole suite exists for. $50,800 earned, $30,000 paid,
+    // $20,800 still owed — summed from the ledger by the server, read back
     // through the app's own client, and checkable on paper.
     const balance = await api.workerBalance(workerId);
     expect(balance.earnedCents).toBe(5_080_000);
@@ -551,10 +553,10 @@ suite(suiteName, () => {
     expect(balance.balanceCents).toBe(2_080_000);
   });
 
-  it("deja el movimiento explicado en el historial", async () => {
+  it("leaves the movement explained in the history", async () => {
     const ledger = await api
       .workerLedger(workerId)
-      .catch((e) => explain(e, "leer el historial"));
+      .catch((e) => explain(e, "reading the history"));
 
     const kinds = ledger.map((e) => e.kind);
     expect(kinds).toContain("devengo");
@@ -572,10 +574,10 @@ suite(suiteName, () => {
     expect(earning.settlementId).toBeTruthy();
   });
 
-  it("el perfil cuenta la misma historia en una sola llamada", async () => {
+  it("tells the same story from the profile, in one call", async () => {
     const profile = await api
       .workerProfile(workerId)
-      .catch((e) => explain(e, "abrir el perfil"));
+      .catch((e) => explain(e, "opening the profile"));
 
     expect(profile.worker.id).toBe(workerId);
     expect(profile.balance.balanceCents).toBe(2_080_000);
@@ -583,35 +585,35 @@ suite(suiteName, () => {
     // Everything was settled, so nothing is pending any more.
     expect(profile.pendingCents).toBe(0);
     expect(profile.workRecords.every((r) => r.settled)).toBe(true);
-    // And a labor inside a live settlement cannot be edited out from under the
-    // payment.
+    // And a work record inside a live settlement cannot be edited out from
+    // under the payment.
     await expect(api.deactivateWorkRecord(recordIds[0])).rejects.toMatchObject({
       code: "WORK_RECORD_SETTLED",
     });
   });
 
   /* ------------------------------------------------------------------ */
-  /* El candado de la liquidación                                        */
+  /* The settlement lock                                                 */
   /* ------------------------------------------------------------------ */
 
   /**
-   * ── EL PRECIO DEL KILO DE LA SEMANA, CONTRA EL SERVIDOR DE VERDAD ──────
+   * ── THE WEEK'S PRICE PER KILO, AGAINST THE REAL SERVER ─────────────────
    *
-   * `PUT /v1/prices/weeks/{monday}` estaba en el cliente desde el sprint 1 y
-   * ninguna pantalla lo llamaba, así que esta prueba tampoco existía: el
-   * único `PUT` del producto que mueve plata ya escrita no se había ejercido
-   * nunca contra un Postgres. Ahora hay una pantalla que lo llama, y lo que
-   * hay que probar contra la API real no es que el `PUT` conteste 200 — es la
-   * consecuencia, que es la que cuesta dinero:
+   * `PUT /v1/prices/weeks/{monday}` had been in the client since sprint 1 and
+   * no screen called it, so this test did not exist either: the product's only
+   * `PUT` that moves money already written had never been exercised against a
+   * Postgres. Now there is a screen that calls it, and what has to be proved
+   * against the real API is not that the `PUT` answers 200 — it is the
+   * consequence, which is the part that costs money:
    *
-   *   fijar el precio de una semana REPRECIA la recolección de esa semana que
-   *   todavía no se ha liquidado, y NO toca la que ya se liquidó.
+   *   setting a week's price RE-PRICES that week's picking that has not been
+   *   settled yet, and does NOT touch what has already been settled.
    *
-   * Corre sobre trabajadora, actividad y lote propios, por lo mismo que el
-   * bloque de abajo: mover el precio de la semana bajo Rosa reescribiría todas
-   * las cifras que los comentarios de este fichero citan a mano.
+   * It runs on a worker, an activity and a plot of its own, for the same
+   * reason as the block below: moving the week's price underneath Rosa would
+   * rewrite every figure the comments in this file quote by hand.
    */
-  describe("el precio del kilo de la semana", () => {
+  describe("the week's price per kilo", () => {
     let priceWorkerId = "";
     let weeklyActivityId = "";
     let monday = "";
@@ -627,11 +629,11 @@ suite(suiteName, () => {
           phone: "",
           country: "Colombia",
         })
-        .catch((e) => explain(e, "contratar para la prueba del precio"));
+        .catch((e) => explain(e, "hiring for the price test"));
       priceWorkerId = worker.id;
 
-      // Una actividad cuyo precio LO PONE LA SEMANA: es la única clase de
-      // labor que un cambio de precio semanal puede mover.
+      // An activity whose price IS SET BY THE WEEK: the only kind of work a
+      // weekly price change can move.
       const activity = await api
         .createActivity({
           id: uuidv7(),
@@ -643,25 +645,25 @@ suite(suiteName, () => {
           defaultRateCents: null,
           validFrom: "2020-01-01",
         })
-        .catch((e) => explain(e, "crear la actividad al precio de la semana"));
+        .catch((e) => explain(e, "creating the activity at the week's price"));
       weeklyActivityId = activity.id;
       monday = mondayOf(today());
     });
 
-    it("se puede fijar, que es lo que ninguna pantalla sabía hacer", async () => {
+    it("can be set, which is what no screen knew how to do", async () => {
       const set = await api
         .setWeekPrice(monday, PRICE_PER_KG)
-        .catch((e) => explain(e, "fijar el precio de la semana"));
+        .catch((e) => explain(e, "setting the week's price"));
       expect(set.costPerUnitCents).toBe(PRICE_PER_KG);
 
       const read = await api
         .weekPrice(monday)
-        .catch((e) => explain(e, "releer el precio de la semana"));
+        .catch((e) => explain(e, "re-reading the week's price"));
       expect(read.costPerUnitCents).toBe(PRICE_PER_KG);
       expect(read.monday).toBe(monday);
     });
 
-    it("y lo que vale la recolección sin liquidar sale de él", async () => {
+    it("and what unsettled picking is worth comes off it", async () => {
       const record = await api
         .createWorkRecord({
           id: uuidv7(),
@@ -673,32 +675,32 @@ suite(suiteName, () => {
           dateTo: today(),
           quantity: 50,
         })
-        .catch((e) => explain(e, "registrar la labor al precio de la semana"));
+        .catch((e) => explain(e, "recording the work at the week's price"));
 
-      // 50 kg x $800. Y no está congelado: es lo que valdría hoy.
+      // 50 kg x $800. And it is not frozen: it is what it would be worth today.
       expect(record.amountIsEstimate).toBe(true);
       const payables = await api.workerPayables(priceWorkerId);
       expect(payables.grossCents).toBe(4_000_000);
     });
 
     /**
-     * LA CONSECUENCIA. Subir el kilo de $800 a $900 sube lo que la finca le
-     * debe a quien recogió esa semana y todavía no ha cobrado — que es
-     * exactamente para lo que existe el precio semanal, y exactamente por lo
-     * que la pantalla lo dice antes de guardarlo.
+     * THE CONSEQUENCE. Raising the kilo from $800 to $900 raises what the farm
+     * owes whoever picked that week and has not been paid yet — which is
+     * exactly what the weekly price is for, and exactly why the screen says so
+     * before saving it.
      */
-    it("subirlo reprecia lo que todavía no se ha liquidado", async () => {
-      await api.setWeekPrice(monday, 90_000).catch((e) => explain(e, "subir el precio"));
+    it("re-prices what has not been settled yet when it goes up", async () => {
+      await api.setWeekPrice(monday, 90_000).catch((e) => explain(e, "raising the price"));
 
       const payables = await api.workerPayables(priceWorkerId);
       // 50 kg x $900.
       expect(payables.grossCents).toBe(4_500_000);
-      // Y sigue siendo un estimado: liquidar es lo que lo fija.
+      // And it is still provisional: settling is what fixes it.
       expect(payables.workRecords[0].rateSource).toBe("weekly_price");
     });
 
-    /** Y lo que YA se liquidó conserva su precio: ése es el trato de liquidar. */
-    it("pero no toca lo que ya se liquidó", async () => {
+    /** And what was ALREADY settled keeps its price: that is the deal settling makes. */
+    it("but does not touch what has already been settled", async () => {
       const payables = await api.workerPayables(priceWorkerId);
       const ids = payables.workRecords.map((w) => w.id);
       const approved = await api.previewSettlement(priceWorkerId, ids);
@@ -708,13 +710,13 @@ suite(suiteName, () => {
           expectedLines: approved.lines,
           id: uuidv7(),
         })
-        .catch((e) => explain(e, "liquidar al precio nuevo"));
+        .catch((e) => explain(e, "settling at the new price"));
 
       const balanceBefore = await api.workerBalance(priceWorkerId);
       expect(balanceBefore.balanceCents).toBe(4_500_000);
 
-      // El precio baja después de liquidar, y el devengo no se mueve.
-      await api.setWeekPrice(monday, 50_000).catch((e) => explain(e, "bajar el precio"));
+      // The price drops after settling, and the accrual does not move.
+      await api.setWeekPrice(monday, 50_000).catch((e) => explain(e, "lowering the price"));
       const balanceAfter = await api.workerBalance(priceWorkerId);
       expect(balanceAfter.balanceCents).toBe(4_500_000);
     });
@@ -726,7 +728,7 @@ suite(suiteName, () => {
    * work records around to stage a race, and doing that to Rosa would quietly
    * rewrite the figures every comment in this file quotes.
    */
-  describe("cuando el bruto se mueve entre mirarlo y aprobarlo", () => {
+  describe("when the gross moves between looking at it and approving it", () => {
     let raceWorkerId = "";
     const raceRecords: string[] = [];
 
@@ -741,7 +743,7 @@ suite(suiteName, () => {
           phone: "",
           country: "Colombia",
         })
-        .catch((e) => explain(e, "contratar para la prueba del candado"));
+        .catch((e) => explain(e, "hiring for the lock test"));
       raceWorkerId = worker.id;
 
       for (const quantity of [10, 20]) {
@@ -756,7 +758,7 @@ suite(suiteName, () => {
             dateTo: today(),
             quantity,
           })
-          .catch((e) => explain(e, "registrar labor para la prueba del candado"));
+          .catch((e) => explain(e, "recording work for the lock test"));
         raceRecords.push(r.id);
       }
     });
@@ -770,10 +772,10 @@ suite(suiteName, () => {
      * it is the difference between a screen that refuses weekly and one that
      * never has to.
      */
-    it("una pesada tardía no entra en lo que ya se aprobó", async () => {
+    it("keeps a late weigh-in out of what was already approved", async () => {
       const approved = await api
         .previewSettlement(raceWorkerId, raceRecords)
-        .catch((e) => explain(e, "previsualizar"));
+        .catch((e) => explain(e, "previewing"));
       // 10 kg + 20 kg at $800.
       expect(approved.grossCents).toBe(2_400_000);
 
@@ -789,7 +791,7 @@ suite(suiteName, () => {
           quantity: 5,
           note: "pesada tardía, entra después de que la pantalla mostró el bruto",
         })
-        .catch((e) => explain(e, "registrar la pesada tardía"));
+        .catch((e) => explain(e, "recording the late weigh-in"));
 
       // The preview of the SAME named set is unmoved: the late weighing is
       // pending, and simply not part of what was approved.
@@ -806,7 +808,7 @@ suite(suiteName, () => {
      * are on the LEDGER, not on the error code: a guard that refused after
      * writing would produce the right code and the wrong balance.
      */
-    it("se niega a liquidar una cifra distinta de la que se aprobó", async () => {
+    it("refuses to settle a figure other than the one that was approved", async () => {
       const approved = await api.previewSettlement(raceWorkerId, raceRecords);
       const gone = approved.lines.find((l) => l.id === raceRecords[1])!;
 
@@ -842,7 +844,7 @@ suite(suiteName, () => {
       expect(change!.repriced).toEqual([]);
     });
 
-    it("y aprobada de nuevo, la cifra nueva sí se liquida", async () => {
+    it("and settles the new figure once it has been approved again", async () => {
       const approved = await api.previewSettlement(raceWorkerId, raceRecords);
       const settlement = await api
         .settle(
@@ -850,19 +852,19 @@ suite(suiteName, () => {
           approved.lines.map((l) => l.id),
           { expectedGrossCents: approved.grossCents, expectedLines: approved.lines },
         )
-        .catch((e) => explain(e, "liquidar la cifra nueva"));
+        .catch((e) => explain(e, "settling the new figure"));
       expect(settlement.grossCents).toBe(approved.grossCents);
       expect((await api.workerBalance(raceWorkerId)).earnedCents).toBe(approved.grossCents);
     });
   });
 
   /* ------------------------------------------------------------------ */
-  /* Inventario, ventas y gastos — RSP-018 … RSP-033                     */
+  /* Inventory, sales and expenses — RSP-018 … RSP-033                   */
   /* ------------------------------------------------------------------ */
 
   /**
    * The rule the whole inventory module is shaped around, checked against the
-   * database that enforces it: EXISTENCIAS ARE DERIVED.
+   * database that enforces it: STOCK LEVELS ARE DERIVED.
    *
    * `stock_moves` is append-only — a trigger and a REVOKE, the same defence
    * the ledger has — so `product.stock` is a SUM computed on every read. What
@@ -870,14 +872,14 @@ suite(suiteName, () => {
    * falls out of the movements, through the real SQL and not through a mock
    * that shares our arithmetic.
    */
-  it("deriva las existencias de los movimientos, y no hay otra forma de moverlas", async () => {
+  it("derives the stock from the movements, and offers no other way to move it", async () => {
     const warehouse = await api
       .createWarehouse("Bodega principal")
-      .catch((e) => explain(e, "crear la bodega"));
+      .catch((e) => explain(e, "creating the warehouse"));
     warehouseId = warehouse.id;
 
     // Idempotent by lower(name), like every picker in this service: asking
-    // twice is one row, which is what makes "escríbala si no está" safe.
+    // twice is one row, which is what makes "write it if it is not there" safe.
     const again = await api.createWarehouse("bodega principal");
     expect(again.id).toBe(warehouseId);
 
@@ -888,7 +890,7 @@ suite(suiteName, () => {
         categoryName: "Producto procesado",
         storageUnit: "Bulto",
       })
-      .catch((e) => explain(e, "crear el producto"));
+      .catch((e) => explain(e, "creating the product"));
     productId = product.id;
     // Brand new, so nothing has moved: zero, and not null and not undefined.
     expect(product.stock).toBe(0);
@@ -903,7 +905,7 @@ suite(suiteName, () => {
         reason: "cosecha",
         date: today(),
       })
-      .catch((e) => explain(e, "registrar la cosecha"));
+      .catch((e) => explain(e, "recording the harvest movement"));
     expect(harvest.move.qty).toBe(40);
 
     await api
@@ -916,9 +918,9 @@ suite(suiteName, () => {
         note: "Se mojó un bulto y medio",
         date: today(),
       })
-      .catch((e) => explain(e, "registrar la merma"));
+      .catch((e) => explain(e, "recording the loss"));
 
-    const after = await api.getProduct(productId).catch((e) => explain(e, "releer el producto"));
+    const after = await api.getProduct(productId).catch((e) => explain(e, "re-reading the product"));
     expect(after.stock).toBe(35);
 
     const levels = await api.stockLevels({ productId });
@@ -939,7 +941,7 @@ suite(suiteName, () => {
    * side only so the preview can say what the movement will do BEFORE it is
    * sent.
    */
-  it("corrige el signo del movimiento según el motivo, en vez de rechazarlo", async () => {
+  it("corrects the movement's sign to match the reason instead of refusing it", async () => {
     const before = (await api.getProduct(productId)).stock;
     const { move } = await api
       .createStockMove({
@@ -950,7 +952,7 @@ suite(suiteName, () => {
         reason: "merma",
         date: today(),
       })
-      .catch((e) => explain(e, "registrar la merma con el signo al revés"));
+      .catch((e) => explain(e, "recording the loss with the sign the wrong way round"));
 
     expect(move.qty).toBe(-5);
     expect((await api.getProduct(productId)).stock).toBe(before - 5);
@@ -962,7 +964,7 @@ suite(suiteName, () => {
    * `allowNegative` records it anyway — the same escape hatch, spelled the way
    * the movement schema spells it.
    */
-  it("guarda la bodega en cualquier salida, no solo en una venta", async () => {
+  it("guards the warehouse on any outgoing movement, not only on a sale", async () => {
     const onHand = (await api.getProduct(productId)).stock;
 
     const refused = await api
@@ -990,7 +992,7 @@ suite(suiteName, () => {
         date: today(),
         allowNegative: true,
       })
-      .catch((e) => explain(e, "forzar el consumo"));
+      .catch((e) => explain(e, "forcing the consumption"));
     expect(forced.move.qty).toBe(-(onHand + 50));
     expect((await api.getProduct(productId)).stock).toBe(-50);
 
@@ -999,7 +1001,7 @@ suite(suiteName, () => {
     // honest way to do it — there is no DELETE to reach for.
     const undone = await api
       .reverseStockMove(forced.move.id, "Se registró por error")
-      .catch((e) => explain(e, "reversar el consumo"));
+      .catch((e) => explain(e, "reversing the consumption"));
     expect(undone.qty).toBe(onHand + 50);
     expect(undone.reason).toBe("ajuste");
     expect(undone.reversesId).toBe(forced.move.id);
@@ -1012,7 +1014,7 @@ suite(suiteName, () => {
   });
 
   /** A `venta` movement belongs to a sale. Through this door it is refused. */
-  it("no deja registrar una venta por la puerta del inventario", async () => {
+  it("refuses to record a sale through the inventory door", async () => {
     const direct = await api
       .createStockMove({
         id: uuidv7(),
@@ -1033,7 +1035,7 @@ suite(suiteName, () => {
    * the coffee back. This is the seam that cannot be checked anywhere else:
    * two lists that have to agree, kept in step by the database.
    */
-  it("una venta saca producto de la bodega, y anularla lo devuelve", async () => {
+  it("takes product out of the warehouse on a sale, and puts it back on a void", async () => {
     const before = (await api.getProduct(productId)).stock;
 
     const sale = await api
@@ -1046,7 +1048,7 @@ suite(suiteName, () => {
         amountCents: 14_400_000,
         date: today(),
       })
-      .catch((e) => explain(e, "registrar la venta"));
+      .catch((e) => explain(e, "recording the sale"));
     saleId = sale.id;
     expect(sale.quantity).toBe(12);
     expect(sale.amountCents).toBe(14_400_000);
@@ -1061,7 +1063,7 @@ suite(suiteName, () => {
     // The total is the server's sum over the LIVE sales, not ours.
     expect(list.totalCents).toBeGreaterThanOrEqual(14_400_000);
 
-    const voided = await api.voidSale(saleId).catch((e) => explain(e, "anular la venta"));
+    const voided = await api.voidSale(saleId).catch((e) => explain(e, "voiding the sale"));
     expect(voided.voided).toBe(true);
     // Flagged AND given back. Flagging alone would leave the coffee sold in
     // one list and gone from the other forever.
@@ -1081,7 +1083,7 @@ suite(suiteName, () => {
    * is ordinary, and a server that made it impossible to record what actually
    * left the farm would be a server nobody could use.
    */
-  it("avisa cuando no hay tanto en bodega, y deja registrarlo de todos modos", async () => {
+  it("warns when there is not that much in the warehouse, and records it anyway", async () => {
     const onHand = (await api.getProduct(productId)).stock;
 
     const refused = await api
@@ -1110,17 +1112,17 @@ suite(suiteName, () => {
         date: today(),
         allowNegativeStock: true,
       })
-      .catch((e) => explain(e, "registrar la venta con el sobregiro"));
+      .catch((e) => explain(e, "recording the sale with the overdraft"));
     expect(anyway.quantity).toBe(onHand + 100);
     expect((await api.getProduct(productId)).stock).toBe(-100);
   });
 
   /**
-   * `expense_target`: a un gasto se le carga UNA cosa. Both and neither are
+   * `expense_target`: an expense is charged to ONE thing. Both and neither are
    * the two failures, and both come back as EXPENSE_TARGET_INVALID — one code
    * for one constraint.
    */
-  it("carga un gasto a una sola cosa, y rechaza las dos y ninguna", async () => {
+  it("charges an expense to one thing, and refuses both or neither", async () => {
     const charged = await api
       .createExpense({
         id: uuidv7(),
@@ -1130,7 +1132,7 @@ suite(suiteName, () => {
         target: "plot",
         plotId,
       })
-      .catch((e) => explain(e, "registrar el gasto"));
+      .catch((e) => explain(e, "recording the expense"));
     expect(charged.target).toBe("plot");
     expect(charged.plotId).toBe(plotId);
     expect(charged.activityId).toBeNull();
@@ -1144,7 +1146,7 @@ suite(suiteName, () => {
         target: "activity",
         activityId,
       })
-      .catch((e) => explain(e, "registrar el gasto de actividad"));
+      .catch((e) => explain(e, "recording the activity expense"));
     expect(toActivity.target).toBe("activity");
     expect(toActivity.plotId).toBeNull();
 
@@ -1183,12 +1185,12 @@ suite(suiteName, () => {
   });
 
   /**
-   * The other half of "un gasto no es una deuda". RSP-030 and RSP-007 use the
+   * The other half of "an expense is not a debt". RSP-030 and RSP-007 use the
    * same word for the cost of a spraying and for what an employee owes the
    * farm; wiring them together would take money out of somebody's wages every
    * time a bag of fertiliser was recorded.
    */
-  it("un gasto no toca el saldo de nadie", async () => {
+  it("leaves everybody's balance alone", async () => {
     const before = (await api.workerBalance(workerId)).balanceCents;
     await api
       .createExpense({
@@ -1199,15 +1201,15 @@ suite(suiteName, () => {
         target: "activity",
         activityId,
       })
-      .catch((e) => explain(e, "registrar el gasto"));
+      .catch((e) => explain(e, "recording the expense"));
     expect((await api.workerBalance(workerId)).balanceCents).toBe(before);
   });
 
   /**
-   * ── EL DOBLE CLIC, CONTRA POSTGRES ────────────────────────────────────
+   * ── THE DOUBLE CLICK, AGAINST POSTGRES ────────────────────────────────
    *
    * The auditor drove the browser and got two `POST /v1/payments`, both 201,
-   * and $20.000 handed over where the foreman had approved $10.000. Two
+   * and $20,000 handed over where the foreman had approved $10,000. Two
    * separate things had to be true for that:
    *
    *   1. the second click reached the network at all, because
@@ -1226,8 +1228,8 @@ suite(suiteName, () => {
    * showed the fix working would not show that the mechanism is what makes it
    * work.
    */
-  describe("dos peticiones idénticas no pueden pagar dos veces", () => {
-    it("mismo id: la segunda recibe el pago que ya existe, y la plata sale una vez", async () => {
+  describe("two identical requests cannot pay twice", () => {
+    it("same id: the second gets the payment that already exists, and the money leaves once", async () => {
       const before = await api.workerBalance(workerId);
       expect(before.balanceCents).toBeGreaterThan(2_000_00);
 
@@ -1248,12 +1250,12 @@ suite(suiteName, () => {
       );
       expect(payments).toHaveLength(1);
 
-      // And the money: $1.000 left the farm, not $2.000.
+      // And the money: $1,000 left the farm, not $2,000.
       const after = await api.workerBalance(workerId);
       expect(before.balanceCents - after.balanceCents).toBe(1_000_00);
     });
 
-    it("ids distintos: el servidor escribe dos pagos — que es el fallo, no el servidor", async () => {
+    it("different ids: the server writes two payments — which is the bug, not the server", async () => {
       const before = await api.workerBalance(workerId);
       const pay = () =>
         api.createPayment({
@@ -1268,14 +1270,14 @@ suite(suiteName, () => {
       const [a, b] = await Promise.all([pay(), pay()]);
       expect(a.id).not.toBe(b.id);
 
-      // $2.000 handed over where $1.000 was approved. This is the auditor's
+      // $2,000 handed over where $1,000 was approved. This is the auditor's
       // finding, reproduced, and it is why the id has to be minted once.
       const after = await api.workerBalance(workerId);
       expect(before.balanceCents - after.balanceCents).toBe(2_000_00);
     });
   });
 
-  it("refresca el token sin que nadie se entere", async () => {
+  it("refreshes the token without anybody noticing", async () => {
     const before = getTokens()!;
 
     // Corrupt only the ACCESS token. The next call gets a 401, the client
@@ -1284,7 +1286,7 @@ suite(suiteName, () => {
     // fifteen minutes with the payment screen open.
     setTokens({ accessToken: `${before.accessToken}-roto`, refreshToken: before.refreshToken });
 
-    const me = await api.me().catch((e) => explain(e, "refrescar la sesión"));
+    const me = await api.me().catch((e) => explain(e, "refreshing the session"));
     expect(me.role).toBe("owner");
 
     const after = getTokens()!;
@@ -1294,8 +1296,8 @@ suite(suiteName, () => {
     expect(after.refreshToken).not.toBe(before.refreshToken);
   });
 
-  it("cierra la sesión de verdad", async () => {
-    await api.logout().catch((e) => explain(e, "cerrar sesión"));
+  it("really does log out", async () => {
+    await api.logout().catch((e) => explain(e, "logging out"));
     setTokens(null);
     await expect(api.me()).rejects.toBeInstanceOf(ApiError);
   });

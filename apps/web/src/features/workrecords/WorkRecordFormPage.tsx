@@ -247,8 +247,8 @@ export function WorkRecordFormPage() {
                 <Typography sx={{ fontWeight: 700 }}>{activity.name}</Typography>
                 <Chip
                   size="small"
-                  /* Decía «pago por unidad de trabajo», que es el nombre de
-                     una columna. `lib/vocab.ts`. */
+                  /* This used to read "pago por unidad de trabajo", which is
+                     a column name. See `lib/vocab.ts`. */
                   label={
                     activity.payMode === "work_unit"
                       ? `${PAY_MODE_LABEL.work_unit} · ${activity.workUnit}`

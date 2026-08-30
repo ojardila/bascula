@@ -66,7 +66,7 @@ describe("the seeded farm renders what the wireframes promise", () => {
     });
   });
 
-  it("lists the lotes with their area and their crops", async () => {
+  it("lists the plots with their area and their crops", async () => {
     renderApp("/lotes");
     expect(await screen.findByText("El Alto")).toBeInTheDocument();
     expect(screen.getByText("La Cuchilla")).toBeInTheDocument();
@@ -81,16 +81,16 @@ describe("the seeded farm renders what the wireframes promise", () => {
     renderApp("/empleados/0192f3a0-0006-7000-8000-000000000001");
     expect(await screen.findByText(/María/)).toBeInTheDocument();
     /**
-     * LA MISMA CIFRA QUE LA PANTALLA DE PAGAR. El perfil gritaba $184.500 —el
-     * libro— y dejaba lo pendiente en letra chica, así que la respuesta a
-     * «¿cuánto le debo?» sólo existía dentro de «pagar». Ahora arriba va el
-     * total y las dos mitades quedan debajo, con sus nombres.
+     * THE SAME FIGURE AS THE PAYMENT SCREEN. The profile shouted $184.500 —
+     * the ledger — and left what was pending in small type, so the answer to
+     * "how much do I owe them?" only existed inside "pay". Now the total goes
+     * on top and the two halves sit below it, under their names.
      */
     expect(screen.getByText("$338.100")).toBeInTheDocument();
     expect(screen.getByText("a favor del empleado")).toBeInTheDocument();
     // $184.500 is the sum of the six seeded ledger rows, not a stored total.
     expect(screen.getByText("$184.500")).toBeInTheDocument();
-    // And the pending work is shown apart: it is not a devengo yet.
+    // And the pending work is shown apart: it is not an accrual yet.
     expect(screen.getAllByText("$153.600").length).toBeGreaterThan(0);
   }, 20000);
 
@@ -101,14 +101,15 @@ describe("the seeded farm renders what the wireframes promise", () => {
     expect(screen.getByText("$30.800")).toBeInTheDocument();
     expect(screen.getByText("$32.800")).toBeInTheDocument();
     expect(screen.getByText("$90.000")).toBeInTheDocument();
-    // balance 184.500 + pending 153.600 — y el botón dice «revisar», porque
-    // pulsarlo ya no escribe nada: abre la lista de lo que se va a firmar.
+    // balance 184.500 + pending 153.600 — and the button says "revisar",
+    // because pressing it no longer writes anything: it opens the list of what
+    // is about to be signed.
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Revisar y pagar · \$338\.100/ })).toBeEnabled(),
     );
   }, 20000);
 
-  it("registers a labor and refuses one with holes in it", async () => {
+  it("registers a work record and refuses one with holes in it", async () => {
     const user = userEvent.setup();
     renderApp("/labores/nueva");
     await screen.findByRole("heading", { name: "Registrar labor" });

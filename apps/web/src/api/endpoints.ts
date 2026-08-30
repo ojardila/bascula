@@ -180,23 +180,23 @@ const items = <T>(res: WireList<T> | null | undefined): T[] => res?.items ?? [];
  * the filter chips can keep saying what they mean.
  */
 /**
- * ── EL FILTRO QUE DECÍA «TODAS» Y ENSEÑABA SÓLO LAS ACTIVAS ──────────────
+ * ── THE FILTER THAT SAID "TODAS" AND SHOWED ONLY THE ACTIVE ONES ─────────
  *
- * `validStatus` en el servidor devuelve 400 para `status=all`; la forma
- * soportada de pedirlo todo es `includeDeleted=true`, que es lo que manda el
- * teléfono y lo que `listFilter` traduce a `Status: "all"`. Esta función
- * traducía «all» a *nada*, y sin `status` el servidor responde sólo las
- * activas. Es decir: el botón «Todas» de todas las listas de la consola
- * enseñaba exactamente lo mismo que «Activas», sin decirlo.
+ * `validStatus` on the server answers 400 for `status=all`; the supported way
+ * to ask for everything is `includeDeleted=true`, which is what the phone
+ * sends and what `listFilter` translates into `Status: "all"`. This function
+ * translated "all" into *nothing*, and with no `status` the server answers
+ * with the active ones only. Which means: the "Todas" chip on every list in
+ * the console showed exactly what "Activas" showed, without saying so.
  *
- * Es el mismo defecto que el pie de `/gastos` —una etiqueta describiendo un
- * conjunto que no es el que se ve— y se arregla en el sitio donde se traduce
- * el filtro, no lista por lista.
+ * It is the same defect as the footer of `/gastos` —a label describing a set
+ * that is not the one on screen— and it is fixed where the filter is
+ * translated, not list by list.
  */
 const statusParam = (status?: string): string | undefined =>
   !status || status === "all" ? undefined : status;
 
-/** «all» viaja como `includeDeleted=true`, que es lo que el servidor acepta. */
+/** "all" travels as `includeDeleted=true`, which is what the server accepts. */
 const includeDeletedParam = (status?: string): string | undefined =>
   status === "all" ? "true" : undefined;
 
@@ -359,15 +359,15 @@ function toSettlement(s: WireSettlement, refs: Refs, workerName: string): Settle
 /* ------------------------------------------------------------------ */
 
 /**
- * Cuántos asientos del libro trae el perfil de un empleado.
+ * How many ledger entries an employee's profile brings back.
  *
- * Cincuenta es el `default` que ya tenía el servidor; lo que cambia es que
- * ahora lo pide la pantalla, así que la pantalla sabe el número y puede
- * decirlo cuando la lista llega llena. Ver `WorkerProfile.ledgerLimit`.
+ * Fifty is the `default` the server already had; what changes is that the
+ * screen now asks for it, so the screen knows the number and can say it when
+ * the list comes back full. See `WorkerProfile.ledgerLimit`.
  */
 export const LEDGER_PAGE = 50;
 
-/** Lo mismo para la bodega: `GET /v1/stock/moves` corta por aquí. */
+/** Same for the store: `GET /v1/stock/moves` cuts off here. */
 export const STOCK_MOVES_PAGE = 200;
 
 export const api = {
@@ -529,7 +529,7 @@ export const api = {
    * behind it selects id, email, name, role, email_verified_at and created_at
    * and nothing else. Both absences are carried through as absences — see
    * `toFarmUser` — because rendering "no lo sé" as "nunca" is what told the
-   * owner he had never logged in.
+   * owner they had never logged in.
    *
    * Only the owner. `docs/diagramas/sistema.md` §3.3 puts user management in
    * the owner column and NOT the administrator column, which is stricter than
@@ -787,13 +787,13 @@ export const api = {
    * rows need names the server did not send.
    */
   /**
-   * `limit` VIAJA A PROPÓSITO, aunque el servidor tenga su propio `default`.
+   * `limit` IS SENT ON PURPOSE, even though the server has its own `default`.
    *
-   * `handleWorkerProfile` corta el libro por `limitParam(r, 50)` y la
-   * respuesta no lleva ni el tope ni el total, así que una pantalla que no
-   * manda el número no tiene forma de saber si lo que recibió es el libro
-   * entero o la primera página. Mandándolo, el tope es una decisión de la
-   * pantalla y la pantalla puede decirlo.
+   * `handleWorkerProfile` cuts the ledger at `limitParam(r, 50)` and the
+   * response carries neither the cap nor the total, so a screen that does not
+   * send the number has no way of knowing whether what it got back is the
+   * whole ledger or the first page. By sending it, the cap is the screen's
+   * decision and the screen can say so.
    */
   workerProfile: async (id: Uuid, limit = LEDGER_PAGE): Promise<WorkerProfile> => {
     const [profile, refs, payables] = await Promise.all([
@@ -1198,19 +1198,19 @@ export const api = {
     }
 
     /**
-     * ── LOS HUECOS DEL ABANICO, CONTADOS ─────────────────────────────
+     * ── THE HOLES IN THE FAN-OUT, COUNTED ────────────────────────────
      *
-     * Estos dos `catch` devolvían una lista vacía y un null, y la pantalla no
-     * tenía forma de distinguir «esta finca no ha liquidado nada» de «no pude
-     * leer los libros». Con los ledgers caídos, `/liquidaciones` afirmaba
-     * «Todavía no se ha liquidado nada en esta finca» — una frase sobre la
-     * finca, no sobre la petición — e imprimía una planilla en blanco con
-     * columna de firmas.
+     * These two `catch` blocks returned an empty list and a null, and the
+     * screen had no way of telling "this farm has settled nothing" apart from
+     * "I could not read the ledgers". With the ledgers down, `/liquidaciones`
+     * asserted "Todavía no se ha liquidado nada en esta finca" — a sentence
+     * about the farm, not about the request — and printed a blank payroll
+     * sheet with a signature column.
      *
-     * Tragarse el fallo sigue siendo lo correcto: una liquidación ilegible no
-     * puede esconder las otras veintinueve. Lo que faltaba era CONTAR los
-     * huecos y devolverlos, para que la pantalla pueda decir de cuántos es la
-     * lista que está enseñando.
+     * Swallowing the failure is still the right thing: one unreadable
+     * settlement must not hide the other twenty-nine. What was missing was
+     * COUNTING the holes and handing them back, so the screen can say how
+     * short the list it is showing might be.
      */
     let unreadableLedgers = 0;
     const ledgers = await Promise.all(
@@ -1446,7 +1446,7 @@ export const api = {
   reactivateProduct: async (id: Uuid): Promise<Product> =>
     toProduct(await http.patch<WireProduct>(`/v1/products/${id}`, { status: "active" })),
 
-  /** Bodegas, categorías de producto y unidades de almacenamiento. */
+  /** Warehouses, product categories and storage units. */
   warehouses: async (): Promise<CatalogItem[]> =>
     items(
       await routeMayBeMissing(

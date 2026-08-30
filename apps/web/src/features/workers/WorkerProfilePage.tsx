@@ -37,7 +37,7 @@ import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
 import { OwedFigure, owedDirection } from "./OwedFigure";
 import { totalOwedCents, type Owed } from "./owed";
-import { CORRECCION_GLOSS, LEDGER_KIND_LABEL, NOT_YET_EARNED } from "../../lib/vocab";
+import { CORRECTION_GLOSS, LEDGER_KIND_LABEL, NOT_YET_EARNED } from "../../lib/vocab";
 
 export function WorkerProfilePage() {
   const { id = "" } = useParams();
@@ -52,10 +52,10 @@ export function WorkerProfilePage() {
 
   const { worker, balance, workRecords, pendingCents, ledger, notes } = data;
   /**
-   * La única definición de «lo que se le debe» del proyecto, en `owed.ts`.
-   * `pendingIsEstimate` sale de las propias labores sin liquidar: en esta
-   * finca casi todas se pagan al precio de la semana, y una cifra que todavía
-   * se puede mover no puede parecerse a una que ya no.
+   * The project's only definition of "what they are owed", in `owed.ts`.
+   * `pendingIsEstimate` comes out of the unsettled work items themselves: on
+   * this farm nearly all of them are paid at the week's price, and a figure
+   * that can still move must not look like one that cannot.
    */
   const owed: Owed = {
     balanceCents: balance.balanceCents,
@@ -140,16 +140,16 @@ export function WorkerProfilePage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 5 }}>
-          {/* ── LA CIFRA POR LA QUE PREGUNTÓ ─────────────────────────────
-              Antes aquí gritaba el saldo del libro —$184.500— y lo pendiente
-              de liquidar iba en letra chica debajo, así que la respuesta a
-              «¿cuánto le debo?» ($338.100) sólo existía dentro de la pantalla
-              de pagar. Quien quería SABER sin PAGAR nunca la veía, y las
-              otras tres pantallas decían otras tres cosas.
+          {/* ── THE FIGURE THEY ASKED FOR ────────────────────────────────
+              This used to shout the ledger balance —$184.500— with what was
+              left to settle in small print below, so the answer to "how much
+              do I owe them?" ($338.100) existed only inside the pay screen.
+              Anybody who wanted to KNOW without PAYING never saw it, and the
+              other three screens said three other things.
 
-              Ahora arriba va el total y debajo, en pequeño, las dos mitades
-              de las que sale. La suma la hace `owed.ts`, que es el único
-              sitio del proyecto donde está escrita. */}
+              Now the total goes on top and the two halves it comes out of go
+              small underneath. `owed.ts` does the adding up, and it is the
+              only place in the project where that sum is written. */}
           <Card sx={{ bgcolor: inFavour ? "#eaf3e8" : "#fdecea" }}>
             <CardContent>
               <Typography variant="overline" color="text.secondary">
@@ -162,9 +162,9 @@ export function WorkerProfilePage() {
 
               <Divider sx={{ my: 1.5 }} />
 
-              {/* El desglose, con los dos nombres que el resto de la consola
-                  usa, para que nadie tenga que adivinar cuál de las dos
-                  mitades es «Pendiente de liquidar». */}
+              {/* The breakdown, using the two names the rest of the console
+                  uses, so nobody has to guess which of the two halves is
+                  "Pendiente de liquidar". */}
               <Stack spacing={0.5}>
                 <Stack direction="row" justifyContent="space-between" alignItems="baseline">
                   <Typography variant="body2" color="text.secondary">
@@ -324,12 +324,13 @@ export function WorkerProfilePage() {
               )}
             </TableBody>
           </Table>
-          {/* ── LA TABLA DECÍA SER TODO Y ERA UNA PÁGINA ──────────────────
-              «Historial financiero» son los últimos `ledgerLimit` asientos:
-              el servidor corta por ahí y la respuesta no lo menciona. Quien
-              lleva dos temporadas en la finca veía media cuenta bajo un
-              título que prometía la entera. Se dice, con el número, y sólo
-              cuando de verdad puede haber más — igual que en `/cosecha`. */}
+          {/* ── THE TABLE CLAIMED TO BE EVERYTHING AND WAS ONE PAGE ───────
+              "Historial financiero" is the last `ledgerLimit` entries: the
+              server cuts it there and the response does not mention it.
+              Somebody two seasons into the farm saw half their account under
+              a title that promised the whole of it. We say so, with the
+              number, and only when there really may be more — same as in
+              `/cosecha`. */}
           {ledger.length >= data.ledgerLimit && (
             <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
               Se muestran los {data.ledgerLimit} movimientos más recientes. Puede haber
@@ -337,7 +338,7 @@ export function WorkerProfilePage() {
             </Typography>
           )}
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-            Nada de esto se edita ni se borra. Un error se corrige con {CORRECCION_GLOSS}
+            Nada de esto se edita ni se borra. Un error se corrige con {CORRECTION_GLOSS}
           </Alert>
         </CardContent>
       </Card>

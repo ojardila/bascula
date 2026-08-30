@@ -26,7 +26,7 @@ export function ConfigPage() {
   const { user, can } = useAuth();
 
   /**
-   * ── DE DÓNDE SALE «ESTADO» ──────────────────────────────────────────
+   * ── WHERE "ESTADO" COMES FROM ───────────────────────────────────────
    *
    * NOT from the session. `/v1/me` reports no farm lifecycle at all, so
    * `toMeUser` infers "active" from the fact that somebody is holding a live
@@ -130,11 +130,10 @@ export function ConfigPage() {
           </Grid>
         )}
 
-        {/* El precio del kilo tiene su propia pantalla —es un hecho semanal
-            con fecha, no un ajuste— pero quien viene a Configuración a
-            buscarlo tiene razón en buscarlo aquí, así que aquí está la
-            puerta. Que no esté en dos sitios: está en uno, señalado desde
-            los dos. */}
+        {/* The price per kilo has its own screen — it is a dated weekly
+            fact, not a setting — but anyone who comes to Configuración
+            looking for it is right to look here, so here is the door. It is
+            not in two places: it is in one, signposted from both. */}
         {can("config.prices") && (
           <Grid size={{ xs: 12, md: 6 }}>
             <Card>

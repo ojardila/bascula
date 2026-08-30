@@ -31,7 +31,7 @@ import { Kg, Stat, Value } from "./Figures";
 import { Curve, RowBar, type CurvePoint } from "./charts";
 import { NOT_ENOUGH_SEASON } from "./text";
 import { foldTotals, kgForDrawing, valueState } from "./totals";
-import { RECOLECTOR } from "../../lib/vocab";
+import { PICKER } from "../../lib/vocab";
 
 export function SeasonPage() {
   const { today, weeks: windowWeeks, canSeeMoney } = useHarvest();
@@ -138,7 +138,7 @@ export function SeasonPage() {
             <Value total={season} scope="el periodo" align="flex-start" />
           </Stat>
         )}
-        <Stat label={RECOLECTOR.Many} hint="El mayor número de personas que trabajó en una misma semana.">
+        <Stat label={PICKER.Many} hint="El mayor número de personas que trabajó en una misma semana.">
           {pickers}
         </Stat>
         <Stat label="Días con recolección">{days}</Stat>
