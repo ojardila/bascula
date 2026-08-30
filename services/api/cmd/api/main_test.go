@@ -157,3 +157,83 @@ func TestDevelopmentSigningKeyIsNotSharedBetweenBoots(t *testing.T) {
 func getenvFrom(envs map[string]string) func(string) string {
 	return func(key string) string { return envs[key] }
 }
+
+// TRUSTED_PROXY_CIDRS decides whether an X-Forwarded-For can move the address
+// the signup rate limit counts, so the parse of it is a security decision and
+// gets a test of its own.
+//
+// The default is the interesting row. Unset must mean an EMPTY list, not a
+// convenient guess like "the private ranges": httpapi reads the header only
+// for a peer inside this list, so an empty list is what makes a service
+// reachable directly immune to the header, and a guess would hand it to
+// anything on the same network.
+func TestResolveConfigTrustedProxyCIDRs(t *testing.T) {
+	base := func(extra map[string]string) map[string]string {
+		envs := map[string]string{
+			"UPLOAD_DIR": "/srv/uploads",
+			"JWT_SECRET": strings.Repeat("a", minSecretBytes),
+		}
+		for k, v := range extra {
+			envs[k] = v
+		}
+		return envs
+	}
+
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want []string
+		// wantErr is a fragment of the refusal, empty when it must boot.
+		wantErr string
+	}{{
+		name: "unset trusts nobody",
+		raw:  "",
+		want: nil,
+	}, {
+		name: "one range",
+		raw:  "10.0.0.0/8",
+		want: []string{"10.0.0.0/8"},
+	}, {
+		name: "several, with the whitespace a human leaves behind",
+		raw:  " 10.0.0.0/8 , 2001:db8::/32 ",
+		want: []string{"10.0.0.0/8", "2001:db8::/32"},
+	}, {
+		// A bare address is the commonest way to write this wrong, and it
+		// must not quietly become "trust nothing" — that is a rate limit that
+		// looks configured and counts the proxy.
+		name:    "a bare address is not a prefix",
+		raw:     "10.0.0.1",
+		wantErr: "is not a CIDR prefix",
+	}, {
+		name:    "one good range and one typo still refuses",
+		raw:     "10.0.0.0/8,10.0.0.0/64",
+		wantErr: "is not a CIDR prefix",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			rc, err := resolveConfig(getenvFrom(base(map[string]string{
+				"TRUSTED_PROXY_CIDRS": tc.raw,
+			})))
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("booted with TRUSTED_PROXY_CIDRS=%q and trusted %v",
+						tc.raw, rc.http.TrustedProxyCIDRs)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("refused with %q, want something about %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("refused a valid TRUSTED_PROXY_CIDRS=%q: %v", tc.raw, err)
+			}
+			if len(rc.http.TrustedProxyCIDRs) != len(tc.want) {
+				t.Fatalf("trusts %v, want %v", rc.http.TrustedProxyCIDRs, tc.want)
+			}
+			for i, want := range tc.want {
+				if rc.http.TrustedProxyCIDRs[i] != want {
+					t.Fatalf("trusts %v, want %v", rc.http.TrustedProxyCIDRs, tc.want)
+				}
+			}
+		})
+	}
+}

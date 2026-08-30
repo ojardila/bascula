@@ -377,3 +377,19 @@ func CountSignupAttempts(ctx context.Context, tx pgx.Tx, ip string, window time.
 		ip, window.String()).Scan(&n)
 	return n, err
 }
+
+// CountSignupAttemptsByEmail counts recent attempts for one address.
+//
+// The other axis. Counting by IP alone bounds a resource the caller can
+// replace per request; counting by address bounds the thing they actually came
+// for. lower(email) rather than email because that is what
+// ix_signup_attempts_email is built on, and because "OWNER@finca.co" and
+// "owner@finca.co" are the same mailbox and must be the same bucket.
+func CountSignupAttemptsByEmail(ctx context.Context, tx pgx.Tx, email string, window time.Duration) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM signup_attempts
+		 WHERE lower(email) = lower($1) AND at > now() - $2::interval`,
+		email, window.String()).Scan(&n)
+	return n, err
+}

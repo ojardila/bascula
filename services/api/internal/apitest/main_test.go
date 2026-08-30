@@ -135,6 +135,7 @@ func setupAndRun(m *testing.M) (int, error) {
 	defer func() { _ = os.RemoveAll(uploadDir) }()
 	cfg.UploadDir = uploadDir
 	cfg.SignupsPerIPPerHour = 1000
+	cfg.SignupsPerEmailPerHour = 1000
 	cfg.MaxFarmsPerEmail = 3
 
 	shared = &harness{
