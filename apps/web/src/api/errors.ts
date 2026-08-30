@@ -113,6 +113,11 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "Su permiso en esta finca cambió mientras trabajaba. Vuelva a entrar para seguir con los permisos nuevos.",
   MEMBERSHIP_REVOKED:
     "Su acceso a esta finca fue retirado. Si cree que es un error, hable con el dueño de la finca; no es problema de su contraseña.",
+  // The platform flag was taken off the account while the session was open.
+  // Same shape as ROLE_CHANGED: the client refreshes and retries once, so this
+  // is normally invisible, and the console simply stops being in the menu.
+  PLATFORM_ROLE_CHANGED:
+    "Su permiso de administrador de la plataforma cambió mientras trabajaba. Vuelva a entrar para seguir con los permisos nuevos.",
   // The server's loud failure when the tenant was never established. It is a
   // 500 and it is a bug on our side of the wire, not something the user did.
   TENANT_NOT_SET:
