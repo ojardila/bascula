@@ -454,11 +454,30 @@ export class RestTransport implements SyncTransport, SeasonImportTransport {
       reversesId: string | null;
     };
 
+    // A `pago` is deliberately NOT sent, and that is a money decision.
+    //
+    // The phone still settles locally, and the server refuses that settlement
+    // (decision 5), so the `devengo` never leaves the handset. Sending the
+    // payment alone put the money on the server while the weighings that
+    // justified it stayed unclaimed in ux_items_payable_live — which let the
+    // console settle and pay them a second time. It was dormant only because
+    // the farm is told to pay from one side, and that is what a landmine looks
+    // like before somebody steps on it.
+    //
+    // An `anticipo` is safe and stays: it claims no weighing, takes no lock,
+    // and amortises exactly when the settlement is finally made — that is
+    // golden case 02. The same holds for a deduction and an adjustment, which
+    // decide nothing about which work has been paid for.
+    //
+    // Payments made on the phone reach the server with the season import,
+    // which carries the settlements and their lines together and reconciles
+    // every balance to the centavo. Until then they live on the handset, which
+    // is where the settlement that justifies them lives too.
     const route: Record<string, string | null> = {
-      pago: "/v1/payments",
       anticipo: "/v1/advances",
       deduccion: "/v1/deductions",
       ajuste: "/v1/adjustments",
+      pago: null,
       devengo: null,
       reverso: null,
     };
