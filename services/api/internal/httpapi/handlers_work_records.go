@@ -14,6 +14,93 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
 
+// publicWorkRecord is the work record with every figure of money taken out of
+// it, which is what the weigher gets. It is the decision publicWorker already
+// makes about a person's private file, applied to the one entity the weigher
+// writes all day long.
+//
+// The field that leaked is estimatedAmountCents. It is quantity times the price
+// in force for the week — see store.priceWorkRecords — and EVERY weighing takes
+// that branch, because a weigher may only record work priced by the week (this
+// file refuses anything else a few lines below). So a weigher who recorded one
+// kilo and read his own row back was handed the price of a kilo, exactly, and
+// any other weighing was one division away from it. That is the number
+// ActionPricesRead keeps behind an administrator, that GET /v1/farm drops from
+// his farm, that composeFarmConfig drops from his sync, and that the feed
+// refuses to send him a weekPrice row for at all.
+//
+// rateCents and amountCents go too, though on a weighing they are null today.
+// They are money by definition, and "null right now" is not a projection: a
+// record written with an explicit price has both filled in, and the weigher's
+// own list is one changed rate_source away from carrying them.
+// amountIsEstimate follows them, because a flag about a number that is not
+// there tells the scale only that a number is being withheld.
+//
+// settled stays. It is not a figure — it says the record can no longer be
+// corrected, which is the difference between a handset that greys a row out and
+// one that lets somebody retype a weighing that has already been paid.
+//
+// It is an allowlist rather than a blanking pass for the reason every
+// projection in this package is: a money field added to store.WorkRecord next
+// sprint is absent from here by default, instead of travelling until somebody
+// remembers to delete it.
+//
+// It is applied on every route that puts a work record on the wire, the two
+// the permission table reserves for administrators included. A projection
+// written only where it is needed today is a projection that fails silently the
+// day an action is relaxed, and relaxing an action is a one-line change in a
+// table nobody reads twice.
+type publicWorkRecord struct {
+	ID          string            `json:"id"`
+	EmployeeID  string            `json:"workerId"`
+	ActivityID  string            `json:"activityId"`
+	PayScheme   domain.PayScheme  `json:"payScheme"`
+	RateSource  domain.RateSource `json:"rateSource"`
+	StartedAt   time.Time         `json:"startedAt"`
+	EndedAt     *time.Time        `json:"endedAt"`
+	LocalDay    time.Time         `json:"dateFrom"`
+	EndLocalDay time.Time         `json:"dateTo"`
+	WeekStart   time.Time         `json:"weekStart"`
+	Quantity    json.Number       `json:"quantity"`
+	UnitID      *string           `json:"unitId"`
+	Note        *string           `json:"note"`
+	DeviceID    *string           `json:"deviceId"`
+	CreatedBy   *string           `json:"createdBy"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	DeletedAt   *time.Time        `json:"deletedAt"`
+	PlotIDs     []string          `json:"plotIds"`
+	PlotCropIDs []string          `json:"plotCropIds"`
+	Settled     bool              `json:"settled"`
+}
+
+func projectWorkRecord(l store.WorkRecord, full bool) any {
+	if full {
+		return l
+	}
+	return publicWorkRecord{
+		ID: l.ID, EmployeeID: l.EmployeeID, ActivityID: l.ActivityID,
+		PayScheme: l.PayScheme, RateSource: l.RateSource,
+		StartedAt: l.StartedAt, EndedAt: l.EndedAt,
+		LocalDay: l.LocalDay, EndLocalDay: l.EndLocalDay, WeekStart: l.WeekStart,
+		Quantity: l.Quantity, UnitID: l.UnitID, Note: l.Note,
+		DeviceID: l.DeviceID, CreatedBy: l.CreatedBy, CreatedAt: l.CreatedAt,
+		DeletedAt: l.DeletedAt, PlotIDs: l.PlotIDs, PlotCropIDs: l.PlotCropIDs,
+		Settled: l.Settled,
+	}
+}
+
+// projectWorkRecords is the list form, and it exists so that neither door onto
+// the list — /v1/work-records or the legacy /v1/pickups facade — can project
+// differently from the other. Two doors onto one list must not answer
+// differently; that is the property handlers_pickups.go is built around.
+func projectWorkRecords(list []store.WorkRecord, full bool) []any {
+	out := make([]any, 0, len(list))
+	for _, l := range list {
+		out = append(out, projectWorkRecord(l, full))
+	}
+	return out
+}
+
 type workRecordRequest struct {
 	ID          string      `json:"id"`
 	ActivityID  string      `json:"activityId"`
@@ -72,7 +159,7 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 	principal, _ := auth.PrincipalFrom(r.Context())
 
 	if existing, err := store.GetWorkRecord(r.Context(), tx, body.ID); err == nil {
-		writeJSON(w, http.StatusOK, existing)
+		writeJSON(w, http.StatusOK, projectWorkRecord(*existing, callerSeesPrivateData(r)))
 		return
 	}
 
@@ -218,7 +305,7 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, created)
+	writeJSON(w, http.StatusCreated, projectWorkRecord(*created, callerSeesPrivateData(r)))
 }
 
 // reactivationSource names the door the work came through. The legacy
@@ -269,13 +356,18 @@ func (s *Server) handleListWorkRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The weigher gets only his own rows, and that narrowing is the RLS policy
-	// on work_records, not a WHERE clause written here.
+	// on work_records, not a WHERE clause written here. WHICH rows is not the
+	// whole of it, though: his own rows carry the week's price in
+	// estimatedAmountCents, so what goes out is also projected. See
+	// publicWorkRecord.
 	list, err := store.ListWorkRecords(r.Context(), tx, f)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": list})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": projectWorkRecords(list, callerSeesPrivateData(r)),
+	})
 }
 
 // confirmWorkRecordFilter is the zero trap, closed on the four ids this filter
@@ -415,7 +507,7 @@ func (s *Server) handleUpdateWorkRecord(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, projectWorkRecord(*updated, callerSeesPrivateData(r)))
 }
 
 func (s *Server) handleGetWorkRecord(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +521,7 @@ func (s *Server) handleGetWorkRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, l)
+	writeJSON(w, http.StatusOK, projectWorkRecord(*l, callerSeesPrivateData(r)))
 }
 
 // handleDeleteWorkRecord is a logical delete, and it refuses on a settled

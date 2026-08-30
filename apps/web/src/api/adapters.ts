@@ -549,7 +549,11 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
     dateFrom: day(r.dateFrom),
     dateTo: day(r.dateTo),
     quantity: quantityFromWire(r.quantity),
-    rateCents: r.rateCents,
+    // Absent for the weigher, null for anybody whose record is still waiting on
+    // the week's price. The model has one shape for both, and it has to: the
+    // difference between "there is no rate yet" and "there is one and it is not
+    // yours" is the server's business, not a render decision.
+    rateCents: r.rateCents ?? null,
     // The server now always says what a record is worth: the settled amount
     // when there is one, otherwise the quantity at the price in force for its
     // week. `amountCents` stays null for weekly-price work — that is the row's

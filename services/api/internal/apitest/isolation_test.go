@@ -137,3 +137,46 @@ func TestTwoFarmsCannotSeeEachOther(t *testing.T) {
 		}
 	})
 }
+
+// TestTheWeigherCannotReadTheWeekPrice goes at the database, past every
+// handler, and asks the one question the projection above cannot answer for
+// itself: if a route forgets to project, does anything still stop the answer?
+//
+// It has to be RLS, because the price of a kilo is not derived from anything
+// the weigher may read — it is a column he must never reach. The policy that
+// shipped in 00008 opened week_prices to every role in the farm, which made
+// the handler the only thing between the scale and the season's price list.
+func TestTheWeigherCannotReadTheWeekPrice(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca del precio semanal", 80000)
+
+	// A real override, so there is a row to read rather than an empty table
+	// that would let this test pass for the wrong reason.
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f.OwnerToken,
+		map[string]any{"priceCents": 91500}, http.StatusOK)
+
+	h.withTenant(t, f.FarmID, f.WeigherID, domain.RoleWeigher,
+		func(ctx context.Context, tx pgx.Tx) {
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM week_prices`).Scan(&n); err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			if n != 0 {
+				t.Fatalf("RLS let the weigher read %d week prices; the price of a "+
+					"kilo is the number §6 keeps away from the scale", n)
+			}
+		})
+
+	h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) {
+			var price int64
+			if err := tx.QueryRow(ctx,
+				`SELECT price_minor FROM week_prices WHERE week_start = '2026-08-24'`).
+				Scan(&price); err != nil {
+				t.Fatalf("the owner cannot read his own week price: %v", err)
+			}
+			if price != 91500 {
+				t.Fatalf("the owner reads %d, want the 91500 he set", price)
+			}
+		})
+}

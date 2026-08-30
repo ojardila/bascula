@@ -196,7 +196,23 @@ export type MockActivity = Omit<WireActivity, "rate"> & { rates: WireActivityRat
  * on the server, so it is not stored here either: `projectWorkRecord` derives
  * it from the tenant's settlements.
  */
-export type MockWorkRecord = Omit<WireWorkRecord, "settled" | "quantity"> & { quantity: number };
+/**
+ * A stored row, which is not the same thing as a wire row.
+ *
+ * The four money keys are OPTIONAL on `WireWorkRecord` because the server drops
+ * them for the weigher, and a stored row that could be missing them would be a
+ * seed with a hole in it. They are required back here: the projection is what
+ * takes them off, in `projectWorkRecordFor`, and a projection cannot take off
+ * what the row never had.
+ */
+export type MockWorkRecord = Omit<WireWorkRecord, "settled" | "quantity"> & {
+  quantity: number;
+} & Required<
+    Pick<
+      WireWorkRecord,
+      "rateCents" | "amountCents" | "estimatedAmountCents" | "amountIsEstimate"
+    >
+  >;
 
 /** One claimed payable. The `voidedAt` is what releases it again. */
 export interface MockSettlementItem {
