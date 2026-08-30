@@ -19,7 +19,7 @@ export default function Home({ navigation }: Props) {
   const [week, setWeek] = useState({ kg: 0, count: 0 });
   const [unit, setUnit] = useState("kg");
   const [cropLabel, setCropLabel] = useState("");
-  const [pending, setPending] = useState({ cents: 0, people: 0 });
+  const [pending, setPending] = useState({ cents: 0, people: 0, unpriced: 0 });
   const [recent, setRecent] = useState<RecentPickup[]>([]);
   // A weighing somebody has just realised is wrong. See `FixPickup`.
   const [fixing, setFixing] = useState<FixablePickup | null>(null);
@@ -37,10 +37,18 @@ export default function Home({ navigation }: Props) {
     setCropLabel(cfg?.label || "");
     setRecent(Pickups.recent().slice(0, 4));
     // Everything still owed farm-wide, so Saturday's job is one tap away.
-    const owed = Payments.pendingAll(cfg?.costPerUnit ?? 0).filter((r) => r.amountCents > 0);
+    const all = Payments.pendingAll(cfg?.costPerUnit ?? 0);
+    const owed = all.filter((r) => r.amountCents > 0);
+    // A worker with kilos on the books and nothing to show for them has not
+    // been paid: no price reached us for those weeks. Dropping that row made
+    // the card vanish, and a home screen with no card on it is a farm being
+    // told there is nobody to pay. Measured: three workers at 40 kg each,
+    // `pendingAll` returns all three and the filter leaves none.
+    const unpriced = all.filter((r) => r.amountCents <= 0 && r.kg > 0).length;
     setPending({
       cents: owed.reduce((sum, r) => sum + r.amountCents, 0),
       people: owed.length,
+      unpriced,
     });
   }, []);
   useFocusEffect(load);
@@ -99,6 +107,29 @@ export default function Home({ navigation }: Props) {
           onPress={() => navigation.navigate("Reports")}
         />
       </View>
+
+      {/* The card is shown for either reason: money owed, or kilos nobody
+          could price. Silence is the one answer this screen must not give
+          when there is unsettled work on the books. */}
+      {pending.people === 0 && pending.unpriced > 0 && (
+        <Card mode="elevated" style={styles.card} onPress={() => navigation.navigate("Settings")}>
+          <Card.Content style={styles.payRow}>
+            <MaterialCommunityIcons name="cash-remove" size={28} color="#8a6d00" />
+            <View style={{ flex: 1 }}>
+              <Text variant="labelLarge" style={{ opacity: 0.7 }}>
+                {t("pay.toPay")}
+              </Text>
+              <Text variant="titleLarge" style={styles.payAmount}>
+                {t("pay.noPriceYet")}
+              </Text>
+              <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+                {t("pay.unpricedPeople", { n: pending.unpriced })}
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#5a6b5c" />
+          </Card.Content>
+        </Card>
+      )}
 
       {pending.people > 0 && (
         <Card mode="elevated" style={styles.card} onPress={() => navigation.navigate("People", { view: "pay" })}>
