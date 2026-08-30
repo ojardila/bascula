@@ -10,6 +10,12 @@
 # ADMIN_DATABASE_URL owns the schema. DATABASE_URL is the application role,
 # which has no BYPASSRLS — that is the whole point of having two.
 #
+# Neither `run` nor `dev` sets TRUSTED_PROXY_CIDRS, and that is right for them:
+# both are reached directly on localhost, and a trust list on a process anybody
+# can open a socket to is a way to hand out rate-limit buckets. A deployment
+# behind nginx or a CDN has to set it — README.md says why, and what the value
+# promises.
+#
 # `run` and `dev` say APP_ENV=development out loud, and they have to. The
 # server treats an unset APP_ENV as production and refuses to boot without a
 # JWT_SECRET, because the alternative — the old default — was a deployment

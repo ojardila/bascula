@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -213,12 +214,27 @@ func (s *Server) buildRouter() chi.Router {
 // being trusted the day the listener gained an IPv6 socket. The zone goes for
 // the same reason.
 //
-// Panics at startup on an invalid prefix, like the middleware it wraps.
-// cmd/api validates TRUSTED_PROXY_CIDRS before it ever gets here.
+// Panics at startup on an invalid prefix, and says which one. cmd/api validates
+// TRUSTED_PROXY_CIDRS and refuses to boot before it ever gets here, so the
+// environment path cannot reach this — but httpapi.New is a public constructor
+// and the middleware it wraps panics from inside chi with no mention of the
+// value or the variable it came from. A constructor that panics is the
+// contract here already (see the blob directory in New), so the fix is to make
+// the panic legible rather than to turn a misconfigured trust list into a
+// server that boots. Dropping the bad entry silently is the one answer that is
+// not available: a prefix that quietly stops being parsed is a proxy that
+// quietly stops being trusted, and the symptom is a rate limit counting the
+// proxy instead of the caller.
 func fromTrustedPeer(trustedIPPrefixes []string, xff func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	prefixes := make([]netip.Prefix, len(trustedIPPrefixes))
 	for i, p := range trustedIPPrefixes {
-		prefixes[i] = netip.MustParsePrefix(p)
+		parsed, err := netip.ParsePrefix(p)
+		if err != nil {
+			panic(fmt.Sprintf("httpapi: TrustedProxyCIDRs[%d] = %q is not a CIDR "+
+				"prefix (%v). It must be a network, not a bare address: use "+
+				"10.1.2.3/32 for a single proxy. See TRUSTED_PROXY_CIDRS.", i, p, err))
+		}
+		prefixes[i] = parsed
 	}
 	return func(next http.Handler) http.Handler {
 		walked := xff(next)

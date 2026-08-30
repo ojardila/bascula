@@ -96,6 +96,19 @@ func (h *harness) recordedSignupIP(t *testing.T, email string) string {
 	return ip
 }
 
+// countSignupAttempts is the other question recordedSignupIP cannot ask: how
+// many rows an address has, including none.
+func (h *harness) countSignupAttempts(t *testing.T, email string) int {
+	t.Helper()
+	var n int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM signup_attempts WHERE lower(email) = lower($1)`,
+		email).Scan(&n); err != nil {
+		t.Fatalf("count signup_attempts for %s: %v", email, err)
+	}
+	return n
+}
+
 // TestForwardingHeadersCannotBuyAFreshRateLimitBucket is the regression.
 //
 // With middleware.RealIP in the chain, chi overwrote r.RemoteAddr with
@@ -143,12 +156,23 @@ func TestForwardingHeadersCannotBuyAFreshRateLimitBucket(t *testing.T) {
 		}
 	}
 
-	for i, email := range emails {
+	// The five that reached the creation path each left a row, and each row
+	// names the socket rather than the caller's invention.
+	for i, email := range emails[:5] {
 		if got := h.recordedSignupIP(t, email); got != "203.0.113.10" {
 			t.Fatalf("signup_attempts row %d records %q: the only record of who "+
 				"tried is the caller's invention, so the table cannot be used as "+
 				"evidence of anything", i+1, got)
 		}
+	}
+	// The sixth was refused BY THE CAP and left nothing, which is the property
+	// that lets a window drain. A refusal that wrote its own row would renew
+	// the refusal, and the count would never come down while anybody kept
+	// knocking. See handleSignup, where the registration sits below both caps.
+	if n := h.countSignupAttempts(t, emails[5]); n != 0 {
+		t.Fatalf("the refused signup wrote %d attempt rows: the counter is fed by "+
+			"its own refusals, so the limit renews itself for as long as an "+
+			"attacker cares to hold it", n)
 	}
 }
 
@@ -326,5 +350,59 @@ func TestSignupsAreAlsoCappedPerEmail(t *testing.T) {
 		t.Fatalf("a fourth signup for %s from a fresh address was accepted: the "+
 			"per-email cap does not exist, so a caller with a supply of addresses "+
 			"pays nothing: got %d %s", email, res.Status, res.Raw)
+	}
+
+	// ── AND THE LOCK ENDS ─────────────────────────────────────────────────
+	//
+	// The cap above is exactly half the test, and the missing half was the
+	// dangerous one. tenant.AfterRequest runs on every exit path, which is what
+	// makes an audit row survive a rejected signup and is the right property —
+	// but while the registration sat ABOVE the caps, a request the cap had
+	// already refused still wrote a row for the address it refused. The window
+	// never drained while somebody went on knocking, so five unauthenticated
+	// requests an hour held any known address permanently unable to register:
+	// the counter was fed by its own refusals.
+	//
+	// So: a dozen more refusals must not move the count, and the window must
+	// then drain on its own.
+	countFor := func() int {
+		t.Helper()
+		var n int
+		if err := h.admin.QueryRow(context.Background(),
+			`SELECT count(*) FROM signup_attempts WHERE lower(email) = lower($1)`,
+			email).Scan(&n); err != nil {
+			t.Fatalf("count attempts: %v", err)
+		}
+		return n
+	}
+	before := countFor()
+	if before != 3 {
+		t.Fatalf("three signups reached the creation path and %d attempts were "+
+			"recorded; the fourth was refused and must not be one of them", before)
+	}
+	for i := 0; i < 12; i++ {
+		if r := post(fmt.Sprintf("203.0.113.%d:50003", 40+i)); r.Status != http.StatusTooManyRequests {
+			t.Fatalf("refusal %d: got %d %s, want 429", i+1, r.Status, r.Raw)
+		}
+	}
+	if after := countFor(); after != before {
+		t.Fatalf("twelve refused requests wrote %d more rows for %s. A counter fed "+
+			"by its own refusals is a lockout nobody can end: the victim sees a "+
+			"generic 429, cannot tell they are being held out, and cannot clear "+
+			"it, while the attacker pays nothing because being throttled was "+
+			"never what they were avoiding", after-before, email)
+	}
+
+	// Ageing the rows rather than waiting out a real hour, for the reason the
+	// login limiter's drain test gives: shortening the window for the test
+	// would prove the counter forgets after a duration nobody ships.
+	if _, err := h.admin.Exec(context.Background(),
+		`UPDATE signup_attempts SET at = at - interval '2 hours' WHERE lower(email) = lower($1)`,
+		email); err != nil {
+		t.Fatalf("age the attempts: %v", err)
+	}
+	if back := post("203.0.113.60:50003"); back.Status != http.StatusCreated {
+		t.Fatalf("the address never came back after the window passed: %d %s",
+			back.Status, back.Raw)
 	}
 }

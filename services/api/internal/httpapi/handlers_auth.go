@@ -107,27 +107,30 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The attempt is recorded outside the request transaction on purpose: a
-	// rejected signup rolls that transaction back, and a rate limit that
-	// forgets every failure is not a rate limit.
+	// ── THE COUNTS COME FIRST, AND NOTHING IS RECORDED ABOVE THEM ─────────
 	//
-	// It is recorded AFTER that transaction rather than beside it. A `defer`
-	// here runs while the middleware still holds the request's connection, so
-	// asking the pool for a second one wants two of the thirteen at once — the
-	// deadlock the note on tenant.KeepChanges says took the platform down
-	// twice, on the one route that needs no credential to reach. Thirteen
-	// concurrent signups were enough to stop every farm, with /health still
-	// green. tenant.AfterRequest runs the write once the connection is back.
-	succeeded := false
-	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
-		if _, err := s.pool.Exec(ctx,
-			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
-			uuid.NewString(), ip, attempted, succeeded); err != nil {
-			slog.ErrorContext(ctx, "could not record the signup attempt",
-				"err", err, "ip", ip)
-		}
-	})
-
+	// The attempt row is registered BELOW both caps, and the order is the whole
+	// of the fix. It used to be registered here, before them, and the
+	// consequence was not a slower limiter, it was a weapon:
+	//
+	// tenant.AfterRequest runs on EVERY exit path — that is the property that
+	// makes the audit row survive a rejected signup, and it is the right
+	// property. But a request the by-email cap had already refused with 429
+	// still ran the callback, so the refusal wrote a row for the address it
+	// refused, and the sliding window never drained while somebody went on
+	// knocking. About five unauthenticated requests an hour, from anywhere,
+	// held a chosen address permanently unable to register. Farm owners'
+	// addresses are on cooperative rosters, invoices and WhatsApp; the victim
+	// saw a generic rate-limit answer, with no way to tell they were being held
+	// out and no way to clear it. The attacker paid nothing, because being
+	// throttled is not what they were trying to avoid.
+	//
+	// A counter fed by its own refusals is not a limiter. `succeeded` cannot
+	// fix it either — a genuine failed signup must still count — because the
+	// distinction that matters is "did this request get as far as trying to
+	// create something", and only the position of this registration records
+	// that. handleLogin's limiter is the same shape and got it right by not
+	// recording an attempt it had already refused; this is that, here.
 	n, err := store.CountSignupAttempts(r.Context(), tx, ip, time.Hour)
 	if err != nil {
 		writeError(w, r, err)
@@ -160,6 +163,33 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 			"too many signups for this address, try again later"))
 		return
 	}
+
+	// Past both caps, so this request is going to TRY to create something, and
+	// that is what an attempt is. Everything from here on is recorded whatever
+	// happens next — a duplicate address, a bad timezone, a database error, a
+	// panic — because all of those are attempts that reached the creation path,
+	// and the counters are supposed to see them.
+	//
+	// The write is outside the request transaction on purpose: a rejected
+	// signup rolls that transaction back, and a rate limit that forgets every
+	// failure is not a rate limit.
+	//
+	// It is recorded AFTER that transaction rather than beside it. A `defer`
+	// here runs while the middleware still holds the request's connection, so
+	// asking the pool for a second one wants two of the thirteen at once — the
+	// deadlock the note on tenant.KeepChanges says took the platform down
+	// twice, on the one route that needs no credential to reach. Thirteen
+	// concurrent signups were enough to stop every farm, with /health still
+	// green. tenant.AfterRequest runs the write once the connection is back.
+	succeeded := false
+	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
+		if _, err := s.pool.Exec(ctx,
+			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
+			uuid.NewString(), ip, attempted, succeeded); err != nil {
+			slog.ErrorContext(ctx, "could not record the signup attempt",
+				"err", err, "ip", ip)
+		}
+	})
 
 	// An address that already has an account gets the SAME ANSWER as one that
 	// does not, and the password in the body is never looked at for either.
