@@ -20,6 +20,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { CROP_PRESETS, presetByKey } from "../cropTypes";
+import { priceToSave, priceIsKnown, priceRefusalKey } from "../configPrice";
 import {
   Config,
   Overrides,
@@ -63,7 +64,9 @@ export default function Settings() {
       setLabel(c.label);
       setUnit(c.unit);
       setYieldUnit(c.yieldUnit);
-      setCost(String(c.costPerUnit));
+      // A row saved before any price arrived holds a null in a column typed
+      // `number`; `String(null)` would put the word «null» in the box.
+      setCost(Number.isFinite(c.costPerUnit) ? String(c.costPerUnit) : "");
     }
     setOverrides(Overrides.all());
     const w = ReportsDb.byWeek().map((r) => r.label);
@@ -82,13 +85,23 @@ export default function Settings() {
     setCost(String(p.defaultCost));
   }
 
+  // The price is the one field on this screen that decides money, so it is the
+  // one field this screen is not allowed to guess at. `priceToSave` returns a
+  // state with no number on it when there is no price to write — see
+  // `configPrice.ts` — and the save stops there with a sentence, rather than
+  // storing a 0 that reprices the week to nothing in silence.
   function saveConfig() {
+    const price = priceToSave(cost, Config.get(), priceIsReadOnly);
+    if (!priceIsKnown(price)) {
+      setSnack(t(priceRefusalKey(price)));
+      return;
+    }
     Config.save({
       cropType,
       label,
       unit,
       yieldUnit,
-      costPerUnit: Number(cost) || 0,
+      costPerUnit: price.costPerUnit,
     });
     setSnack(t("settings.saved"));
   }
@@ -273,9 +286,11 @@ export default function Settings() {
               left={<TextInput.Affix text="$" />}
               value={cost}
               onChangeText={setCost}
+              editable={!priceIsReadOnly}
+              disabled={priceIsReadOnly}
             />
             <HelperText type="info" visible>
-              {t("settings.generalCostHelp")}
+              {priceIsReadOnly ? t("sync.changePrices") : t("settings.generalCostHelp")}
             </HelperText>
             <Button mode="contained" icon="content-save" onPress={saveConfig}>
               {t("settings.saveConfig")}

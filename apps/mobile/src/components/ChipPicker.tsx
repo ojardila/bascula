@@ -109,7 +109,6 @@ export default function ChipPicker({
       {items.length >= searchFrom && (
         <TextInput
           mode="outlined"
-          dense
           label={searchLabel}
           value={query}
           onChangeText={type}
@@ -153,6 +152,6 @@ const styles = StyleSheet.create({
   // exists. The gap is 8 so two names never share an edge.
   chip: { height: 48, justifyContent: "center" },
   chipText: { fontSize: 15, lineHeight: 20 },
-  search: { marginTop: 8 },
+  search: { marginTop: 8, minHeight: 48 },
   empty: { opacity: 0.75, marginTop: 10 },
 });

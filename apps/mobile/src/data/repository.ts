@@ -427,6 +427,7 @@ export interface CropWorker {
 
 export interface CropPickup {
   id: number;
+  personId: number;
   weight: number;
   date: string;
   person: string;

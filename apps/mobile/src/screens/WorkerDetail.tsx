@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { ScrollView, View, StyleSheet, Dimensions } from "react-native";
-import { Text, Card, Avatar, List, Divider, Chip, Button } from "react-native-paper";
+import { Text, Card, Avatar, List, Divider, Chip, Button, Snackbar, Portal, Dialog } from "react-native-paper";
 import { LineChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -17,6 +17,8 @@ import {
 import { useT, formatDay } from "../i18n";
 import { useSync } from "../sync/SyncProvider";
 import { balanceDisplay, type BalanceDisplay } from "../balanceDisplay.ts";
+import FixPickup, { fixableFrom, type FixablePickup } from "../components/FixPickup.tsx";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -58,24 +60,26 @@ export default function WorkerDetail({
    */
   const [balance, setBalance] = useState<BalanceDisplay | null>(null);
   const [config, setConfig] = useState<CropConfig | null>(null);
+  const [fixing, setFixing] = useState<FixablePickup | null>(null);
+  const [snack, setSnack] = useState("");
+  const [askingDelete, setAskingDelete] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      const found = People.byId(personId) ?? null;
-      setPerson(found);
-      if (found) {
-        navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
-      }
-      const s = WorkerReports.stats(personId);
-      if (s) setStats(s);
-      setByWeek(WorkerReports.byWeek(personId));
-      setByCrop(WorkerReports.byCrop(personId));
-      setRecent(WorkerReports.recent(personId));
-      const c = Config.get();
-      setConfig(c ?? null);
-      setBalance(balanceDisplay(Payments.fullBalance(personId), status.pending, status.registered));
-    }, [personId, status.pending, status.registered]),
-  );
+  const load = useCallback(() => {
+    const found = People.byId(personId) ?? null;
+    setPerson(found);
+    if (found) {
+      navigation.setOptions({ title: `${found.name} ${found.lastName}`.trim() });
+    }
+    const s = WorkerReports.stats(personId);
+    if (s) setStats(s);
+    setByWeek(WorkerReports.byWeek(personId));
+    setByCrop(WorkerReports.byCrop(personId));
+    setRecent(WorkerReports.recent(personId));
+    const c = Config.get();
+    setConfig(c ?? null);
+    setBalance(balanceDisplay(Payments.fullBalance(personId), status.pending, status.registered));
+  }, [personId, status.pending, status.registered, navigation]);
+  useFocusEffect(load);
 
   const unit = config?.unit || "kg";
   const days = stats.days;
@@ -220,7 +224,10 @@ export default function WorkerDetail({
 
       {/* Recent */}
       <Card style={styles.card} mode="elevated">
-        <Card.Title title={t("reports.recent")} />
+        <Card.Title
+          title={t("reports.recent")}
+          subtitle={recent.length ? t("fix.hint") : undefined}
+        />
         <Card.Content style={{ paddingHorizontal: 0 }}>
           {recent.length === 0 ? (
             <Text style={[styles.empty, { paddingHorizontal: 16 }]}>{t("reports.nothing")}</Text>
@@ -229,15 +236,88 @@ export default function WorkerDetail({
               <View key={r.id}>
                 {i > 0 && <Divider />}
                 <List.Item
+                  onPress={() =>
+                    setFixing(
+                      fixableFrom({
+                        id: r.id,
+                        personId,
+                        person: person ? `${person.name} ${person.lastName}`.trim() : "",
+                        crop: r.crop,
+                        date: r.date,
+                        weight: r.weight,
+                      }),
+                    )
+                  }
                   title={`${num(r.weight)} ${unit} · ${r.crop}`}
                   description={formatDay(r.date, lang)}
                   left={(p) => <List.Icon {...p} icon="scale" />}
+                  right={(p) => (
+                    <MaterialCommunityIcons
+                      {...p}
+                      name="pencil-outline"
+                      size={18}
+                      color="#5a6b5c"
+                    />
+                  )}
                 />
               </View>
             ))
           )}
         </Card.Content>
       </Card>
+
+      <Button
+        mode="text"
+        textColor="#b3261e"
+        onPress={() => setAskingDelete(true)}
+        style={{ marginTop: 8 }}
+      >
+        {t("confirm.delete")}
+      </Button>
+
+      <Portal>
+        <Dialog visible={askingDelete} onDismiss={() => setAskingDelete(false)}>
+          <Dialog.Icon icon="account-off" />
+          <Dialog.Title style={{ textAlign: "center" }}>
+            {t("confirm.deleteWorkerTitle")}
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={{ textAlign: "center" }}>
+              {person ? `${person.name} ${person.lastName}`.trim() : ""}
+            </Text>
+            <Text variant="bodySmall" style={{ textAlign: "center", opacity: 0.78, marginTop: 8 }}>
+              {t("confirm.deleteWorkerBody")}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAskingDelete(false)}>{t("confirm.cancel")}</Button>
+            <Button
+              textColor="#b3261e"
+              onPress={() => {
+                People.remove(personId);
+                setAskingDelete(false);
+                navigation.goBack();
+              }}
+            >
+              {t("confirm.delete")}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      <FixPickup
+        pickup={fixing}
+        unit={unit}
+        onDismiss={() => setFixing(null)}
+        onDone={(message) => {
+          setFixing(null);
+          load();
+          setSnack(message);
+        }}
+      />
+      <Snackbar visible={!!snack} onDismiss={() => setSnack("")} duration={5000}>
+        {snack}
+      </Snackbar>
     </ScrollView>
   );
 }

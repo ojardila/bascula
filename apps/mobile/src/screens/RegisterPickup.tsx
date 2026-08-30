@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput as RNTextInput } from "react-native";
 import {
   Text,
   TextInput,
@@ -27,6 +27,7 @@ export default function RegisterPickup() {
   const [snack, setSnack] = useState<{ text: string; undo?: number } | null>(null);
   /** A weight worth asking about, held until somebody answers. */
   const [doubt, setDoubt] = useState<WeightDoubt | null>(null);
+  const weightRef = useRef<RNTextInput>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -42,6 +43,14 @@ export default function RegisterPickup() {
     people
       .filter((p) => p.id === personId)
       .map((p) => `${p.name} ${p.lastName}`.trim())[0] ?? "";
+  const cropName = crops.find((c) => c.id === cropId)?.name ?? "";
+
+  useEffect(() => {
+    if (personId != null && cropId != null) {
+      const tmr = setTimeout(() => weightRef.current?.focus(), 50);
+      return () => clearTimeout(tmr);
+    }
+  }, [personId, cropId]);
 
   // The app has a rule that flags two identical pickups within three minutes.
   // Better not to create them in the first place.
@@ -81,7 +90,14 @@ export default function RegisterPickup() {
       // The lote is NOT cleared. The twenty people in the queue are in the
       // same one, and it changes once a day rather than two hundred times.
       // This was the cheapest change in the whole review.
-      setSnack({ text: t("pickup.saved"), undo: r.lastInsertRowId });
+      setSnack({
+        text: t("pickup.saved", {
+          weight: `${num(typed)} ${unit}`,
+          name: personName,
+          crop: cropName,
+        }),
+        undo: r.lastInsertRowId,
+      });
     } finally {
       // Released even if the insert threw: this screen is a tab and never
       // unmounts, so a stuck flag would leave the button dead until restart.
@@ -113,7 +129,10 @@ export default function RegisterPickup() {
   }
 
   return (
-    <>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text variant="titleMedium">{t("pickup.worker")}</Text>
         {people.length === 0 ? (
@@ -163,6 +182,7 @@ export default function RegisterPickup() {
         )}
 
         <TextInput
+          ref={weightRef as never}
           label={t("pickup.weight", { unit })}
           value={weight}
           onChangeText={setWeight}
@@ -178,7 +198,7 @@ export default function RegisterPickup() {
           disabled={!valid}
           onPress={attempt}
           style={styles.mt}
-          contentStyle={{ paddingVertical: 6 }}
+          contentStyle={{ height: 56 }}
         >
           {t("pickup.save")}
         </Button>
@@ -224,7 +244,7 @@ export default function RegisterPickup() {
       >
         {snack?.text ?? ""}
       </Snackbar>
-    </>
+    </KeyboardAvoidingView>
   );
 }
 
