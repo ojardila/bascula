@@ -180,12 +180,28 @@ export interface SeasonImportTransport {
 /**
  * How long the phone waits for `POST /v1/import/season` before giving up.
  *
- * Fifteen minutes, and the arithmetic is the reason. A real season off the
+ * Twenty-five minutes, and the arithmetic is the reason. A real season off the
  * handset in production is 11,7 MB of JSON in a single body — that is the
  * contract's shape, not a choice (§8 fase 3: one request, one transaction).
  * The uplink it goes over is a farm's, which on a bad afternoon settles at
- * something like 100 kbit/s, or ~13 kB/s. 11,7 MB at 13 kB/s is a little over
- * thirteen minutes.
+ * something like 100 kbit/s, or ~13 kB/s.
+ *
+ * Fifteen minutes was the first answer and it was wrong by exactly nothing,
+ * which is the worst way to be wrong. 11,7 MB / 13 kB/s = 900 s = 15 min 0 s.
+ * The deadline and the upload were the same number, so the margin was zero and
+ * a link 1 % slower than the assumption aborted the mudanza. Two things make
+ * that a bad place to stand:
+ *
+ *   - 11,7 MB is what the season weighs TODAY, measured, mid-harvest
+ *     (18.000 pesadas → 48.022 filas → 11,7 MB, `seasonImport.test.ts`). It
+ *     grows every day until the cut, and the cut is the point of it.
+ *   - 13 kB/s is an estimate of a bad afternoon, not a floor. Nobody measured
+ *     the farm's worst.
+ *
+ * Twenty-five minutes covers ~19,5 MB on that same link, which is the measured
+ * season plus two thirds again — room for the harvest to keep going and for
+ * the link to be worse than we guessed. It stays well under the half hour that
+ * `SEASON_IMPORT_TIMEOUT_MS <= 30 min` pins, so it is still a deadline.
  *
  * `HttpClient`'s default of 25 s is right for a sync batch and absurd here:
  * it aborts a perfectly healthy upload after 300 kB, every time, and the
@@ -200,7 +216,7 @@ export interface SeasonImportTransport {
  * stand. Fifteen minutes is long enough for the upload and short enough to
  * have an end the screen can name.
  */
-export const SEASON_IMPORT_TIMEOUT_MS = 15 * 60 * 1000;
+export const SEASON_IMPORT_TIMEOUT_MS = 25 * 60 * 1000;
 
 // ---- Phone value → contract --------------------------------------------
 

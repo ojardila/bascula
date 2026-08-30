@@ -92,7 +92,15 @@ export default function SeasonImport() {
 
   // §2 and the roles: a pesador's token cannot read money, so it cannot move a
   // nómina. Said on the screen rather than discovered by a 403 halfway up.
-  const mayImport = status.role === "owner" || status.role === "admin";
+  //
+  // OWNER ONLY, and admin is not a near miss — it is the mismatch this comment
+  // was written to prevent, pointing the wrong way. The server's permission
+  // table has `ActionImportSeason: {Roles: owners}` and `owners` is
+  // `[]domain.Role{domain.RoleOwner}`, so an admin who got this far uploaded
+  // the whole season and read a 403 at the end of it. On a Tuesday morning,
+  // with somebody standing there, having spent the climb. The mudanza happens
+  // once; the person who can do it should be the only one offered it.
+  const mayImport = status.role === "owner";
 
   return (
     <View style={styles.container}>

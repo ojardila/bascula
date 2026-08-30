@@ -15,6 +15,8 @@ import {
   type CropConfig,
 } from "../db";
 import { useT, formatDay } from "../i18n";
+import { useSync } from "../sync/SyncProvider";
+import { balanceDisplay, type BalanceDisplay } from "../balanceDisplay.ts";
 
 const CHART_W = Dimensions.get("window").width - 32;
 const chartConfig = {
@@ -31,6 +33,7 @@ export default function WorkerDetail({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "WorkerDetail">) {
   const { t, lang, money, num } = useT();
+  const { status } = useSync();
   const { personId } = route.params;
   const [person, setPerson] = useState<Person | null>(null);
   const [stats, setStats] = useState({ kg: 0, pickups: 0, days: 0, firstDate: "", lastDate: "" });
@@ -48,8 +51,12 @@ export default function WorkerDetail({
   // what somebody is owed, with no way for the reader to know, is the lie that
   // decision was written to stop. On a phone that has never synced it is
   // exactly the number it always was.
-  const [balanceCents, setBalanceCents] = useState(0);
-  const [notItemisableCents, setNotItemisableCents] = useState(0);
+  /**
+   * Null until the first read. The tile used to hold a bare `0`, which meant
+   * "loading", "the account is settled" and "this phone has never heard a
+   * balance" all rendered as «Le debemos $0». See `balanceDisplay.ts`.
+   */
+  const [balance, setBalance] = useState<BalanceDisplay | null>(null);
   const [config, setConfig] = useState<CropConfig | null>(null);
 
   useFocusEffect(
@@ -66,10 +73,8 @@ export default function WorkerDetail({
       setRecent(WorkerReports.recent(personId));
       const c = Config.get();
       setConfig(c ?? null);
-      const full = Payments.fullBalance(personId);
-      setBalanceCents(full.balanceCents);
-      setNotItemisableCents(full.notItemisableCents);
-    }, [personId]),
+      setBalance(balanceDisplay(Payments.fullBalance(personId), status.pending, status.registered));
+    }, [personId, status.pending, status.registered]),
   );
 
   const unit = config?.unit || "kg";
@@ -126,19 +131,47 @@ export default function WorkerDetail({
         <Stat label={t("reports.pickups")} value={String(stats.pickups)} />
         <Stat label={t("worker.perDay", { unit })} value={num(Math.round(perDay * 10) / 10)} />
         <Stat label={t("worker.days")} value={String(days)} />
+        {/* A figure this phone did not derive. It is shown with the day it
+            was true ON THE TILE, because a balance without its age is a
+            rumour, and «no lo sé» is a different tile from «$0». */}
         <Stat
-          label={balanceCents < 0 ? t("pay.owesUs") : t("pay.weOwe")}
-          value={money(fromCents(Math.abs(balanceCents)))}
+          label={
+            balance === null || balance.state === "unknown"
+              ? t("pay.balanceTitle")
+              : balance.cents < 0
+                ? t("pay.owesUs")
+                : t("pay.weOwe")
+          }
+          value={
+            balance === null || balance.state === "unknown"
+              ? t("pay.balanceUnknownShort")
+              : money(fromCents(Math.abs(balance.cents)))
+          }
+          sub={
+            balance === null || balance.state === "local"
+              ? // Derived here, now. Nothing to date.
+                undefined
+              : balance.state === "unknown"
+                ? t("pay.balanceUnknownWhy")
+                : balance.state === "provisional"
+                  ? t("pay.asOfProvisional", {
+                      when: formatDay(balance.at.slice(0, 10), lang),
+                      n: num(balance.pending),
+                    })
+                  : t("pay.asOf", { when: formatDay(balance.at.slice(0, 10), lang) })
+          }
           highlight
         />
       </View>
 
       {/* Which part of it the kilos below cannot explain. Without this line
           the tile is a number the rest of the screen does not add up to. */}
-      {notItemisableCents !== 0 && (
+      {balance !== null &&
+        (balance.state === "known" || balance.state === "provisional") &&
+        balance.notItemisableCents !== 0 && (
         <Text style={styles.notItemisable}>
           {t("pay.notItemisable", {
-            amount: money(fromCents(Math.abs(notItemisableCents))),
+            amount: money(fromCents(Math.abs(balance.notItemisableCents))),
           })}
         </Text>
       )}
@@ -213,10 +246,17 @@ export default function WorkerDetail({
 function Stat({
   label,
   value,
+  sub,
   highlight,
 }: {
   label: string;
   value: string;
+  /**
+   * The line that qualifies the number, rendered inside the tile so it cannot
+   * be separated from it by a scroll. The balance tile uses it for the day the
+   * figure was true; §7.3 wants the age next to the amount, not above it.
+   */
+  sub?: string;
   highlight?: boolean;
 }) {
   return (
@@ -231,6 +271,11 @@ function Stat({
         <Text variant="labelSmall" style={{ opacity: 0.7, textAlign: "center" }}>
           {label}
         </Text>
+        {!!sub && (
+          <Text variant="labelSmall" style={{ opacity: 0.6, textAlign: "center" }}>
+            {sub}
+          </Text>
+        )}
       </Card.Content>
     </Card>
   );

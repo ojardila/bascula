@@ -199,6 +199,124 @@ export function receiptHtml(r: ReceiptData, lang: Lang): string {
 </html>`;
 }
 
+/**
+ * What an advance receipt carries. Note what is NOT here.
+ *
+ * No `balanceCents`, and that is the point of a separate type rather than a
+ * flag on `ReceiptData`. A balance on this paper would be a figure from the
+ * last time this handset heard from the server — six days ago on a farm with
+ * signal in the house at night — printed on a document the worker folds into
+ * a pocket and produces three weeks later as proof. The settlement receipt can
+ * carry a balance because it is issued against a document the server agreed
+ * to. This one is issued in a lote, against nothing.
+ *
+ * No lines either, and no kilos. An advance is not payment for identified
+ * work: it claims no weighing, takes no lock, and amortises against whatever
+ * settlement is eventually made (golden case 02). Printing a week's harvest
+ * next to it would invite exactly the reading that is wrong — that these
+ * kilos are now paid for.
+ *
+ * What is left is the only thing the phone knows with certainty and the only
+ * thing the paper has to prove: this person, this day, this much cash, these
+ * two signatures.
+ */
+export interface AdvanceReceiptData {
+  workerName: string;
+  workerDoc?: string | null;
+  farmLabel: string;
+  /** The magnitude handed over. Positive; the ledger holds the sign. */
+  amountCents: number;
+  date: string;
+  note?: string | null;
+}
+
+/**
+ * The advance receipt.
+ *
+ * Same paper, same printer, half the document. `docs/simplificacion.md` §1.3:
+ * «Un recibo de anticipo no necesita ningún cálculo: nombre, cédula, fecha,
+ * importe entregado, firma.» There is no arithmetic in this function, which is
+ * the property worth having — nothing here can disagree with the server,
+ * because nothing here is derived.
+ */
+export function advanceReceiptHtml(r: AdvanceReceiptData, lang: Lang): string {
+  const t = (k: string, v?: Record<string, string | number>) => translate(lang, k, v);
+
+  return `<!doctype html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         font-size: 11pt; color: #16261a; margin: 0; }
+
+  .head { border-top: 3px solid #8a5a00; padding-top: 4mm; margin-bottom: 6mm;
+          display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand { font-size: 15pt; font-weight: 800; color: #6d4700; }
+  .sub { color: #5a6b5c; font-size: 10pt; margin-top: .5mm; }
+  .when { text-align: right; color: #5a6b5c; font-size: 9.5pt; }
+
+  .who { border: 1px solid #e2dcd8; border-radius: 2mm; padding: 4mm;
+         margin-bottom: 6mm; }
+  .who .nm { font-size: 14pt; font-weight: 800; }
+  .who .doc { color: #7a8a7c; font-size: 9.5pt; margin-top: 1mm; }
+
+  /* The one number on the page. */
+  .paid { margin-top: 2mm; border: 2px solid #8a5a00; border-radius: 2mm;
+          padding: 5mm; display: flex; justify-content: space-between;
+          align-items: baseline; }
+  .paid .k { font-size: 10pt; text-transform: uppercase; letter-spacing: .06em;
+             color: #5a6b5c; }
+  .paid .v { font-size: 22pt; font-weight: 800; color: #6d4700; }
+
+  .note { margin-top: 4mm; font-size: 10pt; color: #5a6b5c; }
+  /* Says out loud what this paper is not, so nobody reads it as a week closed. */
+  .what { margin-top: 5mm; padding: 3.5mm; background: #fdf6ec;
+          border-left: 3px solid #8a5a00; border-radius: 1mm;
+          font-size: 9.5pt; color: #6d4700; }
+
+  .sign { margin-top: 24mm; display: flex; gap: 12mm; }
+  .sign div { flex: 1; border-top: 1px solid #c3bab6; padding-top: 2mm;
+              font-size: 9.5pt; color: #5a6b5c; }
+  .foot { margin-top: 8mm; padding-top: 2.5mm; border-top: 1px solid #ece7e2;
+          font-size: 8.5pt; color: #7a8a7c; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <div class="brand">${esc(r.farmLabel)}</div>
+      <div class="sub">${esc(t("pay.advanceReceipt"))}</div>
+    </div>
+    <div class="when">${esc(formatDay(r.date, lang))}</div>
+  </div>
+
+  <div class="who">
+    <div class="nm">${esc(r.workerName)}</div>
+    ${r.workerDoc ? `<div class="doc">${esc(r.workerDoc)}</div>` : ""}
+  </div>
+
+  <div class="paid">
+    <span class="k">${esc(t("pay.advanceDelivered"))}</span>
+    <span class="v">${esc(cents(Math.abs(r.amountCents), lang))}</span>
+  </div>
+
+  ${r.note ? `<p class="note">${esc(r.note)}</p>` : ""}
+
+  <p class="what">${esc(t("pay.advanceReceiptNote"))}</p>
+
+  <div class="sign">
+    <div>${esc(t("pay.signWorker"))}</div>
+    <div>${esc(t("pay.signFarm"))}</div>
+  </div>
+
+  <p class="foot">${esc(t("pay.advanceReceipt"))} · ${esc(formatDay(r.date, lang))}</p>
+</body>
+</html>`;
+}
+
 export interface BalanceRow {
   name: string;
   doc?: string | null;

@@ -5,8 +5,9 @@ import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/nativ
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
-import { People as PeopleDb, Payments, fromCents, toCents, type Person } from "../db";
+import { People as PeopleDb, Payments, fromCents, toCents, today, type Person } from "../db";
 import { useT } from "../i18n";
+import { printAdvance } from "../printAdvance.ts";
 
 // Typed deductions instead of free text: these five cover what actually comes
 // out of a picker's pay on a farm, and naming them keeps the history readable
@@ -22,7 +23,7 @@ const DISCOUNTS = [
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
 
 export default function Adjust() {
-  const { t, money } = useT();
+  const { t, lang, money } = useT();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { personId, kind } = useRoute<RouteProp<RootStackParamList, "Adjust">>().params;
 
@@ -56,13 +57,21 @@ export default function Adjust() {
     try {
       if (mode === "anticipo") {
         Payments.advance(personId, cents);
-      } else {
-        const label =
-          reason === "other" && otherLabel.trim()
-            ? otherLabel.trim()
-            : t(`disc.${reason}`);
-        Payments.deduct(personId, cents, label);
+        setSnack(t("pay.saved"));
+        // The voucher, printed after the row is on the books and never before.
+        // This is the screen an advance is normally handed over from, and
+        // until now it sent the worker away with nothing on paper — the one
+        // part of §6.2's promise the app did not keep. When settling leaves
+        // the handset it becomes the ONLY document a worker can be given in
+        // the lote, so it is not a nicety.
+        void printAdvance(personId, cents, today(), lang).then(() => navigation.goBack());
+        return;
       }
+      const label =
+        reason === "other" && otherLabel.trim() ? otherLabel.trim() : t(`disc.${reason}`);
+      // A deduction is money NOT handed over. There is nothing to sign for and
+      // no cash leaves anybody's hand, so it prints nothing.
+      Payments.deduct(personId, cents, label);
       setSnack(t("pay.saved"));
       setTimeout(() => navigation.goBack(), 700);
     } catch {

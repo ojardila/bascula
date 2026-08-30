@@ -39,11 +39,36 @@ export const BASE_SCHEMA = `
       SELECT * FROM pickups WHERE deletedAt IS NULL;
 `;
 
+/**
+ * `settlements.periodStart` and `settlements.periodEnd` do NOT mean the same
+ * kind of thing, and the asymmetry is deliberate. `movil.md` §9.12 left it as
+ * an open question; this is the answer, and it is a contract, not a phone
+ * preference:
+ *
+ * - `periodStart` is the period **actually covered** — the Monday of the
+ *   oldest week whose lines are in the document, not the `from` the caller
+ *   asked about. A farm running months behind asks from the epoch and gets a
+ *   document that says when the work really starts.
+ * - `periodEnd` is the range **REQUESTED** — the `to` handed in, stored
+ *   uncropped. It can therefore be dated in the future while the `devengo` is
+ *   cropped to today, and that is correct.
+ *
+ * Why the phone must not "fix" it: the server writes the same thing
+ * (`store.Settle` sets `PeriodEnd: to`), `POST /v1/import/season` puts rows
+ * from both sides into one table, and the migration only checks
+ * `period_end >= period_start`. Cropping it here alone would not close a gap —
+ * it would open one, in a money column, between two writers that agree today.
+ *
+ * If the meaning is ever to change it changes on both sides at once, with a
+ * migration. Until then: requested, and the same on both sides.
+ */
 export const PAYMENTS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS settlements (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     personId    INTEGER NOT NULL REFERENCES people(id),
+    -- The period actually covered (oldest week with lines).
     periodStart TEXT NOT NULL,
+    -- The range REQUESTED, uncropped. Same as the server. See above.
     periodEnd   TEXT NOT NULL,
     grossCents  INTEGER NOT NULL,
     status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','void')),

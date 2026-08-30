@@ -44,6 +44,34 @@ export default function SyncStatus() {
 
   const explained = explainSyncError(status.lastError ?? "");
 
+  /**
+   * The money that stays here, split off from the cards that are real
+   * decisions. See the card itself, below, for why it is one and not sixty.
+   */
+  const moneyCards = cards.filter((c) => c.kind === "money-stays-here");
+  const otherCards = cards.filter((c) => c.kind !== "money-stays-here");
+  /**
+   * The magnitude, not the signed sum. A `devengo` is positive and the `pago`
+   * that cancels it is negative, so adding them signed reports «$0 esperando»
+   * for a payroll that moved four million pesos. What the reader needs to know
+   * is how much money is described by rows that have not left, and that is the
+   * sum of what each one is worth.
+   */
+  const moneyTotalCents = moneyCards.reduce(
+    (sum, c) => sum + Math.abs(Number(c.payload.amountCents ?? 0)),
+    0,
+  );
+  /** Up to five names, so the card stays a card. */
+  const moneyPeople = (() => {
+    const names = [...new Set(moneyCards.map((c) => String(c.payload.person ?? "")))].filter(
+      Boolean,
+    );
+    const shown = names.slice(0, 5);
+    return names.length > shown.length
+      ? [...shown, t("conflict.moneyHereMore", { n: num(names.length - shown.length) })]
+      : shown;
+  })();
+
   const load = useCallback(() => {
     setCards(repository.sync.conflicts());
     setSeasonUploaded(
@@ -114,7 +142,10 @@ export default function SyncStatus() {
           the money screen of a farm mid-harvest is an invitation.
         */}
         {status.registered &&
-          (status.role === "owner" || status.role === "admin") &&
+          // Owner only, matching the server's permission table exactly. An
+          // admin used to be offered this and refused at the far end, after
+          // uploading the whole season. See `SeasonImport.tsx`.
+          status.role === "owner" &&
           !seasonUploaded && (
             <Card mode="outlined" style={styles.card}>
               <Card.Title
@@ -230,13 +261,67 @@ export default function SyncStatus() {
           </Card>
         )}
 
-        {cards.length > 0 && (
+        {/*
+          Money that lives only on this phone — a `devengo` and the `pago`
+          that goes with it. ONE card for all of them, not one each.
+
+          Two reasons, and both are about the Saturday this screen is read on.
+          A payroll for a crew of thirty produces sixty of these at once, and
+          sixty cards under a heading that says «necesitan tu decisión» is a
+          screen that looks like a disaster and asks for a decision nobody has
+          to make. And they are not conflicts: nothing raced, nothing was
+          refused on its merits, nothing is lost. They are a statement of where
+          the money is, which is here, until the season import carries it up
+          with the settlement that justifies it.
+
+          It still names names and it still totals the money — §7.3 does not
+          stop applying because there are sixty of them.
+        */}
+        {moneyCards.length > 0 && (
+          <Card mode="outlined" style={styles.card}>
+            <Card.Title
+              title={t("conflict.moneyHereTitle")}
+              left={(p) => <MaterialCommunityIcons {...p} name="cash-lock" size={26} />}
+            />
+            <Card.Content>
+              <Text style={styles.body}>
+                {t("conflict.moneyHereBody", {
+                  n: num(moneyCards.length),
+                  amount: money(fromCents(moneyTotalCents)),
+                })}
+              </Text>
+              <Divider style={styles.divider} />
+              {moneyPeople.map((line) => (
+                <Text key={line} style={styles.dim}>
+                  {line}
+                </Text>
+              ))}
+              <Text style={[styles.body, styles.dim]}>{t("conflict.moneyHereWhere")}</Text>
+            </Card.Content>
+            <Card.Actions>
+              <Button
+                mode="contained-tonal"
+                onPress={() => {
+                  for (const c of moneyCards)
+                    repository.sync.resolveConflict(c.id, "acknowledged");
+                  load();
+                  refresh();
+                  setSnack(t("conflict.closed"));
+                }}
+              >
+                {t("conflict.understood")}
+              </Button>
+            </Card.Actions>
+          </Card>
+        )}
+
+        {otherCards.length > 0 && (
           <Text variant="titleMedium" style={styles.section}>
-            {t("sync.needsYou", { n: cards.length })}
+            {t("sync.needsYou", { n: otherCards.length })}
           </Text>
         )}
 
-        {cards.map((c) => (
+        {otherCards.map((c) => (
           <ConflictCard
             key={c.id}
             conflict={c}
@@ -320,12 +405,23 @@ function ConflictCard({
         </Card>
       );
 
-    case "read-only-on-phone":
+    case "read-only-on-phone": {
+      // The card used to say «un lote o un precio hecho en el teléfono» for
+      // everything that took this branch — including a settlement, which is
+      // neither. Decision 6's plots and prices and decision 5's settlements
+      // arrive here for different reasons and a person can only act on the
+      // difference, so the card names which one it is.
+      const isSettlement =
+        p.table === "settlements" || p.table === "settlement_items";
       return (
         <Card mode="elevated" style={styles.card}>
           <Card.Content>
-            <Text variant="titleSmall">{t("conflict.readOnlyTitle")}</Text>
-            <Text style={styles.body}>{t("conflict.readOnlyBody")}</Text>
+            <Text variant="titleSmall">
+              {isSettlement ? t("conflict.settlementHereTitle") : t("conflict.readOnlyTitle")}
+            </Text>
+            <Text style={styles.body}>
+              {isSettlement ? t("conflict.settlementHereBody") : t("conflict.readOnlyBody")}
+            </Text>
           </Card.Content>
           <Card.Actions>
             <Button
@@ -337,6 +433,7 @@ function ConflictCard({
           </Card.Actions>
         </Card>
       );
+    }
 
     case "balance-mismatch":
       return (

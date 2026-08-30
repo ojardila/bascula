@@ -1004,7 +1004,14 @@ test("una temporada de 18.000 pesadas se empaqueta y se sube en un tiempo humano
 test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
   // The arithmetic in `SEASON_IMPORT_TIMEOUT_MS`, pinned so the constant stays
   // a decision with a reason instead of a number somebody rounds down.
-  const SEASON_BYTES = 11.7e6;
+  //
+  // The name of this test said 12 MB and the number below said 11,7 — and at
+  // fifteen minutes the two answers differed: 11,7 MB passed with a margin of
+  // exactly zero seconds and 12 MB would have failed. A deadline equal to the
+  // upload is not a deadline that covers it; the first link 1 % slower than
+  // the assumption aborts the mudanza. So the test now asks what its title
+  // always claimed, against a season that is still growing.
+  const SEASON_BYTES = 12e6;
   // ~100 kbit/s of usable uplink. What a farm's link degrades to on a bad
   // afternoon, which is the one this has to survive.
   const BAD_LINK_BYTES_PER_S = 13_000;
@@ -1012,8 +1019,17 @@ test("el plazo de la temporada aguanta 12 MB por un enlace de finca", () => {
 
   assert.ok(
     SEASON_IMPORT_TIMEOUT_MS >= needed,
-    `${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min no alcanzan para 11,7 MB ` +
+    `${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min no alcanzan para 12 MB ` +
       `a 13 kB/s (hacen falta ${(needed / 60000).toFixed(1)} min)`,
+  );
+  // And with room, not on the nose. The season measured 11,7 MB mid-harvest
+  // and grows every day until the cut; 13 kB/s is a guess at a bad afternoon,
+  // not a measured floor. A deadline with no margin against either of those
+  // is a deadline that will be met by the farm, once, on the day it matters.
+  assert.ok(
+    SEASON_IMPORT_TIMEOUT_MS >= needed * 1.5,
+    `sin margen: ${(SEASON_IMPORT_TIMEOUT_MS / 60000).toFixed(0)} min contra ` +
+      `${(needed / 60000).toFixed(1)} min necesarios`,
   );
   // And it is still a deadline. A socket with no end is a screen that says
   // "enviando" until somebody force-quits the app.

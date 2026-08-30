@@ -497,6 +497,39 @@ export class SyncEngine {
       return;
     }
 
+    if (code === "SERVER_OWNED" && op.entity === "ledgerEntry") {
+      // A `devengo` or a `pago` that stays on the handset. This used to fall
+      // into `read-only-on-phone` below, and the card the farm saw for a
+      // Saturday's payroll said «un lote o un precio hecho en el teléfono» —
+      // about money, thirty times, naming nobody. It was wrong in every word
+      // that mattered.
+      //
+      // So it gets its own kind, and it carries the three things §7.3 demands
+      // of any card about money: WHO, WHEN, HOW MUCH. Without them the person
+      // reading it cannot tell which movement is being talked about, which is
+      // the difference between a record and an alarm.
+      //
+      // It is also not a decision anybody has to make. Nothing is lost and
+      // nothing is stuck: the movement is on the phone, it counts in the
+      // balance the phone shows, and it reaches the server with the season
+      // import, which carries the settlement and its lines together. The card
+      // says that, and the screen groups these instead of stacking them.
+      this.repo.sync.raiseConflict({
+        kind: "money-stays-here",
+        entity: entry.entity,
+        entityUuid: entry.entityUuid,
+        personId: person?.id ?? null,
+        payload: {
+          person: person?.name ?? null,
+          date: op.payload.date ?? null,
+          kind: op.payload.kind ?? null,
+          amountCents: op.payload.amountCents ?? null,
+          message: result.error?.message ?? null,
+        },
+      });
+      return;
+    }
+
     if (code === "READ_ONLY_ON_PHONE" || code === "SERVER_OWNED") {
       // Decision 6, and what it costs, said out loud on a card rather than
       // discovered by a lote that never appears on the web.

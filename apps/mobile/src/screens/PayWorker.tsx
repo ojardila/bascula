@@ -27,6 +27,9 @@ import {
 } from "../db";
 import { useT, formatWeekRange, endOfWeek, EPOCH_START } from "../i18n";
 import { useSync } from "../sync/SyncProvider";
+import { LOCAL_SETTLEMENT } from "../flags.ts";
+import { printAdvance } from "../printAdvance.ts";
+import { today } from "../db";
 
 // Digits only, so a stray "." or "," can't turn 50000 into 50.
 const onlyDigits = (s: string) => s.replace(/[^0-9]/g, "");
@@ -108,7 +111,14 @@ export default function PayWorker() {
   //
   // A phone that has never been registered keeps the old behaviour: it is
   // alone with the farm's data and there is no second lock to race.
-  const settleAllowed = !status.registered || fresh;
+  //
+  // And ahead of both of them, the flag. When settling does not live on the
+  // handset at all, this screen is the advance screen: the same gate panel
+  // opens, with the sentence saying where the week is closed now instead of
+  // the one telling somebody to find signal — because finding signal would not
+  // help, and a screen that sends a foreman up a hill for nothing is worse
+  // than one that says no.
+  const settleAllowed = LOCAL_SETTLEMENT && (!status.registered || fresh);
   const canSettle = hasWork && settleAllowed;
 
   const byCrop = useMemo(() => {
@@ -129,6 +139,7 @@ export default function PayWorker() {
 
   function confirm() {
     if (busy.current || !config || !preview || !canSettle) return;
+    if (!LOCAL_SETTLEMENT) return;
     busy.current = true;
     try {
       // Settle first so the earning is on the books, then pay what the ledger
@@ -195,7 +206,11 @@ export default function PayWorker() {
           name: person?.name ?? "",
         }),
       );
-      setTimeout(() => navigation.goBack(), 900);
+      // The paper, §6.2's half of the promise. After the ledger row, never
+      // before it, and it cannot fail the advance — see `printAdvance`.
+      void printAdvance(personId, cents, today(), lang, t("pay.advanceAmount")).then(() =>
+        navigation.goBack(),
+      );
     } catch {
       busy.current = false;
       setSnack(t("pay.error"));
@@ -315,9 +330,11 @@ export default function PayWorker() {
               {!settleAllowed && (
                 <View style={styles.gate}>
                   <Text variant="titleSmall" style={styles.gateTitle}>
-                    {t("pay.needsSyncTitle")}
+                    {LOCAL_SETTLEMENT ? t("pay.needsSyncTitle") : t("pay.movedToWebTitle")}
                   </Text>
-                  <Text style={styles.gateBody}>{t("pay.needsSyncBody")}</Text>
+                  <Text style={styles.gateBody}>
+                    {LOCAL_SETTLEMENT ? t("pay.needsSyncBody") : t("pay.movedToWebWorker")}
+                  </Text>
                   <View style={styles.gateActions}>
                     <Button
                       mode="contained"
@@ -328,15 +345,20 @@ export default function PayWorker() {
                     >
                       {t("pay.advanceNow")}
                     </Button>
-                    <Button
-                      mode="outlined"
-                      icon={checking ? undefined : "sync"}
-                      disabled={checking || status.busy}
-                      onPress={() => void syncNow().then(() => void ensureFresh().then(setFresh))}
-                      style={styles.gateButton}
-                    >
-                      {checking ? <ActivityIndicator size={16} /> : t("pay.syncFirst")}
-                    </Button>
+                    {/* Only when syncing is what unblocks it. With the flag
+                        off nothing this button does would let the week close
+                        here, so it is not offered. */}
+                    {LOCAL_SETTLEMENT && (
+                      <Button
+                        mode="outlined"
+                        icon={checking ? undefined : "sync"}
+                        disabled={checking || status.busy}
+                        onPress={() => void syncNow().then(() => void ensureFresh().then(setFresh))}
+                        style={styles.gateButton}
+                      >
+                        {checking ? <ActivityIndicator size={16} /> : t("pay.syncFirst")}
+                      </Button>
+                    )}
                   </View>
                   {status.pending > 0 && (
                     <Text style={styles.dim}>
@@ -346,16 +368,21 @@ export default function PayWorker() {
                 </View>
               )}
 
-              <Button
-                mode="contained"
-                icon="check"
-                disabled={!canSettle}
-                contentStyle={styles.tall}
-                style={styles.confirm}
-                onPress={confirm}
-              >
-                {t("pay.confirm")}
-              </Button>
+              {/* Hidden rather than disabled. A permanently greyed-out
+                  "Confirmar pago" is a dead button, and a dead button on a
+                  money screen is read as a fault in the app. */}
+              {LOCAL_SETTLEMENT && (
+                <Button
+                  mode="contained"
+                  icon="check"
+                  disabled={!canSettle}
+                  contentStyle={styles.tall}
+                  style={styles.confirm}
+                  onPress={confirm}
+                >
+                  {t("pay.confirm")}
+                </Button>
+              )}
               <Button
                 mode="text"
                 icon="history"

@@ -16,6 +16,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import { payrollHtml } from "../receiptHtml";
+import { LOCAL_SETTLEMENT } from "../flags.ts";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types";
@@ -138,6 +139,10 @@ export default function PaymentsPanel() {
   // function is the sheet, the snackbar and the undo handle.
   function runBulk() {
     if (!config) return;
+    // Also here, not only on the button. A guard that lives in the render is a
+    // guard a future navigation or a deep link walks around, and what is
+    // behind this one is thirty settlements and thirty payments.
+    if (!LOCAL_SETTLEMENT) return;
     const run = Payments.runPayroll(
       selected.map((r) => r.personId),
       EPOCH_START,
@@ -276,24 +281,42 @@ export default function PaymentsPanel() {
             <Text variant="bodyMedium" style={styles.dim}>
               {num(totalKg)} {unit} · {rows.length === 1 ? t("pay.people.one") : t("pay.people", { n: rows.length })}
             </Text>
-            <Button
-              mode="contained"
-              icon="cash-multiple"
-              disabled={!rows.length}
-              onPress={openBulk}
-              style={styles.payAll}
-              contentStyle={styles.tall}
-            >
-              {t("pay.payAll")}
-            </Button>
-            <Button
-              mode="text"
-              icon="printer"
-              onPress={printPayroll}
-              style={styles.payrollBtn}
-            >
-              {t("pay.printPayroll")}
-            </Button>
+            {/*
+              The crew payroll, and the sheet that is signed against it. Both
+              settle and pay from the handset, so both live behind the flag.
+
+              With it off, the figure and the list above STAY: knowing who is
+              owed what for this week is a reading, it is what the foreman walks
+              into the lote with, and it is not what moved to the web. What
+              moves is the act. So the card keeps its number and swaps its
+              buttons for the sentence saying where the act happens now — the
+              alternative, a screen that silently loses the two controls
+              somebody has pressed every Saturday for months, teaches nothing.
+            */}
+            {LOCAL_SETTLEMENT ? (
+              <>
+                <Button
+                  mode="contained"
+                  icon="cash-multiple"
+                  disabled={!rows.length}
+                  onPress={openBulk}
+                  style={styles.payAll}
+                  contentStyle={styles.tall}
+                >
+                  {t("pay.payAll")}
+                </Button>
+                <Button
+                  mode="text"
+                  icon="printer"
+                  onPress={printPayroll}
+                  style={styles.payrollBtn}
+                >
+                  {t("pay.printPayroll")}
+                </Button>
+              </>
+            ) : (
+              <Text style={[styles.dim, styles.movedNote]}>{t("pay.movedToWebCrew")}</Text>
+            )}
           </Card.Content>
         </Card>
 
@@ -414,6 +437,7 @@ export default function PaymentsPanel() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 12, paddingBottom: 32 },
+  movedNote: { marginTop: 12, lineHeight: 20 },
   weekBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   weekLabel: { alignItems: "center" },
   dim: { opacity: 0.65 },

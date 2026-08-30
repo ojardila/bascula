@@ -1,87 +1,88 @@
 # @bascula/shared
 
-Lo que **no puede divergir** entre el teléfono, la API en Go y la web.
+What **must not diverge** between the phone, the Go API and the web.
 
-El criterio es el de `docs/arquitectura-api.md` §7 y es deliberadamente
-estrecho: aquí sólo entra lo que, si se escribe dos veces y se escribe distinto,
-**cuesta dinero**. Todo lo demás se queda donde se usa.
+The criterion is the one in `docs/arquitectura-api.md` §7 and it is deliberately
+narrow: only what, if written twice and written differently, **costs money**
+gets in here. Everything else stays where it is used.
 
 ```
 src/enums.ts    LedgerKind · PayMethod · Role · SettlementStatus · PayMode · ActivityCategory
-src/money.ts    toCents · fromCents · amountCents(qty, rate) · la tabla de signos por kind
+src/money.ts    toCents · fromCents · amountCents(qty, rate) · the sign table by kind
 src/time.ts     mondayOf · parseDay · addDays · weekNumber · localDayOf · weekOf
 src/format.ts   formatMoney · formatNumber · formatWeekRange · formatDay
-src/harvest.ts  readHarvest — la lectura de la curva de cosecha
-golden/         los casos de oro. Ver golden/README.md
+src/harvest.ts  readHarvest — reading the shape of the harvest curve
+golden/         the golden cases. See golden/README.md
 ```
 
-## Por qué cada cosa está aquí
+## Why each thing is here
 
-**Los enums** son conjuntos cerrados que viajan por el cable. `deduccion`
-escrito con tilde en un lado es un descuento que deja de contarse.
-`src/enums.test.ts` los compara contra los `CHECK` reales de
-`apps/mobile/src/schema.ts`: añadir un `kind` en un sitio y no en el otro falla
-en la suite, no en una finca un domingo por la tarde.
+**The enums** are closed sets that travel over the wire. `deduccion` written
+with an accent on one side is a deduction that stops being counted.
+`src/enums.test.ts` compares them against the real `CHECK`s in
+`apps/mobile/src/schema.ts`: adding a `kind` in one place and not the other
+fails in the suite, not on a farm on a Sunday afternoon.
 
-**El dinero** es una sola multiplicación —`round(quantity × rateCents)`— y una
-tabla de seis signos, y las dos son exactamente donde dos lenguajes divergen en
-silencio: redondeo al par en vez de medio lejos del cero, redondear el total en
-vez de cada línea, o —la tercera, que costó cuatro centavos por liquidación—
-hacer la multiplicación en coma flotante, donde `1,005 × 7500` nunca llega al
-medio que hay que redondear hacia arriba. `amountCents` multiplica los dígitos
-decimales de la cantidad en `BigInt`, como `big.Rat` en Go y `numeric` en
-Postgres. Ver `golden/README.md`.
+**Money** is a single multiplication — `round(quantity × rateCents)` — and a
+table of six signs, and those two are exactly where two languages diverge in
+silence: banker's rounding instead of half away from zero, rounding the total
+instead of each line, or — the third one, which cost four cents per settlement —
+doing the multiplication in floating point, where `1.005 × 7500` never reaches
+the half that has to be rounded up. `amountCents` multiplies the quantity's
+decimal digits in `BigInt`, like `big.Rat` in Go and `numeric` in Postgres. See
+`golden/README.md`.
 
-**El tiempo** decide qué precio se aplica. La semana es la fecha del lunes,
-nunca `%Y-W%W`; el día de negocio es el día **en la zona de la finca**, no en
-UTC. Las dos reglas ya se rompieron una vez cada una.
+**Time** decides which price applies. The week is the Monday's date, never
+`%Y-W%W`; the business day is the day **in the farm's timezone**, not in UTC.
+Both rules have already been broken once each.
 
-**Los formateadores** vienen del móvil sin tocar una línea. Están aquí porque
-un recibo impreso desde el servidor y uno impreso desde el teléfono tienen que
-leerse idénticos: el trabajador los compara. Y porque el formateo a mano —en vez
-de `Intl`— es la razón de que `$1.471.070` no salga como `$1,471,070` en un
-Android con el locale en `en-US`.
+**The formatters** come from the mobile app without a line changed. They are
+here because a receipt printed from the server and one printed from the phone
+have to read identically: the worker compares them. And because formatting by
+hand — instead of `Intl` — is the reason `$1.471.070` does not come out as
+`$1,471,070` on an Android with its locale set to `en-US`.
 
-## Qué NO está aquí, a propósito
+## What is NOT here, on purpose
 
-- **`db.ts` y `schema.ts` se quedan en el móvil.** Son SQLite y son del
-  teléfono; el servidor lleva Postgres. Lo que cruza no es el SQL, es su
-  **comportamiento**, y eso lo fijan los casos de oro.
-- **`csv.ts`, `strings.ts`, `receiptHtml.ts`, `cropTypes.ts`.** Son puros y
-  portables, pero si divergen no cuesta dinero: cuesta una coma mal puesta.
-  Cuando la web necesite exportar, `csv.ts` es el primer candidato a subir.
-- **DTOs y clientes de API.** `openapi.yaml` es la fuente de verdad y se
-  generan (`oapi-codegen` para Go, `openapi-typescript` para web y móvil). Un
-  tipo escrito a mano aquí competiría con el generado.
+- **`db.ts` and `schema.ts` stay on the phone.** They are SQLite and they belong
+  to the phone; the server runs Postgres. What crosses over is not the SQL, it
+  is its **behaviour**, and that is pinned by the golden cases.
+- **`csv.ts`, `strings.ts`, `receiptHtml.ts`, `cropTypes.ts`.** They are pure
+  and portable, but if they diverge it does not cost money: it costs a misplaced
+  comma. When the web needs to export, `csv.ts` is the first candidate to move
+  up.
+- **DTOs and API clients.** `openapi.yaml` is the source of truth and they are
+  generated (`oapi-codegen` for Go, `openapi-typescript` for web and mobile). A
+  hand-written type here would compete with the generated one.
 
-## Cómo se consume
+## How it is consumed
 
-Sin paso de compilación y sin dependencias: Node 26 ejecuta TypeScript
-directamente y los tests son `node:test` + `node:sqlite`.
+No build step and no dependencies: Node 26 executes TypeScript directly and the
+tests are `node:test` + `node:sqlite`.
 
-El móvil importa por **ruta relativa** (`../../../packages/shared/src/…`), no
-por nombre de paquete. Es a propósito: Metro ya vigila la raíz del monorepo
-—`serverRoot` es la raíz, no `apps/mobile`—, así que una ruta relativa resuelve
-sin `metro.config.js`, sin enlace en `node_modules` y sin tocar el lockfile. El
-teléfono está en producción en plena cosecha; esta era la opción con menos
-piezas móviles. Cuando la web y la API entren, migrar a `@bascula/shared` es un
-`sed`.
+The mobile app imports by **relative path** (`../../../packages/shared/src/…`),
+not by package name. That is on purpose: Metro already watches the monorepo root
+— `serverRoot` is the root, not `apps/mobile` — so a relative path resolves
+without `metro.config.js`, without a link in `node_modules` and without touching
+the lockfile. The phone is in production in the middle of the harvest; this was
+the option with the fewest moving parts. When the web and the API come in,
+migrating to `@bascula/shared` is a `sed`.
 
 ```bash
-npm test       --workspace @bascula/shared   # 48 pruebas
+npm test       --workspace @bascula/shared   # 48 tests
 npm run typecheck --workspace @bascula/shared
 ```
 
-`npm test` en la raíz ejecuta el móvil **y** este paquete (109 pruebas). Esa
-suma vive hoy en el script de `apps/mobile/package.json`; lo limpio es una línea
-en la raíz —`"test": "npm test --workspaces --if-present"`— pero eso es cambio
-del `package.json` raíz y se deja decidido fuera.
+`npm test` at the root runs the mobile app **and** this package (109 tests).
+That sum lives today in the script in `apps/mobile/package.json`; the clean
+thing is one line at the root — `"test": "npm test --workspaces --if-present"` —
+but that is a change to the root `package.json` and is left decided elsewhere.
 
-## Una nota para el backend
+## A note for the backend
 
-`ActivityCategory` tiene **tres** valores aquí (`siembra`, `mantenimiento`,
-`cosecha`), siguiendo `docs/arquitectura-api.md`. `docs/modelo-datos.md`
-declara un cuarto, `otra`. Los dos documentos no coinciden y nadie lo ha
-decidido: está señalado en `src/enums.ts` en vez de resuelto a ojo. Falta
-también `StockReason`, que `arquitectura-api.md` §7 menciona pero para el que
-no hay todavía nada que calcular.
+`ActivityCategory` has **three** values here (`siembra`, `mantenimiento`,
+`cosecha`), following `docs/arquitectura-api.md`. `docs/modelo-datos.md`
+declares a fourth, `otra`. The two documents disagree and nobody has decided:
+it is flagged in `src/enums.ts` rather than resolved by eye. Also missing is
+`StockReason`, which `arquitectura-api.md` §7 mentions but for which there is
+nothing to calculate yet.

@@ -289,14 +289,44 @@ export class FeedTransport implements SyncTransport {
     if (op.entity === "worker" || op.entity === "workRecord") return null;
     if (op.entity === "ledgerEntry") {
       const kind = op.payload.kind;
-      if (kind === "devengo")
+      // A `devengo` and a `pago` both stay here, and they stay TOGETHER.
+      //
+      // The pairing is the whole point. The phone still settles locally and
+      // the server refuses that settlement, so the `devengo` never leaves.
+      // Letting the `pago` travel alone put the money on the server while the
+      // weighings that justified it stayed unclaimed in
+      // `ux_items_payable_live` — which let the console settle and pay them a
+      // second time. It was dormant only because the farm is told to pay from
+      // one side, and that is what a landmine looks like before somebody
+      // steps on it.
+      //
+      // This is the same decision `restTransport.ts` records, repeated here
+      // because THIS is the transport the app runs (`SyncProvider.engineFor`
+      // builds a `FeedTransport`; the REST shim is only kept for the season
+      // import and for a server with no `/v1/sync/*`). Fixing it in one and
+      // not the other left the mine armed on the only path that executes.
+      //
+      // An `anticipo` still goes, and so do a `deduccion` and an `ajuste`:
+      // they claim no weighing, take no lock, and amortise to the centavo
+      // when the settlement is finally made (golden case 02). Cash handed
+      // over in the field still reaches the server. What stops travelling is
+      // only the half that could be counted twice.
+      //
+      // Payments made on the phone reach the server with the season import,
+      // which carries the settlements and their lines together and reconciles
+      // every balance before writing anything. Until then they live where the
+      // settlement that justifies them lives.
+      if (kind === "devengo" || kind === "pago")
         return {
           opId: op.opId,
           status: "unsendable",
           id: op.id,
           error: {
             code: "SERVER_OWNED",
-            message: "un devengo lo produce el servidor al liquidar",
+            message:
+              kind === "devengo"
+                ? "un devengo lo produce el servidor al liquidar"
+                : "un pago viaja con la liquidación que lo justifica",
           },
         };
       return null;

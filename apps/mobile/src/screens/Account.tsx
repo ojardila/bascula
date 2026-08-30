@@ -26,6 +26,8 @@ import {
   type Person,
 } from "../db";
 import { useT, formatDay } from "../i18n";
+import { balanceDisplay, type BalanceDisplay } from "../balanceDisplay.ts";
+import { LOCAL_SETTLEMENT } from "../flags.ts";
 import { useSync } from "../sync/SyncProvider";
 import * as Print from "expo-print";
 import { buildReceipt } from "../receipt";
@@ -78,16 +80,36 @@ export default function Account() {
   // What this phone can hand over, and what it is allowed to pay out. Derived
   // from the ledger, movement by movement, exactly as before.
   const credit = balance?.balanceCents ?? 0;
+  /**
+   * What this screen is allowed to SAY about the balance, as a union with no
+   * numeric member for «no lo sé». See `balanceDisplay.ts` for the three
+   * conditions it exists to enforce.
+   */
+  const display: BalanceDisplay = full
+    ? balanceDisplay(full, status.pending, status.registered)
+    : { state: "local", cents: credit };
   // What the worker is actually owed, which is not the same thing the moment
   // the farm books a jornal on the web (§2.2). On a phone that has never
   // synced these two are identical and nothing on this screen changes.
-  const shown = full?.balanceCents ?? credit;
+  //
+  // Taken from `display`, not from `full.balanceCents`, so the figure on the
+  // screen is always the one the state describes. They differ in exactly one
+  // case and it is the one that matters: while movements are unsent,
+  // `balanceCents` falls back to this phone's own sum and drops the jornales,
+  // whereas `display.cents` is the server's last word brought forward. Reading
+  // one and labelling it with the other is how a screen ends up saying «al 23
+  // de agosto» over a number that is not what the server said on the 23rd.
+  const shown = display.state === "unknown" ? 0 : display.cents;
   const notItemisable = full?.notItemisableCents ?? 0;
   const owes = shown < 0; // the worker took an advance that is not worked off yet
   const busy = useRef(false);
 
   function payOutCredit() {
     if (busy.current || credit <= 0) return;
+    // A `pago`, and a `pago` is the act that moves to the console. Guarded in
+    // the function as well as in the render, because this one is reachable
+    // from four screens.
+    if (!LOCAL_SETTLEMENT) return;
     busy.current = true;
     try {
       // Deliberately unlinked, unlike the two settle-and-pay screens: this
@@ -208,12 +230,54 @@ export default function Account() {
             >
               {shown > 0 ? t("pay.balanceTitle") : owes ? t("pay.owesUs") : t("pay.balanceTitle")}
             </Text>
-            <Text
-              variant="displaySmall"
-              style={shown > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
-            >
-              {money(fromCents(Math.abs(shown)))}
-            </Text>
+
+            {/*
+              The amount and its age, on ONE line.
+
+              This used to be a `displaySmall` on its own with the date three
+              dim captions below it, past the «de este saldo son jornales»
+              paragraph. A capataz reading the big number and handing over cash
+              against it never had to see how old it was. A balance is true as
+              of an instant; six days later it is a rumour, and the rumour has
+              to be legible in the same glance as the figure.
+            */}
+            {display.state === "local" ? (
+              // No server to be behind. The phone derived this now, from its
+              // own ledger, and there is no age to disclose.
+              <Text
+                variant="displaySmall"
+                style={shown > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
+              >
+                {money(fromCents(Math.abs(shown)))}
+              </Text>
+            ) : display.state === "unknown" ? (
+              <>
+                {/* Not «$0». A phone that has never heard a balance is not
+                    saying the account is settled — it is saying it does not
+                    know, and those two must never render the same. */}
+                <Text variant="displaySmall" style={styles.zeroBig}>
+                  {t("pay.balanceUnknownShort")}
+                </Text>
+                <Text style={styles.dim}>{t("pay.balanceUnknownBody")}</Text>
+              </>
+            ) : (
+              <View style={styles.amountRow}>
+                <Text
+                  variant="displaySmall"
+                  style={shown > 0 ? styles.creditBig : owes ? styles.owesBig : styles.zeroBig}
+                >
+                  {money(fromCents(Math.abs(shown)))}
+                </Text>
+                <Text style={[styles.dim, styles.asOf]}>
+                  {display.state === "provisional"
+                    ? t("pay.asOfProvisional", {
+                        when: formatDay(display.at.slice(0, 10), lang),
+                        n: num(display.pending),
+                      })
+                    : t("pay.asOf", { when: formatDay(display.at.slice(0, 10), lang) })}
+                </Text>
+              </View>
+            )}
 
             {/*
               §2.2 and decision 7. The phone shows the whole balance and then
@@ -234,17 +298,16 @@ export default function Account() {
                 )}
               </>
             )}
-            {/* §7.4: while anything is unsent the figure is this phone's own,
-                and it says so rather than passing for the farm's. */}
-            {full?.provisional && full.serverCents !== null && (
-              <Text style={styles.dim}>{t("pay.provisional", { n: num(status.pending) })}</Text>
-            )}
-            {!full?.provisional && full?.serverAt && (
-              <Text style={styles.dim}>
-                {t("pay.fromServer", { when: formatDay(full.serverAt.slice(0, 10), lang) })}
-              </Text>
-            )}
-            {credit > 0 ? (
+            {/* §7.4's sentence used to live here, under the breakdown. It
+                moved up beside the amount, which is the only place it does the
+                job it was written for. */}
+            {/* Handing over the balance is a payment. With the flag off it is
+                the console's, and the card says so where the button was —
+                and the «Registrar movimiento» button below still opens the
+                advance screen, so there is a way to hand over cash. */}
+            {credit > 0 && !LOCAL_SETTLEMENT ? (
+              <Text style={[styles.dim, styles.movedNote]}>{t("pay.movedToWebWorker")}</Text>
+            ) : credit > 0 ? (
               <Button
                 mode="contained-tonal"
                 icon="hand-coin"
@@ -306,7 +369,10 @@ export default function Account() {
                   {i > 0 && <Divider />}
                   <List.Item
                     onPress={
-                      e.kind === "devengo" && e.settlementId && !voided.has(e.id)
+                      LOCAL_SETTLEMENT &&
+                      e.kind === "devengo" &&
+                      e.settlementId &&
+                      !voided.has(e.id)
                         ? () => setVoiding(e)
                         : undefined
                     }
@@ -349,6 +415,11 @@ export default function Account() {
               textColor="#b3261e"
               onPress={() => {
                 if (!voiding?.settlementId) return;
+                // Voiding un-makes a settlement, which is settlement work. The
+                // dialog can only be opened from a row the flag already made
+                // untappable; this is the same guard said again at the point
+                // that actually writes, where it is worth a duplicated line.
+                if (!LOCAL_SETTLEMENT) return;
                 try {
                   Payments.voidSettlement(voiding.settlementId, t("pay.voidNote"));
                   setVoiding(null);
@@ -375,6 +446,10 @@ export default function Account() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  movedNote: { marginTop: 10, lineHeight: 20 },
+  /** The amount and its age share a baseline, so neither can be read alone. */
+  amountRow: { flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", gap: 8 },
+  asOf: { flexShrink: 1 },
   scroll: { padding: 12, paddingBottom: 32 },
   name: { fontWeight: "700", marginBottom: 4 },
   card: { marginTop: 12 },

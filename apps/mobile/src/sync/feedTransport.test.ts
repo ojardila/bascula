@@ -438,6 +438,171 @@ test("un devengo no sale del teléfono y levanta una tarjeta en vez de un 400", 
   );
 });
 
+/**
+ * The landmine, on the transport that actually runs.
+ *
+ * `master` already stopped the phone sending a `pago` — in `restTransport.ts`.
+ * But `SyncProvider.engineFor` builds a `FeedTransport`, and the REST shim is
+ * only kept for the season import and for a server with no `/v1/sync/*`. So
+ * the fix was applied to the path that does not execute, and a payment made on
+ * a Saturday still went up on its own: money on the server, weighings still
+ * unclaimed in `ux_items_payable_live`, and a console that could settle and
+ * pay them a second time.
+ *
+ * This test is here so the two transports cannot drift apart again silently.
+ */
+test("un pago no sale solo: viaja con la liquidación que lo justifica", async () => {
+  const { db, repo } = aPhone();
+  const person = repo.people.add({
+    name: "Ana",
+    lastName: "R",
+    documentType: "CC",
+    docId: "1",
+    tag: "1",
+    image: "",
+  }).lastInsertRowId;
+  const plot = repo.crops.add({ name: "L", type: "cafe", variety: "C", dimension: 1 })
+    .lastInsertRowId;
+  repo.pickups.add({
+    personId: person,
+    cropId: plot,
+    weight: 50,
+    date: "2026-08-24T14:00:00.000Z",
+  });
+  // A Saturday on the farm: settle the week, hand over the cash.
+  repo.payments.settle(person, "2026-08-24", "2026-08-30", 800);
+  repo.payments.pay(person, 40_000_00, { method: "efectivo" });
+  // And an advance, which is the half that IS safe to send: it claims no
+  // weighing, takes no lock, and amortises when the settlement is made.
+  repo.payments.advance(person, 5_000_00);
+
+  const { calls, transport } = fakeApi();
+  const report = await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
+
+  const ops = (calls.find((c) => c.url.includes("/v1/sync/push"))?.body?.ops ?? []) as {
+    entity: string;
+    payload: Record<string, unknown>;
+  }[];
+  assert.ok(!ops.some((o) => o.payload.kind === "pago"), "el pago no salió");
+  assert.ok(!ops.some((o) => o.payload.kind === "devengo"), "ni el devengo");
+  assert.ok(
+    ops.some((o) => o.payload.kind === "anticipo"),
+    "el anticipo sí sale: es el que no puede pagarse dos veces",
+  );
+
+  // Nothing is lost. Both rows are still on the handset, and that is where the
+  // season import will find them.
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE kind IN ('pago','devengo')").get() as {
+      n: number;
+    }).n,
+    2,
+  );
+  assert.ok(report.conflicts > 0);
+});
+
+/**
+ * And it does not sit in the outbox retrying for ever.
+ *
+ * `unsendable` is a different disposition from `rejected`: the engine drops
+ * the entry rather than leaving it queued, because resending it would produce
+ * the same refusal until the end of the harvest. A `pago` that stayed queued
+ * would hold the chip's «sin enviar» count above zero permanently, which is
+ * the number the dueño checks before walking away from the lote.
+ */
+test("un pago rechazado no queda reintentándose para siempre", async () => {
+  const { repo } = aPhone();
+  const person = repo.people.add({
+    name: "Ana",
+    lastName: "R",
+    documentType: "CC",
+    docId: "1",
+    tag: "1",
+    image: "",
+  }).lastInsertRowId;
+  const plot = repo.crops.add({ name: "L", type: "cafe", variety: "C", dimension: 1 })
+    .lastInsertRowId;
+  repo.pickups.add({
+    personId: person,
+    cropId: plot,
+    weight: 50,
+    date: "2026-08-24T14:00:00.000Z",
+  });
+  repo.payments.settle(person, "2026-08-24", "2026-08-30", 800);
+  repo.payments.pay(person, 40_000_00, { method: "efectivo" });
+
+  const { transport } = fakeApi();
+  await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
+  assert.equal(repo.sync.pendingCount(), 0, "el buzón queda vacío, no atascado");
+
+  // A second pass finds nothing to send and raises nothing new: the card is
+  // upserted on (kind, entity, entityUuid), so it does not multiply either.
+  const after = repo.sync.conflicts().length;
+  await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
+  assert.equal(repo.sync.pendingCount(), 0);
+  assert.equal(repo.sync.conflicts().length, after, "ni una tarjeta nueva por pasada");
+});
+
+/**
+ * §7.3: a card about money names a person, a day and an amount.
+ *
+ * The card the farm saw for a Saturday's payroll said «un lote o un precio
+ * hecho en el teléfono», sixty times, naming nobody — it shared a branch with
+ * decision 6's plots and prices. It was wrong in every word that mattered.
+ */
+test("la tarjeta del dinero que se queda nombra a la persona, el día y el importe", async () => {
+  const { repo } = aPhone();
+  const person = repo.people.add({
+    name: "Ana",
+    lastName: "R",
+    documentType: "CC",
+    docId: "1",
+    tag: "1",
+    image: "",
+  }).lastInsertRowId;
+  const plot = repo.crops.add({ name: "L", type: "cafe", variety: "C", dimension: 1 })
+    .lastInsertRowId;
+  repo.pickups.add({
+    personId: person,
+    cropId: plot,
+    weight: 50,
+    date: "2026-08-24T14:00:00.000Z",
+  });
+  repo.payments.settle(person, "2026-08-24", "2026-08-30", 800);
+  repo.payments.pay(person, 40_000_00, { method: "efectivo" });
+
+  const { transport } = fakeApi();
+  await new SyncEngine({ repo, transport, random: () => 0.5 }).sync();
+
+  const cards = repo.sync.conflicts().filter((c) => c.kind === "money-stays-here");
+  assert.ok(cards.length >= 2, "el devengo y el pago");
+  for (const c of cards) {
+    assert.equal(c.personId, person, "la tarjeta sabe de quién habla");
+    assert.equal(c.payload.person, "Ana R", "y lo dice con su nombre");
+    assert.ok(c.payload.date, "y con el día");
+    assert.ok(
+      typeof c.payload.amountCents === "number" && c.payload.amountCents !== 0,
+      "y con el importe",
+    );
+  }
+  // The ledger rows are NOT on the plots-and-prices card any more. The
+  // settlement rows still take that branch — they carry no person and no
+  // amount to put on a card — but the card now says «una liquidación hecha en
+  // este teléfono» rather than «un lote o un precio», which is the word that
+  // was wrong.
+  const readOnly = repo.sync.conflicts().filter((c) => c.kind === "read-only-on-phone");
+  assert.ok(
+    readOnly.some((c) => c.payload.table === "settlements"),
+    "la liquidación sí levanta la suya",
+  );
+  // The lote in this fixture legitimately raises decision 6's card. What must
+  // never appear there again is a row of the ledger.
+  assert.ok(
+    !readOnly.some((c) => c.payload.table === "ledger"),
+    "ningún movimiento de dinero vuelve a la tarjeta de lotes y precios",
+  );
+});
+
 test("un sobre rechazado no arrastra a los demás", async () => {
   const { db, repo } = aPhone();
   const person = repo.people.add({
