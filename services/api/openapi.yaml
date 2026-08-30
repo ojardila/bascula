@@ -4501,6 +4501,15 @@ components:
           retry-once-after-refresh makes the change invisible to the person
           holding the phone. What they meet afterwards, if they were demoted, is
           an ordinary 403 from the permission table, in the role they have.
+        * PLATFORM_ROLE_CHANGED — the account is no longer a platform
+          administrator, and the token still says it is. Same check, same round
+          trip, and the same 401 for the same reason. It is the claim with the
+          most in it: it opens the console over every farm on the platform and
+          it exempts its holder from FARM_SUSPENDED, MEMBERSHIP_REVOKED and
+          ROLE_CHANGED, and it used to be read from the database only at login
+          and at refresh — so taking the flag off an account left a quarter of
+          an hour in which it went on listing and suspending other people's
+          farms.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -4521,6 +4530,12 @@ components:
           quarter of an hour. The screen should say so and send the person
           back to the farm picker; the refresh token was revoked at the same
           time, so there is no session to recover here.
+
+          A platform administrator meets it too, on every route except the
+          console. They are exempt from the check above so that a farm cannot
+          lock them out of the lever they hold over it — but that exemption is
+          about the console, not about the farm, and from outside a farm they
+          administer it without reading inside it.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -4619,6 +4634,7 @@ components:
         - EMAIL_NOT_VERIFIED
         - EMAIL_TAKEN
         - ROLE_CHANGED
+        - PLATFORM_ROLE_CHANGED
         - TOKEN_EXPIRED
         - TOKEN_REUSED
         - RATE_LIMITED

@@ -82,6 +82,30 @@ const (
 	// signed a promoted weigher out of the application for being promoted.
 	CodeRoleChanged Code = "ROLE_CHANGED"
 
+	// PLATFORM_ROLE_CHANGED is ROLE_CHANGED for the one claim above the farm:
+	// `superadmin`, the platform flag.
+	//
+	// The other three cut a session when the platform stops trusting the farm,
+	// when the farm stops trusting the person, and when the person's role on
+	// the farm changes. This one cuts it when the PLATFORM stops trusting the
+	// person, and it was the last claim nothing contradicted. is_superadmin was
+	// read from the users row at login and at refresh and nowhere else, so a
+	// token minted with the flag kept it for the rest of its fifteen minutes:
+	// the console went on listing and SUSPENDING other people's farms, and its
+	// holder went on being exempt from suspension and from removal, after the
+	// flag had been taken off the account. It is the most powerful claim in the
+	// token and it was the only one nobody re-read.
+	//
+	// It is a 401 for the reason ROLE_CHANGED is one. The account is not
+	// forbidden — it is an ordinary member of its farm and everything else it
+	// was doing is still allowed — and only the flag on its token is stale, so
+	// refreshing mends it: handleRefresh re-reads is_superadmin and mints a
+	// token without it, and the console then answers the ordinary 403 the
+	// permission table gives anybody who is not a platform administrator. A 403
+	// would have left the console sitting in the person's menu, failing, rather
+	// than out of their hands.
+	CodePlatformRoleChanged Code = "PLATFORM_ROLE_CHANGED"
+
 	// Business conflicts. These are 409 with a code of their own and they are
 	// part of the contract, not an implementation detail.
 	CodeWorkRecordSettled     Code = "WORK_RECORD_SETTLED"
@@ -217,7 +241,7 @@ func AllCodes() []Code {
 		CodeInvalidCredentials, CodeEmailNotVerified, CodeEmailTaken,
 		CodeTokenExpired, CodeTokenReused, CodeRateLimited,
 		CodeFarmLimitReached, CodeFarmSuspended, CodeMembershipRevoked,
-		CodeRoleChanged,
+		CodeRoleChanged, CodePlatformRoleChanged,
 
 		CodeWorkRecordSettled, CodePayableAlreadyClaimed, CodeSettlementAlreadyVoid,
 		CodeAlreadyReversed, CodeSettlementNotVoid, CodeNothingToRelease,

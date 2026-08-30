@@ -159,6 +159,25 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 				writeError(w, r, domain.TenantNotSet())
 				return
 			}
+			// A platform administrator who is not a member of the farm their
+			// token names may work the console and nothing else.
+			//
+			// The tenant middleware lets them past the membership check on
+			// purpose — a farm that removed them must not be able to lock the
+			// lever holder out of the room the lever is in — but that exemption
+			// is about the console, not about the farm. Without this line the
+			// token's `role` claim went on describing them as the owner of a
+			// farm that had taken them off it, with no membership row left to
+			// disagree, and auth.Rule's one-line rule — "a super-admin
+			// administers farms from the outside and cannot read inside one" —
+			// held only in its first half. The code is MEMBERSHIP_REVOKED
+			// because that is exactly what happened and the clients already
+			// know the sentence for it.
+			if !rule.Superadmin && tenant.PlatformOnly(r.Context()) {
+				writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
+					"that account no longer has access to this farm"))
+				return
+			}
 			if !auth.AllowedFor(p.Role, p.Superadmin, action) {
 				if rule.Superadmin {
 					// A farm role, however senior, is not a platform role: an

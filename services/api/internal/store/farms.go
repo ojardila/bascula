@@ -151,7 +151,9 @@ func farmStatus(suspended *time.Time) string {
 
 // ListAdminFarms lists every farm on the platform. The visibility comes from
 // the p_farms RLS policy, which opens up when app.superadmin is 'on' — the
-// middleware sets that from the token's claim and from nowhere else.
+// middleware sets that from the users row on every request, and from nowhere
+// else. Not from the token: the claim is fifteen minutes old and this is the
+// setting that opens every farm on the platform at once.
 func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFarm, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, name, timezone, currency, country, city, suspended_at, created_at
