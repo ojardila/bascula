@@ -38,6 +38,10 @@ spec:
           labelSelector:
             matchLabels:
               app: bascula-web
+      # Harbor's bascula project is private. The secret is created
+      # against the cluster, never committed — see README.md.
+      imagePullSecrets:
+        - name: harbor-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 101

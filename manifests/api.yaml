@@ -51,6 +51,10 @@ spec:
         app: bascula-migrate
     spec:
       restartPolicy: Never
+      # Harbor's bascula project is private. The secret is created
+      # against the cluster, never committed — see README.md.
+      imagePullSecrets:
+        - name: harbor-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -102,6 +106,10 @@ spec:
       labels:
         app: bascula-api
     spec:
+      # Harbor's bascula project is private. The secret is created
+      # against the cluster, never committed — see README.md.
+      imagePullSecrets:
+        - name: harbor-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
