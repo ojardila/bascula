@@ -51,6 +51,15 @@ spec:
         bypassrls: false
         passwordSecret:
           name: bascula-db-app
+        # bascula_app carries the table grants; bascula_api gets them by
+        # membership. Migration 00001 does this GRANT itself, but a managed
+        # role is reconciled declaratively — CNPG revokes any membership not
+        # listed here, so leaving it out silently undid the migration and the
+        # API got "permission denied for table login_failures" on its first
+        # request. bascula_app is created by that migration, so this cannot be
+        # satisfied until it has run; CNPG retries until it can.
+        inRoles:
+          - bascula_app
 
   postgresql:
     parameters:
