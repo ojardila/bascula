@@ -1,0 +1,165 @@
+# The Go API. One static binary, migrations embedded in it.
+
+# Photos attached to a weighing. They are the one thing here that a redeploy
+# must not lose, and they are not in Postgres.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bascula-uploads
+  namespace: bascula
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bascula-api
+  namespace: bascula
+spec:
+  selector:
+    app: bascula-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+
+# Migrations run as their own Job, not as an init container on the Deployment.
+# An init container would re-run the whole thing on every pod restart and on
+# every scale-up, and two of them racing is how a schema gets half applied.
+# The Job is keyed to the image tag, so a new release gets a new Job and the
+# old one stays as a record of what ran.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bascula-migrate
+  namespace: bascula
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: bascula-migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: harbor.int.engp.io/bascula/api:v0.1.0
+          args: ["-migrate"]
+          env:
+            # The superuser, because 00001 creates extensions and a role and
+            # the database owner may do neither.
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef: {name: bascula-db-superuser, key: username}
+            - name: PGPASS
+              valueFrom:
+                secretKeyRef: {name: bascula-db-superuser, key: password}
+            - name: ADMIN_DATABASE_URL
+              value: postgres://$(PGUSER):$(PGPASS)@bascula-db-rw:5432/bascula?sslmode=require
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bascula-api
+  namespace: bascula
+spec:
+  # One replica, and the uploads volume is why. It is ReadWriteOnce, so a
+  # second pod on another node cannot mount it. Scaling past one means moving
+  # uploads to RWX or to object storage first — not raising this number.
+  replicas: 1
+  strategy:
+    # RollingUpdate with a ReadWriteOnce volume deadlocks: the new pod waits
+    # for a volume the old pod still holds, and the old one waits for the new
+    # one to become ready. Harbor taught us this the slow way.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bascula-api
+  template:
+    metadata:
+      labels:
+        app: bascula-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: harbor.int.engp.io/bascula/api:v0.1.0
+          ports:
+            - containerPort: 8080
+          env:
+            # Anything other than "development" is production, including the
+            # empty string. It is set explicitly all the same: the posture of
+            # this process is a decision, not an inheritance.
+            - name: APP_ENV
+              value: production
+            - name: PORT
+              value: "8080"
+            - name: UPLOAD_DIR
+              value: /srv/uploads
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: bascula-api, key: jwt-secret}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef: {name: bascula-db-app, key: username}
+            - name: PGPASS
+              valueFrom:
+                secretKeyRef: {name: bascula-db-app, key: password}
+            # The application role: NOBYPASSRLS, so the tenant isolation in
+            # 00008 actually binds.
+            - name: DATABASE_URL
+              value: postgres://$(PGUSER):$(PGPASS)@bascula-db-rw:5432/bascula?sslmode=require
+            # Everything reaches this pod through cloudflared and the Gateway,
+            # so the socket's peer is always a cluster address. Without this
+            # the login and signup rate limits would all key on one IP and the
+            # first person to fail a password would lock out the farm.
+            - name: TRUSTED_PROXY_CIDRS
+              value: 10.0.0.0/8,192.168.0.0/16,172.16.0.0/12
+          volumeMounts:
+            - name: uploads
+              mountPath: /srv/uploads
+          livenessProbe:
+            httpGet: {path: /health, port: 8080}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: bascula-uploads

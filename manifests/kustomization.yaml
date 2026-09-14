@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bascula
+
+resources:
+  - postgres.yaml
+  - api.yaml
+  - web.yaml
+  - route.yaml
+
+# The one line CD rewrites. Both images are built from the same commit and
+# released under the same tag, so a deploy moves them together and there is
+# never a web talking to an API it was not built against.
+images:
+  - name: harbor.int.engp.io/bascula/api
+    newTag: v0.1.0
+  - name: harbor.int.engp.io/bascula/web
+    newTag: v0.1.0

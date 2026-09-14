@@ -1,0 +1,195 @@
+name: CD
+
+# Builds the API and the web images and pushes them to Harbor. Deployment is
+# not done here: ArgoCD watches this repo and rolls out the tags written into
+# manifests/kustomization.yaml, which keeps cluster credentials out of GitHub.
+# Same pattern as 3chepes and jurius.
+#
+# Both images are released under ONE tag, from one commit. The web is built
+# against services/api/openapi.yaml, so a release where the two halves came
+# from different commits is a client talking to a schema it was not generated
+# from — the exact drift `npm run types:check` exists to catch.
+#
+# A push to master that touches either half auto-bumps the patch version when
+# the current VERSION is already tagged, then publishes vX.Y.Z.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'services/api/**'
+      - 'manifests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'VERSION'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
+env:
+  REGISTRY: harbor.int.engp.io
+  PROJECT: bascula
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        name: Resolve version
+        run: |
+          set -euo pipefail
+          current="$(tr -d ' \n' < VERSION)"
+          if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION must be semver X.Y.Z, got '$current'" >&2
+            exit 1
+          fi
+          # Loop rather than bump once: a tag can already exist for the next
+          # patch if a previous run stamped VERSION and then failed to push.
+          while git rev-parse "v${current}" >/dev/null 2>&1; do
+            IFS=. read -r major minor patch <<<"$current"
+            current="${major}.${minor}.$((patch + 1))"
+          done
+          echo "${current}" > VERSION
+          echo "version=v${current}" >> "$GITHUB_OUTPUT"
+          echo "### Releasing \`v${current}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Join the tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: bascula-ci-${{ github.run_id }}
+          # --accept-routes only. --accept-dns is a bug here: MagicDNS maps
+          # harbor.int.engp.io to a stale address. Public Cloudflare has it.
+          args: --accept-routes
+          timeout: 5m
+
+      # Harbor is tailnet-only, and the path to it is not instant after
+      # `tailscale up` — docker login then times out waiting for headers.
+      - name: Wait for Harbor
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -skf --max-time 5 "https://${REGISTRY}/api/v2.0/health" >/dev/null; then
+              echo "Harbor healthy after ${i} tries"
+              exit 0
+            fi
+            echo "waiting for Harbor (${i})"
+            sleep 2
+          done
+          echo "Harbor did not become reachable"
+          tailscale status || true
+          getent hosts "$REGISTRY" || true
+          exit 1
+
+      - name: Log in to Harbor
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            if echo "${{ secrets.HARBOR_ROBOT_SECRET }}" | \
+              docker login "$REGISTRY" -u '${{ secrets.HARBOR_ROBOT_NAME }}' --password-stdin; then
+              exit 0
+            fi
+            echo "docker login failed (${i}), retrying"
+            sleep 5
+          done
+          exit 1
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the API
+        uses: docker/build-push-action@v6
+        with:
+          context: services/api
+          file: services/api/Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/api:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      # Context is the repo root: the web imports @bascula/shared through the
+      # npm workspace, so it needs the root lockfile and packages/.
+      - name: Build and push the web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/web:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.PROJECT }}/web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Stamp the version into the manifests
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          v = os.environ["V"]
+          p = Path("manifests/kustomization.yaml")
+          s = p.read_text()
+          # Both entries, one tag: the two images ship together by design.
+          s = re.sub(r"(newTag:\s*)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
+          p.write_text(s)
+
+          # The migration Job is an ArgoCD sync hook with
+          # hook-delete-policy: BeforeHookCreation, so it is deleted and
+          # recreated on every sync — a completed Job's pod spec is immutable
+          # and could not otherwise pick up the new image.
+          p = Path("manifests/api.yaml")
+          s = p.read_text()
+          s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/api:)v[0-9]+\.[0-9]+\.[0-9]+",
+                     r"\g<1>" + v, s)
+          p.write_text(s)
+
+          p = Path("manifests/web.yaml")
+          s = p.read_text()
+          s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/web:)v[0-9]+\.[0-9]+\.[0-9]+",
+                     r"\g<1>" + v, s)
+          p.write_text(s)
+          PY
+          git diff --stat
+
+      - name: Commit, tag, and release
+        env:
+          V: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION manifests/
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+          else
+            git commit -m "Release ${V}"
+          fi
+          git tag -a "${V}" -m "${V}"
+          # Someone may have pushed while the images were building.
+          git pull --rebase --autostash origin master
+          git push origin master
+          git push origin "${V}"
+          gh release create "${V}" --title "${V}" --generate-notes || true

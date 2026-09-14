@@ -1,0 +1,71 @@
+# The built SPA behind nginx. Stateless, so it scales freely and rolls
+# normally — unlike the API, which is pinned to one replica by its volume.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bascula-web
+  namespace: bascula
+spec:
+  selector:
+    app: bascula-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bascula-web
+  namespace: bascula
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: bascula-web
+  template:
+    metadata:
+      labels:
+        app: bascula-web
+    spec:
+      # Two replicas on one node is not redundancy.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: bascula-web
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: harbor.int.engp.io/bascula/web:v0.1.0
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            # nginx writes its pid and temp bodies; the image's root is
+            # otherwise left read-only.
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /tmp}
+      volumes:
+        - {name: cache, emptyDir: {}}
+        - {name: run, emptyDir: {}}

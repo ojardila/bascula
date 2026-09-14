@@ -1,0 +1,79 @@
+# The database.
+#
+# PostGIS is not optional here: 00001_extensions_and_roles.sql does
+# `CREATE EXTENSION postgis` and the plots table stores boundaries as
+# `geography`, so a plain postgres image fails on the first migration.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: bascula-db
+  namespace: bascula
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgis:17-3.5
+
+  # The migration Job connects as this role. It has to: the first migration
+  # creates extensions and a role, neither of which the database owner is
+  # allowed to do.
+  enableSuperuserAccess: true
+
+  bootstrap:
+    initdb:
+      database: bascula
+      owner: bascula
+      # Business dates come from farms.timezone, never from the server, and
+      # the test suite asserts that. A server on America/Bogota would hide a
+      # bug that only shows up in production.
+      localeCType: C
+      localeCollate: C
+      postInitApplicationSQL:
+        # Superuser-only, and done once here so the migrations — which run as
+        # a role that is not superuser in every environment — find them
+        # already present and their IF NOT EXISTS turns into a no-op.
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        - CREATE EXTENSION IF NOT EXISTS postgis;
+
+  managed:
+    roles:
+      # Declared here rather than left to 00001, which creates it with a
+      # password that is committed to the repository and expects production to
+      # replace it out of band. Creating it first means the migration's
+      # IF NOT EXISTS skips it and that password never exists on this cluster.
+      #
+      # NOBYPASSRLS is the point: row level security is the tenant boundary,
+      # so the role the API connects with must not be able to step over it.
+      - name: bascula_api
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        bypassrls: false
+        passwordSecret:
+          name: bascula-db-app
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      # PostGIS ships as a shared library; nothing to preload, but the planner
+      # does better with a realistic estimate of what the page cache holds.
+      effective_cache_size: 768MB
+      shared_buffers: 256MB
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+  storage:
+    size: 10Gi
+    storageClass: longhorn
+
+  # Keep the two instances off the same machine. Longhorn already replicates
+  # the volume three ways, but both Postgres processes on one node means a
+  # node reboot takes the primary and its standby together.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname

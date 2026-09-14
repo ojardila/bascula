@@ -1,0 +1,37 @@
+# One hostname, split by path — the web at the root, the API on the two
+# prefixes it actually serves.
+#
+# This is the "same origin" answer to the question docs/decisiones.md left
+# open before deploying. The browser never makes a cross-origin request, so
+# the API needs no CORS middleware and no origin allowlist to maintain. It is
+# also why apps/web/Dockerfile passes no VITE_API_BASE_URL: the default of ""
+# makes the client fetch /v1 relative to the page.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bascula
+  namespace: bascula
+spec:
+  parentRefs:
+    # The public Gateway, reached through the Cloudflare tunnel. Public because
+    # the farm's phone syncs against this API from the field, where there is no
+    # tailnet — see docs/sincronizacion.md.
+    - name: public
+      namespace: gateway
+  hostnames:
+    - bascula.engp.io
+  rules:
+    # Longest prefix wins in Gateway API, so these two take precedence over the
+    # catch-all below regardless of the order they are written in.
+    - matches:
+        - path: {type: PathPrefix, value: /v1}
+      backendRefs:
+        - {name: bascula-api, port: 80}
+    - matches:
+        - path: {type: PathPrefix, value: /health}
+      backendRefs:
+        - {name: bascula-api, port: 80}
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - {name: bascula-web, port: 80}
