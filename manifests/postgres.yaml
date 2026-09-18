@@ -61,6 +61,16 @@ spec:
         inRoles:
           - bascula_app
 
+  # Backups go through the barman-cloud plugin, not spec.backup. The in-tree
+  # barmanObjectStore still works in 1.30 but CloudNativePG removes it
+  # entirely in 1.31, so writing it that way would have bought backups that
+  # break at the next minor upgrade.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: bascula-backups
+
   postgresql:
     parameters:
       max_connections: "100"
@@ -86,3 +96,55 @@ spec:
   affinity:
     enablePodAntiAffinity: true
     topologyKey: kubernetes.io/hostname
+
+---
+# Where the backups live: the same DigitalOcean Spaces bucket Longhorn and the
+# etcd snapshots already use.
+#
+# Longhorn's own snapshots protect the disk, not the database — restoring one
+# gives you the data files mid-write and Postgres recovers from its WAL on
+# start. This is the copy that survives losing the room.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: bascula-backups
+  namespace: bascula
+spec:
+  retentionPolicy: 30d
+  configuration:
+    destinationPath: s3://k8-longhorn-backups/bascula
+    endpointURL: https://nyc3.digitaloceanspaces.com
+    s3Credentials:
+      accessKeyId:
+        name: bascula-backup-s3
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: bascula-backup-s3
+        key: ACCESS_SECRET_KEY
+    wal:
+      # WAL is what makes point-in-time recovery possible: the base backup
+      # gets you to Sunday, the WAL replays from there to the minute before
+      # whatever went wrong.
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+
+---
+# A base backup every Sunday at 03:00. WAL ships continuously between them,
+# so the recovery window is the last backup plus every transaction since.
+#
+# The schedule is six fields, not five: CNPG puts seconds first.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: bascula-db-weekly
+  namespace: bascula
+spec:
+  schedule: "0 0 3 * * 0"
+  backupOwnerReference: self
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  cluster:
+    name: bascula-db
