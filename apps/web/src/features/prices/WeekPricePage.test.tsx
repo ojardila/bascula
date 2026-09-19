@@ -98,6 +98,22 @@ beforeEach(() => {
       createdAt: `${monday}T15:00:00Z`,
       deletedAt: null,
     });
+    tenant.workRecords.push({
+      ...template,
+      id: "0192f3a0-0008-7000-8000-00000000c002",
+      dateFrom: when,
+      dateTo: when,
+      weekStart: when,
+      startedAt: `${monday}T13:00:00Z`,
+      endedAt: null,
+      quantity: 18,
+      amountCents: null,
+      rateCents: null,
+      estimatedAmountCents: 18 * 80_000,
+      amountIsEstimate: true,
+      createdAt: `${monday}T16:00:00Z`,
+      deletedAt: null,
+    });
   }
 });
 
@@ -144,7 +160,7 @@ describe("setting the week's price per kilo", () => {
 
     // What is unsettled in the current week, said outside the dialog.
     expect(
-      await screen.findByText(/labores de recolección/, { exact: false }),
+      await screen.findByText(/labores? de recolección/, { exact: false }),
     ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/Precio nuevo por kilo/), "1600");
