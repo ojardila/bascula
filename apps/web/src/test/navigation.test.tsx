@@ -56,23 +56,28 @@ beforeEach(() => {
 });
 
 describe("the sidebar shows only what the role can open", () => {
-  it("gives the owner the full sprint-1 set", async () => {
+  it("gives the owner the six day-to-day modules", async () => {
     signInAs("oscar@laesperanza.co");
-    renderApp("/tablero");
+    renderApp("/cosecha");
     const text = await sidebarText();
-    for (const m of ["Tablero", "Lotes", "Empleados", "Actividades", "Labores", "Configuración"]) {
+    for (const m of ["Cosecha", "Lotes", "Empleados", "Pagos", "Ventas", "Configuración"]) {
       expect(text).toContain(m);
+    }
+    for (const m of ["Tablero", "Actividades", "Labores", "Inventario", "Gastos", "Nómina", "Liquidaciones", "Más opciones"]) {
+      expect(text).not.toContain(m);
     }
   });
 
-  it("hides the dashboard, the money and the settings from the weigher", async () => {
+  it("hides money and settings from the weigher, and keeps Labores", async () => {
     signInAs("pesador@laesperanza.co");
     renderApp("/labores");
     const text = await sidebarText();
     expect(text).toContain("Labores");
+    expect(text).toContain("Lotes");
+    expect(text).toContain("Empleados");
     expect(text).not.toContain("Tablero");
     expect(text).not.toContain("Configuración");
-    expect(text).not.toContain("Liquidación");
+    expect(text).not.toContain("Pagos");
     expect(text).not.toContain("Ventas");
     expect(text).not.toContain("Gastos");
   });
