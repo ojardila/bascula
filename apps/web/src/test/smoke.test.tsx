@@ -42,8 +42,10 @@ describe("signing in", () => {
     await user.type(screen.getByLabelText(/^Contraseña/), "esperanza");
     await user.click(screen.getByRole("button", { name: "Entrar" }));
 
-    expect(await screen.findByRole("heading", { name: "La Esperanza" }, { timeout: 5000 }))
+    // Owners land on Cosecha (short menu), not the old Tablero.
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 }))
       .toBeInTheDocument();
+    expect(screen.getByText("La Esperanza")).toBeInTheDocument();
     // The permanent notice is on every authenticated screen, by construction.
     expect(screen.getByText(/llevan cuentas separadas/i)).toBeInTheDocument();
   }, 20000);

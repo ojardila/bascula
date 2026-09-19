@@ -104,28 +104,35 @@ describe("a suspended farm", () => {
 });
 
 describe("the sidebar follows the matrix", () => {
-  it("shows the owner every sprint-1 module", () => {
+  it("shows the owner only the six day-to-day modules", () => {
     const keys = visibleModules(owner).map((m) => m.key);
-    expect(keys).toContain("dashboard");
-    expect(keys).toContain("plots");
-    expect(keys).toContain("workers");
-    expect(keys).toContain("activities");
-    expect(keys).toContain("workRecords");
-    expect(keys).toContain("config");
+    expect(keys).toEqual(["harvest", "plots", "workers", "payroll", "sales", "config"]);
+    expect(visibleModules(owner).map((m) => m.label)).toEqual([
+      "Cosecha",
+      "Lotes",
+      "Empleados",
+      "Pagos",
+      "Ventas",
+      "Configuración",
+    ]);
   });
 
-  it("hides settings and money from the administrator where the matrix does", () => {
+  it("keeps farm settings for the administrator, without the owner's price screen in the short menu", () => {
     const keys = visibleModules(admin).map((m) => m.key);
-    expect(keys).toContain("config"); // farm data, yes
+    expect(keys).toContain("config");
     expect(keys).toContain("workers");
+    expect(keys).toContain("harvest");
+    expect(keys).not.toContain("weekPrice");
+    expect(keys).not.toContain("dashboard");
   });
 
-  it("leaves the weigher with the modules they can actually use", () => {
+  it("leaves the weigher with lots, people, and Labores (their daily screen)", () => {
     const keys = visibleModules(weigher).map((m) => m.key);
-    expect(keys).toEqual(["plots", "workers", "activities", "workRecords"]);
+    expect(keys).toEqual(["plots", "workers", "workRecords"]);
     expect(keys).not.toContain("dashboard");
     expect(keys).not.toContain("config");
     expect(keys).not.toContain("settlements");
+    expect(keys).not.toContain("payroll");
   });
 
   it("gives the super-admin no farm sidebar whatsoever", () => {
@@ -136,16 +143,17 @@ describe("the sidebar follows the matrix", () => {
     for (const m of MODULES) {
       expect(m.action).toBeTruthy();
       expect(m.path.startsWith("/")).toBe(true);
+      expect(typeof m.inNav).toBe("boolean");
     }
   });
 });
 
 describe("where each role lands after logging in", () => {
-  it("takes the owner to the dashboard", () => {
-    expect(landingPath(owner)).toBe("/tablero");
+  it("takes the owner to Cosecha", () => {
+    expect(landingPath(owner)).toBe("/cosecha");
   });
 
-  it("takes the weigher straight to work, since the dashboard is a money screen", () => {
+  it("takes the weigher straight to Labores, since that is their job", () => {
     expect(landingPath(weigher)).toBe("/labores");
   });
 

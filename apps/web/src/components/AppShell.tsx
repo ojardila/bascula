@@ -32,7 +32,7 @@ import HarvestIcon from "@mui/icons-material/Grass";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
 import { useAuth } from "../auth/AuthContext";
-import { MODULES, can, type ModuleDef } from "../auth/permissions";
+import { visibleModules, type ModuleDef } from "../auth/permissions";
 import { SyncWarningBanner } from "./SyncWarningBanner";
 import { ApiModeBanner } from "./ApiModeBanner";
 import { GREEN_DARK } from "../theme";
@@ -124,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenu, setUserMenu] = useState<HTMLElement | null>(null);
 
-  const visible = MODULES.filter((m) => can(principal, m.action));
+  const visible = visibleModules(principal);
   const main = visible.filter((m) => m.group === "main");
   const more = visible.filter((m) => m.group === "more");
 

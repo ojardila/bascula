@@ -189,6 +189,14 @@ export interface ModuleDef {
    * scrolling on a phone.
    */
   group: "main" | "more";
+  /**
+   * Whether this entry appears in the day-to-day sidebar.
+   *
+   * The farm menu is kept to six plain items (Cosecha, Lotes, Empleados,
+   * Pagos, Ventas, Configuración). Other modules stay routable for deep
+   * links and for roles that still need them (e.g. Labores for the weigher).
+   */
+  inNav: boolean;
 }
 
 /**
@@ -199,54 +207,35 @@ export interface ModuleDef {
  * unfinished product, while one that shows what is coming reads as a plan.
  */
 export const MODULES: ModuleDef[] = [
-  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard" , group: "main" },
-  // Straight after the tablero, because it is the screen the owner opens every
-  // morning during the season — not filed behind Labores, where the picking was
-  // effectively hidden until Sprint 4.
-  { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" , group: "main" },
-  // "Lotes", not "Parcelas": the menu and the first field of the form said
-  // different things about the same land. `lib/vocab.ts` decides it once.
-  { key: "plots", label: PLOT.Many, path: PLOT.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" , group: "more" },
-  { key: "workers", label: EMPLOYEE.Many, path: EMPLOYEE.path, action: "workers.read", sprint: 1, available: true, icon: "people" , group: "main" },
-  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" , group: "more" },
-  /**
-   * THE WEEK'S PRICE PER KILO, with an entry of its own.
-   *
-   * It was nowhere: the `PUT` existed in the client and no screen called it.
-   * Anybody looking for it ended up in Actividades pressing "Precio fijo",
-   * which changes the pay mode of all picking — a different thing, and with no
-   * warning. A field hidden inside Configuración would have left the same trap
-   * standing; this is where people look for it, next to Actividades, and it is
-   * called what a coffee farmer calls it.
-   *
-   * `config.prices` is the owner's alone, just like `prices.write` on the
-   * server. An administrator runs the farm and does not decide what a kilo is
-   * worth.
-   */
-  { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price" , group: "main" },
-  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" , group: "main" },
-  // Sprint 5 gave settling a screen of its own. Making one still happens
-  // inside "pagar empleado" — that is where the figure is approved — but the
-  // settlements themselves are records now: which ones exist, whose, for which
-  // week, and which are void. The action is `money.read` and not `money.pay`,
-  // because looking at what was settled is a read.
-  // The crew payroll. `money.pay` and not `money.read`: this entry is a
-  // door to a write, and `money.pay` is in WRITE_ACTIONS, so a suspended farm
-  // does not get offered a payroll it would be refused. It sits above
-  // Liquidaciones because it is the Saturday screen and the settlements list
-  // is what you read afterwards.
-  { key: "payroll", label: "Nómina", path: "/nomina", action: "money.pay", sprint: 5, available: true, icon: "payments" , group: "main" },
-  { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt" , group: "main" },
-  { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" , group: "more" },
-  { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" , group: "more" },
-  { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments" , group: "more" },
-  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings" , group: "more" },
+  // Kept for deep links and permissions, but not in the short farm menu.
+  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard", group: "more", inNav: false },
+  { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest", group: "main", inNav: true },
+  { key: "plots", label: PLOT.Many, path: PLOT.path, action: "plots.read", sprint: 1, available: true, icon: "terrain", group: "main", inNav: true },
+  { key: "workers", label: EMPLOYEE.Many, path: EMPLOYEE.path, action: "workers.read", sprint: 1, available: true, icon: "people", group: "main", inNav: true },
+  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture", group: "more", inNav: false },
+  // Reachable from Configuración ("Fijar el precio de la semana"), not top-level.
+  { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price", group: "more", inNav: false },
+  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task", group: "more", inNav: false },
+  // "Pagos" is the Saturday pay screen; Liquidaciones stays as a deep link / record list.
+  { key: "payroll", label: "Pagos", path: "/nomina", action: "money.pay", sprint: 5, available: true, icon: "payments", group: "main", inNav: true },
+  { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt", group: "more", inNav: false },
+  { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory", group: "more", inNav: false },
+  { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell", group: "main", inNav: true },
+  { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments", group: "more", inNav: false },
+  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings", group: "main", inNav: true },
 ];
 
 /** What this principal is allowed to see in the sidebar. */
 export function visibleModules(principal: Principal): ModuleDef[] {
   if (principal.isSuperAdmin) return [];
-  return MODULES.filter((m) => can(principal, m.action));
+  return MODULES.filter((m) => {
+    if (!can(principal, m.action)) return false;
+    if (m.inNav) return true;
+    // The weigher's daily screen is Labores; keep it in their menu even though
+    // the owner's short list hides it.
+    if (principal.role === "weigher" && m.key === "workRecords") return true;
+    return false;
+  });
 }
 
 /**
@@ -257,10 +246,9 @@ export function visibleModules(principal: Principal): ModuleDef[] {
  */
 export function landingPath(principal: Principal): string {
   if (principal.isSuperAdmin) return "/admin/fincas";
-  // The weigher has no dashboard — it is a money screen — so they land on the
-  // one thing they opened the app to do, not on the first module that happens
-  // to be visible to them.
+  // The weigher lands on Labores — weighing is their job, not the harvest
+  // overview (which they cannot open).
   if (principal.role === "weigher") return "/labores";
   const first = visibleModules(principal)[0];
-  return first ? first.path : "/labores";
+  return first ? first.path : "/cosecha";
 }
