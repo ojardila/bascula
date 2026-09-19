@@ -180,6 +180,15 @@ export interface ModuleDef {
    */
   available: boolean;
   icon: string;
+  /**
+   * Where this entry sits in the sidebar.
+   *
+   * `main` is the day-to-day work of the farm (harvest, people, pay).
+   * `more` is everything else, still one tap away, so the list the
+   * owner opens every morning stays short enough to read without
+   * scrolling on a phone.
+   */
+  group: "main" | "more";
 }
 
 /**
@@ -190,16 +199,16 @@ export interface ModuleDef {
  * unfinished product, while one that shows what is coming reads as a plan.
  */
 export const MODULES: ModuleDef[] = [
-  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard" },
+  { key: "dashboard", label: "Tablero", path: "/tablero", action: "dashboard.view", sprint: 1, available: true, icon: "dashboard" , group: "main" },
   // Straight after the tablero, because it is the screen the owner opens every
   // morning during the season — not filed behind Labores, where the picking was
   // effectively hidden until Sprint 4.
-  { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" },
+  { key: "harvest", label: "Cosecha", path: "/cosecha", action: "harvest.read", sprint: 4, available: true, icon: "harvest" , group: "main" },
   // "Lotes", not "Parcelas": the menu and the first field of the form said
   // different things about the same land. `lib/vocab.ts` decides it once.
-  { key: "plots", label: PLOT.Many, path: PLOT.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" },
-  { key: "workers", label: EMPLOYEE.Many, path: EMPLOYEE.path, action: "workers.read", sprint: 1, available: true, icon: "people" },
-  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" },
+  { key: "plots", label: PLOT.Many, path: PLOT.path, action: "plots.read", sprint: 1, available: true, icon: "terrain" , group: "more" },
+  { key: "workers", label: EMPLOYEE.Many, path: EMPLOYEE.path, action: "workers.read", sprint: 1, available: true, icon: "people" , group: "main" },
+  { key: "activities", label: "Actividades", path: "/actividades", action: "activities.read", sprint: 1, available: true, icon: "agriculture" , group: "more" },
   /**
    * THE WEEK'S PRICE PER KILO, with an entry of its own.
    *
@@ -214,8 +223,8 @@ export const MODULES: ModuleDef[] = [
    * server. An administrator runs the farm and does not decide what a kilo is
    * worth.
    */
-  { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price" },
-  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" },
+  { key: "weekPrice", label: "Precio del kilo", path: "/precio-semana", action: "config.prices", sprint: 5, available: true, icon: "price" , group: "main" },
+  { key: "workRecords", label: "Labores", path: "/labores", action: "workRecords.read", sprint: 1, available: true, icon: "task" , group: "main" },
   // Sprint 5 gave settling a screen of its own. Making one still happens
   // inside "pagar empleado" — that is where the figure is approved — but the
   // settlements themselves are records now: which ones exist, whose, for which
@@ -226,12 +235,12 @@ export const MODULES: ModuleDef[] = [
   // does not get offered a payroll it would be refused. It sits above
   // Liquidaciones because it is the Saturday screen and the settlements list
   // is what you read afterwards.
-  { key: "payroll", label: "Nómina", path: "/nomina", action: "money.pay", sprint: 5, available: true, icon: "payments" },
-  { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt" },
-  { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" },
-  { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" },
-  { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments" },
-  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings" },
+  { key: "payroll", label: "Nómina", path: "/nomina", action: "money.pay", sprint: 5, available: true, icon: "payments" , group: "main" },
+  { key: "settlements", label: "Liquidaciones", path: "/liquidaciones", action: "money.read", sprint: 2, available: true, icon: "receipt" , group: "main" },
+  { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory" , group: "more" },
+  { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell" , group: "more" },
+  { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments" , group: "more" },
+  { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings" , group: "more" },
 ];
 
 /** What this principal is allowed to see in the sidebar. */
