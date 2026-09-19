@@ -56,10 +56,49 @@ const thisMonday = () => mondayOf(todayInFarm("America/Bogota"));
 const priceOf = (monday: string) =>
   db.tenantOf(db.FARM_ID)!.weekPrices.find((p) => p.weekStart === monday)?.priceCents ?? null;
 
+/**
+ * The seed's week prices and picking stop in August 2026. These tests talk
+ * about "this week", which keeps moving, so without a row for the current
+ * Monday `priceOf` is null and the confirmation has nothing to revalue.
+ * Pin both here so the suite does not depend on the calendar.
+ */
 beforeEach(() => {
   db.resetDb();
   invalidateRefs();
   signIn(OWNER);
+
+  const monday = thisMonday();
+  const tenant = db.tenantOf(db.FARM_ID)!;
+  if (!tenant.weekPrices.some((p) => p.weekStart === monday)) {
+    tenant.weekPrices.push({ weekStart: monday, priceCents: 80_000 });
+  }
+
+  const template = tenant.workRecords.find(
+    (r) => r.rateSource === "weekly_price" && r.rateCents === null && r.deletedAt === null,
+  );
+  if (!template) throw new Error("seed is missing an unsettled weekly-price labor");
+  const already = tenant.workRecords.some(
+    (r) => r.weekStart?.slice(0, 10) === monday || r.dateFrom?.slice(0, 10) === monday,
+  );
+  if (!already) {
+    const when = db.dayInstant(monday);
+    tenant.workRecords.push({
+      ...template,
+      id: "0192f3a0-0008-7000-8000-00000000c001",
+      dateFrom: when,
+      dateTo: when,
+      weekStart: when,
+      startedAt: `${monday}T12:00:00Z`,
+      endedAt: null,
+      quantity: 25,
+      amountCents: null,
+      rateCents: null,
+      estimatedAmountCents: 25 * 80_000,
+      amountIsEstimate: true,
+      createdAt: `${monday}T15:00:00Z`,
+      deletedAt: null,
+    });
+  }
 });
 
 describe("setting the week's price per kilo", () => {
