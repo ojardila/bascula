@@ -24,7 +24,6 @@ import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
-import { formatDate } from "../../lib/dates";
 import { OwedFigure } from "./OwedFigure";
 import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
@@ -98,18 +97,7 @@ export function WorkersPage() {
         ),
       },
     ];
-    if (full) {
-      base.push(
-        { key: "phone", header: "Teléfono", render: (w) => w.phone ?? "—", secondary: true },
-        { key: "city", header: "Ciudad", render: (w) => w.city ?? "—", secondary: true },
-        {
-          key: "since",
-          header: "Desde",
-          render: (w) => (w.startedAt ? formatDate(w.startedAt) : "—"),
-          secondary: true,
-        },
-      );
-    }
+    // Phone, city and start date live on the profile — the list is name + what is owed.
     if (money) {
       base.push({
         key: "owed",
@@ -169,7 +157,7 @@ export function WorkersPage() {
         onEdit={can("workers.write") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}/editar`) : undefined}
         extraActions={
           can("money.pay")
-            ? (w) => [{ label: "Pagar empleado", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
+            ? (w) => [{ label: "Pagar", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
             : undefined
         }
         onDeactivate={
