@@ -4,7 +4,6 @@ import { RequireAuth, RequirePermission, RequireSuperAdmin } from "./components/
 import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
-import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { PlotsPage } from "./features/plots/PlotsPage";
 import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
@@ -53,14 +52,9 @@ function Shell() {
     <AppShell>
       <Routes>
         <Route index element={<Navigate to={landing} replace />} />
-        <Route
-          path="tablero"
-          element={
-            <RequirePermission action="dashboard.view" moduleName="ver el tablero">
-              <DashboardPage />
-            </RequirePermission>
-          }
-        />
+        {/* Tablero left the day-to-day product. Old bookmarks still work:
+            they land on Cosecha, the farm's home screen now. */}
+        <Route path="tablero" element={<Navigate to="/cosecha" replace />} />
 
         {/* THE LAND IS CALLED "lote", IN THE ADDRESS BAR TOO. The menu said
             "Parcelas" and the first field of the form that creates them said

@@ -83,6 +83,14 @@ describe("the sidebar shows only what the role can open", () => {
   });
 });
 
+describe("old Tablero bookmarks", () => {
+  it("send the owner to Cosecha", async () => {
+    signInAs("oscar@laesperanza.co");
+    renderApp("/tablero");
+    expect(await screen.findByRole("heading", { name: "Cosecha" })).toBeInTheDocument();
+  });
+});
+
 describe("typing the URL by hand does not get you in", () => {
   it("stops a weigher at an employee's profile and says why", async () => {
     // Hiding the sidebar entry is cosmetic; this is the part that matters.
