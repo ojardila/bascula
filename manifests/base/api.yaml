@@ -43,6 +43,12 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # The Job outliving its sync is the point - its logs are the record of what
+    # the last migration did. But ArgoCD then finds a resource in the cluster
+    # that is in no manifest and calls the app OutOfSync forever, which buries
+    # any drift that would actually matter. This says "expected to be here,
+    # do not compare it".
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
 spec:
   backoffLimit: 4
   template:
