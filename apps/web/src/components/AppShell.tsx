@@ -33,7 +33,6 @@ import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
 import { useAuth } from "../auth/AuthContext";
 import { visibleModules, type ModuleDef } from "../auth/permissions";
-import { SyncWarningBanner } from "./SyncWarningBanner";
 import { ApiModeBanner } from "./ApiModeBanner";
 import { GREEN_DARK } from "../theme";
 
@@ -287,7 +286,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Box component="main" sx={{ flexGrow: 1, width: 0 }}>
         <Toolbar sx={{ minHeight: { xs: 64, sm: 68 } }} />
         <ApiModeBanner />
-        <SyncWarningBanner />
         <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1280, mx: "auto" }}>{children}</Box>
       </Box>
     </Box>
