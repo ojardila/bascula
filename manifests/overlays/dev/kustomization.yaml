@@ -36,3 +36,4 @@ patches:
       version: v1
       kind: ScheduledBackup
       name: bascula-db-weekly
+  - path: public-base-url.yaml

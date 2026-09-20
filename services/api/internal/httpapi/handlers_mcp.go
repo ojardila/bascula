@@ -67,10 +67,8 @@ import (
 // The route is in the permission table as ActionMCP: any member with a valid
 // token may open the tunnel, and the tool then answers according to that
 // member's role. Bearer tokens are what Claude Code, the MCP inspector and any
-// programmatic client send. ChatGPT's connector UI insists on OAuth for a
-// remote server; that is a discovery document and an authorization endpoint
-// on top of the tokens this service already issues, and it is the next step,
-// not this one.
+// programmatic client send. ChatGPT's connector UI runs OAuth 2.1
+// (handlers_oauth.go) and then sends the same JWT.
 
 // mcpTool is one row of the table: the name an assistant calls, what it should
 // read before calling it, and the route it becomes.
@@ -436,6 +434,7 @@ type mcpRemoteAddrKey struct{}
 // handleMCP is the route. It stashes what the inner request will need and
 // lets the SDK's handler do the protocol.
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	allowCORS(w)
 	ctx := context.WithValue(r.Context(), mcpRemoteAddrKey{}, r.RemoteAddr)
 	s.mcp.ServeHTTP(w, r.WithContext(ctx))
 }

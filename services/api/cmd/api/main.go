@@ -290,6 +290,7 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// directory. It must be a volume that survives a restart and is shared by
 	// every replica; the default under /tmp is a development convenience and
 	// nothing else, which is why it is warned about.
+	rc.http.PublicBaseURL = strings.TrimRight(getenv("PUBLIC_BASE_URL"), "/")
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {
 		return resolved{}, errors.New(

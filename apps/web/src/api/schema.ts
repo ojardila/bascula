@@ -2459,7 +2459,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** MCP SSE stream */
+        get: operations["mcpStream"];
         put?: never;
         /**
          * Model Context Protocol endpoint
@@ -2478,7 +2479,111 @@ export interface paths {
          */
         post: operations["mcp"];
         delete?: never;
-        options?: never;
+        /** CORS preflight for browser MCP hosts */
+        options: operations["mcpPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/oauth-protected-resource": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** RFC 9728 protected resource metadata */
+        get: operations["oauthProtectedResource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options: operations["oauthProtectedResourcePreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/oauth-protected-resource/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** RFC 9728 metadata for the /mcp resource */
+        get: operations["oauthProtectedResourceMCP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options: operations["oauthProtectedResourceMCPPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/oauth-authorization-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** RFC 8414 authorization server metadata */
+        get: operations["oauthAuthorizationServer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options: operations["oauthAuthorizationServerPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dynamic client registration (RFC 7591) */
+        post: operations["oauthRegister"];
+        delete?: never;
+        options: operations["oauthRegisterPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Authorization-code login form */
+        get: operations["oauthAuthorize"];
+        put?: never;
+        /** Authorization-code login */
+        post: operations["oauthAuthorizeSubmit"];
+        delete?: never;
+        options: operations["oauthAuthorizePreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange an authorization code for the farm JWT */
+        post: operations["oauthToken"];
+        delete?: never;
+        options: operations["oauthTokenPreflight"];
         head?: never;
         patch?: never;
         trace?: never;
@@ -9381,6 +9486,26 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    mcpStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     mcp: {
         parameters: {
             query?: never;
@@ -9405,6 +9530,281 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    mcpPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthProtectedResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource metadata ChatGPT fetches before the OAuth dance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    oauthProtectedResourcePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthProtectedResourceMCP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Same document as /.well-known/oauth-protected-resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    oauthProtectedResourceMCPPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthAuthorizationServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Issuer, authorize, token and registration endpoints. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    oauthAuthorizationServerPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthRegister: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Public client_id, no secret. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    oauthRegisterPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthAuthorize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description HTML form. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthAuthorizeSubmit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Form re-rendered with an error. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Redirect to redirect_uri with code. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthAuthorizePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bearer access_token (the same JWT login issues). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    oauthTokenPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     syncHandshake: {

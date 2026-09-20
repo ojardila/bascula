@@ -4228,6 +4228,176 @@ paths:
                 type: object
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    get:
+      tags: [mcp]
+      operationId: mcpStream
+      summary: MCP SSE stream
+      x-action: mcp
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200": { description: Event stream, or 405 when the transport is stateless. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    options:
+      tags: [mcp]
+      operationId: mcpPreflight
+      summary: CORS preflight for browser MCP hosts
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/oauth-protected-resource:
+    get:
+      tags: [mcp]
+      operationId: oauthProtectedResource
+      summary: RFC 9728 protected resource metadata
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Resource metadata ChatGPT fetches before the OAuth dance.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: oauthProtectedResourcePreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      tags: [mcp]
+      operationId: oauthProtectedResourceMCP
+      summary: RFC 9728 metadata for the /mcp resource
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Same document as /.well-known/oauth-protected-resource.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: oauthProtectedResourceMCPPreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/oauth-authorization-server:
+    get:
+      tags: [mcp]
+      operationId: oauthAuthorizationServer
+      summary: RFC 8414 authorization server metadata
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Issuer, authorize, token and registration endpoints.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: oauthAuthorizationServerPreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /oauth/register:
+    post:
+      tags: [mcp]
+      operationId: oauthRegister
+      summary: Dynamic client registration (RFC 7591)
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201":
+          description: Public client_id, no secret.
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    options:
+      tags: [mcp]
+      operationId: oauthRegisterPreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /oauth/authorize:
+    get:
+      tags: [mcp]
+      operationId: oauthAuthorize
+      summary: Authorization-code login form
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200": { description: HTML form. }
+    post:
+      tags: [mcp]
+      operationId: oauthAuthorizeSubmit
+      summary: Authorization-code login
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "302": { description: Redirect to redirect_uri with code. }
+        "200": { description: Form re-rendered with an error. }
+    options:
+      tags: [mcp]
+      operationId: oauthAuthorizePreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /oauth/token:
+    post:
+      tags: [mcp]
+      operationId: oauthToken
+      summary: Exchange an authorization code for the farm JWT
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Bearer access_token (the same JWT login issues).
+          content:
+            application/json:
+              schema: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    options:
+      tags: [mcp]
+      operationId: oauthTokenPreflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
 
   # ---------------------------------------------------------------------------
   # Mobile ↔ server synchronisation (docs/sincronizacion.md §3)

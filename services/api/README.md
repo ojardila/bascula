@@ -351,12 +351,14 @@ claude mcp add --transport http bascula https://bascula.engp.io/mcp \
   --header "Authorization: Bearer $TOKEN"
 ```
 
-**Claude Desktop / claude.ai, ChatGPT (custom connector), Cursor and the
-rest**: point them at `https://bascula.engp.io/mcp`. Clients that let you set
-a header take the bearer as above. ChatGPT's connector UI accepts only "no
-auth" or OAuth for a remote server, so it needs the OAuth step below before it
-can connect; until then, test the same tools from ChatGPT through an **Action**
-built from `openapi.yaml` with a bearer token, which its UI does accept.
+**Claude Desktop / Cursor / ChatGPT (Developer Mode with a pasted token)** —
+point them at `https://bascula.engp.io/mcp` and send `Authorization: Bearer`.
+
+**ChatGPT (conector / Apps)**: Settings → Security → Developer mode, then
+Plugins → add `https://bascula.engp.io/mcp`. ChatGPT discovers OAuth at
+`/.well-known/oauth-protected-resource`, registers a public client, and
+opens `/oauth/authorize`. Log in with the farm account. The token it
+receives is the same JWT `POST /v1/auth/login` issues.
 
 **By hand**, which is also how to see what a client sees:
 
@@ -372,13 +374,6 @@ The `Accept` header must name both types: the transport insists.
 
 ### What is deliberately not there yet
 
-- **OAuth.** ChatGPT and claude.ai's connector pages register a remote MCP
-  server through OAuth 2.1 with dynamic client registration and a protected
-  resource metadata document. The tokens this service signs are the right
-  tokens; what is missing is `/.well-known/oauth-protected-resource`, an
-  authorization endpoint that turns a login into a code, and a token endpoint
-  that turns the code into the JWT. It is one sprint, and it belongs after the
-  first assistant has actually been useful with a pasted token.
 - **Writes.** One row in the table per route, once the answer to "what stops
   it registering the same weighing twice" is the same answer the phone gives:
   the client id and the idempotency key in `docs/sincronizacion.md`.
