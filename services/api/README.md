@@ -316,6 +316,77 @@ The load-bearing ones:
   the Go domain against real Postgres. Nine cases, the exact cents the phone
   produces.
 
+## MCP — the API as tools for an assistant
+
+`POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server on the streamable HTTP transport, stateless. ChatGPT, Claude and any
+MCP client connect to it, list the tools and call them. The implementation is
+`internal/httpapi/handlers_mcp.go` and it is deliberately thin: every tool is
+a read-only route of this API under a name and a description an assistant can
+read. A call re-enters the router as an ordinary request carrying the caller's
+bearer, so the permission table, the tenant and RLS apply exactly as they do
+on the wire, and the JSON the assistant sees is the JSON `openapi.yaml`
+documents. There is no second contract to drift.
+
+Twenty-six tools today, all reads: `me`, `farm`, workers and their balances,
+ledgers and payables, plots, activities, work records, pending, balances,
+settlements, week prices, the six reports, stock, products, sales, expenses
+and customers. Writes wait for a confirmation flow — an assistant that can
+settle a week is the double-payment problem with a new face.
+
+### Connecting
+
+The endpoint wants the same access token a session has. Get one:
+
+```sh
+curl -s -X POST https://bascula.engp.io/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@finca.co","password":"…"}' | jq -r .accessToken
+```
+
+**Claude Code**
+
+```sh
+claude mcp add --transport http bascula https://bascula.engp.io/mcp \
+  --header "Authorization: Bearer $TOKEN"
+```
+
+**Claude Desktop / claude.ai, ChatGPT (custom connector), Cursor and the
+rest**: point them at `https://bascula.engp.io/mcp`. Clients that let you set
+a header take the bearer as above. ChatGPT's connector UI accepts only "no
+auth" or OAuth for a remote server, so it needs the OAuth step below before it
+can connect; until then, test the same tools from ChatGPT through an **Action**
+built from `openapi.yaml` with a bearer token, which its UI does accept.
+
+**By hand**, which is also how to see what a client sees:
+
+```sh
+curl -s -X POST http://localhost:8099/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The `Accept` header must name both types: the transport insists.
+
+### What is deliberately not there yet
+
+- **OAuth.** ChatGPT and claude.ai's connector pages register a remote MCP
+  server through OAuth 2.1 with dynamic client registration and a protected
+  resource metadata document. The tokens this service signs are the right
+  tokens; what is missing is `/.well-known/oauth-protected-resource`, an
+  authorization endpoint that turns a login into a code, and a token endpoint
+  that turns the code into the JWT. It is one sprint, and it belongs after the
+  first assistant has actually been useful with a pasted token.
+- **Writes.** One row in the table per route, once the answer to "what stops
+  it registering the same weighing twice" is the same answer the phone gives:
+  the client id and the idempotency key in `docs/sincronizacion.md`.
+- **Sessions.** The transport runs stateless on purpose: a session pinned to
+  one replica is a session the next rollout loses, and the token already says
+  who is calling.
+
+
 ## Left for the next sprint
 
 User management (`/v1/users`), the public repository of activities and products

@@ -114,6 +114,14 @@ const (
 	// The harvest reports. One action for all six, because they are one
 	// module and they are refused as one — see the note in the table below.
 	ActionReportsRead Action = "reports.read"
+
+	// The MCP endpoint. It is a transport, not a feature: every tool it
+	// exposes re-enters the router as an ordinary request carrying the same
+	// bearer, so the permission that matters is the one on the route the tool
+	// maps to. This rule only decides who may open the tunnel at all — any
+	// member with a valid token — and it is TenantOptional because the outer
+	// request touches no table; the inner one opens its own transaction.
+	ActionMCP Action = "mcp"
 )
 
 // Rule is one row of the permission table.
@@ -324,6 +332,8 @@ var Matrix = map[Action]Rule{
 	// somebody of mis-weighing — usually the weigher himself. "El pesador no
 	// ve reportes de dinero" is the floor here, not the ceiling.
 	ActionReportsRead: {Roles: admins, Money: true},
+
+	ActionMCP: {Roles: everyone, TenantOptional: true},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

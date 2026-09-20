@@ -15,7 +15,7 @@ and whatever else gets picked by the kilo.
 |---|---|---|
 | [`apps/mobile`](apps/mobile) | Expo app: weighing, settling, paying, performance | **Working** |
 | [`apps/web`](apps/web) | React: farm administration and super-admin | **Working** |
-| [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint | **Working** |
+| [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint, [MCP server](services/api/README.md#mcp--the-api-as-tools-for-an-assistant) | **Working** |
 | [`packages/shared`](packages/shared) | The ledger contract shared by all three | **Working** |
 
 ## Getting started

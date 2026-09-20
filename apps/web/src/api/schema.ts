@@ -2452,6 +2452,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Model Context Protocol endpoint
+         * @description A Model Context Protocol server over the streamable HTTP transport,
+         *     stateless. ChatGPT, Claude and any MCP client connect here with the
+         *     same bearer token a session carries, list the tools and call them.
+         *
+         *     Every tool is a read-only route of this API under another name: the
+         *     call re-enters the router as an ordinary request with the caller's
+         *     token, so the permission table, the tenant and RLS apply exactly as
+         *     they would to the route itself. What a tool returns is the JSON that
+         *     route documents. There is no second contract.
+         *
+         *     The body is JSON-RPC 2.0 as the MCP specification describes it; a
+         *     generated client has no use for it, which is why it is `object` here.
+         */
+        post: operations["mcp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sync/handshake": {
         parameters: {
             query?: never;
@@ -9348,6 +9379,32 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    mcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The JSON-RPC 2.0 response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     syncHandshake: {

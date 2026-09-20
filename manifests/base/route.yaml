@@ -1,4 +1,4 @@
-# One hostname, split by path — the web at the root, the API on the two
+# One hostname, split by path — the web at the root, the API on the three
 # prefixes it actually serves.
 #
 # This is the "same origin" answer to the question docs/decisiones.md left
@@ -29,6 +29,13 @@ spec:
         - {name: bascula-api, port: 80}
     - matches:
         - path: {type: PathPrefix, value: /health}
+      backendRefs:
+        - {name: bascula-api, port: 80}
+    # The MCP endpoint (services/api/internal/httpapi/handlers_mcp.go). An
+    # assistant connects to https://bascula.engp.io/mcp; without this line the
+    # catch-all sends it to the web's nginx, which answers with the SPA.
+    - matches:
+        - path: {type: PathPrefix, value: /mcp}
       backendRefs:
         - {name: bascula-api, port: 80}
     - matches:

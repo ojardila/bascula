@@ -113,6 +113,9 @@ type Server struct {
 	cfg    Config
 	blobs  blob.Store
 	router chi.Router
+	// mcp is the tool surface of handlers_mcp.go, built after the router
+	// because every tool dispatches back into it.
+	mcp http.Handler
 	// importSlots is the season import's share of the pool, and it is a share
 	// rather than a queue. See store.MaxImportsAtOnce and handleImportSeason.
 	importSlots chan struct{}
@@ -133,6 +136,7 @@ func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	}
 	s.blobs = disk
 	s.router = s.buildRouter()
+	s.mcp = s.buildMCP()
 	return s
 }
 

@@ -247,5 +247,10 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/reports/performance", auth.ActionReportsRead, s.handleReportPerformance},
 		{http.MethodGet, "/v1/reports/anomalies", auth.ActionReportsRead, s.handleReportAnomalies},
 		{http.MethodGet, "/v1/reports/harvest-curve", auth.ActionReportsRead, s.handleReportHarvestCurve},
+
+		// MCP. One POST, stateless: the streamable transport needs nothing
+		// else in that mode, and a session pinned to one replica is a session
+		// the next rollout loses. See handlers_mcp.go.
+		{http.MethodPost, "/mcp", auth.ActionMCP, s.handleMCP},
 	}
 }

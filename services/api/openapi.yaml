@@ -87,6 +87,7 @@ tags:
   - name: reports
   - name: users
   - name: sync
+  - name: mcp
   - name: import
 
 paths:
@@ -4187,6 +4188,46 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+
+  # ---------------------------------------------------------------------------
+  # MCP — the API as tools for an assistant (internal/httpapi/handlers_mcp.go)
+  # ---------------------------------------------------------------------------
+  /mcp:
+    post:
+      tags: [mcp]
+      operationId: mcp
+      summary: Model Context Protocol endpoint
+      description: |
+        A Model Context Protocol server over the streamable HTTP transport,
+        stateless. ChatGPT, Claude and any MCP client connect here with the
+        same bearer token a session carries, list the tools and call them.
+
+        Every tool is a read-only route of this API under another name: the
+        call re-enters the router as an ordinary request with the caller's
+        token, so the permission table, the tenant and RLS apply exactly as
+        they would to the route itself. What a tool returns is the JSON that
+        route documents. There is no second contract.
+
+        The body is JSON-RPC 2.0 as the MCP specification describes it; a
+        generated client has no use for it, which is why it is `object` here.
+      x-action: mcp
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: A JSON-RPC 2.0 request or batch, per the MCP specification.
+      responses:
+        "200":
+          description: The JSON-RPC 2.0 response.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ---------------------------------------------------------------------------
   # Mobile ↔ server synchronisation (docs/sincronizacion.md §3)
