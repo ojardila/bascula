@@ -454,6 +454,22 @@ describe("the mock is the server", () => {
       ]);
     }
     expect(l.body.items.find((f: { name: string }) => f.name === "La Palma").status).toBe("suspended");
+    const created = await fetch("/v1/admin/farms", {
+      method: "POST",
+      headers: H(SUPER),
+      body: JSON.stringify({
+        name: "El Roble",
+        priceCents: 90000,
+        owner: { email: "ana.roble@example.com", name: "Ana Roble" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = await created.json();
+    expect(body.name).toBe("El Roble");
+    expect(body.ownerEmail).toBe("ana.roble@example.com");
+    expect(body.ownerCreated).toBe(true);
+    expect(body.temporaryPassword).toBeTruthy();
+    expect((await get("/v1/admin/farms", OWNER)).status).toBe(403);
     const sus = await fetch("/v1/admin/farms/0192f3a0-0000-7000-8000-000000000002", {
       method: "PATCH", headers: H(SUPER), body: JSON.stringify({ status: "suspended" }) });
     expect(sus.status).toBe(200);

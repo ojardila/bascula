@@ -43,7 +43,7 @@
  */
 import type { components } from "./schema";
 import type {
-  WireActivity, WireActivityRate, WireAdminFarm, WireBalance, WireBoundaryResult,
+  WireActivity, WireActivityRate, WireAdminFarm, WireAdminFarmCreated, WireBalance, WireBoundaryResult,
   WireCatalogItem, WireCustomer, WireExpense, WireLabelBatch, WireLedgerEntry,
   WireNote, WirePlot, WirePlotCrop, WireProduct, WireSale, WireStockLevel,
   WireStockMove, WireWeekPrice, WireWorkUnit,
@@ -141,6 +141,10 @@ type _Note = [Check<SameKeys<WireNote, Schemas["Note"]>>, Assignable<WireNote, S
 type _AdminFarm = [
   Check<SameKeys<WireAdminFarm, Schemas["AdminFarm"]>>,
   Assignable<WireAdminFarm, Schemas["AdminFarm"]>,
+];
+type _AdminFarmCreated = [
+  Check<SameKeys<WireAdminFarmCreated, Schemas["AdminFarmCreated"]>>,
+  Assignable<WireAdminFarmCreated, Schemas["AdminFarmCreated"]>,
 ];
 
 /* -- products, inventory, sales and expenses ------------------------- */
@@ -258,7 +262,7 @@ export type ContractAssertions = [
   _Plot, _PlotCrop, _Boundary,
   _CatalogItem, _WorkUnit, _ActivityRate, _Activity,
   _Balance, _LedgerEntry, _WeekPrice,
-  _Note, _AdminFarm,
+  _Note, _AdminFarm, _AdminFarmCreated,
   _Product, _Customer, _StockLevel, _StockMove, _LabelBatch, _Sale, _Expense,
   _ReportTotals, _ReportWeek, _ReportWeeksResult,
   _ReportGridCell, _ReportGridRow, _ReportGridColumn, _ReportUnattributed,

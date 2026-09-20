@@ -805,8 +805,9 @@ export interface AdminFarm {
   id: Uuid;
   name: string;
   /**
-   * ALWAYS EMPTY. The console may not read a farm's users — the projection is
-   * the enforcement of what a platform administrator can know.
+   * ALWAYS EMPTY on the list. The console may not read a farm's users — the
+   * projection is the enforcement of what a platform administrator can know.
+   * The create response carries the address the operator just typed.
    */
   ownerEmail: string;
   status: FarmStatus;
@@ -817,6 +818,19 @@ export interface AdminFarm {
   workerCount: number | null;
   city?: string | null;
   country?: string | null;
+}
+
+export interface AdminFarmCreate {
+  name: string;
+  priceCents: number;
+  timezone?: string;
+  currency?: string;
+  owner: { email: string; name?: string; password?: string };
+}
+
+export interface AdminFarmCreated extends AdminFarm {
+  ownerCreated: boolean;
+  temporaryPassword?: string;
 }
 
 /* -- envelopes ------------------------------------------------------- */

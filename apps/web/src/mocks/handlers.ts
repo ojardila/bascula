@@ -1030,6 +1030,82 @@ export const handlers = [
     return HttpResponse.json(adminFarm(farm));
   }),
 
+  http.post("*/v1/admin/farms", async ({ request }) => {
+    const g = guard(request, "admin.farms.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as {
+      id?: string;
+      name?: string;
+      timezone?: string;
+      currency?: string;
+      priceCents?: number;
+      owner?: { email?: string; name?: string; password?: string };
+    };
+    if (!body.name?.trim()) return badRequest("name is required");
+    if (!body.priceCents || body.priceCents <= 0) return badRequest("priceCents must be positive");
+    const email = body.owner?.email?.trim().toLowerCase() ?? "";
+    if (!email || !email.includes("@")) return badRequest("owner.email is required");
+    if (body.owner?.password && body.owner.password.length < 10) {
+      return badRequest("password must be at least 10 characters");
+    }
+    if (body.id) {
+      const existing = db.farms.find((f) => f.id === body.id);
+      if (existing) return HttpResponse.json(adminFarm(existing));
+    }
+    let user = db.users.find((u) => u.email === email);
+    let ownerCreated = false;
+    let temporary: string | undefined;
+    if (!user) {
+      temporary = body.owner?.password || "temporary-clave-1";
+      user = {
+        id: crypto.randomUUID(),
+        email,
+        password: temporary,
+        name: body.owner?.name ?? "",
+        superadmin: false,
+        emailVerified: true,
+        role: "owner",
+      };
+      db.users.push(user);
+      ownerCreated = true;
+    } else {
+      user.emailVerified = true;
+    }
+    const farmId = body.id || crypto.randomUUID();
+    const farm = {
+      id: farmId,
+      name: body.name.trim(),
+      timezone: body.timezone || "America/Bogota",
+      currency: body.currency || "COP",
+      minorUnit: 2,
+      phone: null,
+      country: null,
+      city: null,
+      address: null,
+      areaHa: null,
+      suspendedAt: null,
+      createdAt: nowInstant(),
+      priceCents: body.priceCents,
+    };
+    db.farms.push(farm);
+    db.memberships.push({ farmId, userId: user.id, role: "owner" });
+    db.tenants.set(farmId, db.emptyTenant(farmId, body.priceCents, () => crypto.randomUUID()));
+    return HttpResponse.json(
+      {
+        ...adminFarm(farm),
+        ownerEmail: email,
+        ownerCreated,
+        ...(ownerCreated && !body.owner?.password
+          ? {
+              temporaryPassword: temporary,
+              temporaryPasswordNote: "shown once: hand it over now, it cannot be read again",
+            }
+          : {}),
+      },
+      { status: 201 },
+    );
+  }),
+
   /* ---- catalogues ---- */
 
   /**

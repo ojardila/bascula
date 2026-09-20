@@ -573,6 +573,48 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      operationId: adminCreateFarm
+      summary: Create a farm and its first owner
+      description: |
+        The operator door. Public signup is still open; this is how the platform
+        administrator provisions a farm without asking the owner to fill the
+        registration form.
+
+        The owner address is marked verified because the administrator vouched
+        for it — the same act as an invite. A new account gets the password
+        supplied here, or one minted and returned once as `temporaryPassword`.
+        An existing account is attached as owner and its password is not
+        touched.
+
+        The farms-per-email cap of self-serve signup does not apply.
+      x-action: admin.farms.write
+      x-roles: [superadmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminFarmCreate" }
+      responses:
+        "200":
+          description: That id already existed. The farm is returned as listed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFarm" }
+        "201":
+          description: Created. `temporaryPassword` is present only when minted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminFarmCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: IDEMPOTENCY_KEY_REUSED — that id belongs to another farm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /v1/admin/farms/{id}:
     parameters:
@@ -5248,6 +5290,46 @@ components:
         status: { type: string, enum: [active, suspended] }
         suspendedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
+
+    AdminFarmCreate:
+      type: object
+      required: [name, priceCents, owner]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        timezone:
+          type: string
+          default: America/Bogota
+        currency: { type: string, default: COP, minLength: 3, maxLength: 3 }
+        priceCents:
+          type: integer
+          format: int64
+          minimum: 1
+        owner:
+          type: object
+          required: [email]
+          properties:
+            email: { type: string, format: email }
+            name: { type: string }
+            password:
+              type: string
+              minLength: 10
+              description: |
+                Required for a new account only if the caller does not want one
+                minted. An existing account's password is never changed.
+
+    AdminFarmCreated:
+      allOf:
+        - $ref: "#/components/schemas/AdminFarm"
+        - type: object
+          required: [ownerEmail, ownerCreated]
+          properties:
+            ownerEmail: { type: string, format: email }
+            ownerCreated: { type: boolean }
+            temporaryPassword:
+              type: string
+              description: Present only when the server minted one for a new owner.
+            temporaryPasswordNote: { type: string }
 
     # -- users ---------------------------------------------------------------
 

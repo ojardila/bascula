@@ -1,11 +1,10 @@
 /**
- * The super-admin console: list farms, suspend one, and nothing else.
+ * The super-admin console: list farms, create one, suspend one.
  *
- * Decision 2 in `docs/decisiones.md` took the front door away from this screen
- * — farms register themselves now — and left it with exactly the two things it
- * still needs to do. It reads no employees, no work, no money of any farm, and
- * that is why it lives outside the tenant shell, on its own routes, with no
- * sidebar of modules.
+ * Public signup is still open. This is the operator door: provision a farm
+ * with an owner who can log in, without asking them to fill the registration
+ * form. The console still does not read employees, work or money of any farm
+ * — every column here is a column of `farms`.
  *
  * Suspending is not deleting and the copy says so: login still works, reading
  * still works, writing answers 403, and nothing is archived or lost.
@@ -13,7 +12,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AppBar, Avatar, Box, Button, Chip, Container, Stack, Toolbar, Typography,
+  Alert, AppBar, Avatar, Box, Button, Chip, Container, Dialog, DialogActions,
+  DialogContent, DialogTitle, Stack, TextField, Toolbar, Typography,
 } from "@mui/material";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -22,8 +22,10 @@ import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
+import { parseMoneyInput } from "../../lib/money";
+import { useWriteOnce } from "../../lib/writeOnce";
 import { GREEN_DARK } from "../../theme";
-import type { AdminFarm, FarmStatus } from "../../api/types";
+import type { AdminFarm, AdminFarmCreated, FarmStatus } from "../../api/types";
 
 /** No "en prueba": there is no trial anywhere in this API. */
 const STATUS_LABEL: Record<FarmStatus, string> = {
@@ -37,6 +39,8 @@ export function SuperAdminPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [confirm, setConfirm] = useState<AdminFarm | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<AdminFarmCreated | null>(null);
   const [error, setActionError] = useState<string | null>(null);
 
   const { data, error: loadError, reload } = useAsync(
@@ -105,6 +109,11 @@ export function SuperAdminPage() {
           <Avatar sx={{ width: 30, height: 30, bgcolor: GREEN_DARK, fontSize: 13 }}>
             {user?.name?.[0]}
           </Avatar>
+          {user?.farm && (
+            <Button color="inherit" onClick={() => navigate("/cosecha")}>
+              Ir a la finca
+            </Button>
+          )}
           <Button
             color="inherit"
             onClick={async () => {
@@ -119,9 +128,8 @@ export function SuperAdminPage() {
 
       <Container maxWidth="lg" sx={{ py: 4 }}>
         <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Esta consola ve las fincas y su estado. <strong>No lee</strong> empleados,
-          labores ni dinero de ninguna de ellas, y no puede crearlas: desde el
-          auto-registro, las fincas se dan de alta solas.
+          Cree una finca con su dueño, o suspéndala. Esta consola <strong>no lee</strong>{" "}
+          empleados, labores ni dinero de ninguna de ellas.
         </Typography>
 
         <ModuleList<AdminFarm>
@@ -136,9 +144,11 @@ export function SuperAdminPage() {
           isInactive={(f) => f.status === "suspended"}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Buscar por nombre o correo del dueño"
+          searchPlaceholder="Buscar por nombre"
           statusFilter={status}
           onStatusFilterChange={setStatus}
+          onCreate={() => setCreating(true)}
+          createLabel="Nueva finca"
           extraActions={(f) =>
             f.status === "suspended"
               ? [
@@ -183,6 +193,156 @@ export function SuperAdminPage() {
           }
         }}
       />
+
+      <CreateFarmDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(farm) => {
+          setCreating(false);
+          setCreated(farm);
+          reload();
+        }}
+      />
+
+      <Dialog open={!!created} onClose={() => setCreated(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Finca creada</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1 }}>
+            <strong>{created?.name}</strong> ya está activa. El dueño entra con{" "}
+            <strong>{created?.ownerEmail}</strong>.
+          </Typography>
+          {created?.temporaryPassword ? (
+            <Alert severity="warning">
+              Esta clave se muestra una sola vez. Entréguesela ahora: no se puede volver a leer.
+              <Typography sx={{ fontFamily: "ui-monospace, monospace", mt: 1, fontWeight: 700 }}>
+                {created.temporaryPassword}
+              </Typography>
+            </Alert>
+          ) : created?.ownerCreated ? (
+            <Typography color="text.secondary">
+              El dueño entra con la clave que usted escribió.
+            </Typography>
+          ) : (
+            <Typography color="text.secondary">
+              Esa cuenta ya existía: se le agregó esta finca como dueño, sin cambiarle la clave.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setCreated(null)}>
+            Entendido
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
+  );
+}
+
+function CreateFarmDialog({
+  open, onClose, onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (farm: AdminFarmCreated) => void;
+}) {
+  const { busy, run: runOnce } = useWriteOnce();
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [email, setEmail] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setError(null);
+    const priceCents = parseMoneyInput(price) ?? 0;
+    if (!name.trim()) {
+      setError("Escriba el nombre de la finca.");
+      return;
+    }
+    if (priceCents <= 0) {
+      setError("Escriba cuánto paga por kilo.");
+      return;
+    }
+    if (!email.trim() || !email.includes("@")) {
+      setError("Escriba el correo del dueño.");
+      return;
+    }
+    if (password && password.length < 10) {
+      setError("La clave del dueño debe tener al menos 10 caracteres.");
+      return;
+    }
+    const intent = ["admin-farm", name.trim(), email.trim().toLowerCase()].join("|");
+    const outcome = await runOnce(intent, async () =>
+      api.adminCreateFarm({
+        name: name.trim(),
+        priceCents,
+        owner: {
+          email: email.trim(),
+          name: ownerName.trim(),
+          password: password || undefined,
+        },
+      }),
+    ).catch((e: unknown) => {
+      setError(messageFor(e));
+      return { ran: false } as const;
+    });
+    if (!outcome.ran || !outcome.value) return;
+    onCreated(outcome.value);
+    setName("");
+    setPrice("");
+    setEmail("");
+    setOwnerName("");
+    setPassword("");
+  }
+
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Nueva finca</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            label="Nombre de la finca"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            required
+          />
+          <TextField
+            label="Precio por kilo"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            helperText="En pesos. Es el precio de la recolección."
+            required
+          />
+          <TextField
+            label="Correo del dueño"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            required
+          />
+          <TextField
+            label="Nombre del dueño"
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
+          />
+          <TextField
+            label="Clave del dueño"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            helperText="Opcional. Si la deja en blanco, se genera una y se muestra una sola vez."
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>Cancelar</Button>
+        <Button variant="contained" onClick={() => void submit()} disabled={busy}>
+          Crear finca
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

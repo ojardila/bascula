@@ -61,15 +61,12 @@ describe("the super-admin is outside every tenant", () => {
     expect(can(superAdmin, "admin.farms")).toBe(true);
   });
 
-  it("cannot read one single thing inside a farm", () => {
-    // Not the ledger, not the workers, not the plots. Suspending a farm does
-    // not come with the right to read it.
-    for (const action of [
-      "workers.read", "workers.profile", "money.read", "money.pay",
-      "plots.read", "workRecords.read", "config.farm", "dashboard.view",
-    ] as const) {
-      expect(can(superAdmin, action)).toBe(false);
-    }
+  it("still operates a farm they belong to, with that farm's role", () => {
+    // The flag opens the console. It does not blank the membership: Oscar
+    // provisions farms and also runs San Jose.
+    expect(can(superAdmin, "harvest.read")).toBe(true);
+    expect(can(superAdmin, "money.pay")).toBe(true);
+    expect(can(superAdmin, "workers.read")).toBe(true);
   });
 
   it("is the only role that can reach the admin console", () => {
@@ -135,8 +132,10 @@ describe("the sidebar follows the matrix", () => {
     expect(keys).not.toContain("payroll");
   });
 
-  it("gives the super-admin no farm sidebar whatsoever", () => {
-    expect(visibleModules(superAdmin)).toEqual([]);
+  it("gives the super-admin the farm sidebar of their membership, plus the console", () => {
+    const keys = visibleModules(superAdmin).map((m) => m.key);
+    expect(keys).toContain("harvest");
+    expect(can(superAdmin, "admin.farms")).toBe(true);
   });
 
   it("declares an action for every module, so none can be added unguarded", () => {

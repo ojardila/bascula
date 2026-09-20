@@ -235,6 +235,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <MenuItem disabled sx={{ fontSize: 16 }}>
               {user?.email}
             </MenuItem>
+            {user?.isSuperAdmin && (
+              <MenuItem
+                sx={{ fontSize: 17, minHeight: 48 }}
+                onClick={() => {
+                  setUserMenu(null);
+                  navigate("/admin/fincas");
+                }}
+              >
+                Consola de soporte
+              </MenuItem>
+            )}
             <Divider />
             <MenuItem
               sx={{ fontSize: 17, minHeight: 48 }}
