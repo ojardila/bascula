@@ -56,6 +56,7 @@ import {
   rateSourceToWire,
   toActivity,
   toAdminFarm,
+  toAdminFarmCreated,
   toBalance,
   toCatalogItem,
   toFarmSummary,
@@ -87,6 +88,8 @@ import type {
   Activity,
   ActivityInput,
   AdminFarm,
+  AdminFarmCreate,
+  AdminFarmCreated,
   Balance,
   CatalogItem,
   DeductionInput,
@@ -139,6 +142,7 @@ import type {
 import type {
   WireActivity,
   WireAdminFarm,
+  WireAdminFarmCreated,
   WireBalance,
   WireCatalogItem,
   WireEmployee,
@@ -1815,10 +1819,11 @@ export const api = {
   /* -- super-admin --------------------------------------------------- */
 
   /**
-   * The platform console. It can see that a farm exists and suspend it, and it
-   * cannot read an employee, a work record or a peso of anybody's money — the
-   * projection is the enforcement, and the permission table backs it with a
-   * `Superadmin` flag a farm owner cannot satisfy.
+   * The platform console. It lists farms, creates one with its owner, and
+   * suspends one. It cannot read an employee, a work record or a peso of
+   * anybody's money — the list projection is the enforcement, and the
+   * permission table backs it with a `Superadmin` flag a farm owner cannot
+   * satisfy.
    *
    * Two columns the Sprint 1 screen shows have no source and come back empty
    * rather than invented: the owner's address (the console cannot read users)
@@ -1845,6 +1850,21 @@ export const api = {
     status: "active" | "suspended",
   ): Promise<AdminFarm> =>
     toAdminFarm(await http.patch<WireAdminFarm>(`/v1/admin/farms/${id}`, { status })),
+
+  adminCreateFarm: async (body: AdminFarmCreate): Promise<AdminFarmCreated> =>
+    toAdminFarmCreated(
+      await http.post<WireAdminFarmCreated>("/v1/admin/farms", {
+        name: body.name,
+        priceCents: body.priceCents,
+        timezone: body.timezone,
+        currency: body.currency,
+        owner: {
+          email: body.owner.email,
+          name: body.owner.name || undefined,
+          password: body.owner.password || undefined,
+        },
+      }),
+    ),
 };
 
 /* ------------------------------------------------------------------ */

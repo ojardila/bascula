@@ -195,6 +195,22 @@ func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFa
 	return out, rows.Err()
 }
 
+// GetAdminFarm is one farm as the console may see it. Super-admin RLS is what
+// makes a farm other than the token's tenant readable here.
+func GetAdminFarm(ctx context.Context, tx pgx.Tx, id string) (*AdminFarm, error) {
+	var f AdminFarm
+	err := tx.QueryRow(ctx, `
+		SELECT id::text, name, timezone, currency, country, city, suspended_at, created_at
+		  FROM farms WHERE id = $1`, id).
+		Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.Country, &f.City,
+			&f.SuspendedAt, &f.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	f.Status = farmStatus(f.SuspendedAt)
+	return &f, nil
+}
+
 // SetFarmStatus suspends a farm or brings it back. Suspension is not a delete:
 // the rows stay, the sessions stop. Login and refresh refuse a suspended farm,
 // and so does tenant.setContext on every authenticated request — which is what

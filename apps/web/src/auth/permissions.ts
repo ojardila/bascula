@@ -138,10 +138,9 @@ const WRITE_ACTIONS: ReadonlySet<Action> = new Set<Action>([
 ]);
 
 export function can(principal: Principal, action: Action): boolean {
-  // The super-admin lives outside every tenant: it can list and suspend farms
-  // and it can read nothing else. Not the ledger, not the workers, nothing.
+  // The platform flag opens the farm list. It is not a fourth farm role: a
+  // person who is also an owner still operates their own farm with that role.
   if (action === "admin.farms") return principal.isSuperAdmin;
-  if (principal.isSuperAdmin) return false;
 
   if (principal.farmStatus === "suspended" && WRITE_ACTIONS.has(action)) return false;
 
@@ -227,7 +226,6 @@ export const MODULES: ModuleDef[] = [
 
 /** What this principal is allowed to see in the sidebar. */
 export function visibleModules(principal: Principal): ModuleDef[] {
-  if (principal.isSuperAdmin) return [];
   return MODULES.filter((m) => {
     if (!can(principal, m.action)) return false;
     if (m.inNav) return true;

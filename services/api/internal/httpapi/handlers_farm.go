@@ -1,10 +1,14 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
+	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
@@ -93,12 +97,11 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 // The super-admin console
 // ---------------------------------------------------------------------------
 
-// handleListAdminFarms lists the farms on the platform. Decision 2 turned the
-// public signup into the front door and left this console with two jobs: see
-// the farms and suspend one. It still cannot read an employee, a work record
-// or a peso of anybody's money, and the projection here is the enforcement of
-// that — every column returned is a column of `farms`, and none of them is a
-// way to infer what is inside.
+// handleListAdminFarms lists the farms on the platform. Public signup is still
+// the self-serve door; this console lists, creates and suspends. It still
+// cannot read an employee, a work record or a peso of anybody's money, and the
+// projection here is the enforcement of that — every column returned is a
+// column of `farms`, and none of them is a way to infer what is inside.
 func (s *Server) handleListAdminFarms(w http.ResponseWriter, r *http.Request) {
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -118,6 +121,178 @@ func (s *Server) handleListAdminFarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": farms})
+}
+
+type adminCreateFarmRequest struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Timezone   string `json:"timezone"`
+	Currency   string `json:"currency"`
+	PriceCents int64  `json:"priceCents"`
+	Owner      struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	} `json:"owner"`
+}
+
+// handleCreateAdminFarm is the operator door: a farm plus its first owner,
+// active and verified, without going through public signup.
+//
+// The address is marked verified because the platform administrator vouched
+// for it — the same act as an invite, not the mailbox token of open signup.
+// An existing account is attached as owner and its password is not touched.
+// A new account gets a password the caller typed, or one minted here and
+// returned ONCE, the way invite already does.
+//
+// The farms-per-email cap does not apply: that ceiling is for self-serve
+// signup, not for the person who runs the platform.
+func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
+	var req adminCreateFarmRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, r, domain.BadRequest("name is required"))
+		return
+	}
+	if req.PriceCents <= 0 {
+		writeError(w, r, domain.BadRequest("priceCents must be positive"))
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		writeError(w, r, domain.BadRequest("owner.email is required"))
+		return
+	}
+	if req.Owner.Password != "" && len(req.Owner.Password) < 10 {
+		writeError(w, r, domain.BadRequest("password must be at least 10 characters"))
+		return
+	}
+	if len(req.Owner.Password) > auth.MaxPasswordLength {
+		writeError(w, r, domain.BadRequest("password is too long"))
+		return
+	}
+	if req.Timezone == "" {
+		req.Timezone = "America/Bogota"
+	}
+	if req.Currency == "" {
+		req.Currency = "COP"
+	}
+
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	ok, err := store.IsKnownTimezone(r.Context(), tx, req.Timezone)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if !ok {
+		writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
+		return
+	}
+
+	if req.ID != "" {
+		if existing, err := store.GetAdminFarm(r.Context(), tx, req.ID); err == nil {
+			writeJSON(w, http.StatusOK, existing)
+			return
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	user, err := store.FindUserByEmail(r.Context(), tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, r, err)
+		return
+	}
+
+	ownerCreated := false
+	var temporary string
+	if user == nil {
+		temporary = req.Owner.Password
+		if temporary == "" {
+			temporary, err = newTemporaryPassword()
+			if err != nil {
+				writeError(w, r, domain.Internal("could not mint a password").WithCause(err))
+				return
+			}
+		}
+		hash, hashErr := auth.HashPassword(temporary)
+		if hashErr != nil {
+			writeError(w, r, domain.Internal("could not hash the password").WithCause(hashErr))
+			return
+		}
+		name := strings.TrimSpace(req.Owner.Name)
+		user = &store.User{ID: newID(), Email: email, Name: name, PasswordHash: hash}
+		if err := store.CreateUser(r.Context(), tx, *user); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		ownerCreated = true
+	} else if user.EmailVerifiedAt == nil {
+		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	farmID := req.ID
+	if farmID == "" {
+		farmID = newID()
+	}
+	ctx, err := tenant.SetForSignup(r.Context(), tx, farmID, user.ID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := store.CreateFarm(ctx, tx, store.NewFarm{
+		ID: farmID, Name: req.Name, Timezone: req.Timezone,
+		Currency: req.Currency, PriceMinor: req.PriceCents,
+	}); err != nil {
+		if store.IsUniqueViolation(err, "") {
+			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
+				"that id is already in use"))
+			return
+		}
+		writeError(w, r, err)
+		return
+	}
+	if err := store.CreateMembership(ctx, tx, farmID, user.ID, domain.RoleOwner); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := seedFarm(ctx, tx, farmID, req.PriceCents); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	farm, err := store.GetAdminFarm(ctx, tx, farmID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	out := map[string]any{
+		"id": farm.ID, "name": farm.Name, "timezone": farm.Timezone,
+		"currency": farm.Currency, "country": farm.Country, "city": farm.City,
+		"status": farm.Status, "suspendedAt": farm.SuspendedAt,
+		"createdAt":  farm.CreatedAt,
+		"ownerEmail": email, "ownerCreated": ownerCreated,
+	}
+	if ownerCreated && req.Owner.Password == "" {
+		out["temporaryPassword"] = temporary
+		out["temporaryPasswordNote"] = "shown once: hand it over now, it cannot be read again"
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // handleSetFarmStatus suspends a farm or brings it back.

@@ -497,6 +497,66 @@ func TestSuperAdminConsole(t *testing.T) {
 				"how a suspend button ships broken", res.Status, res.Raw)
 		}
 	})
+
+	t.Run("it provisions a farm with a new owner, already verified", func(t *testing.T) {
+		res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+			"name": "Finca El Roble", "priceCents": 90000,
+			"owner": map[string]any{"email": "roble@example.com", "name": "Ana Roble"},
+		}, http.StatusCreated)
+		if res.Body["name"] != "Finca El Roble" {
+			t.Fatalf("created farm: %s", res.Raw)
+		}
+		if res.Body["ownerEmail"] != "roble@example.com" {
+			t.Fatalf("owner email missing: %s", res.Raw)
+		}
+		if res.Body["ownerCreated"] != true {
+			t.Fatalf("expected a new account: %s", res.Raw)
+		}
+		pwd, _ := res.Body["temporaryPassword"].(string)
+		if pwd == "" {
+			t.Fatalf("minted password was not returned: %s", res.Raw)
+		}
+		login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": "roble@example.com", "password": pwd,
+		}, http.StatusOK)
+		if login.Body["farmName"] != "Finca El Roble" {
+			t.Fatalf("new owner could not open the farm: %s", login.Raw)
+		}
+	})
+
+	t.Run("an existing account is attached and its password is left alone", func(t *testing.T) {
+		res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+			"name": "Finca La Ceiba", "priceCents": 85000,
+			"owner": map[string]any{
+				"email": a.OwnerEmail, "name": "Should Not Matter",
+			},
+		}, http.StatusCreated)
+		if res.Body["ownerCreated"] != false {
+			t.Fatalf("existing account was recreated: %s", res.Raw)
+		}
+		if _, leaked := res.Body["temporaryPassword"]; leaked {
+			t.Fatalf("must not mint a password for an existing account: %s", res.Raw)
+		}
+		listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+		names := map[string]bool{}
+		for _, raw := range listed.Body["items"].([]any) {
+			names[raw.(map[string]any)["name"].(string)] = true
+		}
+		if !names["Finca La Ceiba"] {
+			t.Fatalf("new farm missing from the console: %s", listed.Raw)
+		}
+	})
+
+	t.Run("an owner cannot provision farms", func(t *testing.T) {
+		res := h.do(t, http.MethodPost, "/v1/admin/farms", a.OwnerToken, map[string]any{
+			"name": "No", "priceCents": 1,
+			"owner": map[string]any{"email": "x@example.com"},
+		})
+		if res.Status != http.StatusForbidden {
+			t.Fatalf("ordinary owner creating a farm via admin: got %d %s, want 403",
+				res.Status, res.Raw)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

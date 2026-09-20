@@ -297,7 +297,21 @@ export interface paths {
          */
         get: operations["adminListFarms"];
         put?: never;
-        post?: never;
+        /**
+         * Create a farm and its first owner
+         * @description The operator door. Public signup is still open; this is how the platform
+         *     administrator provisions a farm without asking the owner to fill the
+         *     registration form.
+         *
+         *     The owner address is marked verified because the administrator vouched
+         *     for it — the same act as an invite. A new account gets the password
+         *     supplied here, or one minted and returned once as `temporaryPassword`.
+         *     An existing account is attached as owner and its password is not
+         *     touched.
+         *
+         *     The farms-per-email cap of self-serve signup does not apply.
+         */
+        post: operations["adminCreateFarm"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3056,6 +3070,35 @@ export interface components {
             suspendedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        AdminFarmCreate: {
+            /** Format: uuid */
+            id?: string;
+            name: string;
+            /** @default America/Bogota */
+            timezone: string;
+            /** @default COP */
+            currency: string;
+            /** Format: int64 */
+            priceCents: number;
+            owner: {
+                /** Format: email */
+                email: string;
+                name?: string;
+                /**
+                 * @description Required for a new account only if the caller does not want one
+                 *     minted. An existing account's password is never changed.
+                 */
+                password?: string;
+            };
+        };
+        AdminFarmCreated: components["schemas"]["AdminFarm"] & {
+            /** Format: email */
+            ownerEmail: string;
+            ownerCreated: boolean;
+            /** @description Present only when the server minted one for a new owner. */
+            temporaryPassword?: string;
+            temporaryPasswordNote?: string;
         };
         /**
          * @description One member of this farm. `role` is the role the account holds HERE; the
@@ -5990,6 +6033,51 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateFarm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminFarmCreate"];
+            };
+        };
+        responses: {
+            /** @description That id already existed. The farm is returned as listed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFarm"];
+                };
+            };
+            /** @description Created. `temporaryPassword` is present only when minted. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFarmCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description IDEMPOTENCY_KEY_REUSED — that id belongs to another farm. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     adminSetFarmStatus: {

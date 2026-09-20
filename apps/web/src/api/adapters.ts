@@ -41,6 +41,7 @@
 import type {
   Activity,
   AdminFarm,
+  AdminFarmCreated,
   Balance,
   CatalogItem,
   Customer,
@@ -70,6 +71,7 @@ import type {
 import type {
   WireActivity,
   WireAdminFarm,
+  WireAdminFarmCreated,
   WireBalance,
   WireCatalogItem,
   WireEmployee,
@@ -694,6 +696,15 @@ export function toAdminFarm(f: WireAdminFarm): AdminFarm {
     workerCount: null,
     city: f.city,
     country: f.country,
+  };
+}
+
+export function toAdminFarmCreated(f: WireAdminFarmCreated): AdminFarmCreated {
+  return {
+    ...toAdminFarm(f),
+    ownerEmail: f.ownerEmail,
+    ownerCreated: f.ownerCreated,
+    ...(f.temporaryPassword ? { temporaryPassword: f.temporaryPassword } : {}),
   };
 }
 

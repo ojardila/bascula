@@ -43,9 +43,10 @@ func (s *Server) Routes() []Route {
 		// place to test guesses. A session is that proof.
 		{http.MethodPost, "/v1/farms", auth.ActionFarmsCreate, s.handleCreateFarm},
 
-		// The super-admin console, and all of it. Decision 2 made the public
-		// signup the front door and left this with two jobs.
+		// The super-admin console. Public signup is still the self-serve door;
+		// this is the operator door: list, create, suspend.
 		{http.MethodGet, "/v1/admin/farms", auth.ActionAdminFarmsRead, s.handleListAdminFarms},
+		{http.MethodPost, "/v1/admin/farms", auth.ActionAdminFarmsWrite, s.handleCreateAdminFarm},
 		{http.MethodPatch, "/v1/admin/farms/{id}", auth.ActionAdminFarmsWrite, s.handleSetFarmStatus},
 
 		// Who can log in to this farm. A membership, not a person: the account

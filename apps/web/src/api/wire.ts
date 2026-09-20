@@ -253,6 +253,13 @@ export interface WireAdminFarm {
   createdAt: Instant;
 }
 
+export interface WireAdminFarmCreated extends WireAdminFarm {
+  ownerEmail: string;
+  ownerCreated: boolean;
+  temporaryPassword?: string;
+  temporaryPasswordNote?: string;
+}
+
 /* -- catalogues ------------------------------------------------------ */
 
 /** crop-types, varieties, activity-categories all share this row. */
