@@ -22,9 +22,9 @@ import { PROVISIONAL } from "../../lib/vocab";
 
 /** How far back a reading goes. Named in weeks, because a season is weeks. */
 export const RANGES = [
-  { key: "12", label: "Últimas 12 semanas", weeks: 12 },
-  { key: "26", label: "Temporada (6 meses)", weeks: 26 },
-  { key: "52", label: "Últimas 52 semanas", weeks: 52 },
+  { key: "12", label: "3 meses", weeks: 12 },
+  { key: "26", label: "6 meses", weeks: 26 },
+  { key: "52", label: "1 año", weeks: 52 },
 ] as const;
 
 const DEFAULT_RANGE = "26";
@@ -55,10 +55,8 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { path: "/cosecha", label: "Temporada", exact: true },
-  { path: "/cosecha/cultivos", label: "Por cultivo" },
-  { path: "/cosecha/rendimiento", label: "Rendimiento" },
-  { path: "/cosecha/revision", label: "Revisión de pesadas" },
+  { path: "/cosecha", label: "Resumen", exact: true },
+  { path: "/cosecha/revision", label: "Pesadas" },
 ];
 
 export function HarvestLayout() {
@@ -98,8 +96,7 @@ export function HarvestLayout() {
         <Box>
           <Typography variant="h1">Cosecha</Typography>
           <Typography variant="body2" color="text.secondary">
-            La recolección de la finca, semana a semana. Cada pesada sigue siendo una
-            labor y se liquida junto con el resto del trabajo de la persona.
+            Lo que se ha recogido en la finca.
           </Typography>
         </Box>
         <TextField
@@ -108,7 +105,7 @@ export function HarvestLayout() {
           label="Periodo"
           value={range.key}
           onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
-          sx={{ minWidth: 210 }}
+          sx={{ minWidth: 140 }}
         >
           {RANGES.map((r) => (
             <MenuItem key={r.key} value={r.key}>
