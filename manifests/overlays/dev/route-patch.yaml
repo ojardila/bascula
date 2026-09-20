@@ -1,0 +1,9 @@
+- op: replace
+  path: /spec/parentRefs
+  value:
+    - name: internal
+      namespace: gateway
+- op: replace
+  path: /spec/hostnames
+  value:
+    - bascula.int.dev.engp.io

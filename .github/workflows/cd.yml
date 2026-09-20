@@ -1,9 +1,9 @@
 name: CD
 
 # Builds the API and the web images and pushes them to Harbor. CI runs first
-# and must pass. Deployment is not done here: this workflow pins the cooked
-# git tag on the ArgoCD Application in ojardila/gitops, which keeps cluster
-# credentials out of GitHub.
+# and must pass. The cooked git tag is pinned on the ArgoCD Application in
+# ojardila/gitops: automatically to bascula-dev (internal), and to production
+# only after the GitHub Environment `production` is approved.
 #
 # Both images are released under ONE tag, from one commit. The web is built
 # against services/api/openapi.yaml, so a release where the two halves came
@@ -44,19 +44,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - id: live
-        name: Remember the live asset hash
-        run: |
-          set -euo pipefail
-          html=$(curl -sk --max-time 15 "https://bascula.engp.io/?snap=${GITHUB_RUN_ID}-pre" || true)
-          asset=$(printf '%s\n' "$html" | grep -oE '/assets/index-[^"]+' | head -1 || true)
-          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
-          echo "live origin asset: ${asset:-unknown}"
 
       - id: version
         name: Resolve version
@@ -162,7 +155,7 @@ jobs:
           from pathlib import Path
 
           v = os.environ["V"]
-          p = Path("manifests/kustomization.yaml")
+          p = Path("manifests/base/kustomization.yaml")
           s = p.read_text()
           # Both entries, one tag: the two images ship together by design.
           s = re.sub(r"(newTag:\s*)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
@@ -172,13 +165,13 @@ jobs:
           # hook-delete-policy: BeforeHookCreation, so it is deleted and
           # recreated on every sync — a completed Job's pod spec is immutable
           # and could not otherwise pick up the new image.
-          p = Path("manifests/api.yaml")
+          p = Path("manifests/base/api.yaml")
           s = p.read_text()
           s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/api:)v[0-9]+\.[0-9]+\.[0-9]+",
                      r"\g<1>" + v, s)
           p.write_text(s)
 
-          p = Path("manifests/web.yaml")
+          p = Path("manifests/base/web.yaml")
           s = p.read_text()
           s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/web:)v[0-9]+\.[0-9]+\.[0-9]+",
                      r"\g<1>" + v, s)
@@ -194,7 +187,7 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add VERSION manifests/
+          git add VERSION manifests/base/
           if git diff --cached --quiet; then
             echo "nothing to commit"
           else
@@ -207,10 +200,8 @@ jobs:
           git push origin "${V}"
           gh release create "${V}" --title "${V}" --generate-notes || true
 
-      # ArgoCD watches gitops, not this repo's branch tip. Pinning the tag
-      # there is what actually rolls the cluster: a Harbor push that did not
-      # change git used to leave the app on the previous image.
-      - name: Pin the tag in gitops
+      # Dev rolls on every release. Production waits for approval below.
+      - name: Pin dev in gitops
         env:
           V: ${{ steps.version.outputs.version }}
           GITOPS_DEPLOY_KEY: ${{ secrets.GITOPS_DEPLOY_KEY }}
@@ -224,40 +215,58 @@ jobs:
           printenv GITOPS_DEPLOY_KEY > /tmp/gitops_key
           export GIT_SSH_COMMAND='ssh -i /tmp/gitops_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
           git clone --depth 1 git@github.com:ojardila/gitops.git /tmp/gitops
-          python3 - <<'PY'
-          import os, re, sys
-          from pathlib import Path
+          python3 scripts/pin-gitops.py /tmp/gitops/applications/bascula-dev.yaml "$V"
+          git -C /tmp/gitops config user.name  "github-actions[bot]"
+          git -C /tmp/gitops config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/gitops add applications/bascula-dev.yaml
+          if git -C /tmp/gitops diff --cached --quiet; then
+            echo "gitops already pinned bascula-dev at ${V}"
+          else
+            git -C /tmp/gitops commit -m "bascula-dev: pin ${V}"
+            git -C /tmp/gitops push origin HEAD:main
+          fi
 
-          v = os.environ["V"]
-          p = Path("/tmp/gitops/applications/bascula.yaml")
-          s = p.read_text()
-          s, n = re.subn(r"(?m)^(    targetRevision:\s*).+$", r"\g<1>" + v, s, count=1)
-          if n != 1:
-              sys.exit(f"expected 1 targetRevision line, got {n}")
-          s, n = re.subn(
-              r"harbor\.int\.engp\.io/bascula/(api|web):v[0-9]+\.[0-9]+\.[0-9]+",
-              rf"harbor.int.engp.io/bascula/\1:{v}",
-              s,
-          )
-          if n != 2:
-              sys.exit(f"expected 2 image pins, got {n}")
-          p.write_text(s)
-          PY
+  production:
+    needs: release
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: live
+        name: Remember the live asset hash
+        run: |
+          set -euo pipefail
+          html=$(curl -sk --max-time 15 "https://bascula.engp.io/?snap=${GITHUB_RUN_ID}-pre" || true)
+          asset=$(printf '%s\n' "$html" | grep -oE '/assets/index-[^"]+' | head -1 || true)
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+          echo "live origin asset: ${asset:-unknown}"
+
+      - name: Pin production in gitops
+        env:
+          V: ${{ needs.release.outputs.version }}
+          GITOPS_DEPLOY_KEY: ${{ secrets.GITOPS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITOPS_DEPLOY_KEY}" ]; then
+            echo "GITOPS_DEPLOY_KEY is empty" >&2
+            exit 1
+          fi
+          install -m 600 /dev/null /tmp/gitops_key
+          printenv GITOPS_DEPLOY_KEY > /tmp/gitops_key
+          export GIT_SSH_COMMAND='ssh -i /tmp/gitops_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+          git clone --depth 1 git@github.com:ojardila/gitops.git /tmp/gitops
+          python3 scripts/pin-gitops.py /tmp/gitops/applications/bascula.yaml "$V"
           git -C /tmp/gitops config user.name  "github-actions[bot]"
           git -C /tmp/gitops config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C /tmp/gitops add applications/bascula.yaml
           if git -C /tmp/gitops diff --cached --quiet; then
-            echo "gitops already pinned at ${V}"
+            echo "gitops already pinned production at ${V}"
           else
             git -C /tmp/gitops commit -m "bascula: pin ${V}"
             git -C /tmp/gitops push origin HEAD:main
           fi
 
-      # ArgoCD may take a few minutes to roll. Purging before the origin
-      # moves just lets Cloudflare recache the previous index.html (it was
-      # sending max-age=3600 on `/`). Wait for the hashed bundle to change,
-      # then drop the host. Always purge: an API-only release keeps the same
-      # JS and still needs the HTML HIT gone.
       - name: Purge Cloudflare
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
