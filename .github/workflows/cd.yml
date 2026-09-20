@@ -49,6 +49,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - id: live
+        name: Remember the live asset hash
+        run: |
+          set -euo pipefail
+          html=$(curl -sk --max-time 15 "https://bascula.engp.io/?snap=${GITHUB_RUN_ID}-pre" || true)
+          asset=$(printf '%s\n' "$html" | grep -oE '/assets/index-[^"]+' | head -1 || true)
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+          echo "live origin asset: ${asset:-unknown}"
+
       - id: version
         name: Resolve version
         run: |
@@ -243,3 +252,47 @@ jobs:
             git -C /tmp/gitops commit -m "bascula: pin ${V}"
             git -C /tmp/gitops push origin HEAD:main
           fi
+
+      # ArgoCD may take a few minutes to roll. Purging before the origin
+      # moves just lets Cloudflare recache the previous index.html (it was
+      # sending max-age=3600 on `/`). Wait for the hashed bundle to change,
+      # then drop the host. Always purge: an API-only release keeps the same
+      # JS and still needs the HTML HIT gone.
+      - name: Purge Cloudflare
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          OLD_ASSET: ${{ steps.live.outputs.asset }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_API_TOKEN}" ]; then
+            echo "CF_API_TOKEN is empty" >&2
+            exit 1
+          fi
+          for i in $(seq 1 24); do
+            html=$(curl -sk --max-time 15 "https://bascula.engp.io/?snap=${GITHUB_RUN_ID}-${i}" || true)
+            asset=$(printf '%s\n' "$html" | grep -oE '/assets/index-[^"]+' | head -1 || true)
+            if [ -n "${OLD_ASSET}" ] && [ -n "${asset}" ] && [ "${asset}" != "${OLD_ASSET}" ]; then
+              echo "origin rolled ${OLD_ASSET} -> ${asset} after ${i} tries"
+              break
+            fi
+            echo "waiting for origin (${i}) asset=${asset:-none}"
+            sleep 20
+          done
+          zone=$(curl -sS --fail --max-time 15 \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/zones?name=engp.io" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; assert r, "no engp.io zone"; print(r[0]["id"])')
+          code=$(curl -sS --fail --max-time 20 -o /tmp/cf-purge.json -w "%{http_code}" \
+            -X POST "https://api.cloudflare.com/client/v4/zones/${zone}/purge_cache" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"hosts":["bascula.engp.io"]}')
+          python3 - <<'PY'
+          import json, sys
+          d = json.load(open("/tmp/cf-purge.json"))
+          if not d.get("success"):
+              print(d.get("errors"), file=sys.stderr)
+              sys.exit(1)
+          print("purged bascula.engp.io")
+          PY
+          echo "purge http ${code}"

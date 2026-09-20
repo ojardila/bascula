@@ -4,7 +4,9 @@ Báscula on the [`k8`](https://github.com/ojardila/k8) cluster, at
 **bascula.engp.io**. CD writes the image tags into `kustomization.yaml`,
 creates the git tag, then pins that tag on the ArgoCD Application in
 [`gitops`](https://github.com/ojardila/gitops) (`applications/bascula.yaml`).
-ArgoCD rolls from that pin. Nothing here is applied by hand.
+ArgoCD rolls from that pin. CD then waits for the public origin and
+purges Cloudflare for `bascula.engp.io`, so the edge does not keep the
+previous `index.html` for an hour. Nothing here is applied by hand.
 
 ```
                     bascula.engp.io
