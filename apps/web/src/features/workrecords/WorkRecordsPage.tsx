@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Box, Chip, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Stack, Typography } from "@mui/material";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Value } from "../harvest/Figures";
@@ -127,8 +127,15 @@ export function WorkRecordsPage() {
         searchPlaceholder="Buscar por actividad, empleado o lote"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workRecords.write") ? () => navigate("/labores/nueva") : undefined}
-        createLabel="Registrar labor"
+        onCreate={can("workRecords.write") ? () => navigate("/labores/planilla") : undefined}
+        createLabel="Planilla de recolección"
+        toolbarExtra={
+          can("workRecords.write") ? (
+            <Button variant="outlined" onClick={() => navigate("/labores/nueva")}>
+              Una labor
+            </Button>
+          ) : null
+        }
         onDeactivate={
           can("workRecords.write")
             ? async (r) => {

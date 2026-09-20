@@ -14,7 +14,7 @@
  */
 import { createContext, useContext } from "react";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Box, Chip, MenuItem, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, MenuItem, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useAuth } from "../../auth/AuthContext";
 import { todayInFarm } from "../../lib/dates";
@@ -102,20 +102,31 @@ export function HarvestLayout() {
             labor y se liquida junto con el resto del trabajo de la persona.
           </Typography>
         </Box>
-        <TextField
-          select
-          size="small"
-          label="Periodo"
-          value={range.key}
-          onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
-          sx={{ minWidth: 210 }}
-        >
-          {RANGES.map((r) => (
-            <MenuItem key={r.key} value={r.key}>
-              {r.label}
-            </MenuItem>
-          ))}
-        </TextField>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+          {can("workRecords.write") && (
+            <Button
+              component={RouterLink}
+              to="/labores/planilla"
+              variant="contained"
+            >
+              Registrar planilla
+            </Button>
+          )}
+          <TextField
+            select
+            size="small"
+            label="Periodo"
+            value={range.key}
+            onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
+            sx={{ minWidth: 210 }}
+          >
+            {RANGES.map((r) => (
+              <MenuItem key={r.key} value={r.key}>
+                {r.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Stack>
       </Stack>
 
       <Tabs

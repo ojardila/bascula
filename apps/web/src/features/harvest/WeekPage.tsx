@@ -36,6 +36,7 @@ import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
 import { reportWeek } from "../../api/harvest";
 import { formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
+import { useAuth } from "../../auth/AuthContext";
 import { useHarvest } from "./HarvestLayout";
 import { Kg, Stat, Value } from "./Figures";
 import { unattributedReason } from "./text";
@@ -63,6 +64,7 @@ function crossFoots(grid: WireReportGrid): boolean {
 export function WeekPage() {
   const { monday = "" } = useParams();
   const { today, rangeKey, canSeeMoney } = useHarvest();
+  const { can } = useAuth();
   const [axis, setAxis] = useState<"day" | "crop">("day");
 
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(monday) && mondayOf(monday) === monday;
@@ -73,14 +75,26 @@ export function WeekPage() {
   );
 
   const back = (
-    <Button
-      component={RouterLink}
-      to={`/cosecha?rango=${rangeKey}`}
-      startIcon={<ArrowBackIcon />}
-      size="small"
-    >
-      Volver a la temporada
-    </Button>
+    <Stack direction="row" spacing={1} flexWrap="wrap">
+      <Button
+        component={RouterLink}
+        to={`/cosecha?rango=${rangeKey}`}
+        startIcon={<ArrowBackIcon />}
+        size="small"
+      >
+        Volver a la temporada
+      </Button>
+      {can("workRecords.write") && (
+        <Button
+          component={RouterLink}
+          to={`/labores/planilla?lunes=${monday}`}
+          size="small"
+          variant="outlined"
+        >
+          Llenar planilla
+        </Button>
+      )}
+    </Stack>
   );
 
   if (denied) return <PermissionDenied moduleName="ver la cosecha" />;

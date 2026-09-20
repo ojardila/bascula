@@ -19,6 +19,7 @@ import { SettlementDetailPage } from "./features/settlements/SettlementDetailPag
 import { FarmUsersPage } from "./features/users/FarmUsersPage";
 import { WorkRecordsPage } from "./features/workrecords/WorkRecordsPage";
 import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
+import { PlanillaPage } from "./features/workrecords/PlanillaPage";
 import { HarvestLayout } from "./features/harvest/HarvestLayout";
 import { SeasonPage } from "./features/harvest/SeasonPage";
 import { WeekPage } from "./features/harvest/WeekPage";
@@ -230,6 +231,14 @@ function Shell() {
           element={
             <RequirePermission action="workRecords.read" moduleName="ver las labores">
               <WorkRecordsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="labores/planilla"
+          element={
+            <RequirePermission action="workRecords.write" moduleName="registrar la planilla de recolección">
+              <PlanillaPage />
             </RequirePermission>
           }
         />
