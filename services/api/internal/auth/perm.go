@@ -122,6 +122,10 @@ const (
 	// member with a valid token — and it is TenantOptional because the outer
 	// request touches no table; the inner one opens its own transaction.
 	ActionMCP Action = "mcp"
+
+	// OAuth discovery, registration and the authorization-code dance that
+	// ChatGPT's connector UI insists on. Public: there is no token yet.
+	ActionOAuth Action = "oauth"
 )
 
 // Rule is one row of the permission table.
@@ -333,7 +337,8 @@ var Matrix = map[Action]Rule{
 	// ve reportes de dinero" is the floor here, not the ceiling.
 	ActionReportsRead: {Roles: admins, Money: true},
 
-	ActionMCP: {Roles: everyone, TenantOptional: true},
+	ActionMCP:   {Roles: everyone, TenantOptional: true},
+	ActionOAuth: {Public: true, TenantOptional: true},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bascula-api
+  namespace: bascula
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: PUBLIC_BASE_URL
+              value: https://bascula.int.dev.engp.io

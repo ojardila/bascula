@@ -38,6 +38,15 @@ spec:
         - path: {type: PathPrefix, value: /mcp}
       backendRefs:
         - {name: bascula-api, port: 80}
+    # OAuth discovery and the authorization-code dance for ChatGPT connectors.
+    - matches:
+        - path: {type: PathPrefix, value: /oauth}
+      backendRefs:
+        - {name: bascula-api, port: 80}
+    - matches:
+        - path: {type: PathPrefix, value: /.well-known}
+      backendRefs:
+        - {name: bascula-api, port: 80}
     - matches:
         - path: {type: PathPrefix, value: /}
       backendRefs:

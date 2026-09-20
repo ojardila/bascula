@@ -248,9 +248,26 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/reports/anomalies", auth.ActionReportsRead, s.handleReportAnomalies},
 		{http.MethodGet, "/v1/reports/harvest-curve", auth.ActionReportsRead, s.handleReportHarvestCurve},
 
-		// MCP. One POST, stateless: the streamable transport needs nothing
-		// else in that mode, and a session pinned to one replica is a session
-		// the next rollout loses. See handlers_mcp.go.
+		// MCP. Streamable HTTP, stateless. POST is the JSON-RPC; GET is the
+		// optional SSE stream; OPTIONS is CORS for browser hosts (ChatGPT).
 		{http.MethodPost, "/mcp", auth.ActionMCP, s.handleMCP},
+		{http.MethodGet, "/mcp", auth.ActionMCP, s.handleMCP},
+		{http.MethodOptions, "/mcp", auth.ActionOAuth, s.handleMCPOptions},
+
+		// OAuth 2.1 so ChatGPT's connector UI can obtain the same JWT a
+		// session already has. Public: there is no token yet.
+		{http.MethodGet, "/.well-known/oauth-protected-resource", auth.ActionOAuth, s.handleOAuthProtectedResource},
+		{http.MethodGet, "/.well-known/oauth-protected-resource/mcp", auth.ActionOAuth, s.handleOAuthProtectedResource},
+		{http.MethodGet, "/.well-known/oauth-authorization-server", auth.ActionOAuth, s.handleOAuthAuthorizationServer},
+		{http.MethodGet, "/oauth/authorize", auth.ActionOAuth, s.handleOAuthAuthorize},
+		{http.MethodPost, "/oauth/authorize", auth.ActionOAuth, s.handleOAuthAuthorize},
+		{http.MethodPost, "/oauth/token", auth.ActionOAuth, s.handleOAuthToken},
+		{http.MethodPost, "/oauth/register", auth.ActionOAuth, s.handleOAuthRegister},
+		{http.MethodOptions, "/oauth/authorize", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, "/oauth/token", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, "/oauth/register", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, "/.well-known/oauth-protected-resource", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, "/.well-known/oauth-protected-resource/mcp", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, "/.well-known/oauth-authorization-server", auth.ActionOAuth, s.handleMCPOptions},
 	}
 }

@@ -92,6 +92,11 @@ type Config struct {
 	// file. Empty means a directory under the system temp, which is right for
 	// a test and wrong for anything else — see the note in cmd/api.
 	UploadDir string
+	// PublicBaseURL is the HTTPS origin clients see, used as the OAuth
+	// issuer and as the MCP resource identifier. Empty means derive it from
+	// the request (Host and X-Forwarded-Proto), which is right behind the
+	// Gateway and for tests.
+	PublicBaseURL string
 }
 
 // DefaultConfig is the production posture.
@@ -208,6 +213,9 @@ func (s *Server) buildRouter() chi.Router {
 			writeError(w, r, err)
 		})(chained)
 		chained = s.authenticate(chained)
+		if rt.Action == auth.ActionMCP || rt.Action == auth.ActionOAuth {
+			chained = withCORS(chained)
+		}
 		r.Method(rt.Method, rt.Pattern, chained)
 	}
 	return r
@@ -351,6 +359,9 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 
 			p, ok := auth.PrincipalFrom(r.Context())
 			if !ok {
+				if action == auth.ActionMCP {
+					s.writeMCPChallenge(w, r)
+				}
 				writeError(w, r, domain.Unauthorized("authentication required"))
 				return
 			}
