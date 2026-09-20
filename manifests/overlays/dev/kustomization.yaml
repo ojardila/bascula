@@ -1,0 +1,38 @@
+# Internal staging: namespace bascula-dev, tailnet only.
+# Hostname: https://bascula.int.dev.engp.io
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bascula-dev
+resources:
+  - ../../base
+patches:
+  - path: route-patch.yaml
+    target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: HTTPRoute
+      name: bascula
+  - path: web-replicas.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bascula-web
+  - path: postgres-dev.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Cluster
+      name: bascula-db
+  - path: delete-objectstore.yaml
+    target:
+      group: barmancloud.cnpg.io
+      version: v1
+      kind: ObjectStore
+      name: bascula-backups
+  - path: delete-scheduled-backup.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: ScheduledBackup
+      name: bascula-db-weekly

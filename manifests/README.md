@@ -1,12 +1,19 @@
 # Deployment
 
 Báscula on the [`k8`](https://github.com/ojardila/k8) cluster, at
-**bascula.engp.io**. CD writes the image tags into `kustomization.yaml`,
-creates the git tag, then pins that tag on the ArgoCD Application in
-[`gitops`](https://github.com/ojardila/gitops) (`applications/bascula.yaml`).
-ArgoCD rolls from that pin. CD then waits for the public origin and
-purges Cloudflare for `bascula.engp.io`, so the edge does not keep the
-previous `index.html` for an hour. Nothing here is applied by hand.
+**bascula.engp.io** (production, public) and
+**bascula.int.dev.engp.io** (dev, tailnet only).
+
+CD writes the image tags into `kustomization.yaml`, creates the git tag,
+then pins that tag on ArgoCD Applications in
+[`gitops`](https://github.com/ojardila/gitops):
+
+- `applications/bascula-dev.yaml` — every release, no approval
+- `applications/bascula.yaml` — GitHub Environment `production`, after approval
+
+Dev is `manifests/overlays/dev` (namespace `bascula-dev`, internal Gateway).
+Prod is this directory. After a prod pin, CD waits for the public origin and
+purges Cloudflare for `bascula.engp.io`. Nothing here is applied by hand.
 
 ```
                     bascula.engp.io
@@ -121,6 +128,9 @@ kubectl create secret generic bascula-db-app -n bascula \
 # The token signing key. The API refuses to boot without it, by design.
 kubectl create secret generic bascula-api -n bascula \
   --from-literal=jwt-secret="$(openssl rand -base64 48)"
+
+# Dev namespace (harbor-pull copied from prod, new DB password and JWT).
+./scripts/create-dev-secrets.sh
 ```
 
 `bascula-db-superuser`, `bascula-db-ca`, `bascula-db-server` and

@@ -1,0 +1,6 @@
+# Production: public hostname, namespace bascula.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: bascula
+resources:
+  - ../../base
