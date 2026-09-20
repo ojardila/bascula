@@ -4265,6 +4265,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthProtectedResourcePreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []
@@ -4288,6 +4289,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthProtectedResourceMCPPreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []
@@ -4311,6 +4313,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthAuthorizationServerPreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []
@@ -4340,6 +4343,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthRegisterPreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []
@@ -4369,6 +4373,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthAuthorizePreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []
@@ -4393,6 +4398,7 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthTokenPreflight
+      summary: CORS preflight
       x-action: oauth
       x-roles: [public]
       security: []

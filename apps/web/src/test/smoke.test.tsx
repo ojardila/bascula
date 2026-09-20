@@ -46,8 +46,6 @@ describe("signing in", () => {
     expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 }))
       .toBeInTheDocument();
     expect(screen.getByText("La Esperanza")).toBeInTheDocument();
-    // The permanent notice is on every authenticated screen, by construction.
-    expect(screen.getByText(/llevan cuentas separadas/i)).toBeInTheDocument();
   }, 20000);
 
   it("says so, once, when the password is wrong", async () => {

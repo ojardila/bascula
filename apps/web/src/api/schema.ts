@@ -2497,6 +2497,7 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthProtectedResourcePreflight"];
         head?: never;
         patch?: never;
@@ -2514,6 +2515,7 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthProtectedResourceMCPPreflight"];
         head?: never;
         patch?: never;
@@ -2531,6 +2533,7 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthAuthorizationServerPreflight"];
         head?: never;
         patch?: never;
@@ -2548,6 +2551,7 @@ export interface paths {
         /** Dynamic client registration (RFC 7591) */
         post: operations["oauthRegister"];
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthRegisterPreflight"];
         head?: never;
         patch?: never;
@@ -2566,6 +2570,7 @@ export interface paths {
         /** Authorization-code login */
         post: operations["oauthAuthorizeSubmit"];
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthAuthorizePreflight"];
         head?: never;
         patch?: never;
@@ -2583,6 +2588,7 @@ export interface paths {
         /** Exchange an authorization code for the farm JWT */
         post: operations["oauthToken"];
         delete?: never;
+        /** CORS preflight */
         options: operations["oauthTokenPreflight"];
         head?: never;
         patch?: never;
