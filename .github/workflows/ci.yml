@@ -16,12 +16,17 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  # CD calls this and waits. A release that has not passed these jobs
+  # does not get a Harbor tag or a gitops pin.
+  workflow_call:
 
 concurrency:
   # A new push cancels the run still going for the same branch. Nobody reads
-  # the result of a commit that has already been replaced.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # the result of a commit that has already been replaced. CD's call is a
+  # different event, so it does not cancel the standalone master CI (or
+  # vice versa).
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   migrations:

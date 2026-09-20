@@ -1,9 +1,9 @@
 name: CD
 
-# Builds the API and the web images and pushes them to Harbor. Deployment is
-# not done here: ArgoCD watches this repo and rolls out the tags written into
-# manifests/kustomization.yaml, which keeps cluster credentials out of GitHub.
-# Same pattern as 3chepes and jurius.
+# Builds the API and the web images and pushes them to Harbor. CI runs first
+# and must pass. Deployment is not done here: this workflow pins the cooked
+# git tag on the ArgoCD Application in ojardila/gitops, which keeps cluster
+# credentials out of GitHub.
 #
 # Both images are released under ONE tag, from one commit. The web is built
 # against services/api/openapi.yaml, so a release where the two halves came
@@ -36,7 +36,11 @@ env:
   PROJECT: bascula
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -193,3 +197,49 @@ jobs:
           git push origin master
           git push origin "${V}"
           gh release create "${V}" --title "${V}" --generate-notes || true
+
+      # ArgoCD watches gitops, not this repo's branch tip. Pinning the tag
+      # there is what actually rolls the cluster: a Harbor push that did not
+      # change git used to leave the app on the previous image.
+      - name: Pin the tag in gitops
+        env:
+          V: ${{ steps.version.outputs.version }}
+          GITOPS_DEPLOY_KEY: ${{ secrets.GITOPS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITOPS_DEPLOY_KEY}" ]; then
+            echo "GITOPS_DEPLOY_KEY is empty" >&2
+            exit 1
+          fi
+          install -m 600 /dev/null /tmp/gitops_key
+          printenv GITOPS_DEPLOY_KEY > /tmp/gitops_key
+          export GIT_SSH_COMMAND='ssh -i /tmp/gitops_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+          git clone --depth 1 git@github.com:ojardila/gitops.git /tmp/gitops
+          python3 - <<'PY'
+          import os, re, sys
+          from pathlib import Path
+
+          v = os.environ["V"]
+          p = Path("/tmp/gitops/applications/bascula.yaml")
+          s = p.read_text()
+          s, n = re.subn(r"(?m)^(    targetRevision:\s*).+$", r"\g<1>" + v, s, count=1)
+          if n != 1:
+              sys.exit(f"expected 1 targetRevision line, got {n}")
+          s, n = re.subn(
+              r"harbor\.int\.engp\.io/bascula/(api|web):v[0-9]+\.[0-9]+\.[0-9]+",
+              rf"harbor.int.engp.io/bascula/\1:{v}",
+              s,
+          )
+          if n != 2:
+              sys.exit(f"expected 2 image pins, got {n}")
+          p.write_text(s)
+          PY
+          git -C /tmp/gitops config user.name  "github-actions[bot]"
+          git -C /tmp/gitops config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/gitops add applications/bascula.yaml
+          if git -C /tmp/gitops diff --cached --quiet; then
+            echo "gitops already pinned at ${V}"
+          else
+            git -C /tmp/gitops commit -m "bascula: pin ${V}"
+            git -C /tmp/gitops push origin HEAD:main
+          fi
