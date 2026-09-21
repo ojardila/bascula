@@ -79,6 +79,7 @@ describe("the farm status", () => {
         HttpResponse.json({
           id: db.FARM_ID,
           name: "La Esperanza",
+          slug: "la-esperanza",
           timezone: "America/Bogota",
           currency: "COP",
           suspendedAt: "2026-08-01T00:00:00Z",

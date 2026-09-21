@@ -326,6 +326,7 @@ export function toMeUser(w: WireMe): MeUser {
     farm: {
       id: w.farm.id,
       name: w.farm.name,
+      slug: w.farm.slug,
       timezone: w.farm.timezone,
       currency: w.farm.currency,
       status: "active",
@@ -669,6 +670,7 @@ export function toFarmSummary(f: WireFarm): FarmSummary {
   return {
     id: f.id,
     name: f.name,
+    slug: f.slug,
     timezone: f.timezone,
     currency: f.currency,
     status: f.suspendedAt ? "suspended" : "active",
@@ -687,6 +689,7 @@ export function toAdminFarm(f: WireAdminFarm): AdminFarm {
   return {
     id: f.id,
     name: f.name,
+    slug: f.slug,
     // The console cannot read a farm's users, so there is no owner address to
     // show and no worker count to show. The mock invented both.
     ownerEmail: "",

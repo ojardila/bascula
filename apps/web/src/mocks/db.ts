@@ -35,6 +35,7 @@
  *      does not exist on the wire.
  */
 import { mondayOf } from "../lib/dates";
+import { isFarmSlug, slugifyFarmName } from "../lib/farmHost";
 import type {
   WireActivity,
   WireActivityRate,
@@ -124,6 +125,7 @@ export const FARM_ID = "0192f3a0-0000-7000-8000-000000000001";
 export interface MockFarm {
   id: string;
   name: string;
+  slug: string;
   timezone: string;
   currency: string;
   minorUnit: number;
@@ -340,6 +342,26 @@ export function tenantOf(farmId: string): Tenant | undefined {
 
 export function farmOf(farmId: string): MockFarm | undefined {
   return farms.find((f) => f.id === farmId);
+}
+
+export function farmOfSlug(slug: string): MockFarm | undefined {
+  return farms.find((f) => f.slug === slug);
+}
+
+/**
+ * A unique host label. A caller that already chose one is refused by the
+ * handler when it collides; this is for signup, which does not ask.
+ */
+export function allocateSlug(fromName: string, requested?: string): string {
+  const base = requested && isFarmSlug(requested) ? requested : slugifyFarmName(fromName);
+  if (!farmOfSlug(base)) return base;
+  let n = 2;
+  for (;;) {
+    const suffix = `-${n}`;
+    const candidate = `${base.slice(0, Math.max(1, 63 - suffix.length))}${suffix}`;
+    if (!farmOfSlug(candidate)) return candidate;
+    n += 1;
+  }
 }
 
 export function membershipsOf(userId: string): MockMembership[] {
@@ -684,6 +706,7 @@ export function resetDb(): void {
     {
       id: FARM_ID,
       name: "La Esperanza",
+      slug: "la-esperanza",
       timezone: "America/Bogota",
       currency: "COP",
       minorUnit: 2,
@@ -703,6 +726,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0000-7000-8000-000000000002",
       name: "El Mirador",
+      slug: "el-mirador",
       timezone: "America/Bogota",
       currency: "COP",
       minorUnit: 2,
@@ -718,6 +742,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0000-7000-8000-000000000003",
       name: "Villa Nueva",
+      slug: "villa-nueva",
       timezone: "America/Bogota",
       currency: "COP",
       minorUnit: 2,
@@ -733,6 +758,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0000-7000-8000-000000000004",
       name: "La Palma",
+      slug: "la-palma",
       timezone: "America/Bogota",
       currency: "COP",
       minorUnit: 2,
