@@ -54,6 +54,7 @@ import type {
   MeUser,
   PayableLine,
   Payables,
+  PaymentReceipt,
   PayMode,
   Plot,
   PlotCrop,
@@ -78,6 +79,7 @@ import type {
   WireFarm,
   WireFarmUser,
   WireLedgerEntry,
+  WirePaymentReceipt,
   WireMe,
   WireNote,
   WirePayable,
@@ -453,6 +455,28 @@ export function toLedgerEntry(e: WireLedgerEntry): LedgerEntry {
     receiptNumber: null,
     reversesId: e.reversesId,
     settlementId: e.settlementId,
+  };
+}
+
+export function toPaymentReceipt(w: WirePaymentReceipt): PaymentReceipt {
+  return {
+    id: w.id,
+    workerId: w.workerId,
+    date: day(w.date),
+    method: w.method,
+    paidCents: w.paidCents,
+    previousBalanceCents: w.previousBalanceCents,
+    currentWeekCents: w.currentWeekCents,
+    currentWeekFrom: w.currentWeekFrom ? day(w.currentWeekFrom) : null,
+    currentWeekTo: w.currentWeekTo ? day(w.currentWeekTo) : null,
+    deductions: w.deductions.map((d) => ({
+      concept: d.concept,
+      amountCents: d.amountCents,
+      date: day(d.date),
+    })),
+    deductionsCents: w.deductionsCents,
+    remainingCents: w.remainingCents,
+    settlementId: w.settlementId ?? null,
   };
 }
 

@@ -2774,6 +2774,29 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/payments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [money]
+      operationId: getPayment
+      summary: Recibo de un pago, discriminado
+      description: |
+        El mismo desglose que imprime el papel: semana actual, saldo anterior,
+        descuentos por concepto, pago y lo que queda. ChatGPT y la consola
+        leen este documento. `id` es el movimiento de tipo `pago`.
+      x-action: ledger.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: El recibo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentReceipt" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/advances:
     post:
       tags: [money]
@@ -6071,6 +6094,48 @@ components:
         note: { type: string, nullable: true }
         reversesId: { type: string, format: uuid, nullable: true }
         createdAt: { type: string, format: date-time }
+
+    PaymentReceipt:
+      type: object
+      description: |
+        Recibo de un `pago`: semana actual, saldo anterior, descuentos por
+        concepto, lo pagado y lo que queda. La identidad es
+        saldo anterior + semana − descuentos − pago = queda.
+      required:
+        - id
+        - workerId
+        - date
+        - paidCents
+        - previousBalanceCents
+        - currentWeekCents
+        - deductions
+        - deductionsCents
+        - remainingCents
+      properties:
+        id: { type: string, format: uuid }
+        workerId: { type: string, format: uuid }
+        date: { type: string, format: date }
+        method:
+          allOf: [{ $ref: "#/components/schemas/PayMethod" }]
+          nullable: true
+        note: { type: string, nullable: true }
+        paidCents: { type: integer, format: int64 }
+        previousBalanceCents: { type: integer, format: int64 }
+        currentWeekCents: { type: integer, format: int64 }
+        currentWeekFrom: { type: string, format: date, nullable: true }
+        currentWeekTo: { type: string, format: date, nullable: true }
+        deductions:
+          type: array
+          items:
+            type: object
+            required: [concept, amountCents, date]
+            properties:
+              concept: { type: string }
+              amountCents: { type: integer, format: int64 }
+              date: { type: string, format: date }
+        deductionsCents: { type: integer, format: int64 }
+        remainingCents: { type: integer, format: int64 }
+        settlementId: { type: string, format: uuid, nullable: true }
 
     PaymentInput:
       type: object

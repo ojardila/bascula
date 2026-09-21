@@ -160,7 +160,13 @@ func (h *harness) createUnitWithoutKgFactor(t *testing.T, f *farmFixture) string
 
 // daysAgo is a day in the farm's calendar, which for these fixtures is the
 // same calendar the test process is on.
-func daysAgo(n int) string { return time.Now().AddDate(0, 0, -n).Format("2006-01-02") }
+func daysAgo(n int) string {
+	loc, err := time.LoadLocation("America/Bogota")
+	if err != nil {
+		loc = time.UTC
+	}
+	return time.Now().In(loc).AddDate(0, 0, -n).Format("2006-01-02")
+}
 
 // ---------------------------------------------------------------------------
 // Reading the responses

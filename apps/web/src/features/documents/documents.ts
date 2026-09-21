@@ -38,6 +38,13 @@ import { formatDate, formatDateRange, formatPeriod } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
 import { shortReceiptNumber } from "../../lib/receipt";
 import type { PayableLine, Payment, Settlement, Worker } from "../../api/types";
+import {
+  buildReceiptBreakdown,
+  type ReceiptBreakdown,
+  type ReceiptDeduction,
+} from "./receiptBreakdown";
+
+export type { ReceiptBreakdown, ReceiptDeduction };
 
 const money = (c: number) => formatMoney(c);
 
@@ -104,6 +111,12 @@ export interface ReceiptInput {
   payment: Payment;
   /** The work this payment settled. Empty when it paid an existing balance. */
   lines: PayableLine[];
+  /**
+   * The four figures the paper names. When omitted, they are derived from
+   * the payment, the lines, and any deductions passed in.
+   */
+  breakdown?: ReceiptBreakdown;
+  deductions?: ReceiptDeduction[];
 }
 
 /**
@@ -116,28 +129,56 @@ export interface ReceiptInput {
  * salvo" — which is a fact — rather than "$0", which reads like a figure
  * nobody computed.
  */
+function weekLabel(b: ReceiptBreakdown): string {
+  if (b.currentWeekFrom && b.currentWeekTo) {
+    return `Semana actual (${esc(formatPeriod(b.currentWeekFrom, b.currentWeekTo))})`;
+  }
+  return "Semana actual";
+}
+
+function breakdownTable(b: ReceiptBreakdown): string {
+  const rows: string[] = [];
+  if (b.currentWeekCents !== 0) {
+    rows.push(`<tr><td>${weekLabel(b)}</td><td class="n amt">${esc(money(b.currentWeekCents))}</td></tr>`);
+  }
+  rows.push(`<tr><td>Saldo anterior</td><td class="n amt">${esc(money(b.previousBalanceCents))}</td></tr>`);
+  if (b.deductions.length) {
+    for (const d of b.deductions) {
+      rows.push(
+        `<tr><td>Descuento · ${esc(d.concept)}</td><td class="n amt">− ${esc(money(d.amountCents))}</td></tr>`,
+      );
+    }
+  }
+  rows.push(`<tr class="tot"><td>Pago</td><td class="n">${esc(money(b.paidCents))}</td></tr>`);
+  return `<table>
+    <thead><tr><th>Concepto</th><th class="n">Valor</th></tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>`;
+}
+
 export function paymentReceiptHtml(r: ReceiptInput): string {
   const { payment } = r;
+  const weekCents = r.lines.reduce((a, l) => a + l.amountCents, 0);
+  const breakdown = r.breakdown ?? buildReceiptBreakdown({
+    paidCents: payment.amountCents,
+    remainingCents: payment.balanceAfterCents,
+    currentWeekCents: weekCents,
+    deductions: r.deductions ?? [],
+  });
   const rows = lineRows(r.lines);
-  const gross = r.lines.reduce((a, l) => a + l.amountCents, 0);
 
-  const table = r.lines.length
-    ? `<table>
-        <thead>
-          <tr><th>Fecha</th><th>Actividad</th><th class="n">Cantidad</th>
-              <th class="n">Precio</th><th class="n">Valor</th></tr>
-        </thead>
-        <tbody>
-          ${rows}
-          <tr class="tot">
-            <td colspan="4">Total liquidado</td>
-            <td class="n">${esc(money(gross))}</td>
-          </tr>
-        </tbody>
-      </table>`
-    : `<p class="sub">Este pago se abonó al saldo pendiente. No liquidó labores nuevas.</p>`;
+  const detail = r.lines.length
+    ? `<p class="sub" style="margin-top:4mm">Labores de la semana</p>
+        <table>
+          <thead>
+            <tr><th>Fecha</th><th>Actividad</th><th class="n">Cantidad</th>
+                <th class="n">Precio</th><th class="n">Valor</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`
+    : "";
 
-  const after = payment.balanceAfterCents;
+  const after = breakdown.remainingCents;
   const balanceLine =
     after === 0
       ? `<div class="sub">Después de este pago queda a paz y salvo.</div>`
@@ -166,7 +207,8 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
     `${headerHtml({ farmName: r.farmName, date: payment.date }, "Recibo de pago")}
      ${receiptLine}
      ${whoHtml(r.worker)}
-     ${table}
+     ${breakdownTable(breakdown)}
+     ${detail}
      ${hasProvisionalLines(r.lines) ? PROVISIONAL_NOTE : ""}
      <div class="paid">
        <span class="k">Pagado</span>

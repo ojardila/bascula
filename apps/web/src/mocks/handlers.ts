@@ -2375,6 +2375,65 @@ export const handlers = [
   /* ---- ledger movements ---- */
 
   http.post("*/v1/payments", ledgerHandler("pago", true)),
+  http.get("*/v1/payments/:id", async ({ request, params }) => {
+    const g = guard(request, "ledger.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const pago = t.ledger.find((l) => l.id === params.id && l.kind === "pago");
+    if (!pago) return notFound();
+    const reversed = new Set(t.ledger.filter((l) => l.reversesId).map((l) => l.reversesId as string));
+    const live = (e: typeof pago) => !e.reversesId && !reversed.has(e.id);
+    const all = [...t.ledger].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    let remaining = 0;
+    let prevPagoId = "";
+    let pagoIndex = -1;
+    for (let i = 0; i < all.length; i++) {
+      const e = all[i];
+      if (live(e)) remaining += e.amountCents;
+      if (e.id === pago.id) {
+        pagoIndex = i;
+        break;
+      }
+      if (live(e) && e.kind === "pago") prevPagoId = e.id;
+    }
+    if (pagoIndex < 0) return notFound();
+    const afterPrev = prevPagoId ? all.findIndex((e) => e.id === prevPagoId) : -1;
+    let week = 0;
+    const deductions: { concept: string; amountCents: number; date: string }[] = [];
+    let settlementId: string | null = null;
+    for (let i = afterPrev + 1; i < pagoIndex; i++) {
+      const e = all[i];
+      if (!live(e)) continue;
+      if (e.kind === "devengo") {
+        week += e.amountCents;
+        settlementId = e.settlementId;
+      }
+      if (e.kind === "deduccion") {
+        const amt = Math.abs(e.amountCents);
+        deductions.push({
+          concept: (e.note ?? "").trim() || "Descuento",
+          amountCents: amt,
+          date: e.date.slice(0, 10),
+        });
+      }
+    }
+    const disc = deductions.reduce((a, d) => a + d.amountCents, 0);
+    const paid = Math.abs(pago.amountCents);
+    return HttpResponse.json({
+      id: pago.id,
+      workerId: pago.workerId,
+      date: pago.date.slice(0, 10),
+      method: pago.method,
+      note: pago.note,
+      paidCents: paid,
+      previousBalanceCents: remaining - week + disc + paid,
+      currentWeekCents: week,
+      deductions,
+      deductionsCents: disc,
+      remainingCents: remaining,
+      settlementId,
+    });
+  }),
   // No balance check on an advance: exceeding the balance is what an advance is.
   http.post("*/v1/advances", ledgerHandler("anticipo", false)),
   // Not an expense. An expense is the farm's own accounting and never touches

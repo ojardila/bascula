@@ -664,6 +664,23 @@ export interface WireLedgerEntry {
  * `/v1/adjustments`. `amountCents` is POSITIVE — the server applies the sign,
  * and the database rejects the wrong one.
  */
+export interface WirePaymentReceipt {
+  id: Uuid;
+  workerId: Uuid;
+  date: DayISO;
+  method: WirePayMethod | null;
+  note: string | null;
+  paidCents: number;
+  previousBalanceCents: number;
+  currentWeekCents: number;
+  currentWeekFrom?: string | null;
+  currentWeekTo?: string | null;
+  deductions: { concept: string; amountCents: number; date: DayISO }[];
+  deductionsCents: number;
+  remainingCents: number;
+  settlementId?: Uuid | null;
+}
+
 export interface WireLedgerRequest {
   id: Uuid;
   workerId: Uuid;

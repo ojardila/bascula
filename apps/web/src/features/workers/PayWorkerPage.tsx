@@ -70,7 +70,7 @@ import { sentenceFor, type GrossChange } from "../../api/grossChange";
 const FMT = { money: formatMoney, week: formatDayLong };
 import { paymentReceiptHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
-import type { PayableLine, PayMethod, Payment } from "../../api/types";
+import type { PayableLine, PayMethod, Payment, PaymentReceipt } from "../../api/types";
 
 export function PayWorkerPage() {
   const { id = "" } = useParams();
@@ -92,7 +92,11 @@ export function PayWorkerPage() {
    */
   const { busy, run: runOnce, retire } = useWriteOnce();
   const [payError, setPayError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ payment: Payment; lines: PayableLine[] } | null>(null);
+  const [receipt, setReceipt] = useState<{
+    payment: Payment;
+    lines: PayableLine[];
+    slip: PaymentReceipt | null;
+  } | null>(null);
   const [excess, setExcess] = useState<{ amount: number; balance: number } | null>(null);
   /**
    * The figure moved under the person's hands. Non-null means the screen is
@@ -220,7 +224,13 @@ export function PayWorkerPage() {
     // `ran: false` is a second click that was swallowed, or a failure already
     // reported above. Either way there is no new payment to show.
     if (!outcome.ran) return;
-    setReceipt({ payment: outcome.value, lines: approved });
+    let slip: PaymentReceipt | null = null;
+    try {
+      slip = await api.getPayment(outcome.value.id);
+    } catch {
+      slip = null;
+    }
+    setReceipt({ payment: outcome.value, lines: approved, slip });
     setSelected(new Set());
     setPartial("");
     reload();
@@ -248,6 +258,18 @@ export function PayWorkerPage() {
         worker,
         payment: receipt.payment,
         lines: receipt.lines,
+        breakdown: receipt.slip
+          ? {
+              previousBalanceCents: receipt.slip.previousBalanceCents,
+              currentWeekCents: receipt.slip.currentWeekCents,
+              currentWeekFrom: receipt.slip.currentWeekFrom,
+              currentWeekTo: receipt.slip.currentWeekTo,
+              deductions: receipt.slip.deductions,
+              deductionsCents: receipt.slip.deductionsCents,
+              paidCents: receipt.slip.paidCents,
+              remainingCents: receipt.slip.remainingCents,
+            }
+          : undefined,
       }),
     );
     if (!ok) setPayError("No se pudo abrir la impresión. Revise el navegador.");
@@ -765,17 +787,29 @@ export function PayWorkerPage() {
               label={`Recibo N.º ${receipt?.payment.receiptNumber}`}
               sx={{ alignSelf: "flex-start", fontWeight: 700 }}
             />
+            {receipt?.slip && receipt.slip.currentWeekCents !== 0 && (
+              <Stack direction="row" justifyContent="space-between">
+                <Typography color="text.secondary">Semana actual</Typography>
+                <Money cents={receipt.slip.currentWeekCents} variant="small" />
+              </Stack>
+            )}
+            <Stack direction="row" justifyContent="space-between">
+              <Typography color="text.secondary">Saldo anterior</Typography>
+              <Money cents={receipt?.slip?.previousBalanceCents ?? receipt?.payment.balanceBeforeCents ?? 0} variant="small" />
+            </Stack>
+            {receipt?.slip?.deductions.map((d) => (
+              <Stack key={d.concept + d.date} direction="row" justifyContent="space-between">
+                <Typography color="text.secondary">Descuento · {d.concept}</Typography>
+                <Money cents={d.amountCents} variant="small" />
+              </Stack>
+            ))}
             <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Pagado</Typography>
               <Money cents={receipt?.payment.amountCents ?? 0} />
             </Stack>
             <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Saldo antes</Typography>
-              <Money cents={receipt?.payment.balanceBeforeCents ?? 0} variant="small" />
-            </Stack>
-            <Stack direction="row" justifyContent="space-between">
               <Typography color="text.secondary">Saldo después</Typography>
-              <Money cents={receipt?.payment.balanceAfterCents ?? 0} variant="small" />
+              <Money cents={receipt?.slip?.remainingCents ?? receipt?.payment.balanceAfterCents ?? 0} variant="small" />
             </Stack>
           </Stack>
         </DialogContent>
