@@ -1855,6 +1855,7 @@ export const api = {
     toAdminFarmCreated(
       await http.post<WireAdminFarmCreated>("/v1/admin/farms", {
         name: body.name,
+        slug: body.slug,
         priceCents: body.priceCents,
         timezone: body.timezone,
         currency: body.currency,
@@ -2082,10 +2083,11 @@ function farmChoiceFrom(e: unknown): LoginChoice | null {
   return {
     choose: true,
     memberships: farms.map((f) => {
-      const row = f as { id: string; name: string; role: string };
+      const row = f as { id: string; name: string; slug?: string; role: string };
       return {
         farmId: row.id,
         farmName: row.name,
+        slug: row.slug ?? "",
         role: row.role === "admin" ? "administrator" : (row.role as "owner" | "weigher"),
       };
     }),

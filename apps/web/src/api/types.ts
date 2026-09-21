@@ -94,6 +94,7 @@ export type PayMethod = "efectivo" | "transferencia" | "otro";
 export interface Membership {
   farmId: Uuid;
   farmName: string;
+  slug: string;
   role: Role;
 }
 
@@ -176,6 +177,7 @@ export interface MeUser {
 export interface FarmSummary {
   id: Uuid;
   name: string;
+  slug: string;
   timezone: string;
   currency: string;
   status: FarmStatus;
@@ -804,6 +806,7 @@ export interface WeekPrice {
 export interface AdminFarm {
   id: Uuid;
   name: string;
+  slug: string;
   /**
    * ALWAYS EMPTY on the list. The console may not read a farm's users — the
    * projection is the enforcement of what a platform administrator can know.
@@ -822,6 +825,7 @@ export interface AdminFarm {
 
 export interface AdminFarmCreate {
   name: string;
+  slug: string;
   priceCents: number;
   timezone?: string;
   currency?: string;

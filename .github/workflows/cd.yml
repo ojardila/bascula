@@ -291,6 +291,10 @@ jobs:
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/zones?name=engp.io" \
             | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; assert r, "no engp.io zone"; print(r[0]["id"])')
+          # Farm shopfronts (*.bascula.engp.io) share the same origin assets as
+          # the apex, so this host list is enough. Append an extra hostname later
+          # if a farm ever caches independently; Cloudflare hosts purge does not
+          # take a wildcard.
           code=$(curl -sS --fail --max-time 20 -o /tmp/cf-purge.json -w "%{http_code}" \
             -X POST "https://api.cloudflare.com/client/v4/zones/${zone}/purge_cache" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \

@@ -21,6 +21,7 @@ type User struct {
 type Membership struct {
 	FarmID      string
 	FarmName    string
+	FarmSlug    string
 	UserID      string
 	Role        domain.Role
 	SuspendedAt *time.Time
@@ -83,6 +84,7 @@ func CountOwnedFarms(ctx context.Context, tx pgx.Tx, userID string) (int, error)
 type NewFarm struct {
 	ID         string
 	Name       string
+	Slug       string
 	Timezone   string
 	Currency   string
 	PriceMinor int64
@@ -90,8 +92,8 @@ type NewFarm struct {
 
 func CreateFarm(ctx context.Context, tx pgx.Tx, f NewFarm) error {
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO farms (id, name, timezone, currency) VALUES ($1, $2, $3, $4)`,
-		f.ID, f.Name, f.Timezone, f.Currency); err != nil {
+		INSERT INTO farms (id, name, slug, timezone, currency) VALUES ($1, $2, $3, $4, $5)`,
+		f.ID, f.Name, f.Slug, f.Timezone, f.Currency); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `
@@ -107,7 +109,7 @@ func CreateMembership(ctx context.Context, tx pgx.Tx, farmID, userID string, rol
 
 func ListMemberships(ctx context.Context, tx pgx.Tx, userID string) ([]Membership, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT m.farm_id::text, f.name, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency
+		SELECT m.farm_id::text, f.name, f.slug, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency
 		  FROM memberships m JOIN farms f ON f.id = m.farm_id
 		 WHERE m.user_id = $1
 		 ORDER BY f.created_at`, userID)
@@ -119,7 +121,7 @@ func ListMemberships(ctx context.Context, tx pgx.Tx, userID string) ([]Membershi
 	var out []Membership
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.FarmID, &m.FarmName, &m.UserID, &m.Role,
+		if err := rows.Scan(&m.FarmID, &m.FarmName, &m.FarmSlug, &m.UserID, &m.Role,
 			&m.SuspendedAt, &m.Timezone, &m.Currency); err != nil {
 			return nil, err
 		}
@@ -131,10 +133,10 @@ func ListMemberships(ctx context.Context, tx pgx.Tx, userID string) ([]Membershi
 func GetMembership(ctx context.Context, tx pgx.Tx, farmID, userID string) (*Membership, error) {
 	var m Membership
 	err := tx.QueryRow(ctx, `
-		SELECT m.farm_id::text, f.name, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency
+		SELECT m.farm_id::text, f.name, f.slug, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency
 		  FROM memberships m JOIN farms f ON f.id = m.farm_id
 		 WHERE m.farm_id = $1 AND m.user_id = $2`, farmID, userID).
-		Scan(&m.FarmID, &m.FarmName, &m.UserID, &m.Role, &m.SuspendedAt, &m.Timezone, &m.Currency)
+		Scan(&m.FarmID, &m.FarmName, &m.FarmSlug, &m.UserID, &m.Role, &m.SuspendedAt, &m.Timezone, &m.Currency)
 	if err != nil {
 		return nil, err
 	}

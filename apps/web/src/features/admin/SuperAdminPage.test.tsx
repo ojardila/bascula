@@ -47,6 +47,7 @@ describe("the support console", () => {
 
     await user.click(screen.getByRole("button", { name: "Nueva finca" }));
     await user.type(screen.getByLabelText(/Nombre de la finca/), "El Roble");
+    await user.type(screen.getByLabelText(/Identificador/), "el-roble");
     await user.type(screen.getByLabelText(/Precio por kilo/), "900");
     await user.type(screen.getByLabelText(/Correo del dueño/), "ana.roble@example.com");
     await user.type(screen.getByLabelText(/Nombre del dueño/), "Ana Roble");
@@ -54,6 +55,7 @@ describe("the support console", () => {
 
     expect(await screen.findByText("Finca creada")).toBeInTheDocument();
     expect(screen.getByText(/ana.roble@example.com/)).toBeInTheDocument();
+    expect(screen.getByText("https://el-roble.bascula.engp.io")).toBeInTheDocument();
     expect(screen.getAllByText("El Roble").length).toBeGreaterThan(0);
   }, 20000);
 });

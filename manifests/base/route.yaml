@@ -1,5 +1,7 @@
-# One hostname, split by path — the web at the root, the API on the three
-# prefixes it actually serves.
+# Same origin, split by path — the web at the root, the API on the prefixes
+# it actually serves. The apex is the canonical host; farm shopfronts such as
+# sanjose.bascula.engp.io are routing only (Gateway API leftmost wildcard).
+# The tenant is still the JWT farm_id, never the Host.
 #
 # This is the "same origin" answer to the question docs/decisiones.md left
 # open before deploying. The browser never makes a cross-origin request, so
@@ -20,6 +22,7 @@ spec:
       namespace: gateway
   hostnames:
     - bascula.engp.io
+    - "*.bascula.engp.io"
   rules:
     # Longest prefix wins in Gateway API, so these two take precedence over the
     # catch-all below regardless of the order they are written in.
