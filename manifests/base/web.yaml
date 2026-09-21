@@ -48,7 +48,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: web
-          image: harbor.int.engp.io/bascula/web:v0.2.2
+          image: harbor.int.engp.io/bascula/web:v0.2.3
           ports:
             - containerPort: 8080
           livenessProbe:
