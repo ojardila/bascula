@@ -116,7 +116,7 @@ export function HarvestLayout() {
               </Button>
               <Button
                 component={RouterLink}
-                to="/labores/planilla"
+                to="/labores/planilla?modo=semana"
                 variant="outlined"
               >
                 Planilla de la semana

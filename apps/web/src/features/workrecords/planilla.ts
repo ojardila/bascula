@@ -1,16 +1,35 @@
 /**
- * One week's harvest sheet: people down the side, calendar days across.
+ * Arithmetic of the harvest sheet: people × days, kilos in the cells.
  *
- * The screen that uses this is a matrix of kilos. This file is the arithmetic
- * of that matrix — which days, which cells changed, what to write — so a
- * double-click cannot invent a second weighing and a test can walk the cases
- * without rendering a table.
+ * The scale uses one day; the Saturday planilla uses seven. Same writes.
  */
 import { addDays, parseDay } from "../../lib/dates";
 import { parseQuantity } from "./validation";
-import type { WorkRecord, Worker } from "../../api/types";
+import type { Activity, WorkRecord, Worker } from "../../api/types";
+
+export function pickHarvestActivity(activities: Activity[]): Activity | null {
+  const weekly = activities.filter((a) => a.rateSource === "weekly_price");
+  if (weekly.length === 0) return null;
+  const named = weekly.find((a) => /recolecci[oó]n/i.test(a.name));
+  return named ?? weekly[0];
+}
 
 export const DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"] as const;
+
+export function isIsoDay(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+/**
+ * The week grid is `?lunes=` (and the Cosecha week button). Everything else,
+ * including a bare /labores/planilla, is the easy sheet: one day, one lote.
+ */
+export function planillaMode(params: { modo: string | null; lunes: string | null; dia: string | null }): "dia" | "semana" {
+  if (params.modo === "semana") return "semana";
+  if (params.modo === "dia") return "dia";
+  if (params.lunes && !params.dia) return "semana";
+  return "dia";
+}
 
 export function daysOfWeek(monday: string): string[] {
   const start = parseDay(monday);

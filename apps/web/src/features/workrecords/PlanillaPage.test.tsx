@@ -48,7 +48,8 @@ describe("Planilla de recolección", () => {
   it("loads the week as a matrix of people and days", async () => {
     signIn();
     renderApp(`/labores/planilla?lunes=${WEEK}&lote=${ALTO}`);
-    expect(await screen.findByRole("heading", { name: "Planilla de recolección" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Planilla de la semana" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Semana" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("María Restrepo Ospina")).toBeInTheDocument();
     expect(screen.getByText("Jhon Fredy Cardona Loaiza")).toBeInTheDocument();
     // Wednesday 26 Aug is in that week and already has 41 kg for María.
@@ -71,11 +72,34 @@ describe("Planilla de recolección", () => {
     const monday = await screen.findByLabelText(/María Restrepo Ospina, L 24/);
     await user.clear(monday);
     await user.type(monday, "40");
-    await user.click(screen.getByRole("button", { name: "Guardar planilla" }));
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
     await waitFor(() => expect(posted.length).toBeGreaterThan(0));
     const body = posted[0] as { quantity: number; dateFrom: string; plotIds: string[] };
     expect(body.dateFrom).toBe("2026-08-24");
     expect(body.plotIds).toEqual([ALTO]);
     expect(body.quantity).toBe(40);
+  }, 20000);
+
+  it("registers kilos for one lote on one day, per person", async () => {
+    signIn();
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    server.use(
+      http.post("*/v1/work-records", async ({ request }) => {
+        const body = await request.json();
+        posted.push(body);
+        return HttpResponse.json({ ...(body as object), createdAt: "2026-08-26T22:00:00Z" }, { status: 201 });
+      }),
+    );
+    renderApp(`/cosecha/recoleccion?dia=2026-08-26&lote=${ALTO}`);
+    expect(await screen.findByRole("heading", { name: "Registrar recolección" })).toBeInTheDocument();
+    const kilos = await screen.findByLabelText(/Jhon Fredy Cardona Loaiza, kilos/);
+    await user.type(kilos, "55");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(posted.length).toBeGreaterThan(0));
+    const body = posted[0] as { quantity: number; dateFrom: string; plotIds: string[] };
+    expect(body.dateFrom).toBe("2026-08-26");
+    expect(body.plotIds).toEqual([ALTO]);
+    expect(body.quantity).toBe(55);
   }, 20000);
 });
