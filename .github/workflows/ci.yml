@@ -48,6 +48,10 @@ jobs:
     name: money rules (no install)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Farm dates are America/Bogota. A UTC runner at 00:00–05:00 treats
+      # "today" as tomorrow and flags this afternoon's kilos as future work.
+      TZ: America/Bogota
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
