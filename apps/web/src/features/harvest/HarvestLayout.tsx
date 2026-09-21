@@ -104,13 +104,24 @@ export function HarvestLayout() {
         </Box>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
           {can("workRecords.write") && (
-            <Button
-              component={RouterLink}
-              to="/labores/planilla"
-              variant="contained"
-            >
-              Registrar planilla
-            </Button>
+            <>
+              <Button
+                component={RouterLink}
+                to="/cosecha/recoleccion"
+                variant="contained"
+                size="large"
+                sx={{ py: 1.25, px: 2.5, fontSize: "1.05rem" }}
+              >
+                Registrar recolección
+              </Button>
+              <Button
+                component={RouterLink}
+                to="/labores/planilla"
+                variant="outlined"
+              >
+                Planilla de la semana
+              </Button>
+            </>
           )}
           <TextField
             select
