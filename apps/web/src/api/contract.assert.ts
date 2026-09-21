@@ -44,7 +44,7 @@
 import type { components } from "./schema";
 import type {
   WireActivity, WireActivityRate, WireAdminFarm, WireAdminFarmCreated, WireBalance, WireBoundaryResult,
-  WireCatalogItem, WireCustomer, WireExpense, WireLabelBatch, WireLedgerEntry,
+  WireCatalogItem, WireCustomer, WireExpense, WireLabelBatch, WireLedgerEntry, WirePaymentReceipt,
   WireNote, WirePlot, WirePlotCrop, WireProduct, WireSale, WireStockLevel,
   WireStockMove, WireWeekPrice, WireWorkUnit,
   WireAnomaly, WireHarvestCurve, WireHarvestShape, WireHarvestWeekTotal,
@@ -133,6 +133,10 @@ type _LedgerEntry = [
 type _WeekPrice = [
   Check<SameKeys<WireWeekPrice, Schemas["WeekPrice"]>>,
   Assignable<WireWeekPrice, Schemas["WeekPrice"]>,
+];
+type _PaymentReceipt = [
+  Check<SameKeys<Omit<WirePaymentReceipt, "deductions" | "currentWeekFrom" | "currentWeekTo" | "settlementId">, Omit<Schemas["PaymentReceipt"], "deductions" | "currentWeekFrom" | "currentWeekTo" | "settlementId">>>,
+  Assignable<WirePaymentReceipt, Schemas["PaymentReceipt"]>,
 ];
 
 /* -- workers and the platform console -------------------------------- */
@@ -261,7 +265,7 @@ type _HarvestCurve = [
 export type ContractAssertions = [
   _Plot, _PlotCrop, _Boundary,
   _CatalogItem, _WorkUnit, _ActivityRate, _Activity,
-  _Balance, _LedgerEntry, _WeekPrice,
+  _Balance, _LedgerEntry, _WeekPrice, _PaymentReceipt,
   _Note, _AdminFarm, _AdminFarmCreated,
   _Product, _Customer, _StockLevel, _StockMove, _LabelBatch, _Sale, _Expense,
   _ReportTotals, _ReportWeek, _ReportWeeksResult,

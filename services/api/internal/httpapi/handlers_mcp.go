@@ -175,6 +175,9 @@ var mcpTools = []mcpTool{
 			{Name: "offset", In: "query", Type: "integer", Description: "Cuántas saltar, para paginar."}}},
 	{Name: "get_settlement", Method: http.MethodGet, Path: "/v1/settlements/{id}",
 		Description: "Una liquidación con sus líneas." + moneyNote, Params: []mcpParam{pID}},
+	{Name: "get_payment", Method: http.MethodGet, Path: "/v1/payments/{id}",
+		Description: "Recibo de un pago, discriminado: semana actual, saldo anterior, descuentos por concepto, lo pagado y lo que queda. El id es el del movimiento de tipo pago (ver worker_ledger)." + moneyNote,
+		Params:      []mcpParam{pID}},
 	{Name: "week_price", Method: http.MethodGet, Path: "/v1/prices/weeks/{monday}",
 		Description: "El precio del kilo para una semana." + moneyNote, Params: []mcpParam{pMonday}},
 

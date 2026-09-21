@@ -1605,6 +1605,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/payments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Recibo de un pago, discriminado
+         * @description El mismo desglose que imprime el papel: semana actual, saldo anterior,
+         *     descuentos por concepto, pago y lo que queda. ChatGPT y la consola
+         *     leen este documento. `id` es el movimiento de tipo `pago`.
+         */
+        get: operations["getPayment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/advances": {
         parameters: {
             query?: never;
@@ -3856,6 +3880,44 @@ export interface components {
             reversesId?: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        /**
+         * @description Recibo de un `pago`: semana actual, saldo anterior, descuentos por
+         *     concepto, lo pagado y lo que queda. La identidad es
+         *     saldo anterior + semana − descuentos − pago = queda.
+         */
+        PaymentReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workerId: string;
+            /** Format: date */
+            date: string;
+            method?: components["schemas"]["PayMethod"] | null;
+            note?: string | null;
+            /** Format: int64 */
+            paidCents: number;
+            /** Format: int64 */
+            previousBalanceCents: number;
+            /** Format: int64 */
+            currentWeekCents: number;
+            /** Format: date */
+            currentWeekFrom?: string | null;
+            /** Format: date */
+            currentWeekTo?: string | null;
+            deductions: {
+                concept: string;
+                /** Format: int64 */
+                amountCents: number;
+                /** Format: date */
+                date: string;
+            }[];
+            /** Format: int64 */
+            deductionsCents: number;
+            /** Format: int64 */
+            remainingCents: number;
+            /** Format: uuid */
+            settlementId?: string | null;
         };
         PaymentInput: {
             /** Format: uuid */
@@ -8180,6 +8242,31 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description El recibo. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentReceipt"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     createAdvance: {

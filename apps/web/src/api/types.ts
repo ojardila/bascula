@@ -766,6 +766,22 @@ export interface Settlement extends SettlementSummary {
   voidedLineIds: Uuid[];
 }
 
+export interface PaymentReceipt {
+  id: Uuid;
+  workerId: Uuid;
+  date: DayISO;
+  method: PayMethod | null;
+  paidCents: number;
+  previousBalanceCents: number;
+  currentWeekCents: number;
+  currentWeekFrom: string | null;
+  currentWeekTo: string | null;
+  deductions: { concept: string; amountCents: number; date: DayISO }[];
+  deductionsCents: number;
+  remainingCents: number;
+  settlementId: Uuid | null;
+}
+
 export interface Payment {
   id: Uuid;
   workerId: Uuid;

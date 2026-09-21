@@ -106,6 +106,22 @@ describe("the pay receipt (RSP-008)", () => {
     expect(html).not.toContain("Documento");
   });
 
+  it("discriminates the total: this week, previous balance, payment, discounts", () => {
+    const html = paymentReceiptHtml({
+      farmName: "La Esperanza",
+      worker,
+      payment: { ...payment, amountCents: 12_000_000, balanceAfterCents: 1_360_000 },
+      lines: settlement.lines,
+      deductions: [{ concept: "Mercado", amountCents: 2_000_000, date: "2026-08-26" }],
+    });
+    expect(html).toContain("Semana actual");
+    expect(html).toContain("Saldo anterior");
+    expect(html).toContain("Descuento · Mercado");
+    expect(html).toContain("Pago");
+    expect(html).toContain("$153.600");
+    expect(html).toContain("$20.000");
+  });
+
   it("does not print the movement UUID on the receipt the worker takes home", () => {
     const html = paymentReceiptHtml({
       farmName: "La Esperanza",

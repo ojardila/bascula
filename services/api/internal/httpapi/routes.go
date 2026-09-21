@@ -156,6 +156,7 @@ func (s *Server) Routes() []Route {
 		// pay it is somebody's day of picking, trapped for ever.
 		{http.MethodPost, "/v1/settlements/{id}/release", auth.ActionSettlementsRelease, s.handleReleaseSettlement},
 		{http.MethodPost, "/v1/payments", auth.ActionLedgerPayment, s.handlePayment},
+		{http.MethodGet, "/v1/payments/{id}", auth.ActionLedgerRead, s.handleGetPayment},
 		{http.MethodPost, "/v1/advances", auth.ActionLedgerAdvance, s.handleAdvance},
 		{http.MethodPost, "/v1/deductions", auth.ActionLedgerDeduction, s.handleDeduction},
 		{http.MethodPost, "/v1/adjustments", auth.ActionLedgerAdjust, s.handleAdjustment},

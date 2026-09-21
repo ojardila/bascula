@@ -497,6 +497,47 @@ type ledgerRequest struct {
 // handlePayment records money handed over. The client sends a positive amount
 // and the sign is applied here: a 'pago' is negative in the ledger, and the
 // database refuses a positive one outright.
+func (s *Server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	slip, err := store.PaymentReceiptOf(r.Context(), tx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	day := func(t time.Time) string { return t.Format("2006-01-02") }
+	deductions := make([]map[string]any, 0, len(slip.Deductions))
+	for _, d := range slip.Deductions {
+		deductions = append(deductions, map[string]any{
+			"concept": d.Concept, "amountCents": d.AmountCents, "date": day(d.Date),
+		})
+	}
+	out := map[string]any{
+		"id":                   slip.Entry.ID,
+		"workerId":             slip.Entry.EmployeeID,
+		"date":                 day(slip.Entry.LocalDay),
+		"method":               slip.Entry.Method,
+		"note":                 slip.Entry.Note,
+		"paidCents":            slip.PaidCents,
+		"previousBalanceCents": slip.PreviousBalanceCents,
+		"currentWeekCents":     slip.CurrentWeekCents,
+		"deductions":           deductions,
+		"deductionsCents":      slip.DeductionsCents,
+		"remainingCents":       slip.RemainingCents,
+		"settlementId":         slip.SettlementID,
+	}
+	if slip.CurrentWeekFrom != nil {
+		out["currentWeekFrom"] = day(*slip.CurrentWeekFrom)
+	}
+	if slip.CurrentWeekTo != nil {
+		out["currentWeekTo"] = day(*slip.CurrentWeekTo)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handlePayment(w http.ResponseWriter, r *http.Request) {
 	s.addLedgerEntry(w, r, domain.KindPayment, true)
 }

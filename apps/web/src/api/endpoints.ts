@@ -62,6 +62,7 @@ import {
   toFarmSummary,
   toFarmUser,
   toLedgerEntry,
+  toPaymentReceipt,
   toMeUser,
   toNote,
   toPayableLine,
@@ -105,6 +106,7 @@ import type {
   Payables,
   Payment,
   PaymentInput,
+  PaymentReceipt,
   BoundaryResult,
   Customer,
   Expense,
@@ -149,6 +151,7 @@ import type {
   WireFarm,
   WireFarmUser,
   WireLedgerEntry,
+  WirePaymentReceipt,
   WireList,
   WireMe,
   WireNote,
@@ -1393,6 +1396,9 @@ export const api = {
       date: day(entry.date),
     };
   },
+
+  getPayment: async (id: Uuid): Promise<PaymentReceipt> =>
+    toPaymentReceipt(await http.get<WirePaymentReceipt>(`/v1/payments/${id}`)),
 
   /** Money handed over ahead of the work. No balance check: exceeding the
    *  balance is what an advance IS. */
