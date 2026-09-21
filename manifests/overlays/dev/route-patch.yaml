@@ -3,7 +3,13 @@
   value:
     - name: internal
       namespace: gateway
+# Farm shopfronts use one extra DNS label (sanjose.int.dev.engp.io), which
+# already resolves via the existing *.int.dev.engp.io A record. Do not use
+# sanjose.bascula.int.dev.engp.io: it will not match the internal Gateway
+# cert/listener. Staging in gitops is bascula-only, so capturing other unused
+# *.int.dev names is acceptable.
 - op: replace
   path: /spec/hostnames
   value:
     - bascula.int.dev.engp.io
+    - "*.int.dev.engp.io"

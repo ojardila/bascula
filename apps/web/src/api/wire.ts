@@ -132,6 +132,7 @@ export interface WireSession {
   expiresIn: number;
   farmId: Uuid;
   farmName: string;
+  slug: string;
   role: WireRole;
 }
 
@@ -145,7 +146,7 @@ export interface WireMe {
   email: string;
   name: string;
   role: WireRole;
-  farm: { id: Uuid; name: string; timezone: string; currency: string };
+  farm: { id: Uuid; name: string; slug: string; timezone: string; currency: string };
   superadmin: boolean;
 }
 
@@ -206,6 +207,7 @@ export interface WireFarmUser {
 export interface WireFarmChoice {
   id: Uuid;
   name: string;
+  slug: string;
   role: WireRole;
 }
 
@@ -223,6 +225,7 @@ export interface WireFarmChoice {
 export interface WireFarm {
   id: Uuid;
   name: string;
+  slug: string;
   timezone: string;
   currency: string;
   minorUnit: number;
@@ -244,6 +247,7 @@ export interface WireFarm {
 export interface WireAdminFarm {
   id: Uuid;
   name: string;
+  slug: string;
   timezone: string;
   currency: string;
   country: string | null;

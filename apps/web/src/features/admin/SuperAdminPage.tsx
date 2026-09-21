@@ -22,6 +22,7 @@ import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
+import { farmDevUrl, farmProdUrl, isFarmSlug } from "../../lib/farmHost";
 import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { GREEN_DARK } from "../../theme";
@@ -67,6 +68,11 @@ export function SuperAdminPage() {
       render: (f) => (
         <Stack>
           <Typography sx={{ fontWeight: 600 }}>{f.name}</Typography>
+          {f.slug && (
+            <Typography variant="caption" color="text.secondary">
+              {f.slug}.bascula.engp.io
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary">
             {[f.city, f.country].filter(Boolean).join(", ") || "—"}
           </Typography>
@@ -211,6 +217,14 @@ export function SuperAdminPage() {
             <strong>{created?.name}</strong> ya está activa. El dueño entra con{" "}
             <strong>{created?.ownerEmail}</strong>.
           </Typography>
+          {created?.slug && (
+            <Typography sx={{ mb: 1 }}>
+              Dirección: <strong>{farmProdUrl(created.slug)}</strong>
+              <Typography component="span" color="text.secondary" sx={{ display: "block" }}>
+                En desarrollo: {farmDevUrl(created.slug)}
+              </Typography>
+            </Typography>
+          )}
           {created?.temporaryPassword ? (
             <Alert severity="warning">
               Esta clave se muestra una sola vez. Entréguesela ahora: no se puede volver a leer.
@@ -247,6 +261,7 @@ function CreateFarmDialog({
 }) {
   const { busy, run: runOnce } = useWriteOnce();
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
   const [price, setPrice] = useState("");
   const [email, setEmail] = useState("");
   const [ownerName, setOwnerName] = useState("");
@@ -256,8 +271,17 @@ function CreateFarmDialog({
   async function submit() {
     setError(null);
     const priceCents = parseMoneyInput(price) ?? 0;
+    const slugValue = slug.trim().toLowerCase();
     if (!name.trim()) {
       setError("Escriba el nombre de la finca.");
+      return;
+    }
+    if (!slugValue) {
+      setError("Escriba el identificador de la finca.");
+      return;
+    }
+    if (!isFarmSlug(slugValue)) {
+      setError("Use letras minúsculas, números y guiones. Palabras como www o admin no se pueden usar.");
       return;
     }
     if (priceCents <= 0) {
@@ -276,6 +300,7 @@ function CreateFarmDialog({
     const outcome = await runOnce(intent, async () =>
       api.adminCreateFarm({
         name: name.trim(),
+        slug: slugValue,
         priceCents,
         owner: {
           email: email.trim(),
@@ -290,6 +315,7 @@ function CreateFarmDialog({
     if (!outcome.ran || !outcome.value) return;
     onCreated(outcome.value);
     setName("");
+    setSlug("");
     setPrice("");
     setEmail("");
     setOwnerName("");
@@ -308,6 +334,15 @@ function CreateFarmDialog({
             onChange={(e) => setName(e.target.value)}
             autoFocus
             required
+          />
+          <TextField
+            label="Identificador"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, ""))}
+            required
+            autoComplete="off"
+            spellCheck={false}
+            helperText={`https://${slug || "sanjose"}.bascula.engp.io — en desarrollo, ${slug || "sanjose"}.int.dev.engp.io`}
           />
           <TextField
             label="Precio por kilo"

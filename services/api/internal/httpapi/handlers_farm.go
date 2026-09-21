@@ -126,6 +126,7 @@ func (s *Server) handleListAdminFarms(w http.ResponseWriter, r *http.Request) {
 type adminCreateFarmRequest struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Slug       string `json:"slug"`
 	Timezone   string `json:"timezone"`
 	Currency   string `json:"currency"`
 	PriceCents int64  `json:"priceCents"`
@@ -255,10 +256,10 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if err := store.CreateFarm(ctx, tx, store.NewFarm{
+	if err := createFarmRecord(ctx, tx, &store.NewFarm{
 		ID: farmID, Name: req.Name, Timezone: req.Timezone,
 		Currency: req.Currency, PriceMinor: req.PriceCents,
-	}); err != nil {
+	}, req.Slug); err != nil {
 		if store.IsUniqueViolation(err, "") {
 			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
 				"that id is already in use"))
@@ -282,7 +283,7 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"id": farm.ID, "name": farm.Name, "timezone": farm.Timezone,
+		"id": farm.ID, "name": farm.Name, "slug": farm.Slug, "timezone": farm.Timezone,
 		"currency": farm.Currency, "country": farm.Country, "city": farm.City,
 		"status": farm.Status, "suspendedAt": farm.SuspendedAt,
 		"createdAt":  farm.CreatedAt,
