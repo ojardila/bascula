@@ -87,7 +87,7 @@ export function WeekPage() {
       {can("workRecords.write") && (
         <Button
           component={RouterLink}
-          to={`/labores/planilla?lunes=${monday}`}
+          to={`/labores/planilla?modo=semana&lunes=${monday}`}
           size="small"
           variant="outlined"
         >

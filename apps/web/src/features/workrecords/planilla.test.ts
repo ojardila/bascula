@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cellKey, cellsFromRecords, daysOfWeek, emptyCell, formatKg, plannedWrites,
-  workerLabel, type SheetCell,
+  planillaMode, workerLabel, type SheetCell,
 } from "./planilla";
 import type { WorkRecord, Worker } from "../../api/types";
 
@@ -44,6 +44,19 @@ const record = (over: Partial<WorkRecord>): WorkRecord => ({
   settled: false,
   status: "active",
   ...over,
+});
+
+describe("planillaMode", () => {
+  it("defaults to the one-day sheet", () => {
+    expect(planillaMode({ modo: null, lunes: null, dia: null })).toBe("dia");
+  });
+  it("keeps the week grid when Cosecha linked with only lunes", () => {
+    expect(planillaMode({ modo: null, lunes: "2026-08-24", dia: null })).toBe("semana");
+  });
+  it("lets modo override the query leftovers", () => {
+    expect(planillaMode({ modo: "dia", lunes: "2026-08-24", dia: null })).toBe("dia");
+    expect(planillaMode({ modo: "semana", lunes: null, dia: "2026-08-26" })).toBe("semana");
+  });
 });
 
 describe("daysOfWeek", () => {

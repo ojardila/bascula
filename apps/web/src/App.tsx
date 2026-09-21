@@ -19,6 +19,7 @@ import { SettlementDetailPage } from "./features/settlements/SettlementDetailPag
 import { FarmUsersPage } from "./features/users/FarmUsersPage";
 import { WorkRecordsPage } from "./features/workrecords/WorkRecordsPage";
 import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
+import { RecoleccionFormPage } from "./features/workrecords/RecoleccionFormPage";
 import { PlanillaPage } from "./features/workrecords/PlanillaPage";
 import { HarvestLayout } from "./features/harvest/HarvestLayout";
 import { SeasonPage } from "./features/harvest/SeasonPage";
@@ -239,6 +240,14 @@ function Shell() {
           element={
             <RequirePermission action="workRecords.write" moduleName="registrar la planilla de recolección">
               <PlanillaPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="cosecha/recoleccion"
+          element={
+            <RequirePermission action="workRecords.write" moduleName="registrar recolección">
+              <RecoleccionFormPage />
             </RequirePermission>
           }
         />

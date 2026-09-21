@@ -127,8 +127,8 @@ export function WorkRecordsPage() {
         searchPlaceholder="Buscar por actividad, empleado o lote"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workRecords.write") ? () => navigate("/labores/planilla") : undefined}
-        createLabel="Planilla de recolección"
+        onCreate={can("workRecords.write") ? () => navigate("/cosecha/recoleccion") : undefined}
+        createLabel="Registrar recolección"
         toolbarExtra={
           can("workRecords.write") ? (
             <Button variant="outlined" onClick={() => navigate("/labores/nueva")}>

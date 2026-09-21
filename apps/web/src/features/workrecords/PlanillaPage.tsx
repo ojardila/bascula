@@ -1,15 +1,15 @@
 /**
- * The harvest sheet as a calendar matrix: people × days of one week, kilos
- * in the cells, one lote at a time.
+ * Two harvest sheets, same writes.
  *
- * Paper planillas are filled that way. The one-labor form still exists for
- * odd jobs; this is the Saturday-night sheet.
+ * The easy one is the scale: one day, one lote, kilos next to each name.
+ * The week grid is still here for whoever fills the paper planilla on Saturday.
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, CircularProgress, MenuItem, Stack,
-  Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
+  Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PermissionDenied } from "../../components/Guards";
@@ -18,12 +18,12 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { addDays, formatDate, formatWeekRange, mondayOf, parseDay, todayInFarm } from "../../lib/dates";
+import { formatDate, formatWeekRange, mondayOf, parseDay, todayInFarm } from "../../lib/dates";
 import { PLOT } from "../../lib/vocab";
 import type { Activity, Plot, Worker } from "../../api/types";
 import {
-  DAY_LETTERS, cellKey, cellsFromRecords, daysOfWeek, emptyCell, plannedWrites,
-  workerLabel, type SheetCell,
+  DAY_LETTERS, cellKey, cellsFromRecords, daysOfWeek, emptyCell, isIsoDay,
+  pickHarvestActivity, planillaMode, plannedWrites, workerLabel, type SheetCell,
 } from "./planilla";
 
 function dayHeader(day: string, i: number): string {
@@ -31,16 +31,25 @@ function dayHeader(day: string, i: number): string {
   return `${DAY_LETTERS[i]} ${d.getUTCDate()}`;
 }
 
-export function PlanillaPage() {
+export function PlanillaPage({ lockedMode }: { lockedMode?: "dia" | "semana" } = {}) {
   const { can, user } = useAuth();
   const timezone = user?.farm?.timezone ?? "America/Bogota";
   const today = todayInFarm(timezone);
   const [params, setParams] = useSearchParams();
 
   const mondayParam = params.get("lunes") ?? "";
-  const monday = /^\d{4}-\d{2}-\d{2}$/.test(mondayParam) && mondayOf(mondayParam) === mondayParam
+  const diaParam = params.get("dia") ?? "";
+  const mode = lockedMode ?? planillaMode({
+    modo: params.get("modo"),
+    lunes: mondayParam,
+    dia: diaParam,
+  });
+  const monday = isIsoDay(mondayParam) && mondayOf(mondayParam) === mondayParam
     ? mondayParam
-    : mondayOf(today);
+    : mondayOf(isIsoDay(diaParam) ? diaParam : today);
+  const day = isIsoDay(diaParam) && diaParam <= today
+    ? diaParam
+    : (mode === "dia" ? today : monday);
   const plotId = params.get("lote") ?? "";
 
   const [workers, setWorkers] = useState<Worker[] | null>(null);
@@ -54,8 +63,12 @@ export function PlanillaPage() {
   const [loadingSheet, setLoadingSheet] = useState(false);
   const { busy, run: runOnce } = useWriteOnce();
 
-  const days = useMemo(() => daysOfWeek(monday), [monday]);
-  const sunday = addDays(parseDay(monday), 6).toISOString().slice(0, 10);
+  const days = useMemo(
+    () => (mode === "dia" ? [day] : daysOfWeek(monday)),
+    [mode, day, monday],
+  );
+  const from = days[0];
+  const to = days[days.length - 1];
   const plot = plots?.find((p) => p.id === plotId) ?? null;
 
   useEffect(() => {
@@ -67,12 +80,13 @@ export function PlanillaPage() {
       .then(([w, p, a]) => {
         setWorkers(w);
         setPlots(p);
-        setActivity(a.find((x) => x.rateSource === "weekly_price") ?? null);
+        setActivity(pickHarvestActivity(a));
         if (!params.get("lote") && p.length === 1) {
           setParams((prev) => {
             const next = new URLSearchParams(prev);
             next.set("lote", p[0].id);
-            next.set("lunes", monday);
+            if (mode === "semana") next.set("lunes", monday);
+            else next.set("dia", day);
             return next;
           }, { replace: true });
         }
@@ -98,8 +112,8 @@ export function PlanillaPage() {
       .listWorkRecords({
         plotId,
         activityId: activity?.id,
-        from: monday,
-        to: sunday,
+        from,
+        to,
         status: "active",
       })
       .then((records) => {
@@ -116,26 +130,40 @@ export function PlanillaPage() {
     return () => {
       cancelled = true;
     };
-  }, [workers, plotId, monday, sunday, activity?.id, days]);
+  }, [workers, plotId, from, to, activity?.id, days]);
 
-  function setMonday(iso: string) {
-    if (!iso) return;
-    const next = mondayOf(iso);
+  function patchParams(patch: Record<string, string | null>) {
     setParams((prev) => {
       const p = new URLSearchParams(prev);
-      p.set("lunes", next);
-      if (plotId) p.set("lote", plotId);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null) p.delete(k);
+        else p.set(k, v);
+      }
+      if (plotId && !("lote" in patch)) p.set("lote", plotId);
       return p;
     });
   }
 
+  function setMode(next: "dia" | "semana") {
+    if (next === "semana") {
+      patchParams({ modo: "semana", lunes: mondayOf(isIsoDay(diaParam) ? diaParam : today), dia: null });
+    } else {
+      patchParams({ modo: "dia", dia: today, lunes: null });
+    }
+  }
+
+  function setMonday(iso: string) {
+    if (!iso) return;
+    patchParams({ modo: "semana", lunes: mondayOf(iso), dia: null });
+  }
+
+  function setDay(iso: string) {
+    if (!iso || iso > today) return;
+    patchParams({ modo: "dia", dia: iso, lunes: null });
+  }
+
   function setPlot(id: string) {
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.set("lunes", monday);
-      p.set("lote", id);
-      return p;
-    });
+    patchParams({ lote: id });
   }
 
   function setCell(workerId: string, day: string, text: string) {
@@ -161,7 +189,7 @@ export function PlanillaPage() {
       return;
     }
     const cropIds = plot.crops.map((c) => c.id);
-    const intent = ["planilla", monday, plot.id, writes.map((w) => JSON.stringify(w)).join(";")].join("|");
+    const intent = ["planilla", mode, from, to, plot.id, writes.map((w) => JSON.stringify(w)).join(";")].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       for (const w of writes) {
         if (w.kind === "create") {
@@ -192,8 +220,8 @@ export function PlanillaPage() {
     const records = await api.listWorkRecords({
       plotId: plot.id,
       activityId: activity.id,
-      from: monday,
-      to: sunday,
+      from,
+      to,
       status: "active",
     });
     setCells(cellsFromRecords(workers, days, records.filter((r) => r.plotIds.includes(plot.id))));
@@ -239,13 +267,24 @@ export function PlanillaPage() {
       </Button>
 
       <Typography variant="h1" gutterBottom>
-        Planilla de recolección
+        {mode === "dia" ? "Registrar recolección" : "Planilla de la semana"}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Una celda es lo que esa persona recogió ese día, en kilos, en el lote
-        elegido. En blanco es que no trabajó. Lo ya liquidado no se puede
-        cambiar aquí.
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        {mode === "dia"
+          ? "Un lote, un día, los kilos de cada persona. En blanco es que no trabajó ahí."
+          : "La planilla de la semana: personas abajo, días al lado. Lo ya liquidado no se cambia."}
       </Typography>
+
+      {!lockedMode && (
+        <Tabs
+          value={mode}
+          onChange={(_, v: "dia" | "semana") => setMode(v)}
+          sx={{ mb: 2 }}
+        >
+          <Tab value="dia" label="Por día" />
+          <Tab value="semana" label="Semana" />
+        </Tabs>
+      )}
 
       <Stack
         direction={{ xs: "column", sm: "row" }}
@@ -253,13 +292,22 @@ export function PlanillaPage() {
         sx={{ mb: 2 }}
         alignItems={{ xs: "stretch", sm: "flex-end" }}
       >
-        <DateField
-          label="Semana"
-          value={monday}
-          onChange={setMonday}
-          helperText={`Semana del ${formatWeekRange(monday)}`}
-          max={today}
-        />
+        {mode === "dia" ? (
+          <DateField
+            label="Día"
+            value={day}
+            onChange={setDay}
+            max={today}
+          />
+        ) : (
+          <DateField
+            label="Semana"
+            value={monday}
+            onChange={setMonday}
+            helperText={`Semana del ${formatWeekRange(monday)}`}
+            max={today}
+          />
+        )}
         <TextField
           select
           label={PLOT.One}
@@ -281,7 +329,7 @@ export function PlanillaPage() {
           onClick={() => void save()}
           disabled={busy || !plotId || !dirty}
         >
-          Guardar planilla
+          Guardar
         </Button>
       </Stack>
 
@@ -305,17 +353,52 @@ export function PlanillaPage() {
       ) : (
         <Card>
           <CardContent sx={{ overflowX: "auto" }}>
+            {mode === "dia" ? (
+              <Stack spacing={1.5}>
+                {workers.map((w) => {
+                  const cell = cells[cellKey(w.id, day)] ?? emptyCell();
+                  const future = day > today;
+                  return (
+                    <Stack
+                      key={w.id}
+                      direction="row"
+                      spacing={2}
+                      alignItems="center"
+                    >
+                      <Typography sx={{ flex: 1, fontWeight: 600, minWidth: 0 }}>
+                        {workerLabel(w)}
+                      </Typography>
+                      <TextField
+                        value={cell.text}
+                        onChange={(e) => setCell(w.id, day, e.target.value)}
+                        disabled={busy || cell.settled || future}
+                        placeholder="kg"
+                        inputProps={{
+                          inputMode: "decimal",
+                          "aria-label": `${workerLabel(w)}, kilos`,
+                        }}
+                        size="medium"
+                        sx={{
+                          width: 120,
+                          "& input": { textAlign: "right", fontSize: 20, py: 1.25 },
+                        }}
+                      />
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            ) : (
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 700, minWidth: 160 }}>
                     Empleado
                   </TableCell>
-                  {days.map((day, i) => (
-                    <TableCell key={day} align="right" sx={{ fontWeight: 700, minWidth: 88 }}>
-                      <div>{dayHeader(day, i)}</div>
+                  {days.map((d, i) => (
+                    <TableCell key={d} align="right" sx={{ fontWeight: 700, minWidth: 88 }}>
+                      <div>{dayHeader(d, i)}</div>
                       <Typography variant="caption" color="text.secondary">
-                        {formatDate(day).slice(0, 5)}
+                        {formatDate(d).slice(0, 5)}
                       </Typography>
                     </TableCell>
                   ))}
@@ -325,19 +408,19 @@ export function PlanillaPage() {
                 {workers.map((w) => (
                   <TableRow key={w.id} hover>
                     <TableCell sx={{ fontWeight: 600 }}>{workerLabel(w)}</TableCell>
-                    {days.map((day) => {
-                      const cell = cells[cellKey(w.id, day)] ?? emptyCell();
-                      const future = day > today;
+                    {days.map((d) => {
+                      const cell = cells[cellKey(w.id, d)] ?? emptyCell();
+                      const future = d > today;
                       return (
-                        <TableCell key={day} align="right" sx={{ p: 0.5 }}>
+                        <TableCell key={d} align="right" sx={{ p: 0.5 }}>
                           <TextField
                             value={cell.text}
-                            onChange={(e) => setCell(w.id, day, e.target.value)}
+                            onChange={(e) => setCell(w.id, d, e.target.value)}
                             disabled={busy || cell.settled || future}
                             placeholder={future ? "—" : ""}
                             inputProps={{
                               inputMode: "decimal",
-                              "aria-label": `${workerLabel(w)}, ${dayHeader(day, days.indexOf(day))}`,
+                              "aria-label": `${workerLabel(w)}, ${dayHeader(d, days.indexOf(d))}`,
                             }}
                             size="small"
                             sx={{
@@ -352,6 +435,7 @@ export function PlanillaPage() {
                 ))}
               </TableBody>
             </Table>
+            )}
             {workers.length === 0 && (
               <Alert severity="info" sx={{ mt: 2 }}>
                 No hay empleados activos. Regístrelos primero para llenar la planilla.
