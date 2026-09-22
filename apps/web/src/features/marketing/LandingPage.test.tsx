@@ -31,7 +31,7 @@ describe("the public landing", () => {
     renderApp("/");
     expect(
       await screen.findByRole("heading", {
-        name: /La báscula de su finca, en el bolsillo y en la oficina/i,
+        name: /Deje de liquidar la cosecha en un cuaderno/i,
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Crear mi finca" })).toHaveAttribute("href", "/empezar");
