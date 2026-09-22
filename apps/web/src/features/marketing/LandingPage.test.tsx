@@ -41,5 +41,7 @@ describe("the public landing", () => {
     renderApp("/empezar");
     expect(await screen.findByRole("heading", { name: "Crear mi finca" })).toBeInTheDocument();
     expect(screen.getByLabelText(/Identificador/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Teléfono/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Precio por kilo/)).toBeNull();
   });
 });

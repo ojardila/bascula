@@ -97,6 +97,11 @@ type Config struct {
 	// the request (Host and X-Forwarded-Proto), which is right behind the
 	// Gateway and for tests.
 	PublicBaseURL string
+	// GitHubDispatchToken, when set, lets signup ask Actions to write a
+	// dedicated tenant into gitops (own Postgres + pods). Empty means the
+	// farm stays on the shared platform only.
+	GitHubDispatchToken string
+	GitHubDispatchRepo  string
 }
 
 // DefaultConfig is the production posture.

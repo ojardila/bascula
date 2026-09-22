@@ -5155,7 +5155,7 @@ components:
       properties:
         farm:
           type: object
-          required: [name, priceCents]
+          required: [name]
           properties:
             name: { type: string, minLength: 1 }
             slug:
@@ -5173,13 +5173,16 @@ components:
               type: integer
               format: int64
               minimum: 1
-              description: The farm's standing price per unit of collection.
+              description: |
+                Optional on the landing. Omitted, the server seeds Recolección
+                at 800 COP/kg; the owner changes it later.
         owner:
           type: object
           required: [email, password]
           properties:
             email: { type: string, format: email }
             name: { type: string }
+            phone: { type: string }
             password: { type: string, minLength: 10 }
 
     SignupResponse:

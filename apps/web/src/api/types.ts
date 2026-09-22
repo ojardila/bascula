@@ -213,16 +213,11 @@ export interface SignupRequest {
     name: string;
     timezone: string;
     currency: string;
-    /**
-     * What a kilo is worth on day one. Required and positive: the server seeds
-     * every new farm with a "Recoleccion" activity priced from it, so a farm
-     * cannot exist without one.
-     */
-    priceCents: number;
     /** DNS label for https://{slug}.bascula.engp.io */
     slug?: string;
+    priceCents?: number;
   };
-  owner: { email: string; name: string; password: string };
+  owner: { email: string; name: string; phone?: string; password: string };
 }
 
 export interface SignupResponse {

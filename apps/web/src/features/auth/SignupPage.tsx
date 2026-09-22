@@ -19,7 +19,6 @@ import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
-import { parseMoneyInput } from "../../lib/money";
 import { farmUrlForHere, isFarmSlug, slugifyFarmName } from "../../lib/farmHost";
 
 export function SignupPage() {
@@ -27,8 +26,8 @@ export function SignupPage() {
   const [farmName, setFarmName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [price, setPrice] = useState("");
   const [ownerName, setOwnerName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -44,19 +43,15 @@ export function SignupPage() {
    */
   const [devToken, setDevToken] = useState<string | null>(null);
 
-  const priceCents = parseMoneyInput(price) ?? 0;
-
   function localErrors(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!farmName.trim()) e["farm.name"] = "Escriba el nombre de la finca.";
     if (!isFarmSlug(slug)) {
       e["farm.slug"] = "Use letras minúsculas, números y guiones. Ej: fincasanjose";
     }
-    // The server refuses a farm without a price: it seeds every new farm with
-    // a "Recolección" activity priced from this, so there is no such thing as
-    // a farm that has not decided what a kilo is worth.
-    if (priceCents <= 0) e["farm.priceCents"] = "Escriba cuánto paga por kilo.";
     if (!ownerName.trim()) e["owner.name"] = "Escriba su nombre.";
+    const tel = phone.replace(/\D/g, "");
+    if (tel.length < 7) e["owner.phone"] = "Escriba un teléfono.";
     if (!email.trim()) e["owner.email"] = "Escriba su correo.";
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       e["owner.email"] = "Ese correo no parece válido.";
@@ -85,9 +80,13 @@ export function SignupPage() {
           slug,
           timezone: "America/Bogota",
           currency: "COP",
-          priceCents,
         },
-        owner: { email: email.trim(), name: ownerName.trim(), password },
+        owner: {
+          email: email.trim(),
+          name: ownerName.trim(),
+          phone: phone.trim(),
+          password,
+        },
       });
       setDevToken(res.verificationToken);
       setSentTo(res.verificationEmailSentTo);
@@ -120,7 +119,9 @@ export function SignupPage() {
             )}
           </Typography>
           <Typography color="text.secondary" variant="body2">
-            Use el mismo correo y la clave que acaba de escribir.
+            Use el mismo correo y la clave que acaba de escribir. Estamos
+            levantando su base de datos y sus pods; en unos minutos esa URL
+            apunta a su stack.
           </Typography>
           {devToken && (
             <Alert severity="info" sx={{ width: "100%" }}>
@@ -194,35 +195,6 @@ export function SignupPage() {
             fullWidth
             required
           />
-          {/*
-            The price of a kilo, and not the farm's address.
-
-            Sprint 1 asked here for departamento and municipio, which the API
-            has nowhere to put: a department and a municipality describe a
-            PLOT, and the farm's own location is set later in Configuración.
-            What the server does require is this, because it seeds the new farm
-            with a "Recolección" activity priced from it — so this field is the
-            difference between a farm that can weigh coffee on day one and one
-            that cannot.
-          */}
-          <TextField
-            label="Precio por kilo de café"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            error={!!fields["farm.priceCents"]}
-            helperText={
-              fields["farm.priceCents"] ??
-              "Lo que paga hoy por kilo recogido. Lo puede cambiar cada semana."
-            }
-            size="medium"
-            fullWidth
-            required
-            inputMode="numeric"
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            El municipio y el departamento se piden después, en cada lote.
-          </Typography>
-
           <Typography variant="overline" color="text.secondary">
             Su usuario
           </Typography>
@@ -237,12 +209,24 @@ export function SignupPage() {
             required
           />
           <TextField
+            label="Teléfono"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            error={!!fields["owner.phone"]}
+            helperText={fields["owner.phone"]}
+            size="medium"
+            fullWidth
+            required
+            inputMode="tel"
+            autoComplete="tel"
+          />
+          <TextField
             label="Correo"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             error={!!fields["owner.email"]}
-            helperText={fields["owner.email"] ?? "Le enviaremos un enlace de confirmación."}
+            helperText={fields["owner.email"]}
             autoComplete="email"
             size="medium"
             fullWidth

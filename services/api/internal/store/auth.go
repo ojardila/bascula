@@ -13,6 +13,7 @@ type User struct {
 	ID              string
 	Email           string
 	Name            string
+	Phone           string
 	PasswordHash    string
 	IsSuperadmin    bool
 	EmailVerifiedAt *time.Time
@@ -55,8 +56,9 @@ func FindUserByID(ctx context.Context, tx pgx.Tx, id string) (*User, error) {
 
 func CreateUser(ctx context.Context, tx pgx.Tx, u User) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO users (id, email, name, password_hash, is_superadmin)
-		VALUES ($1, $2, $3, $4, $5)`, u.ID, u.Email, u.Name, u.PasswordHash, u.IsSuperadmin)
+		INSERT INTO users (id, email, name, phone, password_hash, is_superadmin)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		u.ID, u.Email, u.Name, u.Phone, u.PasswordHash, u.IsSuperadmin)
 	return err
 }
 

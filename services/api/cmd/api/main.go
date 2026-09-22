@@ -291,6 +291,8 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// every replica; the default under /tmp is a development convenience and
 	// nothing else, which is why it is warned about.
 	rc.http.PublicBaseURL = strings.TrimRight(getenv("PUBLIC_BASE_URL"), "/")
+	rc.http.GitHubDispatchToken = getenv("GITHUB_DISPATCH_TOKEN")
+	rc.http.GitHubDispatchRepo = or("GITHUB_DISPATCH_REPO", "ojardila/bascula")
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {
 		return resolved{}, errors.New(

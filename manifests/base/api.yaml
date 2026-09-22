@@ -152,6 +152,14 @@ spec:
             # OAuth issuer / MCP resource identifier for ChatGPT connectors.
             - name: PUBLIC_BASE_URL
               value: https://bascula.engp.io
+            - name: GITHUB_DISPATCH_REPO
+              value: ojardila/bascula
+            - name: GITHUB_DISPATCH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: bascula-api
+                  key: github-dispatch-token
+                  optional: true
           volumeMounts:
             - name: uploads
               mountPath: /srv/uploads
