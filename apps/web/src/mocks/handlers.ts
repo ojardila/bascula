@@ -648,9 +648,7 @@ export const handlers = [
       return badRequest("owner.password must be at least 10 characters");
     }
     if (!body.farm?.name?.trim()) return badRequest("farm.name is required");
-    if (!body.farm.priceCents || body.farm.priceCents <= 0) {
-      return badRequest("farm.priceCents must be positive");
-    }
+    const priceCents = body.farm.priceCents && body.farm.priceCents > 0 ? body.farm.priceCents : 80000;
 
     const password = body.owner!.password!;
     let user = db.users.find((u) => u.email === email);
@@ -692,12 +690,12 @@ export const handlers = [
       areaHa: null,
       suspendedAt: null,
       createdAt: nowInstant(),
-      priceCents: body.farm.priceCents,
+      priceCents,
     });
     db.memberships.push({ farmId, userId: user.id, role: "owner" });
     // `seedFarm`: a kilo and a "Recoleccion" priced from the weekly table, so
     // the farm can weigh coffee on day one. Nothing else.
-    db.tenants.set(farmId, db.emptyTenant(farmId, body.farm.priceCents, () => crypto.randomUUID()));
+    db.tenants.set(farmId, db.emptyTenant(farmId, priceCents, () => crypto.randomUUID()));
 
     const verificationToken = crypto.randomUUID();
     db.verifications.push({ token: verificationToken, userId: user.id, farmId, consumedAt: null });

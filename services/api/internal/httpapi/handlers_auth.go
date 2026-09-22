@@ -37,6 +37,7 @@ type signupRequest struct {
 	Owner struct {
 		Email    string `json:"email"`
 		Name     string `json:"name"`
+		Phone    string `json:"phone"`
 		Password string `json:"password"`
 	} `json:"owner"`
 }
@@ -94,8 +95,9 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Farm.PriceCents <= 0 {
-		writeError(w, r, domain.BadRequest("farm.priceCents must be positive"))
-		return
+		// Not asked on the landing. Seed Recolección at a standing peso-per-kilo
+		// the owner can change in Configuración / precio de la semana.
+		req.Farm.PriceCents = 80000
 	}
 	if req.Farm.Timezone == "" {
 		req.Farm.Timezone = "America/Bogota"
@@ -266,7 +268,8 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user = &store.User{
-		ID: newID(), Email: email, Name: req.Owner.Name, PasswordHash: passwordHash,
+		ID: newID(), Email: email, Name: req.Owner.Name,
+		Phone: strings.TrimSpace(req.Owner.Phone), PasswordHash: passwordHash,
 	}
 	if err := store.CreateUser(r.Context(), tx, *user); err != nil {
 		writeError(w, r, err)
@@ -283,10 +286,11 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := createFarmRecord(ctx, tx, &store.NewFarm{
+	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Farm.Name, Timezone: req.Farm.Timezone,
 		Currency: req.Farm.Currency, PriceMinor: req.Farm.PriceCents,
-	}, req.Farm.Slug); err != nil {
+	}
+	if err := createFarmRecord(ctx, tx, &newFarm, req.Farm.Slug); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -327,6 +331,12 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// The attempt row records what actually happened. It used to be written
 	// with `true` on every path, including the rejected ones.
 	succeeded = true
+	if !taken {
+		s.kickTenantProvision(tenantProvision{
+			Slug: newFarm.Slug, FarmName: newFarm.Name,
+			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
+		})
+	}
 
 	body := map[string]any{"verificationRequired": taken}
 	if s.cfg.DevEcho {

@@ -44,12 +44,16 @@ jobs:
             echo "slug=${{ github.event.client_payload.slug }}" >> "$GITHUB_OUTPUT"
             echo "farmName=${{ github.event.client_payload.farmName }}" >> "$GITHUB_OUTPUT"
             echo "email=${{ github.event.client_payload.email }}" >> "$GITHUB_OUTPUT"
-            echo "mode=${{ github.event.client_payload.mode || 'shared' }}" >> "$GITHUB_OUTPUT"
+            echo "ownerName=${{ github.event.client_payload.ownerName }}" >> "$GITHUB_OUTPUT"
+            echo "phone=${{ github.event.client_payload.phone }}" >> "$GITHUB_OUTPUT"
+            echo "mode=${{ github.event.client_payload.mode || 'dedicated' }}" >> "$GITHUB_OUTPUT"
           else
             echo "slug=${{ inputs.slug }}" >> "$GITHUB_OUTPUT"
             echo "farmName=${{ inputs.farmName }}" >> "$GITHUB_OUTPUT"
             echo "email=${{ inputs.email }}" >> "$GITHUB_OUTPUT"
             echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+            echo "ownerName=" >> "$GITHUB_OUTPUT"
+            echo "phone=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout gitops
@@ -64,6 +68,8 @@ jobs:
           SLUG: ${{ steps.in.outputs.slug }}
           NAME: ${{ steps.in.outputs.farmName }}
           EMAIL: ${{ steps.in.outputs.email }}
+          OWNER: ${{ steps.in.outputs.ownerName }}
+          PHONE: ${{ steps.in.outputs.phone }}
           MODE: ${{ steps.in.outputs.mode }}
         run: |
           set -euo pipefail
@@ -82,6 +88,8 @@ jobs:
               f"slug: {slug}\n"
               f"farmName: {os.environ['NAME']}\n"
               f"email: {os.environ['EMAIL']}\n"
+              f"ownerName: {os.environ.get('OWNER', '')}\n"
+              f"phone: {os.environ.get('PHONE', '')}\n"
               f"mode: {mode}\n"
               f"url: https://{slug}.bascula.engp.io\n"
               f"createdAt: {datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
