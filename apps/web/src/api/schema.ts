@@ -84,9 +84,12 @@ export interface paths {
         /**
          * Open a session
          * @description Answers 200 with a session when the account belongs to exactly one farm
-         *     or `farmId` was given. When it belongs to several and none was chosen,
-         *     it answers 400 with `details.farms`, which is a list to choose from and
-         *     not a failure.
+         *     or `farmId` / `farmSlug` was given, or the request Host names a farm
+         *     the account belongs to (`{slug}.bascula.engp.io`, or
+         *     `{slug}.int.dev.engp.io` unless the first label is `bascula`). When it
+         *     belongs to several and none was chosen, it answers 400 with
+         *     `details.farms`, which is a list to choose from and not a failure.
+         *     Each item includes `slug`. A Host the account cannot see is ignored.
          *
          *     An unknown address and a wrong password produce the same
          *     INVALID_CREDENTIALS, and take the same time to say it: the branch
@@ -2936,6 +2939,8 @@ export interface components {
         SignupRequest: {
             farm: {
                 name: string;
+                /** @description Optional. Lowercased. Omitted, derived from `name`. */
+                slug?: components["schemas"]["FarmSlug"];
                 /**
                  * @description An IANA name. Mandatory in the schema and validated: every
                  *     business day in this system is a day in the farm's zone, so a
@@ -2987,6 +2992,12 @@ export interface components {
              * @description Required only when the account belongs to more than one farm.
              */
             farmId?: string;
+            /**
+             * @description Optional. Names the farm the same way the request Host does.
+             *     Not required when Host is `{slug}.bascula.engp.io` or
+             *     `{slug}.int.dev.engp.io`.
+             */
+            farmSlug?: components["schemas"]["FarmSlug"];
             deviceId?: string;
         };
         RefreshRequest: {
@@ -3005,6 +3016,7 @@ export interface components {
             /** Format: uuid */
             farmId: string;
             farmName: string;
+            slug: components["schemas"]["FarmSlug"];
             role: components["schemas"]["Role"];
         };
         Me: {
@@ -3019,14 +3031,24 @@ export interface components {
                 /** Format: uuid */
                 id: string;
                 name: string;
+                slug: components["schemas"]["FarmSlug"];
                 timezone: string;
                 currency: string;
             };
         };
+        /**
+         * @description Stable DNS label for the farm. Lowercase letters, digits and single
+         *     hyphens, 2–63 characters. Set at create and not renamed. Reserved
+         *     labels (`www`, `api`, `admin`, `mcp`, `app`, `int`, `bascula`,
+         *     `static`, `assets`, `health`, `oauth`, `well-known`, `mail`,
+         *     `staging`, `prod`, `dev`) are 400.
+         */
+        FarmSlug: string;
         Farm: {
             /** Format: uuid */
             id: string;
             name: string;
+            slug: components["schemas"]["FarmSlug"];
             timezone: string;
             currency: string;
             /** @description Decimal places in the currency. */
@@ -3084,6 +3106,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            slug: components["schemas"]["FarmSlug"];
             timezone: string;
             currency: string;
             country?: string | null;
@@ -3099,6 +3122,8 @@ export interface components {
             /** Format: uuid */
             id?: string;
             name: string;
+            /** @description Optional. Lowercased. Omitted, derived from `name`. */
+            slug?: components["schemas"]["FarmSlug"];
             /** @default America/Bogota */
             timezone: string;
             /** @default COP */
@@ -5993,6 +6018,11 @@ export interface operations {
                     id?: string;
                     name: string;
                     /**
+                     * @description Optional. Lowercased. Omitted, it is derived from `name`.
+                     *     Immutable after create.
+                     */
+                    slug?: components["schemas"]["FarmSlug"];
+                    /**
                      * @description An IANA name Postgres recognises, or 400.
                      * @default America/Bogota
                      */
@@ -6021,6 +6051,7 @@ export interface operations {
                         /** Format: uuid */
                         farmId: string;
                         name: string;
+                        slug: components["schemas"]["FarmSlug"];
                         timezone?: string;
                         currency?: string;
                         role: components["schemas"]["Role"];
@@ -6039,6 +6070,7 @@ export interface operations {
                         /** Format: uuid */
                         farmId: string;
                         name: string;
+                        slug: components["schemas"]["FarmSlug"];
                         timezone?: string;
                         currency?: string;
                         role: components["schemas"]["Role"];

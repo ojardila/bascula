@@ -46,6 +46,7 @@ import { http, HttpResponse, delay } from "msw";
 import * as db from "./db";
 import { cropLabel } from "../api/adapters";
 import { addDays, mondayOf, parseDay } from "../lib/dates";
+import { farmSlugFromHost, isFarmSlug } from "../lib/farmHost";
 import { readHarvest } from "../../../../packages/shared/src/harvest";
 import * as geo from "../lib/geo";
 import type {
@@ -599,8 +600,27 @@ function issueSession(user: db.MockUser, membership: db.MockMembership, familyId
     expiresIn: ACCESS_TTL_SECONDS,
     farmId: membership.farmId,
     farmName: farm?.name ?? "",
+    slug: farm?.slug ?? "",
     role: membership.role,
   };
+}
+
+function hostnameOf(request: Request): string {
+  const header = request.headers.get("host");
+  if (header) return header.split(":")[0] ?? header;
+  try {
+    return new URL(request.url).hostname;
+  } catch {
+    return typeof window !== "undefined" ? window.location.hostname : "";
+  }
+}
+
+function pinnedFarm(request: Request): db.MockFarm | undefined {
+  const fromHost = farmSlugFromHost(hostnameOf(request));
+  const fromWindow =
+    typeof window !== "undefined" ? farmSlugFromHost(window.location.hostname) : null;
+  const slug = fromHost ?? fromWindow;
+  return slug ? db.farmOfSlug(slug) : undefined;
 }
 
 /* -- handlers -------------------------------------------------------- */
@@ -650,9 +670,8 @@ export const handlers = [
         password,
         name: body.owner?.name ?? "",
         superadmin: false,
-        // Born unverified: the farm exists, but nobody can open a session on
-        // it until the address is confirmed.
-        emailVerified: false,
+        // No mailer yet: signup verifies the address so they can log in.
+        emailVerified: true,
         role: "owner",
       };
       db.users.push(user);
@@ -662,6 +681,7 @@ export const handlers = [
     db.farms.push({
       id: farmId,
       name: body.farm.name.trim(),
+      slug: db.allocateSlug(body.farm.name.trim(), body.farm.slug),
       timezone: body.farm.timezone || "America/Bogota",
       currency: body.farm.currency || "COP",
       minorUnit: 2,
@@ -686,7 +706,7 @@ export const handlers = [
       {
         farmId,
         userId: user.id,
-        verificationRequired: true,
+        verificationRequired: false,
         // `DevEcho`. There is no mail sender yet, so in development the token
         // comes back in the response and the app offers to verify in place. In
         // production this key is simply absent.
@@ -727,7 +747,11 @@ export const handlers = [
     if (owned.length === 0) return fail(403, "FORBIDDEN", "that account belongs to no farm");
 
     let chosen: db.MockMembership | undefined;
-    if (body.farmId) {
+    const pinned = pinnedFarm(request);
+    if (pinned) {
+      chosen = owned.find((m) => m.farmId === pinned.id);
+      if (!chosen) return fail(403, "FORBIDDEN", "that account does not belong to that farm");
+    } else if (body.farmId) {
       chosen = owned.find((m) => m.farmId === body.farmId);
       if (!chosen) return fail(403, "FORBIDDEN", "that account does not belong to that farm");
     } else if (owned.length === 1) {
@@ -816,6 +840,7 @@ export const handlers = [
         name: farm?.name ?? "",
         timezone: farm?.timezone ?? "America/Bogota",
         currency: farm?.currency ?? "COP",
+        slug: farm?.slug ?? "",
       },
       superadmin: g.p.user.superadmin,
     });
@@ -1036,6 +1061,7 @@ export const handlers = [
     const body = (await request.json()) as {
       id?: string;
       name?: string;
+      slug?: string;
       timezone?: string;
       currency?: string;
       priceCents?: number;
@@ -1043,6 +1069,11 @@ export const handlers = [
     };
     if (!body.name?.trim()) return badRequest("name is required");
     if (!body.priceCents || body.priceCents <= 0) return badRequest("priceCents must be positive");
+    const requestedSlug = body.slug?.trim().toLowerCase();
+    if (requestedSlug) {
+      if (!isFarmSlug(requestedSlug)) return badRequest("slug is not a valid farm label");
+      if (db.farmOfSlug(requestedSlug)) return conflict("CONFLICT", "that slug is already in use");
+    }
     const email = body.owner?.email?.trim().toLowerCase() ?? "";
     if (!email || !email.includes("@")) return badRequest("owner.email is required");
     if (body.owner?.password && body.owner.password.length < 10) {
@@ -1075,6 +1106,7 @@ export const handlers = [
     const farm = {
       id: farmId,
       name: body.name.trim(),
+      slug: requestedSlug || db.allocateSlug(body.name.trim()),
       timezone: body.timezone || "America/Bogota",
       currency: body.currency || "COP",
       minorUnit: 2,
@@ -3491,6 +3523,7 @@ function adminFarm(f: db.MockFarm) {
   return {
     id: f.id,
     name: f.name,
+    slug: f.slug,
     timezone: f.timezone,
     currency: f.currency,
     country: f.country,

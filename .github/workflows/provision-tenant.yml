@@ -1,0 +1,98 @@
+# Record a farm in gitops and, if mode=dedicated, let ApplicationSet
+# launch its own namespace, Postgres, API, web and URL.
+#
+# Shared mode (default): the farm already lives in the platform DB (signup).
+# This job only writes tenants/shared/{slug}.yaml as the catalog.
+#
+# Dedicated mode: writes tenants/dedicated/{slug}.yaml; Argo ApplicationSet
+# creates Application bascula-{slug} from manifests/overlays/tenant.
+#
+# CI never has kubeconfig. Argo applies. Copy harbor-pull into the new
+# namespace once: scripts/create-dev-secrets.sh with NS=bascula-{slug}.
+name: Provision tenant
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: DNS label (fincasanjose)
+        required: true
+      farmName:
+        description: Display name
+        required: true
+      email:
+        description: Owner email
+        required: true
+      mode:
+        description: shared (catalog only) or dedicated (own stack)
+        type: choice
+        options: [shared, dedicated]
+        default: shared
+  repository_dispatch:
+    types: [provision-tenant]
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve inputs
+        id: in
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "slug=${{ github.event.client_payload.slug }}" >> "$GITHUB_OUTPUT"
+            echo "farmName=${{ github.event.client_payload.farmName }}" >> "$GITHUB_OUTPUT"
+            echo "email=${{ github.event.client_payload.email }}" >> "$GITHUB_OUTPUT"
+            echo "mode=${{ github.event.client_payload.mode || 'shared' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "slug=${{ inputs.slug }}" >> "$GITHUB_OUTPUT"
+            echo "farmName=${{ inputs.farmName }}" >> "$GITHUB_OUTPUT"
+            echo "email=${{ inputs.email }}" >> "$GITHUB_OUTPUT"
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout gitops
+        uses: actions/checkout@v4
+        with:
+          repository: ojardila/gitops
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+          path: gitops
+
+      - name: Write tenant file
+        env:
+          SLUG: ${{ steps.in.outputs.slug }}
+          NAME: ${{ steps.in.outputs.farmName }}
+          EMAIL: ${{ steps.in.outputs.email }}
+          MODE: ${{ steps.in.outputs.mode }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, datetime
+          from pathlib import Path
+          slug = os.environ["SLUG"].strip().lower()
+          if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 63:
+              raise SystemExit(f"bad slug {slug!r}")
+          mode = os.environ["MODE"].strip() or "shared"
+          if mode not in ("shared", "dedicated"):
+              raise SystemExit(f"bad mode {mode!r}")
+          folder = Path("gitops/tenants") / mode
+          folder.mkdir(parents=True, exist_ok=True)
+          body = (
+              f"slug: {slug}\n"
+              f"farmName: {os.environ['NAME']}\n"
+              f"email: {os.environ['EMAIL']}\n"
+              f"mode: {mode}\n"
+              f"url: https://{slug}.bascula.engp.io\n"
+              f"createdAt: {datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
+          )
+          (folder / f"{slug}.yaml").write_text(body)
+          print(body)
+          PY
+          cd gitops
+          git config user.email "bascula-cd@users.noreply.github.com"
+          git config user.name "bascula-cd"
+          git add "tenants/${MODE}/${SLUG}.yaml"
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "tenant ${SLUG} (${MODE})"
+          git push origin HEAD:main

@@ -506,6 +506,9 @@ func TestSuperAdminConsole(t *testing.T) {
 		if res.Body["name"] != "Finca El Roble" {
 			t.Fatalf("created farm: %s", res.Raw)
 		}
+		if res.Body["slug"] != "finca-el-roble" {
+			t.Fatalf("slug from name: got %v, want finca-el-roble: %s", res.Body["slug"], res.Raw)
+		}
 		if res.Body["ownerEmail"] != "roble@example.com" {
 			t.Fatalf("owner email missing: %s", res.Raw)
 		}
@@ -521,6 +524,20 @@ func TestSuperAdminConsole(t *testing.T) {
 		}, http.StatusOK)
 		if login.Body["farmName"] != "Finca El Roble" {
 			t.Fatalf("new owner could not open the farm: %s", login.Raw)
+		}
+		if login.Body["slug"] != "finca-el-roble" {
+			t.Fatalf("session slug: got %v: %s", login.Body["slug"], login.Raw)
+		}
+		listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+		var foundSlug string
+		for _, raw := range listed.Body["items"].([]any) {
+			row := raw.(map[string]any)
+			if row["name"] == "Finca El Roble" {
+				foundSlug, _ = row["slug"].(string)
+			}
+		}
+		if foundSlug != "finca-el-roble" {
+			t.Fatalf("list slug: got %q: %s", foundSlug, listed.Raw)
 		}
 	})
 

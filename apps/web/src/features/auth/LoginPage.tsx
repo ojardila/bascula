@@ -8,6 +8,7 @@ import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
+import { farmSlugFromHost } from "../../lib/farmHost";
 import type { Membership, Role } from "../../api/types";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -32,6 +33,13 @@ export function LoginPage() {
    * second login that names the farm, not a switch inside this session.
    */
   const [choices, setChoices] = useState<Membership[] | null>(null);
+  /**
+   * A pinned host is the farm. Login still sends email and password only —
+   * the browser already puts the host on `/v1/auth/login`. If the API has not
+   * started pinning yet and still answers 400, the chooser below is the same
+   * as today. A 403 is the wrong farm and stays on this screen.
+   */
+  const pinnedSlug = farmSlugFromHost(window.location.hostname);
 
   if (status === "authenticated") return <Navigate to={landing} replace />;
 
@@ -44,7 +52,8 @@ export function LoginPage() {
         setChoices(res.memberships);
         return;
       }
-      navigate(location.state?.from ?? "/", { replace: true });
+      const next = location.state?.from;
+      navigate(next && next !== "/" ? next : landing, { replace: true });
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -86,7 +95,14 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Entrar" subtitle="Escriba el correo y la contraseña de su finca.">
+    <AuthLayout
+      title="Entrar"
+      subtitle={
+        pinnedSlug
+          ? "Escriba el correo y la contraseña de esta finca."
+          : "Escriba el correo y la contraseña de su finca."
+      }
+    >
       <Box component="form" onSubmit={onSubmit} noValidate>
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -130,7 +146,7 @@ export function LoginPage() {
             {busy ? "Entrando…" : "Entrar"}
           </Button>
           <Divider>o</Divider>
-          <Button component={RouterLink} to="/registro" variant="outlined" fullWidth size="large">
+          <Button component={RouterLink} to="/empezar" variant="outlined" fullWidth size="large">
             Registrar mi finca
           </Button>
         </Stack>

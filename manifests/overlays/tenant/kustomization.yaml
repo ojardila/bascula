@@ -1,0 +1,42 @@
+# One farm, one namespace, one URL: {slug}.bascula.engp.io
+#
+# ApplicationSet (gitops) patches hostnames and PUBLIC_BASE_URL per slug.
+# Secrets are minted in-cluster by bootstrap-secrets (PreSync). Copy
+# harbor-pull into the namespace once (same as scripts/create-dev-secrets.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - bootstrap-secrets.yaml
+  - public-url-configmap.yaml
+patches:
+  - path: postgres-small.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Cluster
+      name: bascula-db
+  - path: delete-objectstore.yaml
+    target:
+      group: barmancloud.cnpg.io
+      version: v1
+      kind: ObjectStore
+      name: bascula-backups
+  - path: delete-scheduled-backup.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: ScheduledBackup
+      name: bascula-db-weekly
+  - path: web-replicas.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bascula-web
+  - path: public-base-url.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bascula-api

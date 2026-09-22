@@ -3,8 +3,9 @@
  *
  * This is now the front door: the super-admin console is no longer where a
  * farm is created. Which also makes it the most exposed surface in the system,
- * so the copy is explicit that a verification mail has to be opened before
- * anything works, and the form asks for as little as it can get away with.
+ * so the form asks for as little as it can get away with. There is no mailer
+ * yet: the farm is usable as soon as they submit. When mail is wired, the
+ * mailbox click becomes the gate again.
  * Everything else is asked for later, inside the app, by someone who has
  * already decided to stay.
  */
@@ -15,15 +16,17 @@ import {
 } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
+import { farmUrlForHere, isFarmSlug, slugifyFarmName } from "../../lib/farmHost";
 
 export function SignupPage() {
   const navigate = useNavigate();
   const [farmName, setFarmName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
   const [price, setPrice] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
@@ -46,6 +49,9 @@ export function SignupPage() {
   function localErrors(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!farmName.trim()) e["farm.name"] = "Escriba el nombre de la finca.";
+    if (!isFarmSlug(slug)) {
+      e["farm.slug"] = "Use letras minúsculas, números y guiones. Ej: fincasanjose";
+    }
     // The server refuses a farm without a price: it seeds every new farm with
     // a "Recolección" activity priced from this, so there is no such thing as
     // a farm that has not decided what a kilo is worth.
@@ -76,6 +82,7 @@ export function SignupPage() {
       const res = await api.signup({
         farm: {
           name: farmName.trim(),
+          slug,
           timezone: "America/Bogota",
           currency: "COP",
           priceCents,
@@ -95,21 +102,30 @@ export function SignupPage() {
   }
 
   if (sentTo) {
+    const url = slug ? farmUrlForHere(slug) : "";
     return (
-      <AuthLayout title="Revise su correo" wide>
+      <AuthLayout title="Su finca está lista" wide>
         <Stack spacing={2} alignItems="flex-start">
-          <MarkEmailUnreadIcon color="primary" sx={{ fontSize: 48 }} />
           <Typography>
-            Le enviamos un mensaje a <strong>{sentTo}</strong>. Abra el enlace que
-            trae y su finca queda lista para usar.
+            Registramos <strong>{sentTo}</strong>
+            {url ? (
+              <>
+                . Entre por{" "}
+                <Box component="span" sx={{ fontFamily: "ui-monospace, monospace" }}>
+                  {url}
+                </Box>
+              </>
+            ) : (
+              "."
+            )}
           </Typography>
           <Typography color="text.secondary" variant="body2">
-            Si no llega en unos minutos, revise la carpeta de correo no deseado.
+            Use el mismo correo y la clave que acaba de escribir.
           </Typography>
           {devToken && (
             <Alert severity="info" sx={{ width: "100%" }}>
-              El servidor está en modo desarrollo y no envía correos: devolvió el
-              enlace de confirmación en la respuesta.{" "}
+              Puede confirmar el correo ahora, o entrar directo: el alta ya quedó verificada.
+              {" "}
               <Link
                 component="button"
                 type="button"
@@ -122,12 +138,12 @@ export function SignupPage() {
                   }
                 }}
               >
-                Confirmar y entrar
+                Confirmar correo
               </Link>
             </Alert>
           )}
-          <Button component={RouterLink} to="/entrar" variant="outlined">
-            Ir a entrar
+          <Button component={RouterLink} to="/entrar" variant="contained">
+            Entrar a mi finca
           </Button>
         </Stack>
       </AuthLayout>
@@ -136,8 +152,8 @@ export function SignupPage() {
 
   return (
     <AuthLayout
-      title="Registrar mi finca"
-      subtitle="Cree la finca y su primer usuario. No hace falta que nadie la autorice."
+      title="Crear mi finca"
+      subtitle="En un minuto tiene nombre, dueño y su propia dirección en internet."
       wide
     >
       <Box component="form" onSubmit={onSubmit} noValidate>
@@ -150,12 +166,32 @@ export function SignupPage() {
           <TextField
             label="Nombre de la finca"
             value={farmName}
-            onChange={(e) => setFarmName(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFarmName(v);
+              if (!slugTouched) setSlug(slugifyFarmName(v));
+            }}
             error={!!fields["farm.name"]}
             helperText={fields["farm.name"]}
             size="medium"
             fullWidth
             autoFocus
+            required
+          />
+          <TextField
+            label="Identificador (URL)"
+            value={slug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value.trim().toLowerCase());
+            }}
+            error={!!fields["farm.slug"]}
+            helperText={
+              fields["farm.slug"] ||
+              (slug ? `Su finca: ${farmUrlForHere(slug)}` : "Ej: fincasanjose")
+            }
+            size="medium"
+            fullWidth
             required
           />
           {/*

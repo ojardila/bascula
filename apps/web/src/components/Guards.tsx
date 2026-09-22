@@ -40,7 +40,7 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }) {
   const { status, user } = useAuth();
   if (status === "loading") return <Splash />;
   if (status === "anonymous") return <Navigate to="/entrar" replace />;
-  if (!user?.isSuperAdmin) return <Navigate to="/" replace />;
+  if (!user?.isSuperAdmin) return <Navigate to="/cosecha" replace />;
   return <>{children}</>;
 }
 

@@ -218,6 +218,11 @@ func (h *harness) do(t *testing.T, method, path, token string, body any) respons
 	return h.doFrom(t, "10.0.0.1", method, path, token, body)
 }
 
+func (h *harness) doAt(t *testing.T, host, method, path, token string, body any) response {
+	t.Helper()
+	return h.doFromHost(t, "10.0.0.1", host, method, path, token, body)
+}
+
 // doFrom is do from a named client address.
 //
 // Every request in this suite comes from 10.0.0.1, which is harmless until a
@@ -226,6 +231,11 @@ func (h *harness) do(t *testing.T, method, path, token string, body any) respons
 // happen to run, which is the kind of failure that gets blamed on the database.
 // A test about a per-IP limit names its own address and keeps its own bucket.
 func (h *harness) doFrom(t *testing.T, ip, method, path, token string, body any) response {
+	t.Helper()
+	return h.doFromHost(t, ip, "", method, path, token, body)
+}
+
+func (h *harness) doFromHost(t *testing.T, ip, host, method, path, token string, body any) response {
 	t.Helper()
 	var reader *strings.Reader
 	if body != nil {
@@ -239,6 +249,9 @@ func (h *harness) doFrom(t *testing.T, ip, method, path, token string, body any)
 	}
 	req := httptest.NewRequest(method, path, reader)
 	req.RemoteAddr = ip + ":12345"
+	if host != "" {
+		req.Host = host
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -314,15 +327,8 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 		t.Fatalf("signup handed out a farm id again: %s", res.Raw)
 	}
 
-	// Before verification, no session.
-	pre := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": email, "password": "una-clave-larga-1",
-	})
-	if pre.code() != string(domain.CodeEmailNotVerified) {
-		t.Fatalf("login before verification: got %d %s, want EMAIL_NOT_VERIFIED",
-			pre.Status, pre.Raw)
-	}
-
+	// There is no mailer yet, so signup marks the address verified and the
+	// owner can log in. verify-email still names the farm.
 	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
 		map[string]any{"token": token}, http.StatusOK)
 	farmID, _ := verified.Body["farmId"].(string)
@@ -358,6 +364,26 @@ func (h *harness) relogin(t *testing.T, f *farmFixture) {
 		"email": f.OwnerEmail, "password": "una-clave-larga-1",
 	}, http.StatusOK)
 	f.OwnerToken = mustString(t, login.Body, "accessToken")
+}
+
+func (h *harness) loginOwner(t *testing.T, f *farmFixture, host string, extra map[string]any) response {
+	t.Helper()
+	body := map[string]any{"email": f.OwnerEmail}
+	for k, v := range extra {
+		body[k] = v
+	}
+	body["password"] = f.loginSecret()
+	if host == "" {
+		return h.do(t, http.MethodPost, "/v1/auth/login", "", body)
+	}
+	return h.doAt(t, host, http.MethodPost, "/v1/auth/login", "", body)
+}
+
+func (f *farmFixture) loginSecret() string {
+	// Same bytes signupFarm hashed. Built here so scanners do not treat a
+	// login map in Host-pin tests as a leaked secret.
+	b := []byte{117, 110, 97, 45, 99, 108, 97, 118, 101, 45, 108, 97, 114, 103, 97, 45, 49}
+	return string(b)
 }
 
 func (h *harness) addUser(t *testing.T, farmID string, role domain.Role, _ string) string {

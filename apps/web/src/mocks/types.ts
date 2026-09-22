@@ -186,7 +186,7 @@ export interface ReverseRequestBody {
 
 /** Every field optional: the whole point of the handler is to reject holes. */
 export interface SignupRequestBody {
-  farm?: { name?: string; timezone?: string; currency?: string; priceCents?: number };
+  farm?: { name?: string; slug?: string; timezone?: string; currency?: string; priceCents?: number };
   owner?: { email?: string; name?: string; password?: string };
 }
 

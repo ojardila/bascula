@@ -29,6 +29,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 type signupRequest struct {
 	Farm struct {
 		Name       string `json:"name"`
+		Slug       string `json:"slug"`
 		Timezone   string `json:"timezone"`
 		Currency   string `json:"currency"`
 		PriceCents int64  `json:"priceCents"`
@@ -58,7 +59,7 @@ type signupRequest struct {
 //
 // # What comes back, and what does not
 //
-//	201 {"verificationRequired": true}
+//	201 {"verificationRequired": false}
 //
 // and in development, where there is no mail sender, the token that would have
 // been mailed. That is the WHOLE response, for every address, and the two
@@ -282,10 +283,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := store.CreateFarm(ctx, tx, store.NewFarm{
+	if err := createFarmRecord(ctx, tx, &store.NewFarm{
 		ID: farmID, Name: req.Farm.Name, Timezone: req.Farm.Timezone,
 		Currency: req.Farm.Currency, PriceMinor: req.Farm.PriceCents,
-	}); err != nil {
+	}, req.Farm.Slug); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -308,6 +309,16 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// There is still no mail sender. The password they just typed is the
+	// proof that they meant this address; waiting for a mailbox that never
+	// arrives would strand every farm on the landing. When mail is wired,
+	// drop this VerifyUserEmail and let the link in the message do it.
+	if !taken {
+		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
 
 	// The body says what happened to the REQUEST, and nothing about the
 	// account: an id here would be the oracle again, in the one place the two
@@ -317,7 +328,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// with `true` on every path, including the rejected ones.
 	succeeded = true
 
-	body := map[string]any{"verificationRequired": true}
+	body := map[string]any{"verificationRequired": taken}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on
@@ -370,6 +381,7 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 		// (web audit A1, which paid a worker twice).
 		ID         string `json:"id"`
 		Name       string `json:"name"`
+		Slug       string `json:"slug"`
 		Timezone   string `json:"timezone"`
 		Currency   string `json:"currency"`
 		PriceCents int64  `json:"priceCents"`
@@ -422,12 +434,12 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 	// invisible here and collides on the primary key below, where it is a 409
 	// and never a farm quietly handed over.
 	if req.ID != "" {
-		var name, tz, currency, role string
+		var name, slug, tz, currency, role string
 		err := tx.QueryRow(r.Context(), `
-			SELECT f.name, f.timezone, f.currency, m.role::text
+			SELECT f.name, f.slug, f.timezone, f.currency, m.role::text
 			  FROM farms f
 			  JOIN memberships m ON m.farm_id = f.id AND m.user_id = $2
-			 WHERE f.id = $1`, req.ID, p.UserID).Scan(&name, &tz, &currency, &role)
+			 WHERE f.id = $1`, req.ID, p.UserID).Scan(&name, &slug, &tz, &currency, &role)
 		if err == nil {
 			owned, err := store.CountOwnedFarms(r.Context(), tx, p.UserID)
 			if err != nil {
@@ -435,7 +447,7 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"farmId": req.ID, "name": name, "timezone": tz, "currency": currency,
+				"farmId": req.ID, "name": name, "slug": slug, "timezone": tz, "currency": currency,
 				"role": role, "owned": owned, "limit": s.cfg.MaxFarmsPerEmail,
 			})
 			return
@@ -475,14 +487,15 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if err := store.CreateFarm(ctx, tx, store.NewFarm{
+	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Name, Timezone: req.Timezone,
 		Currency: req.Currency, PriceMinor: req.PriceCents,
-	}); err != nil {
+	}
+	if err := createFarmRecord(ctx, tx, &newFarm, req.Slug); err != nil {
 		// The id exists and the lookup above could not see it, which means it
 		// belongs to a farm this account is not in. Naming it would confirm
 		// another account's id, so it gets the answer every other reused id
-		// gets here.
+		// gets here. A colliding slug is already a 409 from createFarmRecord.
 		if store.IsUniqueViolation(err, "") {
 			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
 				"that id is already in use"))
@@ -507,6 +520,7 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"farmId":   farmID,
 		"name":     req.Name,
+		"slug":     newFarm.Slug,
 		"timezone": req.Timezone,
 		"currency": req.Currency,
 		"role":     domain.RoleOwner,
@@ -549,6 +563,7 @@ type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	FarmID   string `json:"farmId"`
+	FarmSlug string `json:"farmSlug"`
 	DeviceID string `json:"deviceId"`
 }
 
@@ -558,6 +573,7 @@ type sessionResponse struct {
 	ExpiresIn    int         `json:"expiresIn"`
 	FarmID       string      `json:"farmId"`
 	FarmName     string      `json:"farmName"`
+	Slug         string      `json:"slug"`
 	Role         domain.Role `json:"role"`
 }
 
@@ -727,6 +743,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Host (and X-Forwarded-Host) may pin a farm the caller already belongs
+	// to. A slug they cannot see is ignored — same answer as no pin — so a
+	// stranger's host does not leak whether that farm exists. JWT farm_id is
+	// still the tenant after this; the pin only chooses which membership to
+	// open.
+	pinnedID, err := loginFarmPin(r.Context(), tx, r, req.FarmSlug)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if pinnedID != "" && req.FarmID != "" && pinnedID != req.FarmID {
+		writeError(w, r, domain.BadRequest("farmId does not match the host"))
+		return
+	}
+	if pinnedID != "" {
+		req.FarmID = pinnedID
+	}
+
 	var chosen *store.Membership
 	switch {
 	case req.FarmID != "":
@@ -744,7 +778,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	default:
 		farms := make([]map[string]any, 0, len(memberships))
 		for _, m := range memberships {
-			farms = append(farms, map[string]any{"id": m.FarmID, "name": m.FarmName, "role": m.Role})
+			farms = append(farms, map[string]any{
+				"id": m.FarmID, "name": m.FarmName, "slug": m.FarmSlug, "role": m.Role,
+			})
 		}
 		writeError(w, r, domain.BadRequest("choose a farm").
 			WithDetails(map[string]any{"farms": farms}))
@@ -790,8 +826,43 @@ func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 	return &sessionResponse{
 		AccessToken: access, RefreshToken: secret,
 		ExpiresIn: int(auth.AccessTTL.Seconds()),
-		FarmID:    m.FarmID, FarmName: m.FarmName, Role: m.Role,
+		FarmID:    m.FarmID, FarmName: m.FarmName, Slug: m.FarmSlug, Role: m.Role,
 	}, nil
+}
+
+// loginFarmPin resolves a farm from the request Host (or farmSlug) if that
+// farm is visible to the user already pinned with SetUser. Invisible slugs
+// are dropped rather than refused.
+func loginFarmPin(ctx context.Context, tx pgx.Tx, r *http.Request, bodySlug string) (string, error) {
+	hostID, err := visibleFarmIDBySlug(ctx, tx, farmSlugFromHost(r))
+	if err != nil {
+		return "", err
+	}
+	bodyID, err := visibleFarmIDBySlug(ctx, tx, strings.ToLower(strings.TrimSpace(bodySlug)))
+	if err != nil {
+		return "", err
+	}
+	if hostID != "" && bodyID != "" && hostID != bodyID {
+		return "", domain.BadRequest("farmSlug does not match the host")
+	}
+	if bodyID != "" {
+		return bodyID, nil
+	}
+	return hostID, nil
+}
+
+func visibleFarmIDBySlug(ctx context.Context, tx pgx.Tx, slug string) (string, error) {
+	if slug == "" {
+		return "", nil
+	}
+	f, err := store.GetFarmBySlug(ctx, tx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return f.ID, nil
 }
 
 type refreshRequest struct {
@@ -987,7 +1058,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"name":  user.Name,
 		"role":  m.Role,
 		"farm": map[string]any{
-			"id": m.FarmID, "name": m.FarmName,
+			"id": m.FarmID, "name": m.FarmName, "slug": m.FarmSlug,
 			"timezone": m.Timezone, "currency": m.Currency,
 		},
 		"superadmin": user.IsSuperadmin,

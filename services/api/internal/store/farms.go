@@ -17,6 +17,7 @@ import (
 type Farm struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
+	Slug        string     `json:"slug"`
 	Timezone    string     `json:"timezone"`
 	Currency    string     `json:"currency"`
 	MinorUnit   int        `json:"minorUnit"`
@@ -37,13 +38,13 @@ type Farm struct {
 	PriceMinor *int64 `json:"priceCents,omitempty"`
 }
 
-const farmCols = `f.id::text, f.name, f.timezone, f.currency, f.minor_unit, f.phone,
+const farmCols = `f.id::text, f.name, f.slug, f.timezone, f.currency, f.minor_unit, f.phone,
 	f.country, f.city, f.address, f.area_ha::float8, f.suspended_at, f.created_at,
 	f.money_read_only`
 
 func scanFarm(row pgx.Row) (*Farm, error) {
 	var f Farm
-	err := row.Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.MinorUnit, &f.Phone,
+	err := row.Scan(&f.ID, &f.Name, &f.Slug, &f.Timezone, &f.Currency, &f.MinorUnit, &f.Phone,
 		&f.Country, &f.City, &f.Address, &f.AreaHa, &f.SuspendedAt, &f.CreatedAt,
 		&f.MoneyReadOnly)
 	if err != nil {
@@ -69,6 +70,16 @@ func GetFarm(ctx context.Context, tx pgx.Tx) (*Farm, error) {
 	}
 	f.PriceMinor = &price
 	return f, nil
+}
+
+// GetFarmBySlug is the login pin: the farm this slug names, if the caller can
+// see it. p_farms already restricts the table to current_farm(), the caller's
+// memberships (app.user_id, which login sets), and the platform administrator.
+// A slug the caller does not belong to is indistinguishable from one that does
+// not exist: both are pgx.ErrNoRows.
+func GetFarmBySlug(ctx context.Context, tx pgx.Tx, slug string) (*Farm, error) {
+	return scanFarm(tx.QueryRow(ctx,
+		`SELECT `+farmCols+` FROM farms f WHERE f.slug = $1`, slug))
 }
 
 // IsKnownTimezone asks Postgres whether it recognises an IANA name, using the
@@ -147,6 +158,7 @@ func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm, cleared map[string]bool)
 type AdminFarm struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
+	Slug        string     `json:"slug"`
 	Timezone    string     `json:"timezone"`
 	Currency    string     `json:"currency"`
 	Country     *string    `json:"country"`
@@ -170,7 +182,7 @@ func farmStatus(suspended *time.Time) string {
 // setting that opens every farm on the platform at once.
 func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFarm, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, name, timezone, currency, country, city, suspended_at, created_at
+		SELECT id::text, name, slug, timezone, currency, country, city, suspended_at, created_at
 		  FROM farms
 		 WHERE ($1::text IS NULL OR name ILIKE '%' || $1 || '%')
 		   AND ($2::text IS NULL
@@ -185,7 +197,7 @@ func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFa
 	out := []AdminFarm{}
 	for rows.Next() {
 		var f AdminFarm
-		if err := rows.Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.Country,
+		if err := rows.Scan(&f.ID, &f.Name, &f.Slug, &f.Timezone, &f.Currency, &f.Country,
 			&f.City, &f.SuspendedAt, &f.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -200,9 +212,9 @@ func ListAdminFarms(ctx context.Context, tx pgx.Tx, q, status string) ([]AdminFa
 func GetAdminFarm(ctx context.Context, tx pgx.Tx, id string) (*AdminFarm, error) {
 	var f AdminFarm
 	err := tx.QueryRow(ctx, `
-		SELECT id::text, name, timezone, currency, country, city, suspended_at, created_at
+		SELECT id::text, name, slug, timezone, currency, country, city, suspended_at, created_at
 		  FROM farms WHERE id = $1`, id).
-		Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.Country, &f.City,
+		Scan(&f.ID, &f.Name, &f.Slug, &f.Timezone, &f.Currency, &f.Country, &f.City,
 			&f.SuspendedAt, &f.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -223,9 +235,9 @@ func SetFarmStatus(ctx context.Context, tx pgx.Tx, farmID, status string) (*Admi
 		                                     THEN coalesce(suspended_at, now())
 		                                     ELSE NULL END
 		 WHERE id = $1
-		 RETURNING id::text, name, timezone, currency, country, city, suspended_at, created_at`,
+		 RETURNING id::text, name, slug, timezone, currency, country, city, suspended_at, created_at`,
 		farmID, status).
-		Scan(&f.ID, &f.Name, &f.Timezone, &f.Currency, &f.Country, &f.City,
+		Scan(&f.ID, &f.Name, &f.Slug, &f.Timezone, &f.Currency, &f.Country, &f.City,
 			&f.SuspendedAt, &f.CreatedAt)
 	if err != nil {
 		return nil, err
