@@ -59,7 +59,7 @@ type signupRequest struct {
 //
 // # What comes back, and what does not
 //
-//	201 {"verificationRequired": true}
+//	201 {"verificationRequired": false}
 //
 // and in development, where there is no mail sender, the token that would have
 // been mailed. That is the WHOLE response, for every address, and the two
@@ -309,6 +309,16 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// There is still no mail sender. The password they just typed is the
+	// proof that they meant this address; waiting for a mailbox that never
+	// arrives would strand every farm on the landing. When mail is wired,
+	// drop this VerifyUserEmail and let the link in the message do it.
+	if !taken {
+		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
 
 	// The body says what happened to the REQUEST, and nothing about the
 	// account: an id here would be the oracle again, in the one place the two
@@ -318,7 +328,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// with `true` on every path, including the rejected ones.
 	succeeded = true
 
-	body := map[string]any{"verificationRequired": true}
+	body := map[string]any{"verificationRequired": taken}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on

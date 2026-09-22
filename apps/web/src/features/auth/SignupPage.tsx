@@ -3,8 +3,9 @@
  *
  * This is now the front door: the super-admin console is no longer where a
  * farm is created. Which also makes it the most exposed surface in the system,
- * so the copy is explicit that a verification mail has to be opened before
- * anything works, and the form asks for as little as it can get away with.
+ * so the form asks for as little as it can get away with. There is no mailer
+ * yet: the farm is usable as soon as they submit. When mail is wired, the
+ * mailbox click becomes the gate again.
  * Everything else is asked for later, inside the app, by someone who has
  * already decided to stay.
  */
@@ -15,7 +16,6 @@ import {
 } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import MarkEmailUnreadIcon from "@mui/icons-material/MarkEmailUnread";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -102,22 +102,30 @@ export function SignupPage() {
   }
 
   if (sentTo) {
+    const url = slug ? farmUrlForHere(slug) : "";
     return (
-      <AuthLayout title="Revise su correo" wide>
+      <AuthLayout title="Su finca está lista" wide>
         <Stack spacing={2} alignItems="flex-start">
-          <MarkEmailUnreadIcon color="primary" sx={{ fontSize: 48 }} />
           <Typography>
-            Le enviamos un mensaje a <strong>{sentTo}</strong>. Abra el enlace que
-            trae y su finca queda lista en{" "}
-            <strong>{farmUrlForHere(slug)}</strong>.
+            Registramos <strong>{sentTo}</strong>
+            {url ? (
+              <>
+                . Entre por{" "}
+                <Box component="span" sx={{ fontFamily: "ui-monospace, monospace" }}>
+                  {url}
+                </Box>
+              </>
+            ) : (
+              "."
+            )}
           </Typography>
           <Typography color="text.secondary" variant="body2">
-            Si no llega en unos minutos, revise la carpeta de correo no deseado.
+            Use el mismo correo y la clave que acaba de escribir.
           </Typography>
           {devToken && (
             <Alert severity="info" sx={{ width: "100%" }}>
-              El servidor está en modo desarrollo y no envía correos: devolvió el
-              enlace de confirmación en la respuesta.{" "}
+              Puede confirmar el correo ahora, o entrar directo: el alta ya quedó verificada.
+              {" "}
               <Link
                 component="button"
                 type="button"
@@ -130,12 +138,12 @@ export function SignupPage() {
                   }
                 }}
               >
-                Confirmar y entrar
+                Confirmar correo
               </Link>
             </Alert>
           )}
-          <Button component={RouterLink} to="/entrar" variant="outlined">
-            Ir a entrar
+          <Button component={RouterLink} to="/entrar" variant="contained">
+            Entrar a mi finca
           </Button>
         </Stack>
       </AuthLayout>

@@ -670,9 +670,8 @@ export const handlers = [
         password,
         name: body.owner?.name ?? "",
         superadmin: false,
-        // Born unverified: the farm exists, but nobody can open a session on
-        // it until the address is confirmed.
-        emailVerified: false,
+        // No mailer yet: signup verifies the address so they can log in.
+        emailVerified: true,
         role: "owner",
       };
       db.users.push(user);
@@ -707,7 +706,7 @@ export const handlers = [
       {
         farmId,
         userId: user.id,
-        verificationRequired: true,
+        verificationRequired: false,
         // `DevEcho`. There is no mail sender yet, so in development the token
         // comes back in the response and the app offers to verify in place. In
         // production this key is simply absent.

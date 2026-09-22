@@ -327,15 +327,8 @@ func (h *harness) signupFarm(t *testing.T, name string, priceCents int64) *farmF
 		t.Fatalf("signup handed out a farm id again: %s", res.Raw)
 	}
 
-	// Before verification, no session.
-	pre := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": email, "password": "una-clave-larga-1",
-	})
-	if pre.code() != string(domain.CodeEmailNotVerified) {
-		t.Fatalf("login before verification: got %d %s, want EMAIL_NOT_VERIFIED",
-			pre.Status, pre.Raw)
-	}
-
+	// There is no mailer yet, so signup marks the address verified and the
+	// owner can log in. verify-email still names the farm.
 	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
 		map[string]any{"token": token}, http.StatusOK)
 	farmID, _ := verified.Body["farmId"].(string)

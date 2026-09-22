@@ -125,20 +125,9 @@ describe("the mock is the server", () => {
     });
     expect(ok.status).toBe(201);
     const body = await ok.json();
-    expect(body.verificationRequired).toBe(true);
+    expect(body.verificationRequired).toBe(false);
     expect(body.verificationToken).toBeTruthy();
 
-    const blocked = await fetch("/v1/auth/login", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "h@elmirador.co", password: "unacontrasena" }),
-    });
-    expect(blocked.status).toBe(403);
-    expect((await blocked.json()).error.code).toBe("EMAIL_NOT_VERIFIED");
-
-    await fetch("/v1/auth/verify-email", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: body.verificationToken }),
-    });
     const now = await fetch("/v1/auth/login", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "h@elmirador.co", password: "unacontrasena" }),
