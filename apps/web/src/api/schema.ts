@@ -2952,14 +2952,16 @@ export interface components {
                 currency: string;
                 /**
                  * Format: int64
-                 * @description The farm's standing price per unit of collection.
+                 * @description Optional on the landing. Omitted, the server seeds Recolección
+                 *     at 800 COP/kg; the owner changes it later.
                  */
-                priceCents: number;
+                priceCents?: number;
             };
             owner: {
                 /** Format: email */
                 email: string;
                 name?: string;
+                phone?: string;
                 password: string;
             };
         };
