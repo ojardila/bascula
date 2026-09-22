@@ -4,6 +4,7 @@ import { RequireAuth, RequirePermission, RequireSuperAdmin } from "./components/
 import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
+import { LandingPage } from "./features/marketing/LandingPage";
 import { PlotsPage } from "./features/plots/PlotsPage";
 import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
@@ -331,7 +332,9 @@ function Shell() {
 export function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/entrar" element={<LoginPage />} />
+      <Route path="/empezar" element={<SignupPage />} />
       <Route path="/registro" element={<SignupPage />} />
       {/* The super-admin hangs off the login, not off the farm shell: other
           routes, another role, and no read of anybody's ledger. */}

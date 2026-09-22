@@ -52,7 +52,8 @@ export function LoginPage() {
         setChoices(res.memberships);
         return;
       }
-      navigate(location.state?.from ?? "/", { replace: true });
+      const next = location.state?.from;
+      navigate(next && next !== "/" ? next : landing, { replace: true });
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -145,7 +146,7 @@ export function LoginPage() {
             {busy ? "Entrando…" : "Entrar"}
           </Button>
           <Divider>o</Divider>
-          <Button component={RouterLink} to="/registro" variant="outlined" fullWidth size="large">
+          <Button component={RouterLink} to="/empezar" variant="outlined" fullWidth size="large">
             Registrar mi finca
           </Button>
         </Stack>

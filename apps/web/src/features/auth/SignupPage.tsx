@@ -20,10 +20,13 @@ import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { parseMoneyInput } from "../../lib/money";
+import { farmUrlForHere, isFarmSlug, slugifyFarmName } from "../../lib/farmHost";
 
 export function SignupPage() {
   const navigate = useNavigate();
   const [farmName, setFarmName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
   const [price, setPrice] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
@@ -46,6 +49,9 @@ export function SignupPage() {
   function localErrors(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!farmName.trim()) e["farm.name"] = "Escriba el nombre de la finca.";
+    if (!isFarmSlug(slug)) {
+      e["farm.slug"] = "Use letras minúsculas, números y guiones. Ej: fincasanjose";
+    }
     // The server refuses a farm without a price: it seeds every new farm with
     // a "Recolección" activity priced from this, so there is no such thing as
     // a farm that has not decided what a kilo is worth.
@@ -76,6 +82,7 @@ export function SignupPage() {
       const res = await api.signup({
         farm: {
           name: farmName.trim(),
+          slug,
           timezone: "America/Bogota",
           currency: "COP",
           priceCents,
@@ -101,7 +108,8 @@ export function SignupPage() {
           <MarkEmailUnreadIcon color="primary" sx={{ fontSize: 48 }} />
           <Typography>
             Le enviamos un mensaje a <strong>{sentTo}</strong>. Abra el enlace que
-            trae y su finca queda lista para usar.
+            trae y su finca queda lista en{" "}
+            <strong>{farmUrlForHere(slug)}</strong>.
           </Typography>
           <Typography color="text.secondary" variant="body2">
             Si no llega en unos minutos, revise la carpeta de correo no deseado.
@@ -136,8 +144,8 @@ export function SignupPage() {
 
   return (
     <AuthLayout
-      title="Registrar mi finca"
-      subtitle="Cree la finca y su primer usuario. No hace falta que nadie la autorice."
+      title="Crear mi finca"
+      subtitle="En un minuto tiene nombre, dueño y su propia dirección en internet."
       wide
     >
       <Box component="form" onSubmit={onSubmit} noValidate>
@@ -150,12 +158,32 @@ export function SignupPage() {
           <TextField
             label="Nombre de la finca"
             value={farmName}
-            onChange={(e) => setFarmName(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFarmName(v);
+              if (!slugTouched) setSlug(slugifyFarmName(v));
+            }}
             error={!!fields["farm.name"]}
             helperText={fields["farm.name"]}
             size="medium"
             fullWidth
             autoFocus
+            required
+          />
+          <TextField
+            label="Identificador (URL)"
+            value={slug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value.trim().toLowerCase());
+            }}
+            error={!!fields["farm.slug"]}
+            helperText={
+              fields["farm.slug"] ||
+              (slug ? `Su finca: ${farmUrlForHere(slug)}` : "Ej: fincasanjose")
+            }
+            size="medium"
+            fullWidth
             required
           />
           {/*

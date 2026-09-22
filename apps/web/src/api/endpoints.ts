@@ -404,6 +404,7 @@ export const api = {
           timezone: body.farm.timezone || "America/Bogota",
           currency: body.farm.currency || "COP",
           priceCents: body.farm.priceCents,
+          slug: body.farm.slug,
         },
         owner: body.owner,
       },

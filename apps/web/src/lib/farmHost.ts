@@ -94,3 +94,16 @@ export function farmProdUrl(slug: string): string {
 export function farmDevUrl(slug: string): string {
   return `https://${slug}${DEV_SUFFIX}`;
 }
+
+/** The URL this browser should advertise for a new farm. */
+export function farmUrlForHere(slug: string, hostname?: string): string {
+  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+  if (
+    host.endsWith("int.dev.engp.io") ||
+    host === "localhost" ||
+    host === "127.0.0.1"
+  ) {
+    return farmDevUrl(slug);
+  }
+  return farmProdUrl(slug);
+}

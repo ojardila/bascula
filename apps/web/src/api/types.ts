@@ -219,6 +219,8 @@ export interface SignupRequest {
      * cannot exist without one.
      */
     priceCents: number;
+    /** DNS label for https://{slug}.bascula.engp.io */
+    slug?: string;
   };
   owner: { email: string; name: string; password: string };
 }

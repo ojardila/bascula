@@ -1,0 +1,8 @@
+- op: remove
+  path: /spec/template/spec/containers/0/env/8/value
+- op: add
+  path: /spec/template/spec/containers/0/env/8/valueFrom
+  value:
+    configMapKeyRef:
+      name: bascula-public-url
+      key: url

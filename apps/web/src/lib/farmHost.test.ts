@@ -3,6 +3,7 @@ import {
   farmDevUrl,
   farmProdUrl,
   farmSlugFromHost,
+  farmUrlForHere,
   isFarmSlug,
   slugifyFarmName,
 } from "./farmHost";
@@ -66,5 +67,14 @@ describe("isFarmSlug and slugifyFarmName", () => {
   it("builds the two public URLs from a slug", () => {
     expect(farmProdUrl("sanjose")).toBe("https://sanjose.bascula.engp.io");
     expect(farmDevUrl("sanjose")).toBe("https://sanjose.int.dev.engp.io");
+  });
+
+  it("advertises the host that matches where we are standing", () => {
+    expect(farmUrlForHere("fincasanjose", "bascula.int.dev.engp.io")).toBe(
+      "https://fincasanjose.int.dev.engp.io",
+    );
+    expect(farmUrlForHere("fincasanjose", "bascula.engp.io")).toBe(
+      "https://fincasanjose.bascula.engp.io",
+    );
   });
 });

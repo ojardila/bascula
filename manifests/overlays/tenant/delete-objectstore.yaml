@@ -1,0 +1,5 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: bascula-backups
+$patch: delete
