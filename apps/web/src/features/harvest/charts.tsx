@@ -380,6 +380,100 @@ export function Sparkline({
  * each bar darker-where-bigger would double-encode the length as hue and burn
  * the only free channel on information the bar already shows.
  */
+/**
+ * One bar per week. Same rules as the curve: a missing value is a gap, the
+ * running week is drawn hollow, one measure, no dual axis.
+ */
+export function WeekBars({
+  points,
+  height = 180,
+  format,
+  summary,
+  onSelect,
+  color = GREEN,
+}: Omit<CurveProps, "highlight" | "highlightLabel">) {
+  const { ref, width } = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const plotW = Math.max(0, width - PAD.left - PAD.right);
+  const plotH = height - PAD.top - PAD.bottom;
+  const known = points.filter((p) => p.value !== null).map((p) => p.value as number);
+  const top = ceilNice(Math.max(...known, 0));
+  const n = Math.max(1, points.length);
+  const gap = 4;
+  const barW = Math.max(6, plotW / n - gap);
+  const x = (i: number) => PAD.left + i * (plotW / n) + gap / 2;
+  const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
+  const gridValues = [0, 0.5, 1].map((f) => top * f);
+
+  return (
+    <Box ref={ref} sx={{ width: "100%" }}>
+      {width > 0 && (
+        <Box
+          component="svg"
+          role="img"
+          aria-label={summary}
+          width={width}
+          height={height}
+          sx={{ display: "block" }}
+        >
+          {gridValues.map((v) => (
+            <g key={v}>
+              <line x1={PAD.left} x2={PAD.left + plotW} y1={y(v)} y2={y(v)} stroke={AXIS} strokeWidth={1} />
+              <text x={PAD.left - 8} y={y(v) + 4} textAnchor="end" fontSize={10} fill={INK_MUTED} style={moneyFont}>
+                {format(v)}
+              </text>
+            </g>
+          ))}
+          {points.map((p, i) => {
+            if (p.value === null) return null;
+            const h = Math.max(0, y(0) - y(p.value));
+            return (
+              <rect
+                key={p.key}
+                x={x(i)}
+                y={y(p.value)}
+                width={barW}
+                height={h}
+                rx={3}
+                fill={color}
+                opacity={p.partial ? 0.45 : hover === i ? 1 : 0.88}
+                stroke={p.partial ? color : "none"}
+                strokeWidth={p.partial ? 1.5 : 0}
+                style={{ cursor: onSelect ? "pointer" : "default" }}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onSelect?.(p.key)}
+              />
+            );
+          })}
+          {points.map((p, i) => {
+            const every = Math.ceil(points.length / Math.max(2, Math.floor(plotW / 58)));
+            if (i % every !== 0 && i !== points.length - 1) return null;
+            return (
+              <text key={`x${p.key}`} x={x(i) + barW / 2} y={height - 6} textAnchor="middle" fontSize={10} fill={INK_MUTED}>
+                {p.label}
+              </text>
+            );
+          })}
+        </Box>
+      )}
+      {hover !== null && (
+        <Paper variant="outlined" sx={{ px: 1.5, py: 0.75, mt: 0.5, display: "inline-block", bgcolor: "#fbfcfa" }}>
+          <Stack direction="row" spacing={1.5} alignItems="baseline">
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>{points[hover].label}</Typography>
+            <Typography variant="caption" sx={moneyFont}>
+              {points[hover].value === null ? "sin dato" : format(points[hover].value as number)}
+            </Typography>
+            {points[hover].partial && (
+              <Typography variant="caption" color="warning.dark">semana en curso</Typography>
+            )}
+          </Stack>
+        </Paper>
+      )}
+    </Box>
+  );
+}
+
 export function RowBar({ fraction, color = GREEN }: { fraction: number; color?: string }) {
   const pct = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0)) * 100;
   return (

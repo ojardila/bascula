@@ -31,7 +31,14 @@ function dayHeader(day: string, i: number): string {
   return `${DAY_LETTERS[i]} ${d.getUTCDate()}`;
 }
 
-export function PlanillaPage({ lockedMode }: { lockedMode?: "dia" | "semana" } = {}) {
+export function PlanillaPage({
+  lockedMode,
+  hideChrome,
+}: {
+  lockedMode?: "dia" | "semana";
+  /** Parent already drew the title and back link. */
+  hideChrome?: boolean;
+} = {}) {
   const { can, user } = useAuth();
   const timezone = user?.farm?.timezone ?? "America/Bogota";
   const today = todayInFarm(timezone);
@@ -256,6 +263,8 @@ export function PlanillaPage({ lockedMode }: { lockedMode?: "dia" | "semana" } =
 
   return (
     <Box>
+      {!hideChrome && (
+        <>
       <Button
         component={RouterLink}
         to="/cosecha"
@@ -274,6 +283,8 @@ export function PlanillaPage({ lockedMode }: { lockedMode?: "dia" | "semana" } =
           ? "Un lote, un día, los kilos de cada persona. En blanco es que no trabajó ahí."
           : "La planilla de la semana: personas abajo, días al lado. Lo ya liquidado no se cambia."}
       </Typography>
+        </>
+      )}
 
       {!lockedMode && (
         <Tabs

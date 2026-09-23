@@ -93,6 +93,7 @@ describe("Planilla de recolección", () => {
     );
     renderApp(`/cosecha/recoleccion?dia=2026-08-26&lote=${ALTO}`);
     expect(await screen.findByRole("heading", { name: "Registrar recolección" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Masiva" })).toHaveAttribute("aria-selected", "true");
     const kilos = await screen.findByLabelText(/Jhon Fredy Cardona Loaiza, kilos/);
     await user.type(kilos, "55");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
@@ -101,5 +102,30 @@ describe("Planilla de recolección", () => {
     expect(body.dateFrom).toBe("2026-08-26");
     expect(body.plotIds).toEqual([ALTO]);
     expect(body.quantity).toBe(55);
+  }, 20000);
+
+  it("registers one person at a time", async () => {
+    signIn();
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    server.use(
+      http.post("*/v1/work-records", async ({ request }) => {
+        const body = await request.json();
+        posted.push(body);
+        return HttpResponse.json({ ...(body as object), createdAt: "2026-08-26T22:00:00Z" }, { status: 201 });
+      }),
+    );
+    renderApp("/cosecha/recoleccion?quien=uno");
+    expect(await screen.findByRole("tab", { name: "Una persona" })).toHaveAttribute("aria-selected", "true");
+    const person = await screen.findByLabelText(/^Persona/);
+    await user.click(person);
+    await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
+    await user.click(screen.getByLabelText(/^Lote/));
+    await user.click(await screen.findByRole("option", { name: /El Alto/ }));
+    await user.type(screen.getByLabelText("Kilos"), "42");
+    await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
+    await waitFor(() => expect(posted.length).toBeGreaterThan(0));
+    const body = posted[0] as { quantity: number; workerId: string };
+    expect(body.quantity).toBe(42);
   }, 20000);
 });
