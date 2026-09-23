@@ -1,9 +1,9 @@
 Photos from Unsplash (https://unsplash.com/license). Attribution appreciated.
 
-- hills.jpg — green hills landscape (hero atmosphere)
-- cherries.jpg — coffee cherries on the plant (ripe and green)
-- branch.jpg — coffee cherries ripening on the branch
-- hero.jpg — coffee cherries on the tree
+- cherries.jpg — coffee cherries on the tree (hero background + feature)
+- branch.jpg — coffee cherries on the branch
+- hero.jpg — coffee cherries on the plant (section backdrop)
 - scale.jpg — mechanical kilo weighing scale (báscula)
+- hills.jpg — landscape (kept; not featured on the current landing)
 
 No roasted beans and no retail coffee bags — only cherry coffee and scales.

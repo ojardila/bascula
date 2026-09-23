@@ -27,17 +27,22 @@ beforeEach(() => {
 });
 
 describe("the public landing", () => {
-  it("offers to create a farm without asking for a password first", async () => {
+  it("frames coffee-farm administration and asks for a demo", async () => {
     renderApp("/");
     expect(
       await screen.findByRole("heading", {
-        name: /Deje de liquidar la cosecha en un cuaderno/i,
+        name: /La cosecha, los kilos y la liquidación, en orden/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Crear mi finca" })).toHaveAttribute("href", "/empezar");
+    expect(screen.getByText(/Administración de fincas cafeteras/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Pedir demo" }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText("Nombre").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText("Teléfono").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText("Correo").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText("Nombre de la finca").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("lets someone start a farm and pick the URL slug", async () => {
+  it("still lets someone start a farm and pick the URL slug", async () => {
     renderApp("/empezar");
     expect(await screen.findByRole("heading", { name: "Crear mi finca" })).toBeInTheDocument();
     expect(screen.getByLabelText(/Identificador/)).toBeInTheDocument();
