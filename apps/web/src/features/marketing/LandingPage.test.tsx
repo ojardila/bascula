@@ -36,10 +36,12 @@ describe("the public landing", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Administración de fincas cafeteras/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Pedir demo" }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByLabelText("Nombre").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByLabelText("Teléfono").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByLabelText("Correo").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByLabelText("Nombre de la finca").length).toBeGreaterThanOrEqual(1);
+    // MUI required fields append an asterisk to the label textContent, so exact
+    // getByLabelText("Nombre") fails even though the control is correctly labeled.
+    expect(screen.getAllByRole("textbox", { name: /^Nombre$/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("textbox", { name: /^Teléfono$/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("textbox", { name: /^Correo$/ }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("textbox", { name: /^Nombre de la finca$/ }).length).toBeGreaterThanOrEqual(1);
   });
 
   it("still lets someone start a farm and pick the URL slug", async () => {
