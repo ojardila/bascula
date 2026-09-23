@@ -98,8 +98,8 @@ export function HarvestLayout() {
         <Box>
           <Typography variant="h1">Cosecha</Typography>
           <Typography variant="body2" color="text.secondary">
-            La recolección de la finca, semana a semana. Cada pesada sigue siendo una
-            labor y se liquida junto con el resto del trabajo de la persona.
+            Primero la cosecha completa, después esta semana. Cada pesada se
+            liquida con el resto del trabajo de la persona.
           </Typography>
         </Box>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>

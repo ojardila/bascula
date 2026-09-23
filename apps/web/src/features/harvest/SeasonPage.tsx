@@ -12,9 +12,9 @@
  * scales. See the note in `charts.tsx`.
  */
 
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Card, CardContent, Chip, CircularProgress, Stack, Table,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Stack, Table,
   TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -23,10 +23,11 @@ import TimelineIcon from "@mui/icons-material/Timeline";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
-import { reportHarvestCurve, reportWeeks } from "../../api/harvest";
+import { reportHarvestCurve, reportWeek, reportWeeks } from "../../api/harvest";
 import { formatMoney, formatQuantity } from "../../lib/money";
-import { formatDayShort, formatWeekRange, weekTag } from "../../lib/dates";
+import { formatDayShort, formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
 import { useHarvest } from "./HarvestLayout";
+import { useAuth } from "../../auth/AuthContext";
 import { Kg, Stat, Value } from "./Figures";
 import { Curve, RowBar, WeekBars, type CurvePoint } from "./charts";
 import { NOT_ENOUGH_SEASON } from "./text";
@@ -34,16 +35,19 @@ import { foldTotals, kgForDrawing, valueState } from "./totals";
 import { PICKER } from "../../lib/vocab";
 
 export function SeasonPage() {
-  const { today, weeks: windowWeeks, canSeeMoney } = useHarvest();
+  const { today, weeks: windowWeeks, canSeeMoney, rangeKey } = useHarvest();
+  const { can } = useAuth();
   const navigate = useNavigate();
+  const thisMonday = mondayOf(today);
 
   const { data, error, denied } = useAsync(
     async () =>
       Promise.all([
         reportWeeks({ limit: windowWeeks }),
         reportHarvestCurve({ weeks: windowWeeks }),
+        reportWeek(thisMonday),
       ]),
-    [windowWeeks],
+    [windowWeeks, thisMonday],
   );
 
   if (denied) return <PermissionDenied moduleName="ver la cosecha" />;
@@ -63,7 +67,7 @@ export function SeasonPage() {
     );
   }
 
-  const [weeksRes, curve] = data;
+  const [weeksRes, curve, thisWeek] = data;
   // The server sends newest first; a curve is drawn oldest first.
   const weeks = [...weeksRes.items].reverse();
 
@@ -107,7 +111,14 @@ export function SeasonPage() {
   const days = weeks.reduce((s, w) => s + w.days, 0);
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={6}>
+      <Stack spacing={3}>
+        <Box>
+          <Typography variant="h2">La cosecha</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Todo el periodo. Pulse una semana para ver el detalle.
+          </Typography>
+        </Box>
       <Verdict curve={curve} current={current} lastFinished={lastFinished} />
 
       {curve.weeksWithoutKilos > 0 && (
@@ -169,10 +180,10 @@ export function SeasonPage() {
         <Card>
           <CardContent>
             <Typography variant="h3" gutterBottom>
-              Barras de la semana
+              Kilos, semana a semana
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Las mismas semanas, en barras. Pulse una para abrirla.
+              Pulse una barra para abrir esa semana.
             </Typography>
             <WeekBars
               points={kgPoints}
@@ -302,6 +313,81 @@ export function SeasonPage() {
           </Box>
         </CardContent>
       </Card>
+      </Stack>
+
+      <Stack spacing={3}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="space-between"
+          alignItems={{ xs: "stretch", sm: "flex-end" }}
+          spacing={1}
+        >
+          <Box>
+            <Typography variant="h2">Esta semana</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {formatWeekRange(thisMonday)}
+              {!thisWeek.finished ? " · en curso" : ""}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {can("workRecords.write") && (
+              <Button component={RouterLink} to="/cosecha/recoleccion" variant="contained">
+                Registrar
+              </Button>
+            )}
+            <Button
+              component={RouterLink}
+              to={`/cosecha/semana/${thisMonday}?rango=${rangeKey}`}
+              variant="outlined"
+            >
+              Ver quién recogió
+            </Button>
+          </Stack>
+        </Stack>
+
+        {thisWeek.total.records === 0 ? (
+          <Alert severity="info">
+            Nadie ha registrado recolección esta semana. Si ya pesaron, use Registrar.
+          </Alert>
+        ) : (
+          <>
+            <Box
+              sx={{
+                display: "grid",
+                gap: 1.5,
+                gridTemplateColumns: { xs: "1fr 1fr", md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)" },
+              }}
+            >
+              <Stat label="Recogido esta semana">
+                <Kg total={thisWeek.total} align="flex-start" bold scope="la semana" />
+              </Stat>
+              {canSeeMoney && (
+                <Stat label="Valor de la semana">
+                  <Value total={thisWeek.total} scope="la semana" align="flex-start" />
+                </Stat>
+              )}
+              <Stat label={PICKER.Many}>{thisWeek.byDay.rows.length}</Stat>
+              <Stat label="Días con kilo">{thisWeek.byDay.columns.filter((c) => (c.total.kg ?? 0) > 0).length}</Stat>
+            </Box>
+            <Card>
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  Kilos por día
+                </Typography>
+                <WeekBars
+                  points={thisWeek.byDay.columns.map((c) => ({
+                    key: c.key ?? "x",
+                    label: c.key ? formatDayShort(c.key) : c.label,
+                    value: c.total.kg,
+                  }))}
+                  format={(v) => formatQuantity(v)}
+                  summary="Kilos recolectados cada día de esta semana."
+                />
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </Stack>
     </Stack>
   );
 }
