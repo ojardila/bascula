@@ -33,8 +33,8 @@ const FEATURES = [
     body: "El recibo nombra semana actual, saldo anterior, cada descuento y lo pagado. Si no suma, no se imprime.",
   },
   {
-    img: "/landing/beans.jpg",
-    alt: "Café servido",
+    img: "/landing/scale.jpg",
+    alt: "Báscula de kilos",
     kicker: "El asistente",
     title: "Pregúntele a ChatGPT por su propia finca",
     body: "Conecte Báscula. Pregunte cómo quedó el recibo de Elena o cuánto se recolectó esta semana — sin abrirle el libro a nadie más.",
