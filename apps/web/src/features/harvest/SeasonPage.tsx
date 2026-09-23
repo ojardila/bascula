@@ -14,7 +14,7 @@
 
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Card, CardContent, Chip, CircularProgress, Divider, Stack, Table,
+  Alert, Box, Card, CardContent, Chip, CircularProgress, Stack, Table,
   TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -28,7 +28,7 @@ import { formatMoney, formatQuantity } from "../../lib/money";
 import { formatDayShort, formatWeekRange, weekTag } from "../../lib/dates";
 import { useHarvest } from "./HarvestLayout";
 import { Kg, Stat, Value } from "./Figures";
-import { Curve, RowBar, type CurvePoint } from "./charts";
+import { Curve, RowBar, WeekBars, type CurvePoint } from "./charts";
 import { NOT_ENOUGH_SEASON } from "./text";
 import { foldTotals, kgForDrawing, valueState } from "./totals";
 import { PICKER } from "../../lib/vocab";
@@ -144,40 +144,81 @@ export function SeasonPage() {
         <Stat label="Días con recolección">{days}</Stat>
       </Box>
 
-      <Card>
-        <CardContent>
-          <Typography variant="h3" gutterBottom>
-            Kilos por semana
-          </Typography>
-          <Curve
-            points={kgPoints}
-            format={(v) => formatQuantity(v)}
-            highlight={peakIndex >= 0 ? peakIndex : undefined}
-            highlightLabel="pico"
-            summary={`Curva de recolección: ${weeks.length} semanas, máximo ${formatQuantity(maxKg)} kg.`}
-            onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
-          />
-
-          {canSeeMoney && (
-            <>
-              <Divider sx={{ my: 2 }} />
+      <Box
+        sx={{
+          display: "grid",
+          gap: 2,
+          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+        }}
+      >
+        <Card>
+          <CardContent>
+            <Typography variant="h3" gutterBottom>
+              Kilos por semana
+            </Typography>
+            <Curve
+              points={kgPoints}
+              format={(v) => formatQuantity(v)}
+              highlight={peakIndex >= 0 ? peakIndex : undefined}
+              highlightLabel="pico"
+              summary={`Curva de recolección: ${weeks.length} semanas, máximo ${formatQuantity(maxKg)} kg.`}
+              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="h3" gutterBottom>
+              Barras de la semana
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Las mismas semanas, en barras. Pulse una para abrirla.
+            </Typography>
+            <WeekBars
+              points={kgPoints}
+              format={(v) => formatQuantity(v)}
+              summary={`Kilos por semana en barras, ${weeks.length} semanas.`}
+              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="h3" gutterBottom>
+              Gente por semana
+            </Typography>
+            <WeekBars
+              points={weeks.map((w) => ({
+                key: w.weekStart,
+                label: formatDayShort(w.weekStart),
+                value: w.pickers,
+                partial: !w.finished,
+              }))}
+              format={(v) => String(Math.round(v))}
+              summary={`Personas que recolectaron, ${weeks.length} semanas.`}
+              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+            />
+          </CardContent>
+        </Card>
+        {canSeeMoney && (
+          <Card>
+            <CardContent>
               <Typography variant="h3" gutterBottom>
                 Valor por semana
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Las mismas semanas, en pesos. Una semana sin línea es una semana cuyo
-                valor no se pudo calcular — no una semana sin cosecha.
+                Una semana sin barra es una semana cuyo valor no se pudo calcular.
               </Typography>
-              <Curve
+              <WeekBars
                 points={valuePoints}
                 format={(v) => formatMoney(v)}
                 summary={`Valor de la recolección por semana, ${weeks.length} semanas.`}
                 onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
               />
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        )}
+      </Box>
 
       <Card>
         <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>

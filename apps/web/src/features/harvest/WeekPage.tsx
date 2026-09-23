@@ -35,10 +35,12 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
 import { reportWeek } from "../../api/harvest";
-import { formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
+import { formatDayShort, formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
 import { useHarvest } from "./HarvestLayout";
 import { Kg, Stat, Value } from "./Figures";
+import { WeekBars } from "./charts";
+import { formatQuantity } from "../../lib/money";
 import { unattributedReason } from "./text";
 import { kgForDrawing, type Totals } from "./totals";
 import type { WireReportGrid } from "../../api/wire";
@@ -183,6 +185,23 @@ export function WeekPage() {
               {grid.columns.length}
             </Stat>
           </Box>
+
+          <Card>
+            <CardContent>
+              <Typography variant="h3" gutterBottom>
+                Kilos por día
+              </Typography>
+              <WeekBars
+                points={data.byDay.columns.map((c) => ({
+                  key: c.key ?? "x",
+                  label: c.key ? formatDayShort(c.key) : c.label,
+                  value: c.total.kg,
+                }))}
+                format={(v) => formatQuantity(v)}
+                summary="Kilos recolectados cada día de la semana."
+              />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent>
