@@ -31,10 +31,10 @@ describe("the public landing", () => {
     renderApp("/");
     expect(
       await screen.findByRole("heading", {
-        name: /La cosecha, los kilos y la liquidación, en orden/i,
+        name: /Sepa qué deja cada lote de café/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Administración de fincas cafeteras/i)).toBeInTheDocument();
+    expect(screen.getByText(/De la romana al recibo — fincas cafeteras/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Pedir demo" }).length).toBeGreaterThanOrEqual(1);
     // MUI required fields append an asterisk to the label textContent, so exact
     // getByLabelText("Nombre") fails even though the control is correctly labeled.

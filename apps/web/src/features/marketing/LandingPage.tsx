@@ -24,15 +24,15 @@ const SANS = '"Outfit", "Roboto", sans-serif';
 const LEAD_EMAIL = "oscar3425@gmail.com";
 
 const STEPS = [
-  { n: "01", title: "Pida el demo", body: "Deje nombre, teléfono y finca. Le llamamos y le mostramos Báscula con datos reales." },
-  { n: "02", title: "Vea su operación", body: "Pesada por lote y día, planilla de empleados y liquidación que cuadra — en el celular." },
-  { n: "03", title: "Arranque la cosecha", body: "Si le sirve, dejamos su finca lista. El demo no tiene costo ni compromiso." },
+  { n: "01", title: "Pida su demo", body: "Deje nombre, teléfono y finca. Le llamamos y le mostramos Báscula con datos reales de finca." },
+  { n: "02", title: "Vea kilos, planilla y costos", body: "Pesada por persona, lote y día; planilla de empleados; gastos y liquidación que cuadran — en el celular." },
+  { n: "03", title: "Empiece la cosecha", body: "Si le sirve, dejamos su finca lista. El demo no tiene costo ni compromiso." },
 ];
 
 const FEATURES = [
-  { img: "/landing/cherries.jpg", alt: "Cerezas de café en el árbol", kicker: "Cosecha", title: "No más cuadernos de recolección", body: "Cada pesada queda con quién recogió, el lote y el día. Kilos claros por persona — se acabó el Excel del sábado." },
-  { img: "/landing/branch.jpg", alt: "Café cereza en la rama", kicker: "Gente", title: "Empleados y planilla, claros", body: "Quién trabajó, cuánto recogió y cuánto se le debe. Toda la gente de la finca en un solo lugar." },
-  { img: "/landing/scale.jpg", alt: "Báscula de kilos", kicker: "Plata", title: "Cuánto se gana y cuánto se gasta", body: "Gastos y kilos por lote: el centro de costos de la finca. Trazabilidad de la cosecha y liquidación que cuadra — si no suma, no se imprime." },
+  { img: "/landing/cherries.jpg", alt: "Cerezas de café en el árbol", kicker: "Cosecha", title: "No más cuadernos de recolección", body: "Deje el cuaderno y el Excel. Cada pesada queda clara: quién, el lote y el día. Con los kilos listos, la liquidación sale sola." },
+  { img: "/landing/branch.jpg", alt: "Café cereza en la rama", kicker: "Gente", title: "Empleados y planilla, claros", body: "Quién trabajó y cuánto se debe. El recibo que cuadra — si no cuadra, no se imprime." },
+  { img: "/landing/scale.jpg", alt: "Báscula de kilos", kicker: "Plata", title: "Cuánto gasta el lote y qué deja el café", body: "Centro de costos: gastos y kilos por lote. Trazabilidad de la cosecha y liquidación que cuadra." },
 ];
 
 export function LandingPage() {
@@ -112,7 +112,7 @@ function DemoForm(props: { dark?: boolean }) {
     sx: { bgcolor: dark ? "rgba(8,12,8,.72)" : "#fff", color: dark ? "#f4f1ea" : "#1a1c19", borderRadius: 3, p: { xs: 2.5, md: 3 }, border: dark ? "1px solid rgba(255,255,255,.12)" : "1px solid #dde5da", boxShadow: dark ? "0 20px 50px rgba(0,0,0,.35)" : "0 12px 40px rgba(20,40,20,.08)" },
   },
     h(Typography, { sx: { fontFamily: DISPLAY, fontSize: 22, mb: 0.5, color: dark ? "#f4f1ea" : "#1a1c19" } }, "Pedir demo"),
-    h(Typography, { sx: { mb: 2.5, opacity: 0.8, fontSize: 15, color: dark ? "#f4f1ea" : "#43483f" } }, "Deje sus datos. Le mostramos Báscula con la operación de una finca cafetera."),
+    h(Typography, { sx: { mb: 2.5, opacity: 0.8, fontSize: 15, color: dark ? "#f4f1ea" : "#43483f" } }, "Deje sus datos. Agendamos el demo de su finca: pesaje, planilla y costos por lote."),
     error ? h(Alert, { severity: "error", sx: { mb: 2, borderRadius: 2 } }, error) : null,
     h(Stack, { spacing: 2 },
       h(TextField, { label: "Nombre", value: name, onChange: (e: { target: { value: string } }) => setName(e.target.value), fullWidth: true, required: true, autoComplete: "name", sx: fieldSx(dark) }),
@@ -136,10 +136,10 @@ function Hero(props: { signedIn: boolean; landing: string }) {
       ),
       h(Stack, { direction: { xs: "column", md: "row" }, spacing: { xs: 4, md: 6 }, alignItems: { md: "center" }, sx: { flex: 1 } },
         h(Box, { sx: { flex: 1.1, maxWidth: 560 } },
-          h(Typography, { sx: { letterSpacing: "0.16em", textTransform: "uppercase", fontSize: 12, fontWeight: 600, opacity: 0.9, mb: 2 } }, "Administración de fincas cafeteras"),
-          h(Typography, { component: "h1", sx: { fontFamily: DISPLAY, fontWeight: 700, fontSize: { xs: "2.35rem", sm: "3.1rem", md: "3.6rem" }, lineHeight: 1.08, letterSpacing: "-0.03em", mb: 2 } }, "La cosecha, los kilos y la liquidación, en orden."),
-          h(Typography, { sx: { fontSize: { xs: "1.1rem", md: "1.25rem" }, opacity: 0.92, mb: 2, lineHeight: 1.45 } }, "Báscula es el sistema para dueños y administradores de finca: pesada por lote y día, planilla de empleados y recibo que cuadra."),
-          h(Typography, { sx: { opacity: 0.75, fontSize: 15 } }, "Café en cereza. Báscula de kilos. Sin cuaderno mojado."),
+          h(Typography, { sx: { letterSpacing: "0.16em", textTransform: "uppercase", fontSize: 12, fontWeight: 600, opacity: 0.9, mb: 2 } }, "De la romana al recibo — fincas cafeteras"),
+          h(Typography, { component: "h1", sx: { fontFamily: DISPLAY, fontWeight: 700, fontSize: { xs: "2.35rem", sm: "3.1rem", md: "3.6rem" }, lineHeight: 1.08, letterSpacing: "-0.03em", mb: 2 } }, "Sepa qué deja cada lote de café."),
+          h(Typography, { sx: { fontSize: { xs: "1.1rem", md: "1.25rem" }, opacity: 0.92, mb: 2, lineHeight: 1.45 } }, "Báscula es para el dueño y el administrador: pesada por persona, lote y día; empleados y planilla claros; gastos y liquidación que cuadran. En el celular y en el computador."),
+          h(Typography, { sx: { opacity: 0.75, fontSize: 15 } }, "Café en cereza. Kilos en la báscula. Cuentas claras."),
         ),
         h(Box, { sx: { flex: 0.95, width: "100%", maxWidth: 420 } },
           signedIn
@@ -153,9 +153,9 @@ function Hero(props: { signedIn: boolean; landing: string }) {
 
 function Proof() {
   const items = [
-    { k: "Administración", v: "Cosecha, gente y plata juntas" },
-    { k: "La romana", v: "Kilos por persona, lote y día" },
-    { k: "El recibo", v: "Liquidación que sí cuadra" },
+    { k: "La cosecha", v: "Kilos por persona, lote y día" },
+    { k: "La gente", v: "Planilla y liquidación que cuadra" },
+    { k: "La plata", v: "Gastos del lote vs lo que deja el café" },
   ];
   return h(Box, { sx: { bgcolor: "#141914", py: { xs: 4, md: 5 }, borderBottom: "1px solid rgba(255,255,255,.06)" } },
     h(Container, { maxWidth: "lg" },
@@ -192,7 +192,7 @@ function How() {
     h(Box, { component: "img", src: "/landing/hero.jpg", alt: "", sx: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.22 } }),
     h(Box, { sx: { position: "absolute", inset: 0, bgcolor: "rgba(10,14,10,.78)" } }),
     h(Container, { maxWidth: "lg", sx: { position: "relative" } },
-      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 40 }, mb: 6 } }, "Tres pasos hasta el demo."),
+      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 40 }, mb: 6 } }, "Tres pasos. Sin compromiso."),
       h(Stack, { direction: { xs: "column", md: "row" }, spacing: 4 },
         ...STEPS.map((s) => h(Box, { key: s.n, sx: { flex: 1 } },
           h(Typography, { sx: { fontFamily: DISPLAY, fontSize: 40, opacity: 0.35, lineHeight: 1 } }, s.n),
@@ -208,8 +208,8 @@ function DemoBand(props: { signedIn: boolean }) {
   const { signedIn } = props;
   return h(Box, { sx: { bgcolor: GREEN_DARK, py: { xs: 8, md: 10 } } },
     h(Container, { maxWidth: "md" },
-      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 1.5, textAlign: "center", color: "#f4f1ea" } }, "Vea Báscula en su finca."),
-      h(Typography, { sx: { textAlign: "center", opacity: 0.9, mb: 4, fontSize: "1.15rem", color: "#f4f1ea" } }, "Deje sus datos y agendamos una demostración. Sin compromiso."),
+      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 1.5, textAlign: "center", color: "#f4f1ea" } }, "Pida el demo para su finca."),
+      h(Typography, { sx: { textAlign: "center", opacity: 0.9, mb: 4, fontSize: "1.15rem", color: "#f4f1ea" } }, "Treinta minutos. Le mostramos pesaje, planilla y costos por lote. Sin compromiso."),
       !signedIn ? h(Box, { sx: { maxWidth: 420, mx: "auto" } }, h(DemoForm, null)) : null,
       !signedIn ? h(Typography, { sx: { textAlign: "center", mt: 3, opacity: 0.7, fontSize: 14, color: "#f4f1ea" } },
         "¿Ya tiene cuenta? ",
