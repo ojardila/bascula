@@ -9,8 +9,9 @@ if ! kubectl get secret harbor-pull -n "$NS" >/dev/null 2>&1; then
     | python3 -c 'import json,sys; d=json.load(sys.stdin); d["metadata"]={"name":"harbor-pull","namespace":"'"$NS"'"}; d.pop("resourceVersion",None); d.pop("uid",None); d.pop("creationTimestamp",None); print(json.dumps(d))' \
     | kubectl apply -f -
 fi
-if ! kubectl get secret bascula-db-app -n "$NS" >/dev/null 2>&1; then
-  kubectl create secret generic bascula-db-app -n "$NS" \
+# bascula-db-api holds bascula_api. CNPG owns bascula-db-app for owner bascula.
+if ! kubectl get secret bascula-db-api -n "$NS" >/dev/null 2>&1; then
+  kubectl create secret generic bascula-db-api -n "$NS" \
     --type=kubernetes.io/basic-auth \
     --from-literal=username=bascula_api \
     --from-literal=password="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
@@ -19,4 +20,4 @@ if ! kubectl get secret bascula-api -n "$NS" >/dev/null 2>&1; then
   kubectl create secret generic bascula-api -n "$NS" \
     --from-literal=jwt-secret="$(openssl rand -base64 48)"
 fi
-echo "secrets in $NS: harbor-pull, bascula-db-app, bascula-api"
+echo "secrets in $NS: harbor-pull, bascula-db-api, bascula-api"
