@@ -30,9 +30,9 @@ const STEPS = [
 ];
 
 const FEATURES = [
-  { img: "/landing/cherries.jpg", alt: "Cerezas de café en el árbol", kicker: "Cosecha", title: "Kilos por persona, lote y día", body: "Cada pesada queda con el nombre de quien recogió, el lote y el día. Se acabó el cuaderno que se moja y el Excel del sábado." },
-  { img: "/landing/branch.jpg", alt: "Café cereza en la rama", kicker: "Gente", title: "Empleados y planilla, claros", body: "Quién trabajó, cuánto recogió y cuánto se le debe. La administración de la finca en un solo lugar, sin pelear por cifras." },
-  { img: "/landing/scale.jpg", alt: "Báscula de kilos", kicker: "Plata", title: "Liquidación que cuadra", body: "El recibo nombra semana, saldo anterior, descuentos y pago. Si no suma, no se imprime. Paz y salvo con firma." },
+  { img: "/landing/cherries.jpg", alt: "Cerezas de café en el árbol", kicker: "Cosecha", title: "No más cuadernos de recolección", body: "Cada pesada queda con quién recogió, el lote y el día. Kilos claros por persona — se acabó el Excel del sábado." },
+  { img: "/landing/branch.jpg", alt: "Café cereza en la rama", kicker: "Gente", title: "Empleados y planilla, claros", body: "Quién trabajó, cuánto recogió y cuánto se le debe. Toda la gente de la finca en un solo lugar." },
+  { img: "/landing/scale.jpg", alt: "Báscula de kilos", kicker: "Plata", title: "Cuánto se gana y cuánto se gasta", body: "Gastos y kilos por lote: el centro de costos de la finca. Trazabilidad de la cosecha y liquidación que cuadra — si no suma, no se imprime." },
 ];
 
 export function LandingPage() {
@@ -172,7 +172,7 @@ function Proof() {
 function Features() {
   return h(Box, { sx: { bgcolor: "#f4f1ea", color: "#1a1c19", py: { xs: 8, md: 12 } } },
     h(Container, { maxWidth: "lg" },
-      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 6, maxWidth: 680 } }, "Hecha para administrar la finca cafetera, no para vender software."),
+      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 6, maxWidth: 680 } }, "Hecha para saber qué deja el café, no para vender programas."),
       h(Stack, { spacing: { xs: 8, md: 12 } },
         ...FEATURES.map((f, i) => h(Stack, { key: f.title, direction: { xs: "column", md: i % 2 ? "row-reverse" : "row" }, spacing: { xs: 3, md: 8 }, alignItems: "center" },
           h(Box, { component: "img", src: f.img, alt: f.alt, sx: { width: { xs: "100%", md: "52%" }, height: { xs: 240, md: 380 }, objectFit: "cover", borderRadius: 3 } }),
