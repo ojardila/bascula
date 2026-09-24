@@ -35,6 +35,9 @@ RUN npm run build --workspace apps/web
 # nginx-unprivileged listens on 8080 as a non-root user, so the pod needs no
 # capabilities and no runAsUser override to satisfy the restricted policy.
 FROM nginxinc/nginx-unprivileged:1.29-alpine
+USER root
+RUN apk upgrade --no-cache
+USER nginx
 COPY --from=build /src/apps/web/dist /usr/share/nginx/html
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080

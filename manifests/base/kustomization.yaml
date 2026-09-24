@@ -15,4 +15,4 @@ images:
   - name: harbor.int.engp.io/bascula/api
     newTag: v0.2.10
   - name: harbor.int.engp.io/bascula/web
-    newTag: v0.2.10
+    newTag: v0.2.11
