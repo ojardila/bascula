@@ -7,6 +7,7 @@ resources:
   - api.yaml
   - web.yaml
   - route.yaml
+  - networkpolicy.yaml
 
 # The one line CD rewrites. Both images are built from the same commit and
 # released under the same tag, so a deploy moves them together and there is

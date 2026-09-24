@@ -1,0 +1,89 @@
+# Cilium Gateway (Envoy) assigns reserved:ingress on the hop to backends.
+# Standard NetworkPolicy cannot select that identity, so this is a
+# CiliumNetworkPolicy. Pattern: default-deny + Gateway ingress + DNS egress.
+# API also needs Postgres (CNPG) and HTTPS to the world (GitHub repository
+# dispatch for farm provisioning); tighten toFQDNs later once Hubble shows
+# the stable set.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-api
+spec:
+  description: Default-deny with Gateway ingress, DNS, Postgres, and HTTPS egress for bascula-api
+  endpointSelector:
+    matchLabels:
+      app: bascula-api
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: bascula-db
+            cnpg.io/podRole: instance
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Static SPA behind nginx. No outbound app traffic; DNS kept for symmetry
+# with the cluster CNP pattern and any resolver the image may touch.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-web
+spec:
+  description: Default-deny with Gateway ingress + DNS egress for bascula-web
+  endpointSelector:
+    matchLabels:
+      app: bascula-web
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
