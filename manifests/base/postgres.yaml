@@ -49,8 +49,12 @@ spec:
         createdb: false
         createrole: false
         bypassrls: false
+        # Named bascula-db-api on purpose. CNPG reserves <cluster>-app
+        # (bascula-db-app) for the bootstrap owner (`bascula`) and will spam
+        # "wrong username 'bascula_api' in secret, expected 'bascula'" if the
+        # managed API role reuses that secret name.
         passwordSecret:
-          name: bascula-db-app
+          name: bascula-db-api
         # bascula_app carries the table grants; bascula_api gets them by
         # membership. Migration 00001 does this GRANT itself, but a managed
         # role is reconciled declaratively — CNPG revokes any membership not

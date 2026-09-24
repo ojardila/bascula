@@ -135,10 +135,10 @@ spec:
                 secretKeyRef: {name: bascula-api, key: jwt-secret}
             - name: PGUSER
               valueFrom:
-                secretKeyRef: {name: bascula-db-app, key: username}
+                secretKeyRef: {name: bascula-db-api, key: username}
             - name: PGPASS
               valueFrom:
-                secretKeyRef: {name: bascula-db-app, key: password}
+                secretKeyRef: {name: bascula-db-api, key: password}
             # The application role: NOBYPASSRLS, so the tenant isolation in
             # 00008 actually binds.
             - name: DATABASE_URL

@@ -119,8 +119,10 @@ None are in this repo, and none are in git. Both are created against the
 cluster:
 
 ```bash
-# The password for bascula_api. CNPG reconciles the role to match it.
-kubectl create secret generic bascula-db-app -n bascula \
+# The password for bascula_api. CNPG reconciles the managed role to match it.
+# Name it bascula-db-api — not bascula-db-app. CNPG reserves <cluster>-app
+# for the bootstrap owner (`bascula`) and rejects a username mismatch.
+kubectl create secret generic bascula-db-api -n bascula \
   --type=kubernetes.io/basic-auth \
   --from-literal=username=bascula_api \
   --from-literal=password="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)"
