@@ -38,9 +38,10 @@ Requirements: Node 24+. `apps/web` runs against an in-browser mock API by
 default (`VITE_USE_MOCKS=true` in `apps/web/.env.development`); to use the real
 server see [`services/api`](services/api/README.md).
 
-The original Expo app (`apps/mobile`) was removed once the web app covered it,
-offline weighing included. Its code is in the git history; the server still
-accepts its sync and season-upload endpoints.
+**Legacy phone app.** The original Expo app (`apps/mobile`) was removed once the
+web app covered it, offline weighing included; its code is in the git history.
+The server keeps `/v1/sync/*` and `/v1/import/season` so phones that still have
+it installed can upload their season.
 
 ## Design notes
 
