@@ -211,6 +211,7 @@ describe("when the gross changes between looking at it and approving it", () => 
       '[role="dialog"]',
     ) as HTMLElement;
     expect(within(receipt).getByRole("button", { name: /Imprimir recibo/ })).toBeInTheDocument();
+    expect(within(receipt).getByRole("button", { name: /Enviar por WhatsApp/ })).toBeInTheDocument();
   }, 20000);
 });
 

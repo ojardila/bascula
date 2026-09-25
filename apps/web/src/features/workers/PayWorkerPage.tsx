@@ -68,7 +68,9 @@ import { sentenceFor, type GrossChange } from "../../api/grossChange";
  * its arithmetic can be tested on plain numbers.
  */
 const FMT = { money: formatMoney, week: formatDayLong };
-import { paymentReceiptHtml } from "../documents/documents";
+import { paymentReceiptHtml, paymentReceiptText } from "../documents/documents";
+import { shareByWhatsApp } from "../../lib/share";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { printDocument } from "../documents/print";
 import type { PayableLine, PayMethod, Payment, PaymentReceipt } from "../../api/types";
 
@@ -273,6 +275,30 @@ export function PayWorkerPage() {
       }),
     );
     if (!ok) setPayError("No se pudo abrir la impresión. Revise el navegador.");
+  }
+
+  async function sendReceipt() {
+    if (!receipt) return;
+    const text = paymentReceiptText({
+      farmName: user?.farm.name ?? "Finca",
+      worker,
+      payment: receipt.payment,
+      lines: receipt.lines,
+      breakdown: receipt.slip
+        ? {
+            previousBalanceCents: receipt.slip.previousBalanceCents,
+            currentWeekCents: receipt.slip.currentWeekCents,
+            currentWeekFrom: receipt.slip.currentWeekFrom,
+            currentWeekTo: receipt.slip.currentWeekTo,
+            deductions: receipt.slip.deductions,
+            deductionsCents: receipt.slip.deductionsCents,
+            paidCents: receipt.slip.paidCents,
+            remainingCents: receipt.slip.remainingCents,
+          }
+        : undefined,
+    });
+    const outcome = await shareByWhatsApp(text, worker.phone);
+    if (outcome === "failed") setPayError("No se pudo abrir WhatsApp. Revise que el navegador permita ventanas nuevas.");
   }
 
   const partialCents = parseMoneyInput(partial);
@@ -823,6 +849,9 @@ export function PayWorkerPage() {
           {/* RSP-008: "el sistema genera el recibo de pago". It is the primary
               action, because a payment the worker has no paper for is a
               payment they cannot check. */}
+          <Button variant="outlined" startIcon={<WhatsAppIcon />} onClick={() => void sendReceipt()}>
+            Enviar por WhatsApp
+          </Button>
           <Button variant="contained" startIcon={<PrintIcon />} onClick={printReceipt}>
             Imprimir recibo
           </Button>
