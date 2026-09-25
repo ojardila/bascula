@@ -235,6 +235,49 @@ export interface SignupResponse {
    * is present, and tells the truth about why.
    */
   verificationToken: string | null;
+  /**
+   * True when the address already had an account. The server then created
+   * nothing (the answer is otherwise identical), and the owner has to log in
+   * and create the farm from inside.
+   */
+  verificationRequired: boolean;
+}
+
+/** GET /v1/farm-slugs?slug= — the live check behind "Dirección web". */
+export interface SlugAvailability {
+  slug: string;
+  available: boolean;
+  reason?: "taken" | "reserved" | "invalid";
+}
+
+/** GET /v1/farms/{slug}/provision-status — what the waiting screen polls. */
+export interface ProvisionStatus {
+  slug: string;
+  /** https://{slug}.bascula.engp.io */
+  url: string;
+  dedicated: boolean;
+  steps: Array<{ key: "database" | "app" | "web"; done: boolean }>;
+  ready: boolean;
+  /** Past the provisioning budget and still not ready: offer the shared app. */
+  slow: boolean;
+  elapsedSeconds: number;
+}
+
+/** POST /v1/farms — another farm for the account that is signed in. */
+export interface FarmCreate {
+  id?: Uuid;
+  name: string;
+  slug: string;
+  priceCents: number;
+}
+
+export interface FarmCreated {
+  farmId: Uuid;
+  name: string;
+  slug: string;
+  role: string;
+  owned: number;
+  limit: number;
 }
 
 /* -- catalogs -------------------------------------------------------- */

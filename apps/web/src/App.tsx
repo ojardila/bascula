@@ -34,6 +34,8 @@ import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ConfigPage } from "./features/config/ConfigPage";
 import { WorkUnitsPage } from "./features/units/WorkUnitsPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
+import { ProvisionPage } from "./features/provision/ProvisionPage";
+import { NewFarmPage } from "./features/farms/NewFarmPage";
 
 /**
  * `/parcelas/<id>/mapa` -> `/lotes/<id>/mapa`, with the tail intact.
@@ -323,6 +325,9 @@ function Shell() {
           }
         />
 
+        {/* Any member may open a farm of their own: owning a farm is a
+            property of the account, not of the role held here. */}
+        <Route path="fincas/nueva" element={<NewFarmPage />} />
         <Route path="*" element={<Navigate to={landing} replace />} />
       </Routes>
     </AppShell>
@@ -336,6 +341,7 @@ export function App() {
       <Route path="/entrar" element={<LoginPage />} />
       <Route path="/empezar" element={<SignupPage />} />
       <Route path="/registro" element={<SignupPage />} />
+      <Route path="/preparando/:slug" element={<ProvisionPage />} />
       {/* The super-admin hangs off the login, not off the farm shell: other
           routes, another role, and no read of anybody's ledger. */}
       <Route

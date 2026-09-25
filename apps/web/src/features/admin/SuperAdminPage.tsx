@@ -22,7 +22,11 @@ import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
-import { farmDevUrl, farmProdUrl, isFarmSlug } from "../../lib/farmHost";
+import { farmSlugProblem } from "../../lib/farmHost";
+import {
+  FarmUrlField, slugErrorFromApi, useFarmUrl, useSlugCheck,
+} from "../../components/FarmUrlField";
+import { ProvisionProgress } from "../provision/ProvisionProgress";
 import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { GREEN_DARK } from "../../theme";
@@ -154,7 +158,7 @@ export function SuperAdminPage() {
           statusFilter={status}
           onStatusFilterChange={setStatus}
           onCreate={() => setCreating(true)}
-          createLabel="Nueva finca"
+          createLabel="Crear finca"
           extraActions={(f) =>
             f.status === "suspended"
               ? [
@@ -217,14 +221,6 @@ export function SuperAdminPage() {
             <strong>{created?.name}</strong> ya está activa. El dueño entra con{" "}
             <strong>{created?.ownerEmail}</strong>.
           </Typography>
-          {created?.slug && (
-            <Typography sx={{ mb: 1 }}>
-              Dirección: <strong>{farmProdUrl(created.slug)}</strong>
-              <Typography component="span" color="text.secondary" sx={{ display: "block" }}>
-                En desarrollo: {farmDevUrl(created.slug)}
-              </Typography>
-            </Typography>
-          )}
           {created?.temporaryPassword ? (
             <Alert severity="warning">
               Esta clave se muestra una sola vez. Entréguesela ahora: no se puede volver a leer.
@@ -240,6 +236,11 @@ export function SuperAdminPage() {
             <Typography color="text.secondary">
               Esa cuenta ya existía: se le agregó esta finca como dueño, sin cambiarle la clave.
             </Typography>
+          )}
+          {created?.slug && (
+            <Box sx={{ mt: 3 }}>
+              <ProvisionProgress slug={created.slug} compact />
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
@@ -261,7 +262,9 @@ function CreateFarmDialog({
 }) {
   const { busy, run: runOnce } = useWriteOnce();
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+  const url = useFarmUrl();
+  const check = useSlugCheck(url.slug);
+  const [slugError, setSlugError] = useState<string | null>(null);
   const [price, setPrice] = useState("");
   const [email, setEmail] = useState("");
   const [ownerName, setOwnerName] = useState("");
@@ -271,17 +274,16 @@ function CreateFarmDialog({
   async function submit() {
     setError(null);
     const priceCents = parseMoneyInput(price) ?? 0;
-    const slugValue = slug.trim().toLowerCase();
+    const slugValue = url.slug;
     if (!name.trim()) {
       setError("Escriba el nombre de la finca.");
       return;
     }
-    if (!slugValue) {
-      setError("Escriba el identificador de la finca.");
-      return;
-    }
-    if (!isFarmSlug(slugValue)) {
-      setError("Use letras minúsculas, números y guiones. Palabras como www o admin no se pueden usar.");
+    const slugProblem =
+      farmSlugProblem(slugValue) ??
+      (check === "taken" ? "Esa dirección ya la tiene otra finca. Escriba otra." : null);
+    if (slugProblem) {
+      setSlugError(slugProblem);
       return;
     }
     if (priceCents <= 0) {
@@ -309,13 +311,15 @@ function CreateFarmDialog({
         },
       }),
     ).catch((e: unknown) => {
-      setError(messageFor(e));
+      const slugMsg = slugErrorFromApi(e);
+      if (slugMsg) setSlugError(slugMsg);
+      else setError(messageFor(e));
       return { ran: false } as const;
     });
     if (!outcome.ran || !outcome.value) return;
     onCreated(outcome.value);
     setName("");
-    setSlug("");
+    url.reset();
     setPrice("");
     setEmail("");
     setOwnerName("");
@@ -331,18 +335,23 @@ function CreateFarmDialog({
           <TextField
             label="Nombre de la finca"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              url.followName(e.target.value);
+              setSlugError(null);
+            }}
             autoFocus
             required
           />
-          <TextField
-            label="Identificador"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, ""))}
-            required
-            autoComplete="off"
-            spellCheck={false}
-            helperText={`https://${slug || "sanjose"}.bascula.engp.io — en desarrollo, ${slug || "sanjose"}.int.dev.engp.io`}
+          <FarmUrlField
+            slug={url.slug}
+            onChange={(v) => {
+              url.setSlug(v);
+              setSlugError(null);
+            }}
+            check={check}
+            serverError={slugError}
+            disabled={busy}
           />
           <TextField
             label="Precio por kilo"

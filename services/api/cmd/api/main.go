@@ -134,9 +134,29 @@ func run(migrateOnly, pruneOnly bool) error {
 	// the caller is the owner of a real farm, and it extends them only while
 	// the upload keeps making progress. See importReadBudget in
 	// internal/httpapi/handlers_import.go. Everything else keeps these.
+	api := httpapi.New(pool, auth.NewSigner(rc.secret, "bascula"), cfg)
+	if cfg.TenantSlug != "" {
+		internal := &http.Server{
+			Addr:              ":" + rc.internalPort,
+			Handler:           api.InternalHandler(),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+		}
+		go func() {
+			<-ctx.Done()
+			_ = internal.Close()
+		}()
+		go func() {
+			slog.Info("internal listener", "addr", internal.Addr, "tenant", cfg.TenantSlug)
+			if err := internal.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("internal listener", "err", err)
+			}
+		}()
+	}
 	srv := &http.Server{
 		Addr:              ":" + rc.port,
-		Handler:           httpapi.New(pool, auth.NewSigner(rc.secret, "bascula"), cfg),
+		Handler:           api,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -212,10 +232,13 @@ const leakedDevSigningKey = "development-only-signing-key-not-for-production"
 // booting without a signing key, because a job that applies migrations signs
 // nothing.
 type resolved struct {
-	port     string
-	secret   []byte
-	http     httpapi.Config
-	warnings []string
+	port string
+	// internalPort is where a dedicated stack listens for its farm (see
+	// httpapi.InternalHandler). Unused outside TENANT_MODE=dedicated.
+	internalPort string
+	secret       []byte
+	http         httpapi.Config
+	warnings     []string
 }
 
 // resolveConfig reads the environment and decides whether this process is
@@ -293,6 +316,24 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	rc.http.PublicBaseURL = strings.TrimRight(getenv("PUBLIC_BASE_URL"), "/")
 	rc.http.GitHubDispatchToken = getenv("GITHUB_DISPATCH_TOKEN")
 	rc.http.GitHubDispatchRepo = or("GITHUB_DISPATCH_REPO", "ojardila/bascula")
+	rc.http.TenantInternalURL = getenv("TENANT_INTERNAL_URL")
+	rc.http.TenantPublicURL = getenv("TENANT_PUBLIC_URL")
+	rc.internalPort = or("INTERNAL_PORT", "8081")
+	// A DEDICATED stack serves one farm, named by its own public address
+	// (or TENANT_SLUG). It opens the internal port that receives that farm
+	// from the platform, and it never launches stacks of its own.
+	if getenv("TENANT_MODE") == "dedicated" {
+		slug := getenv("TENANT_SLUG")
+		if slug == "" {
+			slug = httpapi.FarmSlugFromURL(rc.http.PublicBaseURL)
+		}
+		if slug == "" {
+			return resolved{}, errors.New(
+				"TENANT_MODE=dedicated needs TENANT_SLUG or a PUBLIC_BASE_URL like https://{slug}.bascula.engp.io")
+		}
+		rc.http.TenantSlug = slug
+		rc.http.GitHubDispatchToken = ""
+	}
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {
 		return resolved{}, errors.New(

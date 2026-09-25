@@ -28,6 +28,12 @@ spec:
     - name: http
       port: 80
       targetPort: 8080
+    # Only a dedicated farm stack listens here (TENANT_MODE=dedicated): the
+    # platform API pushes the farm into it. Not routed by the Gateway, and the
+    # CiliumNetworkPolicy admits only the platform API pods.
+    - name: internal
+      port: 8081
+      targetPort: 8081
 
 # Migrations run as their own Job, not as an init container on the Deployment.
 # An init container would re-run the whole thing on every pod restart and on

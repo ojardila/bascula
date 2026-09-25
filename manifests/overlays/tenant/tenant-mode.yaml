@@ -1,0 +1,14 @@
+# A dedicated stack serves exactly one farm: the one its PUBLIC_BASE_URL
+# (https://{slug}.bascula.engp.io) names. TENANT_MODE=dedicated opens the
+# internal port the platform pushes that farm into, and switches off the
+# repository_dispatch so a tenant never launches tenants.
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: TENANT_MODE
+    value: dedicated
+- op: add
+  path: /spec/template/spec/containers/0/ports/-
+  value:
+    containerPort: 8081
+    name: internal

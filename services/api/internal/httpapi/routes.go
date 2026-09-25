@@ -42,6 +42,11 @@ func (s *Server) Routes() []Route {
 		// address with a password, on an endpoint that issues no session, is a
 		// place to test guesses. A session is that proof.
 		{http.MethodPost, "/v1/farms", auth.ActionFarmsCreate, s.handleCreateFarm},
+		// The waiting screen after a farm is created, and the live "is this
+		// address free" check on the signup form. Both public: the first
+		// caller has no session yet, and a slug is a DNS label anybody sees.
+		{http.MethodGet, "/v1/farms/{slug}/provision-status", auth.ActionProvisionStatus, s.handleProvisionStatus},
+		{http.MethodGet, "/v1/farm-slugs", auth.ActionSlugAvailability, s.handleSlugAvailability},
 
 		// The super-admin console. Public signup is still the self-serve door;
 		// this is the operator door: list, create, suspend.

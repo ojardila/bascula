@@ -33,9 +33,9 @@ type Membership struct {
 func FindUserByEmail(ctx context.Context, tx pgx.Tx, email string) (*User, error) {
 	var u User
 	err := tx.QueryRow(ctx, `
-		SELECT id::text, email, name, password_hash, is_superadmin, email_verified_at
+		SELECT id::text, email, name, phone, password_hash, is_superadmin, email_verified_at
 		  FROM users WHERE lower(email) = lower($1)`, email).
-		Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.IsSuperadmin, &u.EmailVerifiedAt)
+		Scan(&u.ID, &u.Email, &u.Name, &u.Phone, &u.PasswordHash, &u.IsSuperadmin, &u.EmailVerifiedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -45,9 +45,9 @@ func FindUserByEmail(ctx context.Context, tx pgx.Tx, email string) (*User, error
 func FindUserByID(ctx context.Context, tx pgx.Tx, id string) (*User, error) {
 	var u User
 	err := tx.QueryRow(ctx, `
-		SELECT id::text, email, name, password_hash, is_superadmin, email_verified_at
+		SELECT id::text, email, name, phone, password_hash, is_superadmin, email_verified_at
 		  FROM users WHERE id = $1`, id).
-		Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.IsSuperadmin, &u.EmailVerifiedAt)
+		Scan(&u.ID, &u.Email, &u.Name, &u.Phone, &u.PasswordHash, &u.IsSuperadmin, &u.EmailVerifiedAt)
 	if err != nil {
 		return nil, err
 	}

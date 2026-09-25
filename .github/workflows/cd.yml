@@ -124,9 +124,17 @@ jobs:
           platforms: linux/amd64
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
+          # ONE tag and no attestations. Harbor's bascula project has
+          # "prevent vulnerable images" on, which answers 412 to any manifest
+          # that has not been scanned yet. buildx HEADs the manifest again for
+          # every extra tag (and for the provenance index) right after the
+          # first push, before Trivy has had a chance: that 412 is what failed
+          # CD for PR #38 (run 36030996313). The git sha is still recorded in
+          # the release notes and the image label.
           tags: |
             ${{ env.REGISTRY }}/${{ env.PROJECT }}/api:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.PROJECT }}/api:${{ github.sha }}
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -141,7 +149,8 @@ jobs:
           platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.PROJECT }}/web:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.PROJECT }}/web:${{ github.sha }}
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
@@ -257,9 +266,15 @@ jobs:
           export GIT_SSH_COMMAND='ssh -i /tmp/gitops_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
           git clone --depth 1 git@github.com:ojardila/gitops.git /tmp/gitops
           python3 scripts/pin-gitops.py /tmp/gitops/applications/bascula.yaml "$V"
+          # Dedicated farm stacks run the production release too. Before this
+          # they stayed on whatever tag somebody last typed into the
+          # ApplicationSet, which is how a tenant ended up two APIs behind.
+          if [ -f /tmp/gitops/applications/bascula-tenants.yaml ]; then
+            python3 scripts/pin-gitops.py /tmp/gitops/applications/bascula-tenants.yaml "$V"
+          fi
           git -C /tmp/gitops config user.name  "github-actions[bot]"
           git -C /tmp/gitops config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C /tmp/gitops add applications/bascula.yaml
+          git -C /tmp/gitops add applications/bascula.yaml applications/bascula-tenants.yaml
           if git -C /tmp/gitops diff --cached --quiet; then
             echo "gitops already pinned production at ${V}"
           else

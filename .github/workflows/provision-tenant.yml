@@ -7,8 +7,10 @@
 # Dedicated mode: writes tenants/dedicated/{slug}.yaml; Argo ApplicationSet
 # creates Application bascula-{slug} from manifests/overlays/tenant.
 #
-# CI never has kubeconfig. Argo applies. Copy harbor-pull into the new
-# namespace once: scripts/create-dev-secrets.sh with NS=bascula-{slug}.
+# CI never has kubeconfig. Argo applies. harbor-pull is cloned into the new
+# namespace by the Kyverno policy in manifests/cluster/harbor-pull-clone.yaml,
+# and the platform API copies the farm into the new stack once it answers
+# (services/api/internal/httpapi/provision.go).
 name: Provision tenant
 
 on:

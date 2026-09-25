@@ -131,6 +131,10 @@ import type {
   Session,
   SignupRequest,
   SignupResponse,
+  SlugAvailability,
+  ProvisionStatus,
+  FarmCreate,
+  FarmCreated,
   Uuid,
   WeekPrice,
   WorkRecord,
@@ -422,8 +426,24 @@ export const api = {
       // with it rather than telling somebody to check a mailbox that will
       // never receive anything.
       verificationToken: res.verificationToken ?? null,
+      verificationRequired: Boolean(res.verificationRequired),
     };
   },
+
+  /** Is this web address free? Public; never throws for a bad slug. */
+  slugAvailability: (slug: string) =>
+    http.get<SlugAvailability>(`/v1/farm-slugs?slug=${encodeURIComponent(slug)}`, {
+      anonymous: true,
+    }),
+
+  /** Where a new farm's own address stands. Public: the owner has no session yet. */
+  provisionStatus: (slug: string) =>
+    http.get<ProvisionStatus>(`/v1/farms/${encodeURIComponent(slug)}/provision-status`, {
+      anonymous: true,
+    }),
+
+  /** Another farm for the account that is signed in (POST /v1/farms). */
+  createFarm: (body: FarmCreate) => http.post<FarmCreated>("/v1/farms", body),
 
   verifyEmail: (token: string) =>
     http.post<{ userId: Uuid; farmId: Uuid; verified: boolean }>(

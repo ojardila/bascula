@@ -282,6 +282,10 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	s.kickTenantProvision(tenantProvision{
+		Slug: farm.Slug, FarmName: farm.Name,
+		Email: email, OwnerName: user.Name,
+	})
 	out := map[string]any{
 		"id": farm.ID, "name": farm.Name, "slug": farm.Slug, "timezone": farm.Timezone,
 		"currency": farm.Currency, "country": farm.Country, "city": farm.City,

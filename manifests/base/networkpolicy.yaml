@@ -26,6 +26,19 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # A dedicated farm stack receives its farm from the platform API (prod or
+    # dev) on 8081. Nothing else may reach that port.
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: bascula
+            app: bascula-api
+        - matchLabels:
+            io.kubernetes.pod.namespace: bascula-dev
+            app: bascula-api
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -36,6 +49,18 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
+              protocol: TCP
+    # The platform API watches and seeds each dedicated farm stack
+    # (bascula-{slug}) on its internal port.
+    - toEndpoints:
+        - matchLabels:
+            app: bascula-api
+          matchExpressions:
+            - key: io.kubernetes.pod.namespace
+              operator: Exists
+      toPorts:
+        - ports:
+            - port: "8081"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
