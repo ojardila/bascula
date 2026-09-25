@@ -57,6 +57,12 @@ async function boot() {
   if (USE_MOCKS) {
     const { startMocks } = await import("./mocks/browser");
     await startMocks();
+  } else if (import.meta.env.PROD) {
+    // The app's own worker: installable, and the shell opens with no signal.
+    // Never alongside the mock worker, which owns the same scope in dev.
+    void import("virtual:pwa-register")
+      .then(({ registerSW }) => registerSW({ immediate: true }))
+      .catch(() => undefined);
   }
 
   createRoot(document.getElementById("root")!).render(
