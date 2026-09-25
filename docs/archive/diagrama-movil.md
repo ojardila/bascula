@@ -1179,7 +1179,7 @@ for the web.
 *Sections 2 and 9 regenerated in sprint 8 by reading `apps/mobile/src/db.ts`
 (100 lines), `data/repository.ts`, `data/sqliteRepository.ts`,
 `data/syncStore.ts`, `schema.ts`, `sync/` and the 20 screens in
-`apps/mobile/src/screens/`, against `services/api` and `docs/sincronizacion.md`.*
+`apps/mobile/src/screens/`, against `services/api` and `docs/archive/sincronizacion.md`.*
 
 *The rest of the document — §1 the data model, §3 navigation, §4 to §7 the flows
 and the state machine, §8 the event book — was **not** touched. The refactor did

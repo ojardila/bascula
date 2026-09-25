@@ -19,7 +19,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
 
-// The sync endpoints. docs/sincronizacion.md §3.
+// The sync endpoints. docs/archive/sincronizacion.md §3.
 //
 // The phone already synchronises, but against an adapter that assembles the
 // protocol out of the ordinary routes. That works and it is wrong in one

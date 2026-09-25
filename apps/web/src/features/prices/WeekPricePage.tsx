@@ -10,7 +10,7 @@
  * And looking for it was a trap. Whoever went hunting for the field ended up
  * in Activities, pressed "Precio fijo" —which does have a price box— typed 900
  * and saved. That does not raise the week's price: it changes the PAY MODE of
- * all picking and disconnects it from the weekly price the phone still uses.
+ * all picking and disconnects it from the weekly price per kilo.
  * Nothing warned them. That trap is closed in `ActivityFormDialog`; this is
  * the other half: the field, where people look for it.
  *

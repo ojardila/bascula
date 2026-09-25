@@ -26,7 +26,7 @@ export function OfflineBar() {
     <Stack spacing={1} sx={{ mb: online && pending.length === 0 ? 0 : 2 }}>
       {!online && (
         <Alert severity="warning" icon={<CloudOffIcon />} sx={{ fontSize: "1.05rem" }}>
-          <strong>Sin señal.</strong> Puede seguir registrando pesadas: se guardan en este teléfono y
+          <strong>Sin señal.</strong> Puede seguir registrando pesadas: se guardan en este celular y
           se suben solas cuando vuelva la señal. Informes, pagos y nómina necesitan internet.
         </Alert>
       )}

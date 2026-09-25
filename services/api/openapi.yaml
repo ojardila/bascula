@@ -1156,7 +1156,7 @@ paths:
             handset writes to one and the web to the other, the balance is
             split in two, and nothing says so. Restore the existing one with
             PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
-            conflict in docs/sincronizacion.md with no automatic repair.
+            conflict in docs/archive/sincronizacion.md with no automatic repair.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -4580,7 +4580,7 @@ paths:
         "204": { description: Allowed. }
 
   # ---------------------------------------------------------------------------
-  # Mobile ↔ server synchronisation (docs/sincronizacion.md §3)
+  # Mobile ↔ server synchronisation (docs/archive/sincronizacion.md §3)
   #
   # A change feed with a per-farm sequence. The handset carries ONE number,
   # `cursor`, and what it is missing is "everything with a seq greater than
@@ -4807,7 +4807,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # The season import (docs/sincronizacion.md §8, phases 3 and 4)
+  # The season import (docs/archive/sincronizacion.md §8, phases 3 and 4)
   # ---------------------------------------------------------------------------
   /v1/import/season:
     post:
@@ -5400,7 +5400,7 @@ components:
         moneyReadOnly:
           type: boolean
           description: |
-            The phase 4 switch of docs/sincronizacion.md §8. While it is on the
+            The phase 4 switch of docs/archive/sincronizacion.md §8. While it is on the
             handsets may still record weighings — the cut cannot stop the scale
             — and may not settle, pay or void. It rides down in the handshake's
             `capabilities`.
@@ -7478,7 +7478,7 @@ components:
         server's: the handset knows `worker`, `crop` and `workRecord`.
 
         Direction is per entity and is not symmetric (§2 of
-        docs/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
+        docs/archive/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
         both ways. `farmConfig`, `plot`, `crop`, `weekPrice` and `settlement`
         only come down; pushing one is refused with its reason.
       enum: [farmConfig, worker, plot, crop, weekPrice, workRecord, settlement, ledgerEntry]

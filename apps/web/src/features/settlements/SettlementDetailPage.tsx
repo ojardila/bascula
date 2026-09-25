@@ -9,11 +9,11 @@
  *
  * TWO THINGS THIS SCREEN IS CAREFUL ABOUT.
  *
- * ANULAR IS NOT A CASUAL BUTTON. `docs/sincronizacion.md` is explicit: "Anular
+ * ANULAR IS NOT A CASUAL BUTTON. `docs/archive/sincronizacion.md` is explicit: "Anular
  * la liquidación no es un botón de esa pantalla: es una decisión del
  * administrador". So it sits apart from the document, under its own heading,
  * behind a confirmation that states the consequence in the words the domain
- * uses — and `docs/diagramas/movil.md` supplies the sentence the confirmation
+ * uses — and `docs/archive/diagrama-movil.md` supplies the sentence the confirmation
  * has to say: "No hay void -> open. Anular es definitivo."
  *
  * A VOID SETTLEMENT STILL SHOWS EVERYTHING. It is not hidden and it is not

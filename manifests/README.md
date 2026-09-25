@@ -154,7 +154,6 @@ base backups and WAL to S3-compatible storage — DigitalOcean Spaces already
 serves that role for Longhorn and etcd. **This is the first thing to add
 before the farm's season lives here.**
 
-**The cutover.** `docs/simplificacion.md` describes a sequenced migration
-(P0–P8) that moves a live farm's season from the phone to a server. None of it
-has been run, and standing this up does not start it. This is an empty
-database.
+**Seasons from the retired phone app.** A farm that kept its season only on
+the Expo app uploads it through `/v1/import/season` from that app
+(`docs/archive/sincronizacion.md` §8). The web app has no equivalent.

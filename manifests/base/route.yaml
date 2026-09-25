@@ -17,7 +17,7 @@ spec:
   parentRefs:
     # The public Gateway, reached through the Cloudflare tunnel. Public because
     # the farm's phone syncs against this API from the field, where there is no
-    # tailnet — see docs/sincronizacion.md.
+    # tailnet — see docs/archive/sincronizacion.md.
     - name: public
       namespace: gateway
   hostnames:

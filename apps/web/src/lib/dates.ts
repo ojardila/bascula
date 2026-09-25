@@ -38,8 +38,8 @@ export function todayInFarm(timezone: string, now: Date = new Date()): string {
 /**
  * Monday of the week a date falls in, as YYYY-MM-DD.
  *
- * Mirrors `WEEK_OF` in the mobile schema. Weekly prices are keyed by this, so
- * it has to agree with the phone to the day.
+ * Mirrors the server's week key (ISO week, Monday). Weekly prices are keyed
+ * by this, so it has to agree with the server to the day.
  */
 export function mondayOf(date: string | Date): string {
   const d = typeof date === "string" ? parseDay(date) : parseDay(date.toISOString());
@@ -101,8 +101,8 @@ export function formatMonday(monday: string): string {
  * A week is keyed by its Monday everywhere in this product, and "2026-08-24"
  * is not something a person reads as a week. The year is appended only when
  * the week crosses a new year or ends outside the current one, which is the
- * same rule the phone uses (`formatWeekRange` in `packages/shared`), so the
- * two halves of the product name the same week the same way.
+ * same rule as `formatWeekRange` in `packages/shared`, so every screen and
+ * paper names the same week the same way.
  */
 export function formatWeekRange(monday: string, today: Date = new Date()): string {
   const a = parseDay(monday);

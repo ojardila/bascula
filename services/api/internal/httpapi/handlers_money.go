@@ -123,7 +123,7 @@ type settlementRequest struct {
 	Note       *string  `json:"note"`
 
 	// ExpectedGrossCents is what /v1/settlements/preview showed the person who
-	// is about to press the button. §5.5 of docs/sincronizacion.md.
+	// is about to press the button. §5.5 of docs/archive/sincronizacion.md.
 	//
 	// A pointer and not an int64, because zero is a number a client could send
 	// and "absent" has to be distinguishable from it — the rule of this

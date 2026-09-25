@@ -1,13 +1,11 @@
 /**
  * THE PAPER. RSP-008: "El sistema genera el recibo de pago."
  *
- * The phone has printed a receipt and a payroll sheet since Sprint 1 and the
- * console printed nothing, which meant the two halves of the same product
- * handed a worker different things — or nothing at all, on the half that has
- * the keyboard and the printer. These are the same two documents, built from
- * the web's view models, sharing the phone's design through `documentCss.ts`.
+ * The retired phone app printed a receipt and a payroll sheet since Sprint 1.
+ * These are the same documents, built from the web's view models, with the
+ * same design through `documentCss.ts`, so a worker gets the same paper.
  *
- * Three of them, because the console needs one the phone does not:
+ * Three of them:
  *
  *   paymentReceiptHtml   what a worker takes away after being paid. RSP-008.
  *   settlementHtml       the settlement itself, line by line, at the prices
@@ -29,7 +27,7 @@
  *   not decided yet (`PayableLine.rateSource === "weekly_price"`). On screen
  *   that is a chip; on paper it is an amber block, the word PROVISIONAL in the
  *   row, and a footnote — because a colour alone does not survive the
- *   black-and-white printer in a farm office. `docs/sincronizacion.md` asks for
+ *   black-and-white printer in a farm office. `docs/archive/sincronizacion.md` asks for
  *   exactly this: a provisional document "imprime un recibo que dice
  *   «provisional» en letra grande".
  */

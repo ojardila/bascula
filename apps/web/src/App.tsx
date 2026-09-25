@@ -67,7 +67,7 @@ function Shell() {
 
         {/* THE LAND IS CALLED "lote", IN THE ADDRESS BAR TOO. The menu said
             "Parcelas" and the first field of the form that creates them said
-            "Nombre del lote"; the phone knows no word but "lote". See
+            "Nombre del lote"; the farms know no word but "lote". See
             `lib/vocab.ts`. The old route is still below, redirecting, because
             somebody out there has `/parcelas` bookmarked and a new word is no
             reason to break their link. */}
@@ -159,9 +159,7 @@ function Shell() {
         {/* The crew payroll: settling and paying all thirty of them. It is
             `money.pay` and not `money.read`, which also means a suspended farm
             does not see it at all — `money.pay` is a write action. Until this
-            screen existed the console could only pay one worker per page, and
-            `docs/simplificacion.md` §2.1 makes it the prerequisite for taking
-            the payroll off the phone. */}
+            screen existed the web could only pay one worker per page. */}
         <Route
           path="nomina"
           element={

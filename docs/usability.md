@@ -1,5 +1,10 @@
 # Usability review
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md).
+
 Three evaluators used the product as three different people would: the owner who
 wants to know how his harvest is going, the weigher standing at the scale with
 gloves on, and one who read every word and every error message in both clients.

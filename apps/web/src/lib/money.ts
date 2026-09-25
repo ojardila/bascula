@@ -1,18 +1,17 @@
 /**
  * Money. Integer cents, always. Never a float.
  *
- * The rules here are a deliberate port of `apps/mobile/src/format.ts` and
- * `db.ts` (`toCents`, `Math.round(weight * costPerUnitCents)`), not a fresh
- * implementation: the phone and the web have to render the same peso figure
- * for the same work, or the worker holding a paper receipt from one and
- * looking at a screen from the other sees two different numbers.
+ * The rules here are a deliberate port of the retired phone app's `format.ts`
+ * and `db.ts` (`toCents`, `Math.round(weight * costPerUnitCents)`), not a fresh
+ * implementation: a worker holding a paper receipt printed by the phone last
+ * season and looking at this screen must see the same peso figure for the
+ * same work. The server computes money the same way (the golden cases in
+ * `packages/shared/golden`).
  *
- * They will move to `packages/shared` once that package exists; this file is
- * the seam where that swap happens, which is why nothing else in the app does
- * arithmetic on money.
+ * This file is the seam for money in the web app, which is why nothing else
+ * in the app does arithmetic on money.
  *
- * Formatting is done by hand rather than with Intl for the same reason the
- * mobile app does it: es-CO groups thousands with "." and marks decimals with
+ * Formatting is done by hand rather than with Intl on purpose: es-CO groups thousands with "." and marks decimals with
  * ",", and "1,500" meaning a thousand and a half in one convention and one and
  * a half in the other is not a cosmetic difference on a payslip.
  */

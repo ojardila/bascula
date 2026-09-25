@@ -375,7 +375,7 @@ export function membershipFor(farmId: string, userId: string): MockMembership | 
 /**
  * `seedFarm` in handlers_auth.go: the minimum a farm needs to weigh coffee on
  * day one. The three seeded categories, a kilo, and a "Recoleccion" activity
- * priced from the weekly price table — which is exactly what the phone has.
+ * priced from the weekly price table.
  */
 export function emptyTenant(farmId: string, priceCents: number, id: () => string): Tenant {
   const categories: WireCatalogItem[] = ["siembra", "mantenimiento", "cosecha"].map((name) => ({

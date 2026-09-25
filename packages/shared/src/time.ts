@@ -43,7 +43,7 @@ export function mondayOf(date: Date | string): string {
  * first day of the week after it.
  *
  * Was defined twice, character for character, in `PayWorker` and in
- * `PaymentsPanel` (`docs/diagramas/movil.md` §9.12) — the two screens that
+ * `PaymentsPanel` (`docs/archive/diagrama-movil.md` §9.12) — the two screens that
  * decide how far a settlement reaches.
  */
 export const endOfWeek = (monday: string): string =>
@@ -103,7 +103,7 @@ export const weekOf = (instant: Date = new Date()): string =>
 //
 // So the farm's zone becomes the only zone that decides a business date, and
 // the phone's own offset stops being an input to money. The handshake brings
-// the zone (`docs/sincronizacion.md` §3.1); until it does, the constant below
+// the zone (`docs/archive/sincronizacion.md` §3.1); until it does, the constant below
 // is what that farm's handset is already set to.
 
 /** The zone assumed until the server tells the phone otherwise (§1.5b). */

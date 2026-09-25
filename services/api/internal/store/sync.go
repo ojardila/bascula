@@ -13,7 +13,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/domain"
 )
 
-// The change feed, from the server's side. docs/sincronizacion.md §3.
+// The change feed, from the server's side. docs/archive/sincronizacion.md §3.
 //
 // The phone carries ONE number, `cursor`, and what it is missing is
 // "everything with a seq greater than that number". Not a watermark per table:

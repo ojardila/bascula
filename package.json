@@ -1,6 +1,7 @@
 {
   "name": "bascula",
   "private": true,
+  "description": "Báscula: harvest weighing, payroll and profitability web app for coffee farms (Go API + React PWA).",
   "workspaces": [
     "apps/*",
     "packages/*"

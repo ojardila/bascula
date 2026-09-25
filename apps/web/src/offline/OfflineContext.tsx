@@ -37,11 +37,22 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<PendingWeighing[]>([]);
   const [syncing, setSyncing] = useState(false);
   const flushing = useRef(false);
+  // An upload can finish after the provider is gone (logout, or a test
+  // tearing down); setting state then is a React error and, in a test, an
+  // unhandled rejection after the window is gone.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!farmId || !canQueue) return;
     try {
-      setPending(await listPending(farmId));
+      const list = await listPending(farmId);
+      if (alive.current) setPending(list);
     } catch {
       // Storage the browser will not open is the same as nothing stored.
     }
@@ -50,17 +61,19 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const flush = useCallback(async (): Promise<FlushResult | null> => {
     if (!farmId || !canQueue || flushing.current) return null;
     flushing.current = true;
-    setSyncing(true);
+    if (alive.current) setSyncing(true);
     try {
       const r = await flushPending(farmId);
-      if (r.sent > 0) setOnline(true);
+      if (r.sent > 0 && alive.current) setOnline(true);
       return r;
     } catch {
       return null;
     } finally {
       flushing.current = false;
-      setSyncing(false);
-      await refresh();
+      if (alive.current) {
+        setSyncing(false);
+        await refresh();
+      }
     }
   }, [farmId, canQueue, refresh]);
 

@@ -1,6 +1,7 @@
 {
   "name": "bascula-web",
   "private": true,
+  "description": "The Báscula web app: an installable PWA that records weighings offline, plus reports, payroll and farm administration.",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

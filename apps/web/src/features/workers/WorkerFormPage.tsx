@@ -56,7 +56,7 @@ export function WorkerFormPage() {
    * on `deleted_at IS NULL`, so nothing in the database stops a second file
    * for one person — from then on the handset writes to one and the web to the
    * other, the balance is split in two, and nothing says so.
-   * `docs/sincronizacion.md` lists it as the one conflict with no automatic
+   * `docs/archive/sincronizacion.md` lists it as the one conflict with no automatic
    * repair. So the screen offers the repair: reactivate the person who is
    * already here.
    *

@@ -1,19 +1,19 @@
 /**
- * Material 3 in the same green the phone already uses.
+ * Material 3 in Báscula's green.
  *
- * Why MUI and not Tailwind or a hand-rolled set of components: the mobile app
- * is react-native-paper, which is Material Design 3. MUI is the same design
- * language on the web, so the two halves of the product read as one product
- * without anybody maintaining a spec of what "our green" means. It also ships
+ * Why MUI and not Tailwind or a hand-rolled set of components: the original
+ * phone app (since retired) was react-native-paper, Material Design 3, and MUI
+ * kept the same design language when the product moved to the web, without
+ * anybody maintaining a spec of what "our green" means. It also ships
  * the parts this sprint would otherwise have to build badly — data table,
  * autocomplete, dialog, date field, snackbar — and with ten modules queued
  * behind this one, the components are the deliverable, not the CSS.
  *
- * The palette is lifted verbatim from `apps/mobile/App.tsx` (#2e7d32) and the
- * receipt stylesheet (#1b5e20). Same hex, not "about the same green".
+ * The palette (#2e7d32, and #1b5e20 for figures on paper) is the one the
+ * farms already knew from the retired phone app and its receipts. Same hex, not "about the same green".
  *
  * Type and control sizes lean large on purpose: the people who run the farm
- * on this screen (and on the phone) are often around fifty and do not live in
+ * on this screen, on a computer or a phone, are often around fifty and do not live in
  * software. Small type and tight buttons cost them more than they save us.
  */
 import { createTheme } from "@mui/material/styles";

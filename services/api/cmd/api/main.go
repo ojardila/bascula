@@ -68,7 +68,7 @@ func run(migrateOnly, pruneOnly bool) error {
 		return nil
 	}
 
-	// The sweep of docs/sincronizacion.md §3.4. It runs on the ADMIN url for
+	// The sweep of docs/archive/sincronizacion.md §3.4. It runs on the ADMIN url for
 	// the same reason migrations do: sync_log is append-only and DELETE is
 	// revoked from the application role, so the process that serves requests
 	// cannot prune the feed even by accident. A scheduler runs this nightly;

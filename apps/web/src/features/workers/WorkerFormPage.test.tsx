@@ -5,7 +5,7 @@
  * somebody whose document already belongs to a DEACTIVATED worker succeeds at
  * the database level and creates a second file for one person. From then on
  * the handset writes to one and the web to the other, the balance is split in
- * two, and nothing says so — `docs/sincronizacion.md` lists it as the one
+ * two, and nothing says so — `docs/archive/sincronizacion.md` lists it as the one
  * conflict that cannot be repaired automatically.
  *
  * So `POST /v1/workers` answers 409 EMPLOYEE_EXISTS_DELETED with

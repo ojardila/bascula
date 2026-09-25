@@ -50,7 +50,7 @@ import (
 //
 // Every tool maps to a GET. An assistant that can read the farm is useful
 // today and harmless when it misunderstands; one that can settle a week is the
-// double-payment problem in docs/sincronizacion.md wearing a new hat, and it
+// double-payment problem in docs/archive/sincronizacion.md wearing a new hat, and it
 // waits for the confirmation flow (elicitation) to be worth wiring up. Adding
 // a write is one row in the table below, once somebody has decided the answer
 // to "and what stops it paying twice".

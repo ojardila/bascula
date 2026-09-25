@@ -2,12 +2,10 @@
  * CREW PAYROLL, without the screen.
  *
  * On Saturday the farm does not pay one person: it pays thirty, in a line,
- * with the cash counted out on the table. The phone knew how to do it
- * (`PaymentsPanel` and `Payments.runPayroll`); the console only knew how to
- * pay them one at a time (`PayWorkerPage`). `docs/simplificacion.md` §2.1 says
- * it without hedging: crew payroll "moves to the web — and on the web it does
- * not exist yet", and until it exists it cannot be taken away from the phone.
- * This is the testable half of that move; `CrewPayrollPage.tsx` is the other.
+ * with the cash counted out on the table. The retired phone app knew how to
+ * do it (`PaymentsPanel` and `Payments.runPayroll`); the web only knew how to
+ * pay them one at a time (`PayWorkerPage`). This is the testable half of crew
+ * payroll on the web; `CrewPayrollPage.tsx` is the other.
  *
  * It is kept apart from the screen for a concrete reason and not out of taste:
  * what lives here is money split among N people, and I want to be able to test

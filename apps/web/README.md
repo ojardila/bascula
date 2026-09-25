@@ -1,17 +1,34 @@
-# `bascula-web` — the farm administration console
+# `bascula-web` — the Báscula web app
 
-Vite + React + TypeScript + React Router + MUI. Spanish in the interface, code
-comments in English, **money always in whole cents**.
+The whole product for farms: weighing at the scale (on a phone, with or
+without signal), harvest reports, workers, payroll, payments, prices, farm
+administration and the super-admin. An installable PWA; nothing to install
+from a store.
 
-Since sprint 2 this app talks to the real API (`services/api`). The mock data is
-still there, but as a tool, not as the only reality.
+Vite + React + TypeScript + React Router + MUI + vite-plugin-pwa. Spanish in
+the interface, code comments in English, **money always in whole cents**.
+
+It talks to the real API (`services/api`). The mock data is still there, but as
+a tool, not as the only reality.
 
 ## Getting it up
 
 ```sh
-npm install --prefix apps/web --no-workspaces   # install here, not at the root
-npm --prefix apps/web run dev                   # http://localhost:5173
+npm install                       # at the repository root (npm workspaces)
+npm --workspace apps/web run dev  # http://localhost:5173
 ```
+
+## Offline and PWA
+
+- `vite-plugin-pwa` precaches the app shell only (JS, CSS, HTML, icons). API
+  responses are never cached by the service worker.
+- `src/offline/`: weighings that cannot reach the server are kept in
+  IndexedDB with their client-minted id and uploaded on reconnect, on focus
+  and every 30 s; re-sending an id is a no-op on the server. The people and
+  lots for the weighing screen are cached from the last online load.
+- Reports, payments and payroll need a connection and say so.
+- `nginx.conf` serves `index.html`, `sw.js` and the manifest with `no-cache`
+  so a deploy reaches installed phones on the next open.
 
 By default it starts on **mock data** and says so on screen: a blue banner at
 the top warns that nothing you record reaches the server. Log in with
@@ -132,9 +149,8 @@ Five things worth knowing before touching anything:
 4. **`components/ModuleList.tsx` is the mould.** Every list screen uses it. With
    ten modules ahead, a new module that does not use it is a module that
    diverges.
-5. **`lib/money.ts` is the only money arithmetic.** A deliberate port of
-   `apps/mobile/src/format.ts`; it will move to `packages/shared` when that
-   package exists, and that is the only place that will have to be touched.
+5. **`lib/money.ts` is the only money arithmetic.** A deliberate port of the
+   retired phone app's formatting, so papers and screens agree to the peso.
 
 ### The contract, and who rules over the types
 
@@ -252,6 +268,5 @@ Settlements as their own screen, users, RSP-009 and the sale receipt attachment
 would rather not put up a box that swallows the photo). The sidebar shows the
 missing modules greyed out with the sprint they arrive in.
 
-**The sync warning is still up and still true**: until sync exists, a work
-record entered here does not exist for the phone and vice versa, and the
-double-payment lock lives in each database separately. Pay from one side only.
+The web app is the only client now; the double-payment lock lives in one
+database, the server's.

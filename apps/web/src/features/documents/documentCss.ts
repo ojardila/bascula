@@ -1,25 +1,16 @@
 /**
- * THE PRINTED DOCUMENTS' LOOK, TAKEN FROM THE PHONE.
+ * THE PRINTED DOCUMENTS' LOOK, TAKEN FROM THE RETIRED PHONE APP.
  *
- * `apps/mobile/src/receiptHtml.ts` already solved this: the brand green
+ * The phone app's `receiptHtml.ts` had already solved this: the brand green
  * (#2e7d32 header, #1b5e20 for figures), millimetre page margins, the slim
  * rule instead of a filled banner "so a farm office printer is not flooded
  * with ink on every sheet", the zebra rows, the signature lines. That work is
  * reused rather than redone, and this file is where it lives on the web.
  *
- * WHY THIS IS A TRANSCRIPTION AND NOT AN IMPORT.
- *
- * The phone's module cannot be imported here. It pulls in `./strings.ts` —
- * the mobile app's whole i18n layer, which the console does not have and does
- * not want — and `packages/shared/src/format.ts`, whose `formatMoney` takes
- * pesos where every figure in this app is cents and goes through `lib/money`.
- * Importing across `apps/mobile` -> `apps/web` would also make one app's build
- * depend on the other's, which nothing else in this repository does.
- *
- * So the CSS — the part that IS the design — is copied verbatim and the
- * markup around it is written against the web's own view models. When the
- * brand changes, both files change; that is the cost, and it is written down
- * here rather than discovered.
+ * The CSS — the part that IS the design — was copied verbatim, so papers
+ * printed from the web look like the ones farms already signed, and the
+ * markup around it is written against the web's own view models. That app
+ * has since been removed; this file is now the only copy.
  *
  * TWO CONSTRAINTS THAT ARE NOT NEGOTIABLE.
  *
@@ -27,7 +18,7 @@
  *   policy forbids it, printing must work on a farm office machine with no
  *   internet, and a stylesheet that fails to load turns a receipt somebody is
  *   about to sign into unstyled text. Hence the system font stack, which is
- *   the phone's stack unchanged.
+ *   the same stack the phone receipts used.
  *
  *   EVERY VALUE IS ESCAPED. Names, notes and activity labels are user input,
  *   and this file builds HTML with template strings. `esc` is not optional
@@ -44,8 +35,8 @@ export function esc(s: string): string {
 }
 
 /**
- * Copied from `apps/mobile/src/receiptHtml.ts`, with three additions the phone
- * has no use for: `.prov` for a provisional figure, `.void` for a cancelled
+ * Copied from the retired phone app's `receiptHtml.ts`, with three additions
+ * it had no use for: `.prov` for a provisional figure, `.void` for a cancelled
  * document, and `.meta` for the two-column header block a settlement needs.
  */
 export const DOCUMENT_CSS = `

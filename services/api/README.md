@@ -1,5 +1,10 @@
 # Báscula API
 
+Serves the Báscula web app (`apps/web`). The `/v1/sync/*` and
+`/v1/import/season` routes remain for the retired Expo phone app, so phones
+that still have it installed can upload their season
+([`docs/archive/sincronizacion.md`](../../docs/archive/sincronizacion.md)).
+
 Multi-tenant HTTP service. Go 1.26, chi, pgx, goose, Postgres 17 + PostGIS.
 
 ```bash
@@ -82,7 +87,7 @@ Sprint 3 adds the three modules the owner wrote and nobody had built:
 
 Sprint 4 closes the hole the owner pointed at: the console knew how to
 administer a farm and had no way to say how the harvest was going. Every bit of
-that analysis lived in the phone and none of it on the server. Six endpoints
+that analysis lived in the (since retired) phone app and none of it on the server. Six endpoints
 under `/v1/reports` are the port — the weekly list, the week's worker-by-day
 and worker-by-crop grids, the per-crop statistics, the comparative performance
 index, the five review rules, and the harvest curve. The SQL is
@@ -105,7 +110,7 @@ has no index, and the crop grid's null column carries `unattributed` saying
 whether the work named no crop or named several. `valueIsEstimate` keeps what
 the farm OWES from looking like what it has paid.
 
-### The two traps the phone found first, and what Postgres needed
+### The two traps the phone app found first, and what Postgres needed
 
 The extra-zero rule was algebraically unable to fire, because its reference
 included the very weighing it was judging: `w >= 10*avg` reduces to
@@ -208,9 +213,9 @@ trigger refuses it.
    sprint. Migration `00007` says what will live there and, more importantly,
    what never will.
 
-4. **The web records work from day one.** Until sync exists, a work record
-   entered on the web does not exist for the phone and vice versa. Pay from one
-   side only.
+4. **The web records work from day one.** (At the time the phone app kept
+   its own database; it has since been retired and the web is the only
+   client.)
 
 5. **Catalogues are tables, not enums.** Activity categories, crop types,
    varieties, work units, product categories and storage units are per-farm
@@ -266,7 +271,7 @@ interface still says "labor", which is the owner's word.
 
 Money is `bigint` in the currency's minor unit, and the columns say `_minor` and
 not `_cents` because the COP has no real cents. The JSON keeps `Cents` because
-that is what the phone and the contract already say.
+that is what the contract already says.
 
 ## Tests
 
@@ -375,8 +380,9 @@ The `Accept` header must name both types: the transport insists.
 ### What is deliberately not there yet
 
 - **Writes.** One row in the table per route, once the answer to "what stops
-  it registering the same weighing twice" is the same answer the phone gives:
-  the client id and the idempotency key in `docs/sincronizacion.md`.
+  it registering the same weighing twice" is the same answer the web app's
+  offline queue relies on:
+  the client id and the idempotency key in `docs/archive/sincronizacion.md`.
 - **Sessions.** The transport runs stateless on purpose: a session pinned to
   one replica is a session the next rollout loses, and the token already says
   who is calling.

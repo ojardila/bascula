@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Pruning the change feed. docs/sincronizacion.md §3.4.
+// Pruning the change feed. docs/archive/sincronizacion.md §3.4.
 //
 // # What is removed, and why nothing is lost
 //
