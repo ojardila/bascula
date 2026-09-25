@@ -7,3 +7,7 @@ Photos from Unsplash (https://unsplash.com/license). Attribution appreciated.
 - hills.jpg — landscape (kept; not featured on the current landing)
 
 No roasted beans and no retail coffee bags — only cherry coffee and scales.
+
+App screens (`app/*.jpg`) are Báscula's own mobile app with demo data,
+exported from `docs/screenshots/` (resized to 1200px JPEG). The landing labels
+them "Datos de demostración".

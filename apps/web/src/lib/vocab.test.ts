@@ -207,7 +207,11 @@ describe("the person is called \"empleado\", and \"recolector\" only where that 
   });
 
   it("and outside Harvest nobody calls an employee a recolector", () => {
-    const elsewhere = SCREENS.filter((f) => !under("features/harvest")(f));
+    // The public landing is the other place where it is a role: it talks to
+    // the farm owner about the people who pick and are paid by the kilo.
+    const elsewhere = SCREENS.filter(
+      (f) => !under("features/harvest")(f) && !under("features/marketing")(f),
+    );
     expect(show(hits(elsewhere, /recolector/i))).toBe("");
   });
 });
