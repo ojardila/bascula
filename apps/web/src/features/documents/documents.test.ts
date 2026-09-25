@@ -320,3 +320,22 @@ describe("the payroll sheet", () => {
     expect(html).toContain("—");
   });
 });
+
+describe("the receipt as WhatsApp text", () => {
+  it("carries the receipt number, what was paid, and the balance sentence", async () => {
+    const { paymentReceiptText } = await import("./documents");
+    const text = paymentReceiptText({
+      farmName: "La Esperanza",
+      worker: { name: "Ana", lastName: "Ruiz", documentNumber: "" },
+      payment: {
+        id: "p1", workerId: "w1", amountCents: 10_000_00, method: "efectivo",
+        receiptNumber: "3F7A-91C2", balanceBeforeCents: 15_000_00, balanceAfterCents: 5_000_00, date: "2026-09-19",
+      },
+      lines: [],
+    });
+    expect(text).toContain("*Recibo de pago · La Esperanza*");
+    expect(text).toContain("Recibo N.º 3F7A-91C2");
+    expect(text).toContain("*Pagado: $10.000*");
+    expect(text).toContain("Queda pendiente a favor del empleado: $5.000.");
+  });
+});

@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
+import { ExportCard } from "./ExportCard";
 
 /** In Spanish, because this is a label somebody reads and not an enum. */
 const FARM_STATUS: Record<"active" | "suspended", string> = {
@@ -181,6 +182,12 @@ export function ConfigPage() {
                 </Button>
               </CardContent>
             </Card>
+          </Grid>
+        )}
+
+        {(can("money.read") || can("workRecords.readAll")) && (
+          <Grid size={{ xs: 12, md: 6 }}>
+            <ExportCard />
           </Grid>
         )}
 

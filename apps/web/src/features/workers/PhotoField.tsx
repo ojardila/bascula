@@ -17,6 +17,7 @@
 import { useRef, useState } from "react";
 import { Avatar, Box, Button, Stack, Typography } from "@mui/material";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const SIDE = 512;
@@ -43,6 +44,7 @@ interface Props {
 
 export function PhotoField({ value, onChange, fallback }: Props) {
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function pick(file: File | undefined) {
@@ -72,14 +74,33 @@ export function PhotoField({ value, onChange, fallback }: Props) {
           hidden
           onChange={(e) => pick(e.target.files?.[0])}
         />
-        <Stack direction="row" spacing={1}>
+        {/* `capture` opens the camera straight away on a phone; a computer
+            ignores it and shows the file picker, which is still correct. */}
+        <input
+          ref={camera}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          data-testid="photo-camera-input"
+          onChange={(e) => pick(e.target.files?.[0])}
+        />
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<PhotoCameraIcon />}
+            onClick={() => camera.current?.click()}
+          >
+            Tomar foto
+          </Button>
           <Button
             variant="outlined"
             size="small"
-            startIcon={<PhotoCameraIcon />}
+            startIcon={<PhotoLibraryIcon />}
             onClick={() => input.current?.click()}
           >
-            {value ? "Cambiar foto" : "Agregar foto"}
+            {value ? "Cambiar foto" : "Elegir foto"}
           </Button>
           {value && (
             <Button size="small" color="inherit" onClick={() => onChange(null)}>
