@@ -14,10 +14,10 @@ plain Spanish, built for people around fifty who don't live in software.
   <img src="docs/screenshots/web/web-desktop-home.png" width="100%" alt="The harvest dashboard in a desktop browser" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/web/web-phone-weigh.png"   width="24%" alt="Recording a weighing in a phone browser" />
-  <img src="docs/screenshots/web/web-phone-week.png"    width="24%" alt="Kilos per picker and day" />
-  <img src="docs/screenshots/web/web-phone-account.png" width="24%" alt="A picker's balance" />
-  <img src="docs/screenshots/web/web-phone-crops.png"   width="24%" alt="Harvest per lot and week" />
+  <img src="docs/screenshots/web/web-desktop-week.png"    width="49%" alt="One week: kilos per day and per picker" />
+  <img src="docs/screenshots/web/web-desktop-payroll.png" width="49%" alt="Crew payroll" />
+  <img src="docs/screenshots/web/web-desktop-account.png" width="49%" alt="A picker's profile and balance" />
+  <img src="docs/screenshots/web/web-desktop-crops.png"   width="49%" alt="Harvest per crop and lot" />
 </p>
 
 <sub>Screens use demo data. More in [`docs/screenshots`](docs/screenshots/README.md).</sub>

@@ -10,8 +10,8 @@
  * Audience is often around fifty and not used to software: large type, plain
  * Spanish (de usted), one column on the phone, visible field labels.
  *
- * Images: real screens of the web app with demo data (labelled as such),
- * framed as a computer browser and a phone browser, explain; the Unsplash
+ * Images: real screens of the web app with demo data (labelled as such), in
+ * a plain browser window, explain — one per feature, tap to enlarge; the Unsplash
  * coffee photos only accompany. Báscula is a web app: nothing to install,
  * it can be added to the phone's home screen, and weighings can be recorded
  * with no signal (they upload on their own). Regenerate the screens with the
@@ -26,7 +26,10 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Container,
+  Dialog,
+  IconButton,
   Stack,
   TextField,
   Typography,
@@ -34,7 +37,9 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
-import AddToHomeScreenIcon from "@mui/icons-material/AddToHomeScreen";
+import LanguageIcon from "@mui/icons-material/Language";
+import CloseIcon from "@mui/icons-material/Close";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ComputerIcon from "@mui/icons-material/Computer";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { GREEN, GREEN_DARK } from "../../theme";
@@ -66,10 +71,10 @@ const PROBLEMS = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Puede registrar kilos sin señal: se suben solos cuando vuelve la conexión." },
-  { n: "02", title: "Revise la semana", body: "Consulte los kilos registrados y la tarifa correspondiente. Antes de liquidar, confirme que no queden pesadas por subir." },
-  { n: "03", title: "Calcule lo que debe", body: "Calcule el valor del trabajo y aplique los anticipos y descuentos registrados." },
-  { n: "04", title: "Registre lo que entrega", body: "Deje constancia del pago y consulte cuánto queda pendiente. Revise el detalle con el recolector." },
+  { n: "01", img: "/landing/app/registrar-pesada.jpg", alt: "Báscula en el navegador: registrar una pesada con persona, lote, día y kilos", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Puede registrar kilos sin señal: se suben solos cuando vuelve la conexión." },
+  { n: "02", img: "/landing/app/semana.jpg", alt: "Báscula en el navegador: resumen de la semana con kilos por día", title: "Revise la semana", body: "Consulte los kilos registrados y la tarifa correspondiente. Antes de liquidar, confirme que no queden pesadas por subir." },
+  { n: "03", img: "/landing/app/nomina.jpg", alt: "Báscula en el navegador: nómina de la cuadrilla con lo que se debe a cada persona", title: "Calcule lo que debe", body: "Calcule el valor del trabajo y aplique los anticipos y descuentos registrados." },
+  { n: "04", img: "/landing/app/pagar.jpg", alt: "Báscula en el navegador: pagar a un trabajador, con saldo, anticipos y forma de pago", title: "Registre lo que entrega", body: "Deje constancia del pago y consulte cuánto queda pendiente. Revise el detalle con el recolector." },
 ];
 
 const EXAMPLE_ROWS: { label: string; value: string; strong?: boolean }[] = [
@@ -82,9 +87,9 @@ const EXAMPLE_ROWS: { label: string; value: string; strong?: boolean }[] = [
 ];
 
 const QUESTIONS = [
-  { img: "/landing/app/week-detail.jpg", alt: "Pantalla de Báscula con los kilos por recolector y día de una semana", title: "¿Cuánto recogió cada persona?", body: "Consulte kilos por recolector, día y semana. Revise en qué lotes trabajó." },
-  { img: "/landing/app/account.jpg", alt: "Pantalla de Báscula con el estado de cuenta de un recolector", title: "¿Cuánto queda pendiente por pagar?", body: "Vea el valor del trabajo, los anticipos, los descuentos y los pagos registrados de cada persona." },
-  { img: "/landing/app/crop-detail.jpg", alt: "Pantalla de Báscula con la recolección de un lote por semana", title: "¿Cuánto produjo cada lote?", body: "Revise la recolección por lote y semana para ver cómo cambia durante la cosecha." },
+  { img: "/landing/app/semana-recolectores.jpg", alt: "Báscula en el navegador: kilos por recolector y día de una semana", title: "¿Cuánto recogió cada persona?", body: "Consulte kilos por recolector, día y semana. Revise en qué lotes trabajó." },
+  { img: "/landing/app/cuenta.jpg", alt: "Báscula en el navegador: lo que se le debe a una trabajadora, con lo liquidado y lo pendiente", title: "¿Cuánto queda pendiente por pagar?", body: "Vea el valor del trabajo, los anticipos, los descuentos y los pagos registrados de cada persona." },
+  { img: "/landing/app/lotes.jpg", alt: "Báscula en el navegador: recolección de un lote por semana, con kilos, valor y kilos por hectárea", title: "¿Cuánto produjo cada lote?", body: "Revise la recolección por lote y semana para ver cómo cambia durante la cosecha." },
 ];
 
 const FOR_WHOM = [
@@ -192,49 +197,34 @@ function DemoLabel() {
   );
 }
 
-/** A phone-browser screen. The frame and address bar are part of the image. */
-function Screenshot(props: { src: string; alt: string; maxWidth?: number }) {
-  return (
-    <Box sx={{ mx: "auto", maxWidth: props.maxWidth ?? 300, width: "100%" }}>
-      <Box
-        component="img"
-        src={props.src}
-        alt={props.alt}
-        loading="lazy"
-        sx={{ display: "block", width: "100%", height: "auto", filter: "drop-shadow(0 18px 30px rgba(20,40,20,.18))" }}
-      />
-      <DemoLabel />
-    </Box>
-  );
-}
-
 /**
- * The same farm on a computer browser and a phone browser, overlapping: one
- * web address, two screens, nothing to install.
+ * A real screen of the web app in a plain browser window (the frame is part
+ * of the image). On a phone a desktop screen is small, so it opens full size
+ * with a tap.
  */
-function HeroScreens() {
-  // The phone is taller than the computer screen it overlaps; the bottom
-  // padding (a share of the width, so it scales with both images) is the room
-  // it hangs into, so it never covers the label or the caption below.
+function Screenshot(props: { src: string; alt: string; eager?: boolean; label?: boolean }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Box>
-      <Box sx={{ position: "relative", width: "100%", pb: { xs: "30%", md: "16%" } }}>
-        <Box
-          component="img"
-          src="/landing/app/desktop-home.jpg"
-          alt="Báscula abierta en el navegador del computador: kilos recolectados por semana en la finca"
-          sx={{ display: "block", width: "86%", height: "auto", borderRadius: 3 }}
-        />
-        <Box
-          component="img"
-          src="/landing/app/phone-weigh.png"
-          alt="Báscula abierta en el navegador del celular: registro de una pesada con persona, lote, día y kilos"
-          sx={{ position: "absolute", right: 0, bottom: 0, width: "34%", height: "auto", filter: "drop-shadow(0 18px 30px rgba(20,40,20,.25))" }}
-        />
-      </Box>
-      <Box sx={{ mt: 2 }}>
-        <DemoLabel />
-      </Box>
+    <Box sx={{ width: "100%" }}>
+      <ButtonBase
+        onClick={() => setOpen(true)}
+        aria-label={`Ampliar: ${props.alt}`}
+        sx={{ display: "block", width: "100%", position: "relative", borderRadius: 2, overflow: "hidden", boxShadow: "0 16px 40px rgba(20,40,20,.16)", border: `1px solid ${LINE}`, bgcolor: "#fff" }}
+      >
+        <Box component="img" src={props.src} alt={props.alt} loading={props.eager ? "eager" : "lazy"} sx={{ display: "block", width: "100%", height: "auto" }} />
+        <Box aria-hidden sx={{ position: "absolute", right: 8, bottom: 8, display: "flex", alignItems: "center", gap: 0.5, bgcolor: "rgba(26,28,25,.75)", color: "#fff", px: 1, py: 0.25, borderRadius: 999, fontSize: 13 }}>
+          <ZoomInIcon sx={{ fontSize: 16 }} /> Ampliar
+        </Box>
+      </ButtonBase>
+      {props.label !== false && <DemoLabel />}
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth={false} fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 3 }, width: "100%", maxWidth: 1400, bgcolor: "#fff" } }}>
+        <Box sx={{ position: "relative", overflow: "auto" }}>
+          <Box component="img" src={props.src} alt={props.alt} sx={{ display: "block", width: { xs: 1100, md: "100%" }, maxWidth: "none", height: "auto" }} />
+          <IconButton aria-label="Cerrar" onClick={() => setOpen(false)} sx={{ position: "fixed", top: 12, right: 12, bgcolor: "rgba(26,28,25,.8)", color: "#fff", "&:hover": { bgcolor: "rgba(26,28,25,.95)" } }}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
+      </Dialog>
     </Box>
   );
 }
@@ -277,7 +267,7 @@ function Hero() {
     <Box component="section" sx={{ bgcolor: CREAM, py: { xs: 6, md: 10 }, overflow: "hidden" }}>
       <Container maxWidth="lg">
         <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 6, md: 8 }} alignItems="center">
-          <Box sx={{ flex: 1.2 }}>
+          <Box sx={{ flex: 1 }}>
             <Typography sx={{ letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 15, fontWeight: 700, color: GREEN_DARK, mb: 2 }}>
               Para fincas cafeteras
             </Typography>
@@ -297,8 +287,8 @@ function Hero() {
               Le mostramos una cuenta semanal de principio a fin. Demostración gratuita y sin compromiso.
             </Typography>
           </Box>
-          <Box component="figure" sx={{ flex: 1, m: 0, width: "100%", textAlign: "center" }}>
-            <HeroScreens />
+          <Box component="figure" sx={{ flex: 1.25, m: 0, width: "100%", textAlign: "center" }}>
+            <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con kilos por semana, valor y recolectores" eager />
             <Typography component="figcaption" sx={{ mt: 2.5, fontSize: "1.05rem", color: MUTED }}>
               Se abre en el navegador del celular o del computador. No hay nada que instalar.
             </Typography>
@@ -339,9 +329,12 @@ function HowItWorks() {
   return (
     <Section id="como-funciona" bg="#f6f7f4">
       <SectionTitle>Así pasa una pesada a la cuenta del recolector.</SectionTitle>
-      <Box component="ol" sx={{ listStyle: "none", p: 0, m: 0, mt: 5, display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", lg: "repeat(4, 1fr)" } }}>
+      <Box component="ol" sx={{ listStyle: "none", p: 0, m: 0, mt: 5, display: "grid", gap: { xs: 4, md: 3 }, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
         {STEPS.map((s) => (
-          <Box component="li" key={s.n} sx={{ p: 3.5, borderRadius: 4, bgcolor: "#fff", border: `1px solid ${LINE}` }}>
+          <Box component="li" key={s.n} sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: 4, bgcolor: "#fff", border: `1px solid ${LINE}` }}>
+            <Box sx={{ mb: 3 }}>
+              <Screenshot src={s.img} alt={s.alt} />
+            </Box>
             <Typography aria-hidden sx={{ fontFamily: DISPLAY, fontSize: 44, fontWeight: 700, color: GREEN, lineHeight: 1, mb: 1.5 }}>{s.n}</Typography>
             <Typography component="h3" sx={{ fontWeight: 700, fontSize: "1.35rem", mb: 1 }}>{s.title}</Typography>
             <Typography sx={{ fontSize: "1.15rem", color: MUTED, lineHeight: 1.5 }}>{s.body}</Typography>
@@ -398,7 +391,7 @@ function WhatYouCanSee() {
       <Box sx={{ mt: 5, display: "grid", gap: { xs: 7, md: 4 }, gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" } }}>
         {QUESTIONS.map((q) => (
           <Box key={q.title}>
-            <Screenshot src={q.img} alt={q.alt} maxWidth={280} />
+            <Screenshot src={q.img} alt={q.alt} />
             <Typography component="h3" sx={{ mt: 3.5, fontWeight: 700, fontSize: "1.4rem", mb: 1 }}>{q.title}</Typography>
             <Typography sx={{ fontSize: "1.15rem", color: MUTED, lineHeight: 1.5 }}>{q.body}</Typography>
           </Box>
@@ -417,7 +410,7 @@ function FieldAndOffice() {
   const blocks = [
     { icon: <PhoneAndroidIcon sx={{ fontSize: 40 }} />, title: "En el celular", body: "Abra Báscula en el navegador y registre las pesadas donde recibe el café. Puede registrar kilos sin señal: se guardan en el celular y se suben solas cuando vuelve la conexión." },
     { icon: <ComputerIcon sx={{ fontSize: 40 }} />, title: "En el computador", body: "Abra la misma dirección para consultar la información de la finca, revisar el trabajo registrado y llevar las cuentas de los trabajadores." },
-    { icon: <AddToHomeScreenIcon sx={{ fontSize: 40 }} />, title: "Nada que instalar", body: "Es una aplicación web. Si quiere, agréguela a la pantalla de inicio del celular y ábrala como cualquier aplicación." },
+    { icon: <LanguageIcon sx={{ fontSize: 40 }} />, title: "Nada que instalar", body: "Es una aplicación web. Si quiere, agréguela a la pantalla de inicio del celular y ábrala como cualquier aplicación." },
   ];
   return (
     <Section>
