@@ -523,6 +523,19 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A farm created from inside the app gets its own stack exactly like one
+	// created at signup. The dispatch runs after this response and its failure
+	// is only logged: the farm already works on the shared platform.
+	owner, err := store.FindUserByID(r.Context(), tx, p.UserID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	s.kickTenantProvision(tenantProvision{
+		Slug: newFarm.Slug, FarmName: newFarm.Name,
+		Email: owner.Email, OwnerName: owner.Name, Phone: owner.Phone,
+	})
+
 	// No token comes back, and that is not an omission. The tenant travels in
 	// the access token; minting one here would hand the caller a second live
 	// session they did not ask for and cannot see in a list. They log in again

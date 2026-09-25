@@ -15,13 +15,17 @@ import (
 type Action string
 
 const (
-	ActionHealth      Action = "health"
-	ActionSignup      Action = "signup"
-	ActionLogin       Action = "auth.login"
-	ActionRefresh     Action = "auth.refresh"
-	ActionVerifyEmail Action = "auth.verify_email"
-	ActionLogout      Action = "auth.logout"
-	ActionMeRead      Action = "me.read"
+	ActionHealth Action = "health"
+	ActionSignup Action = "signup"
+	// ActionProvisionStatus and ActionSlugAvailability are the two public
+	// reads around creating a farm with its own web address.
+	ActionProvisionStatus  Action = "farms.provisionStatus"
+	ActionSlugAvailability Action = "farms.slugAvailability"
+	ActionLogin            Action = "auth.login"
+	ActionRefresh          Action = "auth.refresh"
+	ActionVerifyEmail      Action = "auth.verify_email"
+	ActionLogout           Action = "auth.logout"
+	ActionMeRead           Action = "me.read"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -166,13 +170,15 @@ var everyone = []domain.Role{domain.RoleOwner, domain.RoleAdmin, domain.RoleWeig
 // Matrix is the permission table. A route whose action is missing here fails
 // the contract test, which is the point.
 var Matrix = map[Action]Rule{
-	ActionHealth:      {Public: true, TenantOptional: true},
-	ActionSignup:      {Public: true, TenantOptional: true},
-	ActionLogin:       {Public: true, TenantOptional: true},
-	ActionRefresh:     {Public: true, TenantOptional: true},
-	ActionVerifyEmail: {Public: true, TenantOptional: true},
-	ActionLogout:      {Roles: everyone},
-	ActionMeRead:      {Roles: everyone},
+	ActionHealth:           {Public: true, TenantOptional: true},
+	ActionSignup:           {Public: true, TenantOptional: true},
+	ActionProvisionStatus:  {Public: true, TenantOptional: true},
+	ActionSlugAvailability: {Public: true, TenantOptional: true},
+	ActionLogin:            {Public: true, TenantOptional: true},
+	ActionRefresh:          {Public: true, TenantOptional: true},
+	ActionVerifyEmail:      {Public: true, TenantOptional: true},
+	ActionLogout:           {Roles: everyone},
+	ActionMeRead:           {Roles: everyone},
 
 	// The weigher reads workers, but the handler hands him a reduced
 	// projection: id, name, lastName, tag. No document, no phone, no photo.

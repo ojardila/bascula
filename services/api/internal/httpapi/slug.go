@@ -206,3 +206,27 @@ func farmSlugFromHost(r *http.Request) string {
 	}
 	return ""
 }
+
+// FarmSlugFromURL is the farm a dedicated stack serves, read off its public
+// base URL (https://lapalma.bascula.engp.io -> "lapalma"). Empty when the URL
+// names no farm.
+func FarmSlugFromURL(raw string) string {
+	host := strings.ToLower(strings.TrimSpace(raw))
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	for _, suffix := range []string{prodFarmHostSuffix, devFarmHostSuffix} {
+		if slug, ok := labelBefore(host, suffix); ok && slug != "bascula" {
+			if s, err := normalizeFarmSlug(slug); err == nil {
+				return s
+			}
+		}
+	}
+	return ""
+}

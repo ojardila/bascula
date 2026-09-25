@@ -102,6 +102,27 @@ type Config struct {
 	// farm stays on the shared platform only.
 	GitHubDispatchToken string
 	GitHubDispatchRepo  string
+	// GitHubAPIURL is https://api.github.com unless a test points it at a
+	// stand-in.
+	GitHubAPIURL string
+	// TenantInternalURL and TenantPublicURL are fmt templates taking the farm
+	// slug: where the platform reaches a dedicated stack inside the cluster,
+	// and the address the farm's owner types. Empty means the production
+	// defaults in provision.go.
+	TenantInternalURL string
+	TenantPublicURL   string
+	// TenantSlug is set only in a DEDICATED stack: the one farm it serves. It
+	// turns on the internal listener that receives that farm from the platform.
+	TenantSlug string
+	// ProvisionPollEvery, ProvisionWatchFor and ProvisionSlowAfter tune the
+	// watcher that copies a new farm into its stack, and when the waiting
+	// screen stops promising and offers the shared address instead.
+	ProvisionPollEvery time.Duration
+	ProvisionWatchFor  time.Duration
+	ProvisionSlowAfter time.Duration
+	// PublicProbeClient is the HTTP client the provision status uses to ask
+	// the farm's public address for /health. Nil means a default client.
+	PublicProbeClient *http.Client
 }
 
 // DefaultConfig is the production posture.
@@ -129,6 +150,9 @@ type Server struct {
 	// importSlots is the season import's share of the pool, and it is a share
 	// rather than a queue. See store.MaxImportsAtOnce and handleImportSeason.
 	importSlots chan struct{}
+	// prov remembers which new farms are being watched and caches the
+	// provision status for a few seconds per slug.
+	prov *provisioner
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -137,7 +161,7 @@ type Server struct {
 // front of an operator.
 func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	s := &Server{
-		pool: pool, signer: signer, cfg: cfg,
+		pool: pool, signer: signer, cfg: cfg, prov: newProvisioner(),
 		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
 	}
 	disk, err := blob.NewDisk(cfg.UploadDir)

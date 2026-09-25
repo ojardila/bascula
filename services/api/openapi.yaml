@@ -541,6 +541,105 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/farms/{slug}/provision-status:
+    get:
+      tags: [farm]
+      operationId: getProvisionStatus
+      summary: How far along the farm's own web address is
+      description: |
+        What the waiting screen polls after a farm is created with a slug —
+        from the landing (signup), from the app (POST /v1/farms) or from the
+        console. Public: the person who just registered has no session yet,
+        and the only thing it reveals is whether a web address answers.
+
+        Three steps, in order:
+
+        - `database` — the farm's own Postgres is up (dedicated stacks only;
+          always done on the shared platform).
+        - `app` — the farm, its members and their passwords have been copied
+          into its own API, so the owner can log in there with the password
+          they already chose.
+        - `web` — `https://{slug}.bascula.engp.io/health` answers 200 over real
+          DNS and TLS.
+
+        `ready` is all three. `slow` turns true when the farm is older than
+        the provisioning budget (15 minutes) and still not ready: the screen
+        should stop promising and send the owner to the shared address, where
+        the farm already works. Cached for a few seconds per slug.
+      x-action: farms.provisionStatus
+      x-roles: [public]
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/FarmSlug" }
+      responses:
+        "200":
+          description: Where the farm's own address stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds]
+                properties:
+                  slug: { $ref: "#/components/schemas/FarmSlug" }
+                  url:
+                    type: string
+                    description: The farm's own address, e.g. https://lapalma.bascula.engp.io
+                  dedicated:
+                    type: boolean
+                    description: True when this platform launches a stack of its own per farm.
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, done]
+                      properties:
+                        key: { type: string, enum: [database, app, web] }
+                        done: { type: boolean }
+                  ready: { type: boolean }
+                  slow: { type: boolean }
+                  elapsedSeconds:
+                    type: integer
+                    format: int64
+                    description: Seconds since the farm was created.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/farm-slugs:
+    get:
+      tags: [farm]
+      operationId: getSlugAvailability
+      summary: Is this web address free for a new farm
+      description: |
+        The live check on the signup and create-farm forms. Public, like the
+        DNS label it asks about. Never an error for a malformed or reserved
+        slug: those come back `available: false` with a `reason`, so the form
+        can say it in plain words while the owner types.
+      x-action: farms.slugAvailability
+      x-roles: [public]
+      security: []
+      parameters:
+        - name: slug
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Whether the slug can be used.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, available]
+                properties:
+                  slug: { type: string }
+                  available: { type: boolean }
+                  reason:
+                    type: string
+                    enum: [taken, reserved, invalid]
+
   # ---------------------------------------------------------------------------
   # Super-admin console
   # ---------------------------------------------------------------------------
