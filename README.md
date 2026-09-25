@@ -24,26 +24,29 @@ Screens use demo data. More in [`docs/screenshots`](docs/screenshots/README.md).
 | [`apps/web`](apps/web) | React PWA: weighing (offline-capable), harvest reports, workers, payroll, payments, farm administration and super-admin | **Working** |
 | [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint, [MCP server](services/api/README.md#mcp--the-api-as-tools-for-an-assistant) | **Working** |
 | [`packages/shared`](packages/shared) | The ledger contract shared by the clients | **Working** |
-| [`apps/mobile`](apps/mobile) | The original Expo app | **Being retired**: replaced by the web app; kept until farms that keep data only on the phone have uploaded their season |
 
 ## Getting started
 
 ```bash
-npm install          # installs every workspace
-npm run android      # or: npm run ios
-npm test             # 75 tests, no build step
+npm install                          # installs every workspace
+npm run dev --workspace apps/web     # the web app, against a mock API
+npm test                             # packages/shared, no build step
 npm run typecheck
 ```
 
-Requirements: Node 18+ and the **Expo Go** app on a simulator or device. The
-mobile app works standalone and offline — none of the planned services are
-needed to use it.
+Requirements: Node 24+. `apps/web` runs against an in-browser mock API by
+default (`VITE_USE_MOCKS=true` in `apps/web/.env.development`); to use the real
+server see [`services/api`](services/api/README.md).
+
+The original Expo app (`apps/mobile`) was removed once the web app covered it,
+offline weighing included. Its code is in the git history; the server still
+accepts its sync and season-upload endpoints.
 
 ## Design notes
 
 - [Use cases](docs/casos-de-uso.md) — the owner's own specification of the
   full scope: plots, employees, activities, work records, inventory, sales and
-  expenses. The mobile app covers a small part of it today.
+  expenses.
 - [API and auth design](docs/arquitectura-api.md) — Go layout, REST contract,
   roles and the cross-tenant worker registry.
 - [Data model](docs/modelo-datos.md) — the PostgreSQL schema, row-level
@@ -54,8 +57,8 @@ needed to use it.
   being paid twice.
 - [Owner decisions](docs/decisiones.md) — the calls the team could not make on
   its own, with what each one costs.
-- Diagrams: [mobile app](docs/diagramas/movil.md) ·
-  [system](docs/diagramas/sistema.md) · [web app](docs/diagramas/web.md)
+- Diagrams: [system](docs/diagramas/sistema.md) · [web app](docs/diagramas/web.md) ·
+  [the retired mobile app](docs/diagramas/movil.md) (historical)
 - [Sync and roles](docs/sync-and-roles.md) — how records travel from a phone
   with no signal to the server, what happens when two phones settle the same
   week, and what each role can do.

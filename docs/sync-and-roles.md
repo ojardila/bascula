@@ -1,5 +1,10 @@
 # Sync, tenants and roles
 
+> **Historical.** The Expo app this document describes was removed from the
+> repository; the web app (`apps/web`) replaced it, with offline weighing
+> through a service worker and IndexedDB. The server endpoints it used
+> (`/v1/sync/*`, `/v1/import/season`) are still in `services/api`.
+
 Design notes, written before any of it is built. Nothing here is implemented
 yet; the mobile app still works entirely on its own device.
 

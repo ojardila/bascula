@@ -1,5 +1,10 @@
 # Báscula — Mobile ↔ server sync
 
+> **Historical.** The Expo app this document describes was removed from the
+> repository; the web app (`apps/web`) replaced it, with offline weighing
+> through a service worker and IndexedDB. The server endpoints it used
+> (`/v1/sync/*`, `/v1/import/season`) are still in `services/api`.
+
 A delivery specification. It is written so that two pairs can implement it
 without having to ask again: every section says **what gets done**, not **what
 the options are**. Where an option is genuinely open, it is in §10 and it is the

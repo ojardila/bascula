@@ -19,9 +19,10 @@ golden/         the golden cases. See golden/README.md
 
 **The enums** are closed sets that travel over the wire. `deduccion` written
 with an accent on one side is a deduction that stops being counted.
-`src/enums.test.ts` compares them against the real `CHECK`s in
-`apps/mobile/src/schema.ts`: adding a `kind` in one place and not the other
-fails in the suite, not on a farm on a Sunday afternoon.
+`src/enums.test.ts` compares them against the server's `CREATE TYPE ... AS
+ENUM` in `services/api/migrations/00001_extensions_and_roles.sql`: adding a
+`kind` in one place and not the other fails in the suite, not on a farm on a
+Sunday afternoon.
 
 **Money** is a single multiplication — `round(quantity × rateCents)` — and a
 table of six signs, and those two are exactly where two languages diverge in
@@ -57,26 +58,18 @@ hand — instead of `Intl` — is the reason `$1.471.070` does not come out as
 
 ## How it is consumed
 
-No build step and no dependencies: Node 26 executes TypeScript directly and the
-tests are `node:test` + `node:sqlite`.
+No build step and no dependencies: Node executes TypeScript directly and the
+tests are `node:test`.
 
-The mobile app imports by **relative path** (`../../../packages/shared/src/…`),
-not by package name. That is on purpose: Metro already watches the monorepo root
-— `serverRoot` is the root, not `apps/mobile` — so a relative path resolves
-without `metro.config.js`, without a link in `node_modules` and without touching
-the lockfile. The phone is in production in the middle of the harvest; this was
-the option with the fewest moving parts. When the web and the API come in,
-migrating to `@bascula/shared` is a `sed`.
+(The retired Expo app imported this package by relative path; it was removed
+from the repository once the web app covered it.)
 
 ```bash
 npm test       --workspace @bascula/shared   # 48 tests
 npm run typecheck --workspace @bascula/shared
 ```
 
-`npm test` at the root runs the mobile app **and** this package (109 tests).
-That sum lives today in the script in `apps/mobile/package.json`; the clean
-thing is one line at the root — `"test": "npm test --workspaces --if-present"` —
-but that is a change to the root `package.json` and is left decided elsewhere.
+`npm test` at the root runs every workspace that has a `test` script.
 
 ## A note for the backend
 

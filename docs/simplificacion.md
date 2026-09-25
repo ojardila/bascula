@@ -1,5 +1,10 @@
 # The simplification the owner proposed
 
+> **Historical.** The Expo app this document describes was removed from the
+> repository; the web app (`apps/web`) replaced it, with offline weighing
+> through a service worker and IndexedDB. The server endpoints it used
+> (`/v1/sync/*`, `/v1/import/season`) are still in `services/api`.
+
 > "Do you think we are overcomplicating things with that sync model? Wouldn't it
 > be better to handle balances only with what is on the web, and only record
 > harvest pickings asynchronously?"
