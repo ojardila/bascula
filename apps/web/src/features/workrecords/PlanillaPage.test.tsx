@@ -120,12 +120,36 @@ describe("Planilla de recolección", () => {
     const person = await screen.findByLabelText(/^Persona/);
     await user.click(person);
     await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
-    await user.click(screen.getByLabelText(/^Lote/));
-    await user.click(await screen.findByRole("option", { name: /El Alto/ }));
+    await user.click(await screen.findByRole("button", { name: "El Alto" }));
     await user.type(screen.getByLabelText("Kilos"), "42");
     await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
     await waitFor(() => expect(posted.length).toBeGreaterThan(0));
     const body = posted[0] as { quantity: number; workerId: string };
     expect(body.quantity).toBe(42);
+    // The person clears for the next one in line; the lote stays.
+    expect(await screen.findByText(/Guardado: María Restrepo Ospina, 42 kg/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "El Alto" })).toHaveAttribute("aria-pressed", "true");
+    expect((screen.getByLabelText(/^Persona/) as HTMLInputElement).value).toBe("");
+  }, 20000);
+
+  it("asks before saving a weight nobody carries, and saves nothing on «Corregir»", async () => {
+    const user = userEvent.setup();
+    signIn();
+    const posted: unknown[] = [];
+    server.use(
+      http.post("*/v1/work-records", async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({}, { status: 500 });
+      }),
+    );
+    renderApp("/cosecha/recoleccion?quien=uno");
+    await user.click(await screen.findByLabelText(/^Persona/));
+    await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
+    await user.click(await screen.findByRole("button", { name: "El Alto" }));
+    await user.type(screen.getByLabelText("Kilos"), "420");
+    await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
+    expect(await screen.findByText("¿420 kg en una sola pesada?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Corregir" }));
+    expect(posted).toHaveLength(0);
   }, 20000);
 });
