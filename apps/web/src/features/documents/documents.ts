@@ -224,6 +224,57 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
   );
 }
 
+/**
+ * The same receipt as plain text, to send over WhatsApp.
+ *
+ * Text and not a PDF: it arrives readable in the chat itself, on any phone,
+ * with nothing to open. The breakdown is the point — a worker distrusts a
+ * figure they cannot check — so every line of work goes on it, newest first.
+ * `*asterisks*` are WhatsApp's bold.
+ */
+export function paymentReceiptText(r: ReceiptInput): string {
+  const { payment } = r;
+  const weekCents = r.lines.reduce((a, l) => a + l.amountCents, 0);
+  const b = r.breakdown ?? buildReceiptBreakdown({
+    paidCents: payment.amountCents,
+    remainingCents: payment.balanceAfterCents,
+    currentWeekCents: weekCents,
+    deductions: r.deductions ?? [],
+  });
+  const name = `${r.worker.name} ${r.worker.lastName}`.trim();
+  const L: string[] = [];
+  L.push(`*Recibo de pago · ${r.farmName}*`);
+  L.push(`Recibo N.º ${payment.receiptNumber}`);
+  L.push(`${name} — ${formatDate(payment.date)}`);
+  if (r.lines.length) {
+    L.push("");
+    const sorted = [...r.lines].sort((a, c) => (a.dateFrom < c.dateFrom ? 1 : a.dateFrom > c.dateFrom ? -1 : 0));
+    for (const l of sorted) {
+      const qty = l.unitLabel ? `${formatQuantity(l.quantity)} ${l.unitLabel}` : "contrato";
+      const prov = l.rateSource === "weekly_price" ? " (provisional)" : "";
+      L.push(`${formatDateRange(l.dateFrom, l.dateTo)} · ${l.activityName} · ${qty} · ${money(l.amountCents)}${prov}`);
+    }
+  }
+  L.push("");
+  if (b.currentWeekCents !== 0) L.push(`Semana actual: ${money(b.currentWeekCents)}`);
+  L.push(`Saldo anterior: ${money(b.previousBalanceCents)}`);
+  for (const d of b.deductions) L.push(`Descuento · ${d.concept}: − ${money(d.amountCents)}`);
+  L.push(`*Pagado: ${money(payment.amountCents)}*`);
+  const after = b.remainingCents;
+  L.push(
+    after === 0
+      ? "Después de este pago queda a paz y salvo."
+      : after > 0
+        ? `Queda pendiente a favor del empleado: ${money(after)}.`
+        : `Queda un anticipo a favor de la finca: ${money(-after)}.`,
+  );
+  if (hasProvisionalLines(r.lines)) {
+    L.push("");
+    L.push("PROVISIONAL: las líneas marcadas se pagan al precio de la semana, que todavía no está fijado.");
+  }
+  return L.join("\n");
+}
+
 /* ------------------------------------------------------------------ */
 /* The settlement                                                     */
 /* ------------------------------------------------------------------ */
