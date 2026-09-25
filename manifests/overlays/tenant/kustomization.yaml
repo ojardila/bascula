@@ -6,6 +6,13 @@
 # itself arrives from the platform API on the internal port (tenant-mode.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Fail safe. Base hardcodes `namespace: bascula` (production). Without this
+# line a tenant rendered by Argo CD lands ON TOP of production, because the
+# Application's destination namespace only fills in resources that have none.
+# The ApplicationSet overrides it per farm (source.kustomize.namespace =
+# bascula-{slug}); if that override is ever missing, this points at a
+# namespace that does not exist and the sync fails instead of clobbering prod.
+namespace: bascula-tenant-namespace-not-set
 resources:
   - ../../base
   - bootstrap-secrets.yaml
