@@ -1,8 +1,9 @@
 # One farm, one namespace, one URL: {slug}.bascula.engp.io
 #
 # ApplicationSet (gitops) patches hostnames and PUBLIC_BASE_URL per slug.
-# Secrets are minted in-cluster by bootstrap-secrets (PreSync). Copy
-# harbor-pull into the namespace once (same as scripts/create-dev-secrets.sh).
+# Secrets are minted in-cluster by bootstrap-secrets (PreSync). harbor-pull
+# is cloned in by Kyverno (manifests/cluster/harbor-pull-clone.yaml). The farm
+# itself arrives from the platform API on the internal port (tenant-mode.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -35,6 +36,12 @@ patches:
       kind: Deployment
       name: bascula-web
   - path: public-base-url.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: bascula-api
+  - path: tenant-mode.yaml
     target:
       group: apps
       version: v1

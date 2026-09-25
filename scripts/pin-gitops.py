@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Rewrite targetRevision and Harbor image tags in a gitops Application."""
+"""Rewrite targetRevision and Harbor image tags in a gitops Application or
+ApplicationSet (whose source sits deeper, under spec.template.spec)."""
 import os
 import re
 import sys
@@ -14,7 +15,7 @@ def main() -> None:
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", v):
         sys.exit(f"version must look like v1.2.3, got {v!r}")
     s = path.read_text()
-    s, n = re.subn(r"(?m)^(    targetRevision:\s*).+$", r"\g<1>" + v, s, count=1)
+    s, n = re.subn(r"(?m)^( +targetRevision:\s*).+$", r"\g<1>" + v, s, count=1)
     if n != 1:
         sys.exit(f"{path}: expected 1 targetRevision line, got {n}")
     s, n = re.subn(

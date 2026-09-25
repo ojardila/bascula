@@ -1,0 +1,54 @@
+# Cluster-scoped, applied once by an operator (kubectl apply -f), NOT by the
+# bascula Argo Applications: those render with a namespace and this file has
+# none to give.
+#
+# Every dedicated farm gets namespace bascula-{slug} from the ApplicationSet,
+# and its API and web images live in Harbor's private bascula project. Until
+# now somebody had to copy harbor-pull into each new namespace by hand, which
+# is exactly what a farm created from the landing at 3 a.m. cannot wait for.
+# Kyverno clones it from ns bascula the moment the namespace exists, and keeps
+# it in sync if the robot credential is rotated there.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:bascula-harbor-pull
+  labels:
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+    rbac.kyverno.io/aggregate-to-admission-controller: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: bascula-tenant-harbor-pull
+  annotations:
+    policies.kyverno.io/title: Clone harbor-pull into bascula tenant namespaces
+    policies.kyverno.io/description: >-
+      Copies Secret harbor-pull from namespace bascula into every bascula-*
+      namespace (dedicated farm stacks) so their pods can pull from Harbor.
+spec:
+  rules:
+    - name: clone-harbor-pull
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: ["bascula-*"]
+      exclude:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: ["bascula-dev"]
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: v1
+        kind: Secret
+        name: harbor-pull
+        namespace: "{{request.object.metadata.name}}"
+        clone:
+          namespace: bascula
+          name: harbor-pull
