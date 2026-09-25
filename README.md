@@ -1,22 +1,30 @@
 # ⚖️ Báscula
 
-**Harvest control and payroll for farms.** A picker weighs in on a phone with no
-signal; the office sees it, settles it and pays it from the web. Coffee, cacao
-and whatever else gets picked by the kilo.
+**Harvest control and payroll for farms.** A web app opened from the browser on
+a phone or a computer: nothing to install, and it can be added to the phone's
+home screen. The person at the scale records each weighing on the phone, even
+with no signal (weighings wait on the device and upload on their own); the
+office reviews, settles and pays from the same web address. Coffee, cacao and
+whatever else gets picked by the kilo.
 
 <p align="center">
-  <img src="docs/screenshots/home.png"        width="24%" alt="Home" />
-  <img src="docs/screenshots/payments.png"    width="24%" alt="Payments" />
-  <img src="docs/screenshots/week-detail.png" width="24%" alt="Week detail" />
-  <img src="docs/screenshots/performance.png" width="24%" alt="Performance" />
+  <img src="docs/screenshots/web/web-desktop-home.png" width="100%" alt="The harvest dashboard in a desktop browser" />
 </p>
+<p align="center">
+  <img src="docs/screenshots/web/web-phone-weigh.png"   width="24%" alt="Recording a weighing in a phone browser" />
+  <img src="docs/screenshots/web/web-phone-week.png"    width="24%" alt="Kilos per picker and day" />
+  <img src="docs/screenshots/web/web-phone-account.png" width="24%" alt="A picker's balance" />
+  <img src="docs/screenshots/web/web-phone-crops.png"   width="24%" alt="Harvest per lot and week" />
+</p>
+
+Screens use demo data. More in [`docs/screenshots`](docs/screenshots/README.md).
 
 | Piece | What it is | State |
 |---|---|---|
-| [`apps/mobile`](apps/mobile) | Expo app: weighing, settling, paying, performance | **Working** |
-| [`apps/web`](apps/web) | React: farm administration and super-admin | **Working** |
+| [`apps/web`](apps/web) | React PWA: weighing (offline-capable), harvest reports, workers, payroll, payments, farm administration and super-admin | **Working** |
 | [`services/api`](services/api) | Go + PostgreSQL, multi-tenant, sync endpoint, [MCP server](services/api/README.md#mcp--the-api-as-tools-for-an-assistant) | **Working** |
-| [`packages/shared`](packages/shared) | The ledger contract shared by all three | **Working** |
+| [`packages/shared`](packages/shared) | The ledger contract shared by the clients | **Working** |
+| [`apps/mobile`](apps/mobile) | The original Expo app | **Being retired**: replaced by the web app; kept until farms that keep data only on the phone have uploaded their season |
 
 ## Getting started
 

@@ -296,7 +296,7 @@ export function ActivityFormDialog({
             <Alert severity="warning">
               <strong>Este precio no es el del kilo de la semana.</strong> Con precio fijo,
               esta actividad se paga siempre a lo que usted escriba abajo y{" "}
-              <strong>deja de seguir el precio semanal</strong> que usa el teléfono. Para
+              <strong>deja de seguir el precio semanal</strong> del kilo. Para
               la recolección de café eso casi nunca es lo que se quiere: el kilo de la
               semana se pone en{" "}
               <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
@@ -308,7 +308,7 @@ export function ActivityFormDialog({
 
           {weekly && canBeWeekly ? (
             <Alert severity="info">
-              El precio lo pone la semana, igual que en el teléfono. Se congela al
+              El precio lo pone la semana (Precio del kilo). Se congela al
               liquidar, no al registrar la labor, y por eso una labor de esta
               actividad tiene que ser de <strong>un solo día</strong>.
               <Box sx={{ mt: 1 }}>

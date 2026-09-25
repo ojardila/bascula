@@ -77,7 +77,7 @@ export function WeekPage() {
   );
 
   const back = (
-    <Stack direction="row" spacing={1} flexWrap="wrap">
+    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
       <Button
         component={RouterLink}
         to={`/cosecha?rango=${rangeKey}`}

@@ -72,6 +72,20 @@ describe("the public landing", () => {
     expect(screen.getByRole("heading", { name: "¿Cuánto cuesta?" })).toBeInTheDocument();
   });
 
+  it("says it is a web app: nothing to install, weighings without signal", async () => {
+    renderApp("/");
+    expect(await screen.findByText(/No hay nada que instalar/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Nada que instalar" })).toBeInTheDocument();
+    expect(screen.getAllByText(/agréguela a la pantalla de inicio del celular/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/registrar kilos sin señal/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "¿Tengo que instalar algo?" })).toBeInTheDocument();
+    // Real screens, from the web app, in a computer and a phone browser.
+    expect(screen.getByAltText(/navegador del computador/)).toHaveAttribute("src", "/landing/app/desktop-home.jpg");
+    expect(screen.getByAltText(/navegador del celular/)).toHaveAttribute("src", "/landing/app/phone-weigh.png");
+    expect(screen.getAllByText("Datos de demostración").length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText(/sincronice/i)).toBeNull();
+  });
+
   it("keeps the free self-serve signup and the sign-in link", async () => {
     renderApp("/");
     const cta = await screen.findByRole("link", { name: "Cree su finca gratis" });

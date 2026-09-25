@@ -1265,7 +1265,7 @@ function PayDriftDialog({
         <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
           <AlertTitle>No se pagó a nadie.</AlertTitle>
           Alguien de la corrida ya no tiene el saldo que usted aprobó — un anticipo
-          entregado en el lote, un descuento, un pago hecho desde el teléfono. Entregar
+          entregado en el lote, un descuento, un pago hecho desde otra pantalla. Entregar
           la cifra vieja sería pagar de más o dejar la cuenta abierta sin decirlo.
         </Alert>
         {check && check.drifts.length > 0 && (
