@@ -10,7 +10,7 @@ import (
 
 // The registry of who has consumed the feed, and under which role.
 //
-// docs/sincronizacion.md gives the handset ONE integer, and that is the right
+// docs/archive/sincronizacion.md gives the handset ONE integer, and that is the right
 // design: a watermark per table needs updated_at everywhere, cannot tell a
 // deletion from a row that never existed, and breaks on clocks. But one integer
 // carries no answer to the question this file exists for — "cursor 412, seen by

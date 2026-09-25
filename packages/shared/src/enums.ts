@@ -42,7 +42,7 @@ export type Role = (typeof ROLES)[number];
 
 /**
  * A settlement is open or annulled; there is no third state and no way back
- * from `void` (see `docs/diagramas/movil.md` §7). A correction is a new
+ * from `void` (see `docs/archive/diagrama-movil.md` §7). A correction is a new
  * settlement, never an edit of the old one.
  */
 export const SETTLEMENT_STATUSES = ["open", "void"] as const;

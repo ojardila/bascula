@@ -1343,7 +1343,7 @@ export const api = {
    * which is what releases their payables; the earning is cancelled by a
    * reversal, never deleted.
    *
-   * `docs/diagramas/movil.md`: "No hay void -> open. Anular es definitivo."
+   * `docs/archive/diagrama-movil.md`: "No hay void -> open. Anular es definitivo."
    * The screen asks before calling this, and says that sentence while asking.
    */
   voidSettlement: async (id: Uuid, reversalId?: Uuid): Promise<Settlement> => {

@@ -28,7 +28,7 @@ type Farm struct {
 	AreaHa      *float64   `json:"areaHa"`
 	SuspendedAt *time.Time `json:"suspendedAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
-	// MoneyReadOnly is the phase 4 switch of docs/sincronizacion.md: for the
+	// MoneyReadOnly is the phase 4 switch of docs/archive/sincronizacion.md: for the
 	// hour the season import runs, the handsets may record weighings and may
 	// not settle, pay or void. It is a pointer so a PUT that does not mention
 	// it leaves it alone, like every other field on this record.

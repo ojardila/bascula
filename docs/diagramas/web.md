@@ -423,7 +423,7 @@ both.
 
 **This is not just one more endpoint.** It is a different product, with legal risk of its
 own, a separate service, its own credentials and no access to the farms schema. It is
-**outside Sprint 1** and it is decision 1 for the owner in `plan-sprint-1.md` §7.
+**outside Sprint 1** and it is decision 1 for the owner in `docs/archive/plan-sprint-1.md` §7.
 
 ```mermaid
 sequenceDiagram
@@ -531,7 +531,7 @@ Three rules that hold the machine up:
 - **`FARM_SUSPENDED` is decided in the `tenant` middleware**, next to the `SET LOCAL`, not in
   each handler. A new handler cannot forget to check it.
 - **The initial state depends on which door you came in through**, and both doors exist
-  because the owner has not answered decision 2 in `plan-sprint-1.md` §7. Careful:
+  because the owner has not answered decision 2 in `docs/archive/plan-sprint-1.md` §7. Careful:
   `arquitectura-api.md` §5 attributes self-registration to "RSP-033", which is actually
   *Eliminar Gasto* (*Delete Expense*). See `sistema.md` §7.6.
 
@@ -705,4 +705,4 @@ that makes the whole cross-tenant module defensible.
 ---
 
 See also: `docs/diagramas/sistema.md` (context, components, ER, RLS, deployment and the full
-list of open clashes) and `docs/diagramas/movil.md` (the mobile app).
+list of open clashes) and `docs/archive/diagrama-movil.md` (the mobile app).

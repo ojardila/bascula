@@ -1,5 +1,10 @@
 # Adversarial audits
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md).
+
 Two auditors from outside the team attacked the system with a brief to break it:
 one the API, the other the web console. They did not read code looking for
 theories — they ran attacks and left behind the scripts that reproduce them.

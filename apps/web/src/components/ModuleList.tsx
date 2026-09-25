@@ -5,7 +5,7 @@
  * same table, the same search box, the same "+ Nuevo" button and the same
  * are-you-sure dialog ten times is not slow, it is *divergent*: by the third
  * copy the confirmation wording differs, by the fifth one of them hard-deletes.
- * `plan-sprint-1.md` makes this component an acceptance criterion for any
+ * `docs/archive/plan-sprint-1.md` makes this component an acceptance criterion for any
  * module PR, and this is it.
  *
  * What it owns, so no screen has to decide again:

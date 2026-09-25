@@ -1,5 +1,10 @@
 # Báscula — multitenant PostgreSQL schema (delivery 1)
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md).
+
 ## 0. Headline decisions
 
 | Point | Decision |

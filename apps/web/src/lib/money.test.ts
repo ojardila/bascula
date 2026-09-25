@@ -1,11 +1,10 @@
 /**
  * Money is the only thing in this app that cannot be a little bit wrong.
  *
- * These tests are pinned to the mobile app's behaviour (`apps/mobile/src/
- * format.ts`, `db.ts`) rather than to a general idea of correct formatting.
- * When `packages/shared` lands, this file should keep passing unchanged — if
- * it does not, the shared package changed the phone's behaviour, which is
- * exactly the thing the golden cases exist to catch.
+ * These tests are pinned to the behaviour farms already had from the retired
+ * phone app (its `format.ts` and `db.ts`) rather than to a general idea of
+ * correct formatting. If one fails, a peso figure changed for the same work,
+ * which is exactly the thing the golden cases exist to catch.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -34,7 +33,7 @@ describe("amountCents", () => {
     expect(formatMoney(amountCents(38.5, 80000))).toBe("$30.800");
   });
 
-  it("agrees with the phone on the three pay modes", () => {
+  it("agrees with the golden rules on the three pay modes", () => {
     expect(amountCents(41, 80000)).toBe(3280000); // work_unit
     expect(amountCents(2, 4500000)).toBe(9000000); // time_unit, 2 jornales
     expect(amountCents(1, 120000000)).toBe(120000000); // contract
@@ -43,7 +42,7 @@ describe("amountCents", () => {
   it("rounds rather than truncating, so cents are never quietly lost", () => {
     // 33.333 kg x $801 = 26.699,733 pesos -> 2.669.973,3 cents -> 2.669.973
     expect(amountCents(33.333, 80100)).toBe(2669973);
-    // Halfway rounds up, as Math.round does on the phone.
+    // Halfway rounds up, as Math.round does (and as the server does).
     expect(amountCents(0.5, 1)).toBe(1);
   });
 

@@ -1,5 +1,10 @@
 # Use cases
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md).
+
 Written by the owner before this work started. They are the source of truth for
 scope: today's mobile app covers only a small part of this.
 

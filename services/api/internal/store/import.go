@@ -47,7 +47,7 @@ func isUUID(s string) bool {
 	return err == nil
 }
 
-// The season import. docs/sincronizacion.md §8, phases 3 and 4.
+// The season import. docs/archive/sincronizacion.md §8, phases 3 and 4.
 //
 // A farm has been running this season on a handset. Until that history is on
 // the server, settlement cannot move here: a settlement created on the server

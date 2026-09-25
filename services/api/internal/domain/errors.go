@@ -146,7 +146,7 @@ const (
 	// message is not branching.
 	CodeLastOwner Code = "LAST_OWNER"
 
-	// GROSS_CHANGED is the answer to §5.5 of docs/sincronizacion.md: the
+	// GROSS_CHANGED is the answer to §5.5 of docs/archive/sincronizacion.md: the
 	// settlement would not add up to the figure the caller was shown by
 	// /v1/settlements/preview, so nothing is written.
 	//

@@ -2,7 +2,7 @@
 #
 #   make up       start Postgres+PostGIS and wait until it answers
 #   make migrate  apply the migrations (a separate step, before any rollout)
-#   make prune    sweep the sync feed (docs/sincronizacion.md 3.4) — a cron job
+#   make prune    sweep the sync feed (docs/archive/sincronizacion.md 3.4) — a cron job
 #   make test     run the suite against that same Postgres
 #   make run      serve on :8080
 #   make dev      serve on :8099 with the signup cap lifted, for the e2e suite

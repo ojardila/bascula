@@ -169,7 +169,7 @@ export function ReviewPage() {
           </Typography>
           <Typography variant="body2" sx={{ mb: 2 }}>
             Cinco reglas simples. Ninguna acusa a nadie: casi siempre es un peso
-            guardado dos veces, una báscula mal leída o la fecha del teléfono.
+            guardado dos veces, una báscula mal leída o una fecha mal puesta.
           </Typography>
           <Stack spacing={1}>
             {RULES.map((r) => (

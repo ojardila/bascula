@@ -167,7 +167,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/adjustments", auth.ActionLedgerAdjust, s.handleAdjustment},
 		{http.MethodPost, "/v1/ledger/{id}/reverse", auth.ActionLedgerReverse, s.handleReverseLedger},
 
-		// Synchronisation (docs/sincronizacion.md §3). Three routes and one
+		// Synchronisation (docs/archive/sincronizacion.md §3). Three routes and one
 		// integer: the handset carries `cursor` and nothing else. Every role
 		// reaches all three — the weigher's handset is the one that spends
 		// days without signal — and what a weigher gets back is narrowed by

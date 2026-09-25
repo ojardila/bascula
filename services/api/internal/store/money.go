@@ -353,7 +353,7 @@ func ListSettlements(ctx context.Context, tx pgx.Tx, f SettlementFilter) ([]Sett
 // means today in the farm's timezone. The golden cases pin it so that a case
 // gives the same answer today and in three years.
 //
-// `expectedGross` is §5.5 of docs/sincronizacion.md: the figure the caller was
+// `expectedGross` is §5.5 of docs/archive/sincronizacion.md: the figure the caller was
 // shown by /v1/settlements/preview. When it is set and the settlement would not
 // add up to it, NOTHING is written and the answer is 409 GROSS_CHANGED. The
 // HTTP layer requires it; the store keeps it optional so the golden cases,

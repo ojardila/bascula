@@ -119,7 +119,7 @@ export function amountCents(quantity: number | string, rateCents: number): numbe
 
 /**
  * The sign a `kind` is allowed to carry. This is the table in
- * `docs/diagramas/movil.md` §8, and it is enforced by a CHECK in
+ * `docs/archive/diagrama-movil.md` §8, and it is enforced by a CHECK in
  * `apps/mobile/src/schema.ts` — this constant exists so a client can refuse
  * the movement before the database does, and so Go enforces the same table.
  *

@@ -7,7 +7,7 @@
  * had raised the week's price.
  *
  * What that switch actually did was change the PAY MODE for all of the farm's
- * coffee picking and cut it loose from the weekly price the phone still uses.
+ * coffee picking and cut it loose from the weekly price per kilo.
  * And on an activity that already exists it did not even do that:
  * `api.updateActivity` only sends name and category, so the switch moved on
  * screen and changed nothing on the server — which is worse, because the

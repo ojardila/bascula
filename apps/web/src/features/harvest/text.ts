@@ -76,7 +76,7 @@ export function anomalyReason(a: WireAnomaly): string {
         : `${amount} está muy por encima de lo que hizo el resto de la cuadrilla en ${where} ese día (unos ${kg(ref)} cada uno). Puede ser un error de la báscula o una pesada de varios anotada a una sola persona.`;
 
     case "future":
-      return `Esta pesada está fechada el ${formatDate(a.date)}, que todavía no ha llegado. Casi siempre es la fecha del teléfono o un error al escribirla.`;
+      return `Esta pesada está fechada el ${formatDate(a.date)}, que todavía no ha llegado. Casi siempre es un error al escribir la fecha.`;
   }
 }
 

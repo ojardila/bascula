@@ -2,7 +2,7 @@
   "name": "@bascula/shared",
   "version": "1.0.0",
   "private": true,
-  "description": "Domain rules that must not diverge between the phone, the API and the web.",
+  "description": "Domain rules shared by the web app and checked against the API: money, weeks, enums.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {

@@ -1,5 +1,10 @@
 # Báscula — API and auth design (revision 2, scope RSP-001…033)
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md).
+
 ## 0. Invariants inherited from the mobile app (still intact)
 
 `int64` cents; append-only ledger (cancelled with a `reverso`, never edited);

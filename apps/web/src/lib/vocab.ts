@@ -36,9 +36,9 @@ import type { LedgerKind, PayMode, TimeUnit } from "../api/types";
 /* ------------------------------------------------------------------ */
 
 /**
- * The phone says "lote" on every one of its screens and on its printed
- * receipt, and does not know the word "parcela": `grep -i parcela
- * apps/mobile/src` returns nothing. The console said "Parcelas" in the menu
+ * The farms say "lote", and so did every screen and printed receipt of the
+ * retired phone app; it never used the word "parcela". The web said
+ * "Parcelas" in the menu
  * and "Nombre del lote" in the first field of the form that creates them.
  *
  * IT DOES NOT GO ON PAPER. None of the three documents names the land in any
@@ -164,7 +164,7 @@ export const TIME_UNIT_LABEL: Record<TimeUnit, string> = {
  *
  * "PROVISIONAL" WINS, AND IT WINS BECAUSE IT IS ALREADY ON THE PAPER: the
  * amber block of a receipt says PROVISIONAL in large type and
- * `docs/sincronizacion.md` asks for it that way. Choosing any of the others
+ * `docs/archive/sincronizacion.md` asks for it that way. Choosing any of the others
  * would have forced a change to all three documents. It is also the word the
  * phone already uses for its unconfirmed balance (`pay.provisional`), so both
  * halves of the product end up saying the same thing without touching a

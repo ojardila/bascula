@@ -2,7 +2,7 @@
 
 > **Note.** `apps/mobile` (Expo plus SQLite) has since been removed; the web
 > app replaced it, offline weighing included. The mobile parts below are
-> historical.
+> historical (see [`docs/archive`](../archive/README.md)).
 
 Diagrams of the new system: **Go API** and **React web app**, multitenant, for coffee
 farms.
@@ -11,8 +11,8 @@ Sources of truth for this document, in this order:
 
 1. `docs/casos-de-uso.md` — scope (RSP-001 … RSP-033), written by the owner.
 2. `docs/arquitectura-api.md` — API design, auth, PostGIS, `work_records`, `registry`.
-3. `docs/plan-sprint-1.md` — the cut for the first delivery.
-4. `docs/sync-and-roles.md` — roles and sync notes.
+3. `docs/archive/plan-sprint-1.md` — the cut for the first delivery.
+4. `docs/archive/sync-and-roles.md` — roles and sync notes.
 5. `apps/mobile/src/schema.ts` and `db.ts` — the accounting domain that must be preserved.
 
 The diagrams describe the **target model** (all 33 use cases). What lands in Sprint 1 is
@@ -73,7 +73,7 @@ no session in any farm — his only relationship with the system is with `regist
 exactly what makes it defensible.
 
 **The employee is not a farm role.** The four roles with a session are super-admin, owner,
-administrator and weigher (`sync-and-roles.md`, `arquitectura-api.md` §6). The employee
+administrator and weigher (`docs/archive/sync-and-roles.md`, `arquitectura-api.md` §6). The employee
 appears as an actor because RSP-009 gives him three rights that do get built: read who
 looked him up, grant or revoke consent, and open a dispute.
 
@@ -328,7 +328,7 @@ graph LR
 | Farm user management | No | Yes | No | No | No |
 | Consent, dispute, lookup log | No | No | No | No | Yes |
 
-Two rows of that table do not come from the use cases but from `sync-and-roles.md`, and it
+Two rows of that table do not come from the use cases but from `docs/archive/sync-and-roles.md`, and it
 has to be said out loud: the use cases attribute **everything** to the "Farm Administrator",
 deleting and setting prices included. The design takes those away from him and gives them to
 the owner. See §7.4.
@@ -792,7 +792,7 @@ The super-admin **is not an exception to RLS**. He operates on `farms` and `memb
 with a different role and a different set of routes (`/v1/admin/farms`); he cannot read
 anyone's ledger, and that is a property of the schema, not a promise from the UI.
 
-> **Naming note.** `plan-sprint-1.md` H3 says `app.current_farm` and
+> **Naming note.** `docs/archive/plan-sprint-1.md` H3 says `app.current_farm` and
 > `arquitectura-api.md` §6 says `app.farm_id`. `app.farm_id` wins. H3 needs fixing.
 
 ---
@@ -873,7 +873,7 @@ This is a head-on clash, and you cannot split the difference. Farm names plus fr
 notes travelling between farms is a labour blacklist: in Colombia that falls under Law 1581
 of 2012, with no declared purpose and no right of rectification. **The design's version gets
 built and RSP-009 stays partially unmet until the owner decides.** It is decision 1 in
-`plan-sprint-1.md` §7.
+`docs/archive/plan-sprint-1.md` §7.
 
 ### 7.2 RSP-004 requires internet and a check that today returns 403
 
@@ -903,7 +903,7 @@ repository stays an open question for the owner.
 ### 7.4 The use cases give everything to the administrator; the roles do not
 
 `casos-de-uso.md` §Convenciones says the actor for all 33 use cases is the **Farm
-Administrator**, including RSP-003/006/013 (delete) and "define prices". `sync-and-roles.md`
+Administrator**, including RSP-003/006/013 (delete) and "define prices". `docs/archive/sync-and-roles.md`
 says the administrator **does not change prices and does not delete people**.
 
 The roles table applies: deleting and prices belong to the **owner**. It is a harder
@@ -927,7 +927,7 @@ so. With a frozen price the range is legitimate. It is drawn in `web.md` §3.
   *Delete Expense*. Self-registration is in `casos-de-uso.md` §9 *Register farm*, which the
   owner left **pending specification**. In other words: the decision to self-register with
   `status='trial'` **is backed by no written use case**; it is option (c) of decision 2 in
-  `plan-sprint-1.md` §7 and is still waiting for an answer.
+  `docs/archive/plan-sprint-1.md` §7 and is still waiting for an answer.
 - **RSP-022, RSP-023 and RSP-024 do not exist.** The document jumps from *Delete Product* to
   *Register inventory*. What is almost certainly missing is warehouses and storage units,
   which RSP-019 and RSP-025 take for granted. Modelled as `warehouses` and `units`, with no
@@ -935,7 +935,7 @@ so. With a frozen price the range is legitimate. It is drawn in `web.md` §3.
 
 ### 7.7 "Field inside plot": a hierarchy that does not exist
 
-`plan-sprint-1.md` H4 says *"fields inside the plot"*. RSP-001 calls the plot's name *"the
+`docs/archive/plan-sprint-1.md` H4 says *"fields inside the plot"*. RSP-001 calls the plot's name *"the
 name of the field"*, and `arquitectura-api.md` models a single level: `plots`.
 
 **One level only.** Field = plot = `plots`; the planting detail is `plot_crops`. H4 is badly
@@ -961,4 +961,4 @@ but he loses the `anticipo`, which during harvest gets used every week.
 
 ---
 
-See also: `docs/diagramas/web.md` (web app) and `docs/diagramas/movil.md` (mobile app).
+See also: `docs/diagramas/web.md` (web app) and `docs/archive/diagrama-movil.md` (mobile app).

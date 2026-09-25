@@ -262,7 +262,7 @@ describe("a settlement from the inside", () => {
   }, 20000);
 
   /**
-   * `docs/sincronizacion.md`: "Anular la liquidación no es un botón de esa
+   * `docs/archive/sincronizacion.md`: "Anular la liquidación no es un botón de esa
    * pantalla: es una decisión del administrador". So it is not next to
    * "Imprimir" — it is under its own heading, and the confirmation says the
    * consequence out loud.

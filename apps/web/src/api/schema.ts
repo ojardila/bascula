@@ -3127,7 +3127,7 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             /**
-             * @description The phase 4 switch of docs/sincronizacion.md §8. While it is on the
+             * @description The phase 4 switch of docs/archive/sincronizacion.md §8. While it is on the
              *     handsets may still record weighings — the cut cannot stop the scale
              *     — and may not settle, pay or void. It rides down in the handshake's
              *     `capabilities`.
@@ -5145,7 +5145,7 @@ export interface components {
          *     server's: the handset knows `worker`, `crop` and `workRecord`.
          *
          *     Direction is per entity and is not symmetric (§2 of
-         *     docs/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
+         *     docs/archive/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
          *     both ways. `farmConfig`, `plot`, `crop`, `weekPrice` and `settlement`
          *     only come down; pushing one is refused with its reason.
          * @enum {string}
@@ -6647,7 +6647,7 @@ export interface operations {
              *     handset writes to one and the web to the other, the balance is
              *     split in two, and nothing says so. Restore the existing one with
              *     PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
-             *     conflict in docs/sincronizacion.md with no automatic repair.
+             *     conflict in docs/archive/sincronizacion.md with no automatic repair.
              */
             409: {
                 headers: {

@@ -47,8 +47,8 @@ that already exists on that farm's phone.
 
 | Document | What it says | What this document decides |
 |---|---|---|
-| `sync-and-roles.md` | "a settlement carries the set of pickup ids it claims, and the server rejects a settlement claiming a pickup that another settlement already holds; the rejected device re-derives" | **Rejected.** Re-deriving does not give back cash that already left somebody's pocket. The phone does not settle without syncing. §6 |
-| `sync-and-roles.md` | ordering by "a per-device counter plus arrival order at the server" | **Replaced** by the server's commit sequence with an `xmin` horizon. There is one server: distributed clocks are not needed. §3.4 |
+| `docs/archive/sync-and-roles.md` | "a settlement carries the set of pickup ids it claims, and the server rejects a settlement claiming a pickup that another settlement already holds; the rejected device re-derives" | **Rejected.** Re-deriving does not give back cash that already left somebody's pocket. The phone does not settle without syncing. §6 |
+| `docs/archive/sync-and-roles.md` | ordering by "a per-device counter plus arrival order at the server" | **Replaced** by the server's commit sequence with an `xmin` horizon. There is one server: distributed clocks are not needed. §3.4 |
 | `modelo-datos.md` §3 | "the mobile app adds a `uuid` column to each table and backfills it, keeping its integer PK" | **Confirmed and detailed.** §1 |
 | `modelo-datos.md` rev. 2 | the payable table is called `labors`; a `pickups` view exists | **Obsolete.** The migrations created `work_records` and there is no `pickups` view. Compatibility comes from the HTTP facade `/v1/pickups`. |
 | `openapi.yaml`, conventions | "every write accepts a client-supplied `id` and is idempotent on `(farm_id, id)`" | **Today this is false for the ledger.** `store.AddLedgerEntry` does a bare `INSERT`; re-sending a payment after a timeout collides with the PK. It is a bug and it has to be fixed before push is switched on. §4.2 |
@@ -851,7 +851,7 @@ week is an office act, not a plot act.
 | | What it does | What is lost |
 |---|---|---|
 | **A. Server owns it (chosen)** | The phone does not settle without syncing; the `anticipo` is the way out in the field | Closing a week and issuing the definitive receipt with no signal. **The app does it today and will stop.** Mitigated: the `anticipo` also prints a receipt, and the later settlement amortises it to the cent. |
-| **B. Settle offline and arbitrate on arrival** (what `sync-and-roles.md` proposes) | The phone settles; the server rejects the loser and sends them the winner to re-derive | **The loser's cash is already in the picker's pocket.** A settlement has to be undone after the money moved — which is literally the failure this whole system exists to avoid. And the loser is the one who had no signal, i.e. the weigher, i.e. the one least able to fix it. |
+| **B. Settle offline and arbitrate on arrival** (what `docs/archive/sync-and-roles.md` proposes) | The phone settles; the server rejects the loser and sends them the winner to re-derive | **The loser's cash is already in the picker's pocket.** A settlement has to be undone after the money moved — which is literally the failure this whole system exists to avoid. And the loser is the one who had no signal, i.e. the weigher, i.e. the one least able to fix it. |
 | **C. Reservation with a lease** | While online the phone reserves a set of payables and can settle them offline until the lease expires | Real complexity (expiry, renewal, releasing after a lost phone) in exchange for something that **only works if the phone was online recently** — which is exactly when A works too. And a phone that falls in the river leaves weighings locked until the lease expires. |
 | **D. Lock split per device** | Each device can only settle what it recorded | Breaks the guarantee of **one** settlement per worker: somebody who picked with two weighers gets two documents and two receipts. It is exactly the two-payable-tables problem `arquitectura-api.md` §1 rejected, reintroduced through the back door. |
 
@@ -1126,7 +1126,7 @@ prevent creating a second crop on a plot while there is a phone on
   *is* the design. A generic engine erases it and turns the first misconfigured
   setting into a payroll leak.
 - **Vector clocks, HLC, or any distributed ordering.** There is one server. Its
-  commit order is a total order. `sync-and-roles.md` proposed "a per-device
+  commit order is a total order. `docs/archive/sync-and-roles.md` proposed "a per-device
   counter plus arrival order"; the `seq` with a horizon does the same thing with
   one integer.
 - **Websockets, SSE or push notifications.** Poll on open, on foreground, every

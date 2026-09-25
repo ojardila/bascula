@@ -33,10 +33,6 @@
  *     a filter was on, or somebody was unticked, or somebody did not get in,
  *     the paper says so top and bottom. It is the bite `SettlementsPage` took
  *     out of us, which here has two more ways to happen.
- *
- * The sync warning from `AppShell` stays on top of all this while the move is
- * unfinished: today this screen and the phone's `PaymentsPanel` can both pay
- * the same person in the same week.
  */
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";

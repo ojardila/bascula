@@ -1,7 +1,7 @@
 /**
  * The role matrix, as one table.
  *
- * Read this next to `docs/sync-and-roles.md` and `arquitectura-api.md` §6.
+ * Read this next to `docs/archive/sync-and-roles.md` and `arquitectura-api.md` §6.
  *
  * **This is not authorization.** The server decides, and it answers 403; the
  * only thing this file does is stop showing people doors they cannot open.

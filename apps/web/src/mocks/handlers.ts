@@ -1507,7 +1507,7 @@ export const handlers = [
      * `ux_employees_doc` is partial on `deleted_at IS NULL`, so this insert
      * would otherwise succeed — and from then on there are two files for one
      * person, the handset writes to one and the web to the other, the balance
-     * is split in two, and nothing says so. `docs/sincronizacion.md` lists it
+     * is split in two, and nothing says so. `docs/archive/sincronizacion.md` lists it
      * as the one conflict with no automatic repair, which is why it is a 409
      * that names the existing row rather than a silent success.
      */

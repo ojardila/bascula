@@ -1,5 +1,11 @@
 # Owner decisions
 
+> **Context.** Written while farms still used the original Expo phone app,
+> since retired. "The phone" and "the mobile app" below mean that app. Today
+> Báscula is a web app (`apps/web`, a PWA that records weighings offline) over
+> the Go API; see the [README](../README.md). The React pin in the root
+> `package.json` (2026-08-29 below) outlived the app and is harmless.
+
 The ones the team could not make on its own. Each closes a discussion left open
 in the designs; if any of them changes, the schema or the contract changes with
 it, so they are recorded here with their date and their consequence.

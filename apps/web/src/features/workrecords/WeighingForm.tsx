@@ -1,7 +1,7 @@
 /**
  * ONE WEIGHING AT A TIME, ON A PHONE, NEXT TO THE SCALE.
  *
- * This is the screen that replaces the Expo app's «Registrar recolección».
+ * It replaced the retired phone app's «Registrar recolección».
  * It is used standing up, with one hand, by somebody who does not live in
  * software, so everything on it is big and in the order the weighing happens:
  * who, which lote, which day, how many kilos, save. After saving, the kilos
@@ -136,7 +136,7 @@ export function WeighingForm() {
         if (cancelled) return;
         if (!cached) {
           setError(
-            "Sin señal y sin lista guardada. Abra esta pantalla una vez con internet para que el teléfono guarde las personas y los lotes.",
+            "Sin señal y sin lista guardada. Abra esta pantalla una vez con internet para que el celular guarde las personas y los lotes.",
           );
           setWorkers([]);
           setPlots([]);
@@ -250,7 +250,7 @@ export function WeighingForm() {
             {error && <Alert severity="error" onClose={() => setError(null)} sx={big}>{error}</Alert>}
             {fromCache && (
               <Alert severity="warning" onClose={() => setFromCache(null)} sx={big}>
-                Sin señal: usando la lista de personas y lotes guardada en este teléfono ({fromCache}).
+                Sin señal: usando la lista de personas y lotes guardada en este celular ({fromCache}).
               </Alert>
             )}
             {undone && <Alert severity="info" onClose={() => setUndone(null)} sx={big}>{undone}</Alert>}
@@ -262,7 +262,7 @@ export function WeighingForm() {
                 action={<Button color="inherit" onClick={() => void undo(last)}>Deshacer</Button>}
               >
                 {lastStillLocal
-                  ? `Guardado en este teléfono: ${last.who}, ${formatQuantity(last.kg)} kg. Se sube cuando vuelva la señal.`
+                  ? `Guardado en este celular: ${last.who}, ${formatQuantity(last.kg)} kg. Se sube cuando vuelva la señal.`
                   : `Guardado: ${last.who}, ${formatQuantity(last.kg)} kg`}
               </Alert>
             )}
@@ -365,7 +365,7 @@ export function WeighingForm() {
               )}
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 1 }}>
-              Están guardadas en este teléfono. Se suben solas cuando hay señal.
+              Están guardadas en este celular. Se suben solas cuando hay señal.
             </Typography>
             <List dense disablePadding>
               {offline.pending.map((p) => (

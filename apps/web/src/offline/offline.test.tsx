@@ -60,7 +60,7 @@ describe("weighing with no signal", () => {
     await user.type(screen.getByLabelText("Kilos"), "37");
     await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
 
-    expect(await screen.findByText(/Guardado en este teléfono: María Restrepo Ospina, 37 kg/)).toBeInTheDocument();
+    expect(await screen.findByText(/Guardado en este celular: María Restrepo Ospina, 37 kg/)).toBeInTheDocument();
     expect(await screen.findByText("1 pesada por subir")).toBeInTheDocument();
     expect(screen.getByText("Pesadas por subir (1)")).toBeInTheDocument();
     expect(posted).toHaveLength(0);

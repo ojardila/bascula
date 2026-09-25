@@ -5,10 +5,10 @@
  *
  * This module shipped its first draft deriving the whole season in the
  * browser, because `/v1/reports/*` did not exist. It exists now — six
- * endpoints, a port of the SQL that has been running on the phone for a season
+ * endpoints, a port of the SQL that ran on the retired phone app for a season
  * — so the derivation is gone rather than kept as a fallback. Two
  * implementations of "what is a picker's index" is precisely the arrangement
- * that lets the phone and the web quote different numbers for the same person,
+ * that lets two screens quote different numbers for the same person,
  * and a fallback is a second implementation that nobody looks at until it is
  * wrong. The server is the one place this arithmetic lives.
  *

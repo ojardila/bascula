@@ -6,7 +6,7 @@
  *   al jornal    -> a period (jornal, semanal, ...) and a price per period
  *   por contrato -> a single total, and no unit at all
  *
- * The price field is the owner's alone (sync-and-roles.md): an administrator
+ * The price field is the owner's alone (docs/archive/sync-and-roles.md): an administrator
  * can create the activity and cannot decide what it pays.
  */
 import { useEffect, useState } from "react";
@@ -268,7 +268,7 @@ export function ActivityFormDialog({
               box does appear — typed 900 and saved, believing they had raised
               the week's price. What they did was change the PAY MODE for all
               of the farm's coffee picking and cut it loose from the weekly
-              price the phone still uses. Nothing warned them.
+              price per kilo. Nothing warned them.
 
               Two things shut it. One: on an activity that already exists the
               switch cannot be moved, because the server will not have it
