@@ -67,7 +67,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: migrate
-          image: harbor.int.engp.io/bascula/api:v0.2.15
+          image: harbor.int.engp.io/bascula/api:v0.2.16
           args: ["-migrate"]
           env:
             # The superuser, because 00001 creates extensions and a role and
@@ -123,7 +123,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: harbor.int.engp.io/bascula/api:v0.2.15
+          image: harbor.int.engp.io/bascula/api:v0.2.16
           ports:
             - containerPort: 8080
           env:
