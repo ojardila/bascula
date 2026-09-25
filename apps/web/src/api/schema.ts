@@ -280,6 +280,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/farms/{slug}/provision-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How far along the farm's own web address is
+         * @description What the waiting screen polls after a farm is created with a slug —
+         *     from the landing (signup), from the app (POST /v1/farms) or from the
+         *     console. Public: the person who just registered has no session yet,
+         *     and the only thing it reveals is whether a web address answers.
+         *
+         *     Three steps, in order:
+         *
+         *     - `database` — the farm's own Postgres is up (dedicated stacks only;
+         *       always done on the shared platform).
+         *     - `app` — the farm, its members and their passwords have been copied
+         *       into its own API, so the owner can log in there with the password
+         *       they already chose.
+         *     - `web` — `https://{slug}.bascula.engp.io/health` answers 200 over real
+         *       DNS and TLS.
+         *
+         *     `ready` is all three. `slow` turns true when the farm is older than
+         *     the provisioning budget (15 minutes) and still not ready: the screen
+         *     should stop promising and send the owner to the shared address, where
+         *     the farm already works. Cached for a few seconds per slug.
+         */
+        get: operations["getProvisionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/farm-slugs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Is this web address free for a new farm
+         * @description The live check on the signup and create-farm forms. Public, like the
+         *     DNS label it asks about. Never an error for a malformed or reserved
+         *     slug: those come back `available: false` with a `reason`, so the form
+         *     can say it in plain words while the owner types.
+         */
+        get: operations["getSlugAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/farms": {
         parameters: {
             query?: never;
@@ -6098,6 +6159,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getProvisionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: components["schemas"]["FarmSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Where the farm's own address stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: components["schemas"]["FarmSlug"];
+                        /** @description The farm's own address, e.g. https://lapalma.bascula.engp.io */
+                        url: string;
+                        /** @description True when this platform launches a stack of its own per farm. */
+                        dedicated: boolean;
+                        steps: {
+                            /** @enum {string} */
+                            key: "database" | "app" | "web";
+                            done: boolean;
+                        }[];
+                        ready: boolean;
+                        slow: boolean;
+                        /**
+                         * Format: int64
+                         * @description Seconds since the farm was created.
+                         */
+                        elapsedSeconds: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getSlugAvailability: {
+        parameters: {
+            query: {
+                slug: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether the slug can be used. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: string;
+                        available: boolean;
+                        /** @enum {string} */
+                        reason?: "taken" | "reserved" | "invalid";
+                    };
                 };
             };
         };

@@ -39,8 +39,15 @@ const APEX = new Set([
 const PROD_SUFFIX = ".bascula.engp.io";
 const DEV_SUFFIX = ".int.dev.engp.io";
 
-/** DNS-label shape: 1–63 chars, lowercase letters, digits, interior hyphens. */
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/**
+ * The same rule the API enforces (services/api/internal/httpapi/slug.go):
+ * 2–63 characters, lowercase letters and digits, single hyphens between them.
+ */
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function slugShapeOk(value: string): boolean {
+  return value.length >= 2 && value.length <= 63 && SLUG_RE.test(value);
+}
 
 function normalizeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/\.$/, "").split(":")[0] ?? "";
@@ -66,12 +73,48 @@ export function farmSlugFromHost(hostname: string): string | null {
     const rest = host.slice(0, -DEV_SUFFIX.length);
     if (rest && !rest.includes(".")) label = rest;
   }
-  if (!label || RESERVED.has(label) || !SLUG_RE.test(label)) return null;
+  if (!label || RESERVED.has(label) || !slugShapeOk(label)) return null;
   return label;
 }
 
 export function isFarmSlug(value: string): boolean {
-  return SLUG_RE.test(value) && !RESERVED.has(value);
+  return slugShapeOk(value) && !RESERVED.has(value);
+}
+
+export function isReservedFarmSlug(value: string): boolean {
+  return RESERVED.has(value);
+}
+
+/**
+ * What is wrong with a web address, in words a farm owner can act on, or null
+ * when it is fine. Same rule as the API, so the form never promises an address
+ * the server then refuses.
+ */
+export function farmSlugProblem(value: string): string | null {
+  if (!value) return "Escriba la dirección web de la finca.";
+  if (value.length < 2) return "La dirección debe tener al menos 2 letras.";
+  if (value.length > 63) return "La dirección es muy larga. Use máximo 63 letras.";
+  if (!SLUG_RE.test(value)) {
+    return "Use solo letras minúsculas sin tildes, números y guiones. Ejemplo: lapalma";
+  }
+  if (RESERVED.has(value)) return "Esa dirección está reservada. Escriba otra.";
+  return null;
+}
+
+/**
+ * Keep what the owner types inside the rule while they type: lowercase, no
+ * accents, spaces become hyphens, anything else is dropped.
+ */
+export function cleanFarmSlugInput(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 63);
 }
 
 /** `San José` → `san-jose`. Empty or reserved names fall back to `finca`. */
@@ -93,6 +136,11 @@ export function farmProdUrl(slug: string): string {
 
 export function farmDevUrl(slug: string): string {
   return `https://${slug}${DEV_SUFFIX}`;
+}
+
+/** `lapalma.bascula.engp.io` — the address without the scheme, for previews. */
+export function farmHostForHere(slug: string, hostname?: string): string {
+  return farmUrlForHere(slug, hostname).replace(/^https:\/\//, "");
 }
 
 /** The URL this browser should advertise for a new farm. */

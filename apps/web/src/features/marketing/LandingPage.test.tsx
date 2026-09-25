@@ -44,11 +44,17 @@ describe("the public landing", () => {
     expect(screen.getAllByRole("textbox", { name: /^Nombre de la finca$/ }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("still lets someone start a farm and pick the URL slug", async () => {
+  it("leads with a free self-serve signup next to the demo", async () => {
+    renderApp("/");
+    const ctas = await screen.findAllByRole("link", { name: "Cree su finca gratis" });
+    expect(ctas.length).toBeGreaterThanOrEqual(1);
+    expect(ctas[0]).toHaveAttribute("href", "/empezar");
+  });
+
+  it("lets someone start a farm and pick its web address", async () => {
     renderApp("/empezar");
-    expect(await screen.findByRole("heading", { name: "Crear mi finca" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/Identificador/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Teléfono/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cree su finca" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Dirección web de la finca/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Precio por kilo/)).toBeNull();
   });
 });

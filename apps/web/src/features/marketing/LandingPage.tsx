@@ -3,7 +3,8 @@
 /**
  * Public conversion page for coffee-farm administrators.
  * Photos: Unsplash — cherries on the tree and a kilo scale only.
- * Primary CTA: contact form so we can schedule a demo.
+ * Primary CTA: "Cree su finca gratis" -> /empezar (self-serve signup with the
+ * farm's own web address). Secondary: the demo form, for those who want a call.
  */
 import { useState, type FormEvent, createElement as h } from "react";
 import { Link as RouterLink } from "react-router-dom";
@@ -124,6 +125,18 @@ function DemoForm(props: { dark?: boolean }) {
   );
 }
 
+/** The main action of the page: create a farm, free, with its own address. */
+function CreateFarmCta(props: { light?: boolean }) {
+  const light = Boolean(props.light);
+  return h(Box, { sx: { textAlign: "center" } },
+    h(Button, {
+      component: RouterLink, to: "/empezar", variant: "contained", size: "large", fullWidth: true,
+      sx: { fontFamily: SANS, fontWeight: 800, minHeight: 68, borderRadius: 999, fontSize: { xs: "1.25rem", md: "1.35rem" }, bgcolor: light ? "#f4f1ea" : GREEN, color: light ? GREEN_DARK : "#fff", boxShadow: "0 12px 30px rgba(0,0,0,.25)", "&:hover": { bgcolor: light ? "#fff" : GREEN_DARK } },
+    }, "Cree su finca gratis"),
+    h(Typography, { sx: { mt: 1.25, fontSize: 15, opacity: 0.85, color: light ? "#f4f1ea" : "#43483f" } }, "En unos minutos, con su propia dirección: sufinca.bascula.engp.io"),
+  );
+}
+
 function Hero(props: { signedIn: boolean; landing: string }) {
   const { signedIn, landing } = props;
   return h(Box, { sx: { position: "relative", minHeight: { xs: "auto", md: "100dvh" }, overflow: "hidden" } },
@@ -144,7 +157,11 @@ function Hero(props: { signedIn: boolean; landing: string }) {
         h(Box, { sx: { flex: 0.95, width: "100%", maxWidth: 420 } },
           signedIn
             ? h(Button, { component: RouterLink, to: landing, variant: "contained", size: "large", fullWidth: true, sx: { fontWeight: 700, minHeight: 56, borderRadius: 999, bgcolor: "#f4f1ea", color: GREEN_DARK, "&:hover": { bgcolor: "#fff" } } }, "Ir a mi finca")
-            : h(DemoForm, { dark: true }),
+            : h(Stack, { spacing: 2.5 },
+                h(CreateFarmCta, { light: true }),
+                h(Typography, { sx: { textAlign: "center", opacity: 0.7, fontSize: 14, letterSpacing: "0.08em", textTransform: "uppercase" } }, "o, si prefiere que le llamemos"),
+                h(DemoForm, { dark: true }),
+              ),
         ),
       ),
     ),
@@ -208,8 +225,9 @@ function DemoBand(props: { signedIn: boolean }) {
   const { signedIn } = props;
   return h(Box, { sx: { bgcolor: GREEN_DARK, py: { xs: 8, md: 10 } } },
     h(Container, { maxWidth: "md" },
-      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 1.5, textAlign: "center", color: "#f4f1ea" } }, "Pida el demo para su finca."),
-      h(Typography, { sx: { textAlign: "center", opacity: 0.9, mb: 4, fontSize: "1.15rem", color: "#f4f1ea" } }, "Treinta minutos. Le mostramos pesaje, planilla y costos por lote. Sin compromiso."),
+      h(Typography, { sx: { fontFamily: DISPLAY, fontSize: { xs: 32, md: 44 }, letterSpacing: "-0.03em", mb: 1.5, textAlign: "center", color: "#f4f1ea" } }, "Cree su finca hoy, o pida un demo."),
+      h(Typography, { sx: { textAlign: "center", opacity: 0.9, mb: 4, fontSize: "1.15rem", color: "#f4f1ea" } }, "Crear la finca es gratis y toma unos minutos. Si prefiere, le mostramos pesaje, planilla y costos por lote en treinta minutos."),
+      !signedIn ? h(Box, { sx: { maxWidth: 420, mx: "auto", mb: 4 } }, h(CreateFarmCta, { light: true })) : null,
       !signedIn ? h(Box, { sx: { maxWidth: 420, mx: "auto" } }, h(DemoForm, null)) : null,
       !signedIn ? h(Typography, { sx: { textAlign: "center", mt: 3, opacity: 0.7, fontSize: 14, color: "#f4f1ea" } },
         "¿Ya tiene cuenta? ",

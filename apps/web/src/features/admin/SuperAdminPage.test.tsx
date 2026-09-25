@@ -45,9 +45,10 @@ describe("the support console", () => {
     expect(await screen.findByRole("heading", { name: "Fincas" })).toBeInTheDocument();
     expect(await screen.findByText("La Esperanza")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Nueva finca" }));
+    await user.click(screen.getByRole("button", { name: "Crear finca" }));
     await user.type(screen.getByLabelText(/Nombre de la finca/), "El Roble");
-    await user.type(screen.getByLabelText(/Identificador/), "el-roble");
+    // The web address follows the name until somebody edits it.
+    expect((screen.getByLabelText(/Dirección web de la finca/) as HTMLInputElement).value).toBe("el-roble");
     await user.type(screen.getByLabelText(/Precio por kilo/), "900");
     await user.type(screen.getByLabelText(/Correo del dueño/), "ana.roble@example.com");
     await user.type(screen.getByLabelText(/Nombre del dueño/), "Ana Roble");
@@ -55,7 +56,9 @@ describe("the support console", () => {
 
     expect(await screen.findByText("Finca creada")).toBeInTheDocument();
     expect(screen.getByText(/ana.roble@example.com/)).toBeInTheDocument();
-    expect(screen.getByText("https://el-roble.bascula.engp.io")).toBeInTheDocument();
+    // The dialog follows the farm's own address while it is prepared.
+    expect(await screen.findByText("Preparando su finca…")).toBeInTheDocument();
+    expect(screen.getAllByText(/el-roble\.bascula\.engp\.io/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("El Roble").length).toBeGreaterThan(0);
   }, 20000);
 });
