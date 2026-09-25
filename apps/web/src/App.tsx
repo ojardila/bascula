@@ -5,6 +5,8 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
 import { LandingPage } from "./features/marketing/LandingPage";
+import { OfflineProvider } from "./offline/OfflineContext";
+import { OfflineBar } from "./offline/OfflineBar";
 import { PlotsPage } from "./features/plots/PlotsPage";
 import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
@@ -54,7 +56,9 @@ function LegacyPlotRedirect() {
 function Shell() {
   const { landing } = useAuth();
   return (
+    <OfflineProvider>
     <AppShell>
+      <OfflineBar />
       <Routes>
         <Route index element={<Navigate to={landing} replace />} />
         {/* Tablero left the day-to-day product. Old bookmarks still work:
@@ -331,6 +335,7 @@ function Shell() {
         <Route path="*" element={<Navigate to={landing} replace />} />
       </Routes>
     </AppShell>
+    </OfflineProvider>
   );
 }
 

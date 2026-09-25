@@ -17,6 +17,11 @@
  *    most common mistake at the scale.
  *  - «Deshacer» on what was just saved, and the list of what was saved on
  *    this screen, so the person at the scale can read back the last few.
+ *  - NO SIGNAL IS NORMAL AT THE SCALE. The lists of people and lotes are kept
+ *    on the device from the last load; a weighing that cannot reach the server
+ *    is kept on the device with the id it was minted with, and uploaded later
+ *    by `OfflineProvider`. Re-sending that id is a no-op on the server, so a
+ *    weighing that did arrive but whose answer was lost is never counted twice.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -27,7 +32,7 @@ import {
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { DateField } from "../../components/DateField";
 import { api } from "../../api/endpoints";
-import { messageFor } from "../../api/errors";
+import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { addDays, formatDate, parseDay, todayInFarm } from "../../lib/dates";
@@ -35,6 +40,8 @@ import { formatQuantity } from "../../lib/money";
 import { PLOT } from "../../lib/vocab";
 import type { Activity, Plot, Worker } from "../../api/types";
 import { parseQuantity } from "./validation";
+import { useOffline } from "../../offline/OfflineContext";
+import { getCache, putCache } from "../../offline/store";
 import { pickHarvestActivity, workerLabel } from "./planilla";
 
 /** Above this, one load is almost certainly a typing mistake. */
@@ -48,6 +55,19 @@ export interface SavedWeighing {
   plot: string;
   day: string;
   kg: number;
+  /** Kept on this device, not yet on the server. */
+  local?: boolean;
+}
+
+interface Refs {
+  workers: Worker[];
+  plots: Plot[];
+  activities: Activity[];
+}
+
+/** The request never got an answer from our server: keep it for later. */
+function noSignal(e: unknown): boolean {
+  return e instanceof ApiError && (e.status === 0 || e.status >= 502);
 }
 
 type DayChoice = "hoy" | "ayer" | "otro";
@@ -80,24 +100,55 @@ export function WeighingForm() {
   const [doubt, setDoubt] = useState<number | null>(null);
   const [saved, setSaved] = useState<SavedWeighing[]>([]);
   const [undone, setUndone] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState<string | null>(null);
   const personRef = useRef<HTMLInputElement>(null);
+  const offline = useOffline();
+  const farmId = user?.farm?.id ?? "";
+  const refsKey = `refs:${farmId}`;
 
   const day = dayChoice === "hoy" ? today : dayChoice === "ayer" ? yesterday : otherDay;
 
   useEffect(() => {
+    let cancelled = false;
+    const show = (r: Refs) => {
+      if (cancelled) return;
+      setWorkers(r.workers);
+      setPlots(r.plots);
+      setActivity(pickHarvestActivity(r.activities));
+      if (r.plots.length === 1) setPlotId(r.plots[0].id);
+    };
     Promise.all([
       api.listWorkers({ status: "active" }),
       api.listPlots({ status: "active" }),
       api.listActivities({ status: "active" }),
     ])
-      .then(([w, p, a]) => {
-        setWorkers(w);
-        setPlots(p);
-        setActivity(pickHarvestActivity(a));
-        if (p.length === 1) setPlotId(p[0].id);
+      .then(([workers, plots, activities]) => {
+        const r = { workers, plots, activities };
+        show(r);
+        void putCache(refsKey, r).catch(() => undefined);
       })
-      .catch((e) => setError(messageFor(e)));
-  }, []);
+      .catch(async (e: unknown) => {
+        if (!noSignal(e)) {
+          if (!cancelled) setError(messageFor(e));
+          return;
+        }
+        const cached = await getCache<Refs>(refsKey).catch(() => null);
+        if (cancelled) return;
+        if (!cached) {
+          setError(
+            "Sin señal y sin lista guardada. Abra esta pantalla una vez con internet para que el teléfono guarde las personas y los lotes.",
+          );
+          setWorkers([]);
+          setPlots([]);
+          return;
+        }
+        show(cached.value);
+        setFromCache(formatDate(cached.savedAt.slice(0, 10)));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refsKey]);
 
   function check(): number | null {
     setError(null);
@@ -136,9 +187,10 @@ export function WeighingForm() {
     setDoubt(null);
     if (!worker || !activity) return;
     const plot = plots?.find((p) => p.id === plotId);
+    const who = workerLabel(worker);
     const outcome = await run(`uno|${worker.id}|${plotId}|${day}|${qty}`, async (mint) => {
       const id = mint();
-      await api.createWorkRecord({
+      const input = {
         id,
         activityId: activity.id,
         workerId: worker.id,
@@ -147,15 +199,26 @@ export function WeighingForm() {
         dateTo: day,
         plotIds: [plotId],
         plotCropIds: plot?.crops.map((c) => c.id) ?? [],
-      });
-      return id;
+      };
+      const keep = async () => {
+        await offline.enqueue({ id, input, who, plot: plot?.name ?? "", kg: qty, day });
+        return { id, local: true };
+      };
+      if (!offline.online && offline.canQueue) return keep();
+      try {
+        await api.createWorkRecord(input);
+        return { id, local: false };
+      } catch (e) {
+        if (noSignal(e) && offline.canQueue) return keep();
+        throw e;
+      }
     }).catch((e: unknown) => {
       setError(messageFor(e));
       return { ran: false } as const;
     });
     if (!outcome.ran) return;
     setSaved((prev) => [
-      { id: outcome.value, who: workerLabel(worker), plot: plot?.name ?? "", day, kg: qty },
+      { id: outcome.value.id, who, plot: plot?.name ?? "", day, kg: qty, local: outcome.value.local },
       ...prev,
     ]);
     setKg("");
@@ -166,7 +229,8 @@ export function WeighingForm() {
   async function undo(w: SavedWeighing) {
     setError(null);
     try {
-      await api.deactivateWorkRecord(w.id);
+      if (offline.pending.some((p) => p.id === w.id)) await offline.remove(w.id);
+      else await api.deactivateWorkRecord(w.id);
       setSaved((prev) => prev.filter((s) => s.id !== w.id));
       setUndone(`Se borró la pesada de ${w.who}: ${formatQuantity(w.kg)} kg.`);
     } catch (e) {
@@ -175,6 +239,7 @@ export function WeighingForm() {
   }
 
   const last = saved[0];
+  const lastStillLocal = !!last && offline.pending.some((p) => p.id === last.id);
   const fewLotes = (plots?.length ?? 0) > 0 && (plots?.length ?? 0) <= LOTE_BUTTONS;
 
   return (
@@ -183,6 +248,11 @@ export function WeighingForm() {
         <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack spacing={3}>
             {error && <Alert severity="error" onClose={() => setError(null)} sx={big}>{error}</Alert>}
+            {fromCache && (
+              <Alert severity="warning" onClose={() => setFromCache(null)} sx={big}>
+                Sin señal: usando la lista de personas y lotes guardada en este teléfono ({fromCache}).
+              </Alert>
+            )}
             {undone && <Alert severity="info" onClose={() => setUndone(null)} sx={big}>{undone}</Alert>}
             {last && !error && !undone && (
               <Alert
@@ -191,7 +261,9 @@ export function WeighingForm() {
                 sx={{ ...big, alignItems: "center" }}
                 action={<Button color="inherit" onClick={() => void undo(last)}>Deshacer</Button>}
               >
-                Guardado: {last.who}, {formatQuantity(last.kg)} kg
+                {lastStillLocal
+                  ? `Guardado en este teléfono: ${last.who}, ${formatQuantity(last.kg)} kg. Se sube cuando vuelva la señal.`
+                  : `Guardado: ${last.who}, ${formatQuantity(last.kg)} kg`}
               </Alert>
             )}
 
@@ -280,6 +352,45 @@ export function WeighingForm() {
           </Stack>
         </CardContent>
       </Card>
+
+      {offline.pending.length > 0 && (
+        <Card sx={{ borderLeft: 6, borderColor: "info.main" }}>
+          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
+              <Typography variant="h3">Pesadas por subir ({offline.pending.length})</Typography>
+              {offline.online && (
+                <Button variant="outlined" disabled={offline.syncing} onClick={() => void offline.flush()}>
+                  {offline.syncing ? "Subiendo…" : "Subir ahora"}
+                </Button>
+              )}
+            </Stack>
+            <Typography color="text.secondary" sx={{ mb: 1 }}>
+              Están guardadas en este teléfono. Se suben solas cuando hay señal.
+            </Typography>
+            <List dense disablePadding>
+              {offline.pending.map((p) => (
+                <ListItem
+                  key={p.id}
+                  disableGutters
+                  divider
+                  secondaryAction={
+                    p.error ? (
+                      <Button color="error" onClick={() => void offline.remove(p.id)}>Borrar</Button>
+                    ) : undefined
+                  }
+                >
+                  <ListItemText
+                    primary={`${p.who} · ${formatQuantity(p.kg)} kg`}
+                    secondary={p.error ? `No se pudo subir: ${p.error}` : `${p.plot} · ${p.day === today ? "hoy" : formatDate(p.day)}`}
+                    primaryTypographyProps={{ fontSize: "1.1rem", fontWeight: 600 }}
+                    secondaryTypographyProps={p.error ? { color: "error" } : undefined}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      )}
 
       {saved.length > 0 && (
         <Card>

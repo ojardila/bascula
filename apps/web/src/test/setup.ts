@@ -1,4 +1,7 @@
 import "@testing-library/jest-dom/vitest";
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
+import { resetStoreForTests } from "../offline/store";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { server } from "../mocks/node";
@@ -9,6 +12,10 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  // Every test starts with nothing kept on the "phone".
+  globalThis.indexedDB = new IDBFactory();
+  resetStoreForTests();
+  localStorage.removeItem("bascula.lastUser");
 });
 afterAll(() => server.close());
 

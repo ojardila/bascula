@@ -12,6 +12,7 @@ import {
 } from "react";
 import { api } from "../api/endpoints";
 import { authEvents, getTokens, setTokens } from "../api/client";
+import { ApiError } from "../api/errors";
 import { can, isReadOnly, landingPath, visibleModules, type Action, type Principal } from "./permissions";
 import type { LoginChoice, MeUser, Session } from "../api/types";
 
@@ -39,6 +40,34 @@ const ANONYMOUS: Principal = { role: "weigher", isSuperAdmin: false, farmStatus:
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** The last `/v1/me` this device saw, so the app can open with no signal. */
+const LAST_USER_KEY = "bascula.lastUser";
+
+function rememberUser(user: MeUser): void {
+  try {
+    localStorage.setItem(LAST_USER_KEY, JSON.stringify(user));
+  } catch {
+    // Storage full or blocked: the app still works online.
+  }
+}
+
+function recalledUser(): MeUser | null {
+  try {
+    const raw = localStorage.getItem(LAST_USER_KEY);
+    return raw ? (JSON.parse(raw) as MeUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function forgetUser(): void {
+  try {
+    localStorage.removeItem(LAST_USER_KEY);
+  } catch {
+    // Nothing to forget.
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     // If there is a token in storage we do not know yet whether it is any
@@ -54,13 +83,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .me()
       .then((user) => {
+        rememberUser(user);
         if (!cancelled) setState({ status: "authenticated", user });
       })
-      .catch(() => {
-        if (!cancelled) {
-          setTokens(null);
-          setState({ status: "anonymous", user: null });
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // NO SIGNAL IS NOT A LOGOUT. Opening the app at the plot with no
+        // network used to throw the session away, and with it the only screen
+        // that works offline. With the tokens still here and the last known
+        // user on this device, the app opens as that user; the first request
+        // that reaches the server settles whether the session is still good.
+        const offline = e instanceof ApiError && (e.status === 0 || e.status >= 502);
+        const last = offline ? recalledUser() : null;
+        if (last) {
+          setState({ status: "authenticated", user: last });
+          return;
         }
+        setTokens(null);
+        forgetUser();
+        setState({ status: "anonymous", user: null });
       });
     return () => {
       cancelled = true;
@@ -70,7 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // The client fires this when a refresh fails; the session is already gone by
   // then, so all this does is move the UI out of the way.
   useEffect(() => {
-    const onLogout = () => setState({ status: "anonymous", user: null });
+    const onLogout = () => {
+      forgetUser();
+      setState({ status: "anonymous", user: null });
+    };
     authEvents.addEventListener("logout", onLogout);
     return () => authEvents.removeEventListener("logout", onLogout);
   }, []);
@@ -84,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // /v1/me before it can build the user. Setting them again is harmless and
     // keeps this function honest about what it leaves behind.
     setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    rememberUser(res.user);
     setState({ status: "authenticated", user: res.user });
     return res;
   }, []);
@@ -95,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // A logout that cannot reach the server still has to clear this browser.
     }
     setTokens(null);
+    forgetUser();
     setState({ status: "anonymous", user: null });
   }, []);
 
