@@ -10,8 +10,12 @@
  * Audience is often around fifty and not used to software: large type, plain
  * Spanish (de usted), one column on the phone, visible field labels.
  *
- * Images: real app screens with demo data (labelled as such) explain; the
- * Unsplash coffee photos only accompany.
+ * Images: real screens of the web app with demo data (labelled as such),
+ * framed as a computer browser and a phone browser, explain; the Unsplash
+ * coffee photos only accompany. Báscula is a web app: nothing to install,
+ * it can be added to the phone's home screen, and weighings can be recorded
+ * with no signal (they upload on their own). Regenerate the screens with the
+ * scripts described in docs/screenshots/README.md.
  */
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
@@ -30,6 +34,7 @@ import {
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
+import AddToHomeScreenIcon from "@mui/icons-material/AddToHomeScreen";
 import ComputerIcon from "@mui/icons-material/Computer";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { GREEN, GREEN_DARK } from "../../theme";
@@ -61,8 +66,8 @@ const PROBLEMS = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Puede guardar la pesada en el celular aunque no haya señal." },
-  { n: "02", title: "Revise la semana", body: "Consulte los kilos registrados y la tarifa correspondiente. Sincronice los datos antes de liquidar en una finca conectada." },
+  { n: "01", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Puede registrar kilos sin señal: se suben solos cuando vuelve la conexión." },
+  { n: "02", title: "Revise la semana", body: "Consulte los kilos registrados y la tarifa correspondiente. Antes de liquidar, confirme que no queden pesadas por subir." },
   { n: "03", title: "Calcule lo que debe", body: "Calcule el valor del trabajo y aplique los anticipos y descuentos registrados." },
   { n: "04", title: "Registre lo que entrega", body: "Deje constancia del pago y consulte cuánto queda pendiente. Revise el detalle con el recolector." },
 ];
@@ -96,7 +101,8 @@ const DEMO_POINTS = [
 ];
 
 const FAQ = [
-  { q: "¿Puedo usar Báscula si no hay señal en la finca?", a: "Puede registrar kilos en el celular sin señal y sincronizarlos cuando recupere la conexión. Para liquidar con la información compartida de la finca, necesita conexión y los datos al día." },
+  { q: "¿Tengo que instalar algo?", a: "No. Báscula es una aplicación web: se abre en el navegador del celular o del computador, con la dirección de su finca. Si quiere, agréguela a la pantalla de inicio del celular y ábrala como cualquier aplicación." },
+  { q: "¿Puedo usar Báscula si no hay señal en la finca?", a: "Sí, para registrar kilos sin señal: las pesadas se guardan en el celular y se suben solas cuando vuelve la conexión. Para ver informes, pagar y liquidar necesita conexión y los datos al día." },
   { q: "¿Necesito comprar una báscula especial?", a: "Puede ingresar manualmente el peso que marca su báscula. Ese registro no requiere una conexión automática entre la báscula y el celular." },
   { q: "¿Puedo llevar anticipos y pagos parciales?", a: "Sí. Puede registrar anticipos, aplicarlos a la cuenta y dejar constancia de pagos parciales. El saldo muestra cuánto queda pendiente." },
   { q: "¿Báscula transfiere el dinero al recolector?", a: "Báscula permite registrar el dinero que usted entrega y consultar el saldo. El pago al recolector lo realiza por el medio que utiliza en su finca." },
@@ -178,6 +184,15 @@ function DemoButton(props: { light?: boolean; fullWidthOnMobile?: boolean }) {
   );
 }
 
+function DemoLabel() {
+  return (
+    <Box sx={{ display: "table", mx: "auto", mt: 1.5, bgcolor: "rgba(26,28,25,.85)", color: "#fff", px: 1.5, py: 0.5, borderRadius: 999, fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
+      Datos de demostración
+    </Box>
+  );
+}
+
+/** A phone-browser screen. The frame and address bar are part of the image. */
 function Screenshot(props: { src: string; alt: string; maxWidth?: number }) {
   return (
     <Box sx={{ mx: "auto", maxWidth: props.maxWidth ?? 300, width: "100%" }}>
@@ -186,10 +201,39 @@ function Screenshot(props: { src: string; alt: string; maxWidth?: number }) {
         src={props.src}
         alt={props.alt}
         loading="lazy"
-        sx={{ display: "block", width: "100%", height: "auto", borderRadius: 4, border: "8px solid #1a1c19", boxShadow: "0 24px 60px rgba(20,40,20,.18)", bgcolor: "#fff" }}
+        sx={{ display: "block", width: "100%", height: "auto", filter: "drop-shadow(0 18px 30px rgba(20,40,20,.18))" }}
       />
-      <Box sx={{ display: "table", mx: "auto", mt: 1.5, bgcolor: "rgba(26,28,25,.85)", color: "#fff", px: 1.5, py: 0.5, borderRadius: 999, fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
-        Datos de demostración
+      <DemoLabel />
+    </Box>
+  );
+}
+
+/**
+ * The same farm on a computer browser and a phone browser, overlapping: one
+ * web address, two screens, nothing to install.
+ */
+function HeroScreens() {
+  // The phone is taller than the computer screen it overlaps; the bottom
+  // padding (a share of the width, so it scales with both images) is the room
+  // it hangs into, so it never covers the label or the caption below.
+  return (
+    <Box>
+      <Box sx={{ position: "relative", width: "100%", pb: { xs: "30%", md: "16%" } }}>
+        <Box
+          component="img"
+          src="/landing/app/desktop-home.jpg"
+          alt="Báscula abierta en el navegador del computador: kilos recolectados por semana en la finca"
+          sx={{ display: "block", width: "86%", height: "auto", borderRadius: 3 }}
+        />
+        <Box
+          component="img"
+          src="/landing/app/phone-weigh.png"
+          alt="Báscula abierta en el navegador del celular: registro de una pesada con persona, lote, día y kilos"
+          sx={{ position: "absolute", right: 0, bottom: 0, width: "34%", height: "auto", filter: "drop-shadow(0 18px 30px rgba(20,40,20,.25))" }}
+        />
+      </Box>
+      <Box sx={{ mt: 2 }}>
+        <DemoLabel />
       </Box>
     </Box>
   );
@@ -253,10 +297,10 @@ function Hero() {
               Le mostramos una cuenta semanal de principio a fin. Demostración gratuita y sin compromiso.
             </Typography>
           </Box>
-          <Box component="figure" sx={{ flex: 0.8, m: 0, width: "100%", textAlign: "center" }}>
-            <Screenshot src="/landing/app/home.jpg" alt="Pantalla de inicio de Báscula en el celular con kilos recolectados y actividad reciente" maxWidth={320} />
+          <Box component="figure" sx={{ flex: 1, m: 0, width: "100%", textAlign: "center" }}>
+            <HeroScreens />
             <Typography component="figcaption" sx={{ mt: 2.5, fontSize: "1.05rem", color: MUTED }}>
-              Cada pesada queda registrada por recolector, lote y fecha.
+              Se abre en el navegador del celular o del computador. No hay nada que instalar.
             </Typography>
           </Box>
         </Stack>
@@ -361,7 +405,7 @@ function WhatYouCanSee() {
         ))}
       </Box>
       <Typography sx={{ mt: 6, fontSize: { xs: "1.15rem", md: "1.25rem" }, color: MUTED, maxWidth: 760 }}>
-        También puede llevar lotes, labores, inventario, ventas y gastos desde la administración web.
+        También puede llevar lotes, labores, inventario, ventas y gastos desde el computador.
       </Typography>
     </Section>
   );
@@ -371,8 +415,9 @@ function WhatYouCanSee() {
 
 function FieldAndOffice() {
   const blocks = [
-    { icon: <PhoneAndroidIcon sx={{ fontSize: 40 }} />, title: "En el celular", body: "Guarde las pesadas donde recibe el café, incluso sin señal. Cuando vuelva la conexión, sincronice los registros." },
-    { icon: <ComputerIcon sx={{ fontSize: 40 }} />, title: "En la administración web", body: "Consulte la información de la finca, revise el trabajo registrado y lleve las cuentas de los trabajadores." },
+    { icon: <PhoneAndroidIcon sx={{ fontSize: 40 }} />, title: "En el celular", body: "Abra Báscula en el navegador y registre las pesadas donde recibe el café. Puede registrar kilos sin señal: se guardan en el celular y se suben solas cuando vuelve la conexión." },
+    { icon: <ComputerIcon sx={{ fontSize: 40 }} />, title: "En el computador", body: "Abra la misma dirección para consultar la información de la finca, revisar el trabajo registrado y llevar las cuentas de los trabajadores." },
+    { icon: <AddToHomeScreenIcon sx={{ fontSize: 40 }} />, title: "Nada que instalar", body: "Es una aplicación web. Si quiere, agréguela a la pantalla de inicio del celular y ábrala como cualquier aplicación." },
   ];
   return (
     <Section>
@@ -393,7 +438,7 @@ function FieldAndOffice() {
           <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mt: 4, p: 2.5, borderRadius: 3, bgcolor: "#fff8e1", border: "1px solid #f0d58a" }}>
             <InfoOutlinedIcon sx={{ color: "#8a6100", mt: 0.25 }} />
             <Typography sx={{ fontSize: "1.1rem", color: INK, lineHeight: 1.5 }}>
-              El registro de kilos funciona sin señal. Para liquidar con los datos compartidos de la finca, necesita conexión y los registros al día.
+              Puede registrar kilos sin señal. Para ver informes, pagar y liquidar necesita conexión y las pesadas ya subidas.
             </Typography>
           </Stack>
         </Box>

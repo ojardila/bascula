@@ -145,9 +145,9 @@ export function ConfigPage() {
                   Precio del kilo
                 </Typography>
                 <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  Lo que la finca paga por kilo recogido, semana por semana. Es el mismo
-                  precio que usa el teléfono y el que se le fija a la recolección cuando
-                  usted liquida.
+                  Lo que la finca paga por kilo recogido, semana por semana. Es el precio
+                  con el que se calcula cada pesada y el que se le fija a la recolección
+                  cuando usted liquida.
                 </Typography>
                 <Button
                   component={RouterLink}

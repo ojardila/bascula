@@ -8,6 +8,7 @@ Photos from Unsplash (https://unsplash.com/license). Attribution appreciated.
 
 No roasted beans and no retail coffee bags — only cherry coffee and scales.
 
-App screens (`app/*.jpg`) are Báscula's own mobile app with demo data,
-exported from `docs/screenshots/` (resized to 1200px JPEG). The landing labels
-them "Datos de demostración".
+App screens (`app/`) are Báscula's web app with demo data, captured in a
+desktop browser (`desktop-home.jpg`) and a phone browser (the rest), frame
+included. Same captures as `docs/screenshots/web/`. The landing labels them
+"Datos de demostración".

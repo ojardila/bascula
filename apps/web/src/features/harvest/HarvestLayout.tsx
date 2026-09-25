@@ -102,7 +102,9 @@ export function HarvestLayout() {
             liquida con el resto del trabajo de la persona.
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+        {/* `useFlexGap`: with wrap, Stack's margin-based spacing leaves the
+            wrapped button indented and the select's label under the button above. */}
+        <Stack direction="row" spacing={1.5} useFlexGap alignItems="center" sx={{ flexWrap: "wrap", pt: 1 }}>
           {can("workRecords.write") && (
             <>
               <Button
