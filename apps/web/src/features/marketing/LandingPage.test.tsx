@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, beforeEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
@@ -79,11 +79,34 @@ describe("the public landing", () => {
     expect(screen.getAllByText(/agréguela a la pantalla de inicio del celular/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/registrar kilos sin señal/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "¿Tengo que instalar algo?" })).toBeInTheDocument();
-    // Real screens, from the web app, in a computer and a phone browser.
-    expect(screen.getByAltText(/navegador del computador/)).toHaveAttribute("src", "/landing/app/desktop-home.jpg");
-    expect(screen.getByAltText(/navegador del celular/)).toHaveAttribute("src", "/landing/app/phone-weigh.png");
-    expect(screen.getAllByText("Datos de demostración").length).toBeGreaterThanOrEqual(4);
+    // Real screens of the web app in a browser window: no phone frames.
+    const shots = [...document.querySelectorAll("img")].map((i) => i.getAttribute("src") ?? "").filter((src) => src.startsWith("/landing/app/"));
+    expect(shots).toEqual(expect.arrayContaining([
+      "/landing/app/cosecha.jpg",
+      "/landing/app/registrar-pesada.jpg",
+      "/landing/app/semana.jpg",
+      "/landing/app/nomina.jpg",
+      "/landing/app/pagar.jpg",
+      "/landing/app/semana-recolectores.jpg",
+      "/landing/app/cuenta.jpg",
+      "/landing/app/lotes.jpg",
+    ]));
+    expect(shots.some((src) => /phone|\.png$/.test(src))).toBe(false);
+    for (const img of document.querySelectorAll("img[src^='/landing/app/']")) {
+      expect(img.getAttribute("alt")).toMatch(/^Báscula .*navegador/);
+    }
+    expect(screen.getAllByText("Datos de demostración").length).toBeGreaterThanOrEqual(8);
     expect(screen.queryByText(/sincronice/i)).toBeNull();
+  });
+
+  it("opens a screenshot full size on a tap, and closes it", async () => {
+    const user = userEvent.setup();
+    renderApp("/");
+    await user.click(await screen.findByRole("button", { name: /^Ampliar: Báscula abierta en el navegador: la cosecha/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("img")).toHaveAttribute("src", "/landing/app/cosecha.jpg");
+    await user.click(within(dialog).getByRole("button", { name: "Cerrar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("keeps the free self-serve signup and the sign-in link", async () => {

@@ -9,6 +9,6 @@ Photos from Unsplash (https://unsplash.com/license). Attribution appreciated.
 No roasted beans and no retail coffee bags — only cherry coffee and scales.
 
 App screens (`app/`) are Báscula's web app with demo data, captured in a
-desktop browser (`desktop-home.jpg`) and a phone browser (the rest), frame
-included. Same captures as `docs/screenshots/web/`. The landing labels them
+desktop browser at 1280×800, browser-window frame included (same method as
+`docs/screenshots/web/`). No phone frames. The landing labels them
 "Datos de demostración".
