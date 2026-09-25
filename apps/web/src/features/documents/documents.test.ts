@@ -326,7 +326,7 @@ describe("the receipt as WhatsApp text", () => {
     const { paymentReceiptText } = await import("./documents");
     const text = paymentReceiptText({
       farmName: "La Esperanza",
-      worker: { name: "Ana", lastName: "Ruiz", documentNumber: null },
+      worker: { name: "Ana", lastName: "Ruiz", documentNumber: "" },
       payment: {
         id: "p1", workerId: "w1", amountCents: 10_000_00, method: "efectivo",
         receiptNumber: "3F7A-91C2", balanceBeforeCents: 15_000_00, balanceAfterCents: 5_000_00, date: "2026-09-19",
