@@ -6,9 +6,6 @@
     "packages/*"
   ],
   "scripts": {
-    "mobile": "npm --workspace apps/mobile run start",
-    "android": "npm --workspace apps/mobile run android",
-    "ios": "npm --workspace apps/mobile run ios",
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

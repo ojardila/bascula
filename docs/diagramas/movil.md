@@ -1,5 +1,10 @@
 # Báscula mobile — architecture diagrams
 
+> **Historical.** The Expo app this document describes was removed from the
+> repository; the web app (`apps/web`) replaced it, with offline weighing
+> through a service worker and IndexedDB. The server endpoints it used
+> (`/v1/sync/*`, `/v1/import/season`) are still in `services/api`.
+
 Engineering documentation for the **`apps/mobile`** app exactly as it stands today
 on branch `feat/api-web-multitenant`: Expo / React Native + TypeScript over local
 SQLite, no network, no accounts and no server. Everything below is taken from the

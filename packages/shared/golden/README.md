@@ -1,25 +1,16 @@
 # Golden cases
 
 JSON fixtures with inputs and **the exact numbers that must come out**. They
-exist for one single reason: so the Go server does not calculate money
-differently from the phone.
-
-They are not mobile tests. They are the calculation contract, written in a
-format both suites walk. If the phone and the server pass the same files, a
-picker is paid the same no matter where the weighing was taken.
+were written so that the Go server could not calculate money differently from
+the phone app the farm used first, and they now pin down the server itself.
 
 - `cases/*.json` — the cases, in file order.
-- `runner.ts` — the TypeScript runner.
-- `golden.test.ts` — the `node:test` suite that executes them.
+- Walked by `services/api/internal/apitest/golden_test.go`, through HTTP,
+  against a real Postgres (the `api` job in CI).
 
-The runner **reimplements nothing**: it imports `BASE_SCHEMA`,
-`PAYMENTS_SCHEMA`, `PENDING_SQL`, `BALANCE_SQL`, `WEEK_OF` and `DAY_OF` from
-`apps/mobile/src/schema.ts` and runs them under `node:sqlite`, exactly like the
-suites that already existed. The only thing retyped is the *sequence of writes*
-of a settlement, because `apps/mobile/src/db.ts` opens `expo-sqlite` at module
-level and cannot be imported outside a phone (`docs/diagramas/movil.md` §9.2).
-That sequence follows `Payments.settle`, `pay`, `advance`, `deduct`, `adjust`,
-`reverse` and `voidSettlement` statement by statement.
+Until the Expo app was removed, a TypeScript runner here also played every case
+against the phone's SQLite schema under `node:sqlite`. It went with the app;
+it is in the git history, along with the app's schema it imported.
 
 ---
 
@@ -140,10 +131,6 @@ the following week.
 > `2026-08-31T00:30Z`: **Monday in UTC, Sunday on the farm.** That is exactly
 > case 04.
 >
-> The TypeScript runner builds the instant from the wall-clock parts with the
-> process's timezone, so the suite gives the same result on any machine: what
-> the file states is the wall-clock time, and SQLite's `'localtime'` undoes the
-> conversion with the same offset.
 
 **The lock.** A weighing belongs to at most **one** live settlement
 (`UNIQUE(pickupId) WHERE voidedAt IS NULL`). Voiding does not delete: it marks
@@ -173,8 +160,8 @@ called `payable_id`, but the partial index is the same.
 1. Create `cases/NN-whatever-it-is.json` with a new `id` and a `why` that says
    what breaks if somebody rewrites it from memory. The `why` comes out in the
    failure message: it is what whoever breaks it will read.
-2. `npm test --workspace @bascula/shared`.
-3. If the case paints a behaviour the mobile app does **not** have today, it is
+2. `make test` in `services/api` (or wait for the `api` job in CI).
+3. If the case paints a behaviour the farms do **not** have today, it is
    not a golden case: it is a change proposal. These files describe what the
    farm is already doing with real money.
 

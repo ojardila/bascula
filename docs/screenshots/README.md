@@ -29,6 +29,3 @@ captures.
 4. Frame them: a browser window with the farm's address
    (`laesperanza.bascula.engp.io`) for desktop, a phone with a mobile-browser
    address bar for phone.
-
-The phone PNGs at the top level of this folder are the retired Expo app; they
-go away with `apps/mobile`.

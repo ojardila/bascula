@@ -19,7 +19,6 @@ WORKDIR /src
 # re-resolve the whole tree on every build.
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
-COPY apps/mobile/package.json apps/mobile/
 COPY packages/shared/package.json packages/shared/
 RUN npm ci
 

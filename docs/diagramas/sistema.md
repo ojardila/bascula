@@ -1,5 +1,9 @@
 # Báscula — System view
 
+> **Note.** `apps/mobile` (Expo plus SQLite) has since been removed; the web
+> app replaced it, offline weighing included. The mobile parts below are
+> historical.
+
 Diagrams of the new system: **Go API** and **React web app**, multitenant, for coffee
 farms.
 

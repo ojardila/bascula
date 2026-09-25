@@ -1,9 +1,9 @@
 # Four jobs, all at once, so the wall clock is the slowest one and not the sum.
 #
 # The job that guards the money needs no dependencies at all. Every test in
-# packages/shared and apps/mobile imports only node: builtins — node:test,
-# node:sqlite — and Node runs the TypeScript directly, so 350 tests answer
-# without npm ever running. Verified by deleting node_modules and running them.
+# packages/shared imports only node: builtins and Node runs the TypeScript
+# directly, so they answer without npm ever running. (The golden cases in
+# packages/shared/golden/cases are walked by the Go suite, `api` below.)
 #
 # That is worth protecting rather than treating as a happy accident: the rules
 # that decide what a picker is paid should be checkable without a network, and
@@ -57,12 +57,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: shared — formatters, week keys, and the ten golden cases
-        run: node --test src/*.test.ts golden/*.test.ts
+      - name: shared — formatters, week keys, enums against the schema
+        run: node --test src/*.test.ts
         working-directory: packages/shared
-      - name: mobile — the data layer, against node:sqlite
-        run: node --test src/*.test.ts src/data/*.test.ts src/sync/*.test.ts
-        working-directory: apps/mobile
 
   web:
     name: console
