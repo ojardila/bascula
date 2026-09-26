@@ -44,7 +44,6 @@ import { ConfigPage } from "./features/config/ConfigPage";
 import { WorkUnitsPage } from "./features/units/WorkUnitsPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 import { ProvisionPage } from "./features/provision/ProvisionPage";
-import { NewFarmPage } from "./features/farms/NewFarmPage";
 
 /**
  * `/parcelas/<id>/mapa` -> `/lotes/<id>/mapa`, with the tail intact.
@@ -347,9 +346,9 @@ function Shell() {
           }
         />
 
-        {/* Any member may open a farm of their own: owning a farm is a
-            property of the account, not of the role held here. */}
-        <Route path="fincas/nueva" element={<NewFarmPage />} />
+        {/* No "create another farm" inside a farm: each farm is isolated,
+            and new farms start only at /empezar on the main domain. The old
+            path lands on the farm's home like any unknown one. */}
         <Route path="*" element={<Navigate to={landing} replace />} />
       </Routes>
     </AppShell>

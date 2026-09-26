@@ -101,8 +101,7 @@ export function SignupPage() {
             Ya existe una cuenta con <strong>{existingAccount}</strong>. No creamos nada nuevo.
           </Typography>
           <Typography sx={{ fontSize: "1.1rem" }}>
-            Entre con su clave de siempre y, adentro, toque su nombre arriba a la derecha y
-            elija <strong>“Crear otra finca”</strong>.
+            Entre con su clave de siempre.
           </Typography>
           <Button component={RouterLink} to="/entrar" variant="contained" size="large" sx={{ minHeight: 60, fontSize: "1.2rem" }}>
             Entrar

@@ -631,20 +631,9 @@ func TestTheFarmsPerEmailCapMovedBehindASession(t *testing.T) {
 		t.Fatalf("the public signup named a farm: %s", again.Raw)
 	}
 
-	// The harness caps at three, and one exists.
-	for i := 2; i <= 3; i++ {
-		res := h.do(t, http.MethodPost, "/v1/farms", token, map[string]any{
-			"name": "Finca " + strconv.Itoa(i), "priceCents": 100000})
-		if res.Status != http.StatusCreated {
-			t.Fatalf("farm %d should still be allowed: %d %s", i, res.Status, res.Raw)
-		}
-	}
-	over := h.do(t, http.MethodPost, "/v1/farms", token, map[string]any{
-		"name": "Finca de mas", "priceCents": 100000})
-	if over.code() != string(domain.CodeFarmLimitReached) {
-		t.Fatalf("the fourth farm on one account: got %d %s, want FARM_LIMIT_REACHED",
-			over.Status, over.Raw)
-	}
+	// And the session is no way round it either: a farm cannot create
+	// another farm at all.
+	requireNoFarmCreate(t, h.server, token)
 }
 
 // ---------------------------------------------------------------------------

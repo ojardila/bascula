@@ -288,31 +288,12 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Add another farm to the account that is signed in
-         * @description **Contract change for the console.** The screen that used to add a
-         *     second farm by POSTing `/v1/signup` with an existing owner's email and
-         *     password must now POST here with that owner's access token, and drop
-         *     the password field from the form. `/v1/signup` no longer accepts the
-         *     credentials of an account that exists: it answers 409 EMAIL_TAKEN on
-         *     the address alone, whatever password is sent.
-         *
-         *     The reason is that the old shape was a password oracle. An
-         *     unauthenticated caller could send an address with a guessed password
-         *     and read the answer: 409 meant wrong, 201 meant right. A session is the
-         *     proof of ownership this route needs, and it is one the account can see
-         *     and revoke.
-         *
-         *     The farms-per-account cap moved here with it, and answers 409
-         *     FARM_LIMIT_REACHED with `details.owned` and `details.limit`.
-         *
-         *     No token comes back. The tenant travels in the access token and this
-         *     route mints none: the caller's current session still points at the farm
-         *     it was opened for. To work in the new farm, log in again with its
-         *     `farmId` — the same call an account belonging to several farms already
-         *     makes.
-         *
-         *     Any role may call it. Owning a farm is a property of the account and
-         *     not of the role it holds on somebody else's farm.
+         * Disabled — a farm cannot create another farm
+         * @description **Always 403 FORBIDDEN.** Each farm is isolated: members create users,
+         *     workers and everything else of their farm, never another farm. New
+         *     farms are registered only on the main domain (`/empezar` →
+         *     `POST /v1/signup`) or by the operator (`POST /v1/admin/farms`). The
+         *     route stays so a cached old console gets a plain refusal.
          */
         post: operations["createFarm"];
         delete?: never;

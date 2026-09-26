@@ -23,7 +23,6 @@ import (
 // between "app" and "web".
 func TestNewFarmGetsACloudflareCertificate(t *testing.T) {
 	h := requireDB(t)
-	owner := h.signupFarm(t, "Finca con certificado", 90000)
 	slug := "cert-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 
 	var mu sync.Mutex
@@ -99,6 +98,8 @@ func TestNewFarmGetsACloudflareCertificate(t *testing.T) {
 	cfg := httpapi.DefaultConfig()
 	cfg.UploadDir = t.TempDir()
 	cfg.MaxFarmsPerEmail = 3
+	cfg.SignupsPerIPPerHour = 1000
+	cfg.SignupsPerEmailPerHour = 1000
 	cfg.TenantPublicURL = public.URL
 	cfg.ProvisionPollEvery = 50 * time.Millisecond
 	cfg.ProvisionWatchFor = 20 * time.Second
@@ -107,12 +108,7 @@ func TestNewFarmGetsACloudflareCertificate(t *testing.T) {
 	cfg.CloudflareAPIURL = cf.URL
 	platform := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg)
 
-	created := call(t, platform, http.MethodPost, "/v1/farms", owner.OwnerToken, map[string]any{
-		"name": "Con certificado", "slug": slug, "priceCents": 90000,
-	})
-	if created.Status != http.StatusCreated {
-		t.Fatalf("create farm: %d %s", created.Status, created.Raw)
-	}
+	signupWithSlug(t, platform, "Con certificado", slug)
 
 	var status response
 	waitFor(t, 10*time.Second, "provision status ready", func() bool {
