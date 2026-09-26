@@ -495,8 +495,16 @@ func limitParam(r *http.Request, def int) int {
 	if err != nil || n <= 0 {
 		return def
 	}
+	// No list here is worth more rows than this in one answer, and an
+	// assistant asking for limit=10000000 must not make the database try.
+	if n > maxListLimit {
+		return maxListLimit
+	}
 	return n
 }
+
+// maxListLimit caps every ?limit= read through limitParam.
+const maxListLimit = 500
 
 // offsetParam reads the page offset. A negative or unparsable one is 0 rather
 // than an error: an offset is a position in a list, and there is no page

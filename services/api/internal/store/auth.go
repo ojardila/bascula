@@ -356,9 +356,18 @@ func FindRefreshToken(ctx context.Context, tx pgx.Tx, hash []byte) (*RefreshToke
 	return &t, nil
 }
 
-func MarkRefreshRotated(ctx context.Context, tx pgx.Tx, id string) error {
-	_, err := tx.Exec(ctx, `UPDATE refresh_tokens SET rotated_at = now() WHERE id = $1`, id)
-	return err
+// MarkRefreshRotated spends a refresh token. It reports false when the token
+// was already spent or revoked — by a concurrent refresh that got there
+// first: the UPDATE waits for that transaction and then finds nothing to
+// change, so one token can never be rotated into two live branches.
+func MarkRefreshRotated(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
+	tag, err := tx.Exec(ctx, `
+		UPDATE refresh_tokens SET rotated_at = now()
+		 WHERE id = $1 AND rotated_at IS NULL AND revoked_at IS NULL`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // RevokeFamily kills every token descended from one login. This is the reuse

@@ -39,6 +39,16 @@ func InsertOAuthClient(ctx context.Context, tx pgx.Tx, c OAuthClient) error {
 	return err
 }
 
+// CountRecentOAuthClients is how many clients registered within the window,
+// platform-wide. It feeds the registration cap every replica shares.
+func CountRecentOAuthClients(ctx context.Context, tx pgx.Tx, window time.Duration) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM oauth_clients WHERE created_at > now() - make_interval(secs => $1)`,
+		window.Seconds()).Scan(&n)
+	return n, err
+}
+
 func GetOAuthClient(ctx context.Context, tx pgx.Tx, id string) (*OAuthClient, error) {
 	var c OAuthClient
 	err := tx.QueryRow(ctx, `

@@ -12,7 +12,7 @@ the caller's role — record weighings, payments and settlements.
   with a «Try it» panel. The same catalogue as JSON:
   [`/mcp/tools.json`](https://bascula.engp.io/mcp/tools.json).
 - Guides: [Connect ChatGPT](connect-chatgpt.md) ·
-  [Connect Claude](connect-claude.md) · [OAuth reference](oauth.md) ·
+  [Connect Claude](connect-claude.md) · [OAuth reference](oauth.md) · [Security](security.md) ·
   [Troubleshooting](troubleshooting.md)
 - Code: `services/api/internal/httpapi/handlers_mcp.go` (read tools, server),
   `handlers_mcp_write.go` (write tools, two-step confirmation),

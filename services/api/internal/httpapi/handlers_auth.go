@@ -689,11 +689,13 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 
 	// A family an assistant holds gets tokens for /mcp only; see
 	// auth.AudienceMCP. The refresh grant keeps the family, so it keeps this.
-	audience := ""
+	var access string
+	var err error
 	if oauthClientID != nil {
-		audience = auth.AudienceMCP
+		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+	} else {
+		access, err = s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	}
-	access, err := s.signer.IssueFor(audience, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	if err != nil {
 		return nil, domain.Internal("could not issue the access token").WithCause(err)
 	}
@@ -771,6 +773,14 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	// An assistant's refresh token is redeemed at /oauth/token, by the
+	// client it was issued to (RFC 6749 §6), and not here, where no client is
+	// checked. Answered like any token this door does not know.
+	if tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(req.RefreshToken)); err == nil && tok.OAuthClientID != nil {
+		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
+			"that refresh token is not valid"))
 		return
 	}
 	session, err := s.rotateRefresh(r, tx, req.RefreshToken, req.DeviceID)
@@ -853,8 +863,17 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 		return nil, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
 			"that farm is suspended")
 	}
-	if err := store.MarkRefreshRotated(r.Context(), tx, tok.ID); err != nil {
+	spent, err := store.MarkRefreshRotated(r.Context(), tx, tok.ID)
+	if err != nil {
 		return nil, err
+	}
+	if !spent {
+		// Lost a race with a concurrent refresh of the same token. The
+		// winner's session stands; this one gets nothing. The family is not
+		// closed here: two requests racing is a client retrying, and a
+		// later replay of this token is caught by the RotatedAt branch.
+		return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
+			"that refresh token was just used")
 	}
 
 	device := deviceID

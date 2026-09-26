@@ -30,6 +30,10 @@ type Claims struct {
 	Role       domain.Role `json:"role"`
 	DeviceID   string      `json:"device_id,omitempty"`
 	Superadmin bool        `json:"superadmin,omitempty"`
+	// ClientID is the OAuth client an assistant's token was issued to (the
+	// "cid" claim). Empty on an ordinary session token. It is what the MCP
+	// audit trail records as "which assistant".
+	ClientID string `json:"cid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -56,12 +60,32 @@ func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string,
 
 // IssueFor is Issue with an audience; "" issues an ordinary session token.
 func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+	if audience == "" {
+		return s.issue(nil, "", userID, farmID, role, deviceID, superadmin)
+	}
+	return s.issue([]string{audience}, "", userID, farmID, role, deviceID, superadmin)
+}
+
+// IssueMCP mints an assistant's access token. Its audience is AudienceMCP
+// plus the MCP resource it was issued for (RFC 8707: https://<host>/mcp), so a
+// token obtained from one farm's address is refused on another's; clientID is
+// the OAuth client that holds the grant.
+func (s *Signer) IssueMCP(resource, clientID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+	aud := []string{AudienceMCP}
+	if resource != "" {
+		aud = append(aud, resource)
+	}
+	return s.issue(aud, clientID, userID, farmID, role, deviceID, superadmin)
+}
+
+func (s *Signer) issue(audience []string, clientID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	now := s.now()
 	c := Claims{
 		FarmID:     farmID,
 		Role:       role,
 		DeviceID:   deviceID,
 		Superadmin: superadmin,
+		ClientID:   clientID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			Issuer:    s.issuer,
@@ -70,8 +94,8 @@ func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, dev
 			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTTL)),
 		},
 	}
-	if audience != "" {
-		c.Audience = jwt.ClaimStrings{audience}
+	if len(audience) > 0 {
+		c.Audience = jwt.ClaimStrings(audience)
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
 	return tok.SignedString(s.key)
@@ -122,4 +146,16 @@ func (c *Claims) ForMCPOnly() bool {
 		}
 	}
 	return false
+}
+
+// MCPResource is the resource an assistant's token is bound to (the audience
+// entry that is not AudienceMCP), or "" for a token minted before audience
+// binding existed, which carried AudienceMCP alone.
+func (c *Claims) MCPResource() string {
+	for _, a := range c.Audience {
+		if a != AudienceMCP {
+			return a
+		}
+	}
+	return ""
 }

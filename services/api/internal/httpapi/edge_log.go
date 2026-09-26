@@ -31,12 +31,13 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 			return
 		}
 		start := time.Now()
-		rpcMethod := ""
+		rpcMethod, rpcTool := "", ""
 		if p == "/mcp" && r.Method == http.MethodPost && r.Body != nil {
 			raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 			if err == nil {
 				r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(raw), r.Body))
 				rpcMethod = jsonRPCMethods(raw)
+				rpcTool = jsonRPCToolName(raw)
 			}
 		}
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -54,9 +55,12 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 		if rpcMethod != "" {
 			attrs = append(attrs, "rpc", rpcMethod)
 		}
+		if rpcTool != "" {
+			attrs = append(attrs, "tool", rpcTool)
+		}
 		if p == "/mcp" {
 			attrs = append(attrs,
-				"bearer", strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "),
+				"bearer", bearerToken(r) != "",
 				"accept", r.Header.Get("Accept"),
 				"mcp_protocol", r.Header.Get("MCP-Protocol-Version"),
 				"mcp_session", r.Header.Get("Mcp-Session-Id") != "")
@@ -105,6 +109,24 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 		}
 		slog.Info("connector request", attrs...)
 	})
+}
+
+// jsonRPCToolName is the tool a tools/call names — its name only, never its
+// arguments, which carry people's names, documents and amounts.
+func jsonRPCToolName(raw []byte) string {
+	var one struct {
+		Method string `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(raw, &one) != nil || one.Method != "tools/call" {
+		return ""
+	}
+	if len(one.Params.Name) > 64 {
+		return one.Params.Name[:64]
+	}
+	return one.Params.Name
 }
 
 // jsonRPCMethods returns the method of a JSON-RPC message, or the methods of

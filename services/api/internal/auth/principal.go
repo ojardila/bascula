@@ -15,6 +15,10 @@ type Principal struct {
 	DeviceID   string
 	Superadmin bool
 	Email      string
+	// ClientID is the OAuth client of an assistant's token ("" otherwise).
+	ClientID string
+	// MCPOnly marks an assistant's token (audience AudienceMCP).
+	MCPOnly bool
 }
 
 type ctxKey int

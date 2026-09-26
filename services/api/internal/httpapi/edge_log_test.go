@@ -62,3 +62,28 @@ func TestConnectorTrafficLogNamesStepsNotSecrets(t *testing.T) {
 		t.Errorf("only connector surfaces are logged:\n%s", out)
 	}
 }
+
+// TestConnectorTrafficLogReadsTheBearerLikeAuthDoes: the scheme is
+// case-insensitive (RFC 7235), and the log said "no bearer" for a lowercase
+// one that authentication accepted. It names the tool of a tools/call and
+// never its arguments.
+func TestConnectorTrafficLogReadsTheBearerLikeAuthDoes(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+	h := logConnectorTraffic(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register_payment","arguments":{"note":"SECRETNOTE"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "bearer SECRETTOKEN")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	out := buf.String()
+	for _, want := range []string{`"bearer":true`, `"tool":"register_payment"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "SECRET") {
+		t.Errorf("log leaks:\n%s", out)
+	}
+}

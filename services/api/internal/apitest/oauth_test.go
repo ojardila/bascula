@@ -107,7 +107,7 @@ func TestOAuthIssuesTheSameJWTLoginWould(t *testing.T) {
 		}
 	}
 
-	sess := h.mcpClient(t, access)
+	sess := h.mcpClientAs(t, access, oauthTestIssuer)
 	res := callTool(t, sess, "me", nil)
 	if res.IsError {
 		t.Fatalf("mcp me with oauth token: %s", toolText(res))
@@ -201,7 +201,7 @@ func TestOAuthRefreshKeepsTheConnectorAlive(t *testing.T) {
 	if access == "" || next["refresh_token"] == refresh {
 		t.Fatalf("refresh did not rotate: %s", rec.Body.String())
 	}
-	sess := h.mcpClient(t, access)
+	sess := h.mcpClientAs(t, access, oauthTestIssuer)
 	if res := callTool(t, sess, "me", nil); res.IsError {
 		t.Fatalf("the refreshed token does not open the tunnel: %s", toolText(res))
 	}

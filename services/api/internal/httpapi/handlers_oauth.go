@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -42,6 +43,8 @@ const (
 	oauthMaxRedirects    = 10
 	oauthMaxRedirectLen  = 2048
 	oauthMaxClientName   = 80
+	// oauthMaxStoredMetadata bounds the registration kept in the database.
+	oauthMaxStoredMetadata = 8 << 10
 )
 
 // errOAuthBadCredentials is the one sign-in failure the login limiter counts.
@@ -74,6 +77,46 @@ func (s *Server) publicBase(r *http.Request) string {
 
 func (s *Server) mcpResource(r *http.Request) string {
 	return s.publicBase(r) + "/mcp"
+}
+
+// requestOrigin is the origin this request arrived at, ignoring
+// PublicBaseURL: on the shared stack a farm's own address
+// ({slug}.bascula.engp.io) reaches the same process as the apex.
+func requestOrigin(r *http.Request) string {
+	proto := "http"
+	if r.TLS != nil {
+		proto = "https"
+	}
+	if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+		proto = strings.TrimSpace(strings.Split(p, ",")[0])
+	}
+	return proto + "://" + r.Host
+}
+
+// resourceIsThisServer reports whether an RFC 8707 resource indicator (or a
+// token audience) names this MCP server: its canonical resource
+// (<issuer>/mcp), the issuer itself, or the same two spelled with the host
+// the request came to. Anything else — another farm's address, another site
+// — is not this server, and a token for it must not be minted or accepted
+// here.
+func (s *Server) resourceIsThisServer(r *http.Request, resource string) bool {
+	canon := func(v string) string {
+		u, err := url.Parse(strings.TrimSpace(v))
+		if err != nil || u.Scheme == "" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return ""
+		}
+		return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.EscapedPath(), "/")
+	}
+	got := canon(resource)
+	if got == "" {
+		return false
+	}
+	for _, base := range []string{s.publicBase(r), requestOrigin(r)} {
+		if got == canon(base+"/mcp") || got == canon(base) {
+			return true
+		}
+	}
+	return false
 }
 
 func allowCORS(w http.ResponseWriter) {
@@ -121,7 +164,7 @@ func (s *Server) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Req
 		"scopes_supported":         []string{oauthScope},
 		"bearer_methods_supported": []string{"header"},
 		"resource_name":            "Báscula",
-		"resource_documentation":   base + "/mcp",
+		"resource_documentation":   base + "/mcp/docs",
 	})
 }
 
@@ -144,7 +187,7 @@ func (s *Server) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.R
 		"registration_endpoint":                          base + "/oauth/register",
 		"revocation_endpoint":                            base + "/oauth/revoke",
 		"jwks_uri":                                       base + "/.well-known/jwks.json",
-		"service_documentation":                          base + "/mcp",
+		"service_documentation":                          base + "/mcp/docs",
 		"response_types_supported":                       []string{"code"},
 		"response_modes_supported":                       []string{"query"},
 		"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
@@ -183,7 +226,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// ChatGPT and Claude use), so it is the one write a stranger can repeat at
 	// will. Each registration is a row that nothing prunes; the cap per address
 	// and the size limits below are what keep a loop from filling the disk.
-	if !s.oauthRegs.allow(clientIP(r), time.Now()) {
+	if !s.oauthRegs.allow(clientIP(r), time.Now()) || !s.oauthRegistrationBudgetLeft(r) {
 		w.Header().Set("Retry-After", "3600")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -305,13 +348,12 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.Internal("could not mint a client id").WithCause(err))
 		return
 	}
-	name := str("client_name")
+	// The name is shown on the sign-in page, so it is kept short and plain:
+	// no control or bidi-override characters that could make «ChatGPT» out
+	// of something else (it is HTML-escaped on the page as well).
+	name := sanitizeClientName(str("client_name"))
 	if name == "" {
 		name = "mcp-client"
-	}
-	// The name is shown on the sign-in page, so it is kept short and plain.
-	if r := []rune(name); len(r) > oauthMaxClientName {
-		name = string(r[:oauthMaxClientName])
 	}
 
 	resp := map[string]any{
@@ -340,6 +382,15 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, r, domain.Internal("could not encode the registration").WithCause(err))
 		return
+	}
+	// What is kept is bounded more tightly than what is accepted: the echo
+	// goes back to the client once, the row stays for ever.
+	if len(stored) > oauthMaxStoredMetadata {
+		stored, _ = json.Marshal(map[string]any{
+			"client_id": id, "client_name": name, "redirect_uris": redirects,
+			"grant_types": grants, "response_types": []string{"code"},
+			"token_endpoint_auth_method": method, "scope": scope,
+		})
 	}
 
 	var secretHash []byte
@@ -370,6 +421,14 @@ func oauthRedirectOK(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("redirect_uri is not a URI")
+	}
+	// RFC 6749 §3.1.2: no fragment. And no user:password@ in front of the
+	// host, which only exists to make a URI read as a different site.
+	if u.Fragment != "" || strings.Contains(raw, "#") {
+		return fmt.Errorf("redirect_uri must not contain a fragment")
+	}
+	if u.User != nil {
+		return fmt.Errorf("redirect_uri must not contain credentials")
 	}
 	host := strings.ToLower(u.Hostname())
 	switch u.Scheme {
@@ -412,7 +471,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		method = oauthChallenge
 	}
 
-	failToClient := func(desc string) {
+	failToClient := func(code, desc string) {
 		if redirectURI == "" {
 			s.oauthForm(w, r, q, desc, nil, nil)
 			return
@@ -423,7 +482,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		qq := u.Query()
-		qq.Set("error", "invalid_request")
+		qq.Set("error", code)
 		qq.Set("error_description", desc)
 		if state != "" {
 			qq.Set("state", state)
@@ -460,7 +519,14 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if challenge == "" || method != oauthChallenge {
-		failToClient("PKCE S256 is required")
+		failToClient("invalid_request", "PKCE S256 is required")
+		return
+	}
+	// RFC 8707: a resource indicator must name this server's MCP endpoint.
+	// The token is bound to it (see issueSessionFor), so a code asked for on
+	// behalf of another resource is refused before anyone signs in.
+	if resource != "" && !s.resourceIsThisServer(r, resource) {
+		failToClient("invalid_target", "resource must be "+s.mcpResource(r))
 		return
 	}
 
@@ -506,28 +572,27 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only the access token is minted here, as proof of who signed in; the
-	// session proper (with its refresh token) is issued at the token
-	// endpoint, to whoever proves they hold the PKCE verifier.
-	access, err := s.signer.Issue(user.ID, chosen.FarmID, chosen.Role, "", user.IsSuperadmin)
-	if err != nil {
-		writeError(w, r, domain.Internal("could not issue the access token").WithCause(err))
-		return
-	}
+	// The code row carries a signed, purpose-bound proof of who signed in
+	// and for which farm — not a bearer token: a dump of oauth_codes must not
+	// hand out sessions. The session proper (access and refresh token) is
+	// issued at the token endpoint, to whoever proves they hold the PKCE
+	// verifier.
+	proof := s.signer.SignTicket(oauthCodeTicketPurpose, user.ID+"|"+chosen.FarmID, oauthCodeTTL)
 	code, err := randomToken(32)
 	if err != nil {
 		writeError(w, r, domain.Internal("could not mint an authorization code").WithCause(err))
 		return
 	}
 	if err := store.InsertOAuthCode(r.Context(), tx, store.OAuthCode{
-		Code:                code,
+		// Only the code's hash is stored, like every other secret here.
+		Code:                oauthCodeKey(code),
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: method,
 		Resource:            resource,
 		Scope:               scope,
-		AccessToken:         access,
+		AccessToken:         proof,
 		ExpiresAt:           time.Now().Add(oauthCodeTTL),
 	}); err != nil {
 		writeError(w, r, err)
@@ -552,7 +617,58 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 const (
 	oauthPickTicketPurpose = "oauth-farm-pick"
 	oauthPickTicketTTL     = 10 * time.Minute
+	// oauthCodeTicketPurpose seals who signed in, for the code exchange.
+	oauthCodeTicketPurpose = "oauth-code"
 )
+
+// oauthCodeKey is the lookup key an authorization code is stored under: its
+// SHA-256, so the table never holds a code that can be exchanged.
+func oauthCodeKey(code string) string {
+	return hex.EncodeToString(auth.HashToken(code))
+}
+
+// sanitizeClientName drops control, format (bidi overrides, zero-width) and
+// other invisible characters from a registered client name, collapses
+// whitespace and cuts it to oauthMaxClientName runes.
+func sanitizeClientName(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		switch {
+		case unicode.IsControl(r), unicode.In(r, unicode.Cf, unicode.Co, unicode.Cs):
+			continue
+		case unicode.IsSpace(r):
+			b.WriteRune(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	name := strings.Join(strings.Fields(b.String()), " ")
+	if rs := []rune(name); len(rs) > oauthMaxClientName {
+		name = string(rs[:oauthMaxClientName])
+	}
+	return name
+}
+
+// oauthRegistrationBudgetLeft is the platform-wide cap on anonymous client
+// registrations, counted in the database so every replica shares it (the
+// per-address limiter in front of it is per process). It is what bounds the
+// table when the addresses are many.
+func (s *Server) oauthRegistrationBudgetLeft(r *http.Request) bool {
+	max := s.cfg.OAuthRegistrationsPerHour
+	if max <= 0 {
+		return true
+	}
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		return true
+	}
+	n, err := store.CountRecentOAuthClients(r.Context(), tx, time.Hour)
+	if err != nil {
+		slog.Error("oauth registration budget", "err", err)
+		return true
+	}
+	return n < max
+}
 
 // oauthPick is the second step of the sign-in page: the password was right and
 // the account belongs to several farms, none of them named by the host.
@@ -761,6 +877,12 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// RFC 8707 at the token endpoint: a resource, if named, must be this
+	// server's MCP endpoint, which is what the token will be bound to.
+	if res := strings.TrimSpace(r.Form.Get("resource")); res != "" && !s.resourceIsThisServer(r, res) {
+		oauthTokenError(w, "invalid_target", "resource must be "+s.mcpResource(r))
+		return
+	}
 	switch r.Form.Get("grant_type") {
 	case "authorization_code":
 		s.oauthExchangeCode(w, r, tx)
@@ -777,13 +899,19 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		// to. A confidential client must authenticate even when it leaves out
 		// client_id, and another client's refresh token is refused.
 		id, clientSecret, basic := oauthClientCredentials(r)
-		if tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret)); err == nil && tok.OAuthClientID != nil {
-			if id != "" && id != *tok.OAuthClientID {
-				oauthTokenError(w, "invalid_grant", "the refresh token was issued to another client")
-				return
-			}
-			id = *tok.OAuthClientID
+		tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret))
+		if err != nil || tok.OAuthClientID == nil {
+			// Unknown, or a web or handset session's token: this endpoint
+			// only rotates what it issued. A browser's refresh token is
+			// redeemed at /v1/auth/refresh and nowhere else.
+			oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
+			return
 		}
+		if id != "" && id != *tok.OAuthClientID {
+			oauthTokenError(w, "invalid_grant", "the refresh token was issued to another client")
+			return
+		}
+		id = *tok.OAuthClientID
 		if id != "" {
 			if _, err := oauthAuthenticateClient(r, tx, id, clientSecret); err != nil {
 				oauthClientError(w, basic, err.Error())
@@ -814,7 +942,7 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		oauthClientError(w, basic, err.Error())
 		return
 	}
-	row, err := store.ConsumeOAuthCode(r.Context(), tx, code)
+	row, err := store.ConsumeOAuthCode(r.Context(), tx, oauthCodeKey(code))
 	if err != nil {
 		oauthTokenError(w, "invalid_grant", "code is not valid")
 		return
@@ -831,15 +959,20 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		return
 	}
 
-	// The code carries the access token signed at sign-in. It says who and
-	// which farm; the session is issued now, with a refresh token, from the
+	// The code carries the proof sealed at sign-in. It says who and which
+	// farm; the session is issued now, with a refresh token, from the
 	// membership as it stands.
-	claims, err := s.signer.Parse(row.AccessToken)
-	if err != nil {
+	who, err := s.signer.VerifyTicket(oauthCodeTicketPurpose, row.AccessToken)
+	userID, farmID, found := strings.Cut(who, "|")
+	if err != nil || !found {
 		oauthTokenError(w, "invalid_grant", "code expired")
 		return
 	}
-	user, err := store.FindUserByID(r.Context(), tx, claims.Subject)
+	if row.Resource != "" && !s.resourceIsThisServer(r, row.Resource) {
+		oauthTokenError(w, "invalid_target", "the code was issued for another resource")
+		return
+	}
+	user, err := store.FindUserByID(r.Context(), tx, userID)
 	if err != nil {
 		oauthTokenError(w, "invalid_grant", "that account no longer exists")
 		return
@@ -848,7 +981,7 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		writeError(w, r, err)
 		return
 	}
-	m, err := store.GetMembership(r.Context(), tx, claims.FarmID, user.ID)
+	m, err := store.GetMembership(r.Context(), tx, farmID, user.ID)
 	if err != nil || m.SuspendedAt != nil {
 		oauthTokenError(w, "invalid_grant", "that account no longer has access to this farm")
 		return
@@ -897,28 +1030,52 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if id, secret, basic := oauthClientCredentials(r); id != "" {
-		if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
-			oauthClientError(w, basic, err.Error())
-			return
-		}
-	}
+	id, secret, basic := oauthClientCredentials(r)
 	token := r.Form.Get("token")
 	if token == "" {
 		oauthTokenError(w, "invalid_request", "token is required")
 		return
 	}
-	if r.Form.Get("token_type_hint") != "access_token" {
-		tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(token))
-		if err == nil {
-			if err := store.RevokeFamily(r.Context(), tx, tok.FamilyID); err != nil {
-				writeError(w, r, err)
-				return
-			}
-		} else if !errors.Is(err, pgx.ErrNoRows) {
+	// Access tokens are stateless and simply lapse; only a refresh token has
+	// anything to revoke. Whatever the hint says, it is looked up as one.
+	tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(token))
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, r, err)
 			return
 		}
+		tok = nil
+	}
+	// RFC 7009 §2.1: the server verifies the token was issued to the client
+	// asking. This endpoint closes an assistant's own grant and nothing
+	// else: a web or handset session's refresh token presented here is left
+	// alone (its door is /v1/auth/logout), and so is another client's.
+	if tok == nil || tok.OAuthClientID == nil {
+		if id != "" {
+			if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
+				oauthClientError(w, basic, err.Error())
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if id == "" {
+		// A public client may identify itself by the token alone; a
+		// confidential one must still authenticate (checked below).
+		id = *tok.OAuthClientID
+	}
+	if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
+		oauthClientError(w, basic, err.Error())
+		return
+	}
+	if id != *tok.OAuthClientID {
+		oauthTokenError(w, "unauthorized_client", "the token was issued to another client")
+		return
+	}
+	if err := store.RevokeFamily(r.Context(), tx, tok.FamilyID); err != nil {
+		writeError(w, r, err)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
