@@ -6,6 +6,7 @@
 #   make test     run the suite against that same Postgres
 #   make run      serve on :8080
 #   make dev      serve on :8099 with the signup cap lifted, for the e2e suite
+#   make db-diagram  regenerate docs/database.md (throwaway Postgres in Docker)
 #
 # ADMIN_DATABASE_URL owns the schema. DATABASE_URL is the application role,
 # which has no BYPASSRLS — that is the whole point of having two.
@@ -33,7 +34,7 @@ DATABASE_URL       ?= postgres://bascula_api:bascula_api_dev@localhost:$(PGPORT)
 export ADMIN_DATABASE_URL
 export DATABASE_URL
 
-.PHONY: up down migrate prune test test-verbose run dev build fmt vet tidy psql logs clean
+.PHONY: up down migrate prune test test-verbose run dev build fmt vet tidy psql logs clean db-diagram
 
 up:
 	docker compose up -d
@@ -79,6 +80,12 @@ dev:
 
 build:
 	go build -o bin/api ./cmd/api
+
+# docs/database.md is generated from the migrations and CI checks it, so a PR
+# that adds a migration runs this and commits the result. It uses its own
+# throwaway container, never the database `make up` started.
+db-diagram:
+	../../scripts/db-diagram.sh
 
 fmt:
 	gofmt -w ./cmd ./internal ./migrations
