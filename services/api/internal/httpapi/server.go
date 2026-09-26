@@ -255,6 +255,7 @@ func (s *Server) buildRouter() chi.Router {
 	}
 	r.Use(middleware.Recoverer)
 	r.Use(noStore)
+	r.Use(logConnectorTraffic)
 
 	for _, rt := range s.Routes() {
 		handler := rt.Handler
