@@ -268,6 +268,11 @@ func (s *Server) Routes() []Route {
 
 		// MCP. Streamable HTTP, stateless. POST is the JSON-RPC; GET is the
 		// optional SSE stream; OPTIONS is CORS for browser hosts (ChatGPT).
+		// The caller's own MCP connections on this farm («Conexiones» in
+		// Configuración): list them, and revoke one.
+		{http.MethodGet, "/v1/mcp/connections", auth.ActionMCPConnectionsRead, s.handleListMCPConnections},
+		{http.MethodDelete, "/v1/mcp/connections/{id}", auth.ActionMCPConnectionsRevoke, s.handleRevokeMCPConnection},
+
 		{http.MethodPost, "/mcp", auth.ActionMCP, s.handleMCP},
 		{http.MethodGet, "/mcp", auth.ActionMCP, s.handleMCP},
 		{http.MethodOptions, "/mcp", auth.ActionOAuth, s.handleMCPOptions},

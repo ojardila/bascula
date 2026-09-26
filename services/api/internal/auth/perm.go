@@ -130,6 +130,12 @@ const (
 	// request touches no table; the inner one opens its own transaction.
 	ActionMCP Action = "mcp"
 
+	// The caller's own MCP connections on this farm: the OAuth sessions an
+	// assistant holds on their behalf. Anyone who may open /mcp may see and
+	// close their own; nobody sees another member's.
+	ActionMCPConnectionsRead   Action = "mcp.connections.read"
+	ActionMCPConnectionsRevoke Action = "mcp.connections.revoke"
+
 	// OAuth discovery, registration and the authorization-code dance that
 	// ChatGPT's connector UI insists on. Public: there is no token yet.
 	ActionOAuth Action = "oauth"
@@ -348,8 +354,10 @@ var Matrix = map[Action]Rule{
 	// ve reportes de dinero" is the floor here, not the ceiling.
 	ActionReportsRead: {Roles: admins, Money: true},
 
-	ActionMCP:   {Roles: everyone, TenantOptional: true},
-	ActionOAuth: {Public: true, TenantOptional: true},
+	ActionMCP:                  {Roles: everyone, TenantOptional: true},
+	ActionMCPConnectionsRead:   {Roles: everyone},
+	ActionMCPConnectionsRevoke: {Roles: everyone},
+	ActionOAuth:                {Public: true, TenantOptional: true},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

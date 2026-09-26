@@ -1112,6 +1112,15 @@ export const api = {
   saveTour: async (tour: string, step: number, status: WireTourStatus): Promise<WireTourProgress> =>
     http.put<WireTourProgress>(`/v1/me/tours/${encodeURIComponent(tour)}`, { step, status }),
 
+  /* -- MCP connections («Conexiones» in Configuración) ---------------- */
+
+  listMcpConnections: async (): Promise<McpConnections> =>
+    http.get<McpConnections>("/v1/mcp/connections"),
+
+  revokeMcpConnection: async (id: string): Promise<void> => {
+    await http.del<void>(`/v1/mcp/connections/${encodeURIComponent(id)}`);
+  },
+
   /* -- money --------------------------------------------------------- */
 
   /**
@@ -2179,3 +2188,19 @@ function deviceId(): string {
 
 /** Kept for the screens that still import it. */
 export { unsupported };
+
+/** One OAuth grant an MCP client (ChatGPT, …) holds for the caller on this farm. */
+export interface McpConnection {
+  id: string;
+  clientName: string;
+  status: "active" | "expired";
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+export interface McpConnections {
+  items: McpConnection[];
+  /** This farm's `/mcp` URL, as the server sees it. */
+  endpoint: string;
+}
