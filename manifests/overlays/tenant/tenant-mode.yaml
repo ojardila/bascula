@@ -12,3 +12,7 @@
   value:
     containerPort: 8081
     name: internal
+# The farm's own stack never talks to the Kubernetes API.
+- op: add
+  path: /spec/template/spec/automountServiceAccountToken
+  value: false

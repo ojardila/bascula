@@ -27,6 +27,7 @@ import (
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/httpapi"
+	"github.com/ojardila/bascula/services/api/internal/kube"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
@@ -366,6 +367,11 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 		// The platform sends the ready notice, never the farm's own stack.
 		rc.http.Mailer = nil
 		rc.mail = ""
+	}
+	// Only the platform reads the cluster (read-only) for provisioning
+	// progress; a farm's own stack has no business there.
+	if rc.http.TenantSlug == "" {
+		rc.http.KubeClient = kube.InCluster()
 	}
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {

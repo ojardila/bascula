@@ -12,6 +12,9 @@
 # and the platform API copies the farm into the new stack once it answers
 # (services/api/internal/httpapi/provision.go).
 name: Provision tenant
+# The platform API finds this run by its name to show progress on the
+# waiting screen (services/api/internal/httpapi/provision_progress.go).
+run-name: Provision tenant ${{ github.event.client_payload.slug || inputs.slug }}
 
 on:
   workflow_dispatch:

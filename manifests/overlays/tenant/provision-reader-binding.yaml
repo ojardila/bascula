@@ -1,0 +1,24 @@
+# Lets the platform API (prod and dev) read this farm stack's status while it
+# comes up: the «Preparando su finca» progress. Read-only; the ClusterRole is
+# manifests/cluster/bascula-provision-reader.yaml.
+#
+# Subjects are written as the ServiceAccounts' user names (kind User) on
+# purpose: kustomize's namespace transformer rewrites a ServiceAccount
+# subject in namespace "bascula" to the tenant namespace, which would grant
+# the farm's own account instead of the platform's. User subjects are left
+# alone, and RBAC matches them to the same ServiceAccount tokens.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bascula-provision-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bascula-tenant-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:serviceaccount:bascula:bascula-api
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:serviceaccount:bascula-dev:bascula-api

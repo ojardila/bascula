@@ -6600,6 +6600,35 @@ export interface operations {
                         /** @description The owner asked for that email. */
                         notifyRequested: boolean;
                         /**
+                         * @description Weighted, monotonic progress stages, read from the cluster
+                         *     (read-only), GitHub Actions, Cloudflare and a strictly
+                         *     verified HTTPS request. See docs/provision-progress.md.
+                         */
+                        stages: {
+                            key: string;
+                            /** @description Plain Spanish. */
+                            label: string;
+                            /** @enum {string} */
+                            state: "done" | "active" | "pending";
+                            weight: number;
+                            /**
+                             * Format: int64
+                             * @description Seconds after the farm's creation the stage was first seen done.
+                             */
+                            doneAfterSeconds?: number;
+                        }[];
+                        /** @description Done weight of the stages, 0–100. 100 only when ready. */
+                        percent: number;
+                        /** @description The step in progress, in plain Spanish. */
+                        current: string;
+                        /**
+                         * @description Where progress was read. pipeline/basic mean the cluster could not be read.
+                         * @enum {string}
+                         */
+                        source: "cluster" | "pipeline" | "basic";
+                        /** @description Plain-Spanish note for the owner when some detail cannot be seen. */
+                        note?: string;
+                        /**
                          * @description While the certificate step is not done, the last problem
                          *     asking Cloudflare for the farm's certificate (a failed API
                          *     call or validation errors). Absent otherwise.

@@ -268,6 +268,24 @@ export interface ProvisionStatus {
   notifyRequested?: boolean;
   /** Last problem getting the farm's certificate, while it is not active. */
   certificateError?: string;
+  /** Weighted, monotonic stages read from the cluster, GitHub and Cloudflare. */
+  stages?: ProvisionStage[];
+  /** Done weight of the stages, 0–100; 100 only when ready. */
+  percent?: number;
+  /** The step in progress, in plain Spanish. */
+  current?: string;
+  /** Where progress was read: the cluster, GitHub Actions only, or basic. */
+  source?: "cluster" | "pipeline" | "basic";
+  /** Plain-Spanish note when some detail cannot be seen. */
+  note?: string;
+}
+
+export interface ProvisionStage {
+  key: string;
+  label: string;
+  state: "done" | "active" | "pending";
+  weight: number;
+  doneAfterSeconds?: number;
 }
 
 

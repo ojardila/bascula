@@ -115,6 +115,10 @@ type provisioner struct {
 	emailing map[string]bool
 	cache    map[string]cachedStatus
 	certs    map[string]*certState
+	// pipelines caches the provision-tenant run per slug; stages remembers
+	// which progress stages were seen done, so progress never goes back.
+	pipelines map[string]pipelineView
+	stages    map[string]*stageMemory
 }
 
 type cachedStatus struct {
@@ -123,7 +127,8 @@ type cachedStatus struct {
 }
 
 func newProvisioner() *provisioner {
-	return &provisioner{watching: map[string]bool{}, emailing: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{}}
+	return &provisioner{watching: map[string]bool{}, emailing: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{},
+		pipelines: map[string]pipelineView{}, stages: map[string]*stageMemory{}}
 }
 
 func (s *Server) tenantInternalURL(slug string) string {
@@ -394,6 +399,16 @@ type provisionStatus struct {
 	// CertificateError is the last problem asking Cloudflare for the farm's
 	// certificate (API error or validation error), while it is not active.
 	CertificateError string `json:"certificateError,omitempty"`
+	// Stages are the weighted, monotonic progress stages; Percent their
+	// done weight (100 only when Ready); Current the step in progress, in
+	// plain Spanish. Source says where progress was read: "cluster",
+	// "pipeline" (GitHub Actions, cluster unreadable) or "basic". Note, when
+	// set, is a plain-Spanish line for the owner about missing detail.
+	Stages  []provisionStage `json:"stages"`
+	Percent int              `json:"percent"`
+	Current string           `json:"current"`
+	Source  string           `json:"source"`
+	Note    string           `json:"note,omitempty"`
 }
 
 // handleProvisionStatus answers the waiting screen. It is public: the caller
@@ -488,6 +503,7 @@ func (s *Server) computeProvisionStatus(ctx context.Context, slug string, create
 	// is active and a strictly verified TLS request to the real hostname
 	// answered 200.
 	st.Ready = database && app && certificate && web
+	s.fillStages(ctx, &st, createdAt, database, app, certificate, web)
 	st.Slow = !st.Ready && time.Since(createdAt) > s.provisionSlowAfter()
 	return st
 }

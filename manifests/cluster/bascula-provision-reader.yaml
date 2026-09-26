@@ -1,0 +1,88 @@
+# Cluster-scoped and cross-namespace RBAC for the platform API's read-only view
+# of new farm stacks. Applied once by an operator (kubectl apply -f), NOT by
+# the bascula Argo Applications: they render everything into their own
+# namespace. See docs/provision-progress.md.
+#
+# Who: ServiceAccount bascula-api in namespaces bascula (prod) and bascula-dev.
+# What: get/list/watch only. No secrets, no configmaps, no writes, no exec.
+#
+#   namespaces (cluster)                     is bascula-{slug} there / listing
+#                                            bascula-* for the hostname sweep
+#   applications.argoproj.io (ns argocd)     bascula-{slug} sync status
+#   inside each bascula-{slug}, through a RoleBinding the tenant overlay ships
+#   (manifests/overlays/tenant/provision-reader-binding.yaml):
+#     pods, services, deployments, jobs, httproutes, clusters.postgresql.cnpg.io
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bascula-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bascula-namespace-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: bascula-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: bascula-api
+    namespace: bascula
+  - kind: ServiceAccount
+    name: bascula-api
+    namespace: bascula-dev
+---
+# Bound per farm namespace only (RoleBinding in bascula-{slug}), never through
+# a ClusterRoleBinding: the API cannot read pods or services anywhere else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: bascula-tenant-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bascula-app-reader
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bascula-app-reader
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bascula-app-reader
+subjects:
+  - kind: ServiceAccount
+    name: bascula-api
+    namespace: bascula
+  - kind: ServiceAccount
+    name: bascula-api
+    namespace: bascula-dev
