@@ -215,6 +215,34 @@ and one empty input per employee.
 8. It clears the boxes, reloads the day, and shows «Listo. Se agregaron N
    pesadas nuevas» (Done. N new weighings were added).
 
+**Alternative flow A — find a picker by name («Buscar por nombre»)**
+
+Pickers rarely reach the scale in list order. Next to the plot selector there is
+a search box (placeholder «Buscar por nombre» — Search by name) so P can find
+the person at the scale without scrolling the whole crew.
+
+1. After step 3, P types part of a name, e.g. «pedro» or «ramirez».
+2. The list narrows as P types. Matching is client-side over the already-loaded
+   active employees (no request), ignores accents and case («ramirez» matches
+   «Ramírez»), and matches any part of the first or last names; every word typed
+   must appear («pedro ram» finds Pedro Ramírez). The screen says «N personas de
+   M» (N people of M) with «Ver a todos» (See everyone). Inactive employees are
+   never listed, so they are never found.
+3. If nobody matches, it shows «No hay nadie con ese nombre» (There is nobody
+   with that name) and «Ver a todos».
+4. P presses Enter (or taps the person): focus moves to the first match's
+   kilogram box. P types the kilograms.
+5. Enter in a filled kilogram box opens the same confirmation as «Guardar»
+   (step 6), with «Sí, guardar» focused, so Enter again saves.
+6. After a successful save, the search is cleared and focused, ready for the
+   next person. «Revisar» (Review) returns focus to the kilogram box.
+
+Kilograms typed for people hidden by the search are kept, counted in «N pesadas
+nuevas sin guardar», and included in the confirmation list. The clear button
+(«Borrar la búsqueda») or Escape empties the search. On a phone, focusing the
+search scrolls it to the top so matches appear right under it above the
+keyboard.
+
 A second visit to the scale repeats the flow and creates another record. Changing
 plots does not change earlier records. A partially filled sheet writes only the
 filled boxes. A failure halfway through is not atomic, but retrying the same
@@ -230,6 +258,10 @@ flowchart TD
   A([Open bulk registration]) --> B[Choose day and plot]
   B --> C[Load active employees and existing day weighings]
   C --> D[Enter new kilograms in empty boxes]
+  C -.-> S[Alt A: type part of a name in «Buscar por nombre»]
+  S --> T{Matches?}
+  T -->|no| U[«No hay nadie con ese nombre»] --> S
+  T -->|yes| V[Enter: focus first match's kilograms] --> D
   D --> E{All filled boxes valid?}
   E -->|no| D
   E -->|yes| F[Confirm day, plot, list, and total]
@@ -238,6 +270,7 @@ flowchart TD
   H -->|yes| I[Stop; keep boxes and successful records]
   H -->|no| J[Clear boxes and reload day]
   J --> K([Show «Listo» — Done])
+  K -.->|search was used| S
 ```
 
 ### CU-03: One plot with several pickers

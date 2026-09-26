@@ -9,7 +9,11 @@
  *  1. The DAY, big and first. Today by default; seven day buttons for the week
  *     (arrows move a week) so «ayer» or «el martes» is one tap. Future days are
  *     disabled.
- *  2. The lote of the pesadas being added, remembered on this device.
+ *  2. The lote of the pesadas being added, remembered on this device. Next to
+ *     it, «Buscar por nombre»: people don't arrive in list order, so typing
+ *     part of a name («pedro», «ramirez») narrows the list right away; Enter
+ *     jumps to the kilos of the first match, Enter there asks to save, and
+ *     after the save the search is cleared and ready for the next person.
  *  3. One row per employee: what that person ALREADY has on the day (any
  *     lote, e.g. «2 pesadas · 38 kg») and one big empty box to ADD another.
  *     People come to the scale several times a day, so a filled box is always
@@ -21,7 +25,7 @@
  * Ids are minted once per approved save (`useWriteOnce`), so a retried save
  * never counts a weighing twice.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, CircularProgress, Dialog, DialogActions,
@@ -31,6 +35,8 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ClearIcon from "@mui/icons-material/Clear";
+import SearchIcon from "@mui/icons-material/Search";
 import SaveIcon from "@mui/icons-material/Save";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
@@ -44,7 +50,7 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { useOffline } from "../../offline/OfflineContext";
 import { DAY_LETTERS, daysOfWeek, isIsoDay, pickHarvestActivity, workerLabel } from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
-import { bulkEntries, registeredByWorker, soFarLabel, type BulkEntry } from "./bulk";
+import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, type BulkEntry } from "./bulk";
 
 const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
 const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"] as const;
@@ -97,6 +103,19 @@ export function RegistroMasivoPage() {
   const [denied, setDenied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const { busy, run: runOnce } = useWriteOnce();
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const kilosRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const lastKilos = useRef<string | null>(null);
+  const searching = search.trim() !== "";
+
+  const focusKilos = (workerId: string | null | undefined) => {
+    if (workerId) kilosRefs.current[workerId]?.focus();
+  };
+  const clearSearch = () => {
+    setSearch("");
+    searchRef.current?.focus();
+  };
 
   function patch(next: Record<string, string>) {
     setParams((prev) => {
@@ -199,6 +218,7 @@ export function RegistroMasivoPage() {
   const plot = plots.find((p) => p.id === plotId) ?? null;
   const soFar = registeredByWorker(dayRecords ?? []);
   const { entries, errors } = bulkEntries(workers, texts);
+  const shown = filterWorkers(workers, search);
   const newKilos = entries.reduce((s, e) => s + e.quantity, 0);
   const dirty = Object.values(texts).some((t) => t.trim() !== "");
   const dayKilos = (dayRecords ?? []).reduce((s, r) => s + r.quantity, 0);
@@ -215,6 +235,11 @@ export function RegistroMasivoPage() {
     if (!entries.length) return;
     setSaveError(null);
     setConfirming(true);
+  }
+
+  function closeConfirm() {
+    setConfirming(false);
+    if (searching) setTimeout(() => focusKilos(lastKilos.current), 0);
   }
 
   async function confirmSave() {
@@ -243,6 +268,11 @@ export function RegistroMasivoPage() {
     });
     if (!outcome.ran) return;
     setTexts({});
+    if (searching) {
+      // Next person: the search is empty and ready to type again.
+      setSearch("");
+      searchRef.current?.focus();
+    }
     setAdded({ day, plotName: plot.name, entries: batch });
     try {
       setDayRecords(await loadDay(activity.id, day));
@@ -309,24 +339,67 @@ export function RegistroMasivoPage() {
         </Stack>
       </Paper>
 
-      {/* 2. The lote of the new pesadas. */}
-      <TextField
-        select
-        fullWidth
-        label={`${PLOT.One} de las pesadas nuevas`}
-        value={plotId}
-        disabled={busy}
-        onChange={(e) => {
-          localStorage.setItem(LAST_LOTE, e.target.value);
-          patch({ lote: e.target.value });
-        }}
-        sx={{ mb: 2, maxWidth: 420, "& .MuiSelect-select": { fontSize: "1.15rem", py: 1.75 } }}
-      >
-        <MenuItem value="" disabled>Elija un lote</MenuItem>
-        {plots.map((p) => (
-          <MenuItem key={p.id} value={p.id} sx={{ fontSize: "1.1rem" }}>{p.name}</MenuItem>
-        ))}
-      </TextField>
+      {/* 2. The lote of the new pesadas, and next to it the search by name. */}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 2 }} sx={{ mb: 2 }}>
+        <TextField
+          select
+          fullWidth
+          label={`${PLOT.One} de las pesadas nuevas`}
+          value={plotId}
+          disabled={busy}
+          onChange={(e) => {
+            localStorage.setItem(LAST_LOTE, e.target.value);
+            patch({ lote: e.target.value });
+          }}
+          sx={{ flex: 1, "& .MuiSelect-select": { fontSize: "1.15rem", py: 1.75 } }}
+        >
+          <MenuItem value="" disabled>Elija un lote</MenuItem>
+          {plots.map((p) => (
+            <MenuItem key={p.id} value={p.id} sx={{ fontSize: "1.1rem" }}>{p.name}</MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          fullWidth
+          value={search}
+          placeholder="Buscar por nombre"
+          disabled={!plotId || workers.length === 0}
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={(e) => {
+            // On a phone the keyboard takes half the screen: bring the search
+            // to the top so the people it finds show right under it.
+            if (window.matchMedia?.("(max-width: 599px)").matches) {
+              e.target.scrollIntoView?.({ block: "start", behavior: "smooth" });
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              focusKilos(shown[0]?.id);
+            } else if (e.key === "Escape" && search) {
+              e.preventDefault();
+              setSearch("");
+            }
+          }}
+          inputRef={searchRef}
+          inputProps={{
+            "aria-label": "Buscar por nombre",
+            autoComplete: "off",
+            autoCorrect: "off",
+            autoCapitalize: "none",
+            spellCheck: false,
+            enterKeyHint: "search",
+          }}
+          InputProps={{
+            startAdornment: <SearchIcon sx={{ mr: 1, color: "text.secondary", fontSize: 28 }} />,
+            endAdornment: search ? (
+              <IconButton aria-label="Borrar la búsqueda" onClick={clearSearch} edge="end" sx={{ width: 48, height: 48 }}>
+                <ClearIcon sx={{ fontSize: 28 }} />
+              </IconButton>
+            ) : null,
+          }}
+          sx={{ flex: 1, scrollMarginTop: 72, "& input": { fontSize: "1.15rem", py: 1.75 } }}
+        />
+      </Stack>
 
       {!offline.online && (
         <Alert severity="warning" sx={{ mb: 2 }}>
@@ -362,15 +435,34 @@ export function RegistroMasivoPage() {
       ) : workers.length === 0 ? (
         <Alert severity="info">No hay empleados activos. Regístrelos primero en Empleados.</Alert>
       ) : (
-        <>
+        // While searching on a phone, keep room below so the search can stay
+        // at the top of the screen with the matches right under it.
+        <Box sx={{ minHeight: searching ? { xs: "80vh", sm: 0 } : undefined }}>
+          {searching && shown.length > 0 && (
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+              <Typography sx={{ flex: 1, fontSize: "1.05rem" }} color="text.secondary">
+                {shown.length === 1 ? "1 persona" : `${shown.length} personas`} de {workers.length}
+              </Typography>
+              <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>Ver a todos</Button>
+            </Stack>
+          )}
+          {searching && shown.length === 0 && (
+            <Alert
+              severity="info"
+              sx={{ fontSize: "1.1rem", alignItems: "center" }}
+              action={<Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>Ver a todos</Button>}
+            >
+              No hay nadie con ese nombre
+            </Alert>
+          )}
           <Stack spacing={1.25}>
-            {workers.map((w) => {
+            {shown.map((w) => {
               const name = workerLabel(w);
               const has = soFar[w.id];
               return (
                 <Card key={w.id} variant="outlined">
                   <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => focusKilos(w.id)}>
                       <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>{name}</Typography>
                       <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>
                         {has ? (
@@ -393,8 +485,21 @@ export function RegistroMasivoPage() {
                         setTexts((prev) => ({ ...prev, [w.id]: v }));
                         setAdded(null);
                       }}
+                      onFocus={() => {
+                        lastKilos.current = w.id;
+                      }}
+                      onKeyDown={(e) => {
+                        // Enter with kilos written asks to save: type, Enter, «Sí, guardar».
+                        if (e.key === "Enter" && (texts[w.id] ?? "").trim() !== "") {
+                          e.preventDefault();
+                          askToSave();
+                        }
+                      }}
                       disabled={busy}
-                      inputProps={{ inputMode: "decimal", "aria-label": `${name}, kilos` }}
+                      inputRef={(el: HTMLInputElement | null) => {
+                        kilosRefs.current[w.id] = el;
+                      }}
+                      inputProps={{ inputMode: "decimal", enterKeyHint: "done", "aria-label": `${name}, kilos` }}
                       InputProps={{ endAdornment: <Typography sx={{ ml: 0.5, color: "text.secondary" }}>kg</Typography> }}
                       sx={{ width: { xs: 128, sm: 150 }, flexShrink: 0, "& input": { textAlign: "right", fontSize: 26, fontWeight: 600, py: 1.5 } }}
                     />
@@ -407,7 +512,7 @@ export function RegistroMasivoPage() {
             Registrado este día: <strong>{formatQuantity(dayKilos)} kg</strong>
             {entries.length > 0 && <> · por agregar: <strong>{formatQuantity(newKilos)} kg</strong></>}
           </Typography>
-        </>
+        </Box>
       )}
 
       {/* 4. Save. Stuck to the bottom only while there is something to save. */}
@@ -437,7 +542,15 @@ export function RegistroMasivoPage() {
         </Paper>
       )}
 
-      <Dialog open={confirming} onClose={() => setConfirming(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={confirming}
+        onClose={closeConfirm}
+        maxWidth="xs"
+        fullWidth
+        // While searching, focus is placed by hand: back on the search after a
+        // save, back on the kilos after «Revisar».
+        disableRestoreFocus={searching}
+      >
         <DialogTitle sx={{ fontSize: "1.4rem" }}>¿Guardar el registro del día?</DialogTitle>
         <DialogContent>
           <Typography sx={{ fontSize: "1.1rem" }}>
@@ -465,8 +578,8 @@ export function RegistroMasivoPage() {
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button onClick={() => setConfirming(false)} size="large">Revisar</Button>
-          <Button onClick={() => void confirmSave()} variant="contained" size="large" sx={{ minHeight: 48, px: 3 }}>
+          <Button onClick={closeConfirm} size="large">Revisar</Button>
+          <Button onClick={() => void confirmSave()} variant="contained" size="large" autoFocus sx={{ minHeight: 48, px: 3 }}>
             Sí, guardar
           </Button>
         </DialogActions>
