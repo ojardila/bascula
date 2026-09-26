@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -119,20 +120,27 @@ type oauthRegisterRequest struct {
 	RedirectURIs []string `json:"redirect_uris"`
 }
 
+// handleOAuthRegister is RFC 7591 dynamic client registration. Clients send
+// much more metadata than this server uses (grant_types, response_types,
+// token_endpoint_auth_method, scope, logo_uri, ...), and RFC 7591 §2 says a
+// server MUST ignore metadata it does not understand. So the body is decoded
+// leniently, not with decode(): the strict decoder turned ChatGPT's
+// registration, which carries grant_types, into a 400, and ChatGPT gave up on
+// the connector before it ever showed the sign-in page.
 func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	var req oauthRegisterRequest
-	if err := decode(r, &req); err != nil {
-		writeError(w, r, err)
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		oauthRegisterError(w, "invalid_client_metadata", "the body is not a JSON client registration")
 		return
 	}
 	if len(req.RedirectURIs) == 0 {
-		writeError(w, r, domain.BadRequest("redirect_uris is required"))
+		oauthRegisterError(w, "invalid_redirect_uri", "redirect_uris is required")
 		return
 	}
 	for _, u := range req.RedirectURIs {
 		if err := oauthRedirectOK(u); err != nil {
-			writeError(w, r, domain.BadRequest(err.Error()))
+			oauthRegisterError(w, "invalid_redirect_uri", err.Error())
 			return
 		}
 	}
@@ -470,6 +478,18 @@ func writeOAuthSession(w http.ResponseWriter, session *sessionResponse) {
 }
 
 func oauthTokenError(w http.ResponseWriter, code, desc string) {
+	allowCORS(w)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":             code,
+		"error_description": desc,
+	})
+}
+
+// oauthRegisterError is RFC 7591 §3.2.2: a 400 with error and
+// error_description, the shape registration clients parse and show.
+func oauthRegisterError(w http.ResponseWriter, code, desc string) {
 	allowCORS(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)

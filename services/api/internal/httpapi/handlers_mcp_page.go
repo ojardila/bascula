@@ -57,9 +57,9 @@ func (s *Server) mcpBrowserPage(next http.Handler) http.Handler {
 <p>Dirección del conector:<br><code>%s</code></p>
 <h2>ChatGPT</h2>
 <ol>
-  <li>Configuración → Aplicaciones y conectores → Configuración avanzada: active el modo desarrollador.</li>
-  <li>Crear conector: pegue la dirección de arriba y elija autenticación <strong>OAuth</strong>.</li>
-  <li>Se abrirá una página de Báscula: entre con el correo y la contraseña de la finca.</li>
+  <li>Desde un computador, en chatgpt.com (la app del celular no deja crear conectores): Configuración → Seguridad e inicio de sesión → active el <strong>Modo desarrollador</strong>. Requiere plan Plus, Pro, Business o Enterprise.</li>
+  <li>Abra <strong>Plugins</strong> (chatgpt.com/plugins), toque <strong>+</strong>, pegue la dirección de arriba y elija autenticación <strong>OAuth</strong>.</li>
+  <li>Se abrirá una página de Báscula: entre con el correo y la contraseña de la finca. Después el conector funciona también en el celular.</li>
 </ol>
 <h2>Claude</h2>
 <ol>
