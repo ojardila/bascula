@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/blob"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/kube"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
@@ -133,6 +135,15 @@ type Config struct {
 	CloudflareZoneID    string
 	CloudflareAPIURL    string
 	CloudflareDCVMethod string
+	// KubeClient reads the cluster (read-only) so the waiting screen can show
+	// real progress of a new farm stack, and so the platform can find farm
+	// namespaces whose certificate is missing. Nil means no cluster reads:
+	// progress falls back to GitHub Actions and the stack's own answer.
+	// ArgoNamespace is where the farms' Argo CD Applications live (argocd).
+	// ReconcileEvery is how often missing custom hostnames are looked for.
+	KubeClient     *kube.Client
+	ArgoNamespace  string
+	ReconcileEvery time.Duration
 	// Mailer sends email. Nil means the platform cannot send any, and
 	// everything that would (the "avísenme por correo" notice) is not
 	// offered. cmd/api sets it only when SMTP_HOST and SMTP_FROM are set.
@@ -188,6 +199,9 @@ func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	s.blobs = disk
 	s.router = s.buildRouter()
 	s.mcp = s.buildMCP()
+	if cfg.KubeClient != nil {
+		go s.reconcileFarmHostnames(context.Background())
+	}
 	return s
 }
 

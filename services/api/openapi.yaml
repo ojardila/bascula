@@ -625,7 +625,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds, notifyAvailable, notifyRequested]
+                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds, notifyAvailable, notifyRequested, stages, percent, current, source]
                 properties:
                   slug: { $ref: "#/components/schemas/FarmSlug" }
                   url:
@@ -656,6 +656,37 @@ paths:
                   notifyRequested:
                     type: boolean
                     description: The owner asked for that email.
+                  stages:
+                    type: array
+                    description: |
+                      Weighted, monotonic progress stages, read from the cluster
+                      (read-only), GitHub Actions, Cloudflare and a strictly
+                      verified HTTPS request. See docs/provision-progress.md.
+                    items:
+                      type: object
+                      required: [key, label, state, weight]
+                      properties:
+                        key: { type: string }
+                        label: { type: string, description: Plain Spanish. }
+                        state: { type: string, enum: [done, active, pending] }
+                        weight: { type: integer }
+                        doneAfterSeconds:
+                          type: integer
+                          format: int64
+                          description: Seconds after the farm's creation the stage was first seen done.
+                  percent:
+                    type: integer
+                    description: Done weight of the stages, 0–100. 100 only when ready.
+                  current:
+                    type: string
+                    description: The step in progress, in plain Spanish.
+                  source:
+                    type: string
+                    enum: [cluster, pipeline, basic]
+                    description: Where progress was read. pipeline/basic mean the cluster could not be read.
+                  note:
+                    type: string
+                    description: Plain-Spanish note for the owner when some detail cannot be seen.
                   certificateError:
                     type: string
                     description: |

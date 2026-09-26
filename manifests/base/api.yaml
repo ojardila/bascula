@@ -89,6 +89,17 @@ spec:
             capabilities: {drop: ["ALL"]}
 
 ---
+# The platform API reads new farm stacks (read-only) to show real progress on
+# «Preparando su finca». Its permissions are bound to this account by
+# manifests/cluster/bascula-provision-reader.yaml and, per farm namespace, by
+# the tenant overlay. A farm's own stack gets the account with no bindings and
+# no token (overlays/tenant/tenant-mode.yaml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bascula-api
+  namespace: bascula
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -116,6 +127,7 @@ spec:
       # against the cluster, never committed — see README.md.
       imagePullSecrets:
         - name: harbor-pull
+      serviceAccountName: bascula-api
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

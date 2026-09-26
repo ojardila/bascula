@@ -17,6 +17,7 @@ resources:
   - ../../base
   - bootstrap-secrets.yaml
   - public-url-configmap.yaml
+  - provision-reader-binding.yaml
 patches:
   - path: postgres-small.yaml
     target:

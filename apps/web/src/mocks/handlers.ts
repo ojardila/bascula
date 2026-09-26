@@ -756,10 +756,34 @@ export const handlers = [
       { key: "web", done: elapsed >= 6 },
     ];
     const ready = steps.every((s) => s.done);
+    const defs: Array<[string, string, number, number]> = [
+      ["received", "Solicitud recibida", 2, 0],
+      ["pipeline_started", "Preparación iniciada", 5, 0.5],
+      ["pipeline_done", "Preparación registrada", 8, 1],
+      ["deployment", "Instalación en marcha", 10, 1.5],
+      ["namespace", "Espacio propio", 5, 2],
+      ["database", "Base de datos", 20, 2.5],
+      ["migrations", "Tablas de datos", 10, 3],
+      ["pods", "Aplicación encendida", 15, 3.5],
+      ["route", "Dirección conectada", 5, 4],
+      ["app", "Su usuario", 5, 4.5],
+      ["certificate", "Conexión segura", 10, 5],
+      ["site", "Dirección abierta", 5, 6],
+    ];
+    let active = false;
+    const stages = defs.map(([key, label, weight, at]) => {
+      const done = ready || elapsed >= at;
+      const state = done ? "done" : active ? "pending" : "active";
+      if (!done) active = true;
+      return { key, label, weight, state };
+    });
+    const percent = ready ? 100 : Math.min(99, stages.filter((s) => s.state === "done").reduce((a, s) => a + s.weight, 0));
     return HttpResponse.json({
       slug, url: farmProdUrl(slug), dedicated: true, steps, ready,
       slow: !ready && elapsed > 900, elapsedSeconds: Math.floor(elapsed),
       notifyAvailable: true, notifyRequested: readyEmailAsked.has(slug),
+      stages, percent, source: "cluster",
+      current: ready ? "¡Su finca está lista!" : "Estamos preparando su finca.",
     });
   }),
 

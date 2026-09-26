@@ -178,4 +178,46 @@ describe("Preparando su finca", () => {
     renderIt();
     expect(await screen.findByTestId("ready-email-done")).toBeInTheDocument();
   });
+
+  it("shows real progress: a bar with the percentage, the current step and every stage", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue({
+      ...status([true, false, false]),
+      percent: 42,
+      current: "Estamos creando la base de datos exclusiva de su finca.",
+      source: "cluster",
+      stages: [
+        { key: "received", label: "Solicitud recibida", state: "done", weight: 2 },
+        { key: "namespace", label: "Espacio propio", state: "done", weight: 40 },
+        { key: "database", label: "Base de datos", state: "active", weight: 20 },
+        { key: "site", label: "Dirección abierta", state: "pending", weight: 38 },
+      ],
+    });
+    renderIt();
+    expect(await screen.findByTestId("stage-database")).toHaveAttribute("data-state", "active");
+    expect(screen.getByTestId("stage-received")).toHaveAttribute("data-state", "done");
+    expect(screen.getByTestId("stage-site")).toHaveAttribute("data-state", "pending");
+    expect(screen.getByTestId("provision-percent")).toHaveTextContent("42");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByTestId("provision-current")).toHaveTextContent("Estamos creando la base de datos");
+    expect(screen.getByText("Base de datos — en curso")).toBeInTheDocument();
+    expect(screen.queryByTestId("provision-note")).toBeNull();
+  });
+
+  it("says plainly when it cannot see every detail", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue({
+      ...status([false, false, false]),
+      percent: 7,
+      current: "Estamos registrando su finca en nuestro sistema.",
+      source: "pipeline",
+      note: "No podemos ver todos los detalles en este momento; le mostramos el avance que sí conocemos. Su finca sigue preparándose.",
+      stages: [
+        { key: "received", label: "Solicitud recibida", state: "done", weight: 2 },
+        { key: "pipeline_started", label: "Preparación iniciada", state: "done", weight: 5 },
+        { key: "pipeline_done", label: "Preparación registrada", state: "active", weight: 93 },
+      ],
+    });
+    renderIt();
+    expect(await screen.findByTestId("provision-note")).toHaveTextContent("No podemos ver todos los detalles");
+    expect(screen.getByTestId("provision-percent")).toHaveTextContent("7");
+  });
 });

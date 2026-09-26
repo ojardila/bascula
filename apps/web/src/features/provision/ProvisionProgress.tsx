@@ -14,9 +14,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Box, Button, CircularProgress, Link, Stack, Typography,
+  Alert, Box, Button, CircularProgress, LinearProgress, Link, Stack, Typography,
 } from "@mui/material";
 import CheckCircle from "@mui/icons-material/CheckCircle";
+import HourglassTop from "@mui/icons-material/HourglassTop";
 import MailOutline from "@mui/icons-material/MailOutline";
 import { api } from "../../api/endpoints";
 import { ApiError } from "../../api/errors";
@@ -110,6 +111,15 @@ export function ProvisionProgress({
   const doneCount = status ? status.steps.filter((s) => s.done).length : 0;
   // The certificate step exists only where the platform issues one per farm.
   const steps = STEPS.filter((st) => st.key !== "certificate" || status?.steps.some((x) => x.key === "certificate"));
+  // Real progress (stages read from the cluster, GitHub, Cloudflare and the
+  // address). An older API without stages gets the four coarse steps.
+  const stages = status?.stages?.length ? status.stages : null;
+  const percent = Math.max(0, Math.min(100, Math.round(
+    status?.percent ?? (status ? (doneCount / Math.max(1, status.steps.length)) * 100 : 0),
+  )));
+  const current = status?.current
+    ?? (status ? STEPS.find((st) => !status.steps.find((x) => x.key === st.key)?.done)?.body : undefined)
+    ?? "Estamos empezando.";
 
   if (missing) {
     return (
@@ -161,44 +171,112 @@ export function ProvisionProgress({
         </Typography>
       </Box>
 
-      <Stack spacing={2} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
-        {steps.map((step, i) => {
-          const done = status?.steps.find((s) => s.key === step.key)?.done ?? false;
-          const current = !done && i === doneCount;
-          return (
-            <Stack
-              key={step.key}
-              component="li"
-              direction="row"
-              spacing={2}
-              alignItems="center"
-              data-testid={`step-${step.key}`}
-              data-done={done ? "true" : "false"}
-              sx={{
-                p: 2, borderRadius: 2, border: 1,
-                borderColor: done ? "success.light" : current ? "primary.light" : "divider",
-                bgcolor: done ? "rgba(46,125,50,.06)" : "transparent",
-              }}
-            >
-              <Box sx={{ width: 40, display: "flex", justifyContent: "center" }}>
-                {done ? (
-                  <CheckCircle color="success" sx={{ fontSize: 36 }} />
-                ) : current ? (
-                  <CircularProgress size={30} />
-                ) : (
-                  <Typography sx={{ fontSize: "1.3rem", color: "text.disabled", fontWeight: 700 }}>{i + 1}</Typography>
-                )}
-              </Box>
-              <Box>
-                <Typography sx={{ fontSize: "1.2rem", fontWeight: 700 }}>
-                  {step.title}{done ? " — lista" : ""}
+      <Box data-testid="provision-bar">
+        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
+          <Typography sx={{ fontSize: "1.2rem", fontWeight: 700 }} data-testid="provision-current">
+            {current}
+          </Typography>
+          <Typography sx={{ fontSize: "1.6rem", fontWeight: 800, color: "primary.main", ml: 2 }} data-testid="provision-percent">
+            {percent}&nbsp;%
+          </Typography>
+        </Stack>
+        <LinearProgress
+          variant="determinate"
+          value={percent}
+          aria-label={`Avance: ${percent} %`}
+          sx={{ height: 16, borderRadius: 999 }}
+        />
+      </Box>
+
+      {status?.note && (
+        <Alert severity="info" sx={{ fontSize: "1.05rem" }} data-testid="provision-note">
+          {status.note}
+        </Alert>
+      )}
+
+      {stages ? (
+        <Stack spacing={1.5} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
+          {stages.map((stage) => {
+            const done = stage.state === "done";
+            const active = stage.state === "active";
+            return (
+              <Stack
+                key={stage.key}
+                component="li"
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                data-testid={`stage-${stage.key}`}
+                data-state={stage.state}
+                aria-current={active ? "step" : undefined}
+                sx={{
+                  px: 2, py: 1.5, borderRadius: 2, border: 1,
+                  borderColor: done ? "success.light" : active ? "primary.main" : "divider",
+                  bgcolor: done ? "rgba(46,125,50,.06)" : active ? "rgba(25,118,210,.06)" : "transparent",
+                }}
+              >
+                <Box sx={{ width: 36, display: "flex", justifyContent: "center", flexShrink: 0 }}>
+                  {done ? (
+                    <CheckCircle color="success" sx={{ fontSize: 32 }} />
+                  ) : active ? (
+                    <HourglassTop color="primary" sx={{ fontSize: 30 }} />
+                  ) : (
+                    <Box sx={{ width: 14, height: 14, borderRadius: "50%", border: 2, borderColor: "text.disabled" }} />
+                  )}
+                </Box>
+                <Typography
+                  sx={{
+                    fontSize: "1.15rem",
+                    fontWeight: active ? 800 : 600,
+                    color: done || active ? "text.primary" : "text.secondary",
+                  }}
+                >
+                  {stage.label}{done ? " — listo" : active ? " — en curso" : ""}
                 </Typography>
-                <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>{step.body}</Typography>
-              </Box>
-            </Stack>
-          );
-        })}
-      </Stack>
+              </Stack>
+            );
+          })}
+        </Stack>
+      ) : (
+        <Stack spacing={2} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
+          {steps.map((step, i) => {
+            const done = status?.steps.find((s) => s.key === step.key)?.done ?? false;
+            const current = !done && i === doneCount;
+            return (
+              <Stack
+                key={step.key}
+                component="li"
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                data-testid={`step-${step.key}`}
+                data-done={done ? "true" : "false"}
+                sx={{
+                  p: 2, borderRadius: 2, border: 1,
+                  borderColor: done ? "success.light" : current ? "primary.light" : "divider",
+                  bgcolor: done ? "rgba(46,125,50,.06)" : "transparent",
+                }}
+              >
+                <Box sx={{ width: 40, display: "flex", justifyContent: "center" }}>
+                  {done ? (
+                    <CheckCircle color="success" sx={{ fontSize: 36 }} />
+                  ) : current ? (
+                    <CircularProgress size={30} />
+                  ) : (
+                    <Typography sx={{ fontSize: "1.3rem", color: "text.disabled", fontWeight: 700 }}>{i + 1}</Typography>
+                  )}
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: "1.2rem", fontWeight: 700 }}>
+                    {step.title}{done ? " — lista" : ""}
+                  </Typography>
+                  <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>{step.body}</Typography>
+                </Box>
+              </Stack>
+            );
+          })}
+        </Stack>
+      )}
 
       {status?.notifyAvailable && (
         <ReadyEmail
