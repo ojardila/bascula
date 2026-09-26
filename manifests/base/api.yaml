@@ -57,6 +57,8 @@ spec:
         app: bascula-migrate
     spec:
       restartPolicy: Never
+      # Migrations talk to Postgres only, never to the Kubernetes API.
+      automountServiceAccountToken: false
       # Harbor's bascula project is private. The secret is created
       # against the cluster, never committed — see README.md.
       imagePullSecrets:

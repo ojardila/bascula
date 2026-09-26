@@ -13,8 +13,10 @@ kind: ClusterRole
 metadata:
   name: kyverno:bascula-harbor-pull
   labels:
+    # Only the background controller runs generate rules. Aggregating this
+    # into the admission controller too gave the webhook write access to
+    # every Secret in the cluster for nothing.
     rbac.kyverno.io/aggregate-to-background-controller: "true"
-    rbac.kyverno.io/aggregate-to-admission-controller: "true"
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
