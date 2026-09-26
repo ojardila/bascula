@@ -25,6 +25,12 @@ type OAuthClient struct {
 }
 
 func InsertOAuthClient(ctx context.Context, tx pgx.Tx, c OAuthClient) error {
+	return InsertOAuthClientFrom(ctx, tx, c, "")
+}
+
+// InsertOAuthClientFrom records a registration and the rate-limit bucket it
+// came from.
+func InsertOAuthClientFrom(ctx context.Context, tx pgx.Tx, c OAuthClient, from string) error {
 	if c.AuthMethod == "" {
 		c.AuthMethod = "none"
 	}
@@ -33,9 +39,9 @@ func InsertOAuthClient(ctx context.Context, tx pgx.Tx, c OAuthClient) error {
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO oauth_clients
-		    (id, name, redirect_uris, secret_hash, token_endpoint_auth_method, scope, metadata)
-		     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		c.ID, c.Name, c.RedirectURIs, c.SecretHash, c.AuthMethod, c.Scope, c.Metadata)
+		    (id, name, redirect_uris, secret_hash, token_endpoint_auth_method, scope, metadata, registered_from)
+		     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		c.ID, c.Name, c.RedirectURIs, c.SecretHash, c.AuthMethod, c.Scope, c.Metadata, from)
 	return err
 }
 
@@ -46,6 +52,17 @@ func CountRecentOAuthClients(ctx context.Context, tx pgx.Tx, window time.Duratio
 	err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM oauth_clients WHERE created_at > now() - make_interval(secs => $1)`,
 		window.Seconds()).Scan(&n)
+	return n, err
+}
+
+// CountRecentOAuthClientsFrom is CountRecentOAuthClients for one
+// rate-limit bucket.
+func CountRecentOAuthClientsFrom(ctx context.Context, tx pgx.Tx, from string, window time.Duration) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM oauth_clients
+		 WHERE registered_from = $1 AND created_at > now() - make_interval(secs => $2)`,
+		from, window.Seconds()).Scan(&n)
 	return n, err
 }
 

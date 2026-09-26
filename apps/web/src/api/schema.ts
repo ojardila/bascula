@@ -2904,6 +2904,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What assistants wrote on this farm
+         * @description One record per write-tool execution through /mcp (previews write
+         *     nothing and are not recorded), including refusals: who, through which
+         *     OAuth client, which tool, the outcome and the arguments. Newest first.
+         *     Owner and administrator only.
+         */
+        get: operations["listMcpActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mcp/connections/{id}": {
         parameters: {
             query?: never;
@@ -4916,6 +4939,35 @@ export interface components {
             lastUsedAt: string;
             /** Format: date-time */
             expiresAt: string;
+            /**
+             * @description What the person granted at sign-in: `write` (consult and, with
+             *     confirmation, register) or `read` (consult only; the assistant is
+             *     never offered a write tool). Grants from before scopes existed
+             *     are `write`.
+             * @enum {string}
+             */
+            access: "read" | "write";
+        };
+        McpActivity: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            userName: string;
+            /** @description The OAuth client */
+            clientId: string | null;
+            /** @example ChatGPT */
+            clientName: string;
+            /** @example register_payment */
+            tool: string;
+            /** @enum {string} */
+            outcome: "done" | "refused" | "failed";
+            /** @description First line of what the tool answered */
+            summary: string;
+            /** @description The arguments the assistant sent, without the confirmation token. */
+            args: Record<string, never>;
+            /** Format: date-time */
+            createdAt: string;
         };
         TourProgress: {
             tour: string;
@@ -11107,6 +11159,32 @@ export interface operations {
                          * @example https://lapalma.bascula.engp.io/mcp
                          */
                         endpoint: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMcpActivity: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The records, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["McpActivity"][];
                     };
                 };
             };

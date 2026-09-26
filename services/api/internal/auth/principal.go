@@ -19,6 +19,8 @@ type Principal struct {
 	ClientID string
 	// MCPOnly marks an assistant's token (audience AudienceMCP).
 	MCPOnly bool
+	// ReadOnly marks an assistant's token granted consultation only.
+	ReadOnly bool
 }
 
 type ctxKey int

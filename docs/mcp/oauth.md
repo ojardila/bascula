@@ -99,7 +99,7 @@ RFC 7591. The JSON body is decoded **leniently** and unknown metadata is
 ignored (a strict decoder once rejected ChatGPT's registration). Registration
 is open (no initial access token), so it is bounded: body at most 64 KB, at
 most 10 `redirect_uris` of at most 2 KB each, `client_name` truncated to 80
-characters, and 30 registrations per client IP per hour per API process
+characters, and 30 registrations per client address (IPv6 /64) per hour
 (beyond that: `429` with `Retry-After: 3600` and
 `error=invalid_client_metadata`).
 
@@ -116,9 +116,9 @@ characters, and 30 registrations per client IP per hour per API process
   bidi-override and zero-width characters are stripped, whitespace collapsed,
   80 characters at most; defaults to `mcp-client`.
 
-Registration is anonymous, so it is capped: 30 per address per hour (per API
-process) and 200 per hour platform-wide (counted in Postgres, shared by every
-replica); past either, `429`. The request body is limited to 64 KiB and the
+Registration is anonymous, so it is capped: 30 per address per hour and 200
+per hour platform-wide, both counted in Postgres (shared by every replica and
+surviving restarts; the address one also in memory); past either, `429`. The request body is limited to 64 KiB and the
 metadata kept in the database to 8 KiB.
 
 Answer: `201` with `client_id`, `client_id_issued_at`, the registered
@@ -234,11 +234,19 @@ Users can also revoke from the app: «Configuración» → «Conexiones» →
 
 ## Scopes
 
-`mcp` is the only real scope; `offline_access` is advertised because clients
-ask for it to get a refresh token (which is issued regardless). Any requested
-scope is accepted and echoed, and **grants nothing extra**: what a token can do
-is decided by the user's role on the farm, through `auth.Matrix`, on every
-tool call.
+Two real scopes: `mcp` (consult and register) and `mcp:read` (consult only).
+`offline_access` is advertised because clients ask for it to get a refresh
+token (which is issued regardless). The sign-in page lets the person choose
+(«Consultar y registrar» / «Solo consultar», form field `access=write|read`);
+the default is `mcp:read` when the client asked only for `mcp:read`, else
+`mcp`. The token response's `scope` is the granted one.
+
+The scope is kept on the refresh-token family and survives rotation. A
+`mcp:read` token gets a `tools/list` without write tools, and a write tool
+call is refused (and recorded in the audit). Families issued before scopes
+existed have no scope and keep full access. Neither scope **adds** anything
+to the role: what a token can do is still decided by the user's role on the
+farm, through `auth.Matrix`, on every tool call. See `security.md`.
 
 ## Resource indicators and audience (RFC 8707)
 

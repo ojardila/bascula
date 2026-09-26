@@ -280,6 +280,8 @@ func (s *Server) Routes() []Route {
 		// Configuración): list them, and revoke one.
 		{http.MethodGet, "/v1/mcp/connections", auth.ActionMCPConnectionsRead, s.handleListMCPConnections},
 		{http.MethodDelete, "/v1/mcp/connections/{id}", auth.ActionMCPConnectionsRevoke, s.handleRevokeMCPConnection},
+		// What assistants wrote on this farm, newest first (the MCP audit).
+		{http.MethodGet, "/v1/mcp/activity", auth.ActionMCPActivityRead, s.handleListMCPActivity},
 
 		{http.MethodPost, "/mcp", auth.ActionMCP, s.handleMCP},
 		{http.MethodGet, "/mcp", auth.ActionMCP, s.handleMCP},

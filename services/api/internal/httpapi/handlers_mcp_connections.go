@@ -20,6 +20,9 @@ type mcpConnectionView struct {
 	CreatedAt  time.Time `json:"createdAt"`
 	LastUsedAt time.Time `json:"lastUsedAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`
+	// Access is what the person granted: "write" (consult and register) or
+	// "read" (consult only).
+	Access string `json:"access"`
 }
 
 // handleListMCPConnections lists the caller's own MCP connections on this
@@ -44,13 +47,17 @@ func (s *Server) handleListMCPConnections(w http.ResponseWriter, r *http.Request
 		if now.After(c.ExpiresAt) {
 			status = "expired"
 		}
+		access := "write"
+		if c.ReadOnly {
+			access = "read"
+		}
 		name := c.ClientName
 		if name == "" {
 			name = "Asistente"
 		}
 		out = append(out, mcpConnectionView{
 			ID: c.ID, ClientName: name, Status: status,
-			CreatedAt: c.CreatedAt, LastUsedAt: c.LastUsedAt, ExpiresAt: c.ExpiresAt,
+			CreatedAt: c.CreatedAt, LastUsedAt: c.LastUsedAt, ExpiresAt: c.ExpiresAt, Access: access,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

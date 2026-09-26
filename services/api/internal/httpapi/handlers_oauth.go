@@ -50,11 +50,41 @@ const (
 // errOAuthBadCredentials is the one sign-in failure the login limiter counts.
 var errOAuthBadCredentials = errors.New("Correo o contraseña incorrectos.")
 
-// oauthScopesSupported: "mcp" is the only permission there is; offline_access
-// is advertised because clients (ChatGPT among them) ask for it to get a
-// refresh token, which this server issues anyway. Any requested scope is
-// accepted: a scope this server does not know grants nothing extra.
-var oauthScopesSupported = []string{oauthScope, "offline_access"}
+// oauthScopesSupported: "mcp" consults and registers within the member's
+// role; "mcp:read" only consults (the person picks on the sign-in page).
+// offline_access is advertised because clients (ChatGPT among them) ask for
+// it to get a refresh token, which this server issues anyway. A scope this
+// server does not know grants nothing.
+var oauthScopesSupported = []string{auth.ScopeMCP, auth.ScopeMCPRead, "offline_access"}
+
+// oauthAccessChoice is what the sign-in page offers: "write" (consult and
+// register) or "read" (consult only). The default follows what the client
+// asked for; an explicit choice on the form wins.
+func oauthAccessChoice(q url.Values) string {
+	switch q.Get("access") {
+	case "read", "write":
+		return q.Get("access")
+	}
+	if auth.ScopeIsReadOnly(q.Get("scope")) {
+		return "read"
+	}
+	return "write"
+}
+
+// oauthGrantedScope is the scope a grant carries: mcp or mcp:read, plus
+// offline_access when the client asked for it.
+func oauthGrantedScope(requested, access string) string {
+	granted := auth.ScopeMCP
+	if access == "read" {
+		granted = auth.ScopeMCPRead
+	}
+	for _, s := range strings.Fields(requested) {
+		if s == "offline_access" {
+			return granted + " offline_access"
+		}
+	}
+	return granted
+}
 
 // oauthClientAuthMethods are the token endpoint client authentication
 // methods. none (public client + PKCE) is what ChatGPT and Claude normally
@@ -161,7 +191,7 @@ func (s *Server) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resource":                 s.mcpResource(r),
 		"authorization_servers":    []string{base},
-		"scopes_supported":         []string{oauthScope},
+		"scopes_supported":         []string{auth.ScopeMCP, auth.ScopeMCPRead},
 		"bearer_methods_supported": []string{"header"},
 		"resource_name":            "Báscula",
 		"resource_documentation":   base + "/mcp/docs",
@@ -406,10 +436,10 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		// would fail with invalid_client long after it was set up.
 		resp["client_secret_expires_at"] = 0
 	}
-	if err := store.InsertOAuthClient(r.Context(), tx, store.OAuthClient{
+	if err := store.InsertOAuthClientFrom(r.Context(), tx, store.OAuthClient{
 		ID: id, Name: name, RedirectURIs: redirects,
 		SecretHash: secretHash, AuthMethod: method, Scope: scope, Metadata: stored,
-	}); err != nil {
+	}, clientIP(r)); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -460,9 +490,10 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	challenge := strings.TrimSpace(q.Get("code_challenge"))
 	method := strings.TrimSpace(q.Get("code_challenge_method"))
 	resource := strings.TrimSpace(q.Get("resource"))
-	// Any requested scope is accepted (unknown ones grant nothing more); it
-	// is carried to the token response so the client sees what it asked for.
-	scope := strings.Join(strings.Fields(q.Get("scope")), " ")
+	// The granted scope: what the person chose on the page (consult and
+	// register, or consult only), plus offline_access if asked for. Unknown
+	// requested scopes grant nothing.
+	scope := oauthGrantedScope(q.Get("scope"), oauthAccessChoice(q))
 	// RFC 9207: every authorization response, success or error, names the
 	// issuer. The metadata advertises it, and ChatGPT checks it before it
 	// exchanges the code.
@@ -667,7 +698,21 @@ func (s *Server) oauthRegistrationBudgetLeft(r *http.Request) bool {
 		slog.Error("oauth registration budget", "err", err)
 		return true
 	}
-	return n < max
+	if n >= max {
+		return false
+	}
+	// The per-address cap again, counted in the database: the in-memory
+	// limiter is per replica and forgets on restart.
+	perIP := s.cfg.OAuthRegistrationsPerIPPerHour
+	if perIP <= 0 {
+		return true
+	}
+	n, err = store.CountRecentOAuthClientsFrom(r.Context(), tx, clientIP(r), time.Hour)
+	if err != nil {
+		slog.Error("oauth registration budget", "err", err)
+		return true
+	}
+	return n < perIP
 }
 
 // oauthPick is the second step of the sign-in page: the password was right and
@@ -986,14 +1031,14 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		oauthTokenError(w, "invalid_grant", "that account no longer has access to this farm")
 		return
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), &row.ClientID)
+	scope := row.Scope
+	if scope == "" {
+		scope = auth.ScopeMCP
+	}
+	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), &row.ClientID, &scope)
 	if err != nil {
 		writeError(w, r, err)
 		return
-	}
-	scope := row.Scope
-	if scope == "" {
-		scope = oauthScope
 	}
 	writeOAuthSession(w, session, scope)
 }
@@ -1167,7 +1212,7 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	}
 	oauthParams := hidden("client_id") + hidden("redirect_uri") + hidden("state") +
 		hidden("code_challenge") + hidden("code_challenge_method") + hidden("resource") +
-		hidden("scope") + hidden("response_type")
+		hidden("scope") + hidden("response_type") + hidden("access")
 	msg := ""
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
@@ -1236,17 +1281,29 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		}
 		farmLine = `<p class="farm">Finca: <strong>` + esc(name) + `</strong></p>`
 	}
-	_, _ = fmt.Fprintf(w, `%s<p>Entre con la misma cuenta de la finca. El asistente podrá <strong>consultar y registrar</strong> cosecha y nómina con los permisos de su rol. Pagos, anticipos, liquidaciones y cambios de precio siempre le piden su confirmación antes de hacerse.</p>
+	writeChecked, readChecked := " checked", ""
+	if oauthAccessChoice(q) == "read" {
+		writeChecked, readChecked = "", " checked"
+	}
+	// The access choice is its own field, so the hidden copy of an earlier
+	// choice is left out of this form.
+	params := strings.Replace(oauthParams, hidden("access"), "", 1)
+	_, _ = fmt.Fprintf(w, `%s<p>Entre con la misma cuenta de la finca. El asistente trabaja con los permisos de su rol.</p>
 %s%s
 <form method="post" action="/oauth/authorize">
   %s
+  <fieldset>
+    <legend>¿Qué podrá hacer el asistente?</legend>
+    <label class="opt"><input type="radio" name="access" value="write"%s><span>Consultar y registrar<span class="slug">Trabajadores, lotes y pesadas. Pagos, anticipos, liquidaciones y precios siempre le piden su confirmación antes de hacerse.</span></span></label>
+    <label class="opt"><input type="radio" name="access" value="read"%s><span>Solo consultar<span class="slug">No cambia ni borra nada de la finca.</span></span></label>
+  </fieldset>
   <label class="f" for="email">Correo</label>
   <input id="email" name="email" type="email" autocomplete="username" required value="%s">
   <label class="f" for="password">Contraseña</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
   <button type="submit">Autorizar</button>
 </form>
-`, head, farmLine, msg, oauthParams, esc(q.Get("email")))
+`, head, farmLine, msg, params, writeChecked, readChecked, esc(q.Get("email")))
 }
 
 func farmIDs(ms []store.Membership) []string {
