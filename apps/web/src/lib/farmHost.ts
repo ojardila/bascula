@@ -155,3 +155,40 @@ export function farmUrlForHere(slug: string, hostname?: string): string {
   }
   return farmProdUrl(slug);
 }
+
+/**
+ * True when this page is served on a farm's own address
+ * (`{slug}.bascula.engp.io`, `{slug}.int.dev.engp.io`), where there is no
+ * landing: `/` is the farm's app. The landing lives only on the main domain.
+ */
+export function isFarmHost(hostname?: string): boolean {
+  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+  return farmSlugFromHost(host) !== null;
+}
+
+/**
+ * The general demo: a main domain that shows the farm's front door at `/`
+ * instead of the marketing landing. The production main domain keeps the
+ * landing.
+ */
+const DEMO_HOSTS = new Set(["bascula.int.dev.engp.io"]);
+
+/** `/` shows the farm entry page (Entrar / Registrar / ¿Olvidó su clave?). */
+export function showsFarmEntry(hostname?: string): boolean {
+  const host = normalizeHostname(hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""));
+  return isFarmHost(host) || DEMO_HOSTS.has(host);
+}
+
+/**
+ * Where "Registrar" goes: a farm is created on the main domain. From a dev
+ * farm that is the dev main domain; on a main domain it is right here.
+ */
+export function signupUrlForHere(hostname?: string): string {
+  const host = normalizeHostname(hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""));
+  if (!isFarmHost(host)) return "/empezar";
+  if (host.endsWith(DEV_SUFFIX)) return "https://bascula.int.dev.engp.io/empezar";
+  return "https://bascula.engp.io/empezar";
+}
+
+/** Where the app starts: `/tablero` (the guard sends a visitor to `/entrar`). */
+export const APP_HOME = "/tablero";

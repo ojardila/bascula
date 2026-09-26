@@ -7,7 +7,7 @@ export function ProvisionPage() {
   const { slug = "" } = useParams();
   return (
     <AuthLayout title="Su finca nueva" wide>
-      <ProvisionProgress slug={slug.toLowerCase()} />
+      <ProvisionProgress slug={slug.toLowerCase()} redirectWhenReady />
     </AuthLayout>
   );
 }

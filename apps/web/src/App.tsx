@@ -7,6 +7,9 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
 import { LandingPage } from "./features/marketing/LandingPage";
+import { APP_HOME, showsFarmEntry } from "./lib/farmHost";
+import { FarmEntryPage } from "./features/entry/FarmEntryPage";
+import { ForgotPasswordPage } from "./features/auth/ForgotPasswordPage";
 import { OfflineProvider } from "./offline/OfflineContext";
 import { OfflineBar } from "./offline/OfflineBar";
 import { PlotsPage } from "./features/plots/PlotsPage";
@@ -358,8 +361,9 @@ function Shell() {
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<HomeRoute />} />
       <Route path="/entrar" element={<LoginPage />} />
+      <Route path="/olvide-mi-clave" element={<ForgotPasswordPage />} />
       <Route path="/empezar" element={<SignupPage />} />
       <Route path="/registro" element={<SignupPage />} />
       <Route path="/preparando/:slug" element={<ProvisionPage />} />
@@ -383,6 +387,19 @@ export function App() {
       />
     </Routes>
   );
+}
+
+/**
+ * `/`: the marketing landing on the main domain only. On a farm's own address
+ * (`{slug}.bascula.engp.io`) and on the general demo there is nothing to
+ * sell: somebody signed in goes straight to `/tablero`, anybody else gets the
+ * farm's front door (Entrar / Registrar / ¿Olvidó su clave?).
+ */
+function HomeRoute() {
+  const { status } = useAuth();
+  if (!showsFarmEntry()) return <LandingPage />;
+  if (status === "authenticated") return <Navigate to={APP_HOME} replace />;
+  return <FarmEntryPage />;
 }
 
 /** A renamed route: same screen, same query string (`?lunes=`, `?lote=`). */
