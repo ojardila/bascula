@@ -631,25 +631,28 @@ func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 		}
 	})
 
-	t.Run("the main domain offers a choice", func(t *testing.T) {
+	t.Run("each farm opens with its own password", func(t *testing.T) {
+		// The second farm was registered with its own password, and only that
+		// password opens it. The account's global password belongs to whoever
+		// registered the address first, which signup does not prove was its
+		// owner (TestSignupFirstCannotOpenTheRealOwnersFarm).
 		res := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
 			"email": email, "password": password,
 		})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("login with two farms: %d %s", res.Status, res.Raw)
+		if res.Status != http.StatusOK || res.Body["slug"] != slugOne {
+			t.Fatalf("the account password should open farm one only: %d %s", res.Status, res.Raw)
 		}
-		details, _ := res.Body["error"].(map[string]any)["details"].(map[string]any)
-		farms, _ := details["farms"].([]any)
-		if len(farms) != 2 {
-			t.Fatalf("the choice lists %d farms, want 2: %s", len(farms), res.Raw)
+		res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": email, "password": second,
+		})
+		if res.Status != http.StatusOK || res.Body["slug"] != slugTwo {
+			t.Fatalf("the second farm's password should open farm two: %d %s", res.Status, res.Raw)
 		}
-		for _, slug := range []string{slugOne, slugTwo} {
-			ok := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-				"email": email, "password": password, "farmSlug": slug,
-			})
-			if ok.Status != http.StatusOK || ok.Body["slug"] != slug {
-				t.Fatalf("login pinned to %s: %d %s", slug, ok.Status, ok.Raw)
-			}
+		res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": email, "password": password, "farmSlug": slugTwo,
+		})
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("the account password opened the farm that has its own: %d %s", res.Status, res.Raw)
 		}
 	})
 
