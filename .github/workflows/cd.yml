@@ -46,11 +46,9 @@ on:
       - 'scripts/ci/**'
   workflow_dispatch:
 
-# No workflow-wide lock any more. It made a whole run (tests, builds) wait
-# behind the previous run's production approval. Only the two steps that
-# must not overlap are serialized, per job: `release` (versions and tags) and
-# `production` (the gitops pin). A newer run waiting for either replaces an
-# older one still waiting, which is exactly "cancel the superseded release".
+# No workflow-wide lock: tests and image builds may run in parallel. The
+# release job is serialized without cancellation so every completed release
+# gets a chance to publish, while production has its own gitops lock below.
 
 env:
   REGISTRY: harbor.int.engp.io
@@ -145,21 +143,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Runs no longer wait for each other as a whole, so an older run whose
-      # CI took longer could reach this point after a newer one. Releasing it
-      # then would move dev and production BACK. The newest tag records the
-      # commit it was released from; if that commit already contains this
-      # one, this run has been superseded and stops here.
+      # The release lock is acquired before this step. Fetch the tag and
+      # master refs while holding it: if a newer release already contains this
+      # push's commit, this run is a clean no-op instead of publishing an old
+      # source or moving dev and production backwards.
       - id: guard
         name: Superseded?
         run: |
           set -uo pipefail
-          git fetch --quiet --tags origin
+          git fetch --quiet origin master --tags
           last=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
-          src=$(git tag -l --format='%(contents)' "$last" 2>/dev/null | sed -n 's/^source: //p' | head -n 1)
-          if [ -n "$src" ] && [ "$src" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$src" 2>/dev/null; then
+          if [ -n "$last" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$last" 2>/dev/null; then
             echo "go=false" >> "$GITHUB_OUTPUT"
-            echo "Superseded: ${last} was released from ${src:0:7}, which already contains ${GITHUB_SHA:0:7}." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Superseded: ${last} already contains ${GITHUB_SHA:0:7}." | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "go=true" >> "$GITHUB_OUTPUT"
           fi
@@ -169,20 +165,28 @@ jobs:
         name: Resolve version
         run: |
           set -euo pipefail
+          # A prior release may have advanced master while this run was
+          # waiting for the lock. Start from that exact latest HEAD, not the
+          # commit checked out when this workflow was queued.
+          git fetch --quiet origin master --tags
+          git reset --hard origin/master
           current="$(tr -d ' \n' < VERSION)"
           if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "VERSION must be semver X.Y.Z, got '$current'" >&2
             exit 1
           fi
           # Loop rather than bump once: a tag can already exist for the next
-          # patch if a previous run stamped VERSION and then failed to push.
-          while git rev-parse "v${current}" >/dev/null 2>&1; do
+          # patch if a previous push reached GitHub before its job failed.
+          while git rev-parse "refs/tags/v${current}" >/dev/null 2>&1; do
             IFS=. read -r major minor patch <<<"$current"
             current="${major}.${minor}.$((patch + 1))"
           done
           echo "${current}" > VERSION
           echo "version=v${current}" >> "$GITHUB_OUTPUT"
-          echo "### Releasing \`v${current}\`" >> "$GITHUB_STEP_SUMMARY"
+          keys=$(scripts/ci/source-keys.sh HEAD)
+          echo "api_key=$(printf '%s\n' "$keys" | awk -F= '$1 == "api" { print $2 }')" >> "$GITHUB_OUTPUT"
+          echo "web_key=$(printf '%s\n' "$keys" | awk -F= '$1 == "web" { print $2 }')" >> "$GITHUB_OUTPUT"
+          echo "### Releasing \`v${current}\` from \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
 
       - if: steps.guard.outputs.go == 'true'
         uses: ./.github/actions/harbor
@@ -203,8 +207,8 @@ jobs:
         if: steps.guard.outputs.go == 'true'
         env:
           V: ${{ steps.version.outputs.version }}
-          API: ${{ needs.plan.outputs.api_key }}
-          WEB: ${{ needs.plan.outputs.web_key }}
+          API: ${{ steps.version.outputs.api_key }}
+          WEB: ${{ steps.version.outputs.web_key }}
         run: |
           set -euo pipefail
           base="${REGISTRY}/${PROJECT}"
@@ -267,18 +271,68 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add VERSION manifests/base/
-          if git diff --cached --quiet; then
-            echo "nothing to commit"
-          else
+
+          # Re-apply the release stamp after a rebase conflict. This is
+          # needed when master moved by a release commit while this run was
+          # preparing its tag: the old stamp must never be rebased over it.
+          restamp() {
+            python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          v = os.environ["V"]
+          p = Path("VERSION")
+          p.write_text(v.removeprefix("v") + "\n")
+          p = Path("manifests/base/kustomization.yaml")
+          s = p.read_text()
+          s = re.sub(r"(newTag:\s*)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
+          p.write_text(s)
+          p = Path("manifests/base/api.yaml")
+          s = p.read_text()
+          s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/api:)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
+          p.write_text(s)
+          p = Path("manifests/base/web.yaml")
+          s = p.read_text()
+          s = re.sub(r"(image:\s*harbor\.int\.engp\.io/bascula/web:)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
+          s, n = re.subn(r"(name:\s*BASCULA_VERSION\s*\n\s*value:\s*)v[0-9]+\.[0-9]+\.[0-9]+", r"\g<1>" + v, s)
+          assert n == 1, f"expected one BASCULA_VERSION in web.yaml, got {n}"
+          p.write_text(s)
+          PY
+          }
+
+          commit_release() {
+            git add VERSION manifests/base/
             git commit -m "Release ${V}"
+          }
+          tag_release() {
+            # The parent is the exact master HEAD being released, even after
+            # a successful rebase.
+            git tag -a "${V}" -m "${V}" -m "source: $(git rev-parse HEAD^)"
+          }
+
+          commit_release
+          tag_release
+          pushed=false
+          for attempt in 1 2 3; do
+            if git push origin HEAD:master && git push origin "${V}"; then
+              pushed=true
+              break
+            fi
+            echo "Release push conflicted; rebasing (attempt ${attempt}/3)." >&2
+            git tag -d "${V}" >/dev/null 2>&1 || true
+            git fetch --quiet origin master --tags
+            if ! git pull --rebase --autostash origin master; then
+              git rebase --abort || true
+              git reset --hard origin/master
+              restamp
+              commit_release
+            fi
+            tag_release
+          done
+          if [ "${pushed}" != true ]; then
+            echo "Could not push ${V} after three attempts" >&2
+            exit 1
           fi
-          # The source line is what the superseded guard above reads.
-          git tag -a "${V}" -m "${V}" -m "source: ${GITHUB_SHA}"
-          # Someone may have pushed while this ran.
-          git pull --rebase --autostash origin master
-          git push origin master
-          git push origin "${V}"
           gh release create "${V}" --title "${V}" --generate-notes || true
 
       # Dev rolls on every release. Production waits for approval below.
@@ -305,10 +359,19 @@ jobs:
             echo "gitops already pinned bascula-dev at ${V}"
           else
             git -C /tmp/gitops commit -m "bascula-dev: pin ${V}"
-            for _ in 1 2 3; do
-              git -C /tmp/gitops push origin HEAD:main && break
+            pushed=false
+            for attempt in 1 2 3; do
+              if git -C /tmp/gitops push origin HEAD:main; then
+                pushed=true
+                break
+              fi
+              echo "gitops push conflicted; rebasing (attempt ${attempt}/3)." >&2
               git -C /tmp/gitops pull --rebase origin main
             done
+            if [ "${pushed}" != true ]; then
+              echo "Could not pin bascula-dev at ${V} after three attempts" >&2
+              exit 1
+            fi
           fi
           scripts/ci/argocd-refresh.sh "$(git -C /tmp/gitops rev-parse HEAD)" applications/bascula-dev.yaml
 
