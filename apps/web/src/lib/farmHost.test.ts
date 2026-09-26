@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  farmGreeting,
   farmDevUrl,
   farmProdUrl,
   farmSlugFromHost,
@@ -106,5 +107,22 @@ describe("showsFarmEntry", () => {
     expect(offersSignup("bascula.int.dev.engp.io")).toBe(true);
     expect(offersSignup("bascula.engp.io")).toBe(true);
     expect(offersSignup("localhost")).toBe(true);
+  });
+});
+
+describe("farmGreeting", () => {
+  it("puts «Finca» before the name", () => {
+    expect(farmGreeting("San José")).toBe("Finca San José");
+    expect(farmGreeting("  La   Palma ")).toBe("Finca La Palma");
+  });
+
+  it("does not say «Finca Finca» when the name already starts with it", () => {
+    expect(farmGreeting("Finca La Palma")).toBe("Finca La Palma");
+    expect(farmGreeting("finca el mirador")).toBe("finca el mirador");
+    expect(farmGreeting("FINCA")).toBe("FINCA");
+  });
+
+  it("keeps names that merely begin with the same letters", () => {
+    expect(farmGreeting("Fincas Unidas")).toBe("Finca Fincas Unidas");
   });
 });

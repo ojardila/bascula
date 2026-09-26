@@ -49,6 +49,9 @@ func (s *Server) Routes() []Route {
 		// caller has no session yet, and a slug is a DNS label anybody sees.
 		{http.MethodGet, "/v1/farms/{slug}/provision-status", auth.ActionProvisionStatus, s.handleProvisionStatus},
 		{http.MethodGet, "/v1/farm-slugs", auth.ActionSlugAvailability, s.handleSlugAvailability},
+		// The farm's display name for the front door and the login screen of
+		// its own address. Public: nobody is signed in there yet.
+		{http.MethodGet, "/v1/farm-name", auth.ActionFarmName, s.handleFarmName},
 		// "Avísenme por correo cuando esté lista", from the same waiting
 		// screen. Public for the same reason; see ready_email.go.
 		{http.MethodPost, "/v1/farms/{slug}/ready-email", auth.ActionProvisionNotify, s.handleRequestReadyEmail},

@@ -8,7 +8,8 @@ import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
-import { farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import { farmGreeting, farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 import type { Membership, Role } from "../../api/types";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -40,6 +41,7 @@ export function LoginPage() {
    * as today. A 403 is the wrong farm and stays on this screen.
    */
   const pinnedSlug = farmSlugFromHost(window.location.hostname);
+  const { name: farmName } = useFarmDisplayName(pinnedSlug);
 
   if (status === "authenticated") return <Navigate to={landing} replace />;
 
@@ -99,7 +101,9 @@ export function LoginPage() {
       title="Entrar"
       subtitle={
         pinnedSlug
-          ? "Escriba el correo y la contraseña de esta finca."
+          ? farmName
+            ? `Escriba el correo y la contraseña de ${farmGreeting(farmName)}.`
+            : "Escriba el correo y la contraseña de esta finca."
           : "Escriba el correo y la contraseña de su finca."
       }
     >

@@ -732,6 +732,41 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/farm-name:
+    get:
+      tags: [farm]
+      operationId: getFarmDisplayName
+      summary: The display name of the farm whose address this is
+      description: |
+        Feeds the front door and the login screen of a farm's own address, so
+        they greet people with "San José" rather than the DNS label
+        "san-jose". The farm is the one named by the request's host; `slug`
+        names it where the host cannot (main domain, development). Public: it
+        says nothing the farm's own page does not already show.
+      x-action: farms.displayName
+      x-roles: [public]
+      security: []
+      parameters:
+        - name: slug
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: The farm's display name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, name]
+                properties:
+                  slug: { $ref: "#/components/schemas/FarmSlug" }
+                  name: { type: string }
+        "404":
+          description: No farm has that address.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/farm-slugs:
     get:
       tags: [farm]

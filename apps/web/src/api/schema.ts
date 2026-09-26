@@ -371,6 +371,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/farm-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The display name of the farm whose address this is
+         * @description Feeds the front door and the login screen of a farm's own address, so
+         *     they greet people with "San José" rather than the DNS label
+         *     "san-jose". The farm is the one named by the request's host; `slug`
+         *     names it where the host cannot (main domain, development). Public: it
+         *     says nothing the farm's own page does not already show.
+         */
+        get: operations["getFarmDisplayName"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/farm-slugs": {
         parameters: {
             query?: never;
@@ -6796,6 +6820,40 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getFarmDisplayName: {
+        parameters: {
+            query?: {
+                slug?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The farm's display name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: components["schemas"]["FarmSlug"];
+                        name: string;
+                    };
+                };
+            };
+            /** @description No farm has that address. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getSlugAvailability: {

@@ -8,11 +8,17 @@
 import { Link as RouterLink } from "react-router-dom";
 import { Box, Button, Container, Link, Paper, Stack, Typography } from "@mui/material";
 import { GREEN, GREEN_DARK } from "../../theme";
-import { farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import { farmGreeting, farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 
 export function FarmEntryPage({ hostname }: { hostname?: string }) {
   const host = hostname ?? window.location.hostname;
   const slug = farmSlugFromHost(host);
+  // "Finca San José", not the DNS label. The slug is only the fallback when
+  // the name cannot be had, and nothing shows until the answer is in, so the
+  // label does not flash from one to the other.
+  const { name, settled } = useFarmDisplayName(slug);
+  const label = slug ? (name ? farmGreeting(name) : settled ? farmGreeting(slug) : null) : null;
   return (
     <Box
       sx={{
@@ -39,8 +45,14 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
                 Bienvenido
               </Typography>
               {slug && (
-                <Typography sx={{ fontSize: "1.3rem", mt: 1, color: "primary.main", fontWeight: 700, wordBreak: "break-all" }}>
-                  Finca {slug}
+                <Typography
+                  data-testid="farm-entry-name"
+                  sx={{
+                    fontSize: "1.3rem", mt: 1, color: "primary.main", fontWeight: 700,
+                    overflowWrap: "anywhere", visibility: label ? "visible" : "hidden",
+                  }}
+                >
+                  {label ?? "\u00a0"}
                 </Typography>
               )}
             </Box>

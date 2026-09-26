@@ -193,3 +193,13 @@ export function offersSignup(hostname?: string): boolean {
 
 /** Where the app starts: `/tablero` (the guard sends a visitor to `/entrar`). */
 export const APP_HOME = "/tablero";
+
+/**
+ * How the front door names a farm: "Finca San José". A farm already called
+ * "Finca La Palma" is not greeted as "Finca Finca La Palma".
+ */
+export function farmGreeting(name: string): string {
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (!clean) return "";
+  return /^finca(\s|$)/i.test(clean) ? clean : `Finca ${clean}`;
+}
