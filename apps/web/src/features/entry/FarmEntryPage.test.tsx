@@ -17,18 +17,23 @@ function renderAt(hostname: string) {
 }
 
 describe("the farm's front door", () => {
-  it("offers enter, register and forgotten password on a farm address", () => {
+  it("offers only enter and forgotten password on a farm address", () => {
     renderAt("cafin3.bascula.engp.io");
     expect(screen.getByText("Finca cafin3")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Entrar" })).toHaveAttribute("href", "/entrar");
-    expect(screen.getByRole("link", { name: "Registrar" })).toHaveAttribute("href", "https://bascula.engp.io/empezar");
+    expect(screen.queryByRole("link", { name: /Registrar/ })).toBeNull();
+    expect(screen.queryByText(/Registrar|Crear.*finca/i)).toBeNull();
+    expect(screen.getAllByRole("link")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "¿Olvidó su clave o su usuario?" })).toHaveAttribute("href", "/olvide-mi-clave");
     expect(screen.queryByText(/Solicitar una demostración/)).toBeNull();
   });
 
-  it("registers on the dev main domain from a dev farm, and in place on the demo", () => {
-    renderAt("cafin3.int.dev.engp.io");
-    expect(screen.getByRole("link", { name: "Registrar" })).toHaveAttribute("href", "https://bascula.int.dev.engp.io/empezar");
+  it("never offers to register on a dev farm either; the demo (a main domain) does", () => {
+    const { unmount } = renderAt("cafin3.int.dev.engp.io");
+    expect(screen.queryByRole("link", { name: /Registrar/ })).toBeNull();
+    unmount();
+    renderAt("bascula.int.dev.engp.io");
+    expect(screen.getByRole("link", { name: "Registrar" })).toHaveAttribute("href", "/empezar");
   });
 
   it("says who resets a forgotten password", () => {

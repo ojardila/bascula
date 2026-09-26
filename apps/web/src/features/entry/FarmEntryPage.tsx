@@ -1,13 +1,14 @@
 /**
  * `/` on a farm's own address ({slug}.bascula.engp.io) and on the general
- * demo: not the marketing landing, just the door. Three things, big: enter,
- * register a farm, and what to do about a forgotten password. People already
- * signed in never see it (HomeRoute sends them to /tablero).
+ * demo: not the marketing landing, just the door. On a farm: enter, and what
+ * to do about a forgotten password — nothing else. A farm never offers to
+ * register another farm; only the demo (a main domain) adds "Registrar".
+ * People already signed in never see it (HomeRoute sends them to /tablero).
  */
 import { Link as RouterLink } from "react-router-dom";
 import { Box, Button, Container, Link, Paper, Stack, Typography } from "@mui/material";
 import { GREEN, GREEN_DARK } from "../../theme";
-import { farmSlugFromHost, signupUrlForHere } from "../../lib/farmHost";
+import { farmSlugFromHost, offersSignup } from "../../lib/farmHost";
 
 export function FarmEntryPage({ hostname }: { hostname?: string }) {
   const host = hostname ?? window.location.hostname;
@@ -52,14 +53,17 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
             >
               Entrar
             </Button>
-            <Button
-              href={signupUrlForHere(host)}
-              variant="outlined"
-              size="large"
-              sx={{ minHeight: 56, fontSize: "1.15rem", borderRadius: 999 }}
-            >
-              Registrar
-            </Button>
+            {offersSignup(host) && (
+              <Button
+                component={RouterLink}
+                to="/empezar"
+                variant="outlined"
+                size="large"
+                sx={{ minHeight: 56, fontSize: "1.15rem", borderRadius: 999 }}
+              >
+                Registrar
+              </Button>
+            )}
             <Link component={RouterLink} to="/olvide-mi-clave" sx={{ fontSize: "1.1rem" }}>
               ¿Olvidó su clave o su usuario?
             </Link>

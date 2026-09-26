@@ -7,7 +7,7 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
 import { LandingPage } from "./features/marketing/LandingPage";
-import { APP_HOME, showsFarmEntry } from "./lib/farmHost";
+import { APP_HOME, isFarmHost, showsFarmEntry } from "./lib/farmHost";
 import { FarmEntryPage } from "./features/entry/FarmEntryPage";
 import { ForgotPasswordPage } from "./features/auth/ForgotPasswordPage";
 import { OfflineProvider } from "./offline/OfflineContext";
@@ -374,8 +374,8 @@ export function App() {
       <Route path="/" element={<HomeRoute />} />
       <Route path="/entrar" element={<LoginPage />} />
       <Route path="/olvide-mi-clave" element={<ForgotPasswordPage />} />
-      <Route path="/empezar" element={<SignupPage />} />
-      <Route path="/registro" element={<SignupPage />} />
+      <Route path="/empezar" element={<MainDomainSignup />} />
+      <Route path="/registro" element={<MainDomainSignup />} />
       <Route path="/preparando/:slug" element={<ProvisionPage />} />
       {/* The super-admin hangs off the login, not off the farm shell: other
           routes, another role, and no read of anybody's ledger. */}
@@ -403,13 +403,24 @@ export function App() {
  * `/`: the marketing landing on the main domain only. On a farm's own address
  * (`{slug}.bascula.engp.io`) and on the general demo there is nothing to
  * sell: somebody signed in goes straight to `/tablero`, anybody else gets the
- * farm's front door (Entrar / Registrar / ¿Olvidó su clave?).
+ * farm's front door (Entrar / ¿Olvidó su clave?).
  */
 function HomeRoute() {
   const { status } = useAuth();
   if (!showsFarmEntry()) return <LandingPage />;
   if (status === "authenticated") return <Navigate to={APP_HOME} replace />;
   return <FarmEntryPage />;
+}
+
+/**
+ * Registering a farm happens on the main domain only (bascula.engp.io/empezar)
+ * or in the super-admin console. On a farm's own address /empezar and
+ * /registro go back to the farm's front door: nothing reachable there before
+ * or during login creates a farm.
+ */
+function MainDomainSignup() {
+  if (isFarmHost()) return <Navigate to="/" replace />;
+  return <SignupPage />;
 }
 
 /** A renamed route: same screen, same query string (`?lunes=`, `?lote=`). */

@@ -8,7 +8,7 @@ import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { messageFor } from "../../api/errors";
-import { farmSlugFromHost } from "../../lib/farmHost";
+import { farmSlugFromHost, offersSignup } from "../../lib/farmHost";
 import type { Membership, Role } from "../../api/types";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -145,10 +145,15 @@ export function LoginPage() {
           <Button type="submit" variant="contained" size="large" disabled={busy} fullWidth>
             {busy ? "Entrando…" : "Entrar"}
           </Button>
-          <Divider>o</Divider>
-          <Button component={RouterLink} to="/empezar" variant="outlined" fullWidth size="large">
-            Registrar mi finca
-          </Button>
+          {/* Main domain only: a farm's login never offers another farm. */}
+          {offersSignup() && (
+            <>
+              <Divider>o</Divider>
+              <Button component={RouterLink} to="/empezar" variant="outlined" fullWidth size="large">
+                Registrar mi finca
+              </Button>
+            </>
+          )}
         </Stack>
       </Box>
 

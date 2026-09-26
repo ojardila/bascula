@@ -10,10 +10,10 @@ import { invalidateRefs } from "../../api/refs";
 import { theme } from "../../theme";
 import { memberships, resetDb, users } from "../../mocks/db";
 
-function renderApp() {
+function renderApp(path = "/entrar") {
   return render(
     <ThemeProvider theme={theme}>
-      <MemoryRouter initialEntries={["/entrar"]}>
+      <MemoryRouter initialEntries={[path]}>
         <AuthProvider>
           <App />
         </AuthProvider>
@@ -47,6 +47,32 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("registering a farm is not offered on a farm's address", () => {
+  it("has no register button on a farm's login", async () => {
+    stubHostname("cafin3.bascula.engp.io");
+    renderApp();
+    expect(await screen.findByRole("button", { name: "Entrar" })).toBeInTheDocument();
+    expect(screen.queryByText(/Registrar|Crear.*finca/i)).toBeNull();
+  });
+
+  it("keeps it on the main domain", async () => {
+    stubHostname("bascula.engp.io");
+    renderApp();
+    expect(await screen.findByRole("link", { name: "Registrar mi finca" })).toHaveAttribute("href", "/empezar");
+  });
+
+  it("sends /empezar and /registro on a farm back to the farm's front door", async () => {
+    stubHostname("cafin3.bascula.engp.io");
+    const { unmount } = renderApp("/empezar");
+    expect(await screen.findByTestId("farm-entry")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Nombre de la finca/)).toBeNull();
+    unmount();
+    renderApp("/registro");
+    expect(await screen.findByTestId("farm-entry")).toBeInTheDocument();
+    expect(screen.queryByText(/Registrar|Crear.*finca/i)).toBeNull();
+  });
 });
 
 describe("login on a pinned host", () => {

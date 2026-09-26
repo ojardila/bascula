@@ -7,7 +7,7 @@ import {
   isFarmHost,
   isFarmSlug,
   showsFarmEntry,
-  signupUrlForHere,
+  offersSignup,
   slugifyFarmName,
 } from "./farmHost";
 
@@ -100,9 +100,11 @@ describe("showsFarmEntry", () => {
     expect(showsFarmEntry("bascula.engp.io")).toBe(false);
     expect(showsFarmEntry("localhost")).toBe(false);
   });
-  it("registers farms on the main domain", () => {
-    expect(signupUrlForHere("cafin3.bascula.engp.io")).toBe("https://bascula.engp.io/empezar");
-    expect(signupUrlForHere("bascula.int.dev.engp.io")).toBe("/empezar");
-    expect(signupUrlForHere("bascula.engp.io")).toBe("/empezar");
+  it("offers to register a farm on main domains only, never on a farm", () => {
+    expect(offersSignup("cafin3.bascula.engp.io")).toBe(false);
+    expect(offersSignup("cafin3.int.dev.engp.io")).toBe(false);
+    expect(offersSignup("bascula.int.dev.engp.io")).toBe(true);
+    expect(offersSignup("bascula.engp.io")).toBe(true);
+    expect(offersSignup("localhost")).toBe(true);
   });
 });
