@@ -13,7 +13,7 @@
 # API on those two prefixes of the same hostname. That is the "same origin"
 # half of the choice docs/decisions.md left open, and it is what lets the API
 # keep having no CORS middleware at all.
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /src
 
 # The lockfile and the manifests first, so editing a component does not
