@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="${DB_DIAGRAM_IMAGE:-imresamu/postgis:17-3.5}"
+IMAGE="${DB_DIAGRAM_IMAGE:-imresamu/postgis:17-3.6}"
 NAME="bascula-db-diagram-$$"
 
 command -v docker >/dev/null || { echo "db-diagram: docker is required" >&2; exit 1; }

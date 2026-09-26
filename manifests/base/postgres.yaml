@@ -10,7 +10,11 @@ metadata:
   namespace: bascula
 spec:
   instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgis:17-3.5
+  # Debian 13 based CNPG PostGIS image, pinned by tag + digest. 17-3.5 was
+  # Debian 11 (EOL). No maintained 3.5 build exists, so this is PostGIS 3.6:
+  # existing clusters need `ALTER EXTENSION postgis UPDATE` once after the
+  # switch (done on every cluster on 2026-09-26).
+  imageName: ghcr.io/cloudnative-pg/postgis:17.11-3.6.4-202609211020-standard-trixie@sha256:d7e6a52200c494fc8292a66e2517bc179e1c0aa9eaaa5911470b741b16428029
 
   # The migration Job connects as this role. It has to: the first migration
   # creates extensions and a role, neither of which the database owner is

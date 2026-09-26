@@ -57,7 +57,8 @@ repo installs. Two instances, anti-affinity across nodes, on Longhorn.
 **PostGIS is required, not optional.** `00001_extensions_and_roles.sql` does
 `CREATE EXTENSION postgis` and `plots` stores boundaries as `geography`, so a
 plain `postgres` image fails on the first migration. The cluster runs
-`ghcr.io/cloudnative-pg/postgis:17-3.5` — the same PostGIS version as the
+`ghcr.io/cloudnative-pg/postgis:17.11-3.6.4-…-standard-trixie` (pinned by
+digest in `base/postgres.yaml`) — the same PostGIS version (3.6) as the
 `docker-compose.yml` used for local work.
 
 Three roles, three different jobs:
