@@ -1209,6 +1209,69 @@ export interface WireReportPerformanceResult {
   items: WireWorkerPerformance[];
 }
 
+/**
+ * GET /v1/workers/{id}/performance — one person's harvest, for the
+ * «Rendimiento» section of the profile. Kilos only; see
+ * internal/store/performance.go. Every `kg` is null — never zero — when no
+ * record behind it could be expressed in kilos.
+ */
+export interface WirePerformanceWeek {
+  /** The settlement week's Monday. */
+  weekStart: DayISO;
+  records: number;
+  kg: number | null;
+  recordsNotInKg: number;
+  daysWorked: number;
+  /** The farm's kilos that week divided by the people who picked them. */
+  farmAvgKg: number | null;
+  farmPickers: number;
+  finished: boolean;
+}
+
+export interface WirePerformanceDay {
+  day: DayISO;
+  records: number;
+  kg: number | null;
+  /** Later this week: has not happened yet in the farm. */
+  future: boolean;
+}
+
+export interface WirePerformancePlot {
+  plotId: Uuid;
+  name: string;
+  kg: number;
+  records: number;
+}
+
+export interface WirePerformanceSummary {
+  thisWeekKg: number | null;
+  /** Last week over the same weekdays the running week has had so far. */
+  lastWeekToDateKg: number | null;
+  lastWeekKg: number | null;
+  recentFrom: DayISO;
+  recentKg: number | null;
+  recentDaysWorked: number;
+  kgPerDayWorked: number | null;
+}
+
+export interface WireWorkerPerformanceReport {
+  scope: WireReportScope;
+  employeeId: Uuid;
+  today: DayISO;
+  thisWeek: DayISO;
+  /** Null: this person has never had a harvest record. */
+  lastRecordOn: DayISO | null;
+  summary: WirePerformanceSummary;
+  /** Oldest first; the running week last. */
+  weeks: WirePerformanceWeek[];
+  /** Monday to Sunday of the running week. */
+  days: WirePerformanceDay[];
+  /** Last four weeks, most kilos first. */
+  plots: WirePerformancePlot[];
+  unattributedKg: number | null;
+  recordsNotInKg: number;
+}
+
 export type WireAnomalyRule = "impossible" | "duplicate" | "digit" | "outlier" | "future";
 
 export interface WireAnomaly {

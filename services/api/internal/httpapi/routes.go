@@ -79,6 +79,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodDelete, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleDeleteWorker},
 		{http.MethodGet, "/v1/workers/{id}/profile", auth.ActionWorkersPrivate, s.handleWorkerProfile},
 		{http.MethodGet, "/v1/workers/{id}/payables", auth.ActionWorkerPayables, s.handleWorkerPayables},
+		{http.MethodGet, "/v1/workers/{id}/performance", auth.ActionWorkerPerformance, s.handleWorkerPerformance},
 		{http.MethodGet, "/v1/workers/{id}/notes", auth.ActionWorkerNotesRead, s.handleListWorkerNotes},
 		{http.MethodPost, "/v1/workers/{id}/notes", auth.ActionWorkerNotesAdd, s.handleAddWorkerNote},
 

@@ -225,6 +225,7 @@ type Action =
   | "workers.notes.read"
   | "workers.notes.write"
   | "workers.payables.read"
+  | "workers.performance.read"
   | "plots.read"
   | "plots.write"
   | "plots.boundary.write"
@@ -309,6 +310,7 @@ const MATRIX: Record<Action, Rule> = {
   "workers.notes.read": { roles: admins },
   "workers.notes.write": { roles: admins },
   "workers.payables.read": { roles: admins },
+  "workers.performance.read": { roles: admins },
 
   "plots.read": { roles: everyone },
   "plots.write": { roles: admins },
@@ -3531,6 +3533,127 @@ export const handlers = [
     if (!expense) return notFound();
     expense.deletedAt = nowInstant();
     return noContent();
+  }),
+
+  /**
+   * One person's harvest, as `internal/store/performance.go` computes it:
+   * weeks keyed by Monday with the farm's average per PICKER, the days of the
+   * running week, last week cut at today's weekday, and the lotes of the last
+   * four weeks. Kilos only; null — never zero — when nothing is in kilos.
+   */
+  http.get("*/v1/workers/:id/performance", ({ request, params }) => {
+    const g = guard(request, "workers.performance.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const id = String(params.id);
+    if (!t.workers.some((w) => w.id === id)) return notFound();
+    const asked = Number(new URL(request.url).searchParams.get("weeks") ?? 12) || 12;
+    const weeks = Math.min(52, Math.max(4, asked));
+
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    const todayD = today();
+    const thisWeek = mondayOf(todayD);
+    const from = day(addDays(parseDay(thisWeek), -7 * (weeks - 1)));
+    const recentFrom = day(addDays(parseDay(thisWeek), -7 * 3));
+    const kgOf = (r: db.MockWorkRecord): number | null => {
+      const unit = t.workUnits.find((u) => u.id === r.unitId);
+      return unit?.kgFactor != null ? r.quantity * unit.kgFactor : null;
+    };
+    const add = (a: number | null, b: number | null) => (b === null ? a : (a ?? 0) + b);
+    const all = t.workRecords.filter((r) => r.deletedAt === null && r.payScheme === "unidad_trabajo");
+    const mine = all.filter((r) => r.workerId === id);
+    const inWindow = all.filter((r) => db.dayOf(r.dateFrom) >= from);
+
+    const weekRows = Array.from({ length: weeks }, (_, i) => {
+      const weekStart = day(addDays(parseDay(from), 7 * i));
+      const rows = inWindow.filter((r) => db.dayOf(r.weekStart) === weekStart);
+      const own = rows.filter((r) => r.workerId === id);
+      let kg: number | null = null;
+      for (const r of own) kg = add(kg, kgOf(r));
+      const perPicker = new Map<string, number>();
+      for (const r of rows) {
+        const k = kgOf(r);
+        if (k !== null) perPicker.set(r.workerId, (perPicker.get(r.workerId) ?? 0) + k);
+      }
+      const totals = [...perPicker.values()];
+      return {
+        weekStart,
+        records: own.length,
+        kg,
+        recordsNotInKg: own.filter((r) => kgOf(r) === null).length,
+        daysWorked: new Set(own.filter((r) => kgOf(r) !== null).map((r) => db.dayOf(r.dateFrom))).size,
+        farmAvgKg: totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : null,
+        farmPickers: totals.length,
+        finished: weekStart < thisWeek,
+      };
+    });
+
+    const kgOn = (d: string) => {
+      const rows = mine.filter((r) => db.dayOf(r.dateFrom) === d);
+      let kg: number | null = null;
+      for (const r of rows) kg = add(kg, kgOf(r));
+      return { records: rows.length, kg };
+    };
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = day(addDays(parseDay(thisWeek), i));
+      return { day: d, ...kgOn(d), future: d > todayD };
+    });
+    let lastWeekToDateKg: number | null = null;
+    const sameDayLastWeek = day(addDays(parseDay(todayD), -7));
+    for (let i = 0; i < 7; i++) {
+      const d = day(addDays(parseDay(thisWeek), i - 7));
+      if (d <= sameDayLastWeek) lastWeekToDateKg = add(lastWeekToDateKg, kgOn(d).kg);
+    }
+
+    const recent = weekRows.slice(-4);
+    let recentKg: number | null = null;
+    for (const w of recent) recentKg = add(recentKg, w.kg);
+    const recentDaysWorked = recent.reduce((s, w) => s + w.daysWorked, 0);
+
+    const byPlot = new Map<string, { kg: number; records: number }>();
+    let unattributedKg: number | null = null;
+    for (const r of mine.filter((r) => db.dayOf(r.dateFrom) >= recentFrom)) {
+      const k = kgOf(r);
+      if (k === null) continue;
+      const plotIds = new Set([
+        ...(r.plotIds ?? []),
+        ...(r.plotCropIds ?? []).map((c) => t.plots.find((p) => (p.crops ?? []).some((x) => x.id === c))?.id),
+      ].filter((x): x is string => !!x));
+      if (plotIds.size !== 1) {
+        unattributedKg = add(unattributedKg, k);
+        continue;
+      }
+      const pid = [...plotIds][0];
+      const cur = byPlot.get(pid) ?? { kg: 0, records: 0 };
+      byPlot.set(pid, { kg: cur.kg + k, records: cur.records + 1 });
+    }
+    const plots = [...byPlot.entries()]
+      .map(([plotId, v]) => ({ plotId, name: t.plots.find((p) => p.id === plotId)?.name ?? "", ...v }))
+      .sort((a, b) => b.kg - a.kg || a.name.localeCompare(b.name));
+
+    const lastDay = mine.map((r) => db.dayOf(r.dateFrom)).sort().pop() ?? null;
+    const n = weekRows.length;
+    return HttpResponse.json({
+      scope: "harvest",
+      employeeId: id,
+      today: todayD,
+      thisWeek,
+      lastRecordOn: lastDay,
+      summary: {
+        thisWeekKg: weekRows[n - 1].kg,
+        lastWeekToDateKg,
+        lastWeekKg: weekRows[n - 2].kg,
+        recentFrom,
+        recentKg,
+        recentDaysWorked,
+        kgPerDayWorked: recentKg !== null && recentDaysWorked > 0 ? recentKg / recentDaysWorked : null,
+      },
+      weeks: weekRows,
+      days,
+      plots,
+      unattributedKg,
+      recordsNotInKg: weekRows.reduce((s, w) => s + w.recordsNotInKg, 0),
+    });
   }),
 
   /* -- reports (cosecha) --------------------------------------------- */

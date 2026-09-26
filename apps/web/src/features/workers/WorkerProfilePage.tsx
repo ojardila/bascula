@@ -39,6 +39,7 @@ import { OwedFigure, owedDirection } from "./OwedFigure";
 import { totalOwedCents, type Owed } from "./owed";
 import { CORRECTION_GLOSS, NOT_YET_EARNED } from "../../lib/vocab";
 import { WorkerHistory } from "../receipts/WorkerHistory";
+import { WorkerPerformance } from "./WorkerPerformance";
 
 const HISTORY_LIMIT = 500;
 
@@ -214,7 +215,14 @@ export function WorkerProfilePage() {
         </Grid>
       </Grid>
 
-      <Card sx={{ mt: 2 }}>
+      {/* «Rendimiento»: what this person picked, week by week. Harvest
+          figures of one person against the farm, so it follows the harvest
+          module's permission, not the payroll's. */}
+      {can("harvest.read") && (
+        <WorkerPerformance workerId={worker.id} />
+      )}
+
+      <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h3" gutterBottom>
             Labores

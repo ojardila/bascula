@@ -803,6 +803,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workers/{id}/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One person's harvest — the «Rendimiento» section of the profile
+         * @description What this person picked, in kilos: per settlement week (keyed by its
+         *     Monday, in the farm's zone) for the last `weeks` weeks, with the farm's
+         *     average per picker beside each week; per day of the running week; and
+         *     per lote over the last four weeks. Plus the three figures at the top of
+         *     the section.
+         *
+         *     Scope is harvest: work paid by the unit of work. Kilos only — no money.
+         *     A weighing in a unit without a kg_factor is left out of every kilo
+         *     figure and counted in `recordsNotInKg`; kilos with nothing behind them
+         *     are null, never zero.
+         *
+         *     This is not the comparative index of `/v1/reports/performance`, and it
+         *     ranks nobody. It is still administrator-only and on the weigher's deny
+         *     list: a chart of one worker against the farm is a judgement about a
+         *     person.
+         *
+         *     Another farm's worker is a 404, never a chart of zeros.
+         */
+        get: operations["workerPerformance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workers/{id}/notes": {
         parameters: {
             query?: never;
@@ -5559,6 +5597,79 @@ export interface components {
              */
             trend: number | null;
         };
+        WorkerPerformanceReport: {
+            scope: components["schemas"]["ReportScope"];
+            /** Format: uuid */
+            employeeId: string;
+            /**
+             * Format: date
+             * @description Today in the farm's zone.
+             */
+            today: string;
+            /**
+             * Format: date
+             * @description Monday of the running week.
+             */
+            thisWeek: string;
+            /**
+             * Format: date
+             * @description The person's latest harvest record, ever. Null means none at all.
+             */
+            lastRecordOn: string | null;
+            summary: {
+                /** @description The running week so far. */
+                thisWeekKg: number | null;
+                /**
+                 * @description Last week over the same weekdays the running week has had so
+                 *     far. The fair comparison for a week that is not over.
+                 */
+                lastWeekToDateKg: number | null;
+                /** @description Last week */
+                lastWeekKg: number | null;
+                /**
+                 * Format: date
+                 * @description First Monday of the four-week window.
+                 */
+                recentFrom: string;
+                recentKg: number | null;
+                /** @description Distinct days with kilos in the four-week window. */
+                recentDaysWorked: number;
+                /** @description recentKg / recentDaysWorked. */
+                kgPerDayWorked: number | null;
+            };
+            /** @description Oldest first; the running week is last and `finished` false. */
+            weeks: {
+                /** Format: date */
+                weekStart: string;
+                records: number;
+                kg: number | null;
+                recordsNotInKg: number;
+                daysWorked: number;
+                /** @description The farm's kilos that week divided by the people who picked them. */
+                farmAvgKg: number | null;
+                farmPickers: number;
+                finished: boolean;
+            }[];
+            /** @description Monday to Sunday of the running week, always seven. */
+            days: {
+                /** Format: date */
+                day: string;
+                records: number;
+                kg: number | null;
+                future: boolean;
+            }[];
+            /** @description Kilos per lote over the four-week window, most first. */
+            plots: {
+                /** Format: uuid */
+                plotId: string;
+                name: string;
+                kg: number;
+                records: number;
+            }[];
+            /** @description Recent kilos whose record names no lote, or more than one. */
+            unattributedKg: number | null;
+            recordsNotInKg: number;
+        };
         ReportPerformanceResult: {
             scope: components["schemas"]["ReportScope"];
             days: number;
@@ -7530,6 +7641,37 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    workerPerformance: {
+        parameters: {
+            query?: {
+                /**
+                 * @description How many settlement weeks, the running one included. Default 12,
+                 *     at least 4 (the recent window), at most 52.
+                 */
+                weeks?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The person's harvest. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerPerformanceReport"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
