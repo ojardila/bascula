@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -47,4 +48,14 @@ func (s *Signer) ticketMAC(purpose, payload string) string {
 	m := hmac.New(sha256.New, s.key)
 	m.Write([]byte("bascula-ticket\x00" + purpose + "\x00" + payload))
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
+}
+
+// OpaqueRef is a stable, keyed name for subject: the same subject always gives
+// the same ref, and without the signing key a ref cannot be computed or
+// reversed, not even by hashing guesses. For identifiers that must be matched
+// later but must not be readable where they are shown (a public run title).
+func (s *Signer) OpaqueRef(purpose, subject string) string {
+	m := hmac.New(sha256.New, s.key)
+	m.Write([]byte("bascula-ref\x00" + purpose + "\x00" + subject))
+	return hex.EncodeToString(m.Sum(nil))[:20]
 }

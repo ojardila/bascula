@@ -16,8 +16,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-
-	"github.com/ojardila/bascula/services/api/internal/domain"
 )
 
 // A farm can get a stack of its own: a namespace with its own Postgres, API
@@ -69,7 +67,10 @@ func (s *Server) kickTenantProvision(p tenantProvision) {
 		body, err := json.Marshal(map[string]any{
 			"event_type": "provision-tenant",
 			"client_payload": map[string]string{
-				"slug":      p.Slug,
+				"slug": p.Slug,
+				// ref, not slug, titles the run: the repository's run list is
+				// public. See provisionRunRef.
+				"ref":       s.provisionRunRef(p.Slug),
 				"farmName":  p.FarmName,
 				"email":     p.Email,
 				"ownerName": p.OwnerName,
@@ -422,9 +423,11 @@ type provisionStatus struct {
 	Note    string           `json:"note,omitempty"`
 }
 
-// handleProvisionStatus answers the waiting screen. It is public: the caller
-// just registered and has no session yet, and everything it reveals — whether
-// a web address answers — is something anybody can find out with a browser.
+// handleProvisionStatus answers the waiting screen. The caller just
+// registered and has no session yet, so the route is public, but the answer is
+// not: it names when the farm was created and how its certificate stands, so
+// it goes only to the holder of the provision ticket signup handed back (or a
+// super-admin). Everybody else gets the 404 of a slug that does not exist.
 //
 // Being public, it is also a lever: one computation is a call to the farm's
 // stack, a TLS probe, about nine Kubernetes reads and, while the farm is being
@@ -438,6 +441,13 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 	slug, err := normalizeFarmSlug(chi.URLParam(r, "slug"))
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	// Only whoever created the farm (or a super-admin) may watch it; anybody
+	// else gets exactly what a slug that does not exist gets, before the
+	// database is asked. See farm_lookup.go.
+	if !s.mayWatchProvision(r, slug) {
+		writeError(w, r, errFarmNotFound())
 		return
 	}
 	s.prov.mu.Lock()
@@ -490,7 +500,7 @@ func provisionStatusTTL(st provisionStatus) time.Duration {
 func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provisionStatus, error) {
 	_, _, createdAt, err := farmBySlug(ctx, s.pool, slug)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return provisionStatus{}, domain.NotFound("farm not found")
+		return provisionStatus{}, errFarmNotFound()
 	}
 	if err != nil {
 		return provisionStatus{}, err
@@ -612,7 +622,14 @@ func (s *Server) probePublic(ctx context.Context, base string) bool {
 
 // handleSlugAvailability lets the signup form say "that address is taken"
 // while the owner is still typing, instead of after they press the button.
+//
+// It is an oracle for one exact slug by nature — that is its job — so it is
+// metered per client address: checking one address as it is typed is a few
+// calls, testing a dictionary of farm names is thousands. It never lists.
 func (s *Server) handleSlugAvailability(w http.ResponseWriter, r *http.Request) {
+	if !s.allowFarmLookup(w, r) {
+		return
+	}
 	raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("slug")))
 	slug, err := normalizeFarmSlug(raw)
 	if err != nil {
@@ -640,7 +657,15 @@ func (s *Server) handleSlugAvailability(w http.ResponseWriter, r *http.Request) 
 // `?slug=` names it where the host cannot (the main domain, development,
 // tests). A dedicated stack falls back to the farm it serves. Public, like the
 // page it feeds; it says nothing that page does not already show.
+//
+// A dedicated stack only knows its own farm, so there it reveals nothing
+// about any other. The shared platform knows every farm, and there the
+// lookup is metered like the availability check: the host is the caller's
+// to choose (X-Forwarded-Host, ?slug=), so it is a slug oracle too.
 func (s *Server) handleFarmName(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.TenantSlug == "" && !s.allowFarmLookup(w, r) {
+		return
+	}
 	raw := farmSlugFromHost(r)
 	if raw == "" {
 		raw = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("slug")))
@@ -650,7 +675,7 @@ func (s *Server) handleFarmName(w http.ResponseWriter, r *http.Request) {
 	}
 	slug, err := normalizeFarmSlug(raw)
 	if err != nil {
-		writeError(w, r, domain.NotFound("farm not found"))
+		writeError(w, r, errFarmNotFound())
 		return
 	}
 	var name *string
@@ -659,7 +684,7 @@ func (s *Server) handleFarmName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if name == nil || strings.TrimSpace(*name) == "" {
-		writeError(w, r, domain.NotFound("farm not found"))
+		writeError(w, r, errFarmNotFound())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"slug": slug, "name": strings.TrimSpace(*name)})

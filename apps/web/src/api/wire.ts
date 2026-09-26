@@ -122,6 +122,11 @@ export interface WireSignupResponse {
    * In production this is absent and the owner uses the link in the mail.
    */
   verificationToken?: string;
+  /**
+   * Opens the new farm's provision status (the waiting screen) for this
+   * browser only; see lib/provisionTicket.
+   */
+  provisionTicket?: string;
 }
 
 /** `POST /v1/auth/login` and `POST /v1/auth/refresh` both answer this. */
@@ -262,6 +267,8 @@ export interface WireAdminFarmCreated extends WireAdminFarm {
   ownerCreated: boolean;
   temporaryPassword?: string;
   temporaryPasswordNote?: string;
+  /** Opens this farm's provision status for the console (see lib/provisionTicket). */
+  provisionTicket?: string;
 }
 
 /* -- catalogues ------------------------------------------------------ */

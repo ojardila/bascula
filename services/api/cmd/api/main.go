@@ -409,6 +409,11 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_HOUR")); err == nil && n > 0 {
 		rc.http.SignupsPerHour = n
 	}
+	// Public slug lookups (signup availability, farm name) per address per
+	// hour; see httpapi/farm_lookup.go. Zero or negative keeps the default.
+	if n, err := strconv.Atoi(getenv("FARM_LOOKUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
+		rc.http.FarmLookupsPerIPPerHour = n
+	}
 
 	// TRUSTED_PROXY_CIDRS names the reverse proxies this service will believe
 	// an X-Forwarded-For from, comma separated, e.g.

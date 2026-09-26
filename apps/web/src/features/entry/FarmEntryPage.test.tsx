@@ -18,9 +18,9 @@ function renderAt(hostname: string) {
 
 describe("the farm's front door", () => {
   it("offers only enter and forgotten password on a farm address", async () => {
-    renderAt("cafin3.bascula.engp.io");
+    renderAt("lapalma.bascula.engp.io");
     // No farm by that name in the mock: the slug is the fallback.
-    expect(await screen.findByText("Finca cafin3")).toBeInTheDocument();
+    expect(await screen.findByText("Finca lapalma")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Entrar" })).toHaveAttribute("href", "/entrar");
     expect(screen.queryByRole("link", { name: /Registrar/ })).toBeNull();
     expect(screen.queryByText(/Registrar|Crear.*finca/i)).toBeNull();
@@ -36,7 +36,7 @@ describe("the farm's front door", () => {
   });
 
   it("never offers to register on a dev farm either; the demo (a main domain) does", () => {
-    const { unmount } = renderAt("cafin3.int.dev.engp.io");
+    const { unmount } = renderAt("lapalma.int.dev.engp.io");
     expect(screen.queryByRole("link", { name: /Registrar/ })).toBeNull();
     unmount();
     renderAt("bascula.int.dev.engp.io");

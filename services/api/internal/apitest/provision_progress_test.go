@@ -95,7 +95,7 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 				if runStatus == "completed" {
 					conclusion = "success"
 				}
-				runs = append([]any{map[string]any{"display_title": "Provision tenant " + slug, "status": runStatus, "conclusion": conclusion}}, runs...)
+				runs = append([]any{map[string]any{"display_title": "Provision tenant " + provisionRunRef(slug), "status": runStatus, "conclusion": conclusion}}, runs...)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": runs})
 		default:
@@ -173,7 +173,7 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	last := -1.0
 	get := func() (map[string]string, response) {
 		time.Sleep(4100 * time.Millisecond) // past the per-slug status cache
-		st := call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+		st := call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 		if st.Status != http.StatusOK {
 			t.Fatalf("status: %d %s", st.Status, st.Raw)
 		}
@@ -290,7 +290,7 @@ func TestProvisionProgressFallsBackWithoutCluster(t *testing.T) {
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/runs") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": []any{
-				map[string]any{"display_title": "Provision tenant " + slug, "status": "in_progress"}}})
+				map[string]any{"display_title": "Provision tenant " + provisionRunRef(slug), "status": "in_progress"}}})
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -317,7 +317,7 @@ func TestProvisionProgressFallsBackWithoutCluster(t *testing.T) {
 	platform := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), pcfg)
 	signupWithSlug(t, platform, "Sin cluster", slug)
 
-	st := call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	st := call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 	stages, p := stagesOf(t, st)
 	if st.Body["source"] != "pipeline" || st.Body["note"] == nil || st.Body["note"] == "" {
 		t.Fatalf("fallback not announced: %s", st.Raw)

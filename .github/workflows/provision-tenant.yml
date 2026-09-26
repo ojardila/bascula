@@ -13,14 +13,17 @@
 # (services/api/internal/httpapi/provision.go).
 name: Provision tenant
 # The platform API finds this run by its name to show progress on the
-# waiting screen (services/api/internal/httpapi/provision_progress.go).
-run-name: Provision tenant ${{ github.event.client_payload.slug || inputs.slug }}
+# waiting screen (services/api/internal/httpapi/provision_progress.go). The
+# name carries an opaque ref (a keyed hash of the slug), NEVER the slug: this
+# repository is public, and so are its run titles and logs. A manual run is
+# titled "manual".
+run-name: Provision tenant ${{ github.event.client_payload.ref || 'manual' }}
 
 on:
   workflow_dispatch:
     inputs:
       slug:
-        description: DNS label (fincasanjose)
+        description: DNS label (lapalma)
         required: true
       farmName:
         description: Display name
@@ -37,9 +40,12 @@ on:
     types: [provision-tenant]
 
 # Signup data (farm name, owner, email, phone) is chosen by an anonymous
-# stranger. It never reaches a shell through ${{ }}: every value arrives as an
-# environment variable, and the YAML is written with every value JSON-quoted
-# (JSON is YAML), so neither a quote nor a newline can add a command or a key.
+# stranger, and this repository's logs are public. So no value ever goes
+# through ${{ }} or a step's `env:` (both are printed in the log), and nothing
+# derived from it is echoed: the script reads the event file itself, masks
+# every value first thing, writes the tenant file and commits it quietly. The
+# YAML is written with every value JSON-quoted (JSON is YAML), so neither a
+# quote nor a newline can add a key.
 permissions:
   contents: read
 
@@ -55,64 +61,69 @@ jobs:
           ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
           path: gitops
 
-      - name: Write tenant file
-        env:
-          SLUG: ${{ github.event.client_payload.slug || inputs.slug }}
-          NAME: ${{ github.event.client_payload.farmName || inputs.farmName }}
-          EMAIL: ${{ github.event.client_payload.email || inputs.email }}
-          OWNER: ${{ github.event.client_payload.ownerName }}
-          PHONE: ${{ github.event.client_payload.phone }}
-          MODE: ${{ github.event.client_payload.mode || inputs.mode || (github.event_name == 'repository_dispatch' && 'dedicated') || 'shared' }}
+      - name: Write and commit the tenant file
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import datetime, json, os, re
+          import datetime, json, os, re, subprocess
           from pathlib import Path
 
+          event = json.load(open(os.environ["GITHUB_EVENT_PATH"]))
+          src = event.get("client_payload") or event.get("inputs") or {}
+
           def field(name, limit):
-              v = os.environ.get(name, "").strip()
+              v = str(src.get(name) or "").strip()
+              if v:
+                  # Masked before anything else can print it.
+                  for line in v.splitlines():
+                      if line.strip():
+                          print(f"::add-mask::{line.strip()}", flush=True)
               if len(v) > limit or re.search(r"[\x00-\x1f\x7f]", v):
                   raise SystemExit(f"bad {name}: too long or has control characters")
               return v
 
-          slug = field("SLUG", 63).lower()
+          slug = field("slug", 63).lower()
           if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
-              raise SystemExit(f"bad slug {slug!r}")
-          mode = field("MODE", 16) or "shared"
+              raise SystemExit("bad slug")
+          mode = field("mode", 16)
+          if not mode:
+              mode = "dedicated" if os.environ["GITHUB_EVENT_NAME"] == "repository_dispatch" else "shared"
           if mode not in ("shared", "dedicated"):
-              raise SystemExit(f"bad mode {mode!r}")
+              raise SystemExit("bad mode")
           doc = {
               "slug": slug,
-              "farmName": field("NAME", 200),
-              "email": field("EMAIL", 320),
-              "ownerName": field("OWNER", 200),
-              "phone": field("PHONE", 40),
+              "farmName": field("farmName", 200),
+              "email": field("email", 320),
+              "ownerName": field("ownerName", 200),
+              "phone": field("phone", 40),
               "mode": mode,
               "url": f"https://{slug}.bascula.engp.io",
               "createdAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
           }
           folder = Path("gitops/tenants") / mode
           folder.mkdir(parents=True, exist_ok=True)
-          body = "".join(f"{k}: {json.dumps(v, ensure_ascii=False)}\n" for k, v in doc.items())
-          (folder / f"{slug}.yaml").write_text(body)
-          print(body)
-          with open(os.environ["GITHUB_ENV"], "a") as env:
-              env.write(f"TENANT_FILE=tenants/{mode}/{slug}.yaml\nTENANT_SLUG={slug}\nTENANT_MODE={mode}\n")
-          PY
+          rel = f"tenants/{mode}/{slug}.yaml"
+          (Path("gitops") / rel).write_text("".join(f"{k}: {json.dumps(v, ensure_ascii=False)}\n" for k, v in doc.items()))
 
-      - name: Commit and push
-        working-directory: gitops
-        run: |
-          set -euo pipefail
-          git config user.email "bascula-cd@users.noreply.github.com"
-          git config user.name "bascula-cd"
-          git add "$TENANT_FILE"
-          git diff --cached --quiet && echo "nothing to commit" && exit 0
-          git commit -m "tenant ${TENANT_SLUG} (${TENANT_MODE})"
+          def git(*args, check=True):
+              # Output swallowed: git echoes paths and commit subjects.
+              return subprocess.run(["git", "-C", "gitops", *args], check=check,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+
+          git("config", "user.email", "bascula-cd@users.noreply.github.com")
+          git("config", "user.name", "bascula-cd")
+          git("add", rel)
+          if git("diff", "--cached", "--quiet", check=False) == 0:
+              print("tenant file unchanged")
+              raise SystemExit(0)
+          git("commit", "-q", "-m", f"tenant {slug} ({mode})")
           # Two signups in the same minute race for main; the loser rebases.
-          for attempt in 1 2 3; do
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 2))
-            git pull --rebase origin main
-          done
-          exit 1
+          import time
+          for attempt in (1, 2, 3):
+              if git("push", "-q", "origin", "HEAD:main", check=False) == 0:
+                  print("tenant file committed")
+                  raise SystemExit(0)
+              time.sleep(attempt * 2)
+              git("pull", "-q", "--rebase", "origin", "main", check=False)
+          raise SystemExit("could not push the tenant file")
+          PY

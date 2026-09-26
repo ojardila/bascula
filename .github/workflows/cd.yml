@@ -499,6 +499,12 @@ jobs:
       # so "live" means exactly: a pod of release V answered. The apex and
       # every dedicated farm are watched at the same time, then Cloudflare's
       # copy of their HTML is dropped in one purge.
+      #
+      # This repository is public, and so are this job's log, its summary and
+      # its annotations. Farm hosts are never printed, and neither is how many
+      # there are: every slug is masked the moment it is read, farms are
+      # reported only in aggregate ("all live" / "some not live"), and the
+      # purge prints nothing but its status. The apex is the only named row.
       - name: Wait until live, then purge Cloudflare
         if: steps.pin.outputs.moved == 'true'
         env:
@@ -511,31 +517,52 @@ jobs:
             echo "CF_API_TOKEN is empty" >&2
             exit 1
           fi
-          hosts="bascula.engp.io"
+          farm_hosts=""
           for f in /tmp/gitops/tenants/dedicated/*.yaml; do
             [ -f "$f" ] || continue
             slug=$(sed -n 's/^slug:[[:space:]]*//p' "$f" | tr -d "\"' " | head -1)
-            [ -n "$slug" ] && hosts="${hosts} ${slug}.bascula.engp.io"
+            [ -n "$slug" ] || continue
+            echo "::add-mask::${slug}"
+            farm_hosts="${farm_hosts} ${slug}.bascula.engp.io"
           done
+          hosts="bascula.engp.io${farm_hosts}"
+          mkdir -p /tmp/farm-live
 
+          # The apex is reported by name; a farm host only leaves a marker
+          # file behind when it did NOT go live, and nothing else.
           wait_live() {
             local host="$1" v=""
             for i in $(seq 1 180); do
               v=$(curl -sk --max-time 8 "https://${host}/version.json?snap=${GITHUB_RUN_ID}-${i}" \
                     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)
               if [ "$v" = "$V" ]; then
-                echo "| ${host} | $(( $(date +%s) - PINNED_AT ))s |" >> /tmp/live.md
-                echo "${host} live on ${V}"
+                if [ "$host" = "bascula.engp.io" ]; then
+                  echo "| bascula.engp.io | $(( $(date +%s) - PINNED_AT ))s |" >> /tmp/live.md
+                  echo "bascula.engp.io live on ${V}"
+                fi
                 return 0
               fi
               sleep 5
             done
-            echo "::warning::${host} still reports '${v:-nothing}' after 15 minutes"
-            echo "| ${host} | not yet (${v:-?}) |" >> /tmp/live.md
+            if [ "$host" = "bascula.engp.io" ]; then
+              echo "::warning::bascula.engp.io still reports '${v:-nothing}' after 15 minutes"
+              echo "| bascula.engp.io | not yet (${v:-?}) |" >> /tmp/live.md
+            else
+              mktemp /tmp/farm-live/late.XXXXXX > /dev/null
+            fi
           }
           : > /tmp/live.md
           for h in $hosts; do wait_live "$h" & done
           wait
+          if [ -n "$farm_hosts" ]; then
+            if [ -n "$(ls -A /tmp/farm-live)" ]; then
+              echo "::warning::at least one farm host did not report ${V} within 15 minutes"
+              echo "| farm hosts | not all live yet |" >> /tmp/live.md
+            else
+              echo "farm hosts live on ${V}"
+              echo "| farm hosts | all live |" >> /tmp/live.md
+            fi
+          fi
           { echo "### Live on ${V} (seconds after the gitops pin)"; echo "| host | live after |"; echo "|---|---|"; cat /tmp/live.md; } >> "$GITHUB_STEP_SUMMARY"
 
           export HOSTS="$hosts"
@@ -554,8 +581,9 @@ jobs:
           import json, sys
           d = json.load(open("/tmp/cf-purge.json"))
           if not d.get("success"):
-              print(d.get("errors"), file=sys.stderr)
+              # Codes only: a Cloudflare message can quote a farm host.
+              print("purge failed:", [e.get("code") for e in d.get("errors") or []], file=sys.stderr)
               sys.exit(1)
-          print("purged", __import__("os").environ["HOSTS"])
+          print("purged the apex and the farm hosts")
           PY
           echo "purge http ${code}"

@@ -112,7 +112,7 @@ func TestNewFarmGetsACloudflareCertificate(t *testing.T) {
 
 	var status response
 	waitFor(t, 10*time.Second, "provision status ready", func() bool {
-		status = call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+		status = call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 		return status.Status == http.StatusOK && status.Body["ready"] == true
 	})
 	steps, _ := status.Body["steps"].([]any)

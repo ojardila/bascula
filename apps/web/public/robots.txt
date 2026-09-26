@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /preparando/
+Disallow: /v1/
+Disallow: /oauth/

@@ -342,7 +342,11 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// Always false now: the farm exists and its owner can sign in, whether or
 	// not the address already had an account. The key stays for clients that
 	// still read it.
-	body := map[string]any{"verificationRequired": false}
+	// The provision ticket lets this browser, and only it, watch the new
+	// farm's own address come up (provision-status is closed to everybody
+	// else; see farm_lookup.go). Both branches create a farm, so it says
+	// nothing about the address.
+	body := map[string]any{"verificationRequired": false, "provisionTicket": s.provisionTicket(newFarm.Slug)}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on

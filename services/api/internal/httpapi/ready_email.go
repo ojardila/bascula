@@ -42,6 +42,12 @@ func (s *Server) handleRequestReadyEmail(w http.ResponseWriter, r *http.Request)
 		writeError(w, r, err)
 		return
 	}
+	// The same gate as the status it belongs to (farm_lookup.go): without the
+	// provision ticket this farm does not exist, whether or not it does.
+	if !s.mayWatchProvision(r, slug) {
+		writeError(w, r, errFarmNotFound())
+		return
+	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -49,7 +55,7 @@ func (s *Server) handleRequestReadyEmail(w http.ResponseWriter, r *http.Request)
 	}
 	_, _, createdAt, err := farmBySlug(r.Context(), tx, slug)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, r, domain.NotFound("farm not found"))
+		writeError(w, r, errFarmNotFound())
 		return
 	}
 	if err != nil {

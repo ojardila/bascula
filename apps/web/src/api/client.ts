@@ -69,6 +69,8 @@ export interface RequestOptions {
   anonymous?: boolean;
   signal?: AbortSignal;
   query?: Record<string, string | number | boolean | undefined | null>;
+  /** Extra request headers (e.g. the provision ticket). */
+  headers?: Record<string, string>;
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -98,7 +100,7 @@ async function rawRequest(
   body: unknown,
   opts: RequestOptions,
 ): Promise<Response> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...opts.headers };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (!opts.anonymous && tokens) {
     headers.Authorization = `Bearer ${tokens.accessToken}`;

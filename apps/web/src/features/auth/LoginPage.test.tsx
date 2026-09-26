@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe("registering a farm is not offered on a farm's address", () => {
   it("has no register button on a farm's login", async () => {
-    stubHostname("cafin3.bascula.engp.io");
+    stubHostname("lapalma.bascula.engp.io");
     renderApp();
     expect(await screen.findByRole("button", { name: "Entrar" })).toBeInTheDocument();
     expect(screen.queryByText(/Registrar|Crear.*finca/i)).toBeNull();
@@ -64,7 +64,7 @@ describe("registering a farm is not offered on a farm's address", () => {
   });
 
   it("sends /empezar and /registro on a farm back to the farm's front door", async () => {
-    stubHostname("cafin3.bascula.engp.io");
+    stubHostname("lapalma.bascula.engp.io");
     const { unmount } = renderApp("/empezar");
     expect(await screen.findByTestId("farm-entry")).toBeInTheDocument();
     expect(screen.queryByLabelText(/Nombre de la finca/)).toBeNull();

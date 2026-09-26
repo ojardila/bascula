@@ -102,7 +102,7 @@ func TestNotReadyUntilCloudflareCertificateIsActive(t *testing.T) {
 	}
 	get := func() response {
 		time.Sleep(4100 * time.Millisecond) // past the per-slug status cache
-		return call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+		return call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 	}
 
 	// Cloudflare errors and a pending certificate: never ready, although
