@@ -382,12 +382,19 @@ func TestASecondFarmForTheSameAddressGetsItsOwnStackWithTheNewPassword(t *testin
 		t.Fatalf("the account's other password opened the new stack: %d %s", old.Status, old.Raw)
 	}
 
-	// The main domain still signs the account in with its own password,
-	// into either farm.
+	// The main domain agrees with the stack: the second farm opens with the
+	// password it was registered with, and the account's other password does
+	// not open it (TestSignupFirstCannotOpenTheRealOwnersFarm says why).
 	main := call(t, platform, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+		"email": ownerEmail, "password": newPassword, "farmSlug": slug,
 	})
 	if main.Status != http.StatusOK || main.Body["slug"] != slug {
 		t.Fatalf("main-domain login into the second farm: %d %s", main.Status, main.Raw)
+	}
+	other := call(t, platform, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+	})
+	if other.Status != http.StatusUnauthorized {
+		t.Fatalf("the account's other password opened the second farm on the main domain: %d %s", other.Status, other.Raw)
 	}
 }

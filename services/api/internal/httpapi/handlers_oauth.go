@@ -571,11 +571,17 @@ type oauthPick struct {
 // Exactly one of (membership, pick, error) is meaningful.
 func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.User, *store.Membership, *oauthPick, error) {
 	var user *store.User
+	// The farms the password opened: carried by the ticket on the second step,
+	// computed from the password on the first. See farmsUnlockedBy.
+	var ticketFarms []string
+	password, globalOK := "", false
 	if ticket := q.Get("ticket"); ticket != "" {
-		uid, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
-		if err != nil {
+		sub, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
+		uid, farms, found := strings.Cut(sub, "|")
+		if err != nil || !found || farms == "" {
 			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
 		}
+		ticketFarms = strings.Split(farms, ",")
 		u, err := store.FindUserByID(r.Context(), tx, uid)
 		if err != nil {
 			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
@@ -583,7 +589,7 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		user = u
 	} else {
 		email := strings.ToLower(strings.TrimSpace(q.Get("email")))
-		password := q.Get("password")
+		password = q.Get("password")
 		if email == "" || password == "" {
 			return nil, nil, nil, errors.New("Correo y contraseña son obligatorios.")
 		}
@@ -596,20 +602,38 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 			hash = u.PasswordHash
 		}
 		ok, err := auth.VerifyPassword(password, hash)
-		if err != nil || !ok || u == nil {
+		if err != nil || u == nil {
 			return nil, nil, nil, errOAuthBadCredentials
 		}
-		user = u
-	}
-	if user.EmailVerifiedAt == nil {
-		return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
+		user, globalOK = u, ok
 	}
 	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
 		return nil, nil, nil, err
 	}
-	memberships, err := store.ListMemberships(r.Context(), tx, user.ID)
+	all, err := store.ListMemberships(r.Context(), tx, user.ID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if len(all) == 0 && (ticketFarms != nil || globalOK) {
+		return nil, nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
+	}
+	var memberships []store.Membership
+	if ticketFarms != nil {
+		for _, m := range all {
+			if containsString(ticketFarms, m.FarmID) {
+				memberships = append(memberships, m)
+			}
+		}
+	} else if memberships, err = farmsUnlockedBy(r.Context(), tx, user.ID, password, globalOK, all); err != nil {
+		return nil, nil, nil, err
+	}
+	if len(memberships) == 0 {
+		// A password that opens none of the account's farms is a wrong
+		// password, and the login limiter counts it as one.
+		return nil, nil, nil, errOAuthBadCredentials
+	}
+	if user.EmailVerifiedAt == nil {
+		return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
 	}
 	var active []store.Membership
 	for _, m := range memberships {
@@ -669,7 +693,7 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		return user, &active[0], nil, nil
 	}
 	return user, nil, &oauthPick{
-		Ticket: s.signer.SignTicket(oauthPickTicketPurpose, user.ID, oauthPickTicketTTL),
+		Ticket: s.signer.SignTicket(oauthPickTicketPurpose, user.ID+"|"+strings.Join(farmIDs(active), ","), oauthPickTicketTTL),
 		Farms:  active,
 	}, nil
 }
@@ -1066,4 +1090,12 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
   <button type="submit">Autorizar</button>
 </form>
 `, head, farmLine, msg, oauthParams, esc(q.Get("email")))
+}
+
+func farmIDs(ms []store.Membership) []string {
+	out := make([]string, len(ms))
+	for i, m := range ms {
+		out[i] = m.FarmID
+	}
+	return out
 }
