@@ -582,3 +582,34 @@ func (s *Server) handleSlugAvailability(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"slug": slug, "available": false, "reason": "taken"})
 	}
 }
+
+// handleFarmName answers the display name of the farm whose address this is:
+// "San José" for san-jose.bascula.engp.io, so the front door stops greeting
+// people with a DNS label. The farm is the one named by the request's host;
+// `?slug=` names it where the host cannot (the main domain, development,
+// tests). A dedicated stack falls back to the farm it serves. Public, like the
+// page it feeds; it says nothing that page does not already show.
+func (s *Server) handleFarmName(w http.ResponseWriter, r *http.Request) {
+	raw := farmSlugFromHost(r)
+	if raw == "" {
+		raw = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("slug")))
+	}
+	if raw == "" {
+		raw = s.cfg.TenantSlug
+	}
+	slug, err := normalizeFarmSlug(raw)
+	if err != nil {
+		writeError(w, r, domain.NotFound("farm not found"))
+		return
+	}
+	var name *string
+	if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&name); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if name == nil || strings.TrimSpace(*name) == "" {
+		writeError(w, r, domain.NotFound("farm not found"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"slug": slug, "name": strings.TrimSpace(*name)})
+}

@@ -21,6 +21,8 @@ const (
 	// reads around creating a farm with its own web address.
 	ActionProvisionStatus  Action = "farms.provisionStatus"
 	ActionSlugAvailability Action = "farms.slugAvailability"
+	// ActionFarmName is the farm's display name for its own front door.
+	ActionFarmName Action = "farms.displayName"
 	// ActionProvisionNotify asks for one email when the farm is ready.
 	ActionProvisionNotify Action = "farms.provisionNotify"
 	ActionLogin           Action = "auth.login"
@@ -183,6 +185,7 @@ var Matrix = map[Action]Rule{
 	ActionSignup:           {Public: true, TenantOptional: true},
 	ActionProvisionStatus:  {Public: true, TenantOptional: true},
 	ActionSlugAvailability: {Public: true, TenantOptional: true},
+	ActionFarmName:         {Public: true, TenantOptional: true},
 	ActionProvisionNotify:  {Public: true, TenantOptional: true},
 	ActionLogin:            {Public: true, TenantOptional: true},
 	ActionRefresh:          {Public: true, TenantOptional: true},

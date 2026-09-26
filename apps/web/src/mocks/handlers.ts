@@ -732,6 +732,14 @@ export const handlers = [
   /**
    * `handleSlugAvailability`: never an error for a bad slug, a reason instead.
    */
+  /** `handleFarmName`: the display name for a farm's front door. */
+  http.get("*/v1/farm-name", ({ request }) => {
+    const slug = (new URL(request.url).searchParams.get("slug") ?? "").trim().toLowerCase();
+    const farm = slug ? db.farmOfSlug(slug) : undefined;
+    if (!farm) return fail(404, "NOT_FOUND", "farm not found");
+    return HttpResponse.json({ slug, name: farm.name });
+  }),
+
   http.get("*/v1/farm-slugs", ({ request }) => {
     const raw = (new URL(request.url).searchParams.get("slug") ?? "").trim().toLowerCase();
     if (isReservedFarmSlug(raw)) return HttpResponse.json({ slug: raw, available: false, reason: "reserved" });

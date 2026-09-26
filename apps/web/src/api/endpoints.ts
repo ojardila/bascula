@@ -435,6 +435,12 @@ export const api = {
     };
   },
 
+  /** The display name of the farm this address belongs to. Public. */
+  farmName: (slug: string) =>
+    http.get<{ slug: string; name: string }>(`/v1/farm-name?slug=${encodeURIComponent(slug)}`, {
+      anonymous: true,
+    }),
+
   /** Is this web address free? Public; never throws for a bad slug. */
   slugAvailability: (slug: string) =>
     http.get<SlugAvailability>(`/v1/farm-slugs?slug=${encodeURIComponent(slug)}`, {
