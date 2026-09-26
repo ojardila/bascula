@@ -124,15 +124,16 @@ Then set `VITE_USE_MOCKS=false` and restart `npm run dev`. See
 
 ## CI and deploy
 
-- **CI** (`.github/workflows/ci.yml`) runs on every PR:
-  - the migration order check;
-  - the database diagram is up to date (`docs/database.md`, `make db-diagram`);
-  - the shared money rules;
-  - web lint, tests and build;
-  - typecheck;
-  - the Go suite against PostGIS.
+- **CI** (`.github/workflows/ci.yml`) runs on every PR. A path filter picks
+  the suites the change can affect; everything runs in parallel:
+  - the migration order check and the shared money rules (always);
+  - web lint, tests and build, and typecheck (web changes);
+  - the Go suite against PostGIS and the database diagram check
+    (`docs/database.md`, `make db-diagram`) (API changes);
+  - the api and web images, pushed to Harbor as `src-<source key>`.
 - **CD** (`cd.yml`) runs on each merge to `master`:
-  - builds the images and tags a release;
+  - promotes the images the PR built to the release tag (no rebuild; CI runs
+    again only if the PR's run does not cover the merged sources);
   - deploys to **dev** (`bascula.int.dev.engp.io`) automatically;
   - deploys to **production** (`bascula.engp.io`) only after manual approval in
     the GitHub `production` environment. The same step bumps the tenants'
@@ -140,6 +141,8 @@ Then set `VITE_USE_MOCKS=false` and restart `npm run dev`. See
     dedicated farm (`{slug}.bascula.engp.io`) moves to the release and runs its
     migrations too.
 
+  How long each part takes, and the (off) auto-approval option:
+  [`docs/deploy-speed.md`](docs/deploy-speed.md).
   Details in [`manifests/README.md`](manifests/README.md).
 
 ## Legacy phone app

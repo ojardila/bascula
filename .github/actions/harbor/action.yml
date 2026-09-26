@@ -1,0 +1,68 @@
+name: Join the tailnet and log in to Harbor
+description: >
+  Harbor (and Argo CD) are tailnet-only. Joins with the CI OAuth client,
+  waits until Harbor answers, then logs docker in with the robot account.
+
+inputs:
+  ts-oauth-client-id: {required: true}
+  ts-oauth-secret: {required: true}
+  robot-name: {required: true}
+  robot-secret: {required: true}
+  hostname:
+    description: Tailnet hostname, unique per job (the tailnet refuses duplicates).
+    required: true
+  registry:
+    default: harbor.int.engp.io
+
+runs:
+  using: composite
+  steps:
+    - name: Join the tailnet
+      uses: tailscale/github-action@v3
+      with:
+        oauth-client-id: ${{ inputs.ts-oauth-client-id }}
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci
+        hostname: ${{ inputs.hostname }}
+        # --accept-routes only. --accept-dns is a bug here: MagicDNS maps
+        # harbor.int.engp.io to a stale address. Public Cloudflare has it.
+        args: --accept-routes
+        timeout: 5m
+
+    # The path to Harbor is not instant after `tailscale up`; docker login
+    # then times out waiting for headers.
+    - name: Wait for Harbor
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+      run: |
+        set -euo pipefail
+        for i in $(seq 1 30); do
+          if curl -skf --max-time 5 "https://${REGISTRY}/api/v2.0/health" >/dev/null; then
+            echo "Harbor healthy after ${i} tries"
+            exit 0
+          fi
+          echo "waiting for Harbor (${i})"
+          sleep 2
+        done
+        echo "Harbor did not become reachable"
+        tailscale status || true
+        getent hosts "$REGISTRY" || true
+        exit 1
+
+    - name: Log in to Harbor
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        ROBOT_NAME: ${{ inputs.robot-name }}
+        ROBOT_SECRET: ${{ inputs.robot-secret }}
+      run: |
+        set -euo pipefail
+        for i in 1 2 3 4 5; do
+          if printenv ROBOT_SECRET | docker login "$REGISTRY" -u "$ROBOT_NAME" --password-stdin; then
+            exit 0
+          fi
+          echo "docker login failed (${i}), retrying"
+          sleep 5
+        done
+        exit 1

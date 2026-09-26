@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
-import { APP_VERSION, applyUpdate, clearUpdateAttempts, fetchServerVersion, isOutdated } from "../lib/appVersion";
+import { APP_BUILD, applyUpdate, clearUpdateAttempts, fetchServerVersion, isOutdated } from "../lib/appVersion";
 
 /** How often an open page asks whether a new build is out. */
 const CHECK_MS = 5 * 60 * 1000;
@@ -22,13 +22,14 @@ export function UpdateBanner({ intervalMs = CHECK_MS }: { intervalMs?: number })
 
   const check = useCallback(() => {
     void fetchServerVersion().then((v) => {
-      setServer(v);
-      if (v !== null && !isOutdated(APP_VERSION, v)) clearUpdateAttempts();
+      const build = v?.build ?? null;
+      setServer(build);
+      if (build !== null && !isOutdated(APP_BUILD, build)) clearUpdateAttempts();
     });
   }, []);
 
   useEffect(() => {
-    if (APP_VERSION === "dev") return;
+    if (APP_BUILD === "dev") return;
     check();
     const onBack = () => { if (document.visibilityState !== "hidden") check(); };
     document.addEventListener("visibilitychange", onBack);
@@ -43,7 +44,7 @@ export function UpdateBanner({ intervalMs = CHECK_MS }: { intervalMs?: number })
     };
   }, [check, intervalMs]);
 
-  if (!isOutdated(APP_VERSION, server)) return null;
+  if (!isOutdated(APP_BUILD, server)) return null;
 
   return (
     <Box

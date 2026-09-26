@@ -12,7 +12,7 @@ import { UpdateBanner } from "./UpdateBanner";
 
 vi.mock("../lib/appVersion", async (orig) => {
   const real = await orig<typeof import("../lib/appVersion")>();
-  return { ...real, APP_VERSION: "0.2.40", fetchServerVersion: vi.fn(), applyUpdate: vi.fn() };
+  return { ...real, APP_BUILD: "b-0240", fetchServerVersion: vi.fn(), applyUpdate: vi.fn() };
 });
 
 
@@ -42,7 +42,21 @@ describe("isOutdated", () => {
 
 describe("UpdateBanner", () => {
   it("stays hidden while the page runs the server's build", async () => {
-    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue("0.2.40");
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.40", build: "b-0240" });
+    renderBanner();
+    await waitFor(() => expect(appVersion.fetchServerVersion).toHaveBeenCalled());
+    expect(screen.queryByText(/versión nueva/)).not.toBeInTheDocument();
+  });
+
+  it("stays hidden when only the release moved (an API-only release, same web build)", async () => {
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.41", build: "b-0240" });
+    renderBanner();
+    await waitFor(() => expect(appVersion.fetchServerVersion).toHaveBeenCalled());
+    expect(screen.queryByText(/versión nueva/)).not.toBeInTheDocument();
+  });
+
+  it("stays hidden against a server image that predates builds", async () => {
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.38", build: null });
     renderBanner();
     await waitFor(() => expect(appVersion.fetchServerVersion).toHaveBeenCalled());
     expect(screen.queryByText(/versión nueva/)).not.toBeInTheDocument();
@@ -56,7 +70,7 @@ describe("UpdateBanner", () => {
   });
 
   it("says so when the server has a newer build, and a tap updates", async () => {
-    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue("0.2.41");
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.41", build: "b-0241" });
     renderBanner();
     const btn = await screen.findByRole("button", { name: /Hay una versión nueva, toque para actualizar/ });
     fireEvent.click(btn);
@@ -65,10 +79,10 @@ describe("UpdateBanner", () => {
   });
 
   it("asks again when the app comes back to the front", async () => {
-    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue("0.2.40");
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.40", build: "b-0240" });
     renderBanner();
     await waitFor(() => expect(appVersion.fetchServerVersion).toHaveBeenCalledTimes(1));
-    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue("0.2.41");
+    vi.mocked(appVersion.fetchServerVersion).mockResolvedValue({ version: "v0.2.41", build: "b-0241" });
     window.dispatchEvent(new Event("pageshow"));
     expect(await screen.findByText(/versión nueva/)).toBeInTheDocument();
   });

@@ -1,0 +1,115 @@
+# Build one image and push it to Harbor as src-<key>, unless that key is
+# already there. Called by CI on every PR (so the images exist before the
+# merge) and by CD only when a key is missing (a direct push, or master moved
+# under the PR).
+#
+# The key is a hash of the sources the image is built from
+# (scripts/ci/source-keys.sh), so an image is built once per distinct source
+# and promoted to every release that carries those sources. A web-only change
+# keeps the API key, finds src-<api key> already in Harbor and builds nothing
+# for the API, and the other way around.
+#
+# ONE tag and no attestations. Harbor's bascula project has "prevent
+# vulnerable images" on, which answers 412 to any manifest that has not been
+# scanned yet; buildx HEADs the manifest again for every extra tag (and for
+# the provenance index) right after the first push, before Trivy has had a
+# chance. That 412 is what failed CD for PR #38 (run 36030996313).
+
+name: images
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: api or web
+        type: string
+        required: true
+    outputs:
+      key:
+        description: the source key the image is tagged with (src-<key>)
+        value: ${{ jobs.build.outputs.key }}
+
+env:
+  REGISTRY: harbor.int.engp.io
+  PROJECT: bascula
+
+jobs:
+  build:
+    name: ${{ inputs.component }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: key
+        name: Source key
+        run: |
+          set -euo pipefail
+          key=$(scripts/ci/source-keys.sh | sed -n 's/^${{ inputs.component }}=//p')
+          echo "key=${key}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${PROJECT}/${{ inputs.component }}:src-${key}" >> "$GITHUB_OUTPUT"
+          echo "### ${{ inputs.component }}: \`src-${key}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: ./.github/actions/harbor
+        with:
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          robot-name: ${{ secrets.HARBOR_ROBOT_NAME }}
+          robot-secret: ${{ secrets.HARBOR_ROBOT_SECRET }}
+          hostname: bascula-img-${{ inputs.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - id: exists
+        name: Already built?
+        run: |
+          if scripts/ci/image-exists.sh "${{ steps.key.outputs.image }}"; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "Already in Harbor, nothing to build." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.exists.outputs.hit != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      # BuildKit cache mounts (Go module + build cache, npm cache) live inside
+      # the builder, which is new on every runner. Carry them in the Actions
+      # cache so a code change recompiles only what it touched.
+      - if: steps.exists.outputs.hit != 'true'
+        id: mounts
+        uses: actions/cache@v4
+        with:
+          path: buildkit-mounts
+          key: mounts-${{ inputs.component }}-${{ hashFiles('services/api/go.sum', 'package-lock.json') }}-${{ github.run_id }}
+          restore-keys: |
+            mounts-${{ inputs.component }}-${{ hashFiles('services/api/go.sum', 'package-lock.json') }}-
+            mounts-${{ inputs.component }}-
+
+      - if: steps.exists.outputs.hit != 'true'
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-dir: buildkit-mounts
+          dockerfile: ${{ inputs.component == 'api' && 'services/api/Dockerfile' || 'apps/web/Dockerfile' }}
+
+      - if: steps.exists.outputs.hit != 'true'
+        name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # The web imports @bascula/shared through the npm workspace, so its
+          # context is the repo root (root lockfile and packages/).
+          context: ${{ inputs.component == 'api' && 'services/api' || '.' }}
+          file: ${{ inputs.component == 'api' && 'services/api/Dockerfile' || 'apps/web/Dockerfile' }}
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            BUILD=${{ steps.key.outputs.key }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.engp.bascula.source-key=${{ steps.key.outputs.key }}
+          tags: ${{ steps.key.outputs.image }}
+          provenance: false
+          sbom: false
+          # Layer cache. PR runs can read master's scope and their own.
+          cache-from: type=gha,scope=${{ inputs.component }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.component }}

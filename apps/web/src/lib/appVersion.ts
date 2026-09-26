@@ -2,29 +2,45 @@
  * Which build of the web app this page is running, and which one the server
  * has now.
  *
- * The build stamps its release (v0.2.37, …) into the bundle as
- * __APP_VERSION__ and writes the same value to /version.json next to it. A page
- * whose bundle says one thing while /version.json says another is running an
- * old copy (a phone that kept the app open, or a service worker that has
- * not swapped yet), and can say so instead of silently misbehaving.
+ * The bundle carries its BUILD: a key of the web's own sources (apps/web,
+ * packages/shared, the lockfile, openapi.yaml), stamped in as __APP_BUILD__.
+ * The same image is promoted from release to release while those sources do
+ * not change, so the build says "same code" and the release number does not.
+ *
+ * The RELEASE (v0.2.39, …) is not in the bundle at all. nginx answers
+ * /version.json from the pod's environment, {"version": release, "build":
+ * build}, and CD stamps the release into manifests/base/web.yaml. A page
+ * whose build differs from the server's is running an old copy (a phone that
+ * kept the app open, or a service worker that has not swapped yet), and can
+ * say so instead of silently misbehaving. A release that only changed the
+ * API does not nag anybody to reload an identical page.
  */
-declare const __APP_VERSION__: string | undefined;
+declare const __APP_BUILD__: string | undefined;
 
-export const APP_VERSION: string =
-  typeof __APP_VERSION__ === "string" && __APP_VERSION__ ? __APP_VERSION__ : "dev";
+export const APP_BUILD: string =
+  typeof __APP_BUILD__ === "string" && __APP_BUILD__ ? __APP_BUILD__ : "dev";
+
+export interface ServerVersion {
+  /** The release, vX.Y.Z (or "dev"). */
+  version: string;
+  /** The web build the server is serving, or null for an image older than builds. */
+  build: string | null;
+}
 
 /**
- * The version the server is serving right now, or null when it cannot be
- * asked. The query string and no-store go around every cache on the way
- * (the browser's, the service worker's, Cloudflare's): this answer is only
- * worth anything if it is fresh.
+ * What the server is serving right now, or null when it cannot be asked.
+ * The query string and no-store go around every cache on the way (the
+ * browser's, the service worker's, Cloudflare's): this answer is only worth
+ * anything if it is fresh.
  */
-export async function fetchServerVersion(): Promise<string | null> {
+export async function fetchServerVersion(): Promise<ServerVersion | null> {
   try {
     const res = await fetch(`/version.json?t=${Date.now()}`, { cache: "no-store" });
     if (!res.ok) return null;
-    const body = (await res.json()) as { version?: unknown };
-    return typeof body.version === "string" && body.version ? body.version : null;
+    const body = (await res.json()) as { version?: unknown; build?: unknown };
+    if (typeof body.version !== "string" || !body.version) return null;
+    const build = typeof body.build === "string" && body.build ? body.build : null;
+    return { version: body.version, build };
   } catch {
     return null;
   }

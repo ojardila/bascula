@@ -1,4 +1,13 @@
-# Four jobs, all at once, so the wall clock is the slowest one and not the sum.
+# The jobs run all at once, so the wall clock is the slowest one and not the
+# sum. On a PR, a path filter first decides which suites the change can
+# affect: a web-only PR does not wait for the Go suite, an API-only PR does
+# not lint the console. The cheap guards (migration order, money rules) run
+# always. Called from CD (a release whose sources were not already tested on
+# their PR), everything runs.
+#
+# On a PR the images are built too, in parallel with the tests, and pushed to
+# Harbor as src-<source key> (images.yml). CD then promotes those exact
+# images to the release tag instead of building them again after the merge.
 #
 # The job that guards the money needs no dependencies at all. Every test in
 # packages/shared imports only node: builtins and Node runs the TypeScript
@@ -12,8 +21,9 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
+  # No push trigger: on master, CD calls this workflow (below) when the
+  # release's sources were not already tested on their PR. Running it again
+  # on every push only doubled the runner time.
   pull_request:
   workflow_dispatch:
   # CD calls this and waits. A release that has not passed these jobs
@@ -23,12 +33,52 @@ on:
 concurrency:
   # A new push cancels the run still going for the same branch. Nobody reads
   # the result of a commit that has already been replaced. CD's call is a
-  # different event, so it does not cancel the standalone master CI (or
-  # vice versa).
+  # different event, so it never cancels anything.
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      # Outside a PR (CD's call, a manual run) everything counts as changed.
+      api: ${{ github.event_name != 'pull_request' || steps.filter.outputs.api == 'true' }}
+      web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.web == 'true' }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'services/api/**'
+              - 'packages/shared/golden/**'
+              - 'docs/database.md'
+              - 'scripts/**'
+              - '.github/**'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'services/api/openapi.yaml'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'scripts/**'
+              - '.github/**'
+
+  # Built on same-repo PRs only: a fork has no Harbor secrets. Skipped work
+  # is cheap here: a key already in Harbor is not built twice.
+  images:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      matrix:
+        component: [api, web]
+    uses: ./.github/workflows/images.yml
+    with:
+      component: ${{ matrix.component }}
+    secrets: inherit
+
   migrations:
     name: migration order (no install)
     runs-on: ubuntu-latest
@@ -63,6 +113,8 @@ jobs:
 
   web:
     name: console
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -80,6 +132,8 @@ jobs:
 
   types:
     name: typecheck
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -93,6 +147,8 @@ jobs:
 
   api:
     name: api
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
