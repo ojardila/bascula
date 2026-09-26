@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -793,28 +794,10 @@ var mcpWriteTools = []mcpWriteTool{
 			{Name: "priceCents", Type: "integer", Required: true, Description: "El precio de un kilo en CENTAVOS. $800 son 80000."},
 		},
 		Destructive: true, Idempotent: true, Money: true,
-		Build: func(a mcpArgs, _ string) (mcpCall, error) {
-			price, err := a.int("priceCents")
-			if err != nil {
-				return mcpCall{}, err
-			}
-			if price <= 0 {
-				return mcpCall{}, fmt.Errorf("priceCents debe ser positivo")
-			}
-			path := "/v1/prices/base/" + pathID(a.str("monday"))
-			if a.str("scope") == "week" {
-				path = "/v1/prices/weeks/" + pathID(a.str("monday"))
-			}
-			return mcpCall{http.MethodPut, path, map[string]any{"priceCents": price}}, nil
-		},
+		Build:   buildPrice,
 		Preview: previewPrice,
-		Done: func(_ int, _ map[string]any, a mcpArgs) string {
-			p, _ := a.int("priceCents")
-			if a.str("scope") == "week" {
-				return "Precio de la semana del " + a.str("monday") + " fijado en " + pesos(p) + " por kilo."
-			}
-			return "Precio base desde el " + a.str("monday") + " fijado en " + pesos(p) + " por kilo."
-		},
+		Execute: executePrice,
+		Done:    donePrice,
 	},
 	{
 		Name: "register_advance", Title: "Registrar un anticipo",
@@ -999,7 +982,88 @@ func previewPrice(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
 			fmt.Fprintf(&sb, "Pesadas sin liquidar que tomarían el nuevo precio: %d. Liquidadas que conservan su precio: %d. Semanas con precio propio que no cambian: %d.", un, se, own)
 		}
 	}
-	return &mcpPreview{Summary: sb.String(), Facts: facts}, nil
+	// The price the preview showed as current is what the confirmation
+	// promises to change. A price PUT is an upsert, not idempotent by id, so
+	// without this a confirmation replayed later (by the assistant, or by
+	// anything holding the transcript) silently put an old price back.
+	return &mcpPreview{Summary: sb.String(), Facts: facts, Bind: strconv.FormatInt(facts["currentPriceCents"].(int64), 10)}, nil
+}
+
+// currentPriceAt reads the price in force for the arguments' scope and Monday,
+// as the preview shows it.
+func currentPriceAt(c *mcpCaller, a mcpArgs) (int64, error) {
+	monday := a.str("monday")
+	if a.str("scope") == "week" {
+		wk, err := c.get("/v1/prices/weeks/" + pathID(monday))
+		if err != nil {
+			return 0, err
+		}
+		return numField(wk, "priceCents"), nil
+	}
+	base, err := c.get("/v1/prices/base")
+	if err != nil {
+		return 0, err
+	}
+	cur := numField(base, "currentCents")
+	if hist, ok := base["history"].([]any); ok {
+		for _, raw := range hist {
+			row, _ := raw.(map[string]any)
+			if vf := strField(row, "validFrom"); vf != "" && vf[:10] <= monday {
+				return numField(row, "priceCents"), nil
+			}
+		}
+	}
+	return cur, nil
+}
+
+// executePrice applies a confirmed price change only if the price is still
+// the one the confirmation was shown.
+func executePrice(c *mcpCaller, a mcpArgs, key, bind string) *mcp.CallToolResult {
+	t := mcpWriteTool{Name: "set_kilo_price", Money: true, Method: http.MethodPut,
+		Pattern: "/v1/prices/base/{monday}", Done: donePrice}
+	want, _ := a.int("priceCents")
+	cur, err := currentPriceAt(c, a)
+	if err != nil {
+		return mcpFailure(err.Error())
+	}
+	if strconv.FormatInt(cur, 10) != bind {
+		if cur == want {
+			// A retry of a confirmation that already went through.
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{
+				Text: donePrice(http.StatusOK, nil, a) + " (Ya estaba aplicado; no se cambió nada.)"}}}
+		}
+		return mcpFailure(fmt.Sprintf("El precio cambió desde el resumen (ahora es %s). No se cambió nada: "+
+			"llame sin token para ver el resumen nuevo y confírmelo otra vez con el usuario.", pesos(cur)))
+	}
+	call, err := buildPrice(a, key)
+	if err != nil {
+		return mcpFailure(err.Error())
+	}
+	status, raw := c.do(call.Method, call.Path, call.Body)
+	return t.result(status, raw, a)
+}
+
+func buildPrice(a mcpArgs, _ string) (mcpCall, error) {
+	price, err := a.int("priceCents")
+	if err != nil {
+		return mcpCall{}, err
+	}
+	if price <= 0 {
+		return mcpCall{}, fmt.Errorf("priceCents debe ser positivo")
+	}
+	path := "/v1/prices/base/" + pathID(a.str("monday"))
+	if a.str("scope") == "week" {
+		path = "/v1/prices/weeks/" + pathID(a.str("monday"))
+	}
+	return mcpCall{http.MethodPut, path, map[string]any{"priceCents": price}}, nil
+}
+
+func donePrice(_ int, _ map[string]any, a mcpArgs) string {
+	p, _ := a.int("priceCents")
+	if a.str("scope") == "week" {
+		return "Precio de la semana del " + a.str("monday") + " fijado en " + pesos(p) + " por kilo."
+	}
+	return "Precio base desde el " + a.str("monday") + " fijado en " + pesos(p) + " por kilo."
 }
 
 // settlementInput is the part of the arguments the preview route reads.
