@@ -7,8 +7,9 @@
  *  - This week in big figures: kilos, value (only for whoever may see money)
  *    and how many people picked, plus one plain sentence about last week.
  *  - Kilos per day of this week, as a short list with a bar.
- *  - Two buttons of equal weight: «Registrar la semana» (everybody, day by
- *    day) and «Registrar una recolección» (one person, one weighing).
+ *  - Two buttons of equal weight: «Registro de recolección masivo» (all the
+ *    employees, one day) and «Registrar una recolección» (one person, one
+ *    weighing).
  *
  * The season history, per crop, the yield index and the weighing review are
  * one discreet link away («Ver más detalles»), so nothing was removed.
@@ -59,10 +60,10 @@ export function CosechaHome() {
       {canWrite && (
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
           <BigAction
-            to="/cosecha/registrar-semana"
+            to="/cosecha/registro-masivo"
             icon={<CalendarViewWeekIcon sx={{ fontSize: 40 }} />}
-            title="Registrar la semana"
-            hint="Los kilos de todos los empleados, día por día"
+            title="Registro de recolección masivo"
+            hint="Un día, todos los empleados a la vez"
           />
           <BigAction
             to="/cosecha/recoleccion"

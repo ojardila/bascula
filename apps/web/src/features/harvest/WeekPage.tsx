@@ -89,11 +89,11 @@ export function WeekPage() {
       {can("workRecords.write") && (
         <Button
           component={RouterLink}
-          to={`/cosecha/registrar-semana?lunes=${monday}`}
+          to={`/cosecha/registro-masivo?dia=${mondayOf(today) === monday ? today : monday}`}
           size="small"
           variant="outlined"
         >
-          Registrar esta semana
+          Registro masivo
         </Button>
       )}
     </Stack>

@@ -26,7 +26,7 @@ import { RecoleccionFormPage } from "./features/workrecords/RecoleccionFormPage"
 import { PlanillaPage } from "./features/workrecords/PlanillaPage";
 import { HarvestLayout } from "./features/harvest/HarvestLayout";
 import { CosechaHome } from "./features/harvest/CosechaHome";
-import { SemanaRegistroPage } from "./features/workrecords/SemanaRegistroPage";
+import { RegistroMasivoPage } from "./features/workrecords/RegistroMasivoPage";
 import { SeasonPage } from "./features/harvest/SeasonPage";
 import { WeekPage } from "./features/harvest/WeekPage";
 import { CropsPage } from "./features/harvest/CropsPage";
@@ -252,13 +252,15 @@ function Shell() {
           }
         />
         <Route
-          path="cosecha/registrar-semana"
+          path="cosecha/registro-masivo"
           element={
-            <RequirePermission action="workRecords.write" moduleName="registrar la semana">
-              <SemanaRegistroPage />
+            <RequirePermission action="workRecords.write" moduleName="el registro de recolección masivo">
+              <RegistroMasivoPage />
             </RequirePermission>
           }
         />
+        {/* The old name of the same screen; links and bookmarks keep working. */}
+        <Route path="cosecha/registrar-semana" element={<RedirectKeepingQuery to="/cosecha/registro-masivo" />} />
         <Route
           path="cosecha/recoleccion"
           element={
@@ -376,4 +378,10 @@ export function App() {
       />
     </Routes>
   );
+}
+
+/** A renamed route: same screen, same query string (`?lunes=`, `?lote=`). */
+function RedirectKeepingQuery({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
 }

@@ -1,10 +1,10 @@
 /**
  * The state and the writes behind a harvest sheet: people × days on one lote.
  *
- * Shared by the old planilla (`/labores/planilla`) and the simple weekly
- * registration (`/cosecha/registrar-semana`), so both load and save the same
- * way: one work record per person, day and lote, with ids minted once so a
- * retried save never counts a weighing twice.
+ * Behind the planilla (`/labores/planilla`): one work record per person, day
+ * and lote, with ids minted once so a retried save never counts a weighing
+ * twice. The bulk registration (`/cosecha/registro-masivo`) does not use it:
+ * there every filled box is a NEW pesada (see `bulk.ts`).
  */
 import { useEffect, useState } from "react";
 import { api } from "../../api/endpoints";

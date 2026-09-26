@@ -71,7 +71,7 @@ const PROBLEMS = [
 ];
 
 const STEPS = [
-  { n: "01", img: "/landing/app/registrar-pesada.jpg", alt: "Báscula en el navegador: registrar una pesada con persona, lote, día y kilos", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Puede registrar kilos sin señal: se suben solos cuando vuelve la conexión." },
+  { n: "01", img: "/landing/app/registrar-pesada.jpg", alt: "Báscula en el navegador: registrar una pesada con persona, lote, día y kilos", title: "Registre los kilos", body: "Seleccione la persona y el lote, e ingrese el peso. Con el registro masivo anota los kilos de todos los empleados de un día a la vez. Una pesada hecha sin señal se sube sola cuando vuelve la conexión." },
   { n: "02", img: "/landing/app/semana.jpg", alt: "Báscula en el navegador: resumen de la semana con kilos por día", title: "Revise la semana", body: "Consulte los kilos registrados y la tarifa correspondiente. Antes de liquidar, confirme que no queden pesadas por subir." },
   { n: "03", img: "/landing/app/nomina.jpg", alt: "Báscula en el navegador: nómina de la cuadrilla con lo que se debe a cada persona", title: "Calcule lo que debe", body: "Calcule el valor del trabajo y aplique los anticipos y descuentos registrados." },
   { n: "04", img: "/landing/app/pagar.jpg", alt: "Báscula en el navegador: pagar a un trabajador, con saldo, anticipos y forma de pago", title: "Registre lo que entrega", body: "Deje constancia del pago y consulte cuánto queda pendiente. Revise el detalle con el recolector." },
@@ -307,7 +307,7 @@ function Hero() {
             </Typography>
           </Box>
           <Box component="figure" sx={{ flex: 1.25, m: 0, width: "100%", textAlign: "center" }}>
-            <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con los kilos de la semana, el valor, los recolectores y los botones para registrar" eager />
+            <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con los kilos de la semana, el valor, los recolectores y los botones para registrar una recolección o el registro masivo de un día" eager />
             <Typography component="figcaption" sx={{ mt: 2.5, fontSize: "1.05rem", color: MUTED }}>
               Se abre en el navegador del celular o del computador. No hay nada que instalar.
             </Typography>

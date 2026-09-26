@@ -112,13 +112,14 @@ Pantallas actuales que escriben pesadas:
 | Pantalla | Ruta | Qué hace | Sin señal |
 |---|---|---|---|
 | Registrar una recolección (`WeighingForm`) | `/cosecha/recoleccion` | Una persona, un lote, un día, kilos. Lista de lo guardado con «Deshacer». | ✅ Cola local (IndexedDB) |
-| Registrar la semana (`SemanaRegistroPage`) | `/cosecha/registrar-semana` | Planilla personas × días de **un lote**; confirma antes de guardar. | ❌ Necesita conexión |
+| Registro de recolección masivo (`RegistroMasivoPage`) | `/cosecha/registro-masivo` | **Un día**, todos los empleados: cada casilla llena **agrega una pesada nueva** en el lote elegido; muestra lo que cada persona ya tiene ese día; confirma antes de guardar. | ❌ Necesita conexión |
 | Planilla del día / de la semana (`PlanillaPage`) | `/labores/planilla?modo=dia|semana` | Planilla anterior; mismo guardado. | ❌ |
 | Labores (`WorkRecordsPage`) | `/labores` | Lista; permite **anular**. | ❌ |
 
-> Las pantallas «Registrar la semana» y el tablero simple de Cosecha llegaron a
-> `master` en los PR #50 y #51 (sin desplegar a producción). Este documento las
-> describe porque están en el código; ver el estado en la sección 8.
+> El tablero simple de Cosecha llegó en el PR #50. La antigua «Registrar la semana»
+> (`/cosecha/registrar-semana`, planilla personas × días) se reemplazó por el
+> «Registro de recolección masivo» de un día; el enlace viejo redirige a la nueva
+> pantalla. Ver el estado en la sección 8.
 
 ## 4. Reglas de negocio comunes
 
@@ -230,85 +231,77 @@ flowchart TD
 ### CU-02 Registro masivo
 
 **Objetivo:** registrar en una sola operación las pesadas de **todos** los recolectores
-que llegaron juntos a la báscula (el caso más frecuente), o pasar la planilla de papel
-de la semana.
+que llegaron juntos a la báscula en un día (el caso más frecuente). Una persona puede
+pesar **varias veces** el mismo día: cada vuelta es una pesada nueva.
 **Actor principal:** P. **Actores secundarios:** los R de la cuadrilla.
 **Pantallas actuales:**
-- Un día, un lote, toda la cuadrilla: `/labores/planilla?modo=dia` (casillas por persona).
-- Una semana, un lote, toda la cuadrilla: «Registrar la semana» (`/cosecha/registrar-semana`): cuadrícula personas × días en computador; un día a la vez con casillas grandes en celular.
+- «Registro de recolección masivo» (`/cosecha/registro-masivo?dia=AAAA-MM-DD&lote=…`): un día, todos los empleados activos, una casilla grande por persona. Igual en celular y computador.
+- Planilla anterior (`/labores/planilla?modo=dia|semana`): casillas persona × día que **reemplazan** el valor (ver CU-06).
 
 **Precondiciones**
 - Como CU-01, más: **hay conexión** (el guardado masivo no usa la cola offline, B-07).
-- Los recolectores están creados y **activos** (la planilla lista solo empleados activos).
-- Se conoce el lote de la planilla (una planilla = un lote).
+- Los recolectores están creados y **activos** (la pantalla lista solo empleados activos).
 
-**Datos capturados:** lote, semana o día, y por cada casilla (persona × día) los kilos. Casilla vacía = no trabajó en ese lote ese día.
+**Datos capturados:** el día, el lote de las pesadas nuevas y, por cada persona, los kilos de **una pesada nueva**. Casilla vacía = nada que agregar.
 
-**Flujo principal (Registrar la semana)**
-1. P abre «Registrar la semana». El sistema propone **esta semana** y el **último lote usado en el dispositivo** (o el único).
-2. El sistema carga los empleados activos y las pesadas ya registradas de esa semana y lote, y llena las casillas (RN-04: varias pesadas en una casilla se muestran sumadas y bloqueadas).
-3. P escribe los kilos de cada persona para cada día (en celular: elige el día con los botones L…D y llena una casilla por persona).
-4. El sistema muestra totales por persona, por día y de la semana, y «N cambios sin guardar».
-5. P pulsa «Guardar la semana».
-6. El sistema valida cada casilla cambiada (número > 0). Si hay error, lo muestra y no guarda nada.
-7. El sistema pide confirmación: «Se van a guardar N cambios en *lote*, semana *x*. Total de la semana: *k* kg».
-8. P confirma («Sí, guardar»).
-9. El sistema calcula las escrituras: casilla nueva → `POST`; casilla con una pesada y otro valor → `PATCH quantity`; casilla vaciada → `PATCH status=inactive`. Las ejecuta **una por una**, cada creación con id estable (`wr|persona|día`) dentro de la intención.
-10. El sistema recarga las casillas desde el servidor y muestra «Listo. Se guardaron N pesadas.»
+**Flujo principal (Registro de recolección masivo)**
+1. P abre «Registro de recolección masivo» desde Cosecha. El sistema propone **hoy** y el **último lote usado en el dispositivo** (o el único).
+2. P confirma o cambia el día: botones L…D de la semana (un toque para «ayer» o «el martes»), flechas para otra semana e «Ir a hoy». No se permiten días futuros. El día se muestra en palabras («Hoy, sábado 26 de septiembre»).
+3. El sistema carga los empleados activos y **todas** las pesadas de recolección ya registradas ese día (en cualquier lote), y en cada fila muestra lo que la persona ya tiene: «Ya tiene: 2 pesadas · 38 kg» (en computador, también el detalle por lote).
+4. P escribe los kilos en la casilla de cada persona que pesó. La casilla está **siempre vacía y habilitada**: no bloquea aunque la persona ya tenga pesadas.
+5. El sistema muestra «N pesadas nuevas sin guardar» y el total por agregar.
+6. P pulsa «Guardar».
+7. El sistema valida cada casilla llena (número > 0). Si hay error, nombra a la persona y no guarda nada.
+8. El sistema pide confirmación: «¿Guardar el registro del día?» con el día, el lote, N pesadas nuevas, el total y la lista persona → kilos; avisa si alguna pasa de 120 kg («revise que no sobre un cero»).
+9. P confirma («Sí, guardar»).
+10. El sistema crea **una pesada nueva por casilla llena** (`POST`, nunca `PATCH`), una por una, cada una con id estable dentro de la intención.
+11. El sistema vacía las casillas, recarga lo registrado del día y muestra «Listo. Se agregaron N pesadas nuevas · día · lote:» con la lista de lo agregado.
 
 **Flujos alternos**
-- **A1 · Un día de la cuadrilla** (`modo=dia`): igual, con una sola columna (el día).
-- **A2 · Cambiar de semana** con las flechas (no se puede pasar a semanas futuras). Los cambios sin guardar se pierden (no hay aviso, B-17).
-- **A3 · Revisar antes de guardar**: en 8 P pulsa «Revisar» y vuelve a 3.
-- **A4 · Nada que guardar**: «No hay cambios que guardar.»
-- **A5 · Solo algunos**: P llena solo las casillas de quienes vinieron; las vacías no generan escrituras.
+- **A1 · Otra vuelta a la báscula:** la misma persona vuelve a pesar; P repite 4–11. Queda una pesada más y la fila muestra el nuevo conteo y la suma.
+- **A2 · Otro lote:** P cambia el lote (paso 1) y registra la cuadrilla de ese lote; las pesadas anteriores del día no cambian.
+- **A3 · Revisar antes de guardar:** en 9 P pulsa «Revisar» y vuelve a 4.
+- **A4 · Solo algunos:** P llena solo las casillas de quienes vinieron; las vacías no generan escrituras.
+- **A5 · Cambiar de día** con casillas llenas: los kilos escritos se conservan en pantalla y se guardan en el día elegido al confirmar (la confirmación muestra el día).
 
 **Flujos de excepción**
-- **E1 · Falla a mitad del guardado.** Las escrituras ya hechas quedan hechas (no es atómico, B-06). El sistema muestra el error. Al reintentar, la misma intención reutiliza los ids ya acuñados: las creaciones que sí llegaron no se duplican. Si P recarga la página, las casillas se leen del servidor y solo faltan las que no llegaron.
-- **E2 · Casilla liquidada.** Se muestra bloqueada (gris); no se puede cambiar (RN-09).
-- **E3 · El pesador corrige o vacía una casilla existente.** El servidor responde 403 (B-01).
-- **E4 · El pesador no ve lo que registró otro.** Por RLS, a un `weigher` las casillas registradas por otra persona le aparecen **vacías** y podría registrarlas de nuevo (B-11).
-- **E5 · Sin conexión.** Aviso «Sin conexión. Para guardar la semana se necesita señal…»; el guardado falla.
+- **E1 · Falla a mitad del guardado.** Las creaciones ya hechas quedan hechas (no es atómico, B-06). El sistema muestra el error y conserva las casillas. Al reintentar, la misma intención reutiliza los ids ya acuñados: las que sí llegaron no se duplican.
+- **E2 · Semana ya liquidada.** El servidor puede rechazar la pesada nueva; se muestra el error (RN-09).
+- **E3 · Corregir o anular una pesada existente:** no se hace aquí; se hace en Labores o en la planilla (CU-06, CU-07).
+- **E4 · El pesador no ve lo que registró otro.** Por RLS, a un `weigher` las pesadas de otra persona no aparecen en «Ya tiene» (B-11).
+- **E5 · Sin conexión.** Aviso «Sin conexión. Para guardar el registro masivo se necesita señal…»; el guardado falla.
 
 **Postcondiciones**
-- Por cada casilla nueva existe un `work_record` activo; las corregidas tienen la nueva cantidad; las vaciadas quedan anuladas.
-- Los totales de la semana en Cosecha y en la nómina reflejan la planilla.
+- Por cada casilla llena existe un `work_record` activo **nuevo** del día y lote elegidos; nada de lo anterior cambia.
+- Los totales de la semana en Cosecha y en la nómina suman las pesadas nuevas.
 
-**Auditoría:** cada pesada creada lleva `created_by`/`created_at`. Las correcciones y anulaciones **no dejan rastro de quién ni cuándo** (B-04).
+**Auditoría:** cada pesada creada lleva `created_by`/`created_at`.
 
 ```mermaid
 flowchart TD
-  A([P abre Registrar la semana]) --> B[Proponer esta semana<br/>y el último lote usado]
-  B --> C{¿Hay lote elegido?}
+  A([P abre Registro de recolección masivo]) --> B[Proponer hoy<br/>y el último lote usado]
+  B --> B1{¿Otro día?}
+  B1 -->|sí| B2[Tocar el día L a D<br/>o cambiar de semana] --> C
+  B1 -->|no| C{¿Hay lote elegido?}
   C -->|no| C1[Elegir lote] --> D
-  C -->|sí| D[Cargar empleados activos<br/>y pesadas de la semana y el lote]
-  D --> E[Llenar casillas<br/>varias pesadas = suma bloqueada<br/>liquidadas y días futuros = bloqueadas]
-  E --> F{¿Pantalla de celular?}
-  F -->|sí| F1[Elegir día L a D<br/>una casilla grande por persona]
-  F -->|no| F2[Cuadrícula personas x días<br/>con totales]
-  F1 --> G[Escribir kilos]
-  F2 --> G
-  G --> H[Mostrar totales y N cambios sin guardar]
-  H --> I{¿Más casillas?}
-  I -->|sí| G
-  I -->|no| J[Pulsar Guardar la semana]
-  J --> K{¿Todas las casillas<br/>cambiadas son válidas?}
-  K -->|no| K1[Mostrar la primera casilla con error] --> G
-  K -->|sí| L[Confirmar: N cambios, lote, semana, total kg]
+  C -->|sí| D[Cargar empleados activos<br/>y las pesadas del día en todos los lotes]
+  D --> E[Cada fila: Ya tiene N pesadas y kg<br/>y una casilla vacía para agregar]
+  E --> G[Escribir kilos de quienes pesaron]
+  G --> H[Mostrar N pesadas nuevas sin guardar]
+  H --> J[Pulsar Guardar]
+  J --> K{¿Todas las casillas<br/>llenas son válidas?}
+  K -->|no| K1[Mostrar la persona con error] --> G
+  K -->|sí| L[Confirmar: día, lote, lista y total<br/>aviso si pasa de 120 kg]
   L -->|Revisar| G
-  L -->|Sí, guardar| M[Calcular escrituras por casilla]
-  M --> N{Por cada casilla cambiada}
-  N -->|nueva| N1[POST con id estable]
-  N -->|otro valor, una pesada| N2[PATCH quantity]
-  N -->|vaciada| N3[PATCH status inactive]
+  L -->|Sí, guardar| N{Por cada casilla llena}
+  N --> N1[POST pesada nueva con id estable]
   N1 --> O{¿Error?}
-  N2 --> O
-  N3 --> O
-  O -->|sí| O1[Detener y mostrar error<br/>lo ya escrito queda escrito]:::stop
-  O1 -.->|Reintentar: mismos ids| M
+  O -->|sí| O1[Detener y mostrar error<br/>lo ya creado queda creado]:::stop
+  O1 -.->|Reintentar: mismos ids| N
   O -->|no, quedan más| N
-  O -->|no, fin| P[Recargar casillas desde el servidor]
-  P --> Q([Listo. Se guardaron N pesadas])
+  O -->|no, fin| P[Vaciar casillas y recargar el día]
+  P --> Q([Listo. Se agregaron N pesadas nuevas<br/>con la lista de lo agregado])
+  Q -.->|otra vuelta a la báscula| G
   classDef stop fill:#fde2e1,stroke:#c62828;
 ```
 
@@ -318,17 +311,17 @@ flowchart TD
 
 **Objetivo:** registrar las pesadas de la gente que trabajó en **un lote** concreto
 (p. ej. solo llegó la cuadrilla de El Alto).
-**Actor principal:** P. **Pantallas:** las del CU-02 (una planilla siempre es de un lote) o
-el CU-01 repetido con el lote fijo.
+**Actor principal:** P. **Pantallas:** las del CU-02 (en el registro masivo, las pesadas nuevas
+de un guardado van al lote elegido) o el CU-01 repetido con el lote fijo.
 
 **Precondiciones:** las de CU-02 (masivo) o CU-01 (individual repetido).
 
 **Flujo principal (planilla del día de un lote)**
-1. P abre la planilla del día (`/labores/planilla?modo=dia`) o «Registrar la semana».
-2. P elige el **lote** y el día (o la semana).
-3. El sistema lista **todos** los empleados activos, con lo ya registrado en ese lote.
+1. P abre «Registro de recolección masivo» (o la planilla del día, `/labores/planilla?modo=dia`).
+2. P elige el **día** y el **lote**.
+3. El sistema lista **todos** los empleados activos, con lo ya registrado ese día.
 4. P llena solo las casillas de quienes trabajaron en ese lote; deja vacías las demás.
-5. Guarda (pasos 5–10 del CU-02).
+5. Guarda (pasos 6–11 del CU-02).
 
 **Flujo alterno — A1 · Individual repetido (con o sin señal).** P abre «Registrar una recolección»; el lote queda fijo entre pesadas (paso 9 del CU-01), así que para cada recolector solo elige la persona y escribe los kilos. Es la vía que funciona **sin señal**.
 
@@ -642,17 +635,18 @@ Ordenadas por impacto en la operación diaria.
 
 ### Estado del trabajo de interfaz relacionado
 
-Los PR **#50** (tablero simple de Cosecha, «Registrar la semana», imagen principal de la
-landing, sección de asistentes de IA) y **#51** (último lote recordado, suma de varias
-pesadas en la planilla) **ya están en `master`**, pero **no se han desplegado a
-producción**, que sigue en v0.2.19. Los casos de uso de arriba describen ese código.
+Los PR **#50** (tablero simple de Cosecha, imagen principal de la landing, sección de
+asistentes de IA) y **#51** (último lote recordado, suma de varias pesadas en la planilla)
+están en producción desde v0.2.21. Después, la antigua «Registrar la semana» se
+reemplazó por el **«Registro de recolección masivo»** de un día, en el que cada casilla
+llena agrega una pesada nueva (una persona puede tener varias el mismo día).
 
 ## 9. Matriz resumen
 
 | Caso | Pantalla actual | Sin señal | owner | admin | weigher | Afecta nómina | Auditoría hoy |
 |---|---|:-:|:-:|:-:|:-:|---|---|
 | CU-01 Individual | `/cosecha/recoleccion` | ✅ | ✅ | ✅ | ✅ | Suma kilos, provisional | creado por / cuándo |
-| CU-02 Masivo | `/cosecha/registrar-semana`, `/labores/planilla` | ❌ | ✅ | ✅ | ⚠️ solo crear | Suma kilos, provisional | creado por / cuándo |
+| CU-02 Masivo | `/cosecha/registro-masivo`, `/labores/planilla` | ❌ | ✅ | ✅ | ⚠️ solo crear | Suma kilos, provisional | creado por / cuándo |
 | CU-03 Un lote | Planilla o individual repetido | Solo individual | ✅ | ✅ | ⚠️ solo crear | Igual | Igual |
 | CU-04 Varios lotes | Individual o planilla por lote | Solo individual | ✅ | ✅ | ✅ | Suma cada vuelta | Igual; sin hora visible |
 | CU-05 Consultar | Cosecha, semana, Labores | Parcial (cola local) | ✅ | ✅ | ⚠️ solo lo suyo, sin Cosecha | — | — |
