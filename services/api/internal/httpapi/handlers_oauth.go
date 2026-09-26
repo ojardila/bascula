@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -534,6 +535,9 @@ func (s *Server) oauthForm(w http.ResponseWriter, q url.Values, notice string, _
 	}
 	msg := ""
 	if notice != "" {
+		// Why the sign-in page came back instead of going on to the assistant
+		// (wrong password, unknown client, ...). Never the password itself.
+		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
 		msg = `<p class="err">` + esc(notice) + `</p>`
 	}
 	_, _ = fmt.Fprintf(w, `<!doctype html>
