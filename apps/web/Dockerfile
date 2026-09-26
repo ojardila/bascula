@@ -56,6 +56,7 @@ COPY --from=build /src/apps/web/dist /usr/share/nginx/html
 # at start (only variables that are set, so nginx's own $uri is left alone).
 # That is how /version.json answers with the release from the pod's env.
 COPY apps/web/nginx.conf /etc/nginx/templates/default.conf.template
+COPY apps/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 ARG BUILD=dev
 ENV BASCULA_BUILD=$BUILD \
     BASCULA_VERSION=dev
