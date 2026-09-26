@@ -186,6 +186,21 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if p := h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-24", f.OwnerToken, nil, http.StatusOK); p.Body["priceCents"].(float64) != 300000 {
 		t.Fatalf("set_kilo_price did not set it: %s", p.Raw)
 	}
+	// A retry of the same confirmation changes nothing and says so.
+	mustTool(t, sess, "set_kilo_price", withToken(priceArgs, tok))
+	// The owner then changes the price by hand. Replaying the old
+	// confirmation must not put $3.000 back: a price PUT is an upsert, and
+	// the confirmation promised to change $2.500, which is no longer there.
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f.OwnerToken,
+		map[string]any{"priceCents": 350000}, http.StatusOK)
+	if res := callTool(t, sess, "set_kilo_price", withToken(priceArgs, tok)); !res.IsError {
+		t.Fatalf("a replayed price confirmation ran again: %s", toolText(res))
+	}
+	if p := h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-24", f.OwnerToken, nil, http.StatusOK); p.Body["priceCents"].(float64) != 350000 {
+		t.Fatalf("the replay overwrote the owner's price: %s", p.Raw)
+	}
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f.OwnerToken,
+		map[string]any{"priceCents": 300000}, http.StatusOK) // what the rest of this test expects
 	// Base price too.
 	baseArgs := map[string]any{"scope": "base", "monday": "2026-08-31", "priceCents": 260000}
 	tok, _ = previewToken(t, sess, "set_kilo_price", baseArgs)
