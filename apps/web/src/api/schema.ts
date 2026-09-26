@@ -2951,6 +2951,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Interactive MCP tool reference (HTML)
+         * @description A Swagger-like page listing every MCP tool with its description,
+         *     allowed roles, parameters and an example request, plus a «Try it»
+         *     panel that posts JSON-RPC to `/mcp` with a bearer token the reader
+         *     pastes (so role checks apply as for any client). Generated from the
+         *     same tool registry that answers `tools/list`. Public; carries no farm
+         *     data.
+         */
+        get: operations["mcpDocsPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/tools.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * MCP tool catalogue (JSON)
+         * @description Every MCP tool exactly as `tools/list` describes it (name, title,
+         *     description, inputSchema, annotations), plus what `tools/list`
+         *     cannot say: the API route each tool becomes, the permission it
+         *     declares and the farm roles allowed to call it. Public; carries no
+         *     farm data.
+         */
+        get: operations["mcpToolsCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/.well-known/oauth-protected-resource": {
         parameters: {
             query?: never;
@@ -11084,6 +11133,99 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    mcpDocsPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The HTML page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    mcpToolsCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalogue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        server: {
+                            /** @example bascula */
+                            name: string;
+                            /** @example Báscula */
+                            title: string;
+                            /** @example 1 */
+                            version: string;
+                        };
+                        /**
+                         * Format: uri
+                         * @example https://san-jose.bascula.engp.io/mcp
+                         */
+                        endpoint: string;
+                        /**
+                         * Format: uri
+                         * @example https://san-jose.bascula.engp.io/mcp/docs
+                         */
+                        docs: string;
+                        transport: string;
+                        instructions: string;
+                        auth: {
+                            /** @example Bearer */
+                            scheme: string;
+                            /** Format: uri */
+                            protectedResourceMetadata: string;
+                            /** Format: uri */
+                            authorizationServerMetadata: string;
+                            note: string;
+                        };
+                        tools: {
+                            /** @example list_workers */
+                            name: string;
+                            title?: string;
+                            description: string;
+                            /** @description The tool's JSON Schema, as in tools/list. */
+                            inputSchema: Record<string, never>;
+                            /** @description MCP tool annotations, as in tools/list. */
+                            annotations?: Record<string, never>;
+                            /** @enum {string} */
+                            kind: "read" | "write";
+                            /** @description Money tool — first call previews and returns a confirmationToken. */
+                            twoStep: boolean;
+                            route: {
+                                /** @example GET */
+                                method: string;
+                                /** @example /v1/workers */
+                                path: string;
+                            };
+                            /** @example workers.read */
+                            action: string;
+                            roles: ("owner" | "admin" | "weigher")[];
+                        }[];
+                    };
+                };
             };
         };
     };

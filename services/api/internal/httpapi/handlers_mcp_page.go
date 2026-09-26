@@ -68,7 +68,8 @@ func (s *Server) mcpBrowserPage(next http.Handler) http.Handler {
 </ol>
 <h2>Qué puede hacer el asistente</h2>
 <p>Lo mismo que su rol en Báscula. Pagos, anticipos, liquidaciones y cambios de precio siempre muestran un resumen y esperan su confirmación antes de hacerse.</p>
+<p><a href="%s/docs">Ver herramientas disponibles</a></p>
 </html>
-`, url)
+`, url, url)
 	})
 }

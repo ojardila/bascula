@@ -461,6 +461,14 @@ function Assistants() {
               </Stack>
             ))}
           </Stack>
+          {/* A plain <a>: /mcp/docs is served by the API, not by this app. */}
+          <Box
+            component="a"
+            href="/mcp/docs"
+            sx={{ display: "inline-block", mt: 3, color: GREEN_DARK, fontWeight: 700, fontSize: { xs: "1.05rem", md: "1.1rem" } }}
+          >
+            Ver herramientas disponibles →
+          </Box>
         </Box>
         <Box sx={{ flex: 1, width: "100%", maxWidth: 560, mx: "auto" }}>
           <Box

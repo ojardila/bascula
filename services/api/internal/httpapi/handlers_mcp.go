@@ -249,37 +249,54 @@ var mcpTools = []mcpTool{
 		Description: "Los clientes a los que la finca vende.", Params: []mcpParam{pQ, pStatus}},
 }
 
+// The server's identity and the instructions every client reads on
+// initialize. Named so the reference page can show exactly the same text.
+const (
+	mcpServerName    = "bascula"
+	mcpServerTitle   = "Báscula"
+	mcpServerVersion = "1"
+	mcpInstructions  = "Báscula lleva el control de cosecha y la nómina de una finca: " +
+		"quién recogió cuántos kilos, en qué lote, a qué precio, y a quién se le debe. " +
+		"Empiece con `me` para saber qué finca y qué rol tiene el token. " +
+		"Todos los valores de dinero son centavos enteros de la moneda de la finca; " +
+		"las fechas son YYYY-MM-DD en la zona horaria de la finca. " +
+		"Hay herramientas de consulta y de registro. Las que mueven dinero " +
+		"(pagos, anticipos, liquidaciones, anular liquidaciones y el precio del kilo) " +
+		"funcionan en dos pasos: la primera llamada no escribe nada y devuelve un resumen " +
+		"con un confirmationToken; muéstrele el resumen al usuario y vuelva a llamar con " +
+		"los mismos argumentos y ese token SOLO si el usuario confirma explícitamente. " +
+		"Nunca confirme por su cuenta."
+)
+
 // buildMCP assembles the server once, at construction time. The tools are
 // closures over s, so the handler can dispatch into the router that was built
 // a moment earlier.
 func (s *Server) buildMCP() http.Handler {
 	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    "bascula",
-		Title:   "Báscula",
-		Version: "1",
+		Name:    mcpServerName,
+		Title:   mcpServerTitle,
+		Version: mcpServerVersion,
 	}, &mcp.ServerOptions{
-		Instructions: "Báscula lleva el control de cosecha y la nómina de una finca: " +
-			"quién recogió cuántos kilos, en qué lote, a qué precio, y a quién se le debe. " +
-			"Empiece con `me` para saber qué finca y qué rol tiene el token. " +
-			"Todos los valores de dinero son centavos enteros de la moneda de la finca; " +
-			"las fechas son YYYY-MM-DD en la zona horaria de la finca. " +
-			"Hay herramientas de consulta y de registro. Las que mueven dinero " +
-			"(pagos, anticipos, liquidaciones, anular liquidaciones y el precio del kilo) " +
-			"funcionan en dos pasos: la primera llamada no escribe nada y devuelve un resumen " +
-			"con un confirmationToken; muéstrele el resumen al usuario y vuelva a llamar con " +
-			"los mismos argumentos y ese token SOLO si el usuario confirma explícitamente. " +
-			"Nunca confirme por su cuenta.",
+		Instructions: mcpInstructions,
 	})
 
-	for _, t := range mcpTools {
-		srv.AddTool(t.definition(), s.mcpToolHandler(t))
-	}
 	s.mcpActions = map[string]auth.Action{}
 	for _, rt := range s.Routes() {
 		s.mcpActions[rt.Method+" "+rt.Pattern] = rt.Action
 	}
+	// Every definition handed to the SDK is also kept, as is, for the
+	// reference page and tools.json (handlers_mcp_docs.go): one list, so
+	// the docs cannot describe a tool tools/list does not serve.
+	s.mcpCatalog = nil
+	for _, t := range mcpTools {
+		def := t.definition()
+		srv.AddTool(def, s.mcpToolHandler(t))
+		s.mcpCatalog = append(s.mcpCatalog, s.mcpCatalogEntry(def, t.Method, t.Path, false))
+	}
 	for _, t := range mcpWriteTools {
-		srv.AddTool(t.definition(), s.mcpWriteHandler(t))
+		def := t.definition()
+		srv.AddTool(def, s.mcpWriteHandler(t))
+		s.mcpCatalog = append(s.mcpCatalog, s.mcpCatalogEntry(def, t.Method, t.Pattern, t.Money))
 	}
 
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv },

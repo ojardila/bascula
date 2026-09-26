@@ -175,6 +175,11 @@ type Server struct {
 	// mcpActions maps "METHOD /pattern" to its permission, so a write tool
 	// can refuse a role before it previews anything.
 	mcpActions map[string]auth.Action
+	// mcpCatalog is every tool definition registered on the MCP server,
+	// in registration order (tools/list sorts by name), with the route and
+	// roles behind it. It feeds
+	// GET /mcp/docs and GET /mcp/tools.json (handlers_mcp_docs.go).
+	mcpCatalog []mcpCatalogTool
 	// importSlots is the season import's share of the pool, and it is a share
 	// rather than a queue. See store.MaxImportsAtOnce and handleImportSeason.
 	importSlots chan struct{}
@@ -260,9 +265,11 @@ func (s *Server) buildRouter() chi.Router {
 
 	for _, rt := range s.Routes() {
 		handler := rt.Handler
-		if rt.Action == auth.ActionHealth {
+		if rt.Action == auth.ActionHealth || rt.Action == auth.ActionMCPDocs {
 			// Health touches no database and needs no transaction: it must
-			// answer even when the tenant machinery cannot.
+			// answer even when the tenant machinery cannot. The MCP tool
+			// reference is the same kind of answer — built from tables in
+			// memory, for anybody — so it skips the chain too.
 			r.Method(rt.Method, rt.Pattern, handler)
 			continue
 		}

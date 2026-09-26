@@ -61,7 +61,9 @@ current code, in
 - **An MCP server** exposes the API as tools for ChatGPT, Claude and other
   assistants — reads and writes, limited to what the user's role may do, with
   an explicit two-step confirmation on anything that moves money
-  ([details](services/api/README.md#mcp--the-api-as-tools-for-an-assistant)).
+  ([details](services/api/README.md#mcp--the-api-as-tools-for-an-assistant),
+  [MCP docs](docs/mcp/README.md), live tool reference at
+  [bascula.engp.io/mcp/docs](https://bascula.engp.io/mcp/docs)).
 
 ## Architecture
 
@@ -158,6 +160,10 @@ installed can upload their season. Documents from that era are in
   roles, and the cross-tenant worker registry.
 - [Data model](docs/data-model.md): the PostgreSQL schema and row-level security.
 - [Database diagram](docs/database.md): generated from the migrations, always current.
+- [MCP server](docs/mcp/README.md): endpoints, auth, roles and tools for AI
+  assistants; guides to [connect ChatGPT](docs/mcp/connect-chatgpt.md) and
+  [Claude](docs/mcp/connect-claude.md), the [OAuth reference](docs/mcp/oauth.md)
+  and [troubleshooting](docs/mcp/troubleshooting.md).
 - [Owner decisions](docs/decisions.md): the calls the team couldn't make on
   its own, with what each one costs.
 - Diagrams: [system](docs/diagrams/system.md) · [web app](docs/diagrams/web.md)
