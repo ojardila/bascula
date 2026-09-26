@@ -130,6 +130,26 @@ func InsertFarmOwnerCredentials(ctx context.Context, tx pgx.Tx, farmID, userID, 
 	return err
 }
 
+// OwnerCredentialHashes maps farm id to the owner password recorded for that
+// farm (farm_owner_credentials), for the user pinned with tenant.SetUser.
+func OwnerCredentialHashes(ctx context.Context, tx pgx.Tx, userID string) (map[string]string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT farm_id::text, password_hash FROM farm_owner_credentials WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var farmID, hash string
+		if err := rows.Scan(&farmID, &hash); err != nil {
+			return nil, err
+		}
+		out[farmID] = hash
+	}
+	return out, rows.Err()
+}
+
 func ListMemberships(ctx context.Context, tx pgx.Tx, userID string) ([]Membership, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT m.farm_id::text, f.name, f.slug, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency
