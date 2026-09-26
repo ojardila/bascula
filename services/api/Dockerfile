@@ -4,7 +4,7 @@
 # The migrations are embedded (see migrations/embed.go), so this image can put
 # the schema in place and then serve it -- no second image, no init container,
 # no SQL files to ship alongside and get out of step with the binary.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Dependencies first, so a change to our own code does not re-download the
