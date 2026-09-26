@@ -434,3 +434,26 @@ func TestIPv6RotationInsideOneSlash64StillHitsTheSignupCap(t *testing.T) {
 		t.Fatalf("another /64 was refused: %d %s", res.Status, res.Raw)
 	}
 }
+
+// TestThePlatformHasASignupCeiling: every farm signup creates is a dedicated
+// stack, and the per-IP and per-address caps are both axes a caller can
+// multiply. The platform-wide ceiling is not.
+func TestThePlatformHasASignupCeiling(t *testing.T) {
+	h := requireDB(t)
+	var recent int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*)::int FROM signup_attempts WHERE succeeded AND at > now() - interval '1 hour'`).Scan(&recent); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	srv := h.serverWithConfig(t, func(cfg *httpapi.Config) {
+		cfg.SignupsPerIPPerHour = 1000
+		cfg.SignupsPerHour = recent + 1
+	})
+	if res, _ := signupFrom(t, srv, "203.0.113.90:1", nil); res.Status != http.StatusCreated {
+		t.Fatalf("the signup under the ceiling: %d %s", res.Status, res.Raw)
+	}
+	res, _ := signupFrom(t, srv, "198.51.100.90:1", nil)
+	if res.Status != http.StatusTooManyRequests || res.code() != string(domain.CodeRateLimited) {
+		t.Fatalf("a fresh IP and address went past the platform ceiling: %d %s", res.Status, res.Raw)
+	}
+}

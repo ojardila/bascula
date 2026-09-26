@@ -176,6 +176,26 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// And a ceiling for the whole platform. Every farm that gets past here is
+	// a dedicated stack (namespace, Postgres, pods, a Cloudflare hostname),
+	// and the two caps above are both axes a caller can multiply: a pool of
+	// addresses times a pool of IPs. This one they cannot. It answers the
+	// same for everybody, so it says nothing about any account.
+	if s.cfg.SignupsPerHour > 0 {
+		recent, err := store.CountSuccessfulSignups(r.Context(), tx, time.Hour)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if recent >= s.cfg.SignupsPerHour {
+			slog.Warn("platform signup ceiling reached", "farmsLastHour", recent, "cap", s.cfg.SignupsPerHour)
+			w.Header().Set("Retry-After", "900")
+			writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+				"many farms are being registered right now; try again in a few minutes"))
+			return
+		}
+	}
+
 	// Past both caps, so this request is going to TRY to create something, and
 	// that is what an attempt is. Everything from here on is recorded whatever
 	// happens next — a duplicate address, a bad timezone, a database error, a

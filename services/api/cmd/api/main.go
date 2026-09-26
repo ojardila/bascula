@@ -401,6 +401,14 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_EMAIL_PER_HOUR")); err == nil && n > 0 {
 		rc.http.SignupsPerEmailPerHour = n
 	}
+	// Farms created by public signup across the platform per hour. Each one
+	// is a dedicated stack, so this is the ceiling on what strangers can make
+	// the cluster build. Raise it for a launch; a zero or negative value keeps
+	// the default, for the same reason as the login limits above.
+	rc.http.SignupsPerHour = 30
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_HOUR")); err == nil && n > 0 {
+		rc.http.SignupsPerHour = n
+	}
 
 	// TRUSTED_PROXY_CIDRS names the reverse proxies this service will believe
 	// an X-Forwarded-For from, comma separated, e.g.
