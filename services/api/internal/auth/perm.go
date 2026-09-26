@@ -38,6 +38,8 @@ const (
 	ActionWorkerNotesRead Action = "workers.notes.read"
 	ActionWorkerNotesAdd  Action = "workers.notes.write"
 	ActionWorkerPayables  Action = "workers.payables.read"
+	// One person's harvest, for the «Rendimiento» section of their profile.
+	ActionWorkerPerformance Action = "workers.performance.read"
 
 	// The audit of decision 8. It is a read of personnel history — who took
 	// somebody off the payroll, and what put them back on — so it sits with
@@ -207,6 +209,13 @@ var Matrix = map[Action]Rule{
 	ActionWorkerNotesRead: {Roles: admins, Money: true},
 	ActionWorkerNotesAdd:  {Roles: admins, Money: true},
 	ActionWorkerPayables:  {Roles: admins, Money: true},
+
+	// A person's harvest, week by week, with the farm's average beside it.
+	// There is not a peso in it, and it is still administrator-only and on the
+	// weigher's deny list, for the reason ActionReportsRead gives: a chart of
+	// one worker against the farm is a judgement about a person, and the
+	// weigher is not the one who makes it.
+	ActionWorkerPerformance: {Roles: admins, Money: true},
 
 	// The reactivation audit. Administrator only and on the deny list, for the
 	// same reason the notes are: it is a record of decisions taken ABOUT
