@@ -29,7 +29,7 @@ export interface TourSummary {
 
 type ActionFn = () => boolean | Promise<boolean>;
 
-interface TourContextValue {
+export interface TourContextValue {
   /** The running tour, or null. */
   current: { tour: TourName; n: number; def: TourStepDef } | null;
   /** True while a dialog the tour opened is in the person's hands. */
@@ -54,7 +54,7 @@ interface TourContextValue {
   note: (patch: Partial<TourSummary> | ((s: TourSummary) => Partial<TourSummary>)) => void;
 }
 
-const TourContext = createContext<TourContextValue | null>(null);
+export const TourContext = createContext<TourContextValue | null>(null);
 
 const EMPTY_SUMMARY: TourSummary = { owners: 0, people: 0, plot: null, priceCents: null };
 

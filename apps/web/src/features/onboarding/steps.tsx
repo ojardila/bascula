@@ -37,8 +37,16 @@ export interface TourStepDef {
   action?: string;
   /** Where the primary button goes when it succeeds. "finish" ends the tour; "stay" leaves it to the action. */
   next?: number | "finish" | "stay";
-  /** Replaces «Saltar» at the bottom-left, e.g. «No hay otros dueños». */
+  /** Replaces «Saltar» at the bottom-left. */
   secondary?: { label: string; next: number };
+  /**
+   * The other answer to a yes-or-no step, e.g. «Soy el único dueño». It gets a
+   * button as big as the primary one, side by side on a computer and stacked
+   * on a phone: «no» is as valid an answer as «sí», and a small link under
+   * the text was read as «there is no way past this step». Choosing it moves
+   * the tour on, and the server records that step as passed like any other.
+   */
+  choice?: { label: string; next: number };
   /** A quiet text link under the body, e.g. «Ahora no». */
   alt?: { label: string; next: number | "finish" };
   /** No «Atrás» on this step. */
@@ -89,11 +97,11 @@ export const OWNER_STEPS: TourStepDef[] = [
       </>
     ),
     primary: "Invitar a otro dueño", action: "open-owner-invite", next: "stay",
-    secondary: { label: "No hay otros dueños", next: 4 },
+    choice: { label: "Soy el único dueño", next: 4 },
   },
   {
     n: 4, kind: "spot", route: "/configuracion/usuarios", target: '[data-tour="invite"]',
-    section: "Su gente", title: "Invite a quien le ayuda",
+    section: "Su gente", title: "¿Quién le ayuda?",
     body: (
       <>
         Administradores y pesadores entran con su propio correo. Toque {b("Invitar a alguien")}{" "}
@@ -101,7 +109,7 @@ export const OWNER_STEPS: TourStepDef[] = [
       </>
     ),
     primary: "Invitar a alguien", action: "open-invite",
-    alt: { label: "Ahora no, seguir con los lotes", next: 8 },
+    choice: { label: "Nadie me ayuda", next: 8 },
   },
   {
     n: 5, kind: "callout", route: "/configuracion/usuarios",
