@@ -106,7 +106,10 @@ There are two ways to get that token:
 1. **OAuth 2.1** — what ChatGPT and Claude do. The client registers itself
    (dynamic client registration), sends the user to the Báscula sign-in page,
    and gets an access token plus a refresh token (60 days, rotated on every
-   use). Details in [oauth.md](oauth.md).
+   use, bound to that client). OAuth access tokens carry `aud: "mcp"` and are
+   accepted **only on `/mcp`** — sent straight to `/v1` they get `401`, so an
+   assistant's token cannot skip the tools' money confirmation. Details in
+   [oauth.md](oauth.md).
 2. **`POST /v1/auth/login`** — for scripts, the MCP Inspector or the «Try it»
    panel: `{"email":"…","password":"…"}` returns `accessToken` (15 minutes)
    and `refreshToken`. On `/mcp/docs`, «Use my Báscula session» reuses the
@@ -153,7 +156,7 @@ user explicitly agrees.
 
 ## Tools
 
-39 tools today. This list is a snapshot; the live, always-current
+40 tools today. This list is a snapshot; the live, always-current
 reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/mcp/docs).
 
 ### Read tools
@@ -167,6 +170,7 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 | [`worker_balance`](https://bascula.engp.io/mcp/docs#tool-worker_balance) | read | `GET /v1/workers/{id}/balance` | owner, admin |
 | [`worker_ledger`](https://bascula.engp.io/mcp/docs#tool-worker_ledger) | read | `GET /v1/workers/{id}/ledger` | owner, admin |
 | [`worker_payables`](https://bascula.engp.io/mcp/docs#tool-worker_payables) | read | `GET /v1/workers/{id}/payables` | owner, admin |
+| [`worker_performance`](https://bascula.engp.io/mcp/docs#tool-worker_performance) | read | `GET /v1/workers/{id}/performance` | owner, admin |
 | [`list_plots`](https://bascula.engp.io/mcp/docs#tool-list_plots) | read | `GET /v1/plots` | owner, admin, weigher |
 | [`list_activities`](https://bascula.engp.io/mcp/docs#tool-list_activities) | read | `GET /v1/activities` | owner, admin, weigher |
 | [`list_work_records`](https://bascula.engp.io/mcp/docs#tool-list_work_records) | read | `GET /v1/work-records` | owner, admin, weigher |
