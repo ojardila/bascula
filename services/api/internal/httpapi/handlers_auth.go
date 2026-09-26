@@ -559,29 +559,47 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		hash = user.PasswordHash
 	}
 	ok, err := auth.VerifyPassword(req.Password, hash)
-	// `user == nil` is last in the condition rather than first because it must
-	// not short-circuit the verification above out of existence: the work is
-	// the point, and an early return placed anywhere before this line puts the
-	// millisecond gap straight back.
-	if err != nil || !ok || user == nil {
+	// The verification above runs whether or not the user exists: the work is
+	// the point, and an early return placed before it puts the millisecond gap
+	// straight back.
+	if err != nil {
+		refuse()
+		return
+	}
+
+	// The memberships policy lets a user read their own rows once app.user_id
+	// is set. This is how the farm list exists before a farm is chosen.
+	//
+	// An unknown address runs the same reads against an id that matches
+	// nothing, for the same reason the decoy hash exists: which queries ran
+	// must not say whether the account does.
+	uid := newID()
+	if user != nil {
+		uid = user.ID
+	}
+	if err := tenant.SetUser(r.Context(), tx, uid); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	all, err := store.ListMemberships(r.Context(), tx, uid)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// A farm with its own owner password opens only with that password; the
+	// rest open with the account's. See farmsUnlockedBy.
+	memberships, err := farmsUnlockedBy(r.Context(), tx, uid, req.Password, ok, all)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if user == nil || (len(memberships) == 0 && !(ok && len(all) == 0)) {
 		refuse()
 		return
 	}
 	if user.EmailVerifiedAt == nil {
 		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
 			"verify the email address before opening a session"))
-		return
-	}
-
-	// The memberships policy lets a user read their own rows once app.user_id
-	// is set. This is how the farm list exists before a farm is chosen.
-	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	memberships, err := store.ListMemberships(r.Context(), tx, user.ID)
-	if err != nil {
-		writeError(w, r, err)
 		return
 	}
 	if len(memberships) == 0 {
@@ -605,6 +623,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if pinnedID != "" {
 		req.FarmID = pinnedID
+	}
+	// A farm the account belongs to but this password does not open is a
+	// wrong password for that farm, counted like any other.
+	if req.FarmID != "" && !hasFarm(memberships, req.FarmID) && hasFarm(all, req.FarmID) {
+		refuse()
+		return
 	}
 
 	var chosen *store.Membership
