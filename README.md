@@ -24,6 +24,10 @@ plain Spanish, built for people around fifty who don't live in software.
 
 ## Features
 
+The day-to-day flows (weigh-in at the scale, planilla from paper, the
+harvest dashboard, paying per kilo) are described in
+[`docs/use-cases.md`](docs/use-cases.md).
+
 - **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
   value, pickers, kilos per day) and two big buttons: «Registrar la semana» and
   «Registrar una recolección». The detailed reports sit behind «Ver más

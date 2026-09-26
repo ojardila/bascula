@@ -49,6 +49,12 @@ export interface SheetCell {
   recordId: string | null;
   settled: boolean;
   original: string;
+  /**
+   * How many weighings this cell adds up. A picker can bring coffee to the
+   * scale several times a day; the cell shows the sum and is read-only when
+   * it is more than one, because one box cannot say which weighing to change.
+   */
+  records?: number;
 }
 
 export function emptyCell(): SheetCell {
@@ -70,13 +76,27 @@ export function cellsFromRecords(
     const day = r.dateFrom.slice(0, 10);
     const key = cellKey(r.workerId, day);
     const existing = out[key];
-    if (!existing || existing.recordId) continue;
+    if (!existing) continue;
+    if (existing.recordId) {
+      // Another weighing the same day on the same lote: add it up.
+      const sum = (parseQuantity(existing.text) ?? 0) + r.quantity;
+      const text = formatKg(Math.round(sum * 1000) / 1000);
+      out[key] = {
+        ...existing,
+        text,
+        original: text,
+        settled: existing.settled || r.settled,
+        records: (existing.records ?? 1) + 1,
+      };
+      continue;
+    }
     const text = formatKg(r.quantity);
     out[key] = {
       text,
       recordId: r.id,
       settled: r.settled,
       original: text,
+      records: 1,
     };
   }
   return out;
@@ -104,7 +124,7 @@ export function plannedWrites(
     for (const day of days) {
       if (day > today) continue;
       const cell = cells[cellKey(w.id, day)] ?? emptyCell();
-      if (cell.settled) continue;
+      if (cell.settled || (cell.records ?? 0) > 1) continue;
       const raw = cell.text.trim();
       if (raw === cell.original) continue;
       if (raw === "") {

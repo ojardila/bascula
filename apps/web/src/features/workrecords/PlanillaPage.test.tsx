@@ -115,7 +115,7 @@ describe("Planilla de recolección", () => {
         return HttpResponse.json({ ...(body as object), createdAt: "2026-08-26T22:00:00Z" }, { status: 201 });
       }),
     );
-    renderApp("/cosecha/recoleccion");
+    const { unmount } = renderApp("/cosecha/recoleccion");
     expect(await screen.findByRole("heading", { name: "Registrar una recolección" })).toBeInTheDocument();
     const person = await screen.findByLabelText(/^Persona/);
     await user.click(person);
@@ -130,6 +130,19 @@ describe("Planilla de recolección", () => {
     expect(await screen.findByText(/Guardado: María Restrepo Ospina, 42 kg/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "El Alto" })).toHaveAttribute("aria-pressed", "true");
     expect((screen.getByLabelText(/^Persona/) as HTMLInputElement).value).toBe("");
+
+    // The same person can come back with another load the same day.
+    await user.click(screen.getByLabelText(/^Persona/));
+    await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
+    await user.type(screen.getByLabelText("Kilos"), "42");
+    await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
+    await waitFor(() => expect(posted.length).toBe(2));
+    expect((posted[1] as { id: string }).id).not.toBe((posted[0] as { id: string }).id);
+
+    // Next time the screen opens on this device, the lote is already chosen.
+    unmount();
+    renderApp("/cosecha/recoleccion");
+    await waitFor(() => expect(screen.getByRole("button", { name: "El Alto" })).toHaveAttribute("aria-pressed", "true"));
   }, 20000);
 
   it("asks before saving a weight nobody carries, and saves nothing on «Corregir»", async () => {

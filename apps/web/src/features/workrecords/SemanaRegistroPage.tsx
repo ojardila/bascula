@@ -13,7 +13,9 @@
  *  - One button saves, and it asks first, saying how many kilos it is about
  *    to save, then says clearly that it did.
  *  - A day in the future cannot be filled, and a settled weighing cannot be
- *    changed; both are shown greyed out.
+ *    changed; both are shown greyed out. So is a day with several weighings
+ *    (a picker can come to the scale more than once a day): the box shows
+ *    their sum, and each one is corrected on its own.
  */
 import { useMemo, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
@@ -166,7 +168,7 @@ export function SemanaRegistroPage() {
       <TextField
         value={cell.text}
         onChange={(e) => setCell(workerId, d, e.target.value)}
-        disabled={busy || cell.settled || future}
+        disabled={busy || cell.settled || (cell.records ?? 0) > 1 || future}
         placeholder={future ? "—" : ""}
         inputProps={{ inputMode: "decimal", "aria-label": `${name}, ${dayLabel(d, i)}` }}
         sx={{
@@ -236,6 +238,12 @@ export function SemanaRegistroPage() {
         </Alert>
       )}
 
+      {Object.values(cells).some((c) => (c.records ?? 0) > 1) && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: "1.05rem" }}>
+          Las casillas grises con kilos suman varias pesadas del mismo día. Para cambiar una,
+          búsquela en Labores.
+        </Alert>
+      )}
       {!plotId ? (
         <Alert severity="info">Elija el lote.</Alert>
       ) : sheet.loadingSheet ? (
