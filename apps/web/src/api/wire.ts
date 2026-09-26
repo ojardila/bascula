@@ -575,6 +575,8 @@ export interface WirePayable {
    * names none. Optional only because an older server did not send it.
    */
   plotNames?: string[];
+  /** Which rule priced a kilo weighing. Absent for work with its own frozen price. */
+  priceSource?: WirePriceSource;
 }
 
 /** `GET /v1/pending?workerId&from&to`. `from` and `to` are both mandatory. */
@@ -754,6 +756,35 @@ export interface WireBasePriceImpact {
   settledRecords: number;
   weeksWithOwnPrice: number;
 }
+
+export type WireSpecialPriceKind = "lote" | "persona";
+
+/** One dated entry of a special price; a null price ends it from that Monday. */
+export interface WireSpecialPriceEntry {
+  validFrom: DayISO;
+  priceCents: number | null;
+  createdAt: string;
+}
+
+/** A lote or a person with a special kilo price (migration 00034). */
+export interface WireSpecialPrice {
+  kind: WireSpecialPriceKind;
+  targetId: Uuid;
+  targetName: string;
+  /** The special price in force this week, or null. */
+  currentCents: number | null;
+  history: WireSpecialPriceEntry[];
+}
+
+/** What a special price from a Monday would move, and what it would not. */
+export interface WireSpecialPriceImpact {
+  unsettledRecords: number;
+  settledRecords: number;
+  overriddenByPerson: number;
+}
+
+/** Which rule priced a kilo weighing: persona > lote > semana > finca. */
+export type WirePriceSource = "persona" | "lote" | "semana" | "finca";
 
 export type WireTourStatus = "active" | "later" | "dismissed" | "done";
 

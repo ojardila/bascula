@@ -174,6 +174,9 @@ import type {
   WireWeekPrice,
   WireBasePriceState,
   WireBasePriceImpact,
+  WireSpecialPrice,
+  WireSpecialPriceImpact,
+  WireSpecialPriceKind,
   WireTourProgress,
   WireTourStatus,
   WireWorkerProfile,
@@ -1103,6 +1106,32 @@ export const api = {
   /** Owner only. Stores the base price from that Monday on and confirms it. */
   setBasePrice: async (monday: string, priceCents: number): Promise<WireBasePriceState> =>
     http.put<WireBasePriceState>(`/v1/prices/base/${mondayOf(monday)}`, { priceCents }),
+
+  /* -- special kilo prices per lote and per person --------------------- */
+
+  /** Owner and administrator. Every lote and person with a special price. */
+  listSpecialPrices: async (): Promise<WireSpecialPrice[]> =>
+    (await http.get<{ items: WireSpecialPrice[] }>("/v1/prices/special")).items,
+
+  /** What a special price from that Monday would move (unsettled) and not (settled). */
+  specialPriceImpact: async (kind: WireSpecialPriceKind, id: string, monday: string): Promise<WireSpecialPriceImpact> =>
+    http.get<WireSpecialPriceImpact>(
+      `/v1/prices/special/${kind === "lote" ? "lotes" : "personas"}/${id}/${mondayOf(monday)}/impact`,
+    ),
+
+  /** Owner only. A fixed price from that Monday on, or null to end it from then. */
+  setSpecialPrice: async (
+    kind: WireSpecialPriceKind, id: string, monday: string, priceCents: number | null,
+  ): Promise<WireSpecialPrice[]> =>
+    (await http.put<{ items: WireSpecialPrice[] }>(
+      `/v1/prices/special/${kind === "lote" ? "lotes" : "personas"}/${id}/${mondayOf(monday)}`, { priceCents },
+    )).items,
+
+  /** Owner only. Removes an entry made by mistake. */
+  deleteSpecialPrice: async (kind: WireSpecialPriceKind, id: string, monday: string): Promise<WireSpecialPrice[]> =>
+    (await http.del<{ items: WireSpecialPrice[] }>(
+      `/v1/prices/special/${kind === "lote" ? "lotes" : "personas"}/${id}/${mondayOf(monday)}`,
+    )).items,
 
   /* -- guided tours ---------------------------------------------------- */
 

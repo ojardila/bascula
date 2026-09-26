@@ -1515,6 +1515,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/prices/special": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Special kilo prices per lote and per person
+         * @description Every lote and person with at least one special price entry, lotes
+         *     first, each with its history newest first and the price in force this
+         *     week (null when none applies). A special price is fixed and starts on
+         *     a Monday. The kilo price of a weighing is resolved as persona > lote >
+         *     semana > finca. An entry with a null price ends the special price from
+         *     that Monday.
+         */
+        get: operations["listSpecialPrices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prices/special/{kind}/{id}/{monday}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description lotes for a lote, personas for a person. */
+                kind: "lotes" | "personas";
+                /** @description The lote (plot) id or the person (worker) id. */
+                id: string;
+                /** @description The Monday the entry applies from. Any other day is a 400. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set or end a special kilo price from a Monday on
+         * @description Owner only. Stores (or corrects) the entry for that Monday. A positive
+         *     `priceCents` is a fixed price from that Monday until the next entry;
+         *     `null` ends the special price from that Monday. Settled weighings keep
+         *     the price they were settled at, so only unsettled work changes.
+         */
+        put: operations["setSpecialPrice"];
+        post?: never;
+        /**
+         * Remove a special price entry entered by mistake
+         * @description Owner only. Removes that Monday's entry, so the entry before it (or
+         *     the next rule down) applies again. To stop a special price from a
+         *     date on, PUT a null price instead. Settled weighings keep their price.
+         */
+        delete: operations["deleteSpecialPrice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prices/special/{kind}/{id}/{monday}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description lotes for a lote, personas for a person. */
+                kind: "lotes" | "personas";
+                /** @description The lote (plot) id or the person (worker) id. */
+                id: string;
+                /** @description The Monday a new entry would apply from. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * What a special price from that Monday would change
+         * @description Counts the kilo weighings of that lote or person from that Monday up to
+         *     its next entry. Unsettled ones would take the new price, settled ones
+         *     would not. For a lote, weighings by a person with their own price are
+         *     counted apart, because the person's price wins.
+         */
+        get: operations["specialPriceImpact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/prices/base/{monday}": {
         parameters: {
             query?: never;
@@ -4363,6 +4454,12 @@ export interface components {
             voided?: boolean;
             /** @description The lotes the work was done in, by name, sorted. Empty when the record names none. */
             plotNames?: string[];
+            /**
+             * @description Which rule priced a kilo weighing (persona > lote > semana >
+             *     finca). Absent for work that froze its own price.
+             * @enum {string}
+             */
+            priceSource?: "persona" | "lote" | "semana" | "finca";
         };
         PendingResult: {
             /** Format: uuid */
@@ -4542,6 +4639,39 @@ export interface components {
             settledRecords: number;
             /** @description Weeks in the range that keep their own price. */
             weeksWithOwnPrice: number;
+        };
+        /** @enum {string} */
+        SpecialPriceKind: "lote" | "persona";
+        SpecialPriceEntry: {
+            /** Format: date */
+            validFrom: string;
+            /**
+             * Format: int64
+             * @description The fixed price from validFrom; null ends the special price from that Monday.
+             */
+            priceCents: number | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SpecialPrice: {
+            kind: components["schemas"]["SpecialPriceKind"];
+            /** Format: uuid */
+            targetId: string;
+            targetName: string;
+            /**
+             * Format: int64
+             * @description The special price in force this week, or null.
+             */
+            currentCents: number | null;
+            history: components["schemas"]["SpecialPriceEntry"][];
+        };
+        SpecialPriceImpact: {
+            /** @description Weighings that would take the new price. */
+            unsettledRecords: number;
+            /** @description Settled weighings that keep their price. */
+            settledRecords: number;
+            /** @description For a lote */
+            overriddenByPerson: number;
         };
         /** @enum {string} */
         TourStatus: "active" | "later" | "dismissed" | "done";
@@ -8542,6 +8672,134 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listSpecialPrices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The special prices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SpecialPrice"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setSpecialPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description lotes for a lote, personas for a person. */
+                kind: "lotes" | "personas";
+                /** @description The lote (plot) id or the person (worker) id. */
+                id: string;
+                /** @description The Monday the entry applies from. Any other day is a 400. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    priceCents: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. Every special price, as the list returns them. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SpecialPrice"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteSpecialPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description lotes for a lote, personas for a person. */
+                kind: "lotes" | "personas";
+                /** @description The lote (plot) id or the person (worker) id. */
+                id: string;
+                /** @description The Monday the entry applies from. Any other day is a 400. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. Every special price, as the list returns them. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SpecialPrice"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    specialPriceImpact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description lotes for a lote, personas for a person. */
+                kind: "lotes" | "personas";
+                /** @description The lote (plot) id or the person (worker) id. */
+                id: string;
+                /** @description The Monday a new entry would apply from. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecialPriceImpact"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     setBasePrice: {

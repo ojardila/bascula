@@ -48,6 +48,7 @@ import type {
   WireNote, WirePlot, WirePlotCrop, WireProduct, WireSale, WireStockLevel,
   WireStockMove, WireWeekPrice, WireWorkUnit,
   WireBasePrice, WireBasePriceState, WireBasePriceImpact, WireTourProgress,
+  WireSpecialPrice, WireSpecialPriceEntry, WireSpecialPriceImpact,
   WireAnomaly, WireHarvestCurve, WireHarvestShape, WireHarvestWeekTotal,
   WireReportAnomaliesResult, WireReportCrop, WireReportGrid, WireReportGridCell,
   WireReportGridColumn, WireReportGridRow, WireReportPerformanceResult,
@@ -142,6 +143,18 @@ type _BasePriceState = [
 type _BasePriceImpact = [
   Check<SameKeys<WireBasePriceImpact, Schemas["BasePriceImpact"]>>,
   Assignable<WireBasePriceImpact, Schemas["BasePriceImpact"]>,
+];
+type _SpecialPriceEntry = [
+  Check<SameKeys<WireSpecialPriceEntry, Schemas["SpecialPriceEntry"]>>,
+  Assignable<WireSpecialPriceEntry, Schemas["SpecialPriceEntry"]>,
+];
+type _SpecialPrice = [
+  Check<SameKeys<WireSpecialPrice, Schemas["SpecialPrice"]>>,
+  Assignable<WireSpecialPrice, Schemas["SpecialPrice"]>,
+];
+type _SpecialPriceImpact = [
+  Check<SameKeys<WireSpecialPriceImpact, Schemas["SpecialPriceImpact"]>>,
+  Assignable<WireSpecialPriceImpact, Schemas["SpecialPriceImpact"]>,
 ];
 type _TourProgress = [
   Check<SameKeys<WireTourProgress, Schemas["TourProgress"]>>,
@@ -284,6 +297,7 @@ export type ContractAssertions = [
   _CatalogItem, _WorkUnit, _ActivityRate, _Activity,
   _Balance, _LedgerEntry, _WeekPrice, _PaymentReceipt,
   _BasePrice, _BasePriceState, _BasePriceImpact, _TourProgress,
+  _SpecialPriceEntry, _SpecialPrice, _SpecialPriceImpact,
   _Note, _AdminFarm, _AdminFarmCreated,
   _Product, _Customer, _StockLevel, _StockMove, _LabelBatch, _Sale, _Expense,
   _ReportTotals, _ReportWeek, _ReportWeeksResult,

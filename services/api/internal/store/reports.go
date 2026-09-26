@@ -90,14 +90,24 @@ harvest AS (
            sl.amount_minor,
            l.amount_minor,
            CASE WHEN l.rate_source = 'weekly_price'
-                THEN round(l.quantity * COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
-                            WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
-                            ORDER BY fp.valid_from DESC LIMIT 1), fc.price_minor))::bigint
+                THEN round(l.quantity * COALESCE(
+                  -- persona > lote first, as kilo_price() (migration 00034).
+                  -- The guards are uncorrelated, so each runs once per query
+                  -- (an InitPlan) and a farm with no special prices never
+                  -- calls the function at all.
+                  CASE WHEN (SELECT EXISTS (SELECT 1 FROM employee_prices
+                                             WHERE farm_id = current_farm()
+                                               AND price_minor IS NOT NULL))
+                         OR (SELECT EXISTS (SELECT 1 FROM plot_prices
+                                             WHERE farm_id = current_farm()
+                                               AND price_minor IS NOT NULL))
+                       THEN special_kilo_price(l.farm_id, l.employee_id, l.id, l.week_start) END,
+                  wp.price_minor,
+                  fpw.price_minor,
+                  fc.price_minor))::bigint
            END) AS value_minor,
          (sl.amount_minor IS NULL AND l.amount_minor IS NULL) AS value_is_estimate,
-         COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
-                            WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
-                            ORDER BY fp.valid_from DESC LIMIT 1), fc.price_minor) AS week_price_minor
+         COALESCE(wp.price_minor, fpw.price_minor, fc.price_minor) AS week_price_minor
     FROM work_records l
     LEFT JOIN work_units u ON u.id = l.unit_id
     LEFT JOIN LATERAL (
@@ -105,6 +115,13 @@ harvest AS (
        WHERE si.payable_id = l.id AND si.voided_at IS NULL LIMIT 1) sl ON true
     LEFT JOIN week_prices wp ON wp.farm_id = l.farm_id AND wp.week_start = l.week_start
     LEFT JOIN farm_config fc ON fc.farm_id = l.farm_id
+    -- The farm's base price for the week, looked up once and used twice. As
+    -- two scalar subqueries the planner priced it twice per weighing, which
+    -- over a season is what pushed these queries past jit_above_cost.
+    LEFT JOIN LATERAL (
+      SELECT fp.price_minor FROM farm_prices fp
+       WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
+       ORDER BY fp.valid_from DESC LIMIT 1) fpw ON true
    WHERE l.deleted_at IS NULL
      AND l.pay_scheme = 'unidad_trabajo'
      AND ($1::date IS NULL OR l.local_day >= $1)

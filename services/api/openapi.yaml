@@ -2629,6 +2629,154 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/prices/special:
+    get:
+      tags: [money]
+      operationId: listSpecialPrices
+      summary: Special kilo prices per lote and per person
+      description: |
+        Every lote and person with at least one special price entry, lotes
+        first, each with its history newest first and the price in force this
+        week (null when none applies). A special price is fixed and starts on
+        a Monday. The kilo price of a weighing is resolved as persona > lote >
+        semana > finca. An entry with a null price ends the special price from
+        that Monday.
+      x-action: prices.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The special prices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SpecialPrice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/prices/special/{kind}/{id}/{monday}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: lotes for a lote, personas for a person.
+        schema: { type: string, enum: [lotes, personas] }
+      - name: id
+        in: path
+        required: true
+        description: The lote (plot) id or the person (worker) id.
+        schema: { type: string, format: uuid }
+      - name: monday
+        in: path
+        required: true
+        description: The Monday the entry applies from. Any other day is a 400.
+        schema: { type: string, format: date, example: "2026-09-21" }
+    put:
+      tags: [money]
+      operationId: setSpecialPrice
+      summary: Set or end a special kilo price from a Monday on
+      description: |
+        Owner only. Stores (or corrects) the entry for that Monday. A positive
+        `priceCents` is a fixed price from that Monday until the next entry;
+        `null` ends the special price from that Monday. Settled weighings keep
+        the price they were settled at, so only unsettled work changes.
+      x-action: prices.write
+      x-roles: [owner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priceCents]
+              properties:
+                priceCents: { type: integer, format: int64, minimum: 1, nullable: true }
+      responses:
+        "200":
+          description: Stored. Every special price, as the list returns them.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SpecialPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [money]
+      operationId: deleteSpecialPrice
+      summary: Remove a special price entry entered by mistake
+      description: |
+        Owner only. Removes that Monday's entry, so the entry before it (or
+        the next rule down) applies again. To stop a special price from a
+        date on, PUT a null price instead. Settled weighings keep their price.
+      x-action: prices.write
+      x-roles: [owner]
+      responses:
+        "200":
+          description: Removed. Every special price, as the list returns them.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SpecialPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/prices/special/{kind}/{id}/{monday}/impact:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: lotes for a lote, personas for a person.
+        schema: { type: string, enum: [lotes, personas] }
+      - name: id
+        in: path
+        required: true
+        description: The lote (plot) id or the person (worker) id.
+        schema: { type: string, format: uuid }
+      - name: monday
+        in: path
+        required: true
+        description: The Monday a new entry would apply from.
+        schema: { type: string, format: date, example: "2026-09-21" }
+    get:
+      tags: [money]
+      operationId: specialPriceImpact
+      summary: What a special price from that Monday would change
+      description: |
+        Counts the kilo weighings of that lote or person from that Monday up to
+        its next entry. Unsettled ones would take the new price, settled ones
+        would not. For a lote, weighings by a person with their own price are
+        counted apart, because the person's price wins.
+      x-action: prices.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SpecialPriceImpact" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/prices/base/{monday}:
     parameters:
       - name: monday
@@ -6734,6 +6882,12 @@ components:
           type: array
           description: The lotes the work was done in, by name, sorted. Empty when the record names none.
           items: { type: string }
+        priceSource:
+          type: string
+          enum: [persona, lote, semana, finca]
+          description: |
+            Which rule priced a kilo weighing (persona > lote > semana >
+            finca). Absent for work that froze its own price.
 
     PendingResult:
       type: object
@@ -6904,6 +7058,46 @@ components:
         unsettledRecords: { type: integer, description: Weighings that would take the new price. }
         settledRecords: { type: integer, description: Settled weighings that keep their price. }
         weeksWithOwnPrice: { type: integer, description: Weeks in the range that keep their own price. }
+
+    SpecialPriceKind:
+      type: string
+      enum: [lote, persona]
+
+    SpecialPriceEntry:
+      type: object
+      required: [validFrom, priceCents, createdAt]
+      properties:
+        validFrom: { type: string, format: date }
+        priceCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: The fixed price from validFrom; null ends the special price from that Monday.
+        createdAt: { type: string, format: date-time }
+
+    SpecialPrice:
+      type: object
+      required: [kind, targetId, targetName, currentCents, history]
+      properties:
+        kind: { $ref: "#/components/schemas/SpecialPriceKind" }
+        targetId: { type: string, format: uuid }
+        targetName: { type: string }
+        currentCents:
+          type: integer
+          format: int64
+          nullable: true
+          description: The special price in force this week, or null.
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/SpecialPriceEntry" }
+
+    SpecialPriceImpact:
+      type: object
+      required: [unsettledRecords, settledRecords, overriddenByPerson]
+      properties:
+        unsettledRecords: { type: integer, description: Weighings that would take the new price. }
+        settledRecords: { type: integer, description: Settled weighings that keep their price. }
+        overriddenByPerson: { type: integer, description: For a lote, unsettled weighings whose person has a price of their own, which wins. }
 
     TourStatus:
       type: string

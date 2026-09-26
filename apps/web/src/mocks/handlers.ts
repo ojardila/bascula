@@ -2272,6 +2272,82 @@ export const handlers = [
     return HttpResponse.json(basePriceState(t));
   }),
 
+  /* ---- special kilo prices (migration 00034) ---- */
+
+  http.get("*/v1/prices/special", ({ request }) => {
+    const g = guard(request, "prices.read");
+    if (g.deny) return g.deny;
+    return HttpResponse.json({ items: specialPricesState(g.p.tenant) });
+  }),
+
+  http.get("*/v1/prices/special/:kind/:id/:monday/impact", ({ request, params }) => {
+    const g = guard(request, "prices.read");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const target = specialTarget(g.p.tenant, String(params.kind), String(params.id));
+    if (target instanceof Response) return target;
+    const t = g.p.tenant;
+    const until = (t.specialPrices ?? [])
+      .filter((p) => p.kind === target.kind && p.targetId === target.id && p.validFrom > monday)
+      .map((p) => p.validFrom).sort()[0] ?? null;
+    let unsettled = 0;
+    let settled = 0;
+    let byPerson = 0;
+    for (const r of t.workRecords) {
+      if (r.deletedAt || r.rateSource !== "weekly_price") continue;
+      const week = mondayOf(r.dateFrom.slice(0, 10));
+      if (week < monday || (until !== null && week >= until)) continue;
+      if (target.kind === "persona" ? r.workerId !== target.id : !(r.plotIds ?? []).includes(target.id)) continue;
+      if (db.isSettled(t, r.id)) settled++;
+      else if (target.kind === "lote" && (db.specialOn(t, "persona", r.workerId, week)?.priceCents ?? null) !== null) byPerson++;
+      else unsettled++;
+    }
+    return HttpResponse.json({ unsettledRecords: unsettled, settledRecords: settled, overriddenByPerson: byPerson });
+  }),
+
+  http.put("*/v1/prices/special/:kind/:id/:monday", async ({ request, params }) => {
+    const g = guard(request, "prices.write");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const body = (await request.json()) as { priceCents?: number | null };
+    if (!("priceCents" in body)) return badRequest("priceCents is required (a positive integer, or null to end the special price)");
+    const price = body.priceCents ?? null;
+    if (price !== null && (!Number.isInteger(price) || price <= 0)) return badRequest("priceCents must be a positive integer or null");
+    const t = g.p.tenant;
+    const target = specialTarget(t, String(params.kind), String(params.id));
+    if (target instanceof Response) return target;
+    t.specialPrices ??= [];
+    const row = t.specialPrices.find((p) => p.kind === target.kind && p.targetId === target.id && p.validFrom === monday);
+    if (row) {
+      row.priceCents = price;
+      row.createdAt = nowInstant();
+    } else {
+      t.specialPrices.push({ kind: target.kind, targetId: target.id, validFrom: monday, priceCents: price, createdAt: nowInstant() });
+    }
+    return HttpResponse.json({ items: specialPricesState(t) });
+  }),
+
+  http.delete("*/v1/prices/special/:kind/:id/:monday", ({ request, params }) => {
+    const g = guard(request, "prices.write");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const t = g.p.tenant;
+    const target = specialTarget(t, String(params.kind), String(params.id));
+    if (target instanceof Response) return target;
+    const before = (t.specialPrices ?? []).length;
+    t.specialPrices = (t.specialPrices ?? []).filter(
+      (p) => !(p.kind === target.kind && p.targetId === target.id && p.validFrom === monday),
+    );
+    if (t.specialPrices.length === before) return fail(404, "NOT_FOUND", "special price");
+    return HttpResponse.json({ items: specialPricesState(t) });
+  }),
+
   /* ---- guided tours ---- */
 
   http.get("*/v1/me/tours", ({ request }) => {
@@ -4330,6 +4406,41 @@ function basePriceState(t: db.Tenant) {
     thisWeek,
     history: history.map((p) => ({ ...p })),
   };
+}
+
+function specialTarget(t: db.Tenant, rawKind: string, id: string): { kind: "lote" | "persona"; id: string; name: string } | Response {
+  const kind = rawKind === "lotes" ? "lote" : rawKind === "personas" ? "persona" : null;
+  if (!kind) return badRequest('kind must be "lotes" or "personas"');
+  if (kind === "lote") {
+    const p = t.plots.find((x) => x.id === id);
+    return p ? { kind, id, name: p.name } : fail(404, "NOT_FOUND", "no such lote or person");
+  }
+  const w = t.workers.find((x) => x.id === id);
+  return w ? { kind, id, name: `${w.name} ${w.lastName ?? ""}`.trim() } : fail(404, "NOT_FOUND", "no such lote or person");
+}
+
+function specialPricesState(t: db.Tenant) {
+  const thisWeek = mondayOf(today());
+  const groups = new Map<string, { kind: "lote" | "persona"; targetId: string; targetName: string; currentCents: number | null; history: { validFrom: string; priceCents: number | null; createdAt: string }[] }>();
+  for (const p of t.specialPrices ?? []) {
+    const key = `${p.kind}:${p.targetId}`;
+    if (!groups.has(key)) {
+      const target = specialTarget(t, p.kind === "lote" ? "lotes" : "personas", p.targetId);
+      groups.set(key, {
+        kind: p.kind,
+        targetId: p.targetId,
+        targetName: target instanceof Response ? "" : target.name,
+        currentCents: db.specialOn(t, p.kind, p.targetId, thisWeek)?.priceCents ?? null,
+        history: [],
+      });
+    }
+    groups.get(key)!.history.push({ validFrom: p.validFrom, priceCents: p.priceCents, createdAt: p.createdAt });
+  }
+  const items = [...groups.values()];
+  for (const it of items) it.history.sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1));
+  return items.sort((a, b) =>
+    a.kind !== b.kind ? (a.kind === "lote" ? -1 : 1) : a.targetName.localeCompare(b.targetName, "es"),
+  );
 }
 
 function checkMonday(raw: string): Response | null {

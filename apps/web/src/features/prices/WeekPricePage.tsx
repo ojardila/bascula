@@ -48,7 +48,8 @@ import { useAuth } from "../../auth/AuthContext";
 import { addDays, formatWeekRange, mondayOf, parseDay, todayInFarm, weekTag } from "../../lib/dates";
 import { amountCents, formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import type { WorkRecord } from "../../api/types";
-import { BasePriceCard, PriceExceptionsCard } from "./BasePriceCard";
+import { BasePriceCard } from "./BasePriceCard";
+import { SpecialPricesCard } from "./SpecialPricesCard";
 
 /** How many Mondays back we offer. A harvest is corrected, not rewritten. */
 const WEEKS_BACK = 8;
@@ -56,7 +57,7 @@ const WEEKS_BACK = 8;
 const sundayOf = (monday: string) => addDays(parseDay(monday), 6).toISOString().slice(0, 10);
 
 export function WeekPricePage() {
-  const { user, can } = useAuth();
+  const { user, can, principal, readOnly } = useAuth();
   const timezone = user?.farm?.timezone ?? "America/Bogota";
   const today = todayInFarm(timezone);
   const thisMonday = mondayOf(today);
@@ -208,7 +209,7 @@ export function WeekPricePage() {
       )}
 
       <BasePriceCard onSaved={() => setTick((t) => t + 1)} />
-      <PriceExceptionsCard />
+      <SpecialPricesCard canEdit={principal.role === "owner" && !readOnly} />
 
       <Typography variant="h2" sx={{ fontSize: 22, fontWeight: 800, mt: 1 }}>
         Precio de una semana

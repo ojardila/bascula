@@ -103,6 +103,9 @@ type Payable struct {
 	// next to the activity so the worker can check the line against their
 	// own memory of the week. Never nil, so the wire always carries a list.
 	PlotNames []string `json:"plotNames"`
+	// PriceSource says which rule priced a kilo weighing: "persona", "lote",
+	// "semana" or "finca". Empty for everything that froze its own price.
+	PriceSource string `json:"priceSource,omitempty"`
 }
 
 // Pending lists what a worker is owed for but has not been settled, with each
@@ -144,15 +147,30 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 		return nil, err
 	}
 
+	// Kilo weighings are priced by kilo_price() (migration 00034): persona >
+	// lote > semana > finca, resolved in one round trip for the whole list.
+	var kiloIDs []string
+	for _, r := range pending {
+		if r.RateSource == domain.RateWeeklyPrice {
+			kiloIDs = append(kiloIDs, r.PayableID)
+		}
+	}
+	kilo, err := KiloPrices(ctx, tx, kiloIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	out := []Payable{}
 	for _, r := range pending {
 		p := r.Payable
 		switch r.RateSource {
 		case domain.RateWeeklyPrice:
-			price, err := WeekPrice(ctx, tx, r.WeekStart)
-			if err != nil {
-				return nil, err
+			kp, ok := kilo[r.PayableID]
+			if !ok {
+				return nil, domain.Internal("work record " + r.PayableID + " has no kilo price")
 			}
+			price := kp.PriceMinor
+			p.PriceSource = kp.Source
 			qty, ok := new(big.Rat).SetString(string(r.Quantity))
 			if !ok {
 				return nil, domain.Internal("unparsable quantity on work record " + r.PayableID)
