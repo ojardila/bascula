@@ -279,11 +279,23 @@ func (s *Server) buildRouter() chi.Router {
 
 	for _, rt := range s.Routes() {
 		handler := rt.Handler
-		if rt.Action == auth.ActionHealth || rt.Action == auth.ActionMCPDocs {
+		if rt.Action == auth.ActionHealth || rt.Action == auth.ActionMCPDocs || rt.Action == auth.ActionProvisionStatus {
 			// Health touches no database and needs no transaction: it must
 			// answer even when the tenant machinery cannot. The MCP tool
 			// reference is the same kind of answer — built from tables in
 			// memory, for anybody — so it skips the chain too.
+			//
+			// Provision status skips it for the pool's sake. It is public,
+			// reads only through SECURITY DEFINER lookups on the pool, and
+			// spends seconds on the network (the farm's address, the cluster,
+			// GitHub) while concurrent callers for the same slug wait for one
+			// computation. Behind the tenant middleware every one of those
+			// callers held a request transaction — a pool connection — while
+			// waiting, and the one computing needed a second connection for
+			// its lookup: more waiters than the pool has connections starved
+			// the computation they were waiting on, and all of them failed at
+			// its deadline. Outside the chain a caller holds no connection
+			// while it waits, and the computation borrows one per query.
 			r.Method(rt.Method, rt.Pattern, handler)
 			continue
 		}

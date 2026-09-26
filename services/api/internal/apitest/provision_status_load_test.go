@@ -17,6 +17,10 @@ import (
 // TestProvisionStatusIsComputedOncePerSlugUnderLoad: the waiting screen's
 // endpoint is public, and one computation costs a probe, cluster reads and a
 // GitHub call. Concurrent callers for one slug share one computation.
+//
+// Twenty is deliberately more than the pool's connections
+// (store.OrdinaryConns + store.MaxImportsAtOnce): a caller that holds a
+// connection while it waits would starve the computation it waits on.
 func TestProvisionStatusIsComputedOncePerSlugUnderLoad(t *testing.T) {
 	h := requireDB(t)
 	var probes atomic.Int32
