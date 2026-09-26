@@ -312,9 +312,14 @@ export interface paths {
         /**
          * How far along the farm's own web address is
          * @description What the waiting screen polls after a farm is created with a slug —
-         *     from the landing (signup), from the app (POST /v1/farms) or from the
-         *     console. Public: the person who just registered has no session yet,
-         *     and the only thing it reveals is whether a web address answers.
+         *     from the landing (signup) or from the console. No session (the person
+         *     who just registered has none yet), but not open to anybody: it answers
+         *     only the holder of the farm's provision ticket (`provisionTicket` on
+         *     the signup and console responses) or a super-admin. Anybody else gets
+         *     404 NOT_FOUND "farm not found", byte for byte what a slug nobody
+         *     registered gets, decided before the database is asked — so the route
+         *     cannot be used to tell which farms exist, when they were created or
+         *     how their certificate stands.
          *
          *     Three steps, in order (four when the platform issues a certificate per
          *     farm address):
@@ -357,8 +362,8 @@ export interface paths {
          * Email the owner once the farm's own address is ready
          * @description "Avísenme por correo cuando esté lista" on the waiting screen. The
          *     email goes to the farm owner's address (never one the caller names),
-         *     at most once per farm, when every provisioning step is done. Public,
-         *     like the status: the person who just registered has no session.
+         *     at most once per farm, when every provisioning step is done. Gated
+         *     like the status: the provision ticket, or 404 as for an unknown slug.
          *
          *     Only while the farm is being prepared (the provisioning budget, 45
          *     minutes). 404 when this platform has no mailer (`notifyAvailable`
@@ -384,7 +389,9 @@ export interface paths {
          *     they greet people with "San José" rather than the DNS label
          *     "san-jose". The farm is the one named by the request's host; `slug`
          *     names it where the host cannot (main domain, development). Public: it
-         *     says nothing the farm's own page does not already show.
+         *     says nothing the farm's own page does not already show. On the shared
+         *     platform (which knows every farm) it is metered per address like the
+         *     availability check; a farm's own stack only knows its own farm.
          */
         get: operations["getFarmDisplayName"];
         put?: never;
@@ -407,7 +414,10 @@ export interface paths {
          * @description The live check on the signup and create-farm forms. Public, like the
          *     DNS label it asks about. Never an error for a malformed or reserved
          *     slug: those come back `available: false` with a `reason`, so the form
-         *     can say it in plain words while the owner types.
+         *     can say it in plain words while the owner types. It answers about one
+         *     exact slug and never lists; it is metered per client address
+         *     (FARM_LOOKUPS_PER_IP_PER_HOUR, 120 by default) so it cannot be used
+         *     to test a dictionary of farm names.
          */
         get: operations["getSlugAvailability"];
         put?: never;
@@ -3537,6 +3547,13 @@ export interface components {
          */
         SignupResponse: {
             /**
+             * @description Opens GET /v1/farms/{slug}/provision-status and POST
+             *     /v1/farms/{slug}/ready-email for this farm (header
+             *     X-Provision-Ticket), for a week. Every signup that creates a farm
+             *     gets one, so it says nothing about the address.
+             */
+            provisionTicket?: string;
+            /**
              * @description Always false. One email may own several farms: a registration with
              *     an address that already has an account creates the new farm too,
              *     with that account as owner, and the password typed here becomes
@@ -3721,6 +3738,8 @@ export interface components {
             /** @description Present only when the server minted one for a new owner. */
             temporaryPassword?: string;
             temporaryPasswordNote?: string;
+            /** @description Opens the new farm's provision status (see SignupResponse). */
+            provisionTicket?: string;
         };
         /**
          * @description One member of this farm. `role` is the role the account holds HERE; the
@@ -6963,8 +6982,18 @@ export interface operations {
     };
     getProvisionStatus: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                /** @description The same ticket, for clients that cannot set a header. */
+                ticket?: string;
+            };
+            header?: {
+                /**
+                 * @description The `provisionTicket` signup (or the console) returned with the
+                 *     farm. Without it, or with one for another slug, the answer is the
+                 *     404 of a slug that does not exist.
+                 */
+                "X-Provision-Ticket"?: string;
+            };
             path: {
                 slug: components["schemas"]["FarmSlug"];
             };
@@ -7047,8 +7076,18 @@ export interface operations {
     };
     requestReadyEmail: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                /** @description The same ticket, for clients that cannot set a header. */
+                ticket?: string;
+            };
+            header?: {
+                /**
+                 * @description The `provisionTicket` signup (or the console) returned with the
+                 *     farm. Without it, or with one for another slug, the answer is the
+                 *     404 of a slug that does not exist.
+                 */
+                "X-Provision-Ticket"?: string;
+            };
             path: {
                 slug: components["schemas"]["FarmSlug"];
             };
@@ -7104,6 +7143,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description RATE_LIMITED — too many slug lookups from this address this hour. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getSlugAvailability: {
@@ -7129,6 +7177,15 @@ export interface operations {
                         /** @enum {string} */
                         reason?: "taken" | "reserved" | "invalid";
                     };
+                };
+            };
+            /** @description RATE_LIMITED — too many slug lookups from this address this hour. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -11039,7 +11096,7 @@ export interface operations {
                         items: components["schemas"]["McpConnection"][];
                         /**
                          * Format: uri
-                         * @example https://cafin3.bascula.engp.io/mcp
+                         * @example https://lapalma.bascula.engp.io/mcp
                          */
                         endpoint: string;
                     };

@@ -71,7 +71,7 @@ afterEach(() => {
 
 describe("the farm MCP address", () => {
   it("is the host the owner is on, plus /mcp", () => {
-    expect(farmMcpUrl("https://cafin3.bascula.engp.io")).toBe("https://cafin3.bascula.engp.io/mcp");
+    expect(farmMcpUrl("https://lapalma.bascula.engp.io")).toBe("https://lapalma.bascula.engp.io/mcp");
     expect(farmMcpUrl("https://bascula.engp.io/")).toBe("https://bascula.engp.io/mcp");
   });
 

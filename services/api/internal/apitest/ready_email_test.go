@@ -46,11 +46,11 @@ func TestReadyEmailIsOfferedOnlyWithAMailer(t *testing.T) {
 	h := requireDB(t)
 	slug := "sin-correo-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 	signupWithSlug(t, h.server, "Sin correo", slug)
-	st := h.do(t, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	st := h.do(t, http.MethodGet, provisionStatusPath(slug), "", nil)
 	if st.Status != http.StatusOK || st.Body["notifyAvailable"] != false || st.Body["notifyRequested"] != false {
 		t.Fatalf("status without a mailer: %d %s", st.Status, st.Raw)
 	}
-	res := h.do(t, http.MethodPost, "/v1/farms/"+slug+"/ready-email", "", nil)
+	res := h.do(t, http.MethodPost, readyEmailPath(slug), "", nil)
 	if res.Status != http.StatusNotFound {
 		t.Fatalf("ready-email without a mailer: %d %s", res.Status, res.Raw)
 	}
@@ -88,21 +88,30 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 
 	ownerEmail := signupWithSlug(t, platform, "La Ceiba", slug)
 
-	st := call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	st := call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 	if st.Body["notifyAvailable"] != true || st.Body["notifyRequested"] != false || st.Body["ready"] != false {
 		t.Fatalf("status before asking: %s", st.Raw)
 	}
 
+	// Without the provision ticket the farm is not there: the same 404 as a
+	// slug nobody registered, and nothing is requested.
+	stranger := call(t, platform, http.MethodPost, "/v1/farms/"+slug+"/ready-email", "", nil)
+	nobody := call(t, platform, http.MethodPost, "/v1/farms/no-existe-"+uuid.NewString()[:6]+"/ready-email", "", nil)
+	if stranger.Status != http.StatusNotFound || stranger.Raw != nobody.Raw {
+		t.Fatalf("ready-email without a ticket: %d %s (unknown slug: %d %s)",
+			stranger.Status, stranger.Raw, nobody.Status, nobody.Raw)
+	}
+
 	// The first send fails; the claim is released and the next check retries.
 	mail.fail.Store(true)
-	req := call(t, platform, http.MethodPost, "/v1/farms/"+slug+"/ready-email", "", nil)
+	req := call(t, platform, http.MethodPost, readyEmailPath(slug), "", nil)
 	if req.Status != http.StatusAccepted || req.Body["requested"] != true {
 		t.Fatalf("ready-email: %d %s", req.Status, req.Raw)
 	}
 	if _, leaked := req.Body["email"]; leaked {
 		t.Fatalf("ready-email must not reveal the owner's address: %s", req.Raw)
 	}
-	st = call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	st = call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 	if st.Body["notifyRequested"] != true {
 		t.Fatalf("status after asking: %s", st.Raw)
 	}
@@ -121,7 +130,7 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 		if mail.count() > 0 {
 			return true
 		}
-		call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+		call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 		platform.ResumeReadyEmails(context.Background())
 		return false
 	})
@@ -139,8 +148,8 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 	}
 
 	// Asking again, polling again, resuming again: still one email.
-	call(t, platform, http.MethodPost, "/v1/farms/"+slug+"/ready-email", "", nil)
-	call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	call(t, platform, http.MethodPost, readyEmailPath(slug), "", nil)
+	call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 	platform.ResumeReadyEmails(context.Background())
 	time.Sleep(400 * time.Millisecond)
 	if n := mail.count(); n != 1 {

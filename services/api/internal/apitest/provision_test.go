@@ -167,6 +167,11 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 		payload["email"] != ownerEmail || payload["farmName"] != "La Palma de prueba" {
 		t.Fatalf("dispatch payload = %v %v", eventType, payload)
 	}
+	// The run is titled by an opaque ref, never the slug: the run list of a
+	// public repository is public.
+	if ref, _ := payload["ref"].(string); ref == "" || ref != provisionRunRef(slug) || strings.Contains(ref, slug) {
+		t.Fatalf("dispatch ref = %v, want the opaque ref for %s", payload["ref"], slug)
+	}
 
 	// The watcher seeds the empty stack.
 	waitFor(t, 15*time.Second, "tenant seeded", func() bool {
@@ -213,7 +218,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	// The waiting screen sees every step done.
 	var status response
 	waitFor(t, 10*time.Second, "provision status ready", func() bool {
-		status = call(t, platform, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+		status = call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
 		return status.Status == http.StatusOK && status.Body["ready"] == true
 	})
 	if status.Body["dedicated"] != true || status.Body["url"] != public.URL {
@@ -274,7 +279,7 @@ func TestProvisionStatusAndSlugChecksWithoutDedicatedStacks(t *testing.T) {
 
 	slug := "compartida-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 	signupWithSlug(t, h.server, "Compartida", slug)
-	st := h.do(t, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
+	st := h.do(t, http.MethodGet, provisionStatusPath(slug), "", nil)
 	if st.Status != http.StatusOK || st.Body["dedicated"] != false {
 		t.Fatalf("status: %d %s", st.Status, st.Raw)
 	}

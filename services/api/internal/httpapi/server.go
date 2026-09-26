@@ -67,6 +67,11 @@ type Config struct {
 	// registration (POST /oauth/register) per address, per API process.
 	// Zero means no cap.
 	OAuthRegistrationsPerIPPerHour int
+	// FarmLookupsPerIPPerHour caps the public slug lookups (the signup
+	// availability check and, on the shared platform, the farm name) per
+	// address, per API process, so they cannot be used to test a dictionary
+	// of farm names. Zero means no cap.
+	FarmLookupsPerIPPerHour int
 	// LoginFailureWindow is how far back the counts look. It is also how long
 	// a lockout lasts, because the two are the same fact: the count drains as
 	// the window slides, so nothing has to expire anything.
@@ -171,6 +176,9 @@ func DefaultConfig() Config {
 		// A person connects an assistant a handful of times; a connector
 		// retrying a failed setup registers again each time.
 		OAuthRegistrationsPerIPPerHour: 30,
+		// Typing one address checks it a handful of times (debounced); a
+		// dictionary of farm names is thousands of checks.
+		FarmLookupsPerIPPerHour: 120,
 	}
 }
 
@@ -199,6 +207,8 @@ type Server struct {
 	prov *provisioner
 	// oauthRegs counts anonymous client registrations per address.
 	oauthRegs *windowLimiter
+	// farmLookups meters the public slug lookups per address.
+	farmLookups *windowLimiter
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -210,6 +220,7 @@ func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 		pool: pool, signer: signer, cfg: cfg, prov: newProvisioner(),
 		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
 		oauthRegs:   newWindowLimiter(cfg.OAuthRegistrationsPerIPPerHour, time.Hour),
+		farmLookups: newWindowLimiter(cfg.FarmLookupsPerIPPerHour, time.Hour),
 	}
 	disk, err := blob.NewDisk(cfg.UploadDir)
 	if err != nil {

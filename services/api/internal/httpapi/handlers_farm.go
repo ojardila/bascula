@@ -293,6 +293,8 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		"status": farm.Status, "suspendedAt": farm.SuspendedAt,
 		"createdAt":  farm.CreatedAt,
 		"ownerEmail": email, "ownerCreated": ownerCreated,
+		// Lets the console watch the farm's address come up.
+		"provisionTicket": s.provisionTicket(farm.Slug),
 	}
 	if ownerCreated && req.Owner.Password == "" {
 		out["temporaryPassword"] = temporary

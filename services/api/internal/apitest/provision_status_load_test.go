@@ -47,7 +47,7 @@ func TestProvisionStatusIsComputedOncePerSlugUnderLoad(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodGet, "/v1/farms/"+slug+"/provision-status", nil)
+			req := httptest.NewRequest(http.MethodGet, provisionStatusPath(slug), nil)
 			req.RemoteAddr = "10.9.2.1:1"
 			rec := httptest.NewRecorder()
 			srv.ServeHTTP(rec, req)

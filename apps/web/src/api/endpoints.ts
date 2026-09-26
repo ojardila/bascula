@@ -84,6 +84,7 @@ import {
 import { invalidateRefs, loadRefs } from "./refs";
 import { mondayOf } from "../lib/dates";
 import { uuidv7 } from "../lib/uuid";
+import { provisionTicketHeaders, saveProvisionTicket } from "../lib/provisionTicket";
 import { shortReceiptNumber } from "../lib/receipt";
 import type {
   Activity,
@@ -419,6 +420,8 @@ export const api = {
       },
       { anonymous: true },
     );
+    // Opens this farm's waiting screen, for this browser only.
+    saveProvisionTicket(body.farm.slug ?? "", res.provisionTicket);
     return {
       // The server no longer names the farm or the user here, on purpose: this
       // route answers identically whether or not the address already has an
@@ -447,22 +450,26 @@ export const api = {
       anonymous: true,
     }),
 
-  /** Where a new farm's own address stands. Public: the owner has no session yet. */
+  /**
+   * Where a new farm's own address stands. No session (the owner has none
+   * yet), but not public either: it carries the provision ticket signup
+   * handed this browser, and without it the API answers 404.
+   */
   provisionStatus: (slug: string) =>
     // `t` busts any cache between here and the API. The API answers
     // Cache-Control: no-store, but a CDN rule with an edge TTL can override
     // that, and a stale "not ready" leaves the owner waiting for nothing.
     http.get<ProvisionStatus>(
       `/v1/farms/${encodeURIComponent(slug)}/provision-status?t=${Date.now()}`,
-      { anonymous: true },
+      { anonymous: true, headers: provisionTicketHeaders(slug) },
     ),
 
-  /** "Avísenme por correo cuando esté lista". Public, like the status. */
+  /** "Avísenme por correo cuando esté lista". Ticket, like the status. */
   requestReadyEmail: (slug: string) =>
     http.post<{ slug: string; requested: boolean }>(
       `/v1/farms/${encodeURIComponent(slug)}/ready-email`,
       undefined,
-      { anonymous: true },
+      { anonymous: true, headers: provisionTicketHeaders(slug) },
     ),
 
   /** Another farm for the account that is signed in (POST /v1/farms). */
@@ -1957,9 +1964,8 @@ export const api = {
   ): Promise<AdminFarm> =>
     toAdminFarm(await http.patch<WireAdminFarm>(`/v1/admin/farms/${id}`, { status })),
 
-  adminCreateFarm: async (body: AdminFarmCreate): Promise<AdminFarmCreated> =>
-    toAdminFarmCreated(
-      await http.post<WireAdminFarmCreated>("/v1/admin/farms", {
+  adminCreateFarm: async (body: AdminFarmCreate): Promise<AdminFarmCreated> => {
+    const res = await http.post<WireAdminFarmCreated>("/v1/admin/farms", {
         name: body.name,
         slug: body.slug,
         priceCents: body.priceCents,
@@ -1970,8 +1976,11 @@ export const api = {
           name: body.owner.name || undefined,
           password: body.owner.password || undefined,
         },
-      }),
-    ),
+      });
+    // Lets the dialog watch the new farm's address come up.
+    saveProvisionTicket(res.slug ?? "", res.provisionTicket);
+    return toAdminFarmCreated(res);
+  },
 };
 
 /* ------------------------------------------------------------------ */

@@ -74,19 +74,19 @@ describe("isFarmSlug and slugifyFarmName", () => {
   });
 
   it("advertises the host that matches where we are standing", () => {
-    expect(farmUrlForHere("fincasanjose", "bascula.int.dev.engp.io")).toBe(
-      "https://fincasanjose.int.dev.engp.io",
+    expect(farmUrlForHere("lapalma", "bascula.int.dev.engp.io")).toBe(
+      "https://lapalma.int.dev.engp.io",
     );
-    expect(farmUrlForHere("fincasanjose", "bascula.engp.io")).toBe(
-      "https://fincasanjose.bascula.engp.io",
+    expect(farmUrlForHere("lapalma", "bascula.engp.io")).toBe(
+      "https://lapalma.bascula.engp.io",
     );
   });
 });
 
 describe("isFarmHost", () => {
   it("is true only on a farm's own address", () => {
-    expect(isFarmHost("cafin3.bascula.engp.io")).toBe(true);
-    expect(isFarmHost("cafin3.int.dev.engp.io")).toBe(true);
+    expect(isFarmHost("lapalma.bascula.engp.io")).toBe(true);
+    expect(isFarmHost("lapalma.int.dev.engp.io")).toBe(true);
     expect(isFarmHost("bascula.engp.io")).toBe(false);
     expect(isFarmHost("bascula.int.dev.engp.io")).toBe(false);
     expect(isFarmHost("www.bascula.engp.io")).toBe(false);
@@ -96,14 +96,14 @@ describe("isFarmHost", () => {
 
 describe("showsFarmEntry", () => {
   it("is the farm hosts and the demo, never the production main domain", () => {
-    expect(showsFarmEntry("cafin3.bascula.engp.io")).toBe(true);
+    expect(showsFarmEntry("lapalma.bascula.engp.io")).toBe(true);
     expect(showsFarmEntry("bascula.int.dev.engp.io")).toBe(true);
     expect(showsFarmEntry("bascula.engp.io")).toBe(false);
     expect(showsFarmEntry("localhost")).toBe(false);
   });
   it("offers to register a farm on main domains only, never on a farm", () => {
-    expect(offersSignup("cafin3.bascula.engp.io")).toBe(false);
-    expect(offersSignup("cafin3.int.dev.engp.io")).toBe(false);
+    expect(offersSignup("lapalma.bascula.engp.io")).toBe(false);
+    expect(offersSignup("lapalma.int.dev.engp.io")).toBe(false);
     expect(offersSignup("bascula.int.dev.engp.io")).toBe(true);
     expect(offersSignup("bascula.engp.io")).toBe(true);
     expect(offersSignup("localhost")).toBe(true);

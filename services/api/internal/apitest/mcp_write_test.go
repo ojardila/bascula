@@ -419,7 +419,7 @@ func TestMCPBrowserGetExplainsItself(t *testing.T) {
 	h := requireDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	req.Host = "cafin3.bascula.engp.io"
+	req.Host = "lapalma.bascula.engp.io"
 	req.RemoteAddr = "10.0.0.1:12345"
 	rec := httptest.NewRecorder()
 	h.server.ServeHTTP(rec, req)
@@ -431,7 +431,7 @@ func TestMCPBrowserGetExplainsItself(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Header().Get("WWW-Authenticate"), "resource_metadata") {
 		t.Errorf("the browser page must stay a 401 with the challenge: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
 	}
-	if !strings.Contains(rec.Body.String(), "cafin3.bascula.engp.io/mcp") {
+	if !strings.Contains(rec.Body.String(), "lapalma.bascula.engp.io/mcp") {
 		t.Errorf("the page should show this host's connector address")
 	}
 

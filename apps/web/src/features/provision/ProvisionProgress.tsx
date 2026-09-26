@@ -124,8 +124,9 @@ export function ProvisionProgress({
   if (missing) {
     return (
       <Alert severity="warning" sx={{ fontSize: "1.1rem" }}>
-        Todavía no encontramos la finca <strong>{host}</strong>. Si la acaba de crear,
-        espere un momento. Si no, <Link component={RouterLink} to="/entrar">entre con su correo</Link>.
+        No podemos mostrar el avance de <strong>{host}</strong> en este navegador. Si la acaba
+        de crear aquí, espere un momento. Si la creó en otro navegador o ya pasaron unos días,{" "}
+        <Link component={RouterLink} to="/entrar">entre con su correo</Link>.
       </Alert>
     );
   }
