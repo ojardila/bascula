@@ -44,6 +44,7 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { GREEN, GREEN_DARK } from "../../theme";
 import { useAuth } from "../../auth/AuthContext";
+import { DemoVideos } from "./DemoVideos";
 
 const DISPLAY = '"Fraunces", Georgia, serif';
 const SANS = '"Outfit", "Roboto", sans-serif';
@@ -144,6 +145,7 @@ export function LandingPage() {
       <NavBar signedIn={signedIn} landing={landing} />
       <Box component="main">
         <Hero />
+        <DemoVideos />
         <Problem />
         <HowItWorks />
         <Example />
