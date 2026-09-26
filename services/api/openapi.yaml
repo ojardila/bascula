@@ -4963,6 +4963,100 @@ paths:
       responses:
         "204": { description: Allowed. }
 
+  /mcp/docs:
+    get:
+      tags: [mcp]
+      operationId: mcpDocsPage
+      summary: Interactive MCP tool reference (HTML)
+      description: |
+        A Swagger-like page listing every MCP tool with its description,
+        allowed roles, parameters and an example request, plus a «Try it»
+        panel that posts JSON-RPC to `/mcp` with a bearer token the reader
+        pastes (so role checks apply as for any client). Generated from the
+        same tool registry that answers `tools/list`. Public; carries no farm
+        data.
+      x-action: mcp.docs
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: The HTML page.
+          content:
+            text/html:
+              schema: { type: string }
+
+  /mcp/tools.json:
+    get:
+      tags: [mcp]
+      operationId: mcpToolsCatalog
+      summary: MCP tool catalogue (JSON)
+      description: |
+        Every MCP tool exactly as `tools/list` describes it (name, title,
+        description, inputSchema, annotations), plus what `tools/list`
+        cannot say: the API route each tool becomes, the permission it
+        declares and the farm roles allowed to call it. Public; carries no
+        farm data.
+      x-action: mcp.docs
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [server, endpoint, docs, transport, instructions, auth, tools]
+                properties:
+                  server:
+                    type: object
+                    required: [name, title, version]
+                    properties:
+                      name: { type: string, example: bascula }
+                      title: { type: string, example: Báscula }
+                      version: { type: string, example: "1" }
+                  endpoint: { type: string, format: uri, example: "https://san-jose.bascula.engp.io/mcp" }
+                  docs: { type: string, format: uri, example: "https://san-jose.bascula.engp.io/mcp/docs" }
+                  transport: { type: string }
+                  instructions: { type: string }
+                  auth:
+                    type: object
+                    required: [scheme, protectedResourceMetadata, authorizationServerMetadata, note]
+                    properties:
+                      scheme: { type: string, example: Bearer }
+                      protectedResourceMetadata: { type: string, format: uri }
+                      authorizationServerMetadata: { type: string, format: uri }
+                      note: { type: string }
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, description, inputSchema, kind, twoStep, route, action, roles]
+                      properties:
+                        name: { type: string, example: list_workers }
+                        title: { type: string }
+                        description: { type: string }
+                        inputSchema:
+                          type: object
+                          description: The tool's JSON Schema, as in tools/list.
+                        annotations:
+                          type: object
+                          description: MCP tool annotations, as in tools/list.
+                        kind: { type: string, enum: [read, write] }
+                        twoStep:
+                          type: boolean
+                          description: Money tool — first call previews and returns a confirmationToken.
+                        route:
+                          type: object
+                          required: [method, path]
+                          properties:
+                            method: { type: string, example: GET }
+                            path: { type: string, example: /v1/workers }
+                        action: { type: string, example: workers.read }
+                        roles:
+                          type: array
+                          items: { type: string, enum: [owner, admin, weigher] }
+
   /.well-known/oauth-protected-resource:
     get:
       tags: [mcp]

@@ -7,7 +7,7 @@ import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
-import { CHATGPT_PLUGINS_URL, CHECK_RETRY_MS, ConnectionsCard, farmMcpUrl, guideText, isPhone } from "./ConnectionsCard";
+import { CHATGPT_PLUGINS_URL, CHECK_RETRY_MS, ConnectionsCard, farmMcpDocsUrl, farmMcpUrl, guideText, isPhone } from "./ConnectionsCard";
 import { api } from "../../api/endpoints";
 import { ApiError } from "../../api/errors";
 import { AuthProvider } from "../../auth/AuthContext";
@@ -73,6 +73,18 @@ describe("the farm MCP address", () => {
   it("is the host the owner is on, plus /mcp", () => {
     expect(farmMcpUrl("https://cafin3.bascula.engp.io")).toBe("https://cafin3.bascula.engp.io/mcp");
     expect(farmMcpUrl("https://bascula.engp.io/")).toBe("https://bascula.engp.io/mcp");
+  });
+
+  it("has a tool reference next to it, served by the API at /mcp/docs", () => {
+    expect(farmMcpDocsUrl("https://san-jose.bascula.engp.io")).toBe("https://san-jose.bascula.engp.io/mcp/docs");
+    expect(farmMcpDocsUrl("https://bascula.engp.io/")).toBe("https://bascula.engp.io/mcp/docs");
+  });
+
+  it("links the card to the tool reference as a plain page load", async () => {
+    renderCard();
+    const link = await screen.findByRole("link", { name: /Ver herramientas disponibles/ });
+    expect(link.getAttribute("href")).toBe(`${window.location.origin}/mcp/docs`);
+    expect(link.getAttribute("target")).toBe("_blank");
   });
 
   it("goes into the steps an owner sends to himself", () => {

@@ -284,6 +284,10 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/mcp", auth.ActionMCP, s.handleMCP},
 		{http.MethodGet, "/mcp", auth.ActionMCP, s.handleMCP},
 		{http.MethodOptions, "/mcp", auth.ActionOAuth, s.handleMCPOptions},
+		// The tool reference, generated from the registry above: a page for
+		// people and the same catalogue as JSON (handlers_mcp_docs.go).
+		{http.MethodGet, "/mcp/docs", auth.ActionMCPDocs, s.handleMCPDocsPage},
+		{http.MethodGet, "/mcp/tools.json", auth.ActionMCPDocs, s.handleMCPToolsJSON},
 
 		// OAuth 2.1 so ChatGPT's connector UI can obtain the same JWT a
 		// session already has. Public: there is no token yet.

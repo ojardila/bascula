@@ -41,6 +41,16 @@ export function farmMcpUrl(origin: string = window.location.origin): string {
 }
 
 /**
+ * This farm's MCP tool reference: a page the API serves (GET /mcp/docs), not
+ * a route of this app. The service worker must let it through to the network
+ * (see pwa/navigateFallbackDenylist.ts), and the link is a plain <a>, never a
+ * router link, so the browser really loads it.
+ */
+export function farmMcpDocsUrl(origin: string = window.location.origin): string {
+  return `${farmMcpUrl(origin)}/docs`;
+}
+
+/**
  * A phone or small tablet. ChatGPT creates custom connectors only on the web
  * at chatgpt.com from a computer: its iPhone and Android apps have no
  * developer mode, and a chatgpt.com link on a phone is taken over by the app.
@@ -335,6 +345,15 @@ export function ConnectionsCard() {
             </>
           )}
         </Typography>
+
+        <Link
+          href={farmMcpDocsUrl()}
+          target="_blank"
+          rel="noopener"
+          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, mt: 1, fontSize: "1rem" }}
+        >
+          Ver herramientas disponibles <OpenInNewIcon sx={{ fontSize: "1rem" }} />
+        </Link>
 
         {/* The data for ChatGPT is always on screen while not connected: it
             must not depend on the tap, on a tab opening, or on the check. */}

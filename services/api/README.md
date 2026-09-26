@@ -333,6 +333,12 @@ bearer, so the permission table, the tenant and RLS apply exactly as they do
 on the wire, and the JSON the assistant sees is the JSON `openapi.yaml`
 documents. There is no second contract to drift.
 
+`GET /mcp/docs` is an interactive, Swagger-like reference of every tool (with
+a «Try it» panel that posts to `/mcp` with the reader's token) and
+`GET /mcp/tools.json` the same catalogue as JSON. Both are generated from the
+tool registry itself (`handlers_mcp_docs.go`), public and data-free. Guides:
+[`docs/mcp`](../../docs/mcp/README.md).
+
 Twenty-seven reads: `me`, `farm`, workers and their balances, ledgers and
 payables, plots, activities, work records, pending, balances, settlements,
 week prices, the six reports, stock, products, sales, expenses and customers.

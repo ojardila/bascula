@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Báscula MCP tools — reference</title>
+<style>
+  :root{--ink:#17231a;--muted:#5b675e;--line:#dfe5dc;--bg:#f6f8f4;--card:#fff;--green:#2e7d32;--green-d:#1b5e20;--amber:#8a5a00;--amber-bg:#fff4dc;--red:#b3261e;--red-bg:#fdecea;--code:#f1f4ef}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--green-d)}
+  code,pre,textarea,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
+  code{background:var(--code);padding:.1rem .35rem;border-radius:4px;word-break:break-word}
+  pre{background:#0f1a12;color:#e6f0e6;padding:.85rem 1rem;border-radius:8px;overflow-x:auto;margin:.5rem 0;white-space:pre}
+  header.top{background:var(--green-d);color:#fff;padding:1.25rem 1rem 1.1rem}
+  header.top a{color:#d9f2d9}
+  .wrap{max-width:62rem;margin:0 auto;padding:0 1rem}
+  header.top h1{font-size:1.45rem;margin:0 0 .25rem}
+  header.top p{margin:.2rem 0;color:#e3efe3}
+  .endpoint{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.6rem}
+  .endpoint code{background:rgba(255,255,255,.14);color:#fff;font-size:.95rem;padding:.3rem .55rem}
+  main{padding:1rem 0 3rem}
+  section.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:1rem 0}
+  section.panel h2{font-size:1.1rem;margin:0 0 .5rem}
+  .muted{color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  .token-row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  input[type=password],input[type=text],input[type=search],textarea{width:100%;border:1px solid #c7d0c4;border-radius:8px;padding:.6rem .7rem;font:inherit;background:#fff;color:inherit}
+  .token-row input{flex:1 1 18rem}
+  button{font:inherit;border:1px solid var(--green);background:var(--green);color:#fff;border-radius:8px;padding:.5rem .9rem;cursor:pointer;min-height:2.5rem}
+  button.ghost{background:#fff;color:var(--green-d)}
+  button:disabled{opacity:.55;cursor:default}
+  .status{font-size:.92rem;margin-top:.4rem}
+  .toolbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:.6rem 0;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  .toolbar input{flex:1 1 14rem}
+  .chips{display:flex;gap:.35rem;flex-wrap:wrap}
+  .chip{display:inline-block;font-size:.78rem;font-weight:600;padding:.12rem .5rem;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--muted);white-space:nowrap}
+  .chip.read{color:var(--green-d);border-color:#b9dcbb;background:#eef8ef}
+  .chip.write{color:var(--amber);border-color:#f0d49a;background:var(--amber-bg)}
+  .chip.money{color:var(--red);border-color:#f3c2bd;background:var(--red-bg)}
+  .chip.role{color:#244a7a;border-color:#c5d5ea;background:#eef3fa}
+  .chip.none{color:var(--red)}
+  h3.group{font-size:1rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:1.6rem 0 .4rem}
+  details.tool{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:.55rem 0;overflow:hidden}
+  details.tool[open]{box-shadow:0 6px 20px rgba(20,40,20,.06)}
+  details.tool>summary{list-style:none;cursor:pointer;padding:.75rem 1rem;display:flex;flex-wrap:wrap;gap:.4rem .7rem;align-items:center}
+  details.tool>summary::-webkit-details-marker{display:none}
+  details.tool>summary .name{font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1rem}
+  details.tool>summary .title{color:var(--muted);flex:1 1 12rem}
+  .body{padding:0 1rem 1rem;border-top:1px solid var(--line)}
+  .route{margin:.75rem 0 .25rem;font-size:.92rem}
+  .method{font-weight:700;color:var(--green-d)}
+  .desc{margin:.5rem 0}
+  .tablewrap{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:.92rem;margin:.35rem 0}
+  th,td{border-bottom:1px solid var(--line);padding:.45rem .5rem;text-align:left;vertical-align:top}
+  th{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  td.pname{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .req{color:var(--red);font-weight:700;font-size:.8rem}
+  .note{background:var(--amber-bg);border-left:4px solid #e0a82e;padding:.55rem .75rem;border-radius:6px;font-size:.93rem;margin:.6rem 0}
+  .note.red{background:var(--red-bg);border-left-color:var(--red)}
+  .try textarea{min-height:7rem;resize:vertical}
+  .try .actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
+  .resp-meta{font-size:.88rem;color:var(--muted)}
+  h4{margin:1rem 0 .3rem;font-size:.95rem}
+  .instr{white-space:pre-wrap;background:var(--code);padding:.6rem .75rem;border-radius:8px;font-size:.92rem}
+  footer{color:var(--muted);font-size:.88rem;padding:1rem 0 2rem}
+  details.tool{scroll-margin-top:4.5rem}
+  @media (max-width:600px){
+    table.params,table.params tbody,table.params tr,table.params td{display:block;width:100%}
+    table.params thead{display:none}
+    table.params tr{border-bottom:1px solid var(--line);padding:.5rem 0}
+    table.params td{border:0;padding:.1rem 0}
+    table.params td.pname{display:inline;font-weight:700;margin-right:.5rem}
+    table.params td.ptype{display:inline;color:var(--muted);margin-right:.5rem}
+    table.params td.preq{display:inline}
+  }
+  @media (max-width:520px){body{font-size:15px}header.top h1{font-size:1.25rem}details.tool>summary{padding:.7rem .75rem}.body{padding:0 .75rem .9rem}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>Báscula MCP tools</h1>
+    <p>Interactive reference for the Model Context Protocol server that ChatGPT, Claude and other assistants use to read and record a farm's harvest and payroll.</p>
+    <div class="endpoint"><span>Endpoint:</span> <code id="endpoint">/mcp</code></div>
+    <p style="margin-top:.5rem"><a href="tools.json">tools.json</a> · <a href="https://github.com/ojardila/bascula/blob/master/docs/mcp/README.md" rel="noopener">Guides</a> · <a href="https://github.com/ojardila/bascula/blob/master/docs/mcp/oauth.md" rel="noopener">OAuth reference</a></p>
+  </div>
+</header>
+<main class="wrap">
+  <noscript><section class="panel">This page needs JavaScript to render. The same catalogue is available as <a href="tools.json">tools.json</a>.</section></noscript>
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>How it works</h2>
+      <p>Transport: <span id="transport" class="muted"></span>.</p>
+      <p>Each tool is a Báscula API route under another name. A call re-enters the API as the caller, so the permission table, the farm and row-level security apply exactly as in the app: <strong>a tool answers according to the role in the token</strong> and returns <code>FORBIDDEN</code> otherwise.</p>
+      <p>Money is in integer <strong>cents</strong>; dates are <code>YYYY-MM-DD</code> in the farm's time zone. Tools marked <span class="chip money">two-step</span> write nothing on the first call: they return a preview and a <code>confirmationToken</code>; a second call with the same arguments and that token executes.</p>
+    </section>
+    <section class="panel">
+      <h2>Authentication</h2>
+      <p>Send <code>Authorization: Bearer &lt;access token&gt;</code>. The token is a Báscula session for one farm and one role. ChatGPT and Claude obtain it with OAuth 2.1 (authorization code + PKCE) — discovery at <a id="prm" href="/.well-known/oauth-protected-resource">/.well-known/oauth-protected-resource</a>. For a script, sign in with <code>POST /v1/auth/login</code> and use <code>accessToken</code> (valid 15 minutes).</p>
+      <p class="muted">Roles: <span class="chip role">owner</span> <span class="chip role">admin</span> <span class="chip role">weigher</span>. The weigher never sees money.</p>
+    </section>
+  </div>
+
+  <section class="panel" id="try-auth">
+    <h2>Try it — your token</h2>
+    <p class="muted">Paste an access token to run tools from this page. It is kept only in this tab and sent only to <code id="endpoint2">/mcp</code> on this host. Calls run for real, with your role, on your farm.</p>
+    <div class="token-row">
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Bearer token (eyJhbGciOi…)">
+      <button type="button" class="ghost" id="show">Show</button>
+      <button type="button" class="ghost" id="use-session">Use my Báscula session</button>
+      <button type="button" id="whoami">Check (me)</button>
+    </div>
+    <div class="status" id="token-status" role="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Server instructions</h2>
+    <p class="muted">What every client reads when it connects (sent by the server, in Spanish):</p>
+    <div class="instr" id="instructions"></div>
+  </section>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Filter tools by name or text…" aria-label="Filter tools">
+    <span class="muted" id="count"></span>
+  </div>
+  <div id="tools"></div>
+  <footer>Generated by the server from the same tool registry that answers <code>tools/list</code>, so it always matches what is deployed.</footer>
+</main>
+<script id="catalog" type="application/json">/*__MCP_CATALOG__*/null</script>
+<script>
+(function () {
+  "use strict";
+  var raw = document.getElementById("catalog").textContent;
+  var cat = null;
+  try { cat = JSON.parse(raw); } catch (e) { cat = null; }
+  if (!cat) {
+    fetch("tools.json").then(function (r) { return r.json(); }).then(render);
+  } else {
+    render(cat);
+  }
+
+  var tokenInput = document.getElementById("token");
+  var status = document.getElementById("token-status");
+  try { tokenInput.value = sessionStorage.getItem("bascula.mcpdocs.token") || ""; } catch (e) {}
+  tokenInput.addEventListener("input", function () {
+    try { sessionStorage.setItem("bascula.mcpdocs.token", tokenInput.value.trim()); } catch (e) {}
+  });
+  document.getElementById("show").addEventListener("click", function (ev) {
+    var shown = tokenInput.type === "text";
+    tokenInput.type = shown ? "password" : "text";
+    ev.target.textContent = shown ? "Show" : "Hide";
+  });
+  document.getElementById("use-session").addEventListener("click", function () {
+    // The web app on this same host keeps its session here. Read it, never
+    // write it: refreshing is the app's job.
+    var t = null;
+    try { t = JSON.parse(localStorage.getItem("bascula.tokens") || "null"); } catch (e) { t = null; }
+    if (t && t.accessToken) {
+      tokenInput.value = t.accessToken;
+      tokenInput.dispatchEvent(new Event("input"));
+      status.textContent = "Loaded the session of the Báscula app open on this host. If it has expired, open the app once and try again.";
+    } else {
+      status.textContent = "No Báscula session found in this browser for this host. Sign in to the app on this address first, or paste a token.";
+    }
+  });
+  document.getElementById("whoami").addEventListener("click", function () {
+    status.textContent = "Calling me…";
+    callTool("me", {}).then(function (r) {
+      var sc = r.json && r.json.result && r.json.result.structuredContent;
+      if (r.json && r.json.result && !r.json.result.isError && sc) {
+        var farm = sc.farm && (sc.farm.name || sc.farm.id);
+        status.textContent = "OK: " + (sc.email || sc.name || sc.id || "user") + " · role " + (sc.role || "?") + (farm ? " · farm " + farm : "");
+      } else {
+        status.textContent = "Not accepted (HTTP " + r.status + "). " + summarize(r);
+      }
+    });
+  });
+
+  function token() { return tokenInput.value.trim().replace(/^Bearer\s+/i, ""); }
+
+  var rpcId = 1;
+  function callTool(name, args) {
+    var body = { jsonrpc: "2.0", id: rpcId++, method: "tools/call", params: { name: name, arguments: args } };
+    var headers = { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" };
+    if (token()) headers.Authorization = "Bearer " + token();
+    return fetch(endpointPath(), { method: "POST", headers: headers, body: JSON.stringify(body), cache: "no-store" })
+      .then(function (res) {
+        return res.text().then(function (text) {
+          var json = null;
+          try { json = JSON.parse(text); } catch (e) { json = null; }
+          return { status: res.status, json: json, text: text, challenge: res.headers.get("WWW-Authenticate") };
+        });
+      })
+      .catch(function (e) { return { status: 0, json: null, text: String(e) }; });
+  }
+  function summarize(r) {
+    if (r.json && r.json.error) return r.json.error.message || JSON.stringify(r.json.error);
+    if (r.json && r.json.result && r.json.result.content) {
+      return (r.json.result.content[0] && r.json.result.content[0].text || "").slice(0, 200);
+    }
+    return (r.text || "").slice(0, 200);
+  }
+  function endpointPath() {
+    try { return new URL(cat.endpoint).pathname; } catch (e) { return "/mcp"; }
+  }
+
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (k === "text") n.textContent = attrs[k];
+      else if (k === "cls") n.className = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function chip(text, cls) { return el("span", { cls: "chip " + (cls || ""), text: text }); }
+
+  function typeOf(s) {
+    if (!s) return "any";
+    var t = s.type || (s.enum ? "string" : "any");
+    if (Array.isArray(t)) t = t.join(" | ");
+    if (t === "array") {
+      var it = s.items || {};
+      return "array of " + (it.type === "object" ? "objects" : typeOf(it));
+    }
+    if (s.format) t += " (" + s.format + ")";
+    return t;
+  }
+  function rows(schema, prefix, out) {
+    var props = (schema && schema.properties) || {};
+    var req = (schema && schema.required) || [];
+    Object.keys(props).sort(function (a, b) {
+      var ra = req.indexOf(a) >= 0, rb = req.indexOf(b) >= 0;
+      if (ra !== rb) return ra ? -1 : 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    }).forEach(function (name) {
+      var p = props[name];
+      out.push({ name: prefix + name, type: typeOf(p), required: req.indexOf(name) >= 0, desc: p.description || "", enumv: p.enum });
+      if (p.type === "array" && p.items && p.items.type === "object") rows(p.items, prefix + name + "[].", out);
+      if (p.type === "object" && p.properties) rows(p, prefix + name + ".", out);
+    });
+    return out;
+  }
+  function example(s) {
+    if (!s) return null;
+    if (s.enum && s.enum.length) return s.enum[0];
+    switch (s.type) {
+      case "string":
+        if (s.format === "uuid") return "00000000-0000-0000-0000-000000000000";
+        if (s.format === "date") return monday();
+        return "";
+      case "integer": return 0;
+      case "number": return 0;
+      case "boolean": return false;
+      case "array": return [example(s.items)];
+      case "object":
+        var o = {};
+        (s.required || []).forEach(function (k) { o[k] = example(s.properties[k]); });
+        return o;
+    }
+    return null;
+  }
+  function monday() {
+    var d = new Date();
+    var day = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - day);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function exampleArgs(t) {
+    var s = t.inputSchema || {};
+    var o = {};
+    (s.required || []).forEach(function (k) {
+      if (k !== "confirmationToken") o[k] = example((s.properties || {})[k]);
+    });
+    return o;
+  }
+  function curl(t, args) {
+    var body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: t.name, arguments: args } };
+    return "curl -s " + cat.endpoint + " \\\n" +
+      "  -H \"Authorization: Bearer $TOKEN\" \\\n" +
+      "  -H 'Content-Type: application/json' \\\n" +
+      "  -H 'Accept: application/json, text/event-stream' \\\n" +
+      "  -d '" + JSON.stringify(body).replace(/'/g, "'\\''") + "'";
+  }
+
+  function toolCard(t) {
+    var roles = t.roles && t.roles.length ? t.roles.map(function (r) { return chip(r, "role"); }) : [chip("no farm role", "none")];
+    var badges = [chip(t.kind, t.kind)];
+    if (t.twoStep) badges.push(chip("two-step", "money"));
+    if (t.annotations && t.annotations.destructiveHint) badges.push(chip("destructive", "write"));
+    var summary = el("summary", null, [
+      el("span", { cls: "name", text: t.name }),
+      el("span", { cls: "title", text: t.title || firstSentence(t.description) }),
+      el("span", { cls: "chips" }, badges.concat(roles))
+    ]);
+    var body = el("div", { cls: "body" });
+    body.appendChild(el("div", { cls: "route" }, [
+      "Route: ", el("span", { cls: "method", text: t.route.method }), " ", el("code", { text: t.route.path }),
+      "  · permission ", el("code", { text: t.action || "?" })
+    ]));
+    body.appendChild(el("p", { cls: "desc", text: t.description }));
+    body.appendChild(el("p", { cls: "muted", text: "Allowed roles: " + (t.roles && t.roles.length ? t.roles.join(", ") : "none") + ". Anyone else gets a FORBIDDEN tool error." }));
+    if (t.twoStep) {
+      body.appendChild(el("div", { cls: "note red", text: "Moves money. First call: no write — returns a Spanish summary, a preview and confirmationToken (valid 10 minutes). Second call with the SAME arguments plus confirmationToken executes. An assistant must only confirm after the user says yes." }));
+    } else if (t.kind === "write") {
+      body.appendChild(el("div", { cls: "note", text: "Writes to the farm's data as soon as it is called." }));
+    }
+
+    body.appendChild(el("h4", { text: "Parameters" }));
+    var r = rows(t.inputSchema, "", []);
+    if (!r.length) {
+      body.appendChild(el("p", { cls: "muted", text: "None. Call it with {}." }));
+    } else {
+      var tbody = el("tbody");
+      r.forEach(function (p) {
+        var desc = p.desc;
+        if (p.enumv) desc += (desc ? " " : "") + "One of: " + p.enumv.join(", ") + ".";
+        tbody.appendChild(el("tr", null, [
+          el("td", { cls: "pname", text: p.name }),
+          el("td", { cls: "mono ptype", text: p.type }),
+          el("td", { cls: "preq" }, [p.required ? el("span", { cls: "req", text: "required" }) : el("span", { cls: "muted", text: "optional" })]),
+          el("td", { text: desc })
+        ]));
+      });
+      body.appendChild(el("div", { cls: "tablewrap" }, [el("table", { cls: "params" }, [
+        el("thead", null, [el("tr", null, [el("th", { text: "Name" }), el("th", { text: "Type" }), el("th", { text: "" }), el("th", { text: "Description" })])]),
+        tbody
+      ])]));
+    }
+
+    var args = exampleArgs(t);
+    body.appendChild(el("h4", { text: "Example request" }));
+    body.appendChild(el("pre", { text: curl(t, args) }));
+
+    var tryBox = el("div", { cls: "try" });
+    tryBox.appendChild(el("h4", { text: "Try it" }));
+    var ta = el("textarea", { spellcheck: "false", "aria-label": "Arguments for " + t.name });
+    ta.value = JSON.stringify(args, null, 2);
+    var run = el("button", { type: "button", text: t.kind === "write" ? "Run (writes for real)" : "Run" });
+    var meta = el("span", { cls: "resp-meta" });
+    var out = el("pre", { hidden: "hidden" });
+    run.addEventListener("click", function () {
+      var a;
+      try { a = ta.value.trim() ? JSON.parse(ta.value) : {}; } catch (e) { meta.textContent = "Arguments are not valid JSON: " + e.message; return; }
+      if (!token()) { meta.textContent = "Paste a token in «Try it — your token» first."; return; }
+      if (t.kind === "write" && !t.twoStep && !window.confirm("This writes to your farm's data now. Run " + t.name + "?")) return;
+      run.disabled = true; meta.textContent = "Running…";
+      var started = Date.now();
+      callTool(t.name, a).then(function (res) {
+        run.disabled = false;
+        var isErr = res.json && res.json.result && res.json.result.isError;
+        meta.textContent = "HTTP " + res.status + " · " + (Date.now() - started) + " ms" + (isErr ? " · tool error" : "") +
+          (res.status === 401 ? " · token missing, expired or invalid" : "");
+        out.hidden = false;
+        out.textContent = res.json ? JSON.stringify(unwrap(res.json), null, 2) : res.text;
+      });
+    });
+    tryBox.appendChild(ta);
+    tryBox.appendChild(el("div", { cls: "actions" }, [run, meta]));
+    tryBox.appendChild(out);
+    body.appendChild(tryBox);
+
+    var d = el("details", { cls: "tool", id: "tool-" + t.name, "data-search": (t.name + " " + (t.title || "") + " " + t.description + " " + t.route.path).toLowerCase() }, [summary, body]);
+    return d;
+  }
+  // The tool's text content is a JSON string; show it parsed so the answer reads.
+  function unwrap(j) {
+    try {
+      var c = j.result && j.result.content;
+      if (c && c.length === 1 && c[0].type === "text") {
+        var copy = JSON.parse(JSON.stringify(j));
+        try { copy.result.content[0].text = JSON.parse(c[0].text); } catch (e) {}
+        delete copy.result.structuredContent;
+        return copy;
+      }
+    } catch (e) {}
+    return j;
+  }
+  function firstSentence(s) { s = s || ""; var i = s.indexOf(". "); return i > 0 ? s.slice(0, i + 1) : s; }
+
+  function render(c) {
+    cat = c;
+    document.getElementById("endpoint").textContent = c.endpoint;
+    document.getElementById("endpoint2").textContent = c.endpoint;
+    document.getElementById("transport").textContent = c.transport;
+    document.getElementById("instructions").textContent = c.instructions;
+    document.getElementById("prm").href = c.auth.protectedResourceMetadata;
+    var host = document.getElementById("tools");
+    var groups = [["read", "Read tools"], ["write", "Write tools"]];
+    groups.forEach(function (g) {
+      var list = c.tools.filter(function (t) { return t.kind === g[0]; });
+      if (!list.length) return;
+      host.appendChild(el("h3", { cls: "group", text: g[1] + " (" + list.length + ")" }));
+      list.forEach(function (t) { host.appendChild(toolCard(t)); });
+    });
+    var count = document.getElementById("count");
+    count.textContent = c.tools.length + " tools";
+    document.getElementById("filter").addEventListener("input", function (ev) {
+      var q = ev.target.value.trim().toLowerCase();
+      var shown = 0;
+      host.querySelectorAll("details.tool").forEach(function (d) {
+        var ok = !q || d.getAttribute("data-search").indexOf(q) >= 0;
+        d.hidden = !ok; if (ok) shown++;
+      });
+      count.textContent = shown + " of " + c.tools.length + " tools";
+    });
+    if (location.hash) {
+      var d = document.getElementById(location.hash.slice(1));
+      if (d && d.tagName === "DETAILS") { d.open = true; d.scrollIntoView(); }
+    }
+  }
+})();
+</script>
+</body>
+</html>

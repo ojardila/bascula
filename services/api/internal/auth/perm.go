@@ -143,6 +143,14 @@ const (
 	// OAuth discovery, registration and the authorization-code dance that
 	// ChatGPT's connector UI insists on. Public: there is no token yet.
 	ActionOAuth Action = "oauth"
+
+	// The MCP tool reference: GET /mcp/docs (a page) and GET /mcp/tools.json
+	// (the same catalogue as JSON). Public and data-free: it lists the
+	// names, descriptions and input schemas tools/list serves, plus the
+	// roles the permission table allows for each. Running a tool from the
+	// page goes through POST /mcp with the reader's own token, like any
+	// other client.
+	ActionMCPDocs Action = "mcp.docs"
 )
 
 // Rule is one row of the permission table.
@@ -370,6 +378,7 @@ var Matrix = map[Action]Rule{
 	ActionMCPConnectionsRead:   {Roles: everyone},
 	ActionMCPConnectionsRevoke: {Roles: everyone},
 	ActionOAuth:                {Public: true, TenantOptional: true},
+	ActionMCPDocs:              {Public: true, TenantOptional: true},
 }
 
 // Allowed reports whether a farm role, on its own, may perform an action.

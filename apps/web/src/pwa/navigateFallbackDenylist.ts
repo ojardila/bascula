@@ -12,7 +12,8 @@
  * could not come. Phones and fresh browsers, with no worker yet, worked.
  *
  * Everything under these prefixes is served by the API (see the HTTPRoute),
- * never by the SPA.
+ * never by the SPA. That includes the MCP tool reference at /mcp/docs and
+ * /mcp/tools.json, which the /mcp rule covers.
  */
 export const navigateFallbackDenylist: RegExp[] = [
   /^\/v1\//,
