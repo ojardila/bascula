@@ -3197,6 +3197,13 @@ export interface components {
          *     response now.
          */
         SignupResponse: {
+            /**
+             * @description Always false. One email may own several farms: a registration with
+             *     an address that already has an account creates the new farm too,
+             *     with that account as owner, and the password typed here becomes
+             *     the owner's password on the new farm's own stack. The account's
+             *     password on the main domain is not changed.
+             */
             verificationRequired: boolean;
             /**
              * @description Present only when the server runs with DevEcho on, because there is
@@ -3204,9 +3211,9 @@ export interface components {
              *     development.
              *
              *     It is echoed for a registered address too, and for that address it
-             *     verifies nothing — the row it names was rolled back with the rest of
-             *     the work that branch spent. Withholding it would be the difference
-             *     an attacker reads.
+             *     verifies nothing — it is never stored, because the account's address
+             *     is already verified. Withholding it would be the difference an
+             *     attacker reads.
              */
             verificationToken?: string;
         };

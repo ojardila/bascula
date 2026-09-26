@@ -39,7 +39,6 @@ export function SignupPage() {
   const [slugError, setSlugError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [existingAccount, setExistingAccount] = useState<string | null>(null);
 
   function localErrors(): Record<string, string> {
     const e: Record<string, string> = {};
@@ -69,14 +68,13 @@ export function SignupPage() {
 
     setBusy(true);
     try {
-      const res = await api.signup({
+      // One email may own several farms, so an address that already has an
+      // account gets its new farm like anybody else; there is nothing to
+      // branch on in the answer.
+      await api.signup({
         farm: { name: farmName.trim(), slug: url.slug, timezone: "America/Bogota", currency: "COP" },
         owner: { email: email.trim(), name: ownerName.trim(), password },
       });
-      if (res.verificationRequired) {
-        setExistingAccount(email.trim());
-        return;
-      }
       navigate(`/preparando/${url.slug}`);
     } catch (err) {
       const slugMsg = slugErrorFromApi(err);
@@ -91,24 +89,6 @@ export function SignupPage() {
     } finally {
       setBusy(false);
     }
-  }
-
-  if (existingAccount) {
-    return (
-      <AuthLayout title="Ese correo ya tiene cuenta" wide>
-        <Stack spacing={3}>
-          <Typography sx={{ fontSize: "1.2rem" }}>
-            Ya existe una cuenta con <strong>{existingAccount}</strong>. No creamos nada nuevo.
-          </Typography>
-          <Typography sx={{ fontSize: "1.1rem" }}>
-            Entre con su clave de siempre.
-          </Typography>
-          <Button component={RouterLink} to="/entrar" variant="contained" size="large" sx={{ minHeight: 60, fontSize: "1.2rem" }}>
-            Entrar
-          </Button>
-        </Stack>
-      </AuthLayout>
-    );
   }
 
   return (

@@ -110,8 +110,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := clientIP(r)
-	// The address as it arrived. `email` below is reassigned in the branch that
-	// creates nothing, and the attempt row must not record that invention.
+	// The address as it arrived, which is what the attempt row records.
 	attempted := email
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -203,80 +202,46 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 
-	// An address that already has an account gets the SAME ANSWER as one that
-	// does not, and the password in the body is never looked at for either.
+	// An address that already has an account is not a reason to stop.
 	//
-	// # What this used to be
+	// Every farm is its own world — its own address and, on a dedicated stack,
+	// its own database — and the same person may own several. So a
+	// registration with an address that already has an account creates the new
+	// farm exactly like any other and makes that account its owner. What the
+	// person typed belongs to THAT farm: the name and the password go to
+	// farm_owner_credentials (migration 00032), and the seed of the farm's own
+	// stack reads them before the users row, so the owner signs in on
+	// {slug}.bascula.engp.io with the password they just chose.
 	//
-	// It used to look at the password, and that made the registration form an
-	// oracle for both halves of a credential. Send an address with a wrong
-	// password: 409. Send it with the right one: 201, a farm created — a
-	// stranger's confirmation that the guess was correct, with no token spent,
-	// no failed-login counter touched and no trace on the account it belongs
-	// to. A login without a login.
-	//
-	// The first half of the fix was to notice that "create a second farm for an
-	// account that already exists" is an ACTION BY THAT ACCOUNT, and that an
-	// account proves who it is by opening a session. So it moved: POST
-	// /v1/farms, behind a token, and the farms-per-email cap moved with it,
-	// because it is a rule about an account and this endpoint no longer knows
-	// which account it would be about.
-	//
-	// # What was still left, which is this half
-	//
-	// The 409 itself. It says nothing about the password and it still answers,
-	// to anybody who asks, whether a given person banks here. That is worth
-	// something on its own — a list of addresses that are coffee farm owners in
-	// Huila is a phishing list — and it is worth more as the first step of the
-	// attack the 409 was already the second step of.
-	//
-	// So the answer stopped depending on the account. Same status, same body,
-	// and — because a 2 ms reply beside a 26 ms one is the same disclosure said
-	// more quietly — the same work: the branch below runs the entire creation
-	// against a synthetic address and throws it away. See tenant.DiscardChanges.
-	//
-	// # And the person who mistyped their address
-	//
-	// They see "revise su correo", like everybody else, and no mail arrives,
-	// because the address they typed is somebody else's. They try again. That
-	// is a worse minute for them than "ese correo ya tiene cuenta" would have
-	// been, and it is the right trade: the alternative tells every stranger the
-	// same thing it tells them.
-	//
-	// What the person who OWNS that address should get is a message saying
-	// somebody tried to register with it and they already have an account —
-	// which is what makes this branch honest rather than merely quiet, and
-	// which this service cannot send, because it has no mail sender at all yet.
-	// The verification mail of the ordinary branch does not exist either. When
-	// one is wired in, both messages get written at the same time; until then
-	// the two branches are equally silent, which is at least not a new lie.
+	// The account's global password — the one the main domain checks — is
+	// never touched, and nothing about the account flows back: a stranger who
+	// registers a farm with somebody else's address gets a farm of their own
+	// with the password they typed, and cannot read or change anything of that
+	// person's. The answer is the same for both branches (201,
+	// verificationRequired false), so it still says nothing about whether the
+	// address is registered, and both branches do the same work.
 	user, err := store.FindUserByEmail(r.Context(), tx, email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, r, err)
 		return
 	}
-	taken := user != nil
-	if taken {
-		// Nothing this branch writes survives the request. The address is
-		// synthetic and unreachable (RFC 2606 reserves .invalid) so that even a
-		// failure to discard could not leave a row claiming somebody's mailbox,
-		// and the id is fresh so it collides with nothing.
-		email = "signup-" + newID() + "@shadow.invalid"
-		tenant.DiscardChanges(r.Context())
-	}
+	existing := user != nil
 
 	passwordHash, err := auth.HashPassword(req.Owner.Password)
 	if err != nil {
 		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
 		return
 	}
-	user = &store.User{
-		ID: newID(), Email: email, Name: req.Owner.Name,
-		Phone: strings.TrimSpace(req.Owner.Phone), PasswordHash: passwordHash,
-	}
-	if err := store.CreateUser(r.Context(), tx, *user); err != nil {
-		writeError(w, r, err)
-		return
+	phone := strings.TrimSpace(req.Owner.Phone)
+	if !existing {
+		user = &store.User{
+			ID: newID(), Email: email, Name: req.Owner.Name,
+			Phone: phone, PasswordHash: passwordHash,
+		}
+		if err := store.CreateUser(r.Context(), tx, *user); err != nil {
+			writeError(w, r, err)
+			return
+		}
 	}
 
 	farmID := newID()
@@ -302,6 +267,13 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	if existing {
+		if err := store.InsertFarmOwnerCredentials(ctx, tx, farmID, user.ID,
+			strings.TrimSpace(req.Owner.Name), phone, passwordHash); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
 	if err := seedFarm(ctx, tx, farmID, req.Farm.PriceCents); err != nil {
 		writeError(w, r, err)
 		return
@@ -312,16 +284,22 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.Internal("could not mint a verification token").WithCause(err))
 		return
 	}
-	if err := store.InsertEmailVerification(ctx, tx, newID(), user.ID, farmID, hash,
-		time.Now().Add(48*time.Hour)); err != nil {
-		writeError(w, r, err)
-		return
+	// An existing account is already somebody's verified address, and the
+	// token development echoes must not become a way to verify it on their
+	// behalf; so for that branch the token is minted (same work, same answer)
+	// and not stored, and verifies nothing.
+	if !existing {
+		if err := store.InsertEmailVerification(ctx, tx, newID(), user.ID, farmID, hash,
+			time.Now().Add(48*time.Hour)); err != nil {
+			writeError(w, r, err)
+			return
+		}
 	}
 	// There is still no mail sender. The password they just typed is the
 	// proof that they meant this address; waiting for a mailbox that never
 	// arrives would strand every farm on the landing. When mail is wired,
 	// drop this VerifyUserEmail and let the link in the message do it.
-	if !taken {
+	if !existing {
 		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
 			writeError(w, r, err)
 			return
@@ -335,14 +313,15 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// The attempt row records what actually happened. It used to be written
 	// with `true` on every path, including the rejected ones.
 	succeeded = true
-	if !taken {
-		s.kickTenantProvision(tenantProvision{
-			Slug: newFarm.Slug, FarmName: newFarm.Name,
-			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
-		})
-	}
+	s.kickTenantProvision(tenantProvision{
+		Slug: newFarm.Slug, FarmName: newFarm.Name,
+		Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
+	})
 
-	body := map[string]any{"verificationRequired": taken}
+	// Always false now: the farm exists and its owner can sign in, whether or
+	// not the address already had an account. The key stays for clients that
+	// still read it.
+	body := map[string]any{"verificationRequired": false}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on
@@ -449,7 +428,7 @@ type sessionResponse struct {
 // milliseconds first. An order of magnitude, readable with `curl -w
 // %{time_total}` from anywhere in the world, is a working answer to "does this
 // person bank here" — which handleSignup goes to the trouble of
-// tenant.DiscardChanges to avoid giving, on the strength of the argument that
+// the same answer for every address to avoid giving, on the strength of the argument that
 // "a list of addresses that are coffee farm owners in Huila is a phishing
 // list". The same list was on offer here, one endpoint away, for free.
 //

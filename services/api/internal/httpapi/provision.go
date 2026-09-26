@@ -305,8 +305,16 @@ func (s *Server) buildTenantSeed(ctx context.Context, slug string) (*tenantSeed,
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT u.id::text, u.email, u.name, u.phone, u.password_hash, u.email_verified_at, m.role::text
+		SELECT u.id::text, u.email,
+		       coalesce(c.name, u.name), coalesce(c.phone, u.phone),
+		       coalesce(c.password_hash, u.password_hash),
+		       CASE WHEN c.user_id IS NULL THEN u.email_verified_at ELSE c.created_at END,
+		       m.role::text
 		  FROM memberships m JOIN users u ON u.id = m.user_id
+		  -- A farm registered with an address that already had an account
+		  -- carries the name and password typed on THAT registration
+		  -- (migration 00032); its own stack gets those, never the account's.
+		  LEFT JOIN farm_owner_credentials c ON c.farm_id = m.farm_id AND c.user_id = m.user_id
 		 WHERE m.farm_id = $1
 		 ORDER BY (m.role = 'owner') DESC, u.id`, farmID)
 	if err != nil {
