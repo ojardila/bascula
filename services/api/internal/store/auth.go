@@ -309,13 +309,16 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 	RotatedAt *time.Time
 	RevokedAt *time.Time
+	// OAuthClientID is the MCP client (ChatGPT, …) that obtained this
+	// family through /oauth/token; nil for a web or handset login.
+	OAuthClientID *string
 }
 
 func InsertRefreshToken(ctx context.Context, tx pgx.Tx, t RefreshToken, hash []byte) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO refresh_tokens (id, family_id, user_id, farm_id, token_hash, device_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		t.ID, t.FamilyID, t.UserID, t.FarmID, hash, t.DeviceID, t.ExpiresAt)
+		INSERT INTO refresh_tokens (id, family_id, user_id, farm_id, token_hash, device_id, expires_at, oauth_client_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		t.ID, t.FamilyID, t.UserID, t.FarmID, hash, t.DeviceID, t.ExpiresAt, t.OAuthClientID)
 	return err
 }
 
@@ -323,10 +326,10 @@ func FindRefreshToken(ctx context.Context, tx pgx.Tx, hash []byte) (*RefreshToke
 	var t RefreshToken
 	err := tx.QueryRow(ctx, `
 		SELECT id::text, family_id::text, user_id::text, farm_id::text, device_id::text,
-		       expires_at, rotated_at, revoked_at
+		       expires_at, rotated_at, revoked_at, oauth_client_id
 		  FROM refresh_tokens WHERE token_hash = $1`, hash).
 		Scan(&t.ID, &t.FamilyID, &t.UserID, &t.FarmID, &t.DeviceID,
-			&t.ExpiresAt, &t.RotatedAt, &t.RevokedAt)
+			&t.ExpiresAt, &t.RotatedAt, &t.RevokedAt, &t.OAuthClientID)
 	if err != nil {
 		return nil, err
 	}

@@ -4593,6 +4593,56 @@ paths:
   # ---------------------------------------------------------------------------
   # MCP — the API as tools for an assistant (internal/httpapi/handlers_mcp.go)
   # ---------------------------------------------------------------------------
+  /v1/mcp/connections:
+    get:
+      tags: [auth]
+      operationId: listMcpConnections
+      summary: The caller's own MCP connections on this farm
+      description: |
+        Sessions an OAuth client (ChatGPT or any other MCP connector) obtained
+        for the caller on this farm through `/oauth/token`, not revoked.
+        Expired ones are listed with `status: expired`. Another member's
+        connections are never listed. `endpoint` is this farm's `/mcp` URL.
+      x-action: mcp.connections.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: The connections, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, endpoint]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/McpConnection" }
+                  endpoint: { type: string, format: uri, example: "https://cafin3.bascula.engp.io/mcp" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/mcp/connections/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      operationId: revokeMcpConnection
+      summary: Revoke one of the caller's MCP connections
+      description: |
+        Revokes the refresh-token family server-side: the client cannot
+        refresh again. An access token it already holds expires on its own
+        within its short lifetime (15 minutes).
+      x-action: mcp.connections.revoke
+      x-roles: [owner, admin, weigher]
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /mcp:
     post:
       tags: [mcp]
@@ -6821,6 +6871,17 @@ components:
     TourStatus:
       type: string
       enum: [active, later, dismissed, done]
+
+    McpConnection:
+      type: object
+      required: [id, clientName, status, createdAt, lastUsedAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        clientName: { type: string, example: ChatGPT }
+        status: { type: string, enum: [active, expired] }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
 
     TourProgress:
       type: object

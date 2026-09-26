@@ -629,6 +629,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // role, and an opaque refresh token whose sha256 is all Postgres keeps.
 func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 	m *store.Membership, deviceID, familyID string) (*sessionResponse, error) {
+	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, nil)
+}
+
+// issueSessionFor is issueSession for a family an OAuth client (an MCP
+// connector) holds: oauthClientID tags every token in it, which is what the
+// «Conexiones» block in Configuración lists and revokes.
+func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
+	m *store.Membership, deviceID, familyID string, oauthClientID *string) (*sessionResponse, error) {
 
 	access, err := s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	if err != nil {
@@ -645,6 +653,7 @@ func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 	if err := store.InsertRefreshToken(r.Context(), tx, store.RefreshToken{
 		ID: newID(), FamilyID: familyID, UserID: user.ID, FarmID: m.FarmID,
 		DeviceID: device, ExpiresAt: time.Now().Add(auth.RefreshTTL),
+		OAuthClientID: oauthClientID,
 	}, hash); err != nil {
 		return nil, err
 	}
@@ -797,7 +806,7 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSession(r, tx, user, m, device, tok.FamilyID)
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, tok.OAuthClientID)
 	if err != nil {
 		return nil, err
 	}

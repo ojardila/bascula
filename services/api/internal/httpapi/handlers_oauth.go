@@ -451,7 +451,7 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		oauthTokenError(w, "invalid_grant", "that account no longer has access to this farm")
 		return
 	}
-	session, err := s.issueSession(r, tx, user, m, "", newID())
+	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), &row.ClientID)
 	if err != nil {
 		writeError(w, r, err)
 		return

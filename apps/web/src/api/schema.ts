@@ -2718,6 +2718,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own MCP connections on this farm
+         * @description Sessions an OAuth client (ChatGPT or any other MCP connector) obtained
+         *     for the caller on this farm through `/oauth/token`, not revoked.
+         *     Expired ones are listed with `status: expired`. Another member's
+         *     connections are never listed. `endpoint` is this farm's `/mcp` URL.
+         */
+        get: operations["listMcpConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke one of the caller's MCP connections
+         * @description Revokes the refresh-token family server-side: the client cannot
+         *     refresh again. An access token it already holds expires on its own
+         *     within its short lifetime (15 minutes).
+         */
+        delete: operations["revokeMcpConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp": {
         parameters: {
             query?: never;
@@ -4498,6 +4545,20 @@ export interface components {
         };
         /** @enum {string} */
         TourStatus: "active" | "later" | "dismissed" | "done";
+        McpConnection: {
+            /** Format: uuid */
+            id: string;
+            /** @example ChatGPT */
+            clientName: string;
+            /** @enum {string} */
+            status: "active" | "expired";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         TourProgress: {
             tour: string;
             step: number;
@@ -10321,6 +10382,58 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HarvestCurve"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listMcpConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The connections, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["McpConnection"][];
+                        /**
+                         * Format: uri
+                         * @example https://cafin3.bascula.engp.io/mcp
+                         */
+                        endpoint: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    revokeMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];

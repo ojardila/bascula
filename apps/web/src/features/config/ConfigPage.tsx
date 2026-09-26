@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
+import { ConnectionsCard } from "./ConnectionsCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
 
@@ -56,6 +57,12 @@ export function ConfigPage() {
       </Typography>
 
       <Grid container spacing={3}>
+        {/* «Conexiones» first: connecting the farm to ChatGPT is the one
+            thing here an owner comes to do rather than to check. */}
+        <Grid size={{ xs: 12 }}>
+          <ConnectionsCard />
+        </Grid>
+
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>
             <CardContent>

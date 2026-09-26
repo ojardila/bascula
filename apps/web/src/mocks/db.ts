@@ -298,6 +298,8 @@ export interface Tenant {
   /** `farm_config.price_confirmed_at IS NOT NULL`. Absent means confirmed (seeded farms). */
   priceConfirmed?: boolean;
   /** `user_tours`, keyed by user id. */
+  /** OAuth grants an MCP client holds, per user id (the server's refresh families). */
+  mcpConnections?: Record<string, { id: string; clientName: string; createdAt: string; lastUsedAt: string; expiresAt: string }[]>;
   tours?: Record<string, { tour: string; step: number; status: "active" | "later" | "dismissed" | "done"; updatedAt: string }[]>;
   /**
    * A farm created in this session (signup, new farm). Its people have seen no

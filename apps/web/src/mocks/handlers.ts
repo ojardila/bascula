@@ -210,6 +210,8 @@ function authenticate(request: Request): Guarded {
 type Action =
   | "me.read"
   | "me.tours.write"
+  | "mcp.connections.read"
+  | "mcp.connections.revoke"
   | "auth.logout"
   | "farm.read"
   | "farm.write"
@@ -276,6 +278,8 @@ interface Rule {
 const MATRIX: Record<Action, Rule> = {
   "me.read": { roles: everyone },
   "me.tours.write": { roles: everyone },
+  "mcp.connections.read": { roles: everyone },
+  "mcp.connections.revoke": { roles: everyone },
   "auth.logout": { roles: everyone },
 
   // Everybody reads the farm — the weigher's client needs the timezone and the
@@ -2279,6 +2283,30 @@ export const handlers = [
     if (i >= 0) mine[i] = { ...row };
     else mine.push({ ...row });
     return HttpResponse.json(row);
+  }),
+
+  /* ---- MCP connections («Conexiones» in Configuración) ---- */
+
+  http.get("*/v1/mcp/connections", ({ request }) => {
+    const g = guard(request, "mcp.connections.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const items = (t.mcpConnections?.[g.p.user.id] ?? []).map((c) => ({
+      ...c,
+      status: Date.parse(c.expiresAt) < Date.now() ? "expired" : "active",
+    }));
+    return HttpResponse.json({ items, endpoint: `${new URL(request.url).origin}/mcp` });
+  }),
+
+  http.delete("*/v1/mcp/connections/:id", ({ request, params }) => {
+    const g = guard(request, "mcp.connections.revoke");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const mine = t.mcpConnections?.[g.p.user.id] ?? [];
+    const i = mine.findIndex((c) => c.id === String(params.id));
+    if (i < 0) return fail(404, "NOT_FOUND", "no MCP connection with that id");
+    mine.splice(i, 1);
+    return noContent();
   }),
 
   /* ---- pending and balances ---- */
