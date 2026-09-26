@@ -53,6 +53,8 @@ func (s *Server) dedicatedProvisioning() bool {
 // gitops. Argo then creates namespace, Postgres and API/web pods. Failures
 // are logged: the farm already exists on the shared platform.
 func (s *Server) kickTenantProvision(p tenantProvision) {
+	// The farm address needs its certificate on the shared platform too.
+	s.ensureFarmCertificate(p.Slug)
 	if !s.dedicatedProvisioning() || p.Slug == "" {
 		return
 	}
@@ -110,6 +112,7 @@ type provisioner struct {
 	mu       sync.Mutex
 	watching map[string]bool
 	cache    map[string]cachedStatus
+	certs    map[string]*certState
 }
 
 type cachedStatus struct {
@@ -118,7 +121,7 @@ type cachedStatus struct {
 }
 
 func newProvisioner() *provisioner {
-	return &provisioner{watching: map[string]bool{}, cache: map[string]cachedStatus{}}
+	return &provisioner{watching: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{}}
 }
 
 func (s *Server) tenantInternalURL(slug string) string {
@@ -420,9 +423,21 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 	st.Steps = []provisionStep{
 		{Key: "database", Done: database},
 		{Key: "app", Done: app},
-		{Key: "web", Done: web},
 	}
-	st.Ready = database && app && web
+	certificate := true
+	if s.farmCertificates() {
+		cs := s.certStateOf(slug)
+		// A certificate that already answers over TLS is done, whatever this
+		// process remembers; otherwise (re)start the watcher, which also
+		// covers a restart of this process.
+		certificate = cs.Active || web
+		if !certificate {
+			s.ensureFarmCertificate(slug)
+		}
+		st.Steps = append(st.Steps, provisionStep{Key: "certificate", Done: certificate})
+	}
+	st.Steps = append(st.Steps, provisionStep{Key: "web", Done: web})
+	st.Ready = database && app && certificate && web
 	st.Slow = !st.Ready && time.Since(createdAt) > s.provisionSlowAfter()
 
 	s.prov.mu.Lock()

@@ -123,6 +123,15 @@ type Config struct {
 	// PublicProbeClient is the HTTP client the provision status uses to ask
 	// the farm's public address for /health. Nil means a default client.
 	PublicProbeClient *http.Client
+	// CloudflareSaaSToken and CloudflareZoneID, when both set, make the
+	// platform request a Cloudflare for SaaS custom hostname (an edge
+	// certificate) for every new farm address. Empty means no calls at all.
+	// CloudflareAPIURL points tests at a stand-in; CloudflareDCVMethod is
+	// "http" (default) or "txt". See farm_certificate.go.
+	CloudflareSaaSToken string
+	CloudflareZoneID    string
+	CloudflareAPIURL    string
+	CloudflareDCVMethod string
 }
 
 // DefaultConfig is the production posture.
