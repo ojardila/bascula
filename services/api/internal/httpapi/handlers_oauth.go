@@ -3,6 +3,7 @@ package httpapi
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +36,17 @@ const (
 	oauthCodeTTL   = 10 * time.Minute
 	oauthChallenge = "S256"
 )
+
+// oauthScopesSupported: "mcp" is the only permission there is; offline_access
+// is advertised because clients (ChatGPT among them) ask for it to get a
+// refresh token, which this server issues anyway. Any requested scope is
+// accepted: a scope this server does not know grants nothing extra.
+var oauthScopesSupported = []string{oauthScope, "offline_access"}
+
+// oauthClientAuthMethods are the token endpoint client authentication
+// methods. none (public client + PKCE) is what ChatGPT and Claude normally
+// pick; the two secret methods are for a host that registers as confidential.
+var oauthClientAuthMethods = []string{"none", "client_secret_post", "client_secret_basic"}
 
 func (s *Server) publicBase(r *http.Request) string {
 	if u := strings.TrimRight(s.cfg.PublicBaseURL, "/"); u != "" {
@@ -58,6 +71,7 @@ func allowCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers",
 		"Authorization, Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id")
 }
 
 func withCORS(next http.Handler) http.Handler {
@@ -96,52 +110,156 @@ func (s *Server) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Req
 		"authorization_servers":    []string{base},
 		"scopes_supported":         []string{oauthScope},
 		"bearer_methods_supported": []string{"header"},
+		"resource_name":            "Báscula",
 		"resource_documentation":   base + "/mcp",
 	})
 }
 
+// handleOAuthAuthorizationServer serves RFC 8414 metadata. The same document
+// answers /.well-known/openid-configuration and the path-suffixed variants
+// (…/oauth-authorization-server/mcp, …/openid-configuration/mcp) that MCP
+// clients try for an issuer with a path: ChatGPT asks for both documents, and
+// a 404 on one of them is one more thing it may count against the server.
+// The OpenID-only fields (jwks_uri, subject_types_supported,
+// id_token_signing_alg_values_supported) are there so a strict OIDC discovery
+// parser does not reject the document; openid is not an offered scope and no
+// ID token is ever issued.
 func (s *Server) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	base := s.publicBase(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"issuer":                                base,
-		"authorization_endpoint":                base + "/oauth/authorize",
-		"token_endpoint":                        base + "/oauth/token",
-		"registration_endpoint":                 base + "/oauth/register",
-		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"code_challenge_methods_supported":      []string{oauthChallenge},
-		"token_endpoint_auth_methods_supported": []string{"none"},
-		"scopes_supported":                      []string{oauthScope},
+		"issuer":                                         base,
+		"authorization_endpoint":                         base + "/oauth/authorize",
+		"token_endpoint":                                 base + "/oauth/token",
+		"registration_endpoint":                          base + "/oauth/register",
+		"revocation_endpoint":                            base + "/oauth/revoke",
+		"jwks_uri":                                       base + "/.well-known/jwks.json",
+		"service_documentation":                          base + "/mcp",
+		"response_types_supported":                       []string{"code"},
+		"response_modes_supported":                       []string{"query"},
+		"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
+		"code_challenge_methods_supported":               []string{oauthChallenge},
+		"token_endpoint_auth_methods_supported":          oauthClientAuthMethods,
+		"revocation_endpoint_auth_methods_supported":     oauthClientAuthMethods,
+		"scopes_supported":                               oauthScopesSupported,
+		"authorization_response_iss_parameter_supported": true,
+		"subject_types_supported":                        []string{"public"},
+		"id_token_signing_alg_values_supported":          []string{"RS256"},
 	})
 }
 
-type oauthRegisterRequest struct {
-	ClientName   string   `json:"client_name"`
-	RedirectURIs []string `json:"redirect_uris"`
+// handleOAuthJWKS: the access tokens are HMAC-signed and verified only by
+// this server, so there is no public key to publish. The empty set exists
+// because jwks_uri is a required field of OpenID discovery.
+func (s *Server) handleOAuthJWKS(w http.ResponseWriter, r *http.Request) {
+	allowCORS(w)
+	writeJSON(w, http.StatusOK, map[string]any{"keys": []any{}})
 }
 
 // handleOAuthRegister is RFC 7591 dynamic client registration. Clients send
-// much more metadata than this server uses (grant_types, response_types,
-// token_endpoint_auth_method, scope, logo_uri, ...), and RFC 7591 §2 says a
-// server MUST ignore metadata it does not understand. So the body is decoded
+// much more metadata than this server uses, and RFC 7591 §2 says a server
+// MUST ignore metadata it does not understand. So the body is decoded
 // leniently, not with decode(): the strict decoder turned ChatGPT's
 // registration, which carries grant_types, into a 400, and ChatGPT gave up on
 // the connector before it ever showed the sign-in page.
+//
+// The response is the full §3.2.1 client information response: client_id,
+// client_id_issued_at, the secret and client_secret_expires_at when the client
+// asked to be confidential, and every registered metadata field as the server
+// actually registered it.
 func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
-	var req oauthRegisterRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&raw); err != nil || raw == nil {
+		slog.Warn("connector request register body", "error", "not a JSON object")
 		oauthRegisterError(w, "invalid_client_metadata", "the body is not a JSON client registration")
 		return
 	}
-	if len(req.RedirectURIs) == 0 {
+	str := func(k string) string {
+		v, _ := raw[k].(string)
+		return strings.TrimSpace(v)
+	}
+	list := func(k string) []string {
+		var out []string
+		switch v := raw[k].(type) {
+		case []any:
+			for _, e := range v {
+				if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
+					out = append(out, strings.TrimSpace(s))
+				}
+			}
+		case string:
+			if strings.TrimSpace(v) != "" {
+				out = []string{strings.TrimSpace(v)}
+			}
+		}
+		return out
+	}
+
+	redirects := list("redirect_uris")
+	requestedMethod := str("token_endpoint_auth_method")
+	method := requestedMethod
+	switch method {
+	case "", "none":
+		method = "none"
+	case "client_secret_post", "client_secret_basic":
+	default:
+		// private_key_jwt, tls_client_auth, ...: not supported. RFC 7591 §2
+		// lets the server register a different method; PKCE public client is
+		// the one every MCP host can use.
+		method = "none"
+	}
+	var grants []string
+	for _, g := range list("grant_types") {
+		if (g == "authorization_code" || g == "refresh_token") && !containsString(grants, g) {
+			grants = append(grants, g)
+		}
+	}
+	if !containsString(grants, "authorization_code") {
+		grants = append([]string{"authorization_code"}, grants...)
+	}
+	if !containsString(grants, "refresh_token") {
+		grants = append(grants, "refresh_token")
+	}
+	scope := strings.Join(strings.Fields(str("scope")), " ")
+	if scope == "" {
+		scope = strings.Join(oauthScopesSupported, " ")
+	}
+
+	// Temporary diagnostics: what the connector asked for. Keys and
+	// non-secret values only; a registration carries no secret, but a
+	// software_statement (a signed JWT) is left out anyway.
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	slog.Info("connector request register body",
+		"ua", r.UserAgent(),
+		"keys", keys,
+		"client_name", str("client_name"),
+		"redirect_uris", redirects,
+		"grant_types", list("grant_types"),
+		"response_types", list("response_types"),
+		"token_endpoint_auth_method", requestedMethod,
+		"granted_auth_method", method,
+		"scope", str("scope"),
+		"application_type", str("application_type"),
+	)
+
+	if len(redirects) == 0 {
 		oauthRegisterError(w, "invalid_redirect_uri", "redirect_uris is required")
 		return
 	}
-	for _, u := range req.RedirectURIs {
+	for _, u := range redirects {
 		if err := oauthRedirectOK(u); err != nil {
 			oauthRegisterError(w, "invalid_redirect_uri", err.Error())
+			return
+		}
+	}
+	for _, rt := range list("response_types") {
+		if rt != "code" {
+			oauthRegisterError(w, "invalid_client_metadata", "only the code response type is supported")
 			return
 		}
 	}
@@ -155,25 +273,61 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.Internal("could not mint a client id").WithCause(err))
 		return
 	}
-	name := strings.TrimSpace(req.ClientName)
+	name := str("client_name")
 	if name == "" {
 		name = "mcp-client"
 	}
+
+	resp := map[string]any{
+		"client_id":                  id,
+		"client_id_issued_at":        time.Now().Unix(),
+		"client_name":                name,
+		"redirect_uris":              redirects,
+		"grant_types":                grants,
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": method,
+		"scope":                      scope,
+	}
+	// Every other field the client registered is echoed verbatim (RFC 7591
+	// §3.2.1), except anything secret-shaped the server does not keep.
+	for k, v := range raw {
+		if _, set := resp[k]; set || v == nil {
+			continue
+		}
+		switch k {
+		case "client_secret", "client_secret_expires_at", "software_statement", "client_id", "client_id_issued_at":
+			continue
+		}
+		resp[k] = v
+	}
+	stored, err := json.Marshal(resp)
+	if err != nil {
+		writeError(w, r, domain.Internal("could not encode the registration").WithCause(err))
+		return
+	}
+
+	var secretHash []byte
+	if method != "none" {
+		secret, err := randomToken(32)
+		if err != nil {
+			writeError(w, r, domain.Internal("could not mint a client secret").WithCause(err))
+			return
+		}
+		secretHash = auth.HashToken(secret)
+		resp["client_secret"] = secret
+		// 0: the secret does not expire. A connector whose secret lapsed
+		// would fail with invalid_client long after it was set up.
+		resp["client_secret_expires_at"] = 0
+	}
 	if err := store.InsertOAuthClient(r.Context(), tx, store.OAuthClient{
-		ID: id, Name: name, RedirectURIs: req.RedirectURIs,
+		ID: id, Name: name, RedirectURIs: redirects,
+		SecretHash: secretHash, AuthMethod: method, Scope: scope, Metadata: stored,
 	}); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"client_id":                  id,
-		"client_name":                name,
-		"redirect_uris":              req.RedirectURIs,
-		"grant_types":                []string{"authorization_code", "refresh_token"},
-		"response_types":             []string{"code"},
-		"token_endpoint_auth_method": "none",
-		"code_challenge_methods":     []string{oauthChallenge},
-	})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func oauthRedirectOK(raw string) error {
@@ -211,6 +365,13 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	challenge := strings.TrimSpace(q.Get("code_challenge"))
 	method := strings.TrimSpace(q.Get("code_challenge_method"))
 	resource := strings.TrimSpace(q.Get("resource"))
+	// Any requested scope is accepted (unknown ones grant nothing more); it
+	// is carried to the token response so the client sees what it asked for.
+	scope := strings.Join(strings.Fields(q.Get("scope")), " ")
+	// RFC 9207: every authorization response, success or error, names the
+	// issuer. The metadata advertises it, and ChatGPT checks it before it
+	// exchanges the code.
+	issuer := s.publicBase(r)
 	if method == "" {
 		method = oauthChallenge
 	}
@@ -231,6 +392,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		if state != "" {
 			qq.Set("state", state)
 		}
+		qq.Set("iss", issuer)
 		u.RawQuery = qq.Encode()
 		http.Redirect(w, r, u.String(), http.StatusFound)
 	}
@@ -302,6 +464,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: method,
 		Resource:            resource,
+		Scope:               scope,
 		AccessToken:         access,
 		ExpiresAt:           time.Now().Add(oauthCodeTTL),
 	}); err != nil {
@@ -319,6 +482,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	if state != "" {
 		qq.Set("state", state)
 	}
+	qq.Set("iss", issuer)
 	u.RawQuery = qq.Encode()
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
@@ -378,6 +542,58 @@ func (s *Server) oauthLogin(r *http.Request, tx pgx.Tx, email, password, farmID 
 	return user, chosen, nil
 }
 
+// oauthClientCredentials reads the client's identity the way RFC 6749 §2.3
+// allows: HTTP Basic (client_secret_basic, both halves form-urlencoded) or
+// client_id / client_secret in the form (client_secret_post, or a public
+// client that sends only client_id).
+func oauthClientCredentials(r *http.Request) (id, secret string, basic bool) {
+	if u, p, ok := r.BasicAuth(); ok {
+		if v, err := url.QueryUnescape(u); err == nil {
+			u = v
+		}
+		if v, err := url.QueryUnescape(p); err == nil {
+			p = v
+		}
+		return u, p, true
+	}
+	return strings.TrimSpace(r.Form.Get("client_id")), r.Form.Get("client_secret"), false
+}
+
+// oauthAuthenticateClient checks a client against its registration. A
+// confidential client must present its secret; a public client is identified
+// by client_id alone (PKCE is what protects its code). A wrong secret is
+// always refused.
+func oauthAuthenticateClient(r *http.Request, tx pgx.Tx, id, secret string) (*store.OAuthClient, error) {
+	client, err := store.GetOAuthClient(r.Context(), tx, id)
+	if err != nil {
+		return nil, errors.New("unknown client")
+	}
+	if len(client.SecretHash) > 0 {
+		if secret == "" {
+			return nil, errors.New("client authentication is required for this client")
+		}
+		if subtle.ConstantTimeCompare(auth.HashToken(secret), client.SecretHash) != 1 {
+			return nil, errors.New("client authentication failed")
+		}
+	}
+	return client, nil
+}
+
+// oauthClientError is RFC 6749 §5.2 invalid_client: 401, with a Basic
+// challenge when the client tried Basic.
+func oauthClientError(w http.ResponseWriter, basic bool, desc string) {
+	allowCORS(w)
+	if basic {
+		w.Header().Set("WWW-Authenticate", `Basic realm="bascula"`)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":             "invalid_client",
+		"error_description": desc,
+	})
+}
+
 func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	if err := r.ParseForm(); err != nil {
@@ -393,6 +609,14 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	case "authorization_code":
 		s.oauthExchangeCode(w, r, tx)
 	case "refresh_token":
+		// A client that identifies itself must authenticate correctly; the
+		// refresh token alone is what refreshes a public client's session.
+		if id, secret, basic := oauthClientCredentials(r); id != "" {
+			if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
+				oauthClientError(w, basic, err.Error())
+				return
+			}
+		}
 		// The same rotation a handset gets: single use, and a replay closes
 		// the whole family. Without this grant an assistant's connection died
 		// fifteen minutes after it was made, when the access token expired.
@@ -406,7 +630,7 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 			oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
 			return
 		}
-		writeOAuthSession(w, session)
+		writeOAuthSession(w, session, "")
 	default:
 		oauthTokenError(w, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
 	}
@@ -416,9 +640,13 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 	code := r.Form.Get("code")
 	verifier := r.Form.Get("code_verifier")
 	redirectURI := r.Form.Get("redirect_uri")
-	clientID := r.Form.Get("client_id")
+	clientID, clientSecret, basic := oauthClientCredentials(r)
 	if code == "" || verifier == "" || redirectURI == "" || clientID == "" {
 		oauthTokenError(w, "invalid_request", "code, code_verifier, redirect_uri and client_id are required")
+		return
+	}
+	if _, err := oauthAuthenticateClient(r, tx, clientID, clientSecret); err != nil {
+		oauthClientError(w, basic, err.Error())
 		return
 	}
 	row, err := store.ConsumeOAuthCode(r.Context(), tx, code)
@@ -465,17 +693,69 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		writeError(w, r, err)
 		return
 	}
-	writeOAuthSession(w, session)
+	scope := row.Scope
+	if scope == "" {
+		scope = oauthScope
+	}
+	writeOAuthSession(w, session, scope)
 }
 
-func writeOAuthSession(w http.ResponseWriter, session *sessionResponse) {
-	writeJSON(w, http.StatusOK, map[string]any{
+// writeOAuthSession answers the token endpoint. scope is the granted scope;
+// "" leaves it out, which RFC 6749 §5.1 reads as "the same as before" (the
+// refresh grant).
+func writeOAuthSession(w http.ResponseWriter, session *sessionResponse, scope string) {
+	body := map[string]any{
 		"access_token":  session.AccessToken,
 		"refresh_token": session.RefreshToken,
 		"token_type":    "Bearer",
 		"expires_in":    session.ExpiresIn,
-		"scope":         oauthScope,
-	})
+	}
+	if scope != "" {
+		body["scope"] = scope
+	}
+	w.Header().Set("Pragma", "no-cache")
+	writeJSON(w, http.StatusOK, body)
+}
+
+// handleOAuthRevoke is RFC 7009 token revocation. A refresh token closes its
+// whole family (the connection disappears from «Conexiones»); an access token
+// is a fifteen-minute JWT with no server-side state, so it simply lapses. The
+// answer is 200 either way, including for a token this server never issued.
+func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	allowCORS(w)
+	if err := r.ParseForm(); err != nil {
+		oauthTokenError(w, "invalid_request", "malformed form")
+		return
+	}
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if id, secret, basic := oauthClientCredentials(r); id != "" {
+		if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
+			oauthClientError(w, basic, err.Error())
+			return
+		}
+	}
+	token := r.Form.Get("token")
+	if token == "" {
+		oauthTokenError(w, "invalid_request", "token is required")
+		return
+	}
+	if r.Form.Get("token_type_hint") != "access_token" {
+		tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(token))
+		if err == nil {
+			if err := store.RevokeFamily(r.Context(), tx, tok.FamilyID); err != nil {
+				writeError(w, r, err)
+				return
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, r, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func oauthTokenError(w http.ResponseWriter, code, desc string) {
