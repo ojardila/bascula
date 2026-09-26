@@ -173,21 +173,22 @@ export function isFarmHost(hostname?: string): boolean {
  */
 const DEMO_HOSTS = new Set(["bascula.int.dev.engp.io"]);
 
-/** `/` shows the farm entry page (Entrar / Registrar / ¿Olvidó su clave?). */
+/** `/` shows the entry page (Entrar / ¿Olvidó su clave?; Registrar on the demo only). */
 export function showsFarmEntry(hostname?: string): boolean {
   const host = normalizeHostname(hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""));
   return isFarmHost(host) || DEMO_HOSTS.has(host);
 }
 
 /**
- * Where "Registrar" goes: a farm is created on the main domain. From a dev
- * farm that is the dev main domain; on a main domain it is right here.
+ * Whether this address may offer to register a farm. Only a main domain
+ * (bascula.engp.io, the dev demo, localhost) does. A farm's own address never
+ * shows "Registrar" anywhere — not on its front door, not on its login, and
+ * /empezar there goes back to the front door: each farm is isolated, and new
+ * farms are created only at bascula.engp.io/empezar or in the super-admin
+ * console. The API refuses POST /v1/farms from inside a farm as well.
  */
-export function signupUrlForHere(hostname?: string): string {
-  const host = normalizeHostname(hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""));
-  if (!isFarmHost(host)) return "/empezar";
-  if (host.endsWith(DEV_SUFFIX)) return "https://bascula.int.dev.engp.io/empezar";
-  return "https://bascula.engp.io/empezar";
+export function offersSignup(hostname?: string): boolean {
+  return !isFarmHost(hostname);
 }
 
 /** Where the app starts: `/tablero` (the guard sends a visitor to `/entrar`). */
