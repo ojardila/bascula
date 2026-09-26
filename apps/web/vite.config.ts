@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath, URL } from "node:url";
+import { navigateFallbackDenylist } from "./src/pwa/navigateFallbackDenylist";
 
 /**
  * THE PROXY IS NOT A CONVENIENCE. It is the only way this app can reach the
@@ -86,7 +87,8 @@ export default defineConfig(({ mode }) => {
           globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
           globIgnores: ["landing/**", "mockServiceWorker.js"],
           navigateFallback: "/index.html",
-          navigateFallbackDenylist: [/^\/v1\//, /^\/health/, /^\/landing\//],
+          // /oauth, /mcp and /.well-known belong to the API: see the module.
+          navigateFallbackDenylist,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
