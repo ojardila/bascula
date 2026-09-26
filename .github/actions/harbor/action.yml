@@ -18,15 +18,16 @@ runs:
   using: composite
   steps:
     - name: Join the tailnet
-      uses: tailscale/github-action@v3
+      uses: tailscale/github-action@v4
       with:
         oauth-client-id: ${{ inputs.ts-oauth-client-id }}
         oauth-secret: ${{ inputs.ts-oauth-secret }}
         tags: tag:ci
         hostname: ${{ inputs.hostname }}
-        # --accept-routes only. --accept-dns is a bug here: MagicDNS maps
-        # harbor.int.engp.io to a stale address. Public Cloudflare has it.
-        args: --accept-routes
+        # No `args`: the action already passes --accept-routes, and Tailscale
+        # 1.94 (v4's default) rejects the flag given twice. Do not add
+        # --accept-dns either: MagicDNS maps harbor.int.engp.io to a stale
+        # address. Public Cloudflare has it.
         timeout: 5m
 
     # The path to Harbor is not instant after `tailscale up`; docker login

@@ -72,7 +72,7 @@ jobs:
       web_key: ${{ steps.keys.outputs.web }}
       tested: ${{ steps.tested.outputs.tested }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -148,7 +148,7 @@ jobs:
       go: ${{ steps.guard.outputs.go }}
       needs_review: ${{ steps.review.outputs.needs_review }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -208,7 +208,7 @@ jobs:
 
       # A current buildx: imagetools create --prefer-index=false.
       - if: steps.guard.outputs.go == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build once, promote: the release tag is a registry-side copy of the
       # image CI built from these sources. Nothing is rebuilt or pulled.
@@ -433,17 +433,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Only for the Argo CD webhook (tailnet-only). Not for Harbor.
       - name: Join the tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
           hostname: bascula-prod-${{ github.run_id }}-${{ github.run_attempt }}
-          args: --accept-routes
+          # No `args`: the action passes --accept-routes itself and Tailscale
+          # 1.94 rejects the flag given twice.
           timeout: 5m
 
       # Production and every dedicated farm move in ONE gitops commit, and

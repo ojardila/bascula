@@ -2044,7 +2044,7 @@ export const handlers = [
     const quantity = activity.payScheme === "contrato" ? 1 : body.quantity;
     if (!db.isPositiveQuantity(quantity)) return badRequest("quantity must be a positive number");
 
-    let rateSource = activity.rateSource;
+    let rateSource: typeof activity.rateSource;
     let rateCents: number | null = null;
     if (body.rateCents != null) {
       // The caller named the price, so it freezes here and a date range is

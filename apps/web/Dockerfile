@@ -13,7 +13,7 @@
 # API on those two prefixes of the same hostname. That is the "same origin"
 # half of the choice docs/decisions.md left open, and it is what lets the API
 # keep having no CORS middleware at all.
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /src
 
 # The lockfile and the manifests first, so editing a component does not
@@ -42,7 +42,7 @@ RUN npm run build --workspace apps/web
 
 # nginx-unprivileged listens on 8080 as a non-root user, so the pod needs no
 # capabilities and no runAsUser override to satisfy the restricted policy.
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 USER root
 # The stock default.conf goes: ours is rendered from the template below. With
 # the stock file present (and owned by nginx), the entrypoint's

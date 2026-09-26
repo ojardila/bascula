@@ -4,7 +4,7 @@
 # The migrations are embedded (see migrations/embed.go), so this image can put
 # the schema in place and then serve it -- no second image, no init container,
 # no SQL files to ship alongside and get out of step with the binary.
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 
 # Dependencies first, so a change to our own code does not re-download the
@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w" \
       -o /out/api ./cmd/api
 
-FROM alpine:3.21
+FROM alpine:3.24
 # ca-certificates only: the binary is static, but TLS to anything outside needs
 # the root store. tzdata because settlement periods are farm-local dates and a
 # container with no zones resolves America/Bogota to UTC, which moves a week.
