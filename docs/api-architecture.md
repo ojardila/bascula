@@ -183,7 +183,7 @@ pre-sign.
 document asks for **self-registration** in its unnumbered section and the
 earlier design gave signup to the super-admin alone. It is settled with both
 doors, and a new farm becomes active once its email is verified (see
-`docs/decisiones.md`):
+`docs/decisions.md`):
 ```
 POST /v1/signup {farm:{name,timezone}, owner:{email,name,password}}   public, rate-limited
 POST /v1/auth/login · /auth/refresh · /auth/logout · GET /v1/me        M W

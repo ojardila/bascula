@@ -1,12 +1,12 @@
 # Demo videos on the landing
 
-The «Véalo funcionando» section of the landing (`apps/web/src/features/marketing/DemoVideos.tsx`) shows two videos. It appears on the main domain only: the landing is never rendered on a farm's own address.
+The «Véalo funcionando» (See it in action) section of the landing (`apps/web/src/features/marketing/DemoVideos.tsx`) shows two videos. It appears on the main domain only: the landing is never rendered on a farm's own address.
 
 | File (`apps/web/src/features/marketing/media/`) | What |
 |---|---|
-| `demo-1.mp4` / `.webm`, `demo-1-poster.webp`, `demo-1.es.vtt` | Main flow, 1920×1080, 45 s: harvest dashboard → workers → pay a picker (advance deducted) → «Pago registrado» → receipt and PDF → money history |
+| `demo-1.mp4` / `.webm`, `demo-1-poster.webp`, `demo-1.es.vtt` | Main flow, 1920×1080, 45 s: harvest dashboard → workers → pay a picker (advance deducted) → «Pago registrado» (Payment recorded) → receipt and PDF → money history |
 | `demo-1-vertical.*` | The same flow, 1080×1920, 40 s, for phones held upright |
-| `demo-2.*` | Full tour, 1920×1080, 64 s: weighing on the phone, crew payroll with advances, settlements, Conexiones / «Conectar con ChatGPT», two farms side by side, bascula.engp.io/empezar, support console |
+| `demo-2.*` | Full tour, 1920×1080, 64 s: weighing on the phone, crew payroll with advances, settlements, «Conexiones» (Connections) / «Conectar con ChatGPT» (Connect to ChatGPT), two farms side by side, bascula.engp.io/empezar, support console |
 
 - **Recording:** Báscula v0.2.33, on an isolated local stack with fictional farms (La Esperanza, El Mirador). No production data. The browser address bar shows the production-style farm addresses. The «ChatGPT» connection was a real OAuth grant against the local API and was removed afterwards.
 - **Captions:** Spanish captions are burned into the picture, so the videos read with the sound off. The `.vtt` files carry the same text for assistive technology and search, and they are not shown by default.

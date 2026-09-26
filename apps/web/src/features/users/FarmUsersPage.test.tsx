@@ -3,9 +3,9 @@
  *
  * Two things are worth testing here and neither of them is the form.
  *
- * WHO MAY. `docs/diagramas/sistema.md` §3.3 puts user management in the owner
+ * WHO MAY. `docs/diagrams/system.md` §3.3 puts user management in the owner
  * column and leaves the administrator's blank — stricter than
- * `casos-de-uso.md` reads on its own, and the same tightening that took prices
+ * `use-cases.md` reads on its own, and the same tightening that took prices
  * and deletion off the administrator. If that ever silently relaxes, an
  * administrator can hand somebody the payroll.
  *

@@ -114,7 +114,7 @@ export function ConfigPage() {
           </Card>
         </Grid>
 
-        {/* Gestión de usuarios. Owner only — sistema.md §3.3 leaves the
+        {/* Gestión de usuarios. Owner only — system.md §3.3 leaves the
             administrator's column blank for this one — so the card is not even
             shown to an administrator, who would only meet PermissionDenied. */}
         {can("config.users") && (

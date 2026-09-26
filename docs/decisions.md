@@ -93,7 +93,7 @@ ends in a miscalculated payment.
   exist anywhere yet. Who maintains it?
 - **RSP-022, RSP-023 and RSP-024** are missing from the use-case document.
 - **Self-registration has no written use case.** RSP-033 is *Eliminar Gasto*
-  (delete an expense); the "Registro de finca" section was left unnumbered and
+  (delete an expense); the «Registro de finca» (farm registration) section was left unnumbered and
   undetailed.
 
 ---
@@ -105,7 +105,7 @@ written in the designs.
 
 ## 2026-08-29 — Categories are catalogues, not enumerations
 
-`arquitectura-api.md` fixed three activity categories and `modelo-datos.md`
+`api-architecture.md` fixed three activity categories and `data-model.md`
 declared four. Both were wrong: RSP-011 says the selector comes «con opción de
 crear una nueva» (*with the option to create a new one*). A farm that also grows
 cacao will invent categories nobody foresaw, and with a Postgres `ENUM` each one
@@ -122,9 +122,9 @@ that mean nothing if a farm invents a value: `ledger_kind`, `pay_method`,
 
 ## 2026-08-29 — A work record is called `work_record`, and only that
 
-The documents carried three names for the same entity: `arquitectura-api.md`
+The documents carried three names for the same entity: `api-architecture.md`
 uses `/v1/tasks` in its Delivery 2 and `work_records` in revision 2, and
-`modelo-datos.md` calls it `labors`. With that, the front end built against one
+`data-model.md` calls it `labors`. With that, the front end built against one
 name and the back end was heading for another.
 
 It is `work_records`: the table, the `/v1/work-records` endpoints, and

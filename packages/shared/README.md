@@ -2,7 +2,7 @@
 
 What **must not diverge** between the phone, the Go API and the web.
 
-The criterion is the one in `docs/arquitectura-api.md` §7 and it is deliberately
+The criterion is the one in `docs/api-architecture.md` §7 and it is deliberately
 narrow: only what, if written twice and written differently, **costs money**
 gets in here. Everything else stays where it is used.
 
@@ -74,8 +74,8 @@ npm run typecheck --workspace @bascula/shared
 ## A note for the backend
 
 `ActivityCategory` has **three** values here (`siembra`, `mantenimiento`,
-`cosecha`), following `docs/arquitectura-api.md`. `docs/modelo-datos.md`
+`cosecha`), following `docs/api-architecture.md`. `docs/data-model.md`
 declares a fourth, `otra`. The two documents disagree and nobody has decided:
 it is flagged in `src/enums.ts` rather than resolved by eye. Also missing is
-`StockReason`, which `arquitectura-api.md` §7 mentions but for which there is
+`StockReason`, which `api-architecture.md` §7 mentions but for which there is
 nothing to calculate yet.

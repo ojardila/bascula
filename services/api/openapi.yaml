@@ -23,7 +23,7 @@
 # CONVENTIONS THAT APPLY EVERYWHERE, stated once instead of on sixty operations:
 #
 #   * The tenant travels in the access token and never in a path. There is no
-#     {farmId} anywhere below, deliberately (§6 of docs/arquitectura-api.md):
+#     {farmId} anywhere below, deliberately (§6 of docs/api-architecture.md):
 #     a farm id in a path invites somebody to trust it.
 #   * A resource of another farm answers 404, never an empty list and never a
 #     zero total. An endpoint that adds something up confirms the resource
@@ -1187,7 +1187,7 @@ paths:
       operationId: listReactivations
       summary: Every worker the server put back on the payroll by itself
       description: |
-        Decision 8 of docs/decisiones.md: a worker who was taken off the
+        Decision 8 of docs/decisions.md: a worker who was taken off the
         payroll and turns up with NEW work comes back on by himself, because if
         he is working he is still on the farm. The owner took that decision
         against the team's advice and attached one condition to it — that it is
@@ -1316,7 +1316,7 @@ paths:
             handset writes to one and the web to the other, the balance is
             split in two, and nothing says so. Restore the existing one with
             PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
-            conflict in docs/archive/sincronizacion.md with no automatic repair.
+            conflict in docs/archive/synchronization.md with no automatic repair.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3567,7 +3567,7 @@ paths:
   # facts underneath it, and when it does nothing can say which one is lying.
   #
   # The whole module is on the weigher's deny list, alongside payroll:
-  # docs/modelo-datos.md §9 puts sales, expenses and stock_moves outside his
+  # docs/data-model.md §9 puts sales, expenses and stock_moves outside his
   # reach "the same way the ledger is", and RSP-018 puts stock on hand on the
   # very first product screen, so there is no reduced projection worth having.
   # ---------------------------------------------------------------------------
@@ -5243,7 +5243,7 @@ paths:
         "204": { description: Allowed. }
 
   # ---------------------------------------------------------------------------
-  # Mobile ↔ server synchronisation (docs/archive/sincronizacion.md §3)
+  # Mobile ↔ server synchronisation (docs/archive/synchronization.md §3)
   #
   # A change feed with a per-farm sequence. The handset carries ONE number,
   # `cursor`, and what it is missing is "everything with a seq greater than
@@ -5470,7 +5470,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # The season import (docs/archive/sincronizacion.md §8, phases 3 and 4)
+  # The season import (docs/archive/synchronization.md §8, phases 3 and 4)
   # ---------------------------------------------------------------------------
   /v1/import/season:
     post:
@@ -6070,7 +6070,7 @@ components:
         moneyReadOnly:
           type: boolean
           description: |
-            The phase 4 switch of docs/archive/sincronizacion.md §8. While it is on the
+            The phase 4 switch of docs/archive/synchronization.md §8. While it is on the
             handsets may still record weighings — the cut cannot stop the scale
             — and may not settle, pay or void. It rides down in the handshake's
             `capabilities`.
@@ -8394,7 +8394,7 @@ components:
         server's: the handset knows `worker`, `crop` and `workRecord`.
 
         Direction is per entity and is not symmetric (§2 of
-        docs/archive/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
+        docs/archive/synchronization.md). `worker`, `workRecord` and `ledgerEntry` travel
         both ways. `farmConfig`, `plot`, `crop`, `weekPrice` and `settlement`
         only come down; pushing one is refused with its reason.
       enum: [farmConfig, worker, plot, crop, weekPrice, workRecord, settlement, ledgerEntry]

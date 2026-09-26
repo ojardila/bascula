@@ -125,7 +125,7 @@ func (b *progressBody) Close() error { return b.body.Close() }
 // handleImportSeason is §8 phases 3 and 4: the season that is already on a
 // handset, moved onto the server WITHOUT changing a single identifier.
 //
-// Why it exists at all, in one sentence from decisiones.md: "una liquidación
+// Why it exists at all, in one sentence from decisions.md: "una liquidación
 // creada en el servidor reclamaría pesadas que el servidor no tiene". Until
 // this has run, settling on the server is settling against half a season.
 //

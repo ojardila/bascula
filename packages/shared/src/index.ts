@@ -1,7 +1,7 @@
 /**
  * @bascula/shared — what must not diverge.
  *
- * The rule for this package (`docs/arquitectura-api.md` §7): only what costs
+ * The rule for this package (`docs/api-architecture.md` §7): only what costs
  * money if the phone, the Go API and the web disagree. Closed sets of values,
  * the money arithmetic, and the derivation of a week and a day. Everything
  * else stays where it is used.

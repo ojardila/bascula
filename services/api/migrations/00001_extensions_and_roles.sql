@@ -4,7 +4,7 @@
 -- Extensions. pgcrypto for digest() (registry identity hashing), postgis for
 -- plot boundaries. PostGIS is adopted from day one on purpose: a polygon in
 -- jsonb neither validates nor computes, and backfilling geometry later is
--- archaeology. See docs/modelo-datos.md section C.
+-- archaeology. See docs/data-model.md section C.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
@@ -75,7 +75,7 @@ CREATE FUNCTION current_user_id() RETURNS uuid
 -- a use case describes with "add it if it is not there" — activity categories,
 -- crop types, varieties, work units — is a per-farm catalogue table instead: a
 -- closed type would make every new value an ALTER TYPE in production. See the
--- team decision of 2026-08-29 in docs/decisiones.md.
+-- team decision of 2026-08-29 in docs/decisions.md.
 CREATE TYPE farm_role         AS ENUM ('owner', 'admin', 'weigher');
 CREATE TYPE ledger_kind       AS ENUM ('devengo', 'pago', 'anticipo', 'deduccion', 'ajuste', 'reverso');
 CREATE TYPE pay_method        AS ENUM ('efectivo', 'transferencia', 'otro');
@@ -90,7 +90,7 @@ CREATE TYPE time_unit         AS ENUM ('jornal', 'semanal', 'quincenal', 'mensua
 --   weekly_price   derived from week_prices at settlement time (the behaviour
 --                  the phone has today). Requires a single-day record.
 -- The single-day requirement for the two derived modes is decision 4 in
--- docs/decisiones.md, enforced by work_record_rate_shape in 00005, not by convention.
+-- docs/decisions.md, enforced by work_record_rate_shape in 00005, not by convention.
 CREATE TYPE rate_source AS ENUM ('explicit', 'activity_dated', 'weekly_price');
 
 -- +goose StatementEnd

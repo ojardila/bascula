@@ -1,7 +1,7 @@
 /**
  * The role matrix, as one table.
  *
- * Read this next to `docs/archive/sync-and-roles.md` and `arquitectura-api.md` §6.
+ * Read this next to `docs/archive/sync-and-roles.md` and `api-architecture.md` §6.
  *
  * **This is not authorization.** The server decides, and it answers 403; the
  * only thing this file does is stop showing people doors they cannot open.
@@ -44,7 +44,7 @@ export type Action =
   | "money.read"
   | "money.pay"
   // Products, the warehouse, sales and expenses. Four surfaces, eight actions,
-  // and the weigher has none of them: `docs/modelo-datos.md` §790 puts
+  // and the weigher has none of them: `docs/data-model.md` §790 puts
   // `ventas`, `gastos` and `stock_moves` outside his projection with the same
   // shape as the ledger, and the movements go with them because a movement
   // names what a lot produced.
@@ -199,7 +199,7 @@ export interface ModuleDef {
 }
 
 /**
- * The sidebar of the wireframe in `docs/diagramas/web.md` §8.1, in order.
+ * The sidebar of the wireframe in `docs/diagrams/web.md` §8.1, in order.
  *
  * The later-sprint modules are listed and disabled on purpose: the owner asked
  * for this map, and a sidebar that grows an entry every three weeks reads as an

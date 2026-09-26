@@ -4,7 +4,7 @@
 -- The cross-tenant registry is a different product with its own legal risk, so
 -- it gets its own schema, its own credentials, and no access to the farm
 -- tables. It is created empty on purpose: this sprint builds nothing inside it
--- (decision 1 in docs/decisiones.md).
+-- (decision 1 in docs/decisions.md).
 --
 -- When it is built, it will hold exactly two things and nothing else:
 --   * employment_spans — presence, by month, opt-in per farm. No free text, no
@@ -28,7 +28,7 @@ GRANT USAGE ON SCHEMA registry TO bascula_app;
 
 COMMENT ON SCHEMA registry IS
   'Cross-tenant worker registry. Employment spans and the lookup log only. '
-  'No notes, no alerts, no judgements: see docs/decisiones.md decision 1.';
+  'No notes, no alerts, no judgements: see docs/decisions.md decision 1.';
 
 -- +goose StatementEnd
 

@@ -2,7 +2,7 @@
  * THE ONLY WAY A QUANTITY IN THIS APP EVER CHANGES.
  *
  * There is no "editar la cantidad en stock" anywhere, and this dialog is why
- * there does not need to be one. `docs/modelo-datos.md`: "existencias
+ * there does not need to be one. `docs/data-model.md`: "existencias
  * derivadas de entradas y salidas, igual que el saldo se deriva del ledger. Un stock
  * materializado es un total que se desincroniza de sus hechos, y ya sabemos
  * qué opinamos de eso."

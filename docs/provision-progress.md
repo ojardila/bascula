@@ -1,4 +1,4 @@
-# «Preparando su finca»: real provisioning progress
+# «Preparando su finca» (Preparing your farm): real provisioning progress
 
 `GET /v1/farms/{slug}/provision-status` returns, besides the four legacy
 `steps`, weighted monotonic `stages`, a `percent`, the `current` step in plain

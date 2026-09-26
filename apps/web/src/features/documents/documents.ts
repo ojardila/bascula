@@ -27,7 +27,7 @@
  *   not decided yet (`PayableLine.rateSource === "weekly_price"`). On screen
  *   that is a chip; on paper it is an amber block, the word PROVISIONAL in the
  *   row, and a footnote — because a colour alone does not survive the
- *   black-and-white printer in a farm office. `docs/archive/sincronizacion.md` asks for
+ *   black-and-white printer in a farm office. `docs/archive/synchronization.md` asks for
  *   exactly this: a provisional document "imprime un recibo que dice
  *   «provisional» en letra grande".
  */

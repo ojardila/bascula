@@ -56,7 +56,7 @@ CREATE TABLE activities (
 CREATE UNIQUE INDEX ux_activities_name ON activities (farm_id, lower(name)) WHERE archived_at IS NULL;
 
 -- ---------------------------------------------------------------------------
--- Dated rates (decision 4 in docs/decisiones.md).
+-- Dated rates (decision 4 in docs/decisions.md).
 --
 -- activity_pay_* no longer holds one loose price: it holds a history of rates,
 -- each in force from `valid_from` until the next row's valid_from. Because a

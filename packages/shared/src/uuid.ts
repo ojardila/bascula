@@ -7,7 +7,7 @@
  * the row was created, so `ORDER BY uuid` is `ORDER BY when it happened`. The
  * server pages through a device's history with a plain `WHERE uuid > ?`, with
  * no cursor table and no clock comparison. That property is a contract, so it
- * lives with the rest of the contract (`docs/arquitectura-api.md` §7).
+ * lives with the rest of the contract (`docs/api-architecture.md` §7).
  *
  * Layout (RFC 9562 §5.7):
  *

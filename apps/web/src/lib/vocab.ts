@@ -164,7 +164,7 @@ export const TIME_UNIT_LABEL: Record<TimeUnit, string> = {
  *
  * "PROVISIONAL" WINS, AND IT WINS BECAUSE IT IS ALREADY ON THE PAPER: the
  * amber block of a receipt says PROVISIONAL in large type and
- * `docs/archive/sincronizacion.md` asks for it that way. Choosing any of the others
+ * `docs/archive/synchronization.md` asks for it that way. Choosing any of the others
  * would have forced a change to all three documents. It is also the word the
  * phone already uses for its unconfirmed balance (`pay.provisional`), so both
  * halves of the product end up saying the same thing without touching a

@@ -11,7 +11,7 @@
 # apps/web/src/api/mode.ts), which makes the browser fetch /v1 and /health
 # relative to wherever the page was served from — and the HTTPRoute puts the
 # API on those two prefixes of the same hostname. That is the "same origin"
-# half of the choice docs/decisiones.md left open, and it is what lets the API
+# half of the choice docs/decisions.md left open, and it is what lets the API
 # keep having no CORS middleware at all.
 FROM node:24-alpine AS build
 WORKDIR /src
