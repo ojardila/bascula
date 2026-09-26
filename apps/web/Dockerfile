@@ -44,7 +44,12 @@ RUN npm run build --workspace apps/web
 # capabilities and no runAsUser override to satisfy the restricted policy.
 FROM nginxinc/nginx-unprivileged:1.29-alpine
 USER root
-RUN apk upgrade --no-cache
+# The stock default.conf goes: ours is rendered from the template below. With
+# the stock file present (and owned by nginx), the entrypoint's
+# 10-listen-on-ipv6 script runs `apk manifest nginx`, which hangs as a
+# non-root user in the cluster; the pod never listened (bascula-dev, v0.2.40).
+RUN apk upgrade --no-cache \
+ && rm -f /etc/nginx/conf.d/default.conf
 USER nginx
 COPY --from=build /src/apps/web/dist /usr/share/nginx/html
 # A template, not a plain conf: the image's entrypoint renders it with envsubst

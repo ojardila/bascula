@@ -342,7 +342,12 @@ jobs:
 
   production:
     needs: release
-    if: needs.release.outputs.go == 'true'
+    # !cancelled(): without it the implicit success() also looks at `ci`,
+    # which is SKIPPED whenever the PR already tested the sources, and a
+    # skipped ancestor skips this job too (what happened to v0.2.40).
+    if: >-
+      !cancelled() && needs.release.result == 'success'
+      && needs.release.outputs.go == 'true'
     # AUTO-APPROVAL IS OFF. `production` requires Oscar's approval, always.
     # Setting the repository variable PROD_AUTO_APPROVE=true would send
     # releases WITHOUT migrations or database/cluster changes (see the review
