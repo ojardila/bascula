@@ -1,4 +1,5 @@
-import { APP_VERSION } from "../../lib/appVersion";
+import { useEffect, useState } from "react";
+import { APP_BUILD, fetchServerVersion } from "../../lib/appVersion";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, Typography,
@@ -229,8 +230,22 @@ export function ConfigPage() {
         </Grid>
       </Grid>
       <Typography variant="body2" sx={{ color: "text.secondary", mt: 3, textAlign: "center" }}>
-        Báscula versión {APP_VERSION}
+        Báscula versión <ReleaseLabel />
       </Typography>
     </Box>
   );
+}
+
+/**
+ * The release comes from the server (/version.json), not from the bundle:
+ * the same web image is promoted across releases that did not touch it.
+ */
+function ReleaseLabel() {
+  const [release, setRelease] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fetchServerVersion().then((v) => { if (live && v) setRelease(v.version); });
+    return () => { live = false; };
+  }, []);
+  return <>{release ?? APP_BUILD}</>;
 }

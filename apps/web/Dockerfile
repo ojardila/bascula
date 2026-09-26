@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The web app, built once and served as static files.
 #
 # Built from the REPOSITORY ROOT, not from this directory: the web imports
@@ -20,7 +21,9 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN npm ci
+# The npm cache is a BuildKit cache mount: in CI it is carried between runs
+# (buildkit-cache-dance), so a changed lockfile downloads only what changed.
+RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline --no-audit --no-fund
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web
@@ -29,10 +32,12 @@ COPY services/api/openapi.yaml services/api/openapi.yaml
 # `build` runs types:check first, which diffs src/api/schema.ts against
 # openapi.yaml. A drifted client fails here rather than at runtime, which is
 # why openapi.yaml is copied in above.
-# The release (vX.Y.Z without the v), from CD. The bundle and /version.json
-# carry it so an old copy on a phone can see it is old.
-ARG VERSION=dev
-ENV VITE_APP_VERSION=$VERSION
+# The build key (a hash of the web's own sources, from CI). The bundle carries
+# it so an old copy on a phone can see it is old. The RELEASE is not baked in:
+# CI builds this image once per source key and CD promotes the same image to
+# every release that did not touch the web. See src/lib/appVersion.ts.
+ARG BUILD=dev
+ENV VITE_APP_BUILD=$BUILD
 RUN npm run build --workspace apps/web
 
 # nginx-unprivileged listens on 8080 as a non-root user, so the pod needs no
@@ -42,5 +47,11 @@ USER root
 RUN apk upgrade --no-cache
 USER nginx
 COPY --from=build /src/apps/web/dist /usr/share/nginx/html
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# A template, not a plain conf: the image's entrypoint renders it with envsubst
+# at start (only variables that are set, so nginx's own $uri is left alone).
+# That is how /version.json answers with the release from the pod's env.
+COPY apps/web/nginx.conf /etc/nginx/templates/default.conf.template
+ARG BUILD=dev
+ENV BASCULA_BUILD=$BUILD \
+    BASCULA_VERSION=dev
 EXPOSE 8080

@@ -1,0 +1,5 @@
+# The web image builds from the repo root. Only what its Dockerfile COPYs
+# matters; this keeps local node_modules and build output out of the context.
+**/node_modules
+**/dist
+.git

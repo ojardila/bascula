@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The API, as one static binary in a scratch-sized image.
 #
 # The migrations are embedded (see migrations/embed.go), so this image can put
@@ -8,17 +9,21 @@ WORKDIR /src
 
 # Dependencies first, so a change to our own code does not re-download the
 # module cache on every build.
+# The module and build caches are BuildKit cache mounts. In CI they are
+# carried between runs (buildkit-cache-dance), so a code change recompiles
+# only the packages it touched.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-# CGO off makes it static, so the final image needs no libc at all. The version
-# is stamped in for /health to report which commit is actually running -- on a
-# one-droplet deployment that is the only way to tell a failed deploy from a
-# successful one that changed nothing.
-ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
-      -ldflags="-s -w -X main.version=${VERSION}" \
+# CGO off makes it static, so the final image needs no libc at all. No release
+# number is stamped in: CI builds this image once per source tree and CD
+# promotes the same image to every release that did not touch services/api.
+# (The old -X main.version flag pointed at a variable that no longer exists.)
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
+      -ldflags="-s -w" \
       -o /out/api ./cmd/api
 
 FROM alpine:3.21
