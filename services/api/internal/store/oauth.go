@@ -66,6 +66,11 @@ type OAuthCode struct {
 }
 
 func InsertOAuthCode(ctx context.Context, tx pgx.Tx, c OAuthCode) error {
+	// Codes are deleted when they are exchanged; one that never is (the
+	// connector gave up) would stay for ever. Each new code sweeps the dead.
+	if _, err := tx.Exec(ctx, `DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 hour'`); err != nil {
+		return err
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO oauth_codes
 		    (code, client_id, redirect_uri, code_challenge, code_challenge_method,

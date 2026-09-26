@@ -35,7 +35,17 @@ const (
 	oauthScope     = "mcp"
 	oauthCodeTTL   = 10 * time.Minute
 	oauthChallenge = "S256"
+
+	// Registration limits. A real connector registers one or two redirect
+	// URIs and a short name in well under a kilobyte.
+	oauthRegisterMaxBody = 64 << 10
+	oauthMaxRedirects    = 10
+	oauthMaxRedirectLen  = 2048
+	oauthMaxClientName   = 80
 )
+
+// errOAuthBadCredentials is the one sign-in failure the login limiter counts.
+var errOAuthBadCredentials = errors.New("Correo o contraseña incorrectos.")
 
 // oauthScopesSupported: "mcp" is the only permission there is; offline_access
 // is advertised because clients (ChatGPT among them) ask for it to get a
@@ -169,8 +179,22 @@ func (s *Server) handleOAuthJWKS(w http.ResponseWriter, r *http.Request) {
 // actually registered it.
 func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
+	// Registration is anonymous by design (RFC 7591 open registration is what
+	// ChatGPT and Claude use), so it is the one write a stranger can repeat at
+	// will. Each registration is a row that nothing prunes; the cap per address
+	// and the size limits below are what keep a loop from filling the disk.
+	if !s.oauthRegs.allow(clientIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "3600")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_client_metadata",
+			"error_description": "too many registrations from this address, try again later",
+		})
+		return
+	}
 	var raw map[string]any
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&raw); err != nil || raw == nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, oauthRegisterMaxBody)).Decode(&raw); err != nil || raw == nil {
 		slog.Warn("connector request register body", "error", "not a JSON object")
 		oauthRegisterError(w, "invalid_client_metadata", "the body is not a JSON client registration")
 		return
@@ -251,7 +275,15 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		oauthRegisterError(w, "invalid_redirect_uri", "redirect_uris is required")
 		return
 	}
+	if len(redirects) > oauthMaxRedirects {
+		oauthRegisterError(w, "invalid_redirect_uri", "too many redirect_uris")
+		return
+	}
 	for _, u := range redirects {
+		if len(u) > oauthMaxRedirectLen {
+			oauthRegisterError(w, "invalid_redirect_uri", "redirect_uri is too long")
+			return
+		}
 		if err := oauthRedirectOK(u); err != nil {
 			oauthRegisterError(w, "invalid_redirect_uri", err.Error())
 			return
@@ -276,6 +308,10 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	name := str("client_name")
 	if name == "" {
 		name = "mcp-client"
+	}
+	// The name is shown on the sign-in page, so it is kept short and plain.
+	if r := []rune(name); len(r) > oauthMaxClientName {
+		name = string(r[:oauthMaxClientName])
 	}
 
 	resp := map[string]any{
@@ -378,12 +414,12 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	failToClient := func(desc string) {
 		if redirectURI == "" {
-			s.oauthForm(w, r, q, desc, nil)
+			s.oauthForm(w, r, q, desc, nil, nil)
 			return
 		}
 		u, err := url.Parse(redirectURI)
 		if err != nil {
-			s.oauthForm(w, r, q, desc, nil)
+			s.oauthForm(w, r, q, desc, nil, nil)
 			return
 		}
 		qq := u.Query()
@@ -398,14 +434,13 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if clientID == "" || redirectURI == "" {
-		s.oauthForm(w, r, q, "Faltan client_id o redirect_uri.", nil)
+		s.oauthForm(w, r, q, "Faltan client_id o redirect_uri.", nil, nil)
 		return
 	}
-	if challenge == "" || method != oauthChallenge {
-		failToClient("PKCE S256 is required")
-		return
-	}
-
+	// The client and its exact redirect_uri are checked BEFORE anything is
+	// sent to that redirect_uri. The PKCE check used to come first, and its
+	// error went to whatever redirect_uri the query named: an open redirect
+	// from the farm's own domain to any site.
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -414,30 +449,60 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	client, err := store.GetOAuthClient(r.Context(), tx, clientID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.oauthForm(w, r, q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil)
+			s.oauthForm(w, r, q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil, nil)
 			return
 		}
 		writeError(w, r, err)
 		return
 	}
 	if !containsString(client.RedirectURIs, redirectURI) {
-		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil)
+		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil, nil)
+		return
+	}
+	if challenge == "" || method != oauthChallenge {
+		failToClient("PKCE S256 is required")
 		return
 	}
 
 	if r.Method == http.MethodGet {
-		s.oauthForm(w, r, q, "", nil)
+		s.oauthForm(w, r, q, "", nil, client)
 		return
+	}
+
+	// The same limiter as /v1/auth/login, on the same table: this form checks
+	// the same password, and without it the sign-in page was an unmetered
+	// way around the login limit. The second step (farm pick) carries a
+	// ticket, not a password, and is not counted.
+	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
+	ip := clientIP(r)
+	if q.Get("ticket") == "" && email != "" {
+		failedPair, failedIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if failedPair >= s.cfg.LoginFailuresPerEmailPerIP || failedIP >= s.cfg.LoginFailuresPerIP {
+			s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
+			return
+		}
 	}
 
 	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
 	if ferr != nil {
-		s.oauthForm(w, r, q, ferr.Error(), nil)
+		if errors.Is(ferr, errOAuthBadCredentials) {
+			// The page is a 200, so the request transaction commits and the
+			// failure is counted; nothing else has been written by now.
+			if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
+				writeError(w, r, domain.Internal("could not record the failed sign-in").WithCause(err))
+				return
+			}
+		}
+		s.oauthForm(w, r, q, ferr.Error(), nil, client)
 		return
 	}
 	if pick != nil {
 		// Several farms and nothing (host, choice) says which: second step.
-		s.oauthForm(w, r, q, "", pick)
+		s.oauthForm(w, r, q, "", pick, client)
 		return
 	}
 
@@ -532,7 +597,7 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		}
 		ok, err := auth.VerifyPassword(password, hash)
 		if err != nil || !ok || u == nil {
-			return nil, nil, nil, errors.New("Correo o contraseña incorrectos.")
+			return nil, nil, nil, errOAuthBadCredentials
 		}
 		user = u
 	}
@@ -676,14 +741,6 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	case "authorization_code":
 		s.oauthExchangeCode(w, r, tx)
 	case "refresh_token":
-		// A client that identifies itself must authenticate correctly; the
-		// refresh token alone is what refreshes a public client's session.
-		if id, secret, basic := oauthClientCredentials(r); id != "" {
-			if _, err := oauthAuthenticateClient(r, tx, id, secret); err != nil {
-				oauthClientError(w, basic, err.Error())
-				return
-			}
-		}
 		// The same rotation a handset gets: single use, and a replay closes
 		// the whole family. Without this grant an assistant's connection died
 		// fifteen minutes after it was made, when the access token expired.
@@ -691,6 +748,23 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		if secret == "" {
 			oauthTokenError(w, "invalid_request", "refresh_token is required")
 			return
+		}
+		// RFC 6749 §6: a refresh token is bound to the client it was issued
+		// to. A confidential client must authenticate even when it leaves out
+		// client_id, and another client's refresh token is refused.
+		id, clientSecret, basic := oauthClientCredentials(r)
+		if tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret)); err == nil && tok.OAuthClientID != nil {
+			if id != "" && id != *tok.OAuthClientID {
+				oauthTokenError(w, "invalid_grant", "the refresh token was issued to another client")
+				return
+			}
+			id = *tok.OAuthClientID
+		}
+		if id != "" {
+			if _, err := oauthAuthenticateClient(r, tx, id, clientSecret); err != nil {
+				oauthClientError(w, basic, err.Error())
+				return
+			}
 		}
 		session, err := s.rotateRefresh(r, tx, secret, "")
 		if err != nil {
@@ -885,10 +959,22 @@ const oauthFormStyle = `<style>
   label.opt:has(input:checked){border-color:#2e7d32;background:#eef7ee}
   label.opt input{width:1.4rem;height:1.4rem;margin:0;flex:none}
   .slug{display:block;color:#666;font-size:.9rem}
+  .who{background:#f4f4f4;padding:.6rem .8rem;border-radius:8px;color:#111;word-break:break-all}
+  .warn{font-size:.9rem}
 </style>`
 
-func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values, notice string, pick *oauthPick) {
+// oauthForm renders the sign-in page. client is nil until the request names a
+// registered client; from then on the page says which application is asking
+// and which site the code goes to, because registration is open and a
+// stranger can register a client of their own.
+func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values, notice string, pick *oauthPick, client *store.OAuthClient) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// A password form must not be framed (clickjacking), and its URL carries
+	// state and the PKCE challenge, which no Referer should repeat.
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	esc := html.EscapeString
 	hidden := func(name string) string {
@@ -907,6 +993,15 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		// (wrong password, unknown client, ...). Never the password itself.
 		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
 		msg = `<p class="err">` + esc(notice) + `</p>`
+	}
+	if client != nil {
+		dest := q.Get("redirect_uri")
+		if u, err := url.Parse(dest); err == nil && u.Host != "" {
+			dest = u.Host
+		}
+		msg = `<p class="who">Aplicación: <strong>` + esc(client.Name) + `</strong><br>` +
+			`Le devolverá el acceso a: <strong>` + esc(dest) + `</strong></p>` +
+			`<p class="warn">Si no reconoce ese sitio, no escriba su contraseña.</p>` + msg
 	}
 	head := `<!doctype html>
 <html lang="es">
