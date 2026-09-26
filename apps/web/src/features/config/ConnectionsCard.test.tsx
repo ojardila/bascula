@@ -97,6 +97,15 @@ describe("which devices count as a phone", () => {
     asDevice(MAC_UA, 0);
     expect(isPhone()).toBe(false);
   });
+
+  it("the installed app on a touch screen is a phone, whatever its user agent says", () => {
+    asDevice(MAC_UA, 0);
+    const mm = vi.spyOn(window, "matchMedia").mockImplementation(
+      (q: string) => ({ matches: q.includes("coarse") || q.includes("standalone"), media: q }) as MediaQueryList,
+    );
+    expect(isPhone()).toBe(true);
+    mm.mockRestore();
+  });
 });
 
 describe("Conectar con ChatGPT on a computer", () => {

@@ -1,3 +1,4 @@
+import { UpdateBanner } from "./components/UpdateBanner";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { TourProvider } from "./features/onboarding/TourContext";
@@ -370,6 +371,8 @@ function Shell() {
 
 export function App() {
   return (
+    <>
+    <UpdateBanner />
     <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/entrar" element={<LoginPage />} />
@@ -396,6 +399,7 @@ export function App() {
         }
       />
     </Routes>
+    </>
   );
 }
 

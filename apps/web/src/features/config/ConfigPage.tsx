@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../../lib/appVersion";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, Typography,
@@ -227,6 +228,9 @@ export function ConfigPage() {
           </Card>
         </Grid>
       </Grid>
+      <Typography variant="body2" sx={{ color: "text.secondary", mt: 3, textAlign: "center" }}>
+        Báscula versión {APP_VERSION}
+      </Typography>
     </Box>
   );
 }

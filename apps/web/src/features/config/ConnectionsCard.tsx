@@ -50,9 +50,14 @@ export function isPhone(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
   if (/iPhone|iPod|Android.*Mobile|Windows Phone/i.test(ua)) return true;
-  // iPadOS reports itself as a Mac; a Mac has no touch points.
+  // iPadOS, and an iPhone asking for the desktop site, report a Mac; a Mac
+  // has no touch points.
   if (/iPad|Android/i.test(ua)) return true;
-  return /Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
+  if (/Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return true;
+  // The installed app on any touch device, or a small touch-only screen.
+  const mq = (q: string) => typeof window !== "undefined" && window.matchMedia?.(q).matches === true;
+  if (mq("(pointer: coarse)") && (mq("(display-mode: standalone)") || mq("(max-width: 900px)"))) return true;
+  return false;
 }
 
 function CopyField({ value, label }: { value: string; label: string }) {
@@ -213,13 +218,17 @@ export function ConnectionsCard() {
   }, [connected]);
 
   const guideRef = useRef<HTMLDivElement | null>(null);
-  function openGuide() {
+  function openGuide(e?: { preventDefault(): void }) {
+    // Belt and braces: whatever the first render decided, a tap on a phone
+    // never goes to chatgpt.com (the ChatGPT app takes the link over and
+    // cannot add connectors). It stays here, on the data.
+    if (isPhone()) e?.preventDefault();
     setActionError(null);
     setRevoked(false);
     setGuide(true);
     // On a phone the button does not leave Báscula: it brings the data into
     // view. (scrollIntoView is missing in some test DOMs.)
-    if (phone) guideRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    if (phone || isPhone()) guideRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }
 
   async function revoke() {
@@ -283,7 +292,7 @@ export function ConnectionsCard() {
           <Button
             variant="contained"
             size="large"
-            onClick={openGuide}
+            onClick={() => openGuide()}
             aria-expanded={guide}
             sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
           >

@@ -46,10 +46,22 @@ import { fileURLToPath, URL } from "node:url";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const target = env.VITE_API_URL || "http://localhost:8099";
+  // The release this bundle is (the Docker build passes VERSION from CD).
+  // Stamped into the code as __APP_VERSION__ and written to /version.json,
+  // so an open page can tell that the server has moved on without it.
+  const appVersion = process.env.VITE_APP_VERSION || env.VITE_APP_VERSION || "dev";
 
   return {
+    define: { __APP_VERSION__: JSON.stringify(appVersion) },
     plugins: [
       react(),
+      {
+        name: "bascula-version-json",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ version: appVersion }) });
+        },
+      },
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: false,
