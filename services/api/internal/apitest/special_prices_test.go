@@ -6,7 +6,7 @@ import (
 )
 
 // TestSpecialKiloPrices covers per-lote and per-person fixed kilo prices
-// (migration 00032): precedence persona > lote > semana > finca, dates, ending
+// (migration 00034): precedence persona > lote > semana > finca, dates, ending
 // an exception, and the approved rule that a settled week never changes.
 func TestSpecialKiloPrices(t *testing.T) {
 	h := requireDB(t)

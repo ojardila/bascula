@@ -62,10 +62,10 @@ CREATE POLICY p_employee_prices_write ON employee_prices FOR ALL
 
 COMMENT ON TABLE plot_prices IS
   'Fixed kilo price for one lote, effective from a Monday; NULL price ends it. '
-  'Money: owner and administrator read, owner writes. See migration 00032.';
+  'Money: owner and administrator read, owner writes. See migration 00034.';
 COMMENT ON TABLE employee_prices IS
   'Fixed kilo price for one person, effective from a Monday; NULL price ends it. '
-  'Money: owner and administrator read, owner writes. See migration 00032.';
+  'Money: owner and administrator read, owner writes. See migration 00034.';
 
 -- The one definition of "what a kilo of this weighing is worth", and where
 -- that number came from. SECURITY INVOKER (the default): a role that cannot
@@ -98,7 +98,7 @@ LANGUAGE sql STABLE AS $fn$
 $fn$;
 
 COMMENT ON FUNCTION kilo_price(uuid, uuid, uuid, date) IS
-  'Kilo price of one weighing and its source: persona > lote > semana > finca. See migration 00032.';
+  'Kilo price of one weighing and its source: persona > lote > semana > finca. See migration 00034.';
 
 -- The two special rules alone (persona, then lote), or NULL: the part of
 -- kilo_price() that the reports add in front of their own week/farm price.
@@ -130,7 +130,7 @@ END
 $fn$;
 
 COMMENT ON FUNCTION special_kilo_price(uuid, uuid, uuid, date) IS
-  'Persona or lote kilo price of one weighing, NULL when neither applies. See migration 00032.';
+  'Persona or lote kilo price of one weighing, NULL when neither applies. See migration 00034.';
 -- +goose StatementEnd
 
 -- +goose Down

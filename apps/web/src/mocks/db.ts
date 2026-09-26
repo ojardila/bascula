@@ -307,7 +307,7 @@ export interface Tenant {
    * the app, so they read as "done" and no test meets a welcome it did not ask for.
    */
   freshTours?: boolean;
-  /** `plot_prices` and `employee_prices` (migration 00032). A null price ends one. */
+  /** `plot_prices` and `employee_prices` (migration 00034). A null price ends one. */
   specialPrices?: MockSpecialPrice[];
   ledger: WireLedgerEntry[];
   settlements: MockSettlement[];

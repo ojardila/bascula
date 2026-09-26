@@ -147,7 +147,7 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 		return nil, err
 	}
 
-	// Kilo weighings are priced by kilo_price() (migration 00032): persona >
+	// Kilo weighings are priced by kilo_price() (migration 00034): persona >
 	// lote > semana > finca, resolved in one round trip for the whole list.
 	var kiloIDs []string
 	for _, r := range pending {

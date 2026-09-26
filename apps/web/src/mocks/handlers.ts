@@ -2248,7 +2248,7 @@ export const handlers = [
     return HttpResponse.json(basePriceState(t));
   }),
 
-  /* ---- special kilo prices (migration 00032) ---- */
+  /* ---- special kilo prices (migration 00034) ---- */
 
   http.get("*/v1/prices/special", ({ request }) => {
     const g = guard(request, "prices.read");

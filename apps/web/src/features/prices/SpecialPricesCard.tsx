@@ -1,6 +1,6 @@
 /**
  * «PRECIOS ESPECIALES»: a fixed kilo price for one lote or one person, from a
- * Monday on (migration 00032).
+ * Monday on (migration 00034).
  *
  * Which price pays a kilo, first match wins, said on screen in plain words:
  *   persona > lote > semana > finca.

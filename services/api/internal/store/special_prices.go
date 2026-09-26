@@ -10,7 +10,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Special kilo prices per lote and per person (migration 00032).
+// Special kilo prices per lote and per person (migration 00034).
 //
 // An exception is a fixed price from a Monday on. A row whose price is NULL
 // ends it from that Monday. kilo_price() in the migration is the single rule

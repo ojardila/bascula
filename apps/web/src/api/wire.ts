@@ -766,7 +766,7 @@ export interface WireSpecialPriceEntry {
   createdAt: string;
 }
 
-/** A lote or a person with a special kilo price (migration 00032). */
+/** A lote or a person with a special kilo price (migration 00034). */
 export interface WireSpecialPrice {
   kind: WireSpecialPriceKind;
   targetId: Uuid;

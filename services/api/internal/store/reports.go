@@ -91,7 +91,7 @@ harvest AS (
            l.amount_minor,
            CASE WHEN l.rate_source = 'weekly_price'
                 THEN round(l.quantity * COALESCE(
-                  -- persona > lote first, as kilo_price() (migration 00032).
+                  -- persona > lote first, as kilo_price() (migration 00034).
                   -- The guards are uncorrelated, so each runs once per query
                   -- (an InitPlan) and a farm with no special prices never
                   -- calls the function at all.

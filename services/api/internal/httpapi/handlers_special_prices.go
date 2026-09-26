@@ -14,7 +14,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Special kilo prices per lote and per person (migration 00032).
+// Special kilo prices per lote and per person (migration 00034).
 //
 // Fixed prices from a Monday on. Precedence, first match wins:
 // persona > lote > semana > finca (kilo_price() in the migration). A settled
