@@ -119,6 +119,17 @@ type provisioner struct {
 	// which progress stages were seen done, so progress never goes back.
 	pipelines map[string]pipelineView
 	stages    map[string]*stageMemory
+	// inflight holds the one computation running per slug; see
+	// handleProvisionStatus.
+	inflight map[string]*statusCall
+}
+
+// statusCall is one computation of a slug's status that concurrent callers
+// wait on instead of starting their own.
+type statusCall struct {
+	done   chan struct{}
+	status provisionStatus
+	err    error
 }
 
 type cachedStatus struct {
@@ -128,7 +139,7 @@ type cachedStatus struct {
 
 func newProvisioner() *provisioner {
 	return &provisioner{watching: map[string]bool{}, emailing: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{},
-		pipelines: map[string]pipelineView{}, stages: map[string]*stageMemory{}}
+		pipelines: map[string]pipelineView{}, stages: map[string]*stageMemory{}, inflight: map[string]*statusCall{}}
 }
 
 func (s *Server) tenantInternalURL(slug string) string {
@@ -414,8 +425,15 @@ type provisionStatus struct {
 // handleProvisionStatus answers the waiting screen. It is public: the caller
 // just registered and has no session yet, and everything it reveals — whether
 // a web address answers — is something anybody can find out with a browser.
-// The result is cached for a few seconds per slug so a screen polling every
-// few seconds costs one probe, not one per tab.
+//
+// Being public, it is also a lever: one computation is a call to the farm's
+// stack, a TLS probe, about nine Kubernetes reads and, while the farm is being
+// built, a GitHub API call on the dispatch token. So the answer is cached per
+// slug (a few seconds while provisioning, a minute once ready), and callers
+// that arrive while it is being computed wait for that computation instead of
+// each starting their own. Before this, a hundred concurrent requests for one
+// slug were a hundred computations, and enough of them spent the dispatch
+// token's hourly GitHub quota that real signups could no longer provision.
 func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 	slug, err := normalizeFarmSlug(chi.URLParam(r, "slug"))
 	if err != nil {
@@ -423,27 +441,64 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.prov.mu.Lock()
-	c, ok := s.prov.cache[slug]
-	s.prov.mu.Unlock()
-	if ok && time.Since(c.at) < 4*time.Second {
+	if c, ok := s.prov.cache[slug]; ok && time.Since(c.at) < provisionStatusTTL(c.status) {
+		s.prov.mu.Unlock()
 		writeJSON(w, http.StatusOK, c.status)
 		return
 	}
+	call, running := s.prov.inflight[slug]
+	if !running {
+		call = &statusCall{done: make(chan struct{})}
+		s.prov.inflight[slug] = call
+	}
+	s.prov.mu.Unlock()
 
-	_, _, createdAt, err := farmBySlug(r.Context(), s.pool, slug)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, r, domain.NotFound("farm not found"))
+	if !running {
+		// Not tied to this caller's connection: others may be waiting on it.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		call.status, call.err = s.provisionStatusFor(ctx, slug)
+		cancel()
+		s.prov.mu.Lock()
+		delete(s.prov.inflight, slug)
+		if call.err == nil {
+			s.prov.cache[slug] = cachedStatus{at: time.Now(), status: call.status}
+		}
+		s.prov.mu.Unlock()
+		close(call.done)
+	}
+	select {
+	case <-call.done:
+	case <-r.Context().Done():
 		return
+	}
+	if call.err != nil {
+		writeError(w, r, call.err)
+		return
+	}
+	writeJSON(w, http.StatusOK, call.status)
+}
+
+// provisionStatusTTL is how long a computed status is served from the cache.
+// A ready farm stays ready; there is nothing to watch closely.
+func provisionStatusTTL(st provisionStatus) time.Duration {
+	if st.Ready {
+		return time.Minute
+	}
+	return 4 * time.Second
+}
+
+func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provisionStatus, error) {
+	_, _, createdAt, err := farmBySlug(ctx, s.pool, slug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return provisionStatus{}, domain.NotFound("farm not found")
 	}
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return provisionStatus{}, err
 	}
-
-	st := s.computeProvisionStatus(r.Context(), slug, createdAt)
+	st := s.computeProvisionStatus(ctx, slug, createdAt)
 	st.NotifyAvailable = s.readyEmailAvailable()
 	if st.NotifyAvailable {
-		requested, sent := s.readyEmailState(r.Context(), slug)
+		requested, sent := s.readyEmailState(ctx, slug)
 		st.NotifyRequested = requested
 		if st.Ready && requested && !sent {
 			// Covers a restart that lost the watcher while the screen was
@@ -451,11 +506,7 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 			go s.sendReadyEmail(context.Background(), slug, st.URL)
 		}
 	}
-
-	s.prov.mu.Lock()
-	s.prov.cache[slug] = cachedStatus{at: time.Now(), status: st}
-	s.prov.mu.Unlock()
-	writeJSON(w, http.StatusOK, st)
+	return st, nil
 }
 
 // computeProvisionStatus asks every step where it stands. Both the waiting
