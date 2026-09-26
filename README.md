@@ -24,12 +24,18 @@ plain Spanish, built for people around fifty who don't live in software.
 
 ## Features
 
+- **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
+  value, pickers, kilos per day) and two big buttons: «Registrar la semana» and
+  «Registrar una recolección». The detailed reports sit behind «Ver más
+  detalles».
 - **Weighing at the scale.** A phone-first screen with a person, the lot as a
   big button, Hoy / Ayer / Otro día, and the kilos. It asks before saving an
   implausible weight, and «Deshacer» undoes the last one. It works without
   signal: the queue shows «N pesadas por subir» and uploads on its own. Each
   weighing carries a client-minted id, so a resend is never counted twice.
-- **Weekly sheet** for recording a whole crew and a week at once.
+- **Weekly sheet** («Registrar la semana») for recording a whole crew and a
+  week at once: a grid with totals on a computer, one day at a time with big
+  boxes on a phone, and a confirmation before saving.
 - **Harvest reports.** Season curve, week detail (kilos per picker and day or
   per crop), yield per lot and crop, a comparative performance index, and a
   review of suspicious weighings.
@@ -44,7 +50,8 @@ plain Spanish, built for people around fifty who don't live in software.
   button fills an empty farm to try the product.
 - **Multi-tenant**: every farm gets its own subdomain. A super-admin
   provisions and suspends farms.
-- **An MCP server** exposes the API as tools for an assistant
+- **An MCP server** exposes the API as read-only tools for ChatGPT, Claude and
+  other assistants, limited to what the user's role may see
   ([details](services/api/README.md#mcp--the-api-as-tools-for-an-assistant)).
 
 ## Architecture

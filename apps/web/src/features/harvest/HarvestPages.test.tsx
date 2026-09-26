@@ -178,8 +178,8 @@ describe("a figure the server could not establish never renders as a zero", () =
     ]);
     serveCurve();
 
-    const { container } = renderApp("/cosecha");
-    await screen.findByRole("heading", { name: "Cosecha" });
+    const { container } = renderApp("/cosecha/detalles");
+    await screen.findByRole("heading", { name: "Más detalles de la cosecha" });
     await screen.findByText("Valor de la recolección");
 
     await waitFor(() => {
@@ -198,8 +198,8 @@ describe("a figure the server could not establish never renders as a zero", () =
     serveWeeks([week(weekOf(1), totals({ records: 4, recordsNotInKg: 4 }))]);
     serveCurve();
 
-    renderApp("/cosecha");
-    await screen.findByRole("heading", { name: "Cosecha" });
+    renderApp("/cosecha/detalles");
+    await screen.findByRole("heading", { name: "Más detalles de la cosecha" });
     const dashes = await screen.findAllByLabelText(/no convierte a kilos/);
     expect(dashes.length).toBeGreaterThan(0);
   }, 20000);
@@ -208,8 +208,8 @@ describe("a figure the server could not establish never renders as a zero", () =
     signIn();
     serveWeeks([week(weekOf(1)), week(weekOf(2))]);
     serveCurve();
-    renderApp("/cosecha");
-    await screen.findByRole("heading", { name: "Cosecha" });
+    renderApp("/cosecha/detalles");
+    await screen.findByRole("heading", { name: "Más detalles de la cosecha" });
     expect((await screen.findAllByText(/provisional/i)).length).toBeGreaterThan(0);
   }, 20000);
 
@@ -221,8 +221,8 @@ describe("a figure the server could not establish never renders as a zero", () =
       }),
     ]);
     serveCurve();
-    renderApp("/cosecha");
-    await screen.findByRole("heading", { name: "Cosecha" });
+    renderApp("/cosecha/detalles");
+    await screen.findByRole("heading", { name: "Más detalles de la cosecha" });
     expect((await screen.findAllByText(/al menos · faltan 1/)).length).toBeGreaterThan(0);
   }, 20000);
 });
@@ -242,7 +242,7 @@ describe("the season screen answers the question it exists for", () => {
       shape: { peak: { weekStart: weekOf(3), kg: 400, records: 1 }, fallingWeeks: 2, windingDown: true, contiguousWeeks: 3 },
     });
 
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(await screen.findByText(/La cosecha va de salida/)).toBeInTheDocument();
     expect(screen.getByText(/pasó su pico/)).toBeInTheDocument();
     expect(screen.getByText(/mover gente a otro lote/)).toBeInTheDocument();
@@ -253,7 +253,7 @@ describe("the season screen answers the question it exists for", () => {
     serveWeeks([week(thisMonday, { finished: false })]);
     serveCurve({ weeks: [{ weekStart: thisMonday, kg: 40, records: 1 }] });
 
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(
       await screen.findByText(/Todavía no hay semanas terminadas suficientes/),
     ).toBeInTheDocument();
@@ -268,7 +268,7 @@ describe("the season screen answers the question it exists for", () => {
       weeksWithoutKilos: 2,
     });
 
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(await screen.findByText(/Tratarlas como cero habría fabricado una caída/)).toBeInTheDocument();
   }, 20000);
 
@@ -276,7 +276,7 @@ describe("the season screen answers the question it exists for", () => {
     signIn();
     serveWeeks([]);
     serveCurve();
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(
       await screen.findByText(/pagada a destajo al precio de la semana/),
     ).toBeInTheDocument();
@@ -289,7 +289,7 @@ describe("the season screen answers the question it exists for", () => {
       weeks: [{ weekStart: weekOf(1), kg: 100, records: 1 }],
       shape: { peak: { weekStart: weekOf(1), kg: 100, records: 1 }, fallingWeeks: 0, windingDown: false, contiguousWeeks: 3 },
     });
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(await screen.findByText("en curso")).toBeInTheDocument();
   }, 20000);
 });
@@ -601,12 +601,60 @@ describe("the review screen explains itself in sentences, not codes", () => {
 
 /* ------------------------------------------------------------------ */
 
+describe("the Cosecha dashboard is simple", () => {
+  it("shows this week in big figures, two equal actions and one link to the details", async () => {
+    signIn();
+    renderApp("/cosecha");
+    expect(await screen.findByRole("heading", { name: "Cosecha" })).toBeInTheDocument();
+    expect(await screen.findByText("Kilos esta semana")).toBeInTheDocument();
+    expect(screen.getByText("Recolectores")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Registrar la semana/ })).toHaveAttribute("href", "/cosecha/registrar-semana");
+    expect(screen.getByRole("link", { name: /Registrar una recolección/ })).toHaveAttribute("href", "/cosecha/recoleccion");
+    expect(screen.getByRole("link", { name: /Ver más detalles/ })).toHaveAttribute("href", "/cosecha/detalles");
+    // None of the advanced chrome: no tabs, no period.
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.queryByLabelText("Periodo")).toBeNull();
+  }, 20000);
+
+  it("never prints a zero for a week whose value could not be established", async () => {
+    signIn();
+    const unpriced = totals({ records: 3, kg: 90, recordsWithoutValue: 3 });
+    serveWeekDetail({
+      scope: "harvest",
+      weekStart: thisMonday,
+      finished: false,
+      coveredFrom: thisMonday,
+      coveredTo: addDays(parseDay(thisMonday), 6).toISOString().slice(0, 10),
+      partialWindow: false,
+      byDay: { columns: [{ key: thisMonday, label: "L", total: unpriced }], rows: [], total: unpriced },
+      byCrop: { columns: [], rows: [], total: unpriced },
+      total: unpriced,
+    });
+    const { container } = renderApp("/cosecha");
+    await screen.findByText("Valor");
+    await waitFor(() => expect(container.textContent).not.toMatch(/\$0(?!\d)/));
+    expect((await screen.findAllByLabelText(/No se pudo calcular el valor/)).length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("keeps the season, crops, yield and review one link away", async () => {
+    signIn();
+    serveWeeks([week(weekOf(1))]);
+    serveCurve();
+    renderApp("/cosecha/detalles");
+    expect(await screen.findByRole("heading", { name: "Más detalles de la cosecha" })).toBeInTheDocument();
+    for (const t of ["Temporada", "Por cultivo", "Rendimiento", "Revisión de pesadas"]) {
+      expect(screen.getByRole("tab", { name: t })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("link", { name: /Volver a la cosecha/ })).toHaveAttribute("href", "/cosecha");
+  }, 20000);
+});
+
 describe("the module says what its figures cover, and who may see them", () => {
   it("says the figures are picking only, not the week's payroll", async () => {
     signIn();
     serveWeeks([week(weekOf(1))]);
     serveCurve();
-    renderApp("/cosecha");
+    renderApp("/cosecha/detalles");
     expect(await screen.findByText("Solo recolección")).toBeInTheDocument();
   }, 20000);
 

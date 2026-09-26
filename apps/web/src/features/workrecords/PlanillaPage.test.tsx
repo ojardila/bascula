@@ -91,9 +91,9 @@ describe("Planilla de recolección", () => {
         return HttpResponse.json({ ...(body as object), createdAt: "2026-08-26T22:00:00Z" }, { status: 201 });
       }),
     );
-    renderApp(`/cosecha/recoleccion?dia=2026-08-26&lote=${ALTO}`);
-    expect(await screen.findByRole("heading", { name: "Registrar recolección" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Masiva" })).toHaveAttribute("aria-selected", "true");
+    // An old «Masiva» link lands on the day planilla it used to show.
+    renderApp(`/cosecha/recoleccion?quien=todos&dia=2026-08-26&lote=${ALTO}`);
+    expect(await screen.findByRole("heading", { name: "Planilla del día" })).toBeInTheDocument();
     const kilos = await screen.findByLabelText(/Jhon Fredy Cardona Loaiza, kilos/);
     await user.type(kilos, "55");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
@@ -115,8 +115,8 @@ describe("Planilla de recolección", () => {
         return HttpResponse.json({ ...(body as object), createdAt: "2026-08-26T22:00:00Z" }, { status: 201 });
       }),
     );
-    renderApp("/cosecha/recoleccion?quien=uno");
-    expect(await screen.findByRole("tab", { name: "Una persona" })).toHaveAttribute("aria-selected", "true");
+    renderApp("/cosecha/recoleccion");
+    expect(await screen.findByRole("heading", { name: "Registrar una recolección" })).toBeInTheDocument();
     const person = await screen.findByLabelText(/^Persona/);
     await user.click(person);
     await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
@@ -151,5 +151,31 @@ describe("Planilla de recolección", () => {
     expect(await screen.findByText("¿420 kg en una sola pesada?")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Corregir" }));
     expect(posted).toHaveLength(0);
+  }, 20000);
+
+  it("registers the whole week, asking before it saves", async () => {
+    signIn();
+    const user = userEvent.setup();
+    const posted: unknown[] = [];
+    server.use(
+      http.post("*/v1/work-records", async ({ request }) => {
+        const body = await request.json();
+        posted.push(body);
+        return HttpResponse.json({ ...(body as object), createdAt: "2026-08-24T22:00:00Z" }, { status: 201 });
+      }),
+    );
+    renderApp(`/cosecha/registrar-semana?lunes=${WEEK}&lote=${ALTO}`);
+    expect(await screen.findByRole("heading", { name: "Registrar la semana" })).toBeInTheDocument();
+    const cell = await screen.findByLabelText(/Jhon Fredy Cardona Loaiza, L 24/);
+    await user.type(cell, "35");
+    expect(screen.getByText("1 cambio sin guardar")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Guardar la semana" }));
+    expect(await screen.findByText("¿Guardar la semana?")).toBeInTheDocument();
+    expect(posted).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Sí, guardar" }));
+    await waitFor(() => expect(posted.length).toBe(1));
+    const body = posted[0] as { quantity: number; dateFrom: string; plotIds: string[] };
+    expect(body).toMatchObject({ quantity: 35, dateFrom: "2026-08-24", plotIds: [ALTO] });
+    expect(await screen.findByText(/Se guardó 1 pesada/)).toBeInTheDocument();
   }, 20000);
 });

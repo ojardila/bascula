@@ -1,5 +1,9 @@
 /**
- * The frame around the five harvest screens.
+ * The frame around the harvest screens.
+ *
+ * `/cosecha` itself is the simple dashboard (`CosechaHome`): no tabs, no
+ * period, two big actions. It only borrows this layout's context. The
+ * readings below live one link away, under «Ver más detalles».
  *
  * WHY A TAB SET AND NOT FIVE SIDEBAR ENTRIES. The owner's question is "how is
  * the harvest going", and the four other screens are ways of asking it more
@@ -16,6 +20,7 @@ import { createContext, useContext } from "react";
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Chip, MenuItem, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useAuth } from "../../auth/AuthContext";
 import { todayInFarm } from "../../lib/dates";
 import { PROVISIONAL } from "../../lib/vocab";
@@ -50,12 +55,10 @@ export function useHarvest(): HarvestContext {
 interface TabDef {
   path: string;
   label: string;
-  /** Match the path exactly. Only the season tab, which is the index route. */
-  exact?: boolean;
 }
 
 const TABS: TabDef[] = [
-  { path: "/cosecha", label: "Temporada", exact: true },
+  { path: "/cosecha/detalles", label: "Temporada" },
   { path: "/cosecha/cultivos", label: "Por cultivo" },
   { path: "/cosecha/rendimiento", label: "Rendimiento" },
   { path: "/cosecha/revision", label: "Revisión de pesadas" },
@@ -74,9 +77,7 @@ export function HarvestLayout() {
   const onWeek = location.pathname.startsWith("/cosecha/semana/");
   const activeTab = onWeek
     ? false
-    : (TABS.find((t) =>
-        t.exact ? location.pathname === t.path : location.pathname.startsWith(t.path),
-      )?.path ?? "/cosecha");
+    : (TABS.find((t) => location.pathname.startsWith(t.path))?.path ?? "/cosecha/detalles");
 
   const ctx: HarvestContext = {
     today,
@@ -86,8 +87,20 @@ export function HarvestLayout() {
     canSeeMoney: can("money.read"),
   };
 
+  // The dashboard draws its own, much simpler, page.
+  if (location.pathname.replace(/\/+$/, "") === "/cosecha") {
+    return (
+      <Ctx.Provider value={ctx}>
+        <Outlet />
+      </Ctx.Provider>
+    );
+  }
+
   return (
     <Box>
+      <Button component={RouterLink} to="/cosecha" startIcon={<ArrowBackIcon />} sx={{ mb: 1, fontSize: "1rem" }}>
+        Volver a la cosecha
+      </Button>
       <Stack
         direction={{ xs: "column", sm: "row" }}
         justifyContent="space-between"
@@ -95,51 +108,21 @@ export function HarvestLayout() {
         spacing={2}
         sx={{ mb: 2 }}
       >
-        <Box>
-          <Typography variant="h1">Cosecha</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Primero la cosecha completa, después esta semana. Cada pesada se
-            liquida con el resto del trabajo de la persona.
-          </Typography>
-        </Box>
-        {/* `useFlexGap`: with wrap, Stack's margin-based spacing leaves the
-            wrapped button indented and the select's label under the button above. */}
-        <Stack direction="row" spacing={1.5} useFlexGap alignItems="center" sx={{ flexWrap: "wrap", pt: 1 }}>
-          {can("workRecords.write") && (
-            <>
-              <Button
-                component={RouterLink}
-                to="/cosecha/recoleccion"
-                variant="contained"
-                size="large"
-                sx={{ py: 1.25, px: 2.5, fontSize: "1.05rem" }}
-              >
-                Registrar recolección
-              </Button>
-              <Button
-                component={RouterLink}
-                to="/labores/planilla?modo=semana"
-                variant="outlined"
-              >
-                Planilla de la semana
-              </Button>
-            </>
-          )}
-          <TextField
-            select
-            size="small"
-            label="Periodo"
-            value={range.key}
-            onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
-            sx={{ minWidth: 210 }}
-          >
-            {RANGES.map((r) => (
-              <MenuItem key={r.key} value={r.key}>
-                {r.label}
-              </MenuItem>
-            ))}
-          </TextField>
-        </Stack>
+        <Typography variant="h1">Más detalles de la cosecha</Typography>
+        <TextField
+          select
+          size="small"
+          label="Periodo"
+          value={range.key}
+          onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
+          sx={{ minWidth: 210 }}
+        >
+          {RANGES.map((r) => (
+            <MenuItem key={r.key} value={r.key}>
+              {r.label}
+            </MenuItem>
+          ))}
+        </TextField>
       </Stack>
 
       <Tabs

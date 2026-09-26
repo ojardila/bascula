@@ -92,6 +92,23 @@ const QUESTIONS = [
   { img: "/landing/app/lotes.jpg", alt: "Báscula en el navegador: recolección de un lote por semana, con kilos, valor y kilos por hectárea", title: "¿Cuánto produjo cada lote?", body: "Revise la recolección por lote y semana para ver cómo cambia durante la cosecha." },
 ];
 
+/**
+ * Questions the MCP tools can really answer (services/api/internal/httpapi/
+ * handlers_mcp.go): report_week / list_work_records, list_balances,
+ * report_harvest_curve. The answers are illustrative and marked as such.
+ */
+const ASSISTANT_CHAT = [
+  { q: "¿Cuántos kilos recogió Pedro esta semana?", a: "Pedro Ramírez lleva 215 kg esta semana, todos en el lote El Alto." },
+  { q: "¿A quién le debo y cuánto?", a: "Tiene saldo pendiente con 6 recolectores. El más alto es el de María Gómez: $310.000." },
+  { q: "¿Ya pasó el pico de la cosecha?", a: "Sí. El pico fue la semana del 7 al 13 de septiembre y desde entonces los kilos bajan poco a poco." },
+];
+
+const ASSISTANT_POINTS = [
+  "Pregunte con sus palabras, como le preguntaría a una persona.",
+  "El asistente solo ve lo que el rol de ese usuario permite: el pesador no ve dinero.",
+  "Solo consulta. No cambia ni borra nada de la finca.",
+];
+
 const FOR_WHOM = [
   "Paga la recolección por kilo.",
   "Lleva cuentas de varios recolectores.",
@@ -112,6 +129,7 @@ const FAQ = [
   { q: "¿Puedo llevar anticipos y pagos parciales?", a: "Sí. Puede registrar anticipos, aplicarlos a la cuenta y dejar constancia de pagos parciales. El saldo muestra cuánto queda pendiente." },
   { q: "¿Báscula transfiere el dinero al recolector?", a: "Báscula permite registrar el dinero que usted entrega y consultar el saldo. El pago al recolector lo realiza por el medio que utiliza en su finca." },
   { q: "¿Puedo consultar cuánto se recoge en cada lote?", a: "Sí. Puede revisar los kilos por lote, recolector y semana." },
+  { q: "¿Funciona con ChatGPT o Claude?", a: "Sí. Báscula se conecta con ChatGPT, Claude y otros asistentes de IA. Cada persona entra con su usuario de Báscula y el asistente solo puede consultar lo que su rol le permite ver." },
   { q: "¿Cuánto cuesta?", a: "La demostración es gratuita. Solicítela para conocer las condiciones de uso y el costo del servicio antes de empezar." },
   { q: "¿Tengo que llevar los datos de mi finca a la demostración?", a: "Puede conocer el recorrido con datos de ejemplo. Cuéntenos cómo registra los kilos y paga la recolección para enfocar la conversación en su operación." },
 ];
@@ -130,6 +148,7 @@ export function LandingPage() {
         <HowItWorks />
         <Example />
         <WhatYouCanSee />
+        <Assistants />
         <FieldAndOffice />
         <ForWhom />
         <DemoPreview />
@@ -288,7 +307,7 @@ function Hero() {
             </Typography>
           </Box>
           <Box component="figure" sx={{ flex: 1.25, m: 0, width: "100%", textAlign: "center" }}>
-            <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con kilos por semana, valor y recolectores" eager />
+            <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con los kilos de la semana, el valor, los recolectores y los botones para registrar" eager />
             <Typography component="figcaption" sx={{ mt: 2.5, fontSize: "1.05rem", color: MUTED }}>
               Se abre en el navegador del celular o del computador. No hay nada que instalar.
             </Typography>
@@ -400,6 +419,58 @@ function WhatYouCanSee() {
       <Typography sx={{ mt: 6, fontSize: { xs: "1.15rem", md: "1.25rem" }, color: MUTED, maxWidth: 760 }}>
         También puede llevar lotes, labores, inventario, ventas y gastos desde el computador.
       </Typography>
+    </Section>
+  );
+}
+
+/* ------------------------------------------------------ 6b. assistants -- */
+
+function Assistants() {
+  return (
+    <Section id="asistentes" bg="#eef4ec">
+      <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 5, md: 8 }} alignItems={{ xs: "stretch", md: "center" }}>
+        <Box sx={{ flex: 1 }}>
+          <SectionTitle>Pregúntele a su asistente de IA.</SectionTitle>
+          <Lead>
+            Báscula se conecta con ChatGPT, Claude y otros asistentes. Pregunte por los kilos,
+            los saldos o la cosecha, y el asistente le responde con los datos de su finca.
+          </Lead>
+          <Stack component="ul" spacing={2} sx={{ listStyle: "none", p: 0, m: 0, mt: 3 }}>
+            {ASSISTANT_POINTS.map((t) => (
+              <Stack key={t} component="li" direction="row" spacing={1.5} alignItems="flex-start">
+                <CheckCircleOutlineIcon sx={{ color: GREEN_DARK, mt: 0.25 }} />
+                <Typography sx={{ fontSize: { xs: "1.1rem", md: "1.2rem" }, color: MUTED, lineHeight: 1.5 }}>{t}</Typography>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+        <Box sx={{ flex: 1, width: "100%", maxWidth: 560, mx: "auto" }}>
+          <Box
+            role="figure"
+            aria-label="Ejemplo de conversación con un asistente de IA"
+            sx={{ bgcolor: "#fff", borderRadius: 4, border: `1px solid ${LINE}`, boxShadow: "0 12px 40px rgba(20,40,20,.08)", p: { xs: 2, md: 3 } }}
+          >
+            <Typography sx={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", color: GREEN_DARK, mb: 2 }}>
+              EJEMPLO · CIFRAS ILUSTRATIVAS
+            </Typography>
+            <Stack spacing={1.5}>
+              {ASSISTANT_CHAT.map((m) => (
+                <Stack key={m.q} spacing={1}>
+                  <Box sx={{ alignSelf: "flex-end", maxWidth: "85%", bgcolor: GREEN_DARK, color: "#fff", px: 2, py: 1.25, borderRadius: "18px 18px 4px 18px", fontSize: { xs: "1.05rem", md: "1.1rem" }, lineHeight: 1.4 }}>
+                    {m.q}
+                  </Box>
+                  <Box sx={{ alignSelf: "flex-start", maxWidth: "85%", bgcolor: "#f3f5f1", color: INK, px: 2, py: 1.25, borderRadius: "18px 18px 18px 4px", fontSize: { xs: "1.05rem", md: "1.1rem" }, lineHeight: 1.4 }}>
+                    {m.a}
+                  </Box>
+                </Stack>
+              ))}
+            </Stack>
+          </Box>
+          <Typography sx={{ mt: 1.5, fontSize: "0.95rem", color: MUTED, textAlign: "center" }}>
+            Respuestas de ejemplo. Con su finca, el asistente responde con sus datos reales.
+          </Typography>
+        </Box>
+      </Stack>
     </Section>
   );
 }

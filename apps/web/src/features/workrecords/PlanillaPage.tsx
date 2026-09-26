@@ -4,7 +4,7 @@
  * The easy one is the scale: one day, one lote, kilos next to each name.
  * The week grid is still here for whoever fills the paper planilla on Saturday.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, CircularProgress, MenuItem, Stack,
@@ -14,17 +14,13 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PermissionDenied } from "../../components/Guards";
 import { DateField } from "../../components/DateField";
-import { api } from "../../api/endpoints";
-import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
-import { useWriteOnce } from "../../lib/writeOnce";
 import { formatDate, formatWeekRange, mondayOf, parseDay, todayInFarm } from "../../lib/dates";
 import { PLOT } from "../../lib/vocab";
-import type { Activity, Plot, Worker } from "../../api/types";
 import {
-  DAY_LETTERS, cellKey, cellsFromRecords, daysOfWeek, emptyCell, isIsoDay,
-  pickHarvestActivity, planillaMode, plannedWrites, workerLabel, type SheetCell,
+  DAY_LETTERS, cellKey, daysOfWeek, emptyCell, isIsoDay, planillaMode, workerLabel,
 } from "./planilla";
+import { useHarvestSheet } from "./useHarvestSheet";
 
 function dayHeader(day: string, i: number): string {
   const d = parseDay(day);
@@ -59,85 +55,31 @@ export function PlanillaPage({
     : (mode === "dia" ? today : monday);
   const plotId = params.get("lote") ?? "";
 
-  const [workers, setWorkers] = useState<Worker[] | null>(null);
-  const [plots, setPlots] = useState<Plot[] | null>(null);
-  const [activity, setActivity] = useState<Activity | null>(null);
-  const [cells, setCells] = useState<Record<string, SheetCell>>({});
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
-  const [loadingSheet, setLoadingSheet] = useState(false);
-  const { busy, run: runOnce } = useWriteOnce();
-
   const days = useMemo(
     () => (mode === "dia" ? [day] : daysOfWeek(monday)),
     [mode, day, monday],
   );
-  const from = days[0];
-  const to = days[days.length - 1];
-  const plot = plots?.find((p) => p.id === plotId) ?? null;
 
-  useEffect(() => {
-    Promise.all([
-      api.listWorkers({ status: "active" }),
-      api.listPlots({ status: "active" }),
-      api.listActivities({ status: "active" }),
-    ])
-      .then(([w, p, a]) => {
-        setWorkers(w);
-        setPlots(p);
-        setActivity(pickHarvestActivity(a));
-        if (!params.get("lote") && p.length === 1) {
-          setParams((prev) => {
-            const next = new URLSearchParams(prev);
-            next.set("lote", p[0].id);
-            if (mode === "semana") next.set("lunes", monday);
-            else next.set("dia", day);
-            return next;
-          }, { replace: true });
-        }
-      })
-      .catch((e) => {
-        if (e instanceof ApiError && e.isPermissionDenied) setDenied(true);
-        else setLoadError(messageFor(e));
-      });
-    // catalogues load once; the sheet reloads when monday/lote change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!workers || !plotId) {
-      setCells({});
-      return;
-    }
-    let cancelled = false;
-    setLoadingSheet(true);
-    setSaveError(null);
-    setSaved(null);
-    api
-      .listWorkRecords({
-        plotId,
-        activityId: activity?.id,
-        from,
-        to,
-        status: "active",
-      })
-      .then((records) => {
-        if (cancelled) return;
-        const mine = records.filter((r) => r.plotIds.includes(plotId));
-        setCells(cellsFromRecords(workers, days, mine));
-      })
-      .catch((e) => {
-        if (!cancelled) setLoadError(messageFor(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSheet(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workers, plotId, from, to, activity?.id, days]);
+  const {
+    workers, plots, activity, cells, setCell, dirty, loadingSheet, loadError,
+    saveError, setSaveError, saved, setSaved, denied, busy, save,
+  } = useHarvestSheet({
+    days,
+    plotId,
+    today,
+    intentTag: mode,
+    onCatalogues: (p) => {
+      if (!params.get("lote") && p.length === 1) {
+        setParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("lote", p[0].id);
+          if (mode === "semana") next.set("lunes", monday);
+          else next.set("dia", day);
+          return next;
+        }, { replace: true });
+      }
+    },
+  });
 
   function patchParams(patch: Record<string, string | null>) {
     setParams((prev) => {
@@ -173,67 +115,6 @@ export function PlanillaPage({
     patchParams({ lote: id });
   }
 
-  function setCell(workerId: string, day: string, text: string) {
-    const key = cellKey(workerId, day);
-    setCells((prev) => ({
-      ...prev,
-      [key]: { ...(prev[key] ?? emptyCell()), text },
-    }));
-    setSaved(null);
-  }
-
-  async function save() {
-    if (!workers || !activity || !plot) return;
-    setSaveError(null);
-    setSaved(null);
-    const { writes, errors } = plannedWrites(workers, days, cells, today);
-    if (errors.length) {
-      setSaveError(errors[0]);
-      return;
-    }
-    if (!writes.length) {
-      setSaved("No hay cambios que guardar.");
-      return;
-    }
-    const cropIds = plot.crops.map((c) => c.id);
-    const intent = ["planilla", mode, from, to, plot.id, writes.map((w) => JSON.stringify(w)).join(";")].join("|");
-    const outcome = await runOnce(intent, async (mint) => {
-      for (const w of writes) {
-        if (w.kind === "create") {
-          await api.createWorkRecord({
-            id: mint(`wr|${w.workerId}|${w.day}`),
-            activityId: activity.id,
-            workerId: w.workerId,
-            quantity: w.quantity,
-            dateFrom: w.day,
-            dateTo: w.day,
-            plotIds: [plot.id],
-            plotCropIds: cropIds,
-          });
-        } else if (w.kind === "update") {
-          await api.updateWorkRecord(w.recordId, { quantity: w.quantity });
-        } else {
-          await api.deactivateWorkRecord(w.recordId);
-        }
-      }
-      return writes.length;
-    }).catch((e: unknown) => {
-      setSaveError(messageFor(e));
-      return { ran: false } as const;
-    });
-    if (!outcome.ran || outcome.value == null) return;
-    const n = outcome.value;
-    setSaved(n === 1 ? "Se guardó 1 pesada." : `Se guardaron ${n} pesadas.`);
-    const records = await api.listWorkRecords({
-      plotId: plot.id,
-      activityId: activity.id,
-      from,
-      to,
-      status: "active",
-    });
-    setCells(cellsFromRecords(workers, days, records.filter((r) => r.plotIds.includes(plot.id))));
-  }
-
   if (denied || !can("workRecords.write")) {
     return <PermissionDenied moduleName="registrar la planilla de recolección" />;
   }
@@ -259,8 +140,6 @@ export function PlanillaPage({
     );
   }
 
-  const dirty = Object.values(cells).some((c) => c.text !== c.original);
-
   return (
     <Box>
       {!hideChrome && (
@@ -276,7 +155,7 @@ export function PlanillaPage({
       </Button>
 
       <Typography variant="h1" gutterBottom>
-        {mode === "dia" ? "Registrar recolección" : "Planilla de la semana"}
+        {mode === "dia" ? "Planilla del día" : "Planilla de la semana"}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         {mode === "dia"
