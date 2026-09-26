@@ -255,6 +255,7 @@ func (s *Server) buildRouter() chi.Router {
 	}
 	r.Use(middleware.Recoverer)
 	r.Use(noStore)
+	r.Use(securityHeaders)
 	r.Use(logConnectorTraffic)
 
 	for _, rt := range s.Routes() {
@@ -498,6 +499,21 @@ func noStore(next http.Handler) http.Handler {
 		if wantsNoStore(r.URL.Path) {
 			w.Header().Set("Cache-Control", "no-store")
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeaders goes on every API answer. Nothing the API serves is meant
+// to be framed or sniffed into another type: JSON, uploaded photographs, the
+// OAuth sign-in page. A handler with a stricter policy (the sign-in page)
+// sets its own afterwards and wins.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		next.ServeHTTP(w, r)
 	})
 }
