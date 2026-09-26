@@ -109,6 +109,17 @@ describe("the public landing", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("says it works with AI assistants, only within the user's role, with example answers marked", async () => {
+    renderApp("/");
+    expect(await screen.findByRole("heading", { name: "Pregúntele a su asistente de IA." })).toBeInTheDocument();
+    const section = document.getElementById("asistentes")!;
+    expect(section.textContent).toMatch(/ChatGPT, Claude y otros asistentes/);
+    expect(section.textContent).toMatch(/solo ve lo que el rol/);
+    expect(within(section).getByText("¿Cuántos kilos recogió Pedro esta semana?")).toBeInTheDocument();
+    expect(within(section).getByText("¿A quién le debo y cuánto?")).toBeInTheDocument();
+    expect(within(section).getByText(/EJEMPLO · CIFRAS ILUSTRATIVAS/)).toBeInTheDocument();
+  });
+
   it("keeps the free self-serve signup and the sign-in link", async () => {
     renderApp("/");
     const cta = await screen.findByRole("link", { name: "Cree su finca gratis" });

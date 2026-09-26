@@ -80,7 +80,7 @@ export function WeekPage() {
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
       <Button
         component={RouterLink}
-        to={`/cosecha?rango=${rangeKey}`}
+        to={`/cosecha/detalles?rango=${rangeKey}`}
         startIcon={<ArrowBackIcon />}
         size="small"
       >
@@ -89,11 +89,11 @@ export function WeekPage() {
       {can("workRecords.write") && (
         <Button
           component={RouterLink}
-          to={`/labores/planilla?modo=semana&lunes=${monday}`}
+          to={`/cosecha/registrar-semana?lunes=${monday}`}
           size="small"
           variant="outlined"
         >
-          Llenar planilla
+          Registrar esta semana
         </Button>
       )}
     </Stack>

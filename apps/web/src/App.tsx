@@ -25,6 +25,8 @@ import { WorkRecordFormPage } from "./features/workrecords/WorkRecordFormPage";
 import { RecoleccionFormPage } from "./features/workrecords/RecoleccionFormPage";
 import { PlanillaPage } from "./features/workrecords/PlanillaPage";
 import { HarvestLayout } from "./features/harvest/HarvestLayout";
+import { CosechaHome } from "./features/harvest/CosechaHome";
+import { SemanaRegistroPage } from "./features/workrecords/SemanaRegistroPage";
 import { SeasonPage } from "./features/harvest/SeasonPage";
 import { WeekPage } from "./features/harvest/WeekPage";
 import { CropsPage } from "./features/harvest/CropsPage";
@@ -225,7 +227,8 @@ function Shell() {
             </RequirePermission>
           }
         >
-          <Route index element={<SeasonPage />} />
+          <Route index element={<CosechaHome />} />
+          <Route path="detalles" element={<SeasonPage />} />
           <Route path="semana/:monday" element={<WeekPage />} />
           <Route path="cultivos" element={<CropsPage />} />
           <Route path="rendimiento" element={<YieldPage />} />
@@ -245,6 +248,14 @@ function Shell() {
           element={
             <RequirePermission action="workRecords.write" moduleName="registrar la planilla de recolección">
               <PlanillaPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="cosecha/registrar-semana"
+          element={
+            <RequirePermission action="workRecords.write" moduleName="registrar la semana">
+              <SemanaRegistroPage />
             </RequirePermission>
           }
         />
