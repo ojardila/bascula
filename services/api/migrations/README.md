@@ -28,7 +28,7 @@ shipped with. `make migrate` applies them locally; on a cluster the
    cannot merge. Never edit `docs/database.md` by hand.
 4. **Row level security.** A new table holding farm data gets `farm_id`, RLS
    enabled and forced, and its policies, like the tables before it
-   ([`docs/modelo-datos.md`](../../../docs/modelo-datos.md)).
+   ([`docs/data-model.md`](../../../docs/data-model.md)).
 
 ## How a migration reaches every farm
 

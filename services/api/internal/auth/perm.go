@@ -157,7 +157,7 @@ type Rule struct {
 	// this table and asserts 403 for the weigher on every one of them.
 	//
 	// Stock is on that list even though a sack of coffee is not a peso.
-	// docs/modelo-datos.md §9 is explicit: "ventas, gastos y stock_moves
+	// docs/data-model.md §9 is explicit: "ventas, gastos y stock_moves
 	// are out of the weigher's reach the same way the ledger is". The flag is
 	// what the contract test walks, so anything the weigher must not see
 	// carries it — the name is about payroll because that is where it

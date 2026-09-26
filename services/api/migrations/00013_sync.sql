@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 
 -- The change feed, and the operation log that makes a resend safe.
--- docs/sincronizacion.md §3.4 and §4.2 specify both tables; this file is that
+-- docs/synchronization.md §3.4 and §4.2 specify both tables; this file is that
 -- specification, with the two things it left implicit made explicit: who may
 -- read the feed, and what the feed says about a farm that already had rows in
 -- it before the feed existed.

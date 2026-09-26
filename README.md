@@ -27,22 +27,20 @@ plain Spanish, built for people around fifty who don't live in software.
 Harvest registration (weigh-ins, bulk planilla, several lots a day, editing
 and voiding) is specified, with activity diagrams and the gaps against the
 current code, in
-[`docs/use-cases/registro-recoleccion.md`](docs/use-cases/registro-recoleccion.md)
-(in Spanish).
+[`docs/use-cases/harvest-registration.md`](docs/use-cases/harvest-registration.md)
+(in English; exact Spanish UI labels are retained with English glosses).
 
 - **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
-  value, pickers, kilos per day) and two big buttons: «Registro de recolección
-  masivo» and «Registrar una recolección». The detailed reports sit behind «Ver más
-  detalles».
+  value, pickers, kilos per day) and two big buttons: «Registro de recolección masivo» (Bulk harvest registration) and «Registrar una recolección» (Register a harvest). The detailed reports sit behind «Ver más detalles» (See more details).
 - **Weighing at the scale.** A phone-first screen with a person, the lot as a
-  big button, Hoy / Ayer / Otro día, and the kilos. It asks before saving an
-  implausible weight, and «Deshacer» undoes the last one. It works without
-  signal: the queue shows «N pesadas por subir» and uploads on its own. Each
+  big button, «Hoy» (Today) / «Ayer» (Yesterday) / «Otro día» (Another day), and the kilos. It asks before saving an
+  implausible weight, and «Deshacer» (Undo) undoes the last one. It works without
+  signal: the queue shows «N pesadas por subir» (N weighings to upload) and uploads on its own. Each
   weighing carries a client-minted id, so a resend is never counted twice.
-- **Bulk registration for one day** («Registro de recolección masivo») for the
+- **Bulk registration for one day** («Registro de recolección masivo» (Bulk harvest registration)) for the
   whole crew at once: pick the day (today by default, one tap for any day of
   the week) and the lot, then type the kilos in one big box per employee. Each
-  row shows what that person already has that day («2 pesadas · 38 kg»); every
+  row shows what that person already has that day («2 pesadas · 38 kg» (2 weighings · 38 kg)); every
   filled box adds a NEW weighing and nothing is replaced, because people come
   to the scale several times a day. It confirms before saving and then lists
   exactly what was added.
@@ -155,15 +153,15 @@ installed can upload their season. Documents from that era are in
 
 ## Design notes
 
-- [Use cases](docs/casos-de-uso.md): the owner's specification of the full scope.
-- [API and auth design](docs/arquitectura-api.md): Go layout, REST contract,
+- [Use cases](docs/use-cases.md): the owner's specification of the full scope.
+- [API and auth design](docs/api-architecture.md): Go layout, REST contract,
   roles, and the cross-tenant worker registry.
-- [Data model](docs/modelo-datos.md): the PostgreSQL schema and row-level security.
+- [Data model](docs/data-model.md): the PostgreSQL schema and row-level security.
 - [Database diagram](docs/database.md): generated from the migrations, always current.
-- [Owner decisions](docs/decisiones.md): the calls the team couldn't make on
+- [Owner decisions](docs/decisions.md): the calls the team couldn't make on
   its own, with what each one costs.
-- Diagrams: [system](docs/diagramas/sistema.md) · [web app](docs/diagramas/web.md)
-- [Adversarial audits](docs/auditorias.md): what held, what broke, and what is still open.
+- Diagrams: [system](docs/diagrams/system.md) · [web app](docs/diagrams/web.md)
+- [Adversarial audits](docs/audits.md): what held, what broke, and what is still open.
 - [Usability review](docs/usability.md)
 - [Archive](docs/archive/README.md): sync protocol, the simplification
   proposal, the sprint 1 plan, and the mobile diagrams.

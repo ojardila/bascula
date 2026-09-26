@@ -12,7 +12,7 @@ import (
 //
 // PriceMinor is here and not in a separate object because it is one number the
 // owner thinks of as part of the farm's settings. The HTTP layer is what drops
-// it for the weigher; see §6 of docs/arquitectura-api.md, which says GET
+// it for the weigher; see §6 of docs/api-architecture.md, which says GET
 // /v1/config reaches him without costPerUnitCents.
 type Farm struct {
 	ID          string     `json:"id"`
@@ -28,7 +28,7 @@ type Farm struct {
 	AreaHa      *float64   `json:"areaHa"`
 	SuspendedAt *time.Time `json:"suspendedAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
-	// MoneyReadOnly is the phase 4 switch of docs/archive/sincronizacion.md: for the
+	// MoneyReadOnly is the phase 4 switch of docs/archive/synchronization.md: for the
 	// hour the season import runs, the handsets may record weighings and may
 	// not settle, pay or void. It is a pointer so a PUT that does not mention
 	// it leaves it alone, like every other field on this record.

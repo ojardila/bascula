@@ -56,7 +56,7 @@ export function WorkerFormPage() {
    * on `deleted_at IS NULL`, so nothing in the database stops a second file
    * for one person — from then on the handset writes to one and the web to the
    * other, the balance is split in two, and nothing says so.
-   * `docs/archive/sincronizacion.md` lists it as the one conflict with no automatic
+   * `docs/archive/synchronization.md` lists it as the one conflict with no automatic
    * repair. So the screen offers the repair: reactivate the person who is
    * already here.
    *
@@ -325,7 +325,7 @@ export function WorkerFormPage() {
           </Card>
 
           {/* RSP-004 also asks for a cross-farm background check before saving.
-              That is the registry service, and `docs/decisiones.md` keeps it
+              That is the registry service, and `docs/decisions.md` keeps it
               out of this sprint — deliberately, not by omission.
               ── AND NONE OF THAT IS THE BUSINESS OF WHOEVER FILLS THIS IN ─
               There used to be a callout here saying "the cross-farm history
@@ -336,7 +336,7 @@ export function WorkerFormPage() {
               Whoever reads it learns nothing they can use; they learn that the
               screen was not written for them. The decision stays documented
               where decisions get made, which is this comment and
-              `docs/decisiones.md`. */}
+              `docs/decisions.md`. */}
         </Grid>
       </Grid>
 

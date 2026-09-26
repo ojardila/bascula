@@ -13,7 +13,7 @@ import { DateField } from "../../components/DateField";
  * A debt the worker owes the farm: a `deduccion` in their ledger.
  *
  * Not to be confused with an "expense" (RSP-030), which is the farm's own
- * accounting and never touches anybody's pay. `arquitectura-api.md` is
+ * accounting and never touches anybody's pay. `api-architecture.md` is
  * emphatic that mixing them means logging the cost of a fumigation deducts it
  * from someone's wages.
  */

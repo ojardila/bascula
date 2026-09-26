@@ -1,5 +1,5 @@
 /**
- * Public farm registration — decision 2 in `docs/decisiones.md`, and the
+ * Public farm registration — decision 2 in `docs/decisions.md`, and the
  * landing's main button ("Cree su finca gratis").
  *
  * Five fields and one button: the farm's name, its web address (filled from

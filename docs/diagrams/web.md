@@ -9,7 +9,7 @@ Rules that cut across every screen and that are not repeated in each diagram:
 - **Navigation hides what the role cannot do**, but that is not authorisation: the
   authorisation is on the server and it returns `403`. Hiding a button is not a permission.
 - **On entering a module without the privilege**, the web app shows the warning and takes
-  the user out of the module — that is the convention from `casos-de-uso.md`, applied on top
+  the user out of the module — that is the convention from `use-cases.md`, applied on top
   of the API's `403`.
 - **On save**, if required fields are missing it says **which ones** and **why**, and it
   returns to the form with what was typed intact.
@@ -162,7 +162,7 @@ grey = **Sprint 3 or undecided** (inventory, RSP-009, super-admin console, devic
 management).
 
 The super-admin console hangs off the login, **not off the farm shell**: it is a different
-set of routes, a different role and no reads of anyone else's ledger. `arquitectura-api.md`
+set of routes, a different role and no reads of anyone else's ledger. `api-architecture.md`
 §8 says that with self-registration it is "almost unnecessary"; it stays as a minimal screen
 for suspending.
 
@@ -287,7 +287,7 @@ Three things this flow decides that are worth not losing:
   people settle at the same time, the second one gets `409 PAYABLE_ALREADY_CLAIMED` with a
   complete `details.winningSettlement` to re-derive from. Nothing is lost silently.
 - **A date range with a weekly price collapses to a single day**, it is not rejected. See
-  `sistema.md` §7.5: it is the way out of a real clash between RSP-015 and the price model.
+  `system.md` §7.5: it is the way out of a real clash between RSP-015 and the price model.
 
 **The weigher sees a cut-down version of this screen**: only `work_unit` activities, no
 price field, no `default_rate_cents` in the `GET /v1/activities`, and the employee list
@@ -339,7 +339,7 @@ flowchart TD
 - **A full payment leaves the balance at zero** by posting a `pago` for the exact balance at
   the moment of the write, with the balance re-read inside the same transaction. Reading it
   before and posting it afterwards is how you overpay when two people collect at once.
-- **The excess is an `anticipo`, not an error.** See `sistema.md` §7.9.
+- **The excess is an `anticipo`, not an error.** See `system.md` §7.9.
 - **Nothing is edited.** A payment recorded wrong is cancelled with a `reverso`, and
   `reverses_id` is unique: an entry cannot be reversed twice.
 
@@ -486,7 +486,7 @@ a closed catalog, attributed to an identifiable farm, notified to the worker, di
 and expiring automatically after 24 months. It sits behind a flag that is switched off.
 
 **Open clash:** RSP-009 asks to show the **farm names** and the **notes**. This design does
-not deliver them. See `sistema.md` §7.1.
+not deliver them. See `system.md` §7.1.
 
 ---
 
@@ -532,8 +532,8 @@ Three rules that hold the machine up:
   each handler. A new handler cannot forget to check it.
 - **The initial state depends on which door you came in through**, and both doors exist
   because the owner has not answered decision 2 in `docs/archive/plan-sprint-1.md` §7. Careful:
-  `arquitectura-api.md` §5 attributes self-registration to "RSP-033", which is actually
-  *Eliminar Gasto* (*Delete Expense*). See `sistema.md` §7.6.
+  `api-architecture.md` §5 attributes self-registration to "RSP-033", which is actually
+  *Eliminar Gasto* (*Delete Expense*). See `system.md` §7.6.
 
 ---
 
@@ -704,5 +704,5 @@ that makes the whole cross-tenant module defensible.
 
 ---
 
-See also: `docs/diagramas/sistema.md` (context, components, ER, RLS, deployment and the full
-list of open clashes) and `docs/archive/diagrama-movil.md` (the mobile app).
+See also: `docs/diagrams/system.md` (context, components, ER, RLS, deployment and the full
+list of open clashes) and `docs/archive/mobile-diagrams.md` (the mobile app).

@@ -9,7 +9,7 @@ import (
 )
 
 // Employee is a worker. The table is `employees` and the route is
-// /v1/workers: docs/modelo-datos.md names the table, docs/arquitectura-api.md
+// /v1/workers: docs/data-model.md names the table, docs/api-architecture.md
 // names the route, and neither was going to be renamed to match the other.
 type Employee struct {
 	ID           string     `json:"id"`
@@ -254,7 +254,7 @@ type NewReactivation struct {
 	By       string
 }
 
-// ReactivateForWork is decision 8 of docs/decisiones.md, with the boundary the
+// ReactivateForWork is decision 8 of docs/decisions.md, with the boundary the
 // team of 2026-08-29 drew around it.
 //
 // The decision: somebody taken off the payroll who turns up with new work is

@@ -37,7 +37,7 @@ purges Cloudflare for `bascula.engp.io`. Nothing here is applied by hand.
 
 ## One hostname, split by path
 
-`docs/decisiones.md` left a decision open: serve the web and the API behind the
+`docs/decisions.md` left a decision open: serve the web and the API behind the
 same origin, or mount CORS on the server with an origin allowlist. This picks
 the first. `route.yaml` sends `/v1` and `/health` to the API and everything
 else to the web, so the browser never makes a cross-origin request — the API
@@ -168,7 +168,7 @@ before the farm's season lives here.**
 
 **Seasons from the retired phone app.** A farm that kept its season only on
 the Expo app uploads it through `/v1/import/season` from that app
-(`docs/archive/sincronizacion.md` §8). The web app has no equivalent.
+(`docs/archive/synchronization.md` §8). The web app has no equivalent.
 
 ---
 
@@ -196,7 +196,7 @@ farm (100 included on the free plan, then $0.10 each per month).
 - The platform API creates the custom hostname when a farm is created
   (`services/api/internal/httpapi/farm_certificate.go`, HTTP validation), polls
   it until the hostname and its certificate are active, and the waiting screen
-  (`/empezar`) shows it as the «Conexión segura» step.
+  (`/empezar`) shows it as the «Conexión segura» (Secure connection) step.
 - It is **off** unless `CF_SAAS_TOKEN` is set. The token lives in the secret
   `bascula-cloudflare` (key `saas-token`), which is created by hand, never
   committed:
@@ -221,7 +221,7 @@ farm (100 included on the free plan, then $0.10 each per month).
 ## Mail
 
 The platform API can send one email: "Su finca ya está lista", to a farm's
-owner who pressed «Avísenme por correo cuando esté lista» on the waiting
+owner who pressed «Avísenme por correo cuando esté lista» (Notify me by email when it is ready) on the waiting
 screen. It is **off** until the ConfigMap `bascula-mail` exists; without it the
 screen does not offer the option and nothing is sent.
 

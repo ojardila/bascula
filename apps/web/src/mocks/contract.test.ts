@@ -1254,7 +1254,7 @@ describe("products, stock, sales and expenses", () => {
   /* -- the weigher -------------------------------------------------- */
 
   it("keeps the weigher off all four surfaces", async () => {
-    // docs/modelo-datos.md §790: ventas, gastos and stock_moves sit outside the
+    // docs/data-model.md §790: ventas, gastos and stock_moves sit outside the
     // weigher's projection with the same shape as the ledger. The movements go
     // with the money because a movement names the plot and the crop it came
     // out of, which makes the list of them a yield report.

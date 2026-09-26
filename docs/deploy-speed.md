@@ -29,7 +29,7 @@ built at all, and vice versa.
 The release number is therefore not baked into the images. The web's
 `/version.json` is answered by nginx from the pod's environment
 (`BASCULA_VERSION`, stamped into `manifests/base/web.yaml` by CD), and the
-«versión nueva» banner compares **build keys**: a release that only changed
+«versión nueva» (new version) banner compares **build keys**: a release that only changed
 the API does not ask anyone to reload an identical page.
 
 **CI is not run twice.** Before, master ran CI on push and again inside CD.

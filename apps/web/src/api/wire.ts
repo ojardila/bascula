@@ -4,7 +4,7 @@
  * WHY THIS FILE EXISTS SEPARATELY FROM `types.ts`
  *
  * Sprint 1 built the web against a mock whose shapes came from
- * `docs/arquitectura-api.md`. The server that actually shipped disagrees with
+ * `docs/api-architecture.md`. The server that actually shipped disagrees with
  * that document in a couple of dozen places — Spanish enum values, `docId`
  * instead of `documentNumber`, no denormalised names anywhere, a settlement
  * step the document folded into the payment. Sprint 2's job was to stop
@@ -155,8 +155,8 @@ export interface WireMe {
  *
  * NOT TRANSCRIBED FROM A RUNNING SERVER, and the only type in this file that
  * is not. `routes.go` has no `/v1/users` and `openapi.yaml` has no `User`
- * schema — `docs/casos-de-uso.md` §8 leaves the use case "pendiente de
- * detallar" and `docs/arquitectura-api.md` §329 answers it with "alta de
+ * schema — `docs/use-cases.md` §8 leaves the use case "pendiente de
+ * detallar" and `docs/api-architecture.md` §329 answers it with "alta de
  * usuario con rol" over those three verbs. This is that shape, and nothing
  * more than that shape: id, who, what role, what state.
  *
@@ -814,7 +814,7 @@ export interface WireTourProgress {
  *   internal/store/expenses.go    Expense, ExpenseTotals
  *   migrations/00009…00011        the columns and the CHECK constraints
  *
- * Copying the Go structs rather than `docs/modelo-datos.md` is the lesson of
+ * Copying the Go structs rather than `docs/data-model.md` is the lesson of
  * Sprint 1 applied early: the document and the service disagreed in a couple
  * of dozen places, and the half of the app built against the document had to
  * be rewritten. A struct with `json:` tags on it cannot be wrong about what it

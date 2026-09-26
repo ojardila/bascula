@@ -4,7 +4,7 @@
  *
  * WHY THIS FILE WAS REWRITTEN IN SPRINT 2
  *
- * The sprint-1 mock was built from `docs/arquitectura-api.md`. The Go service
+ * The sprint-1 mock was built from `docs/api-architecture.md`. The Go service
  * that shipped disagrees with that document in a couple of dozen places, and a
  * mock that keeps the document's shapes is worse than no mock at all: every
  * test passes through an adapter that will never run in production, and the
@@ -291,7 +291,7 @@ const MATRIX: Record<Action, Rule> = {
   /**
    * OWNER ONLY, and that is not a transcription — `perm.go` has no such action
    * because `routes.go` had no `/v1/users` when it was written. It comes from
-   * `docs/diagramas/sistema.md` §3.3, whose capability table puts "gestión de
+   * `docs/diagrams/system.md` §3.3, whose capability table puts "gestión de
    * usuarios de la finca" in the owner column and leaves the administrator's
    * blank. An administrator therefore meets a real 403 here, exactly as they
    * would on a server that had the route.
@@ -344,7 +344,7 @@ const MATRIX: Record<Action, Rule> = {
   /**
    * The four new surfaces, and the weigher is on none of them.
    *
-   * `docs/modelo-datos.md` §790: "ventas, gastos y stock_moves quedan fuera del
+   * `docs/data-model.md` §790: "ventas, gastos y stock_moves quedan fuera del
    * pesador con la misma forma que ledger." The movements go with the money
    * for a reason that is not obvious until you look at one: a movement names
    * the plot and the crop it came out of, so the list of them is a yield
@@ -936,7 +936,7 @@ export const handlers = [
   /* ---- the farm's users ---- */
 
   /**
-   * `GET|POST|PATCH /v1/users`, per `docs/arquitectura-api.md` §329.
+   * `GET|POST|PATCH /v1/users`, per `docs/api-architecture.md` §329.
    *
    * THE GO HANDLER HAS LANDED, and where the two disagree this file is the one
    * that is wrong — the standing rule at the top of this file. Two things were
@@ -1510,7 +1510,7 @@ export const handlers = [
      * `ux_employees_doc` is partial on `deleted_at IS NULL`, so this insert
      * would otherwise succeed — and from then on there are two files for one
      * person, the handset writes to one and the web to the other, the balance
-     * is split in two, and nothing says so. `docs/archive/sincronizacion.md` lists it
+     * is split in two, and nothing says so. `docs/archive/synchronization.md` lists it
      * as the one conflict with no automatic repair, which is why it is a 409
      * that names the existing row rather than a silent success.
      */

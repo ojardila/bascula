@@ -3,7 +3,7 @@
 Serves the Báscula web app (`apps/web`). The `/v1/sync/*` and
 `/v1/import/season` routes remain for the retired Expo phone app, so phones
 that still have it installed can upload their season
-([`docs/archive/sincronizacion.md`](../../docs/archive/sincronizacion.md)).
+([`docs/archive/synchronization.md`](../../docs/archive/synchronization.md)).
 
 Multi-tenant HTTP service. Go 1.26, chi, pgx, goose, Postgres 17 + PostGIS.
 
@@ -40,7 +40,7 @@ every boot, so a token from one process is worth nothing to the next.
 repository describes.** It is the list of networks whose `X-Forwarded-For` this
 service will believe, and it decides who the rate limits count.
 
-`docs/diagramas/sistema.md` §6 puts a reverse proxy in front of this process,
+`docs/diagrams/system.md` §6 puts a reverse proxy in front of this process,
 terminating TLS. With the variable unset, every request arrives from that
 proxy's address and the per-IP signup cap collapses into **one global bucket of
 five signups an hour for the whole platform** — one clumsy afternoon and nobody
@@ -259,11 +259,11 @@ are generated in a loop.
 
 The two design documents name the same things differently. The entity a farmer
 calls a *labor* is `work_records` everywhere in code and on
-the wire — `arquitectura-api.md` called it `/v1/tasks` in one section and
-`work_records` in another, `modelo-datos.md` called it `labors`. The Spanish
+the wire — `api-architecture.md` called it `/v1/tasks` in one section and
+`work_records` in another, `data-model.md` called it `labors`. The Spanish
 interface still says "labor", which is the owner's word.
 
-| Wire (`arquitectura-api.md`) | Database (`modelo-datos.md`) |
+| Wire (`api-architecture.md`) | Database (`data-model.md`) |
 |---|---|
 | `/v1/workers` | `employees` |
 | `/v1/work-records` | `work_records` |
@@ -410,7 +410,7 @@ The `Accept` header must name both types: the transport insists.
 - **Writes.** One row in the table per route, once the answer to "what stops
   it registering the same weighing twice" is the same answer the web app's
   offline queue relies on:
-  the client id and the idempotency key in `docs/archive/sincronizacion.md`.
+  the client id and the idempotency key in `docs/archive/synchronization.md`.
 - **Sessions.** The transport runs stateless on purpose: a session pinned to
   one replica is a session the next rollout loses, and the token already says
   who is calling.
@@ -424,6 +424,6 @@ everything in the registry schema, and object storage for uploads — the
 interface is here, the bucket is not.
 
 Also deliberately unbuilt: RSP-022 … RSP-024 do not exist in
-`docs/casos-de-uso.md`, which jumps from RSP-021 to RSP-025. The warehouse
+`docs/use-cases.md`, which jumps from RSP-021 to RSP-025. The warehouse
 endpoints under `/v1/warehouses` are what the DDL implies they were, but nobody
 has written the use cases, so nothing was invented beyond a name and a row.

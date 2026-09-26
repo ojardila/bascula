@@ -2,7 +2,7 @@
  * `{"error":{"code","message","details"}}` -> something a farmer can act on.
  *
  * The contract is explicit that the client branches on `code` and that the
- * translation lives here (arquitectura-api.md §7). The server's `message` is
+ * translation lives here (api-architecture.md §7). The server's `message` is
  * for the log; it is only shown when we have no translation, and then it is
  * shown rather than swallowed, because a wrong-but-visible message is easier
  * to report than a silent screen.
@@ -36,7 +36,7 @@ export class ApiError extends Error {
   }
 
   /**
-   * True when the module must be exited, per the casos-de-uso convention.
+   * True when the module must be exited, per the use-cases convention.
    *
    * Not every 403 qualifies, and getting this wrong is user-visible. The
    * server answers 403 for three quite different situations:

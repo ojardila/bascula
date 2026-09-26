@@ -113,7 +113,7 @@ CREATE TRIGGER t_ledger_reverso BEFORE INSERT ON ledger
 
 -- The ledger is append-only, and that is not a team habit.
 --
--- docs/modelo-datos.md proposes DO INSTEAD NOTHING rules here. A rule would
+-- docs/data-model.md proposes DO INSTEAD NOTHING rules here. A rule would
 -- work, but it makes an UPDATE a silent no-op: the statement reports success,
 -- zero rows change, and nobody finds out until the money does not add up. A
 -- trigger says the same thing out loud, and it applies to every role including

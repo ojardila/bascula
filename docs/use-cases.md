@@ -8,12 +8,12 @@
 Written by the owner before this work started. They are the source of truth for
 scope: today's mobile app covers only a small part of this.
 
-Interface references the owner pointed at for the plot module (*Parcelas*):
+Interface references the owner pointed at for the plot module (plots):
 cropti.com and farmlogs.com.
 
 > A note on vocabulary. This is the owner's document and his words are the
 > product's words. Where a Spanish term is also what the interface says, it is
-> kept in parentheses: **Parcela** (plot) and **Labor** (work record) are the
+> kept in parentheses: **«Parcela»** (plot) and **«Labor»** (work record) are the
 > two that matter most.
 
 ## Conventions common to every case
@@ -28,14 +28,14 @@ cropti.com and farmlogs.com.
 
 ---
 
-## 1. Plot management (*Gestión de Parcelas*)
+## 1. Plot management
 
-### RSP-001 Register a Parcela
+### RSP-001 Register a plot
 
 Fields:
 
 *Plot information*
-- Plot name (*nombre del lote*) — string(80), required
+- Plot name — string(80), required
 - Total area in hectares — double, required
 
 *Location*
@@ -53,15 +53,15 @@ Fields:
 Exception: the system offers a coffee crop by default, ready to have a variety
 selected against it.
 
-### RSP-002 Modify a Parcela
+### RSP-002 Modify a plot
 The same fields, pre-filled with the stored values.
 
-### RSP-003 Delete a Parcela
+### RSP-003 Delete a plot
 Asks for confirmation. On accept, the plot becomes **inactive**, not deleted.
 
 ---
 
-## 2. Employee management (*Gestión de Empleados*)
+## 2. Employee management
 
 ### RSP-004 Register an Employee
 
@@ -89,7 +89,7 @@ Confirmation; the employee becomes **inactive**.
 ### RSP-007 View an Employee's profile
 Shows the employee's details, the **balance owed to them**, and action buttons:
 pay employee, register a debt, add a note. Plus:
-- **Work records** (*Labores*): activity name, date, plots
+- **Work records** («Labores» — work records): activity name, date, plots
 - **Financial history**: type (debt or payment), concept, amount, date
 - **Notes**: text and date
 
@@ -112,7 +112,7 @@ recorded that this farm looked them up.**
 
 ---
 
-## 3. Activity management (*Gestión de Actividades*)
+## 3. Activity management
 
 ### RSP-010 List Activities
 Pulls the latest categories and activities from the public repository on the
@@ -122,8 +122,8 @@ details of its units. For example:
 - Harvest → picking, paid by the kilo
 - Maintenance → felling by the day, fertilising by the day
 
-Offers a search box and the buttons "Agregar Actividad" (*add activity*) and
-"Definir Precios" (*set prices*).
+Offers a search box and the buttons «Agregar Actividad» (Add activity) and
+«Definir Precios» (Set prices).
 
 ### RSP-011 Register an Activity
 - Name — required
@@ -145,9 +145,9 @@ Still to be specified by the owner.
 
 ---
 
-## 4. Work record management (*Gestión de Labores*)
+## 4. Work-record management
 
-### RSP-014 List Labores
+### RSP-014 List work records
 Shows activity, form of payment, date performed, plots and crops, with a search
 box and a "Registrar labor" (*register work record*) button.
 
@@ -166,7 +166,7 @@ Deleting leaves the work record **inactive**.
 
 ---
 
-## 5. Product and inventory management (*Gestión de Productos e Inventarios*)
+## 5. Product and inventory management
 
 ### RSP-018 List Products
 Pulls categories and products from the public repository. Groups them by
@@ -188,7 +188,7 @@ Deleting leaves the product **inactive**.
 
 ---
 
-## 6. Sales management (*Gestión de Ventas*)
+## 6. Sales management
 
 ### RSP-026 List Sales · RSP-027 Register a Sale
 - Product — select, required
@@ -202,7 +202,7 @@ Deleting leaves the sale **inactive**.
 
 ---
 
-## 7. Expense management (*Gestión de Gastos*)
+## 7. Expense management
 
 ### RSP-030 List Expenses · RSP-031 Register an Expense
 - Value — double
@@ -217,7 +217,7 @@ Deleting leaves the expense **inactive**.
 
 ---
 
-## 8. Configuration (*Configuración*)
+## 8. Configuration
 
 ### Modify farm details
 - Name, phone, size in hectares — required

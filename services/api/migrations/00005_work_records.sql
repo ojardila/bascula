@@ -5,7 +5,7 @@
 -- activity paid per work unit with date_from = date_to; there is no `pickups`
 -- table. Two payable tables would mean two anti double-pay locks and no way
 -- for one settlement to take both, and a picker who also did a day's clearing
--- needs one settlement, not two. See docs/arquitectura-api.md section 1.
+-- needs one settlement, not two. See docs/api-architecture.md section 1.
 CREATE TABLE work_records (
   id            uuid PRIMARY KEY,
   farm_id       uuid NOT NULL REFERENCES farms(id),

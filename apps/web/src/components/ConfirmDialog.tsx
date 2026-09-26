@@ -17,7 +17,7 @@ interface Props {
  * The confirmation in front of every logical removal.
  *
  * It says "queda inactiva" and not "se elimina", because that is what happens:
- * nothing is ever deleted (casos-de-uso.md). Telling the user otherwise makes
+ * nothing is ever deleted (use-cases.md). Telling the user otherwise makes
  * them hesitate over a reversible action and, worse, trains them to believe
  * data disappears when it does not.
  */

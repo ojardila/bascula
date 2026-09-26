@@ -49,11 +49,11 @@ that already exists on that farm's phone.
 |---|---|---|
 | `docs/archive/sync-and-roles.md` | "a settlement carries the set of pickup ids it claims, and the server rejects a settlement claiming a pickup that another settlement already holds; the rejected device re-derives" | **Rejected.** Re-deriving does not give back cash that already left somebody's pocket. The phone does not settle without syncing. §6 |
 | `docs/archive/sync-and-roles.md` | ordering by "a per-device counter plus arrival order at the server" | **Replaced** by the server's commit sequence with an `xmin` horizon. There is one server: distributed clocks are not needed. §3.4 |
-| `modelo-datos.md` §3 | "the mobile app adds a `uuid` column to each table and backfills it, keeping its integer PK" | **Confirmed and detailed.** §1 |
-| `modelo-datos.md` rev. 2 | the payable table is called `labors`; a `pickups` view exists | **Obsolete.** The migrations created `work_records` and there is no `pickups` view. Compatibility comes from the HTTP facade `/v1/pickups`. |
+| `data-model.md` §3 | "the mobile app adds a `uuid` column to each table and backfills it, keeping its integer PK" | **Confirmed and detailed.** §1 |
+| `data-model.md` rev. 2 | the payable table is called `labors`; a `pickups` view exists | **Obsolete.** The migrations created `work_records` and there is no `pickups` view. Compatibility comes from the HTTP facade `/v1/pickups`. |
 | `openapi.yaml`, conventions | "every write accepts a client-supplied `id` and is idempotent on `(farm_id, id)`" | **Today this is false for the ledger.** `store.AddLedgerEntry` does a bare `INSERT`; re-sending a payment after a timeout collides with the PK. It is a bug and it has to be fixed before push is switched on. §4.2 |
-| `arquitectura-api.md` §8 | "offline sync: not now" | This document **is** that later. Its deadline is no longer set by a preference but by the facade: `/v1/pickups` can only translate `cropId → plot_crop` while the relation is 1:1. §8 |
-| `decisiones.md` §3 | "during the transition, pay from one side only" | That mitigation **does not end when sync is deployed**, but at phase 6 of §8. Before that they are still two databases. |
+| `api-architecture.md` §8 | "offline sync: not now" | This document **is** that later. Its deadline is no longer set by a preference but by the facade: `/v1/pickups` can only translate `cropId → plot_crop` while the relation is 1:1. §8 |
+| `decisions.md` §3 | "during the transition, pay from one side only" | That mitigation **does not end when sync is deployed**, but at phase 6 of §8. Before that they are still two databases. |
 
 ---
 
@@ -823,8 +823,8 @@ completed in the current session (`more:false`) and an empty outbox for that
 worker. If either is missing, the button is off with this sentence, and with the
 `anticipo` button **next to it, not in another menu**:
 
-> Para liquidar hay que sincronizar. Sin señal puedes entregar un anticipo: se
-> descuenta solo cuando se liquide.
+> To settle, you have to sync. With no signal, you can hand over an anticipo: it
+> is deducted automatically when the settlement is made.
 
 (*To settle you have to sync. With no signal you can hand over an `anticipo`: it
 is deducted automatically when the settlement happens.*)
@@ -853,7 +853,7 @@ week is an office act, not a plot act.
 | **A. Server owns it (chosen)** | The phone does not settle without syncing; the `anticipo` is the way out in the field | Closing a week and issuing the definitive receipt with no signal. **The app does it today and will stop.** Mitigated: the `anticipo` also prints a receipt, and the later settlement amortises it to the cent. |
 | **B. Settle offline and arbitrate on arrival** (what `docs/archive/sync-and-roles.md` proposes) | The phone settles; the server rejects the loser and sends them the winner to re-derive | **The loser's cash is already in the picker's pocket.** A settlement has to be undone after the money moved — which is literally the failure this whole system exists to avoid. And the loser is the one who had no signal, i.e. the weigher, i.e. the one least able to fix it. |
 | **C. Reservation with a lease** | While online the phone reserves a set of payables and can settle them offline until the lease expires | Real complexity (expiry, renewal, releasing after a lost phone) in exchange for something that **only works if the phone was online recently** — which is exactly when A works too. And a phone that falls in the river leaves weighings locked until the lease expires. |
-| **D. Lock split per device** | Each device can only settle what it recorded | Breaks the guarantee of **one** settlement per worker: somebody who picked with two weighers gets two documents and two receipts. It is exactly the two-payable-tables problem `arquitectura-api.md` §1 rejected, reintroduced through the back door. |
+| **D. Lock split per device** | Each device can only settle what it recorded | Breaks the guarantee of **one** settlement per worker: somebody who picked with two weighers gets two documents and two receipts. It is exactly the two-payable-tables problem `api-architecture.md` §1 rejected, reintroduced through the back door. |
 
 The argument that decides between A and B is not technical, it is about who does
 what. **The one who spends days without a signal is the weigher, and the weigher
@@ -1035,7 +1035,7 @@ transaction**, keeping the phone's UUIDs:
 
 `plot_crops` inherits the `crop`'s uuid because that is where the weighings
 pointed; the plot is new and takes the name of the plot the user had in his
-head. It is the migration `modelo-datos.md` §B already describes, and its
+head. It is the migration `data-model.md` §B already describes, and its
 important property is that **the money is not remapped**:
 `settlement_items.payable_id` points at the same uuid it pointed at on the phone.
 

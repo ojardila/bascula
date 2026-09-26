@@ -3,13 +3,13 @@
  *
  * Until now the only way to create a user was to register a whole new farm,
  * which meant an owner who hired a foreman had no way to give him a login.
- * `docs/casos-de-uso.md` §8 lists this as "listar y agregar usuarios" and then
- * says "pendiente de detallar"; `docs/arquitectura-api.md` §329 answers it
+ * `docs/use-cases.md` §8 lists this as "listar y agregar usuarios" and then
+ * says "pendiente de detallar"; `docs/api-architecture.md` §329 answers it
  * with the minimum that unblocks — `GET|POST|PATCH /v1/users`, owner only.
  *
- * OWNER ONLY, AND NOT ADMINISTRATOR. `docs/diagramas/sistema.md` §3.3 puts
+ * OWNER ONLY, AND NOT ADMINISTRATOR. `docs/diagrams/system.md` §3.3 puts
  * "gestión de usuarios de la finca" in the owner column and leaves the
- * administrator's blank, which is stricter than `casos-de-uso.md` reads on its
+ * administrator's blank, which is stricter than `use-cases.md` reads on its
  * own — the same tightening that took price-setting and deletion off the
  * administrator. `permissions.ts` has said so since Sprint 1: `config.users`
  * is in OWNER and in neither of the others.

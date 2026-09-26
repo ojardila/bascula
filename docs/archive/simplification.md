@@ -48,7 +48,7 @@ contradictory, and this is not a suspicion — it is what runs today:
 6. **But the `pago` does leave**, via `/v1/payments` with
    `allowOverpayment: true` (`restTransport.ts:458` and `:496`).
 
-The result, from phase 6 of `sincronizacion.md` §8 onwards: the server receives
+The result, from phase 6 of `synchronization.md` §8 onwards: the server receives
 a payment without the `devengo` that justifies it, **and the weighings are still
 unclaimed in `ux_items_payable_live`**, so the web can settle them again and pay
 them again. That is the double payment the whole design exists to prevent,
@@ -244,7 +244,7 @@ be sold to farms that may or may not have a signal, the proposal cuts off that
 market — and that is a business decision, not an architectural one. If the
 answer is "yes, I do want to sell to those farms", then neither this proposal
 nor the current model is the answer: the answer is the "provisional" variant in
-`sincronizacion.md` §6.4, and it has to be costed now rather than discovered
+`synchronization.md` §6.4, and it has to be costed now rather than discovered
 with the first farm that asks for it.
 
 ---

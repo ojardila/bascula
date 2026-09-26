@@ -1,7 +1,7 @@
 /**
  * A whole coffee farm, in memory, in the SERVER's own shapes.
  *
- * Sprint 1 seeded this file from `docs/arquitectura-api.md`. Sprint 2 re-seeded
+ * Sprint 1 seeded this file from `docs/api-architecture.md`. Sprint 2 re-seeded
  * it from `services/api` itself: every row below is now a value of a type in
  * `src/api/wire.ts`, which was hand-transcribed from the Go structs. The point
  * is not tidiness. If the mock keeps emitting the old invented shapes, then
@@ -9,7 +9,7 @@
  * the adapter the real API needs is the one nothing tests.
  *
  * The figures are unchanged and they are load-bearing. They agree with the
- * wireframes in `docs/diagramas/web.md` §8 to the peso: 38,5 kg x $800 =
+ * wireframes in `docs/diagrams/web.md` §8 to the peso: 38,5 kg x $800 =
  * $30.800; María's pending total is $153.600; her derived balance is $184.500.
  * If you change a seed number and those stop matching, the seed is wrong, not
  * the wireframe.
@@ -1650,7 +1650,7 @@ export function resetDb(): void {
    * The catalogues RSP-019 puts behind an "add it if it is not there" button.
    *
    * `storage_units` carries a single `name` and NOT the `code`+`label` pair
-   * `docs/modelo-datos.md` gave it. Migration 00009 says why in as many words:
+   * `docs/data-model.md` gave it. Migration 00009 says why in as many words:
    * `work_units` needs two identifiers because it also carries `kg_factor`,
    * and a factor is what makes one farm's "canasta" comparable with another's.
    * A storage unit converts to nothing and is only ever shown in a picker.

@@ -771,7 +771,7 @@ export interface PaymentInput {
  * whether it still stands.
  *
  * `status` has two values and no third. A void settlement is never reopened —
- * `docs/archive/sincronizacion.md`: "Ninguna liquidación cerrada se reabre nunca, por
+ * `docs/archive/synchronization.md`: "Ninguna liquidación cerrada se reabre nunca, por
  * ningún motivo" — so there is no "reversed to draft" state to model, and the
  * screen offers no control that would imply one.
  */

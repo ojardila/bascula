@@ -41,7 +41,7 @@ export const fromCents = (cents: Cents): number => cents / 100;
  * The one multiplication in the product: quantity x unit rate.
  *
  * Mirrors `Math.round(weight * costPerUnitCents)` in the mobile ledger and the
- * `amount_cents = round(quantity x rate_cents)` rule of arquitectura-api.md.
+ * `amount_cents = round(quantity x rate_cents)` rule of api-architecture.md.
  * Valid for the three pay modes: contract (quantity = 1), time_unit (quantity
  * = number of day-wages) and work_unit (quantity = kg / arrobas / baskets).
  */

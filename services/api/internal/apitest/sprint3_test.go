@@ -691,7 +691,7 @@ func TestInventoryEndpointsThatAddUpConfirmTheResourceFirst(t *testing.T) {
 }
 
 // TestWeigherSeesNoSalesExpensesOrStock is the sprint's half of the rule that
-// docs/modelo-datos.md §9 states: ventas, gastos and stock_moves are outside
+// docs/data-model.md §9 states: ventas, gastos and stock_moves are outside
 // the weigher's reach with the same shape as the ledger.
 //
 // The contract test already asserts 403 on every route marked Money. This one
