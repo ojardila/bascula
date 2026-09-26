@@ -650,6 +650,9 @@ function InviteDialog({
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {/* Tour step 5 goes first: at the bottom of the dialog it sat below
+              the fold on every screen, phone and desktop alike. */}
+          {!owner && <TourCallout tour="owner" n={5} onPrimary={submit} />}
           {owner && (
             <Alert severity="warning" icon={false} sx={{ fontSize: 16 }}>
               <AlertTitle sx={{ fontWeight: 800 }}>Un dueño puede todo</AlertTitle>
@@ -729,7 +732,6 @@ function InviteDialog({
               </Stack>
             </Box>
           )}
-          {!owner && <TourCallout tour="owner" n={5} onPrimary={submit} />}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
