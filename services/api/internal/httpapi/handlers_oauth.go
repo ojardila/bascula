@@ -378,12 +378,12 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	failToClient := func(desc string) {
 		if redirectURI == "" {
-			s.oauthForm(w, q, desc, nil)
+			s.oauthForm(w, r, q, desc, nil)
 			return
 		}
 		u, err := url.Parse(redirectURI)
 		if err != nil {
-			s.oauthForm(w, q, desc, nil)
+			s.oauthForm(w, r, q, desc, nil)
 			return
 		}
 		qq := u.Query()
@@ -398,7 +398,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if clientID == "" || redirectURI == "" {
-		s.oauthForm(w, q, "Faltan client_id o redirect_uri.", nil)
+		s.oauthForm(w, r, q, "Faltan client_id o redirect_uri.", nil)
 		return
 	}
 	if challenge == "" || method != oauthChallenge {
@@ -414,33 +414,30 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	client, err := store.GetOAuthClient(r.Context(), tx, clientID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.oauthForm(w, q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil)
+			s.oauthForm(w, r, q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil)
 			return
 		}
 		writeError(w, r, err)
 		return
 	}
 	if !containsString(client.RedirectURIs, redirectURI) {
-		s.oauthForm(w, q, "redirect_uri no coincide con el cliente registrado.", nil)
+		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil)
 		return
 	}
 
 	if r.Method == http.MethodGet {
-		s.oauthForm(w, q, "", nil)
+		s.oauthForm(w, r, q, "", nil)
 		return
 	}
 
-	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
-	password := q.Get("password")
-	farmID := strings.TrimSpace(q.Get("farm_id"))
-	if email == "" || password == "" {
-		s.oauthForm(w, q, "Correo y contraseña son obligatorios.", nil)
-		return
-	}
-
-	user, chosen, ferr := s.oauthLogin(r, tx, email, password, farmID)
+	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
 	if ferr != nil {
-		s.oauthForm(w, q, ferr.Error(), nil)
+		s.oauthForm(w, r, q, ferr.Error(), nil)
+		return
+	}
+	if pick != nil {
+		// Several farms and nothing (host, choice) says which: second step.
+		s.oauthForm(w, r, q, "", pick)
 		return
 	}
 
@@ -487,59 +484,129 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
-func (s *Server) oauthLogin(r *http.Request, tx pgx.Tx, email, password, farmID string) (*store.User, *store.Membership, error) {
-	user, err := store.FindUserByEmail(r.Context(), tx, email)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil, err
-	}
-	hash := auth.DecoyHash()
-	if user != nil {
-		hash = user.PasswordHash
-	}
-	ok, err := auth.VerifyPassword(password, hash)
-	if err != nil || !ok || user == nil {
-		return nil, nil, fmt.Errorf("correo o contraseña incorrectos")
+const (
+	oauthPickTicketPurpose = "oauth-farm-pick"
+	oauthPickTicketTTL     = 10 * time.Minute
+)
+
+// oauthPick is the second step of the sign-in page: the password was right and
+// the account belongs to several farms, none of them named by the host.
+type oauthPick struct {
+	Ticket string
+	Farms  []store.Membership
+}
+
+// oauthSignIn resolves who is signing in and for which farm.
+//
+// First step: email and password. Second step (only on the main host, for an
+// account with several farms): a ticket proving the password was already
+// checked, plus the farm the person picked from the list. A farm host
+// ({slug}.bascula.engp.io) names its farm, so it never asks.
+//
+// Exactly one of (membership, pick, error) is meaningful.
+func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.User, *store.Membership, *oauthPick, error) {
+	var user *store.User
+	if ticket := q.Get("ticket"); ticket != "" {
+		uid, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
+		if err != nil {
+			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
+		}
+		u, err := store.FindUserByID(r.Context(), tx, uid)
+		if err != nil {
+			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
+		}
+		user = u
+	} else {
+		email := strings.ToLower(strings.TrimSpace(q.Get("email")))
+		password := q.Get("password")
+		if email == "" || password == "" {
+			return nil, nil, nil, errors.New("Correo y contraseña son obligatorios.")
+		}
+		u, err := store.FindUserByEmail(r.Context(), tx, email)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, nil, err
+		}
+		hash := auth.DecoyHash()
+		if u != nil {
+			hash = u.PasswordHash
+		}
+		ok, err := auth.VerifyPassword(password, hash)
+		if err != nil || !ok || u == nil {
+			return nil, nil, nil, errors.New("Correo o contraseña incorrectos.")
+		}
+		user = u
 	}
 	if user.EmailVerifiedAt == nil {
-		return nil, nil, fmt.Errorf("verifique el correo antes de conectar un asistente")
+		return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
 	}
 	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	memberships, err := store.ListMemberships(r.Context(), tx, user.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	var active []store.Membership
+	for _, m := range memberships {
+		if m.SuspendedAt == nil {
+			active = append(active, m)
+		}
 	}
 	if len(memberships) == 0 {
-		return nil, nil, fmt.Errorf("esa cuenta no pertenece a ninguna finca")
+		return nil, nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
 	}
-	// A farm address (cafin3.bascula.engp.io) names its farm, so an account
-	// with several farms signing in there needs no UUID typed by hand.
-	if farmID == "" && len(memberships) > 1 {
-		if pinned, err := loginFarmPin(r.Context(), tx, r, ""); err == nil {
-			farmID = pinned
-		}
+	if len(active) == 0 {
+		return nil, nil, nil, errors.New("Esa finca está suspendida.")
 	}
-	var chosen *store.Membership
-	switch {
-	case farmID != "":
-		for i := range memberships {
-			if memberships[i].FarmID == farmID {
-				chosen = &memberships[i]
+	find := func(farmID string) *store.Membership {
+		for i := range active {
+			if active[i].FarmID == farmID {
+				return &active[i]
 			}
 		}
-		if chosen == nil {
-			return nil, nil, fmt.Errorf("esa cuenta no pertenece a esa finca")
+		return nil
+	}
+
+	// A farm address names its farm: no question, and no other farm.
+	if slug := farmSlugFromHost(r); slug != "" {
+		for _, m := range memberships {
+			if m.FarmSlug == slug && m.SuspendedAt != nil {
+				return nil, nil, nil, errors.New("Esa finca está suspendida.")
+			}
 		}
-	case len(memberships) == 1:
-		chosen = &memberships[0]
-	default:
-		return nil, nil, fmt.Errorf("esta cuenta tiene varias fincas; elija una")
+		for i := range active {
+			if active[i].FarmSlug == slug {
+				return user, &active[i], nil, nil
+			}
+		}
+		pinned, err := visibleFarmIDBySlug(r.Context(), tx, slug)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if m := find(pinned); pinned != "" && m != nil {
+			return user, m, nil, nil
+		}
+		// A dedicated farm stack holds only its own farm, so on its host
+		// the one active membership is that farm.
+		if len(active) == 1 {
+			return user, &active[0], nil, nil
+		}
+		return nil, nil, nil, errors.New("Esa cuenta no pertenece a esta finca.")
 	}
-	if chosen.SuspendedAt != nil {
-		return nil, nil, fmt.Errorf("esa finca está suspendida")
+
+	if farmID := strings.TrimSpace(q.Get("farm_id")); farmID != "" {
+		if m := find(farmID); m != nil {
+			return user, m, nil, nil
+		}
+		return nil, nil, nil, errors.New("Esa cuenta no pertenece a esa finca.")
 	}
-	return user, chosen, nil
+	if len(active) == 1 {
+		return user, &active[0], nil, nil
+	}
+	return user, nil, &oauthPick{
+		Ticket: s.signer.SignTicket(oauthPickTicketPurpose, user.ID, oauthPickTicketTTL),
+		Farms:  active,
+	}, nil
 }
 
 // oauthClientCredentials reads the client's identity the way RFC 6749 §2.3
@@ -802,7 +869,25 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-func (s *Server) oauthForm(w http.ResponseWriter, q url.Values, notice string, _ any) {
+// oauthFormStyle: large tap targets, readable on a phone and on a desk.
+const oauthFormStyle = `<style>
+  body{font:17px/1.45 system-ui,sans-serif;max-width:30rem;margin:8vh auto;padding:0 1.25rem;color:#111}
+  h1{font-size:1.3rem;margin:0 0 .5rem}
+  p{color:#444}
+  label.f{display:block;margin:.9rem 0 .3rem;font-weight:600}
+  input[type=email],input[type=password]{width:100%;box-sizing:border-box;padding:.75rem .8rem;font:inherit;border:1px solid #bbb;border-radius:8px}
+  button{margin-top:1.25rem;width:100%;padding:.9rem 1rem;font:inherit;font-weight:600;background:#2e7d32;color:#fff;border:0;border-radius:8px;cursor:pointer}
+  .err{color:#a30;background:#fee;padding:.6rem .8rem;border-radius:8px}
+  .farm{color:#1b5e20;background:#eef7ee;padding:.6rem .8rem;border-radius:8px}
+  fieldset{border:0;margin:1rem 0 0;padding:0}
+  legend{font-weight:600;margin-bottom:.5rem}
+  label.opt{display:flex;align-items:center;gap:.8rem;min-height:3.25rem;margin:.5rem 0;padding:.8rem 1rem;border:1px solid #bbb;border-radius:10px;cursor:pointer}
+  label.opt:has(input:checked){border-color:#2e7d32;background:#eef7ee}
+  label.opt input{width:1.4rem;height:1.4rem;margin:0;flex:none}
+  .slug{display:block;color:#666;font-size:.9rem}
+</style>`
+
+func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values, notice string, pick *oauthPick) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	esc := html.EscapeString
@@ -813,6 +898,9 @@ func (s *Server) oauthForm(w http.ResponseWriter, q url.Values, notice string, _
 		}
 		return `<input type="hidden" name="` + esc(name) + `" value="` + esc(v) + `">`
 	}
+	oauthParams := hidden("client_id") + hidden("redirect_uri") + hidden("state") +
+		hidden("code_challenge") + hidden("code_challenge_method") + hidden("resource") +
+		hidden("scope") + hidden("response_type")
 	msg := ""
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
@@ -820,34 +908,67 @@ func (s *Server) oauthForm(w http.ResponseWriter, q url.Values, notice string, _
 		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
 		msg = `<p class="err">` + esc(notice) + `</p>`
 	}
-	_, _ = fmt.Fprintf(w, `<!doctype html>
+	head := `<!doctype html>
+<html lang="es">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
 <title>Conectar Báscula</title>
-<style>
-  body{font:16px/1.4 system-ui,sans-serif;max-width:28rem;margin:12vh auto;padding:0 1.25rem;color:#111}
-  h1{font-size:1.25rem;margin:0 0 .5rem}
-  p{color:#444}
-  label{display:block;margin:.75rem 0 .25rem;font-weight:600}
-  input{width:100%%;box-sizing:border-box;padding:.5rem .6rem;font:inherit;border:1px solid #ccc;border-radius:6px}
-  button{margin-top:1rem;padding:.6rem 1rem;font:inherit;background:#0a7;color:#fff;border:0;border-radius:6px;cursor:pointer}
-  .err{color:#a30;background:#fee;padding:.5rem .75rem;border-radius:6px}
-</style>
+` + oauthFormStyle + `
 <h1>Conectar Báscula a un asistente</h1>
-<p>Entre con la misma cuenta de la finca. El asistente podrá <strong>consultar y registrar</strong> cosecha y nómina con los permisos de su rol. Pagos, anticipos, liquidaciones y cambios de precio siempre le piden su confirmación antes de hacerse.</p>
+`
+	if pick != nil {
+		var opts strings.Builder
+		for i, m := range pick.Farms {
+			checked := ""
+			if i == 0 {
+				checked = " checked"
+			}
+			name := strings.TrimSpace(m.FarmName)
+			if name == "" {
+				name = m.FarmSlug
+			}
+			slug := ""
+			if m.FarmSlug != "" {
+				slug = `<span class="slug">` + esc(m.FarmSlug) + `.bascula.engp.io</span>`
+			}
+			fmt.Fprintf(&opts, `<label class="opt"><input type="radio" name="farm_id" value="%s"%s><span>%s%s</span></label>
+`, esc(m.FarmID), checked, esc(name), slug)
+		}
+		_, _ = fmt.Fprintf(w, `%s<p>Su cuenta tiene varias fincas. Elija cuál va a usar el asistente.</p>
 %s
 <form method="post" action="/oauth/authorize">
-  %s%s%s%s%s%s
-  <label for="email">Correo</label>
+  %s<input type="hidden" name="ticket" value="%s">
+  <fieldset>
+    <legend>Finca</legend>
+    %s
+  </fieldset>
+  <button type="submit">Continuar</button>
+</form>
+`, head, msg, oauthParams, esc(pick.Ticket), opts.String())
+		return
+	}
+
+	farmLine := ""
+	if slug := farmSlugFromHost(r); slug != "" {
+		name := slug
+		if s.pool != nil {
+			var dn *string
+			if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
+				name = *dn
+			}
+		}
+		farmLine = `<p class="farm">Finca: <strong>` + esc(name) + `</strong></p>`
+	}
+	_, _ = fmt.Fprintf(w, `%s<p>Entre con la misma cuenta de la finca. El asistente podrá <strong>consultar y registrar</strong> cosecha y nómina con los permisos de su rol. Pagos, anticipos, liquidaciones y cambios de precio siempre le piden su confirmación antes de hacerse.</p>
+%s%s
+<form method="post" action="/oauth/authorize">
+  %s
+  <label class="f" for="email">Correo</label>
   <input id="email" name="email" type="email" autocomplete="username" required value="%s">
-  <label for="password">Contraseña</label>
+  <label class="f" for="password">Contraseña</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
-  <label for="farm_id">Finca (UUID, si tiene más de una)</label>
-  <input id="farm_id" name="farm_id" value="%s" placeholder="se elige sola si solo hay una">
   <button type="submit">Autorizar</button>
 </form>
-`, msg,
-		hidden("client_id"), hidden("redirect_uri"), hidden("state"),
-		hidden("code_challenge"), hidden("code_challenge_method"), hidden("resource"),
-		esc(q.Get("email")), esc(q.Get("farm_id")))
+`, head, farmLine, msg, oauthParams, esc(q.Get("email")))
 }
