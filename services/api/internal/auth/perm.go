@@ -26,6 +26,7 @@ const (
 	ActionVerifyEmail      Action = "auth.verify_email"
 	ActionLogout           Action = "auth.logout"
 	ActionMeRead           Action = "me.read"
+	ActionToursWrite       Action = "me.tours.write"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -179,6 +180,7 @@ var Matrix = map[Action]Rule{
 	ActionVerifyEmail:      {Public: true, TenantOptional: true},
 	ActionLogout:           {Roles: everyone},
 	ActionMeRead:           {Roles: everyone},
+	ActionToursWrite:       {Roles: everyone},
 
 	// The weigher reads workers, but the handler hands him a reduced
 	// projection: id, name, lastName, tag. No document, no phone, no photo.

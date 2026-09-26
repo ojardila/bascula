@@ -32,6 +32,8 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/auth/verify-email", auth.ActionVerifyEmail, s.handleVerifyEmail},
 		{http.MethodPost, "/v1/auth/logout", auth.ActionLogout, s.handleLogout},
 		{http.MethodGet, "/v1/me", auth.ActionMeRead, s.handleMe},
+		{http.MethodGet, "/v1/me/tours", auth.ActionMeRead, s.handleListTours},
+		{http.MethodPut, "/v1/me/tours/{tour}", auth.ActionToursWrite, s.handleSaveTour},
 
 		// The farm's own record. The weigher reads it without the price.
 		{http.MethodGet, "/v1/farm", auth.ActionFarmRead, s.handleGetFarm},
@@ -140,6 +142,9 @@ func (s *Server) Routes() []Route {
 		// Prices.
 		{http.MethodGet, "/v1/prices/weeks/{monday}", auth.ActionPricesRead, s.handleGetWeekPrice},
 		{http.MethodPut, "/v1/prices/weeks/{monday}", auth.ActionPricesWrite, s.handleSetWeekPrice},
+		{http.MethodGet, "/v1/prices/base", auth.ActionPricesRead, s.handleGetBasePrice},
+		{http.MethodGet, "/v1/prices/base/{monday}/impact", auth.ActionPricesRead, s.handleBasePriceImpact},
+		{http.MethodPut, "/v1/prices/base/{monday}", auth.ActionPricesWrite, s.handleSetBasePrice},
 
 		// Money. Every one of these is Money:true in the permission table, and
 		// the contract test asserts 403 for the weigher on all of them.

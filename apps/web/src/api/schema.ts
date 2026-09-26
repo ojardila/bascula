@@ -205,6 +205,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/tours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's progress through the guided tours
+         * @description Per user and per farm, so a tour started on the phone resumes on the
+         *     computer. Only the caller's own rows exist for them.
+         */
+        get: operations["listTours"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tours/{tour}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A short lowercase tour name, e.g. `owner` or `weigher`. */
+                tour: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Save the caller's progress through one tour */
+        put: operations["saveTour"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/farm": {
         parameters: {
             query?: never;
@@ -1401,6 +1442,82 @@ export interface paths {
          *     keeps the price it was settled at.
          */
         put: operations["setWeekPrice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prices/base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The farm's base price of a kilo, with its history
+         * @description The base price is effective-dated: each row applies from its Monday
+         *     until the next row. A week with its own price (`/v1/prices/weeks`)
+         *     keeps it. `confirmed` is false for a farm signed up from the landing
+         *     whose default price nobody has chosen yet; the onboarding tour asks
+         *     the owner to confirm it.
+         */
+        get: operations["getBasePrice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prices/base/{monday}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the price applies from. Any other day is a 400. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the base price from a Monday on
+         * @description Owner only. Stores (or corrects) the base price from that Monday until
+         *     the next one in the history, and marks the farm's price as confirmed.
+         *     Settled weighings keep the price they were settled at: a new price
+         *     never changes a settled week, only unsettled work.
+         */
+        put: operations["setBasePrice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prices/base/{monday}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday a new base price would apply from. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * What a new base price from that Monday would change
+         * @description Counts the weighings priced by the week from that Monday up to the
+         *     next history row: the unsettled ones would take the new price, the
+         *     settled ones would not. Weeks with their own price are counted apart
+         *     because they keep it.
+         */
+        get: operations["basePriceImpact"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -4234,6 +4351,49 @@ export interface components {
             /** @description Always empty here. The lines are on the detail route. */
             items: components["schemas"]["Payable"][];
         };
+        BasePriceState: {
+            /**
+             * Format: int64
+             * @description The base price in force this week.
+             */
+            currentCents: number;
+            /** @description False until an owner has chosen or confirmed the price. */
+            confirmed: boolean;
+            /**
+             * Format: date
+             * @description This week's Monday in the farm's timezone.
+             */
+            thisWeek: string;
+            history: components["schemas"]["BasePrice"][];
+        };
+        BasePrice: {
+            /**
+             * Format: date
+             * @description The Monday this price applies from.
+             */
+            validFrom: string;
+            /** Format: int64 */
+            priceCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        BasePriceImpact: {
+            /** @description Weighings that would take the new price. */
+            unsettledRecords: number;
+            /** @description Settled weighings that keep their price. */
+            settledRecords: number;
+            /** @description Weeks in the range that keep their own price. */
+            weeksWithOwnPrice: number;
+        };
+        /** @enum {string} */
+        TourStatus: "active" | "later" | "dismissed" | "done";
+        TourProgress: {
+            tour: string;
+            step: number;
+            status: components["schemas"]["TourStatus"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
         WeekPrice: {
             /**
              * Format: date
@@ -6012,6 +6172,64 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listTours: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One row per tour the caller has touched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TourProgress"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    saveTour: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A short lowercase tour name, e.g. `owner` or `weigher`. */
+                tour: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    step: number;
+                    status: components["schemas"]["TourStatus"];
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TourProgress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getFarm: {
@@ -8009,6 +8227,89 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WeekPrice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getBasePrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The price in force this week and the history, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BasePriceState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setBasePrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday the price applies from. Any other day is a 400. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    priceCents: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. The new state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BasePriceState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    basePriceImpact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Monday a new base price would apply from. */
+                monday: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BasePriceImpact"];
                 };
             };
             400: components["responses"]["BadRequest"];

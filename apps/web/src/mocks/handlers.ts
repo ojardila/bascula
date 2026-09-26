@@ -209,6 +209,7 @@ function authenticate(request: Request): Guarded {
  */
 type Action =
   | "me.read"
+  | "me.tours.write"
   | "auth.logout"
   | "farm.read"
   | "farm.write"
@@ -274,6 +275,7 @@ interface Rule {
 
 const MATRIX: Record<Action, Rule> = {
   "me.read": { roles: everyone },
+  "me.tours.write": { roles: everyone },
   "auth.logout": { roles: everyone },
 
   // Everybody reads the farm — the weigher's client needs the timezone and the
@@ -704,6 +706,9 @@ export const handlers = [
     // `seedFarm`: a kilo and a "Recoleccion" priced from the weekly table, so
     // the farm can weigh coffee on day one. Nothing else.
     db.tenants.set(farmId, db.emptyTenant(farmId, priceCents, () => crypto.randomUUID()));
+    // Not asked on the landing: the default stays unconfirmed until the
+    // onboarding tour's first step, as on the server.
+    if (!(body.farm.priceCents && body.farm.priceCents > 0)) db.tenants.get(farmId)!.priceConfirmed = false;
 
     const verificationToken = crypto.randomUUID();
     db.verifications.push({ token: verificationToken, userId: user.id, farmId, consumedAt: null });
@@ -977,12 +982,16 @@ export const handlers = [
     const fields: Record<string, string> = {};
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fields.email = "invalid";
     if (name === "") fields.name = "required";
-    // No `owner`: a second owner is not something this form hands out. The
-    // real handler will have to say the same or the screen is lying.
+    // Same rule as `handleInviteUser`: nobody hands out a role above their
+    // own, so only an owner may invite another owner (a partner).
     const role = body.role;
-    if (role !== "admin" && role !== "weigher") fields.role = "invalid";
-    if (Object.keys(fields).length || (role !== "admin" && role !== "weigher")) {
+    const known = role === "owner" || role === "admin" || role === "weigher";
+    if (!known) fields.role = "invalid";
+    if (Object.keys(fields).length || !known) {
       return badRequest("invalid user", { fields });
+    }
+    if (role === "owner" && g.p.role !== "owner") {
+      return fail(403, "FORBIDDEN", "you cannot give somebody a role above your own; an owner does that");
     }
 
     const existing = db.users.find((u) => u.email === email);
@@ -2214,6 +2223,97 @@ export const handlers = [
     if (existing) existing.priceCents = body.priceCents;
     else g.p.tenant.weekPrices.push({ weekStart: monday, priceCents: body.priceCents });
     return HttpResponse.json({ weekStart: monday, priceCents: body.priceCents });
+  }),
+
+  /* ---- base price, effective-dated (migration 00030) ---- */
+
+  http.get("*/v1/prices/base", ({ request }) => {
+    const g = guard(request, "prices.read");
+    if (g.deny) return g.deny;
+    return HttpResponse.json(basePriceState(g.p.tenant));
+  }),
+
+  http.get("*/v1/prices/base/:monday/impact", ({ request, params }) => {
+    const g = guard(request, "prices.read");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const t = g.p.tenant;
+    const until = db.basePricesOf(t).map((p) => p.validFrom).filter((d) => d > monday).sort()[0] ?? null;
+    const inRange = (w: string) => w >= monday && (until === null || w < until);
+    const own = new Set(t.weekPrices.map((p) => p.weekStart));
+    let unsettled = 0;
+    let settled = 0;
+    for (const r of t.workRecords) {
+      if (r.deletedAt || r.rateSource !== "weekly_price") continue;
+      const week = mondayOf(r.dateFrom.slice(0, 10));
+      if (!inRange(week) || own.has(week)) continue;
+      const isSettled = t.settlements.some(
+        (s) => s.voidedAt === null && s.items.some((i) => i.payableId === r.id && i.voidedAt === null),
+      );
+      if (isSettled) settled++;
+      else unsettled++;
+    }
+    return HttpResponse.json({
+      unsettledRecords: unsettled,
+      settledRecords: settled,
+      weeksWithOwnPrice: t.weekPrices.filter((p) => inRange(p.weekStart)).length,
+    });
+  }),
+
+  http.put("*/v1/prices/base/:monday", async ({ request, params }) => {
+    const g = guard(request, "prices.write");
+    if (g.deny) return g.deny;
+    const monday = String(params.monday);
+    const bad = checkMonday(monday);
+    if (bad) return bad;
+    const body = (await request.json()) as WeekPriceRequestBody;
+    if (!body.priceCents || body.priceCents <= 0) return badRequest("priceCents must be positive");
+    const t = g.p.tenant;
+    const rows = db.basePricesOf(t);
+    const existing = rows.find((p) => p.validFrom === monday);
+    if (existing) {
+      existing.priceCents = body.priceCents;
+      existing.createdAt = nowInstant();
+    } else {
+      rows.push({ validFrom: monday, priceCents: body.priceCents, createdAt: nowInstant() });
+    }
+    t.priceConfirmed = true;
+    const farm = db.farms.find((f) => f.id === t.farmId);
+    const current = db.basePriceOn(t, mondayOf(today()));
+    if (farm && current !== null) farm.priceCents = current;
+    return HttpResponse.json(basePriceState(t));
+  }),
+
+  /* ---- guided tours ---- */
+
+  http.get("*/v1/me/tours", ({ request }) => {
+    const g = guard(request, "me.read");
+    if (g.deny) return g.deny;
+    return HttpResponse.json({ items: g.p.tenant.tours?.[g.p.user.id] ?? [] });
+  }),
+
+  http.put("*/v1/me/tours/:tour", async ({ request, params }) => {
+    const g = guard(request, "me.tours.write");
+    if (g.deny) return g.deny;
+    const tour = String(params.tour);
+    if (!/^[a-z][a-z0-9_-]{0,39}$/.test(tour)) return badRequest("tour must be a short lowercase name");
+    const body = (await request.json()) as { step?: number; status?: string };
+    const status = body.status;
+    if (status !== "active" && status !== "later" && status !== "dismissed" && status !== "done") {
+      return badRequest("status must be active, later, dismissed or done");
+    }
+    const step = Number(body.step ?? 0);
+    if (!Number.isInteger(step) || step < 0 || step > 100) return badRequest("step must be between 0 and 100");
+    const t = g.p.tenant;
+    t.tours ??= {};
+    const mine = (t.tours[g.p.user.id] ??= []);
+    const row = { tour, step, status, updatedAt: nowInstant() } as const;
+    const i = mine.findIndex((x) => x.tour === tour);
+    if (i >= 0) mine[i] = { ...row };
+    else mine.push({ ...row });
+    return HttpResponse.json(row);
   }),
 
   /* ---- pending and balances ---- */
@@ -4191,6 +4291,17 @@ function toRate(body: RateRequestBody, payScheme: string): WireActivityRate {
  * segment must BE a Monday — the phone's old "2026-W33" is obsolete, because
  * `WEEK_OF` already produces the Monday.
  */
+function basePriceState(t: db.Tenant) {
+  const thisWeek = mondayOf(today());
+  const history = db.basePricesOf(t);
+  return {
+    currentCents: db.basePriceOn(t, thisWeek) ?? db.farms.find((f) => f.id === t.farmId)?.priceCents ?? 0,
+    confirmed: t.priceConfirmed !== false,
+    thisWeek,
+    history: history.map((p) => ({ ...p })),
+  };
+}
+
 function checkMonday(raw: string): Response | null {
   if (!DAY.test(raw)) return badRequest("the week is named by its Monday, YYYY-MM-DD");
   if (mondayOf(raw) !== raw) return badRequest("that date is not a Monday");

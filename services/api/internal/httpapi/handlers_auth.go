@@ -94,9 +94,12 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("farm.name is required"))
 		return
 	}
-	if req.Farm.PriceCents <= 0 {
+	priceChosen := req.Farm.PriceCents > 0
+	if !priceChosen {
 		// Not asked on the landing. Seed Recolección at a standing peso-per-kilo
-		// the owner can change in Configuración / precio de la semana.
+		// so the farm can weigh on day one, but leave it UNCONFIRMED: the
+		// onboarding tour's first step asks the owner to confirm or change it,
+		// instead of silently paying $800 a kilo.
 		req.Farm.PriceCents = 80000
 	}
 	if req.Farm.Timezone == "" {
@@ -289,6 +292,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Farm.Name, Timezone: req.Farm.Timezone,
 		Currency: req.Farm.Currency, PriceMinor: req.Farm.PriceCents,
+		PriceConfirmed: priceChosen,
 	}
 	if err := createFarmRecord(ctx, tx, &newFarm, req.Farm.Slug); err != nil {
 		writeError(w, r, err)
@@ -500,6 +504,7 @@ func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
 	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Name, Timezone: req.Timezone,
 		Currency: req.Currency, PriceMinor: req.PriceCents,
+		PriceConfirmed: true, // required and chosen by the caller
 	}
 	if err := createFarmRecord(ctx, tx, &newFarm, req.Slug); err != nil {
 		// The id exists and the lookup above could not see it, which means it

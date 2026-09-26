@@ -174,6 +174,10 @@ import type {
   WireSettlementPreview,
   WireSignupResponse,
   WireWeekPrice,
+  WireBasePriceState,
+  WireBasePriceImpact,
+  WireTourProgress,
+  WireTourStatus,
   WireWorkerProfile,
   WireWorkerPublic,
   WireWorkRecord,
@@ -1076,6 +1080,28 @@ export const api = {
     toWeekPrice(
       await http.put<WireWeekPrice>(`/v1/prices/weeks/${mondayOf(monday)}`, { priceCents }),
     ),
+
+  /* -- the farm's base price, effective-dated ------------------------- */
+
+  /** Owner and administrator. The price in force this week and its history. */
+  getBasePrice: async (): Promise<WireBasePriceState> =>
+    http.get<WireBasePriceState>("/v1/prices/base"),
+
+  /** What a new base price from that Monday would move (unsettled) and not (settled). */
+  basePriceImpact: async (monday: string): Promise<WireBasePriceImpact> =>
+    http.get<WireBasePriceImpact>(`/v1/prices/base/${mondayOf(monday)}/impact`),
+
+  /** Owner only. Stores the base price from that Monday on and confirms it. */
+  setBasePrice: async (monday: string, priceCents: number): Promise<WireBasePriceState> =>
+    http.put<WireBasePriceState>(`/v1/prices/base/${mondayOf(monday)}`, { priceCents }),
+
+  /* -- guided tours ---------------------------------------------------- */
+
+  listTours: async (): Promise<WireTourProgress[]> =>
+    (await http.get<{ items: WireTourProgress[] }>("/v1/me/tours")).items,
+
+  saveTour: async (tour: string, step: number, status: WireTourStatus): Promise<WireTourProgress> =>
+    http.put<WireTourProgress>(`/v1/me/tours/${encodeURIComponent(tour)}`, { step, status }),
 
   /* -- money --------------------------------------------------------- */
 

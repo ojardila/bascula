@@ -31,6 +31,8 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import HarvestIcon from "@mui/icons-material/Grass";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import { useTour } from "../features/onboarding/TourContext";
 import { useAuth } from "../auth/AuthContext";
 import { visibleModules, type ModuleDef } from "../auth/permissions";
 import { ApiModeBanner } from "./ApiModeBanner";
@@ -122,6 +124,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenu, setUserMenu] = useState<HTMLElement | null>(null);
+  const tour = useTour();
+  /** «Ayuda y recorrido»: the owner's full tour or the weigher's short one. */
+  const startTour = () => {
+    if (!tour.available) return;
+    setMobileOpen(false);
+    setUserMenu(null);
+    tour.start(tour.available);
+  };
 
   const visible = visibleModules(principal);
   const main = visible.filter((m) => m.group === "main");
@@ -163,6 +173,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Typography>
           <List disablePadding>{renderGroup(more)}</List>
         </>
+      )}
+      {tour.available && (
+        <List disablePadding sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+          <ListItemButton
+            data-tour="help-menu"
+            onClick={startTour}
+            sx={{ mx: 1, borderRadius: 2, minHeight: 52, py: 1.25 }}
+          >
+            <ListItemIcon sx={{ minWidth: 44 }}>
+              <HelpOutlineIcon fontSize="medium" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Ayuda y recorrido"
+              slotProps={{ primary: { fontWeight: 600, fontSize: 17 } }}
+            />
+          </ListItemButton>
+        </List>
       )}
     </Box>
   );
@@ -253,6 +280,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 }}
               >
                 Consola de soporte
+              </MenuItem>
+            )}
+            {tour.available && (
+              <MenuItem sx={{ fontSize: 17, minHeight: 48 }} onClick={startTour}>
+                Ayuda y recorrido
               </MenuItem>
             )}
             <Divider />

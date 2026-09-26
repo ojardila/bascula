@@ -293,6 +293,12 @@ export interface Tenant {
   activities: MockActivity[];
   workRecords: MockWorkRecord[];
   weekPrices: WireWeekPrice[];
+  /** `farm_prices` (migration 00030). Absent until first read: one row "since always". */
+  basePrices?: MockBasePrice[];
+  /** `farm_config.price_confirmed_at IS NOT NULL`. Absent means confirmed (seeded farms). */
+  priceConfirmed?: boolean;
+  /** `user_tours`, keyed by user id. */
+  tours?: Record<string, { tour: string; step: number; status: "active" | "later" | "dismissed" | "done"; updatedAt: string }[]>;
   ledger: WireLedgerEntry[];
   settlements: MockSettlement[];
   notes: WireNote[];
@@ -550,7 +556,32 @@ export function projectWorkRecord(t: Tenant, r: MockWorkRecord): WireWorkRecord 
 export function weekPriceOf(t: Tenant, weekStart: string): number {
   const override = t.weekPrices.find((p) => p.weekStart === weekStart);
   if (override) return override.priceCents;
+  const base = basePriceOn(t, weekStart);
+  if (base !== null) return base;
   return farmOf(t.farmId)?.priceCents ?? 0;
+}
+
+export interface MockBasePrice {
+  validFrom: string;
+  priceCents: number;
+  createdAt: string;
+}
+
+/** The base price history, newest first; seeded with the farm's price "since always". */
+export function basePricesOf(t: Tenant): MockBasePrice[] {
+  if (!t.basePrices) {
+    t.basePrices = [
+      { validFrom: "2000-01-03", priceCents: farmOf(t.farmId)?.priceCents ?? 0, createdAt: new Date().toISOString() },
+    ];
+  }
+  return t.basePrices.sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1));
+}
+
+/** The base price for a Monday, or null when no history row covers it. */
+export function basePriceOn(t: Tenant, monday: string): number | null {
+  if (!t.basePrices) return null;
+  const row = basePricesOf(t).find((p) => p.validFrom <= monday);
+  return row ? row.priceCents : null;
 }
 
 /**

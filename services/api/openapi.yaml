@@ -373,6 +373,65 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/me/tours:
+    get:
+      tags: [auth]
+      operationId: listTours
+      summary: The caller's progress through the guided tours
+      description: |
+        Per user and per farm, so a tour started on the phone resumes on the
+        computer. Only the caller's own rows exist for them.
+      x-action: me.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: One row per tour the caller has touched.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/TourProgress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me/tours/{tour}:
+    parameters:
+      - name: tour
+        in: path
+        required: true
+        description: A short lowercase tour name, e.g. `owner` or `weigher`.
+        schema: { type: string, pattern: "^[a-z][a-z0-9_-]{0,39}$", example: owner }
+    put:
+      tags: [auth]
+      operationId: saveTour
+      summary: Save the caller's progress through one tour
+      x-action: me.tours.write
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step, status]
+              properties:
+                step: { type: integer, minimum: 0, maximum: 100 }
+                status: { $ref: "#/components/schemas/TourStatus" }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TourProgress" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ---------------------------------------------------------------------------
   # The farm's own record
   # ---------------------------------------------------------------------------
@@ -2432,6 +2491,95 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WeekPrice" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/prices/base:
+    get:
+      tags: [money]
+      operationId: getBasePrice
+      summary: The farm's base price of a kilo, with its history
+      description: |
+        The base price is effective-dated: each row applies from its Monday
+        until the next row. A week with its own price (`/v1/prices/weeks`)
+        keeps it. `confirmed` is false for a farm signed up from the landing
+        whose default price nobody has chosen yet; the onboarding tour asks
+        the owner to confirm it.
+      x-action: prices.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The price in force this week and the history, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BasePriceState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/prices/base/{monday}:
+    parameters:
+      - name: monday
+        in: path
+        required: true
+        description: The Monday the price applies from. Any other day is a 400.
+        schema: { type: string, format: date, example: "2026-09-21" }
+    put:
+      tags: [money]
+      operationId: setBasePrice
+      summary: Set the base price from a Monday on
+      description: |
+        Owner only. Stores (or corrects) the base price from that Monday until
+        the next one in the history, and marks the farm's price as confirmed.
+        Settled weighings keep the price they were settled at: a new price
+        never changes a settled week, only unsettled work.
+      x-action: prices.write
+      x-roles: [owner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priceCents]
+              properties:
+                priceCents: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Stored. The new state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BasePriceState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/prices/base/{monday}/impact:
+    parameters:
+      - name: monday
+        in: path
+        required: true
+        description: The Monday a new base price would apply from.
+        schema: { type: string, format: date, example: "2026-09-21" }
+    get:
+      tags: [money]
+      operationId: basePriceImpact
+      summary: What a new base price from that Monday would change
+      description: |
+        Counts the weighings priced by the week from that Monday up to the
+        next history row: the unsettled ones would take the new price, the
+        settled ones would not. Weeks with their own price are counted apart
+        because they keep it.
+      x-action: prices.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BasePriceImpact" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -6486,6 +6634,46 @@ components:
           type: array
           description: Always empty here. The lines are on the detail route.
           items: { $ref: "#/components/schemas/Payable" }
+
+    BasePriceState:
+      type: object
+      required: [currentCents, confirmed, thisWeek, history]
+      properties:
+        currentCents: { type: integer, format: int64, description: The base price in force this week. }
+        confirmed: { type: boolean, description: False until an owner has chosen or confirmed the price. }
+        thisWeek: { type: string, format: date, description: This week's Monday in the farm's timezone. }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/BasePrice" }
+
+    BasePrice:
+      type: object
+      required: [validFrom, priceCents, createdAt]
+      properties:
+        validFrom: { type: string, format: date, description: The Monday this price applies from. }
+        priceCents: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+
+    BasePriceImpact:
+      type: object
+      required: [unsettledRecords, settledRecords, weeksWithOwnPrice]
+      properties:
+        unsettledRecords: { type: integer, description: Weighings that would take the new price. }
+        settledRecords: { type: integer, description: Settled weighings that keep their price. }
+        weeksWithOwnPrice: { type: integer, description: Weeks in the range that keep their own price. }
+
+    TourStatus:
+      type: string
+      enum: [active, later, dismissed, done]
+
+    TourProgress:
+      type: object
+      required: [tour, step, status, updatedAt]
+      properties:
+        tour: { type: string }
+        step: { type: integer }
+        status: { $ref: "#/components/schemas/TourStatus" }
+        updatedAt: { type: string, format: date-time }
 
     WeekPrice:
       type: object
