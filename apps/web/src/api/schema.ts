@@ -1818,7 +1818,8 @@ export interface paths {
          * Recibo de un pago, discriminado
          * @description El mismo desglose que imprime el papel: semana actual, saldo anterior,
          *     descuentos por concepto, pago y lo que queda. ChatGPT y la consola
-         *     leen este documento. `id` es el movimiento de tipo `pago`.
+         *     leen este documento. `id` es el movimiento de tipo `pago`, `anticipo`
+         *     o `deduccion`; cualquier otro tipo es 404.
          */
         get: operations["getPayment"];
         put?: never;
@@ -4152,6 +4153,13 @@ export interface components {
          * @description Recibo de un `pago`: semana actual, saldo anterior, descuentos por
          *     concepto, lo pagado y lo que queda. La identidad es
          *     saldo anterior + semana − descuentos − pago = queda.
+         *
+         *     The same route rebuilds the slip of an `anticipo` or a `deduccion`
+         *     (the worker's history opens all three). For those, the week is zero,
+         *     `deductions` is empty and `paidCents` is the movement's own amount:
+         *     saldo anterior − monto = queda. Everything is read from the ledger as
+         *     it stood when the movement was written; a reversal written later does
+         *     not change the figures, it only sets `reversed`.
          */
         PaymentReceipt: {
             /** Format: uuid */
@@ -4185,6 +4193,15 @@ export interface components {
             remainingCents: number;
             /** Format: uuid */
             settlementId?: string | null;
+            /** @enum {string} */
+            kind: "pago" | "anticipo" | "deduccion";
+            /**
+             * @description Every settlement whose devengo makes up `currentWeekCents`, oldest
+             *     first. Their frozen lines summed give `currentWeekCents` exactly.
+             */
+            settlementIds?: string[];
+            /** @description The movement was cancelled by a reversal after it was written. */
+            reversed?: boolean;
         };
         PaymentInput: {
             /** Format: uuid */
@@ -4263,6 +4280,8 @@ export interface components {
             amountCents: number;
             /** @description Only meaningful inside a settlement. */
             voided?: boolean;
+            /** @description The lotes the work was done in, by name, sorted. Empty when the record names none. */
+            plotNames?: string[];
         };
         PendingResult: {
             /** Format: uuid */

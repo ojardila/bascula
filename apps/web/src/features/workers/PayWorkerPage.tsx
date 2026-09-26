@@ -48,6 +48,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
 import { Money } from "../../components/Money";
 import { PermissionDenied, Splash } from "../../components/Guards";
@@ -846,6 +847,17 @@ export function PayWorkerPage() {
           <Button onClick={() => navigate(`/empleados/${id}`)} color="inherit">
             Ver el perfil
           </Button>
+          {/* The receipt as a page, with its lines by week, labor and lote and
+              "Descargar PDF" — the copy that works on a phone. */}
+          {receipt && (
+            <Button
+              variant="outlined"
+              startIcon={<ReceiptLongIcon />}
+              onClick={() => navigate(`/empleados/${id}/historial/pago/${receipt.payment.id}`)}
+            >
+              Ver recibo
+            </Button>
+          )}
           {/* RSP-008: "el sistema genera el recibo de pago". It is the primary
               action, because a payment the worker has no paper for is a
               payment they cannot check. */}

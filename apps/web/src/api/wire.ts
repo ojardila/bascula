@@ -570,6 +570,11 @@ export interface WirePayable {
   rateCents: number;
   amountCents: number;
   voided: boolean;
+  /**
+   * The lotes the work was done in, by name, sorted. Empty when the record
+   * names none. Optional only because an older server did not send it.
+   */
+  plotNames?: string[];
 }
 
 /** `GET /v1/pending?workerId&from&to`. `from` and `to` are both mandatory. */
@@ -670,6 +675,8 @@ export interface WireLedgerEntry {
  */
 export interface WirePaymentReceipt {
   id: Uuid;
+  /** `pago`, `anticipo` or `deduccion`: the same route rebuilds all three. */
+  kind: "pago" | "anticipo" | "deduccion";
   workerId: Uuid;
   date: DayISO;
   method: WirePayMethod | null;
@@ -683,6 +690,10 @@ export interface WirePaymentReceipt {
   deductionsCents: number;
   remainingCents: number;
   settlementId?: Uuid | null;
+  /** Every settlement whose devengo makes up the week, oldest first. */
+  settlementIds?: Uuid[];
+  /** Cancelled by a reversal after it was written. The figures do not move. */
+  reversed?: boolean;
 }
 
 export interface WireLedgerRequest {

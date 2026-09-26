@@ -659,8 +659,14 @@ export interface PayableLine {
   dateTo: DayISO;
   /** The Monday the payable belongs to. What a weekly price is keyed on. */
   weekStart: DayISO;
-  /** Empty: a payable carries the activity and the money, not the plots. */
+  /** The lotes the work was done in, by name. Empty when it names none. */
   plotNames: string[];
+  /**
+   * How the quantity is counted: kilos (`work_unit`, with `unitLabel`),
+   * jornales (`time_unit`) or one contract (`contract`). Optional so that
+   * fixtures written before it existed still type-check.
+   */
+  payMode?: PayMode;
   quantity: number;
   /** Non-null only for work paid by weighed quantity — a *pesada*. */
   unitLabel: string | null;
@@ -795,6 +801,8 @@ export interface Settlement extends SettlementSummary {
 
 export interface PaymentReceipt {
   id: Uuid;
+  /** `pago`, `anticipo` or `deduccion`: the history opens all three. */
+  kind: "pago" | "anticipo" | "deduccion";
   workerId: Uuid;
   date: DayISO;
   method: PayMethod | null;
@@ -807,6 +815,11 @@ export interface PaymentReceipt {
   deductionsCents: number;
   remainingCents: number;
   settlementId: Uuid | null;
+  /** Every settlement whose frozen lines make up `currentWeekCents`. */
+  settlementIds: Uuid[];
+  note: string | null;
+  /** Cancelled later by a reversal. Shown, never subtracted. */
+  reversed: boolean;
 }
 
 export interface Payment {

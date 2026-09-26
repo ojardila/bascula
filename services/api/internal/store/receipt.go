@@ -30,17 +30,37 @@ type PaymentReceipt struct {
 	PaidCents            int64
 	RemainingCents       int64
 	SettlementID         *string
+	// SettlementIDs is every live settlement whose devengo makes up
+	// CurrentWeekCents, oldest first. Their frozen lines ARE the week on the
+	// receipt: summed, they give CurrentWeekCents exactly, because each
+	// devengo is its settlement's gross.
+	SettlementIDs []string
+	// Reversed is true when the movement was later cancelled by a reverso.
+	// The receipt is still rebuilt as it stood the day it was written.
+	Reversed bool
 }
 
 // PaymentReceiptOf rebuilds the slip for one payment. The identity is:
 //
 //	saldo anterior + semana actual − descuentos − pago = queda
+//
+// It also rebuilds the slip of an `anticipo` or a `deduccion`, which is the
+// same identity with no week and no discounts of its own: the movement IS the
+// amount, and saldo anterior − monto = queda. The worker's history opens all
+// three, and each has to come out exactly as it stood that day — which is why
+// everything here is read from the ledger in the order it was written and
+// nothing is recomputed from today's prices.
 func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*PaymentReceipt, error) {
 	pago, err := FindLedgerEntry(ctx, tx, paymentID)
 	if err != nil {
 		return nil, err
 	}
-	if pago == nil || pago.Kind != domain.KindPayment {
+	if pago == nil {
+		return nil, pgx.ErrNoRows
+	}
+	switch pago.Kind {
+	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction:
+	default:
 		return nil, pgx.ErrNoRows
 	}
 
@@ -65,14 +85,37 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 		return nil, err
 	}
 
+	// Two readings of "reversed", and the receipt needs both.
+	//
+	//   reversed        — cancelled at any time, up to today. Only used to say
+	//                     so on the slip.
+	//   reversedBefore  — cancelled BEFORE this movement was written. That is
+	//                     the ledger as it stood the day of the receipt, and it
+	//                     is the only reading the figures may use: a settlement
+	//                     voided a month after the payment must not change what
+	//                     the payment's receipt says the week was.
+	pagoAt := -1
+	for i, e := range all {
+		if e.ID == pago.ID {
+			pagoAt = i
+			break
+		}
+	}
+	if pagoAt < 0 {
+		return nil, pgx.ErrNoRows
+	}
 	reversed := map[string]bool{}
-	for _, e := range all {
+	reversedBefore := map[string]bool{}
+	for i, e := range all {
 		if e.ReversesID != nil {
 			reversed[*e.ReversesID] = true
+			if i < pagoAt {
+				reversedBefore[*e.ReversesID] = true
+			}
 		}
 	}
 	live := func(e LedgerEntry) bool {
-		return e.ReversesID == nil && !reversed[e.ID]
+		return e.ReversesID == nil && !reversedBefore[e.ID]
 	}
 
 	var remaining int64
@@ -99,11 +142,16 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 	}
 
 	var week int64
-	var deductions []ReceiptDeduction
+	deductions := []ReceiptDeduction{}
+	settlementIDs := []string{}
 	var disc int64
 	var settlementID *string
 	var weekFrom, weekTo *time.Time
 	for i := 0; i < pagoIndex; i++ {
+		if pago.Kind != domain.KindPayment {
+			// An advance or a deduction is its own amount and nothing else.
+			break
+		}
 		e := all[i]
 		if !live(e) {
 			continue
@@ -116,6 +164,7 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 			week += e.AmountMinor
 			if e.SettlementID != nil {
 				settlementID = e.SettlementID
+				settlementIDs = append(settlementIDs, *e.SettlementID)
 			}
 		case domain.KindDeduction:
 			amt := -e.AmountMinor
@@ -133,12 +182,21 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 		}
 	}
 
-	if settlementID != nil {
-		s, err := GetSettlement(ctx, tx, *settlementID)
-		if err == nil {
-			weekFrom, weekTo = &s.PeriodStart, &s.PeriodEnd
-		} else if !errors.Is(err, pgx.ErrNoRows) {
+	for _, id := range settlementIDs {
+		st, err := GetSettlement(ctx, tx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
 			return nil, err
+		}
+		if weekFrom == nil || st.PeriodStart.Before(*weekFrom) {
+			from := st.PeriodStart
+			weekFrom = &from
+		}
+		if weekTo == nil || st.PeriodEnd.After(*weekTo) {
+			to := st.PeriodEnd
+			weekTo = &to
 		}
 	}
 
@@ -157,5 +215,7 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 		PaidCents:            paid,
 		RemainingCents:       remaining,
 		SettlementID:         settlementID,
+		SettlementIDs:        settlementIDs,
+		Reversed:             reversed[pago.ID],
 	}, nil
 }
