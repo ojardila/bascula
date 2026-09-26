@@ -302,25 +302,44 @@ jobs:
             echo "waiting for origin (${i}) asset=${asset:-none}"
             sleep 20
           done
+          # Dedicated farm stacks (tenants/dedicated/{slug}.yaml in gitops, cloned
+          # by the pin step above) have their own hostnames, and Cloudflare keeps
+          # their HTML for an hour like the apex. Without purging them a new farm
+          # opens the previous release until that hour runs out. Give each a
+          # moment to roll to the same bundle first.
+          hosts="bascula.engp.io"
+          for f in /tmp/gitops/tenants/dedicated/*.yaml; do
+            [ -f "$f" ] || continue
+            slug=$(sed -n 's/^slug:[[:space:]]*//p' "$f" | tr -d "\"' " | head -1)
+            [ -n "$slug" ] || continue
+            host="${slug}.bascula.engp.io"
+            for i in $(seq 1 12); do
+              html=$(curl -sk --max-time 15 "https://${host}/entrar?snap=${GITHUB_RUN_ID}-${i}" || true)
+              tasset=$(printf '%s\n' "$html" | grep -oE '/assets/index-[^"]+' | head -1 || true)
+              if [ -z "${asset:-}" ] || [ "${tasset}" = "${asset}" ]; then break; fi
+              echo "waiting for ${host} (${i}) asset=${tasset:-none}"
+              sleep 10
+            done
+            hosts="${hosts} ${host}"
+          done
+          export HOSTS="$hosts"
           zone=$(curl -sS --fail --max-time 15 \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/zones?name=engp.io" \
             | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; assert r, "no engp.io zone"; print(r[0]["id"])')
-          # Farm shopfronts (*.bascula.engp.io) share the same origin assets as
-          # the apex, so this host list is enough. Append an extra hostname later
-          # if a farm ever caches independently; Cloudflare hosts purge does not
-          # take a wildcard.
+          # Cloudflare hosts purge does not take a wildcard: the apex plus
+          # every dedicated farm host collected above.
           code=$(curl -sS --fail --max-time 20 -o /tmp/cf-purge.json -w "%{http_code}" \
             -X POST "https://api.cloudflare.com/client/v4/zones/${zone}/purge_cache" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data '{"hosts":["bascula.engp.io"]}')
+            --data "$(python3 -c 'import json,os; print(json.dumps({"hosts": os.environ["HOSTS"].split()}))')")
           python3 - <<'PY'
           import json, sys
           d = json.load(open("/tmp/cf-purge.json"))
           if not d.get("success"):
               print(d.get("errors"), file=sys.stderr)
               sys.exit(1)
-          print("purged bascula.engp.io")
+          print("purged", __import__("os").environ["HOSTS"])
           PY
           echo "purge http ${code}"
