@@ -383,7 +383,8 @@ func (s *Server) mcpDispatch(ctx context.Context, req *mcp.CallToolRequest, meth
 		rd = bytes.NewReader(body)
 	}
 	inner, err := http.NewRequestWithContext(
-		context.WithValue(ctx, chi.RouteCtxKey, nil), method, target, rd)
+		context.WithValue(context.WithValue(ctx, chi.RouteCtxKey, nil), mcpDispatchKey{}, true),
+		method, target, rd)
 	if err != nil {
 		return http.StatusInternalServerError, []byte(`{"error":{"code":"INTERNAL","message":"could not build the request"}}`)
 	}
@@ -519,3 +520,12 @@ func (r *mcpRecorder) WriteHeader(code int)        { r.status = code }
 func (r *mcpRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 var _ io.Writer = (*mcpRecorder)(nil)
+
+// mcpDispatchKey marks a request an MCP tool built in-process. Nothing from
+// the network can set a context value, so it cannot be forged.
+type mcpDispatchKey struct{}
+
+func mcpDispatched(ctx context.Context) bool {
+	v, _ := ctx.Value(mcpDispatchKey{}).(bool)
+	return v
+}
