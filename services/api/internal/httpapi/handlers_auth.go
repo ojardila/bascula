@@ -730,21 +730,30 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-
-	tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(req.RefreshToken))
+	session, err := s.rotateRefresh(r, tx, req.RefreshToken, req.DeviceID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
-				"that refresh token is not valid"))
-			return
-		}
 		writeError(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+// rotateRefresh is the rotation itself, shared by POST /v1/auth/refresh and
+// the OAuth token endpoint's refresh_token grant, so an assistant's session
+// is exactly as revocable — and a replayed token exactly as fatal — as a
+// handset's.
+func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID string) (*sessionResponse, error) {
+	tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
+				"that refresh token is not valid")
+		}
+		return nil, err
+	}
 	if tok.RevokedAt != nil {
-		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
-			"that session was closed"))
-		return
+		return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
+			"that session was closed")
 	}
 	if tok.RotatedAt != nil {
 		// Reuse: a replay, or a stolen copy. The whole family dies.
@@ -772,57 +781,48 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			// Not swallowed. A revocation that failed leaves a token somebody
 			// may have stolen alive, and answering "the session has been
 			// closed" would be a lie about the one thing this branch is for.
-			writeError(w, r, domain.Internal(
-				"could not close the reused session").WithCause(err))
-			return
+			return nil, domain.Internal(
+				"could not close the reused session").WithCause(err)
 		}
 		// Everything this transaction has written is exactly the revocation
 		// above, which is the obligation KeepChanges puts on its caller.
 		tenant.KeepChanges(r.Context())
-		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
-			"that refresh token was already used; the session has been closed"))
-		return
+		return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenReused,
+			"that refresh token was already used; the session has been closed")
 	}
 	if time.Now().After(tok.ExpiresAt) {
-		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
-			"that refresh token expired"))
-		return
+		return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
+			"that refresh token expired")
 	}
 
 	user, err := store.FindUserByID(r.Context(), tx, tok.UserID)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, err
 	}
 	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
-		writeError(w, r, err)
-		return
+		return nil, err
 	}
 	m, err := store.GetMembership(r.Context(), tx, tok.FarmID, tok.UserID)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, err
 	}
 	if m.SuspendedAt != nil {
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
-			"that farm is suspended"))
-		return
+		return nil, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
+			"that farm is suspended")
 	}
 	if err := store.MarkRefreshRotated(r.Context(), tx, tok.ID); err != nil {
-		writeError(w, r, err)
-		return
+		return nil, err
 	}
 
-	device := req.DeviceID
+	device := deviceID
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
 	session, err := s.issueSession(r, tx, user, m, device, tok.FamilyID)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, session)
+	return session, nil
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

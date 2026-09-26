@@ -70,10 +70,20 @@ func (s *Server) handleMCPOptions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) writeMCPChallenge(w http.ResponseWriter, r *http.Request) {
+// writeMCPChallenge is the header an MCP client reads to find the OAuth
+// server. It goes on every 401 from /mcp: with no token (the first contact),
+// and with a token that no longer verifies — an access token lives fifteen
+// minutes, and a client that is told only "401" with no challenge has no way
+// to know it should refresh or sign in again, so the connector just stops
+// working. errCode is "" for the first case and "invalid_token" for the second
+// (RFC 6750 §3).
+func (s *Server) writeMCPChallenge(w http.ResponseWriter, r *http.Request, errCode string) {
 	meta := s.publicBase(r) + "/.well-known/oauth-protected-resource"
-	w.Header().Set("WWW-Authenticate",
-		fmt.Sprintf(`Bearer realm="bascula", resource_metadata=%q, scope=%q`, meta, oauthScope))
+	v := fmt.Sprintf(`Bearer realm="bascula", resource_metadata=%q, scope=%q`, meta, oauthScope)
+	if errCode != "" {
+		v += fmt.Sprintf(`, error=%q, error_description="the access token expired or is not valid"`, errCode)
+	}
+	w.Header().Set("WWW-Authenticate", v)
 }
 
 func (s *Server) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +107,7 @@ func (s *Server) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.R
 		"token_endpoint":                        base + "/oauth/token",
 		"registration_endpoint":                 base + "/oauth/register",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{oauthChallenge},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"scopes_supported":                      []string{oauthScope},
@@ -150,7 +160,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		"client_id":                  id,
 		"client_name":                name,
 		"redirect_uris":              req.RedirectURIs,
-		"grant_types":                []string{"authorization_code"},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
 		"code_challenge_methods":     []string{oauthChallenge},
@@ -263,9 +273,12 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.issueSession(r, tx, user, chosen, "", newID())
+	// Only the access token is minted here, as proof of who signed in; the
+	// session proper (with its refresh token) is issued at the token
+	// endpoint, to whoever proves they hold the PKCE verifier.
+	access, err := s.signer.Issue(user.ID, chosen.FarmID, chosen.Role, "", user.IsSuperadmin)
 	if err != nil {
-		writeError(w, r, err)
+		writeError(w, r, domain.Internal("could not issue the access token").WithCause(err))
 		return
 	}
 	code, err := randomToken(32)
@@ -280,7 +293,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: method,
 		Resource:            resource,
-		AccessToken:         session.AccessToken,
+		AccessToken:         access,
 		ExpiresAt:           time.Now().Add(oauthCodeTTL),
 	}); err != nil {
 		writeError(w, r, err)
@@ -327,6 +340,13 @@ func (s *Server) oauthLogin(r *http.Request, tx pgx.Tx, email, password, farmID 
 	if len(memberships) == 0 {
 		return nil, nil, fmt.Errorf("esa cuenta no pertenece a ninguna finca")
 	}
+	// A farm address (cafin3.bascula.engp.io) names its farm, so an account
+	// with several farms signing in there needs no UUID typed by hand.
+	if farmID == "" && len(memberships) > 1 {
+		if pinned, err := loginFarmPin(r.Context(), tx, r, ""); err == nil {
+			farmID = pinned
+		}
+	}
 	var chosen *store.Membership
 	switch {
 	case farmID != "":
@@ -355,22 +375,41 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		oauthTokenError(w, "invalid_request", "malformed form")
 		return
 	}
-	if r.Form.Get("grant_type") != "authorization_code" {
-		oauthTokenError(w, "unsupported_grant_type", "only authorization_code is supported")
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
 		return
 	}
+	switch r.Form.Get("grant_type") {
+	case "authorization_code":
+		s.oauthExchangeCode(w, r, tx)
+	case "refresh_token":
+		// The same rotation a handset gets: single use, and a replay closes
+		// the whole family. Without this grant an assistant's connection died
+		// fifteen minutes after it was made, when the access token expired.
+		secret := r.Form.Get("refresh_token")
+		if secret == "" {
+			oauthTokenError(w, "invalid_request", "refresh_token is required")
+			return
+		}
+		session, err := s.rotateRefresh(r, tx, secret, "")
+		if err != nil {
+			oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
+			return
+		}
+		writeOAuthSession(w, session)
+	default:
+		oauthTokenError(w, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
+	}
+}
+
+func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pgx.Tx) {
 	code := r.Form.Get("code")
 	verifier := r.Form.Get("code_verifier")
 	redirectURI := r.Form.Get("redirect_uri")
 	clientID := r.Form.Get("client_id")
 	if code == "" || verifier == "" || redirectURI == "" || clientID == "" {
 		oauthTokenError(w, "invalid_request", "code, code_verifier, redirect_uri and client_id are required")
-		return
-	}
-
-	tx, err := tenant.Tx(r.Context())
-	if err != nil {
-		writeError(w, r, err)
 		return
 	}
 	row, err := store.ConsumeOAuthCode(r.Context(), tx, code)
@@ -390,11 +429,43 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The code carries the access token signed at sign-in. It says who and
+	// which farm; the session is issued now, with a refresh token, from the
+	// membership as it stands.
+	claims, err := s.signer.Parse(row.AccessToken)
+	if err != nil {
+		oauthTokenError(w, "invalid_grant", "code expired")
+		return
+	}
+	user, err := store.FindUserByID(r.Context(), tx, claims.Subject)
+	if err != nil {
+		oauthTokenError(w, "invalid_grant", "that account no longer exists")
+		return
+	}
+	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	m, err := store.GetMembership(r.Context(), tx, claims.FarmID, user.ID)
+	if err != nil || m.SuspendedAt != nil {
+		oauthTokenError(w, "invalid_grant", "that account no longer has access to this farm")
+		return
+	}
+	session, err := s.issueSession(r, tx, user, m, "", newID())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeOAuthSession(w, session)
+}
+
+func writeOAuthSession(w http.ResponseWriter, session *sessionResponse) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": row.AccessToken,
-		"token_type":   "Bearer",
-		"expires_in":   int(auth.AccessTTL.Seconds()),
-		"scope":        oauthScope,
+		"access_token":  session.AccessToken,
+		"refresh_token": session.RefreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    session.ExpiresIn,
+		"scope":         oauthScope,
 	})
 }
 
@@ -459,7 +530,7 @@ func (s *Server) oauthForm(w http.ResponseWriter, q url.Values, notice string, _
   .err{color:#a30;background:#fee;padding:.5rem .75rem;border-radius:6px}
 </style>
 <h1>Conectar Báscula a un asistente</h1>
-<p>Entre con la misma cuenta de la finca. El asistente podrá <strong>consultar</strong> cosecha y nómina; no podrá liquidar ni pagar.</p>
+<p>Entre con la misma cuenta de la finca. El asistente podrá <strong>consultar y registrar</strong> cosecha y nómina con los permisos de su rol. Pagos, anticipos, liquidaciones y cambios de precio siempre le piden su confirmación antes de hacerse.</p>
 %s
 <form method="post" action="/oauth/authorize">
   %s%s%s%s%s%s

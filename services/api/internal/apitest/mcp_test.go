@@ -78,8 +78,30 @@ func TestMCPListsToolsAndAnswersAsTheCaller(t *testing.T) {
 	names := map[string]bool{}
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
-		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-			t.Errorf("tool %q is not marked read-only; every tool in this release is", tool.Name)
+		if tool.Annotations == nil {
+			t.Errorf("tool %q has no annotations", tool.Name)
+			continue
+		}
+		if mcpWriteToolNames[tool.Name] {
+			if tool.Annotations.ReadOnlyHint {
+				t.Errorf("write tool %q is marked read-only", tool.Name)
+			}
+			if tool.Annotations.DestructiveHint == nil {
+				t.Errorf("write tool %q does not say whether it is destructive", tool.Name)
+			}
+		} else if !tool.Annotations.ReadOnlyHint {
+			t.Errorf("read tool %q is not marked read-only", tool.Name)
+		}
+		if mcpMoneyToolNames[tool.Name] {
+			raw, _ := json.Marshal(tool.InputSchema)
+			if !strings.Contains(string(raw), "confirmationToken") {
+				t.Errorf("money tool %q takes no confirmationToken", tool.Name)
+			}
+		}
+	}
+	for name := range mcpWriteToolNames {
+		if !names[name] {
+			t.Errorf("write tool %q is missing from tools/list", name)
 		}
 	}
 	for _, want := range []string{"me", "farm", "list_workers", "list_balances", "report_weeks"} {

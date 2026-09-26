@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ojardila/bascula/services/api/internal/auth"
 )
 
 // The MCP endpoint: the API as a set of tools an assistant can call.
@@ -46,14 +48,22 @@ import (
 //
 // The price is that a tool can do nothing a route cannot. That is the point.
 //
-// ── READ-ONLY, FOR NOW ─────────────────────────────────────────────────────
+// ── WRITES, AND WHAT STOPS THEM PAYING TWICE ──────────────────────────────
 //
-// Every tool maps to a GET. An assistant that can read the farm is useful
-// today and harmless when it misunderstands; one that can settle a week is the
-// double-payment problem in docs/archive/sincronizacion.md wearing a new hat, and it
-// waits for the confirmation flow (elicitation) to be worth wiring up. Adding
-// a write is one row in the table below, once somebody has decided the answer
-// to "and what stops it paying twice".
+// The reads are the table below. The writes are a second table, in
+// handlers_mcp_write.go, dispatched the same way — an inner request against
+// the router as the caller — so a weigher asking the assistant to pay
+// somebody gets the 403 the console would give him.
+//
+// Anything that moves money (payment, advance, settlement and its void, the
+// price of a kilo) runs in two steps. The first call writes nothing and
+// answers a Spanish preview with the amounts and a confirmation token, signed
+// by the server and bound to the user, the farm, the tool and the exact
+// arguments, valid for ten minutes. Only a second call carrying that token
+// executes. The token's nonce becomes the id of the row written, and every
+// money route here is idempotent by id, so a token used twice — a retry, a
+// double click, an assistant that got confused — finds its own row and adds
+// nothing: at most one movement per confirmation, by construction.
 //
 // ── STATELESS ─────────────────────────────────────────────────────────────
 //
@@ -91,9 +101,16 @@ type mcpParam struct {
 	Required    bool
 	Enum        []string
 	Description string
+	// Schema, when set, is the whole JSON Schema of the parameter — for the
+	// arrays and objects the write tools take — and the fields above that
+	// describe a scalar are ignored.
+	Schema *jsonschema.Schema
 }
 
 func (p mcpParam) schema() *jsonschema.Schema {
+	if p.Schema != nil {
+		return p.Schema
+	}
 	s := &jsonschema.Schema{Type: p.Type, Description: p.Description}
 	if p.Format != "" {
 		s.Format = p.Format
@@ -242,11 +259,23 @@ func (s *Server) buildMCP() http.Handler {
 			"Empiece con `me` para saber qué finca y qué rol tiene el token. " +
 			"Todos los valores de dinero son centavos enteros de la moneda de la finca; " +
 			"las fechas son YYYY-MM-DD en la zona horaria de la finca. " +
-			"Las herramientas son de solo lectura.",
+			"Hay herramientas de consulta y de registro. Las que mueven dinero " +
+			"(pagos, anticipos, liquidaciones, anular liquidaciones y el precio del kilo) " +
+			"funcionan en dos pasos: la primera llamada no escribe nada y devuelve un resumen " +
+			"con un confirmationToken; muéstrele el resumen al usuario y vuelva a llamar con " +
+			"los mismos argumentos y ese token SOLO si el usuario confirma explícitamente. " +
+			"Nunca confirme por su cuenta.",
 	})
 
 	for _, t := range mcpTools {
 		srv.AddTool(t.definition(), s.mcpToolHandler(t))
+	}
+	s.mcpActions = map[string]auth.Action{}
+	for _, rt := range s.Routes() {
+		s.mcpActions[rt.Method+" "+rt.Pattern] = rt.Action
+	}
+	for _, t := range mcpWriteTools {
+		srv.AddTool(t.definition(), s.mcpWriteHandler(t))
 	}
 
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv },
@@ -295,38 +324,9 @@ func (s *Server) mcpToolHandler(t mcpTool) mcp.ToolHandler {
 			return mcpFailure(err.Error()), nil
 		}
 
-		// The inner request. The bearer and the client address are the two
-		// things the chain in server.go reads from the outside world, and
-		// they are copied verbatim so the tool is the caller, not the server.
-		//
-		// chi stores its routing context on the request context and reuses
-		// it if it finds one, so the inner request must not inherit the outer
-		// one's — that would route with the outer request's path and params.
-		// Clearing the key gives the mux a fresh context while keeping the
-		// caller's cancellation.
-		inner, err := http.NewRequestWithContext(
-			context.WithValue(ctx, chi.RouteCtxKey, nil), t.Method, target, nil)
-		if err != nil {
-			return nil, err
-		}
-		inner.Header.Set("Accept", "application/json")
-		if req.Extra != nil && req.Extra.Header != nil {
-			if a := req.Extra.Header.Get("Authorization"); a != "" {
-				inner.Header.Set("Authorization", a)
-			}
-			if fwd := req.Extra.Header.Get("X-Forwarded-For"); fwd != "" {
-				inner.Header.Set("X-Forwarded-For", fwd)
-			}
-		}
-		if addr, ok := ctx.Value(mcpRemoteAddrKey{}).(string); ok {
-			inner.RemoteAddr = addr
-		}
-
-		rec := &mcpRecorder{header: http.Header{}, status: http.StatusOK}
-		s.router.ServeHTTP(rec, inner)
-
-		body := rec.body.String()
-		if rec.status >= 400 {
+		status, raw := s.mcpDispatch(ctx, req, t.Method, target, nil)
+		body := string(raw)
+		if status >= 400 {
 			// The route's own error envelope, unchanged: it carries the code
 			// the clients already know how to read (FORBIDDEN, NOT_FOUND…).
 			return mcpFailure(body), nil
@@ -338,11 +338,53 @@ func (s *Server) mcpToolHandler(t mcpTool) mcp.ToolHandler {
 		// prefer it to a string. Only an object qualifies; a bare array is
 		// wrapped in text alone, which every client accepts.
 		var structured map[string]any
-		if json.Unmarshal(rec.body.Bytes(), &structured) == nil {
+		if json.Unmarshal(raw, &structured) == nil {
 			res.StructuredContent = structured
 		}
 		return res, nil
 	}
+}
+
+// mcpDispatch runs one inner request against the router as the caller and
+// returns what the route answered.
+func (s *Server) mcpDispatch(ctx context.Context, req *mcp.CallToolRequest, method, target string, body []byte) (int, []byte) {
+	// The inner request. The bearer and the client address are the two
+	// things the chain in server.go reads from the outside world, and
+	// they are copied verbatim so the tool is the caller, not the server.
+	//
+	// chi stores its routing context on the request context and reuses
+	// it if it finds one, so the inner request must not inherit the outer
+	// one's — that would route with the outer request's path and params.
+	// Clearing the key gives the mux a fresh context while keeping the
+	// caller's cancellation.
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	inner, err := http.NewRequestWithContext(
+		context.WithValue(ctx, chi.RouteCtxKey, nil), method, target, rd)
+	if err != nil {
+		return http.StatusInternalServerError, []byte(`{"error":{"code":"INTERNAL","message":"could not build the request"}}`)
+	}
+	inner.Header.Set("Accept", "application/json")
+	if body != nil {
+		inner.Header.Set("Content-Type", "application/json")
+	}
+	if req.Extra != nil && req.Extra.Header != nil {
+		if a := req.Extra.Header.Get("Authorization"); a != "" {
+			inner.Header.Set("Authorization", a)
+		}
+		if fwd := req.Extra.Header.Get("X-Forwarded-For"); fwd != "" {
+			inner.Header.Set("X-Forwarded-For", fwd)
+		}
+	}
+	if addr, ok := ctx.Value(mcpRemoteAddrKey{}).(string); ok {
+		inner.RemoteAddr = addr
+	}
+
+	rec := &mcpRecorder{header: http.Header{}, status: http.StatusOK}
+	s.router.ServeHTTP(rec, inner)
+	return rec.status, rec.body.Bytes()
 }
 
 // resolve fills the path and builds the query from the arguments, refusing

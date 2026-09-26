@@ -60,8 +60,9 @@ current code, in
   button fills an empty farm to try the product.
 - **Multi-tenant**: every farm gets its own subdomain. A super-admin
   provisions and suspends farms.
-- **An MCP server** exposes the API as read-only tools for ChatGPT, Claude and
-  other assistants, limited to what the user's role may see
+- **An MCP server** exposes the API as tools for ChatGPT, Claude and other
+  assistants — reads and writes, limited to what the user's role may do, with
+  an explicit two-step confirmation on anything that moves money
   ([details](services/api/README.md#mcp--the-api-as-tools-for-an-assistant)).
 
 ## Architecture
