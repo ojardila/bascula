@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ojardila/bascula/services/api/internal/auth"
+	"github.com/ojardila/bascula/services/api/internal/httpapi"
 )
 
 // mcpClient opens a real MCP session against the server, over HTTP, as the
@@ -19,6 +22,35 @@ func (h *harness) mcpClient(t *testing.T, token string) *mcp.ClientSession {
 	ts := httptest.NewServer(h.server)
 	t.Cleanup(ts.Close)
 
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   ts.URL + "/mcp",
+		HTTPClient: &http.Client{Transport: bearerTransport{token: token, next: http.DefaultTransport}},
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), transport, nil)
+	if err != nil {
+		t.Fatalf("mcp connect: %v", err)
+	}
+	t.Cleanup(func() { _ = sess.Close() })
+	return sess
+}
+
+// oauthTestIssuer is the origin the suite's OAuth requests arrive at
+// (httptest.NewRequest's default Host), and so the resource an assistant's
+// token from h.server is bound to.
+const oauthTestIssuer = "http://example.com"
+
+// mcpClientAs is mcpClient against a server whose public base URL is
+// publicBase: an assistant's token is bound to the MCP resource it was issued
+// for, and the MCP client connects from a loopback address of its own.
+func (h *harness) mcpClientAs(t *testing.T, token, publicBase string) *mcp.ClientSession {
+	t.Helper()
+	cfg := httpapi.DefaultConfig()
+	cfg.UploadDir = t.TempDir()
+	cfg.PublicBaseURL = publicBase
+	srv := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   ts.URL + "/mcp",
 		HTTPClient: &http.Client{Transport: bearerTransport{token: token, next: http.DefaultTransport}},

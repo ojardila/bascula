@@ -2944,14 +2944,22 @@ export interface paths {
          *     stateless. ChatGPT, Claude and any MCP client connect here with the
          *     same bearer token a session carries, list the tools and call them.
          *
-         *     Every tool is a read-only route of this API under another name: the
-         *     call re-enters the router as an ordinary request with the caller's
-         *     token, so the permission table, the tenant and RLS apply exactly as
-         *     they would to the route itself. What a tool returns is the JSON that
-         *     route documents. There is no second contract.
+         *     Every tool is a route of this API under another name: 28 read tools
+         *     and 12 write tools (workers, plots, weighings, prices, advances,
+         *     payments, settlements). The call re-enters the router as an ordinary
+         *     request with the caller's token, so the permission table, the tenant
+         *     and RLS apply exactly as they would to the route itself. What a tool
+         *     returns is the JSON that route documents. There is no second
+         *     contract. The five tools that move money (set_kilo_price,
+         *     register_advance, register_payment, create_settlement,
+         *     void_settlement) run in two steps: a preview with a confirmation
+         *     token, then the write only when called again with that token. The
+         *     catalogue is at /mcp/docs and /mcp/tools.json; the security model at
+         *     docs/mcp/security.md.
          *
-         *     The body is JSON-RPC 2.0 as the MCP specification describes it; a
-         *     generated client has no use for it, which is why it is `object` here.
+         *     The body is one JSON-RPC 2.0 message as the MCP specification
+         *     describes it (at most 1 MiB; batches are refused); a generated client
+         *     has no use for it, which is why it is `object` here.
          */
         post: operations["mcp"];
         delete?: never;

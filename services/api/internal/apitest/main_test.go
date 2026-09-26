@@ -145,6 +145,9 @@ func setupAndRun(m *testing.M) (int, error) {
 	cfg.SignupsPerIPPerHour = 1000
 	cfg.SignupsPerEmailPerHour = 1000
 	cfg.MaxFarmsPerEmail = 3
+	// The platform-wide registration cap counts rows in this shared scratch
+	// database; the test about it builds a server with a cap of its own.
+	cfg.OAuthRegistrationsPerHour = 1 << 20
 	// The login limiter, small enough that a test can reach it without paying
 	// for a hundred hashes, and with the two axes far enough apart that a test
 	// can trip one without tripping the other. The window stays long: nothing

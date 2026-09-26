@@ -104,14 +104,22 @@ characters, and 30 registrations per client IP per hour per API process
 `error=invalid_client_metadata`).
 
 - `redirect_uris` (required): each must be `https`, or `http` only on
-  `localhost` / `127.0.0.1` / `::1`. Otherwise `400 invalid_redirect_uri`.
+  `localhost` / `127.0.0.1` / `::1`; no fragment and no `user:pass@`.
+  Otherwise `400 invalid_redirect_uri`.
 - `response_types`: only `code` (else `400 invalid_client_metadata`).
 - `token_endpoint_auth_method`: `none` (default; public client + PKCE),
   `client_secret_post` or `client_secret_basic`. Anything else
   (`private_key_jwt`, …) is registered as `none`.
 - `grant_types`: normalized to `authorization_code` + `refresh_token`.
 - `scope`: echoed; defaults to `mcp offline_access`.
-- `client_name`: shown later in «Conexiones»; defaults to `mcp-client`.
+- `client_name`: shown on the sign-in page and in «Conexiones»; control,
+  bidi-override and zero-width characters are stripped, whitespace collapsed,
+  80 characters at most; defaults to `mcp-client`.
+
+Registration is anonymous, so it is capped: 30 per address per hour (per API
+process) and 200 per hour platform-wide (counted in Postgres, shared by every
+replica); past either, `429`. The request body is limited to 64 KiB and the
+metadata kept in the database to 8 KiB.
 
 Answer: `201` with `client_id`, `client_id_issued_at`, the registered
 metadata, and — for the two secret methods — `client_secret` with
@@ -180,13 +188,15 @@ registered with a secret must present it; a wrong secret is always refused
 (`401 invalid_client`, with a `Basic` challenge if Basic was tried).
 
 **`grant_type=authorization_code`**: `code`, `code_verifier`,
-`redirect_uri`, `client_id` (all required). The code is deleted on first use
+`redirect_uri`, `client_id` (all required). Codes live 10 minutes and are
+stored only as their SHA-256, next to a purpose-bound signed proof of who
+signed in (never a bearer token). The code is deleted on first use
 **even if PKCE then fails**. `code`/`client_id`/`redirect_uri` must match the
 authorization; `SHA256(code_verifier)` must equal the challenge. The
 membership is re-checked (suspended or removed → `invalid_grant`). Answer:
 
 ```json
-{ "access_token": "<JWT, aud=mcp>", "refresh_token": "<opaque>", "token_type": "Bearer",
+{ "access_token": "<JWT, aud=[mcp, <base>/mcp], cid=<client_id>>", "refresh_token": "<opaque>", "token_type": "Bearer",
   "expires_in": 900, "scope": "mcp offline_access" }
 ```
 
@@ -199,18 +209,25 @@ another client gets `400 invalid_grant` («the refresh token was issued to
 another client»), and a confidential client must authenticate even if it omits
 `client_id`. Refresh tokens are **rotated and single-use**, with the same
 family rules as the mobile app: replaying a used refresh token revokes the
-whole family. Refresh tokens live 60 days; the new access token keeps
-`aud=mcp`. `scope` is omitted from the answer (RFC 6749 §5.1: unchanged). A
+whole family, and two concurrent refreshes of the same token yield exactly
+one new session. Only families issued through OAuth are rotated here (a web
+or handset refresh token → `invalid_grant`), and an assistant's refresh token
+is not accepted by `/v1/auth/refresh`. Refresh tokens live 60 days; the new
+access token keeps the same audience. `scope` is omitted from the answer (RFC 6749 §5.1: unchanged). A
 bad token → `400 invalid_grant`.
 
 Errors follow RFC 6749 §5.2: `{"error": "...", "error_description": "..."}`.
 
 ## Revocation — `POST /oauth/revoke`
 
-RFC 7009. Form: `token`, optional `token_type_hint`, optional client auth.
-A refresh token revokes its whole family (the connection disappears from
-«Conexiones»). An access token is stateless and simply lapses within
-15 minutes. Always `200`, including for unknown tokens.
+RFC 7009. Form: `token`, optional `token_type_hint`, client identification
+(`client_id` for a public client; a confidential client must authenticate).
+An assistant's refresh token revokes its whole family (the connection
+disappears from «Conexiones») — but only when the asking client is the one it
+was issued to (another client → `400 unauthorized_client`). A web or handset
+session's refresh token presented here is left alone (its door is
+`/v1/auth/logout`). An access token is stateless and simply lapses within
+15 minutes. `200` for unknown tokens.
 
 Users can also revoke from the app: «Configuración» → «Conexiones» →
 «Administrar» → «Revocar conexión» (`DELETE /v1/mcp/connections/{id}`).
@@ -222,6 +239,17 @@ ask for it to get a refresh token (which is issued regardless). Any requested
 scope is accepted and echoed, and **grants nothing extra**: what a token can do
 is decided by the user's role on the farm, through `auth.Matrix`, on every
 tool call.
+
+## Resource indicators and audience (RFC 8707)
+
+`resource`, when sent to `/oauth/authorize` or `/oauth/token`, must name this
+server: `<base>/mcp` or `<base>` (also accepted with the host the request came
+to). Anything else → `invalid_target` (on authorize, as a redirect to the
+registered `redirect_uri`). Every access token issued through OAuth carries
+`aud = ["mcp", "<base>/mcp"]` and `/mcp` refuses a token whose resource is not
+itself (`401` + `WWW-Authenticate … error="invalid_token"`): a token obtained
+from one farm's address does not open another's. Tokens minted before this
+binding (audience `mcp` only) are accepted until they expire.
 
 ## Using the token
 

@@ -256,6 +256,9 @@ func (t mcpWriteTool) definition() *mcp.Tool {
 
 func (s *Server) mcpWriteHandler(t mcpWriteTool) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if msg := s.mcpThrottle(req, true); msg != "" {
+			return mcpFailure(msg), nil
+		}
 		a, err := parseMCPArgs(req, t.params())
 		if err != nil {
 			return mcpFailure(err.Error()), nil
@@ -340,16 +343,17 @@ func (s *Server) mcpPrincipal(req *mcp.CallToolRequest) (*auth.Principal, error)
 	if req.Extra == nil || req.Extra.Header == nil {
 		return nil, fmt.Errorf("no headers")
 	}
-	h := req.Extra.Header.Get("Authorization")
-	if len(h) <= 7 || !strings.EqualFold(h[:7], "bearer ") {
+	raw := bearerFromHeader(req.Extra.Header.Get("Authorization"))
+	if raw == "" {
 		return nil, fmt.Errorf("no bearer")
 	}
-	claims, err := s.signer.Parse(strings.TrimSpace(h[7:]))
+	claims, err := s.signer.Parse(raw)
 	if err != nil {
 		return nil, err
 	}
 	return &auth.Principal{UserID: claims.Subject, FarmID: claims.FarmID,
-		Role: claims.Role, DeviceID: claims.DeviceID, Superadmin: claims.Superadmin}, nil
+		Role: claims.Role, DeviceID: claims.DeviceID, Superadmin: claims.Superadmin,
+		ClientID: claims.ClientID, MCPOnly: claims.ForMCPOnly()}, nil
 }
 
 // ── confirmation ──────────────────────────────────────────────────────────

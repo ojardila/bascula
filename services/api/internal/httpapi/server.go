@@ -72,6 +72,14 @@ type Config struct {
 	// address, per API process, so they cannot be used to test a dictionary
 	// of farm names. Zero means no cap.
 	FarmLookupsPerIPPerHour int
+	// OAuthRegistrationsPerHour caps registrations platform-wide, counted
+	// in the database so every replica shares it.
+	OAuthRegistrationsPerHour int
+	// MCPCallsPerUserPerMinute and MCPWritesPerUserPerMinute bound the tool
+	// calls one account's tokens may make (per API process), reads and
+	// writes together and writes alone.
+	MCPCallsPerUserPerMinute  int
+	MCPWritesPerUserPerMinute int
 	// LoginFailureWindow is how far back the counts look. It is also how long
 	// a lockout lasts, because the two are the same fact: the count drains as
 	// the window slides, so nothing has to expire anything.
@@ -178,7 +186,13 @@ func DefaultConfig() Config {
 		OAuthRegistrationsPerIPPerHour: 30,
 		// Typing one address checks it a handful of times (debounced); a
 		// dictionary of farm names is thousands of checks.
-		FarmLookupsPerIPPerHour: 120,
+		FarmLookupsPerIPPerHour:   120,
+		OAuthRegistrationsPerHour: 200,
+		// An assistant answering one question makes a handful of calls; a
+		// week of payroll a few dozen. These are far above that and far
+		// below what it takes to hurt the database.
+		MCPCallsPerUserPerMinute:  120,
+		MCPWritesPerUserPerMinute: 30,
 	}
 }
 
@@ -209,6 +223,9 @@ type Server struct {
 	oauthRegs *windowLimiter
 	// farmLookups meters the public slug lookups per address.
 	farmLookups *windowLimiter
+	// mcpCalls and mcpWrites count MCP tool calls per user.
+	mcpCalls  *windowLimiter
+	mcpWrites *windowLimiter
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -221,6 +238,8 @@ func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
 		oauthRegs:   newWindowLimiter(cfg.OAuthRegistrationsPerIPPerHour, time.Hour),
 		farmLookups: newWindowLimiter(cfg.FarmLookupsPerIPPerHour, time.Hour),
+		mcpCalls:    newWindowLimiter(cfg.MCPCallsPerUserPerMinute, time.Minute),
+		mcpWrites:   newWindowLimiter(cfg.MCPWritesPerUserPerMinute, time.Minute),
 	}
 	disk, err := blob.NewDisk(cfg.UploadDir)
 	if err != nil {
@@ -322,6 +341,11 @@ func (s *Server) buildRouter() chi.Router {
 		chained = s.authenticate(chained)
 		if rt.Method == http.MethodGet && rt.Pattern == "/mcp" {
 			chained = s.mcpBrowserPage(chained)
+		}
+		if rt.Action == auth.ActionOAuth {
+			// Forms and registrations are a few kilobytes; ParseForm's own
+			// default would read ten megabytes from a stranger.
+			chained = limitBody(oauthMaxBody, chained)
 		}
 		if rt.Action == auth.ActionMCP || rt.Action == auth.ActionOAuth {
 			chained = withCORS(chained)
@@ -448,12 +472,26 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeError(w, r, domain.Unauthorized("this token is for the MCP endpoint (/mcp) only"))
 			return
 		}
+		// RFC 8707 audience binding: an assistant's token names the MCP
+		// resource it was issued for, and is refused anywhere else — a token
+		// from one farm's address does not open another's. Tokens minted
+		// before the binding carry no resource and lapse within AccessTTL.
+		if claims.ForMCPOnly() && r.URL.Path == "/mcp" && !mcpDispatched(r.Context()) {
+			if res := claims.MCPResource(); res != "" && !s.resourceIsThisServer(r, res) {
+				s.writeMCPChallenge(w, r, "invalid_token")
+				writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
+					"this token was issued for another MCP resource"))
+				return
+			}
+		}
 		p := &auth.Principal{
 			UserID:     claims.Subject,
 			FarmID:     claims.FarmID,
 			Role:       claims.Role,
 			DeviceID:   claims.DeviceID,
 			Superadmin: claims.Superadmin,
+			ClientID:   claims.ClientID,
+			MCPOnly:    claims.ForMCPOnly(),
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})
@@ -527,8 +565,25 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 	}
 }
 
+// oauthMaxBody bounds every request body on the OAuth endpoints.
+const oauthMaxBody = 64 << 10
+
+func limitBody(n int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func bearerToken(r *http.Request) string {
-	h := r.Header.Get("Authorization")
+	return bearerFromHeader(r.Header.Get("Authorization"))
+}
+
+// bearerFromHeader reads an RFC 6750 bearer out of an Authorization value.
+// The scheme is case-insensitive (RFC 7235 §2.1), everywhere it is read.
+func bearerFromHeader(h string) string {
 	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
 		return strings.TrimSpace(h[7:])
 	}
