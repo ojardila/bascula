@@ -34,6 +34,7 @@
  *      a plot out of use has a `deletedAt`. The old mock's `status: "active"`
  *      does not exist on the wire.
  */
+import type { McpActivity } from "../api/endpoints";
 import { mondayOf } from "../lib/dates";
 import { isFarmSlug, slugifyFarmName } from "../lib/farmHost";
 import type {
@@ -299,7 +300,9 @@ export interface Tenant {
   priceConfirmed?: boolean;
   /** `user_tours`, keyed by user id. */
   /** OAuth grants an MCP client holds, per user id (the server's refresh families). */
-  mcpConnections?: Record<string, { id: string; clientName: string; createdAt: string; lastUsedAt: string; expiresAt: string }[]>;
+  mcpConnections?: Record<string, { id: string; clientName: string; createdAt: string; lastUsedAt: string; expiresAt: string; access?: "read" | "write" }[]>;
+  /** GET /v1/mcp/activity: what assistants wrote, newest first. */
+  mcpActivity?: McpActivity[];
   tours?: Record<string, { tour: string; step: number; status: "active" | "later" | "dismissed" | "done"; updatedAt: string }[]>;
   /**
    * A farm created in this session (signup, new farm). Its people have seen no

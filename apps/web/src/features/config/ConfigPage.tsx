@@ -12,6 +12,7 @@ import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ConnectionsCard } from "./ConnectionsCard";
+import { McpActivityCard } from "./McpActivityCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
 
@@ -64,6 +65,11 @@ export function ConfigPage() {
         <Grid size={{ xs: 12 }}>
           <ConnectionsCard />
         </Grid>
+        {can("mcp.activity") && (
+          <Grid size={{ xs: 12 }}>
+            <McpActivityCard />
+          </Grid>
+        )}
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>

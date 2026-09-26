@@ -1159,6 +1159,10 @@ export const api = {
   listMcpConnections: async (): Promise<McpConnections> =>
     http.get<McpConnections>("/v1/mcp/connections"),
 
+  /** What assistants wrote on this farm. Owner and administrator only. */
+  listMcpActivity: async (): Promise<McpActivityList> =>
+    http.get<McpActivityList>("/v1/mcp/activity?limit=30"),
+
   revokeMcpConnection: async (id: string): Promise<void> => {
     await http.del<void>(`/v1/mcp/connections/${encodeURIComponent(id)}`);
   },
@@ -2241,6 +2245,26 @@ export interface McpConnection {
   createdAt: string;
   lastUsedAt: string;
   expiresAt: string;
+  /** What the person granted: consult and register, or consult only. */
+  access: "read" | "write";
+}
+
+/** One write an assistant ran (or was refused) through the MCP tools. */
+export interface McpActivity {
+  id: string;
+  userId: string;
+  userName: string;
+  clientId: string | null;
+  clientName: string;
+  tool: string;
+  outcome: "done" | "refused" | "failed";
+  summary: string;
+  args: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface McpActivityList {
+  items: McpActivity[];
 }
 
 export interface McpConnections {

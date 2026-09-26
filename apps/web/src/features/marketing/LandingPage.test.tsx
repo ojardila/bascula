@@ -115,6 +115,11 @@ describe("the public landing", () => {
     const section = document.getElementById("asistentes")!;
     expect(section.textContent).toMatch(/ChatGPT, Claude y otros asistentes/);
     expect(section.textContent).toMatch(/solo ve lo que el rol/);
+    // Honest about writes: it registers only with the person's confirmation,
+    // and it can be connected to consult only.
+    expect(section.textContent).toMatch(/si usted lo confirma, registra/);
+    expect(section.textContent).toMatch(/solo consultar/);
+    expect(section.textContent).not.toMatch(/No cambia ni borra nada/);
     expect(within(section).getByText("¿Cuántos kilos recogió Pedro esta semana?")).toBeInTheDocument();
     expect(within(section).getByText("¿A quién le debo y cuánto?")).toBeInTheDocument();
     expect(within(section).getByText(/EJEMPLO · CIFRAS ILUSTRATIVAS/)).toBeInTheDocument();

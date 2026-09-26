@@ -57,6 +57,11 @@ export type Action =
   | "expenses.read"
   | "expenses.write"
   | "config.farm"
+  // «Conexiones»: every member sees and revokes the assistants THEY
+  // connected (the server lists only the caller's own).
+  | "connections.manage"
+  // What assistants wrote on the farm (GET /v1/mcp/activity).
+  | "mcp.activity"
   | "config.users"
   | "config.prices"
   | "admin.farms";
@@ -75,6 +80,7 @@ const OWNER: Action[] = [
   "sales.read", "sales.write",
   "expenses.read", "expenses.write",
   "config.farm", "config.users", "config.prices",
+  "connections.manage", "mcp.activity",
 ];
 
 /**
@@ -96,6 +102,7 @@ const ADMINISTRATOR: Action[] = [
   "sales.read", "sales.write",
   "expenses.read", "expenses.write",
   "config.farm",
+  "connections.manage", "mcp.activity",
 ];
 
 /**
@@ -111,6 +118,9 @@ const WEIGHER: Action[] = [
   "activities.read",
   "workRecords.read",
   "workRecords.write",
+  // A weigher can connect an assistant with their own account, so they must
+  // be able to see and revoke it.
+  "connections.manage",
 ];
 
 const MATRIX: Record<Role, ReadonlySet<Action>> = {
@@ -221,6 +231,9 @@ export const MODULES: ModuleDef[] = [
   { key: "inventory", label: "Inventario", path: "/inventario", action: "products.read", sprint: 3, available: true, icon: "inventory", group: "more", inNav: false },
   { key: "sales", label: "Ventas", path: "/ventas", action: "sales.read", sprint: 3, available: true, icon: "sell", group: "main", inNav: true },
   { key: "expenses", label: "Gastos", path: "/gastos", action: "expenses.read", sprint: 3, available: true, icon: "payments", group: "more", inNav: false },
+  // The owner and the administrator find «Conexiones» inside Configuración;
+  // the weigher, who has no Configuración, gets it in their menu.
+  { key: "connections", label: "Conexiones", path: "/conexiones", action: "connections.manage", sprint: 5, available: true, icon: "link", group: "more", inNav: false },
   { key: "config", label: "Configuración", path: "/configuracion", action: "config.farm", sprint: 1, available: true, icon: "settings", group: "main", inNav: true },
 ];
 
@@ -232,6 +245,7 @@ export function visibleModules(principal: Principal): ModuleDef[] {
     // The weigher's daily screen is Labores; keep it in their menu even though
     // the owner's short list hides it.
     if (principal.role === "weigher" && m.key === "workRecords") return true;
+    if (principal.role === "weigher" && m.key === "connections") return true;
     return false;
   });
 }

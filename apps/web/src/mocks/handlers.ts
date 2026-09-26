@@ -212,6 +212,7 @@ type Action =
   | "me.tours.write"
   | "mcp.connections.read"
   | "mcp.connections.revoke"
+  | "mcp.activity.read"
   | "auth.logout"
   | "farm.read"
   | "farm.write"
@@ -281,6 +282,7 @@ const MATRIX: Record<Action, Rule> = {
   "me.tours.write": { roles: everyone },
   "mcp.connections.read": { roles: everyone },
   "mcp.connections.revoke": { roles: everyone },
+  "mcp.activity.read": { roles: admins },
   "auth.logout": { roles: everyone },
 
   // Everybody reads the farm — the weigher's client needs the timezone and the
@@ -2403,9 +2405,16 @@ export const handlers = [
     const t = g.p.tenant;
     const items = (t.mcpConnections?.[g.p.user.id] ?? []).map((c) => ({
       ...c,
+      access: c.access ?? "write",
       status: Date.parse(c.expiresAt) < Date.now() ? "expired" : "active",
     }));
     return HttpResponse.json({ items, endpoint: `${new URL(request.url).origin}/mcp` });
+  }),
+
+  http.get("*/v1/mcp/activity", ({ request }) => {
+    const g = guard(request, "mcp.activity.read");
+    if (g.deny) return g.deny;
+    return HttpResponse.json({ items: g.p.tenant.mcpActivity ?? [] });
   }),
 
   http.delete("*/v1/mcp/connections/:id", ({ request, params }) => {

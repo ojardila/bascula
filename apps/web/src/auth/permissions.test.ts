@@ -125,11 +125,18 @@ describe("the sidebar follows the matrix", () => {
 
   it("leaves the weigher with lots, people, and Labores (their daily screen)", () => {
     const keys = visibleModules(weigher).map((m) => m.key);
-    expect(keys).toEqual(["plots", "workers", "workRecords"]);
+    expect(keys).toEqual(["plots", "workers", "workRecords", "connections"]);
     expect(keys).not.toContain("dashboard");
     expect(keys).not.toContain("config");
     expect(keys).not.toContain("settlements");
     expect(keys).not.toContain("payroll");
+  });
+
+  it("lets every role see and revoke its own assistant connections, and only owner/admin read the activity", () => {
+    expect(can(weigher, "connections.manage")).toBe(true);
+    expect(can(weigher, "mcp.activity")).toBe(false);
+    expect(can(owner, "mcp.activity")).toBe(true);
+    expect(can(admin, "mcp.activity")).toBe(true);
   });
 
   it("gives the super-admin the farm sidebar of their membership, plus the console", () => {

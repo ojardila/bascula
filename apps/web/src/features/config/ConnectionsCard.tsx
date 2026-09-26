@@ -448,6 +448,11 @@ export function ConnectionsCard() {
                   <Typography sx={{ color: "text.secondary", fontSize: "1.05rem" }}>
                     Creada el {formatWhen(c.createdAt, tz)}
                   </Typography>
+                  <Typography sx={{ fontSize: "1.05rem", mt: 0.5 }}>
+                    {c.access === "read"
+                      ? "Solo consulta: no puede registrar nada."
+                      : "Consulta y, si usted lo confirma, registra."}
+                  </Typography>
                   <Button
                       variant="contained"
                       color="error"
