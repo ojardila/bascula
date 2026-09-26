@@ -2,8 +2,8 @@
  * «REGISTRAR UNA RECOLECCIÓN»: one person, one weighing.
  *
  * The phone-first form next to the scale (`WeighingForm`), which keeps
- * working with no signal. The crew-wide sheet is «Registrar la semana»
- * (`/cosecha/registrar-semana`); an old link that asked for the crew on
+ * working with no signal. The crew-wide sheet is «Registro de recolección
+ * masivo» (`/cosecha/registro-masivo`); an old link that asked for the crew on
  * one day (`?quien=todos`) goes to the day planilla it used to show.
  */
 import { Link as RouterLink, Navigate, useSearchParams } from "react-router-dom";

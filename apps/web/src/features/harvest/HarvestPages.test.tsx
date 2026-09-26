@@ -608,7 +608,7 @@ describe("the Cosecha dashboard is simple", () => {
     expect(await screen.findByRole("heading", { name: "Cosecha" })).toBeInTheDocument();
     expect(await screen.findByText("Kilos esta semana")).toBeInTheDocument();
     expect(screen.getByText("Recolectores")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Registrar la semana/ })).toHaveAttribute("href", "/cosecha/registrar-semana");
+    expect(screen.getByRole("link", { name: /Registro de recolección masivo/ })).toHaveAttribute("href", "/cosecha/registro-masivo");
     expect(screen.getByRole("link", { name: /Registrar una recolección/ })).toHaveAttribute("href", "/cosecha/recoleccion");
     expect(screen.getByRole("link", { name: /Ver más detalles/ })).toHaveAttribute("href", "/cosecha/detalles");
     // None of the advanced chrome: no tabs, no period.

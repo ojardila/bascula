@@ -31,17 +31,21 @@ current code, in
 (in Spanish).
 
 - **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
-  value, pickers, kilos per day) and two big buttons: «Registrar la semana» and
-  «Registrar una recolección». The detailed reports sit behind «Ver más
+  value, pickers, kilos per day) and two big buttons: «Registro de recolección
+  masivo» and «Registrar una recolección». The detailed reports sit behind «Ver más
   detalles».
 - **Weighing at the scale.** A phone-first screen with a person, the lot as a
   big button, Hoy / Ayer / Otro día, and the kilos. It asks before saving an
   implausible weight, and «Deshacer» undoes the last one. It works without
   signal: the queue shows «N pesadas por subir» and uploads on its own. Each
   weighing carries a client-minted id, so a resend is never counted twice.
-- **Weekly sheet** («Registrar la semana») for recording a whole crew and a
-  week at once: a grid with totals on a computer, one day at a time with big
-  boxes on a phone, and a confirmation before saving.
+- **Bulk registration for one day** («Registro de recolección masivo») for the
+  whole crew at once: pick the day (today by default, one tap for any day of
+  the week) and the lot, then type the kilos in one big box per employee. Each
+  row shows what that person already has that day («2 pesadas · 38 kg»); every
+  filled box adds a NEW weighing and nothing is replaced, because people come
+  to the scale several times a day. It confirms before saving and then lists
+  exactly what was added.
 - **Harvest reports.** Season curve, week detail (kilos per picker and day or
   per crop), yield per lot and crop, a comparative performance index, and a
   review of suspicious weighings.
