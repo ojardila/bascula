@@ -63,6 +63,11 @@ Asks for confirmation. On accept, the plot becomes **inactive**, not deleted.
 
 ## 2. Employee management
 
+> **Detailed cases:** archiving and restoring, work records, the account
+> statement, settlement history and WhatsApp contact are specified with
+> activity diagrams in [use-cases/employees.md](use-cases/employees.md)
+> (EMP-01…EMP-10).
+
 ### RSP-004 Register an Employee
 
 *Employee details*

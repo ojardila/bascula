@@ -29,6 +29,9 @@ and voiding) is specified, with activity diagrams and the gaps against the
 current code, in
 [`docs/use-cases/harvest-registration.md`](docs/use-cases/harvest-registration.md)
 (in English; exact Spanish UI labels are retained with English glosses).
+The Employees module (archiving, work records, account statement, settlement
+history, WhatsApp contact) is specified the same way in
+[`docs/use-cases/employees.md`](docs/use-cases/employees.md).
 
 - **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
   value, pickers, kilos per day) and two big buttons: «Registro de recolección masivo» (Bulk harvest registration) and «Registrar una recolección» (Register a harvest). The detailed reports sit behind «Ver más detalles» (See more details).
