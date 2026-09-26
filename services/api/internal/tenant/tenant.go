@@ -131,8 +131,9 @@ func KeepChanges(ctx context.Context) {
 // even though the response is a success.
 //
 // It exists for one shape too, and it is narrower still: a handler that has to
-// SPEND the same work as another branch without keeping any of it. The only
-// case today is signup answering an address that already has an account. That
+// SPEND the same work as another branch without keeping any of it. Nothing
+// calls it today: signup used it for an address that already had an account,
+// until one email was allowed to own several farms (migration 00032). That
 // answer has to be indistinguishable from the answer a new address gets — same
 // status, same body, and the same time on the clock, because a reply that comes
 // back in 2 ms where the other takes 26 tells an unauthenticated caller which

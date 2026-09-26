@@ -300,3 +300,94 @@ func waitFor(t *testing.T, d time.Duration, what string, ok func() bool) {
 	}
 	t.Fatalf("timed out waiting for %s", what)
 }
+
+// TestASecondFarmForTheSameAddressGetsItsOwnStackWithTheNewPassword: the same
+// email registers a second farm at /empezar. The new farm is provisioned like
+// any other, and its own stack is seeded with the name and password typed on
+// THAT registration, so the owner signs in there with the password they just
+// chose — while the main domain keeps the account's original password.
+func TestASecondFarmForTheSameAddressGetsItsOwnStackWithTheNewPassword(t *testing.T) {
+	h := requireDB(t)
+	slug := "segunda-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
+
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer gh.Close()
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer public.Close()
+
+	uploads, _ := os.MkdirTemp("", "bascula-tenant-uploads-")
+	defer os.RemoveAll(uploads)
+	tcfg := httpapi.DefaultConfig()
+	tcfg.UploadDir = uploads
+	tcfg.TenantSlug = slug
+	tenantAPI := httpapi.New(scratchTenantDB(t, h), auth.NewSigner([]byte("tenant-signing-key-0123456789abcdef"), "bascula"), tcfg)
+	internal := httptest.NewServer(tenantAPI.InternalHandler())
+	defer internal.Close()
+
+	pcfg := httpapi.DefaultConfig()
+	pcfg.UploadDir = uploads
+	pcfg.SignupsPerIPPerHour = 1000
+	pcfg.SignupsPerEmailPerHour = 1000
+	pcfg.GitHubDispatchToken = "gh-test"
+	pcfg.GitHubDispatchRepo = "ojardila/bascula"
+	pcfg.GitHubAPIURL = gh.URL
+	pcfg.TenantInternalURL = internal.URL
+	pcfg.TenantPublicURL = public.URL
+	pcfg.ProvisionPollEvery = 50 * time.Millisecond
+	pcfg.ProvisionWatchFor = 20 * time.Second
+	platform := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), pcfg)
+
+	// The first farm lives on the shared platform only (no stack is serving
+	// its slug in this test); what matters is that the address has an account.
+	ownerEmail := signupWithSlug(t, platform, "Primera finca", "primera-"+uuid.NewString()[:6])
+
+	const newPassword = "clave-de-la-segunda-finca"
+	res := call(t, platform, http.MethodPost, "/v1/signup", "", map[string]any{
+		"farm":  map[string]any{"name": "San José de prueba", "slug": slug},
+		"owner": map[string]any{"email": ownerEmail, "name": "Dueña Segunda", "password": newPassword},
+	})
+	if res.Status != http.StatusCreated || res.Body["verificationRequired"] != false {
+		t.Fatalf("second signup: %d %s", res.Status, res.Raw)
+	}
+
+	waitFor(t, 15*time.Second, "tenant seeded", func() bool {
+		r, err := http.Get(internal.URL + "/internal/tenant")
+		if err != nil {
+			return false
+		}
+		defer r.Body.Close()
+		var info map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&info)
+		return info["seeded"] == true
+	})
+
+	login := call(t, tenantAPI, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": ownerEmail, "password": newPassword, "farmSlug": slug,
+	})
+	if login.Status != http.StatusOK || login.Body["slug"] != slug {
+		t.Fatalf("login on the new stack with the new password: %d %s", login.Status, login.Raw)
+	}
+	me := call(t, tenantAPI, http.MethodGet, "/v1/me", mustString(t, login.Body, "accessToken"), nil)
+	if me.Status != http.StatusOK || me.Body["name"] != "Dueña Segunda" {
+		t.Fatalf("the new stack's owner is not who registered it: %d %s", me.Status, me.Raw)
+	}
+	old := call(t, tenantAPI, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+	})
+	if old.Status != http.StatusUnauthorized {
+		t.Fatalf("the account's other password opened the new stack: %d %s", old.Status, old.Raw)
+	}
+
+	// The main domain still signs the account in with its own password,
+	// into either farm.
+	main := call(t, platform, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+	})
+	if main.Status != http.StatusOK || main.Body["slug"] != slug {
+		t.Fatalf("main-domain login into the second farm: %d %s", main.Status, main.Raw)
+	}
+}

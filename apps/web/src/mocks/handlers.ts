@@ -657,16 +657,11 @@ export const handlers = [
 
     const password = body.owner!.password!;
     let user = db.users.find((u) => u.email === email);
-    if (user) {
-      // An existing address may open a second farm, but only by proving it
-      // owns the account, and only up to the cap.
-      if (user.password !== password) {
-        return conflict("EMAIL_TAKEN", "that address already has an account");
-      }
-      if (db.membershipsOf(user.id).length >= 3) {
-        return conflict("FARM_LIMIT_REACHED", "that address already owns as many farms as it may");
-      }
-    } else {
+    // One email may own several farms, as on the server: an address that
+    // already has an account gets the new farm too, and the answer is the
+    // same. (The server keeps the typed password for the new farm's own
+    // stack; the mock has no stacks, so it simply adds the membership.)
+    if (!user) {
       user = {
         id: crypto.randomUUID(),
         email,

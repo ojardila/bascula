@@ -236,9 +236,9 @@ export interface SignupResponse {
    */
   verificationToken: string | null;
   /**
-   * True when the address already had an account. The server then created
-   * nothing (the answer is otherwise identical), and the owner has to log in
-   * and create the farm from inside.
+   * Always false today: the farm is created whether or not the address
+   * already had an account (one email may own several farms). Kept because
+   * the server still sends it.
    */
   verificationRequired: boolean;
 }

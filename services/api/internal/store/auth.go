@@ -119,6 +119,17 @@ func CreateMembership(ctx context.Context, tx pgx.Tx, farmID, userID string, rol
 	return err
 }
 
+// InsertFarmOwnerCredentials records what somebody typed when they registered
+// a new farm with an address that already had an account: the name and the
+// password for THAT farm. The seed of the farm's own stack prefers them to the
+// users row (migration 00032).
+func InsertFarmOwnerCredentials(ctx context.Context, tx pgx.Tx, farmID, userID, name, phone, passwordHash string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO farm_owner_credentials (farm_id, user_id, name, phone, password_hash)
+		VALUES ($1, $2, $3, $4, $5)`, farmID, userID, name, phone, passwordHash)
+	return err
+}
+
 func ListMemberships(ctx context.Context, tx pgx.Tx, userID string) ([]Membership, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT m.farm_id::text, f.name, f.slug, m.user_id::text, m.role, f.suspended_at, f.timezone, f.currency

@@ -75,4 +75,18 @@ describe("Cree su finca — the farm's web address", () => {
     await waitFor(() => expect(screen.getByTestId("step-database")).toBeInTheDocument());
     expect(screen.getByText(/Puede tardar unos minutos/)).toBeInTheDocument();
   });
+
+  it("creates the farm even when the email already owns another farm", async () => {
+    // One email may own several farms: no «ese correo ya tiene cuenta».
+    const user = userEvent.setup();
+    renderApp("/empezar");
+    await user.type(await screen.findByLabelText(/Nombre de la finca/), "Segunda Finca");
+    await user.type(screen.getByLabelText(/Su nombre/), "Oscar");
+    await user.type(screen.getByLabelText(/^Correo/), "oscar@laesperanza.co");
+    await user.type(screen.getByLabelText(/^Clave/), "otra-clave-para-esta-finca");
+    await user.click(screen.getByRole("button", { name: "Crear mi finca" }));
+    expect(await screen.findByText("Preparando su finca…", {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.getByText(/segunda-finca\.bascula\.engp\.io/)).toBeInTheDocument();
+    expect(screen.queryByText("Ese correo ya tiene cuenta")).not.toBeInTheDocument();
+  });
 });

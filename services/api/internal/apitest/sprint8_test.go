@@ -527,95 +527,91 @@ func TestSuspendingAFarmStopsTheSessionsAlreadyOpen(t *testing.T) {
 // Finding 12: the public signup was an oracle for accounts and passwords
 // ---------------------------------------------------------------------------
 
-// TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession.
+// TestSignupWithARegisteredAddressCreatesAnotherFarm.
 //
-// Same address, wrong password: 409. Same address, RIGHT password: 201, with a
-// farm created. An unauthenticated caller could confirm that an address is
-// registered and that a guessed password is the real one — a login without a
-// login, and without any of a login's traces.
+// One email may own several farms: each farm is its own world, with its own
+// data and, on a dedicated stack, its own database. So a registration with an
+// address that already has an account creates the new farm and makes that
+// account its owner, instead of stopping at "ese correo ya tiene cuenta".
 //
-// The fix is not a quieter password check. It is that adding a farm to an
-// account that exists is an action BY that account, and an account proves who it
-// is by opening a session.
-func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
+// What must still hold: the answer does not say whether the address was
+// registered, the account's own password is never changed by a stranger who
+// knows the address, a farm cannot create another farm, and the main domain
+// still offers a choice when one account owns several farms.
+func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 	h := requireDB(t)
 
-	email := "oraculo-" + uuid.NewString() + "@example.com"
+	email := "varias-" + uuid.NewString() + "@example.com"
 	const password = "contrasena-larga-1"
-	signup := func(name, pass string) response {
+	const second = "otra-clave-distinta-2"
+	signup := func(name, slug, pass string) response {
 		return h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
-			"farm": map[string]any{"name": name, "timezone": "America/Bogota",
+			"farm": map[string]any{"name": name, "slug": slug, "timezone": "America/Bogota",
 				"currency": "COP", "priceCents": 100000},
 			"owner": map[string]any{"email": email, "name": "Duena", "password": pass},
 		})
 	}
+	slugOne := "uno-" + uuid.NewString()[:8]
+	slugTwo := "dos-" + uuid.NewString()[:8]
 
-	first := h.mustDo(t, http.MethodPost, "/v1/signup", "", map[string]any{
-		"farm": map[string]any{"name": "Finca uno", "timezone": "America/Bogota",
+	first := signup("Finca uno", slugOne, password)
+	if first.Status != http.StatusCreated {
+		t.Fatalf("first signup: %d %s", first.Status, first.Raw)
+	}
+
+	fresh := h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
+		"farm": map[string]any{"name": "Finca nueva", "timezone": "America/Bogota",
 			"currency": "COP", "priceCents": 100000},
-		"owner": map[string]any{"email": email, "name": "Duena", "password": password},
-	}, http.StatusCreated)
-	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
-		map[string]any{"token": first.Body["verificationToken"]}, http.StatusOK)
-	_ = mustString(t, verified.Body, "farmId")
-
-	t.Run("the right password and a wrong one are the same answer", func(t *testing.T) {
-		right := signup("Finca dos", password)
-		wrong := signup("Finca dos", "esta-no-es-la-clave")
-		if right.Status != wrong.Status || right.code() != wrong.code() {
-			t.Fatalf("the guess is still readable off the answer:\n  right: %d %s\n  wrong: %d %s",
-				right.Status, right.Raw, wrong.Status, wrong.Raw)
-		}
-		// And no farm was created for the correct guess.
-		if _, made := right.Body["farmId"]; made {
-			t.Fatalf("a farm came out of a signup that should have refused: %s", right.Raw)
-		}
+		"owner": map[string]any{"email": "nadie-" + uuid.NewString() + "@example.com",
+			"name": "Nadie", "password": password},
 	})
+	taken := signup("Finca dos", slugTwo, second)
 
-	// The half that was still open when the two above closed: the answer no
-	// longer depends on the ACCOUNT either. Same status, same keys, same time.
-	t.Run("a registered address and an unknown one are the same answer", func(t *testing.T) {
-		fresh := h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
-			"farm": map[string]any{"name": "Finca nueva", "timezone": "America/Bogota",
-				"currency": "COP", "priceCents": 100000},
-			"owner": map[string]any{"email": "nadie-" + uuid.NewString() + "@example.com",
-				"name": "Nadie", "password": password},
-		})
-		taken := signup("Finca dos", password)
-
-		if fresh.Status != taken.Status {
-			t.Fatalf("status still says whether the address is registered: %d vs %d",
-				fresh.Status, taken.Status)
-		}
-		if fresh.Status != http.StatusCreated {
-			t.Fatalf("signup answered %d: %s", fresh.Status, fresh.Raw)
+	t.Run("the registered address gets a farm and the same answer", func(t *testing.T) {
+		if taken.Status != http.StatusCreated || fresh.Status != http.StatusCreated {
+			t.Fatalf("signup answered %d / %d: %s", taken.Status, fresh.Status, taken.Raw)
 		}
 		if got, want := keysOf(taken.Body), keysOf(fresh.Body); !reflect.DeepEqual(got, want) {
-			t.Fatalf("the two answers have different shapes: %v vs %v\n  %s\n  %s",
-				got, want, taken.Raw, fresh.Raw)
+			t.Fatalf("the two answers have different shapes: %v vs %v", got, want)
 		}
-		if taken.Body["verificationRequired"] != true {
-			t.Fatalf("a registered address got a different body: %s", taken.Raw)
+		if taken.Body["verificationRequired"] != false {
+			t.Fatalf("a registered address was still turned away: %s", taken.Raw)
+		}
+		var owners int
+		if err := h.admin.QueryRow(context.Background(), `
+			SELECT count(*)::int FROM memberships m
+			  JOIN users u ON u.id = m.user_id JOIN farms f ON f.id = m.farm_id
+			 WHERE lower(u.email) = lower($1) AND m.role = 'owner'
+			   AND f.slug IN ($2, $3)`, email, slugOne, slugTwo).Scan(&owners); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if owners != 2 {
+			t.Fatalf("the account owns %d of the two farms, want 2", owners)
+		}
+		var users int
+		if err := h.admin.QueryRow(context.Background(),
+			`SELECT count(*)::int FROM users WHERE lower(email) = lower($1)`, email).Scan(&users); err != nil {
+			t.Fatalf("count users: %v", err)
+		}
+		if users != 1 {
+			t.Fatalf("%d users rows for one address on the shared platform, want 1", users)
 		}
 	})
 
-	t.Run("nothing survives the answer that created nothing", func(t *testing.T) {
-		// The branch runs the whole creation against a synthetic address so
-		// that the clock cannot tell the two apart, and throws it away. If the
-		// discard ever stopped working, this is where it shows: rows claiming
-		// a reserved domain that no mailbox can ever answer for.
-		var shadows int
-		if err := h.admin.QueryRow(context.Background(),
-			`SELECT count(*)::int FROM users WHERE email LIKE '%@shadow.invalid'`).
-			Scan(&shadows); err != nil {
-			t.Fatalf("count: %v", err)
+	t.Run("the account's own password is untouched", func(t *testing.T) {
+		// The password typed on the second registration belongs to the new
+		// farm's own stack, not to the account: whoever knows an address must
+		// not be able to change how its owner signs in.
+		res := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": email, "password": second, "farmSlug": slugOne,
+		})
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("the second registration's password opened the account: %d %s", res.Status, res.Raw)
 		}
-		if shadows != 0 {
-			t.Fatalf("%d discarded signups were committed after all", shadows)
-		}
+	})
 
-		// And the token it echoed in development names nothing.
-		tok, _ := signup("Finca dos", password).Body["verificationToken"].(string)
+	t.Run("the echoed token verifies nothing for an existing account", func(t *testing.T) {
+		tok, _ := taken.Body["verificationToken"].(string)
 		if tok == "" {
 			t.Fatal("development stopped echoing a token for a registered address, " +
 				"which is the difference an attacker reads")
@@ -623,49 +619,42 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 		bad := h.do(t, http.MethodPost, "/v1/auth/verify-email", "",
 			map[string]any{"token": tok})
 		if bad.Status != http.StatusBadRequest {
-			t.Fatalf("a discarded verification token verified something: %d %s",
+			t.Fatalf("a registered address's echoed token verified something: %d %s",
 				bad.Status, bad.Raw)
 		}
 	})
 
-	t.Run("and the clock does not tell them apart either", func(t *testing.T) {
-		// The disclosure this replaced was 26 ms against 2 ms: a thirteenfold
-		// difference readable from anywhere on the internet, with no body to
-		// read at all. The tolerance here is deliberately loose — a laptop
-		// running Postgres in Docker is not a quiet machine, and a test that
-		// fails on a noisy afternoon gets deleted — but it is nowhere near
-		// loose enough to let that ratio back in.
-		median := func(f func()) time.Duration {
-			const n = 9
-			out := make([]time.Duration, 0, n)
-			for i := 0; i < n; i++ {
-				start := time.Now()
-				f()
-				out = append(out, time.Since(start))
-			}
-			sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-			return out[n/2]
+	t.Run("the same address is one owner per farm", func(t *testing.T) {
+		again := signup("Finca dos otra vez", slugTwo, second)
+		if again.Status < 400 {
+			t.Fatalf("a second farm took an address already in use: %d %s", again.Status, again.Raw)
 		}
-		fresh := median(func() {
-			h.do(t, http.MethodPost, "/v1/signup", "", map[string]any{
-				"farm": map[string]any{"name": "F", "timezone": "America/Bogota",
-					"currency": "COP", "priceCents": 100000},
-				"owner": map[string]any{"email": "reloj-" + uuid.NewString() + "@example.com",
-					"name": "N", "password": password},
-			})
-		})
-		taken := median(func() { signup("Finca dos", password) })
+	})
 
-		ratio := float64(fresh) / float64(taken)
-		if ratio < 0.4 || ratio > 2.5 {
-			t.Fatalf("the answer's timing says which branch it took: "+
-				"unknown address %v, registered address %v (ratio %.2f)",
-				fresh, taken, ratio)
+	t.Run("the main domain offers a choice", func(t *testing.T) {
+		res := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": email, "password": password,
+		})
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("login with two farms: %d %s", res.Status, res.Raw)
+		}
+		details, _ := res.Body["error"].(map[string]any)["details"].(map[string]any)
+		farms, _ := details["farms"].([]any)
+		if len(farms) != 2 {
+			t.Fatalf("the choice lists %d farms, want 2: %s", len(farms), res.Raw)
+		}
+		for _, slug := range []string{slugOne, slugTwo} {
+			ok := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+				"email": email, "password": password, "farmSlug": slug,
+			})
+			if ok.Status != http.StatusOK || ok.Body["slug"] != slug {
+				t.Fatalf("login pinned to %s: %d %s", slug, ok.Status, ok.Raw)
+			}
 		}
 	})
 
 	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": email, "password": password,
+		"email": email, "password": password, "farmSlug": slugOne,
 	}, http.StatusOK)
 	token, _ := login.Body["accessToken"].(string)
 
