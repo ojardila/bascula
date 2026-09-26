@@ -327,17 +327,43 @@ The load-bearing ones:
 server on the streamable HTTP transport, stateless. ChatGPT, Claude and any
 MCP client connect to it, list the tools and call them. The implementation is
 `internal/httpapi/handlers_mcp.go` and it is deliberately thin: every tool is
-a read-only route of this API under a name and a description an assistant can
+a route of this API under a name and a description an assistant can
 read. A call re-enters the router as an ordinary request carrying the caller's
 bearer, so the permission table, the tenant and RLS apply exactly as they do
 on the wire, and the JSON the assistant sees is the JSON `openapi.yaml`
 documents. There is no second contract to drift.
 
-Twenty-six tools today, all reads: `me`, `farm`, workers and their balances,
-ledgers and payables, plots, activities, work records, pending, balances,
-settlements, week prices, the six reports, stock, products, sales, expenses
-and customers. Writes wait for a confirmation flow — an assistant that can
-settle a week is the double-payment problem with a new face.
+Twenty-seven reads: `me`, `farm`, workers and their balances, ledgers and
+payables, plots, activities, work records, pending, balances, settlements,
+week prices, the six reports, stock, products, sales, expenses and customers.
+
+Twelve writes (`handlers_mcp_write.go`): `create_worker`, `update_worker`
+(including deactivate/reactivate), `create_plot` (with its crop),
+`register_weighing`, `register_harvest_week` (atomic, over
+`POST /v1/work-records/batch`), `correct_weighing`, `void_weighing`,
+`set_kilo_price` (base from a Monday on, or one week), `register_advance`,
+`register_payment`, `create_settlement` and `void_settlement`.
+
+The five that move money — price, advance, payment, settlement and its void —
+are two calls. The first writes nothing and answers a Spanish summary with the
+amounts plus a `confirmationToken`: HMAC-signed with the JWT key, bound to the
+user, the farm, the tool and the exact arguments, valid ten minutes. Only a
+second call with the same arguments and that token executes. The token's
+nonce becomes the id of the row written, and those routes are idempotent by
+id, so a token used twice finds its own row: at most one movement per
+confirmation. A settlement's token also binds the gross and the exact lines
+the summary showed; if a weighing arrives or the price moves in between, the
+confirmation is refused and a new summary is needed. The role check runs
+before the summary, so a weigher is never shown one. Elicitation is not used:
+the transport is stateless, and a server-to-client request needs a session.
+
+A browser that opens `/mcp` (Accept `text/html`, no token) gets a Spanish
+page explaining how to add the connector; MCP clients never ask for HTML and
+still get the 401 with its `WWW-Authenticate` challenge — which is now also
+sent when a token has expired (`error="invalid_token"`). The OAuth token
+endpoint issues a refresh token and supports the `refresh_token` grant, with
+the same single-use rotation as the handsets, so a connector survives the
+fifteen-minute access token.
 
 ### Connecting
 

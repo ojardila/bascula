@@ -156,6 +156,9 @@ type Server struct {
 	// mcp is the tool surface of handlers_mcp.go, built after the router
 	// because every tool dispatches back into it.
 	mcp http.Handler
+	// mcpActions maps "METHOD /pattern" to its permission, so a write tool
+	// can refuse a role before it previews anything.
+	mcpActions map[string]auth.Action
 	// importSlots is the season import's share of the pool, and it is a share
 	// rather than a queue. See store.MaxImportsAtOnce and handleImportSeason.
 	importSlots chan struct{}
@@ -252,6 +255,9 @@ func (s *Server) buildRouter() chi.Router {
 			writeError(w, r, err)
 		})(chained)
 		chained = s.authenticate(chained)
+		if rt.Method == http.MethodGet && rt.Pattern == "/mcp" {
+			chained = s.mcpBrowserPage(chained)
+		}
 		if rt.Action == auth.ActionMCP || rt.Action == auth.ActionOAuth {
 			chained = withCORS(chained)
 		}
@@ -364,6 +370,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		claims, err := s.signer.Parse(raw)
 		if err != nil {
+			if r.URL.Path == "/mcp" {
+				s.writeMCPChallenge(w, r, "invalid_token")
+			}
 			writeError(w, r, err)
 			return
 		}
@@ -399,7 +408,7 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 			p, ok := auth.PrincipalFrom(r.Context())
 			if !ok {
 				if action == auth.ActionMCP {
-					s.writeMCPChallenge(w, r)
+					s.writeMCPChallenge(w, r, "")
 				}
 				writeError(w, r, domain.Unauthorized("authentication required"))
 				return

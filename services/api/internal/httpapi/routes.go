@@ -127,6 +127,9 @@ func (s *Server) Routes() []Route {
 		// RLS policy on work_records enforces a second time.
 		{http.MethodGet, "/v1/work-records", auth.ActionWorkRecordsRead, s.handleListWorkRecords},
 		{http.MethodPost, "/v1/work-records", auth.ActionWorkRecordsWrite, s.handleCreateWorkRecord},
+		// A harvest week in one request, all or nothing: the same write as
+		// above once per line, inside one transaction.
+		{http.MethodPost, "/v1/work-records/batch", auth.ActionWorkRecordsWrite, s.handleCreateWorkRecordBatch},
 		{http.MethodGet, "/v1/work-records/{id}", auth.ActionWorkRecordsRead, s.handleGetWorkRecord},
 		{http.MethodPatch, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleUpdateWorkRecord},
 		{http.MethodDelete, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleDeleteWorkRecord},

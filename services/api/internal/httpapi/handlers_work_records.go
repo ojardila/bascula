@@ -139,40 +139,46 @@ func (s *Server) handleCreateWorkRecord(w http.ResponseWriter, r *http.Request) 
 // go through it: the price rules and the weigher's restrictions cannot drift
 // between them because there is nothing to drift from.
 func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, body workRecordRequest) {
-	if body.ActivityID == "" || body.WorkerID == "" {
-		writeError(w, r, domain.BadRequest("activityId and workerId are required"))
+	out, status, err := s.createWorkRecord(r, body)
+	if err != nil {
+		writeError(w, r, err)
 		return
+	}
+	writeJSON(w, status, out)
+}
+
+// createWorkRecord is the write itself, answering (record, status, error)
+// instead of writing a response, so the batch route can run it once per line
+// inside ONE transaction and give up on the whole week at the first refusal.
+func (s *Server) createWorkRecord(r *http.Request, body workRecordRequest) (any, int, error) {
+	if body.ActivityID == "" || body.WorkerID == "" {
+		return nil, 0, domain.BadRequest("activityId and workerId are required")
 	}
 	if body.ID == "" {
 		body.ID = newID()
 	}
 	from, to, err := parseWorkRecordDates(body)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 	farmID, err := tenant.FarmID(r.Context())
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 	principal, _ := auth.PrincipalFrom(r.Context())
 
 	if existing, err := store.GetWorkRecord(r.Context(), tx, body.ID); err == nil {
-		writeJSON(w, http.StatusOK, projectWorkRecord(*existing, callerSeesPrivateData(r)))
-		return
+		return projectWorkRecord(*existing, callerSeesPrivateData(r)), http.StatusOK, nil
 	}
 
 	activity, err := store.GetActivity(r.Context(), tx, body.ActivityID)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 
 	// The weigher records weighings and nothing else. A weighing is an
@@ -183,13 +189,11 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 	// unexplained NO_RATE_IN_FORCE.
 	if principal.Role == domain.RoleWeigher {
 		if activity.RateSource != domain.RateWeeklyPrice {
-			writeError(w, r, domain.Forbidden(
-				"a weigher may only record work priced by the week"))
-			return
+			return nil, 0, domain.Forbidden(
+				"a weigher may only record work priced by the week")
 		}
 		if body.RateCents != nil {
-			writeError(w, r, domain.Forbidden("a weigher may not set a rate"))
-			return
+			return nil, 0, domain.Forbidden("a weigher may not set a rate")
 		}
 	}
 
@@ -200,16 +204,14 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 	}
 	qty, ok := new(big.Rat).SetString(string(quantity))
 	if !ok || qty.Sign() <= 0 {
-		writeError(w, r, domain.BadRequest("quantity must be a positive number"))
-		return
+		return nil, 0, domain.BadRequest("quantity must be a positive number")
 	}
 	// The column is numeric(12, 3) and Postgres would ROUND a fourth decimal
 	// place rather than refuse it — storing a weight nobody weighed and
 	// charging for it. See domain/numeric.go.
 	if err := domain.CheckNumeric("quantity", string(quantity),
 		domain.QuantityPrecision, domain.QuantityScale); err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 
 	record := store.WorkRecord{
@@ -227,8 +229,7 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		// The caller named the price, so it freezes here and a date range is
 		// perfectly legal.
 		if *body.RateCents <= 0 {
-			writeError(w, r, domain.BadRequest("rateCents must be positive"))
-			return
+			return nil, 0, domain.BadRequest("rateCents must be positive")
 		}
 		record.RateSource = domain.RateExplicit
 		record.PriceMinor = body.RateCents
@@ -244,9 +245,8 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		record.RateSource = domain.RateActivityDated
 		rate, err := store.RateInForce(r.Context(), tx, activity.ID, from)
 		if err != nil {
-			writeError(w, r, domain.Conflict(domain.CodeNoRateInForce,
-				"that activity has no rate in force on that date").WithCause(err))
-			return
+			return nil, 0, domain.Conflict(domain.CodeNoRateInForce,
+				"that activity has no rate in force on that date").WithCause(err)
 		}
 		record.PriceMinor = &rate.RateMinor
 	}
@@ -255,17 +255,15 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 	// whose price is derived from a date must be a single day. A wage from
 	// Tuesday to Tuesday has no single validity period and no single week.
 	if record.RateSource.Derived() && !from.Equal(to) {
-		writeError(w, r, domain.BadRequest(
+		return nil, 0, domain.BadRequest(
 			"a work record priced by date must be a single day; send rateCents to freeze a price over a range").
-			WithDetails(map[string]any{"code": string(domain.CodeRangeNeedsFrozenRate)}))
-		return
+			WithDetails(map[string]any{"code": string(domain.CodeRangeNeedsFrozenRate)})
 	}
 
 	if record.PriceMinor != nil {
 		amount := domain.AmountMinor(qty, *record.PriceMinor)
 		if amount <= 0 {
-			writeError(w, r, domain.BadRequest("the work record adds up to zero"))
-			return
+			return nil, 0, domain.BadRequest("the work record adds up to zero")
 		}
 		record.AmountMinor = &amount
 	}
@@ -275,23 +273,20 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 
 	started, err := store.InstantForLocalDay(r.Context(), tx, from)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 	record.StartedAt = started
 	if !to.Equal(from) {
 		ended, err := store.InstantForLocalDay(r.Context(), tx, to)
 		if err != nil {
-			writeError(w, r, err)
-			return
+			return nil, 0, err
 		}
 		record.EndedAt = &ended
 	}
 
 	created, err := store.CreateWorkRecord(r.Context(), tx, farmID, record)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
 
 	// Decision 8, on this door too. The rule and its boundary live in
@@ -308,10 +303,9 @@ func (s *Server) createWorkRecordFrom(w http.ResponseWriter, r *http.Request, bo
 		WorkedAt: started, DeviceID: device, Source: reactivationSource(device),
 		By: principalUserID(principal),
 	}); err != nil {
-		writeError(w, r, err)
-		return
+		return nil, 0, err
 	}
-	writeJSON(w, http.StatusCreated, projectWorkRecord(*created, callerSeesPrivateData(r)))
+	return projectWorkRecord(*created, callerSeesPrivateData(r)), http.StatusCreated, nil
 }
 
 // reactivationSource names the door the work came through. The legacy

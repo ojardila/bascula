@@ -1299,6 +1299,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/work-records/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record many work records at once, all or nothing
+         * @description A harvest week in one request. Every line goes through exactly the
+         *     same write as `POST /v1/work-records` — price rules, the weigher's
+         *     restrictions, idempotency by `id` — inside ONE transaction: the first
+         *     refusal answers with `details.line` (0-based) and nothing is written.
+         *
+         *     `activityId` on the batch is the default for lines that name none;
+         *     when both are missing the farm's harvest activity (priced by the week)
+         *     is used, as on the legacy pickup door.
+         *
+         *     `id` is the batch's idempotency key: a line without its own `id` gets
+         *     one derived from (batch id, line number), so resending the same batch
+         *     answers 200 and writes nothing new.
+         *
+         *     `weekStart`, when given, must be a Monday and every line must fall in
+         *     that week.
+         */
+        post: operations["createWorkRecordBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/work-records/{id}": {
         parameters: {
             query?: never;
@@ -3966,6 +4000,49 @@ export interface components {
             plotCropIds?: string[];
             note?: string | null;
             deviceId?: string | null;
+        };
+        WorkRecordBatchInput: {
+            /**
+             * Format: uuid
+             * @description Idempotency key of the whole batch.
+             */
+            id?: string;
+            /**
+             * Format: date
+             * @description A Monday; every line must fall in that week.
+             */
+            weekStart?: string;
+            /**
+             * Format: uuid
+             * @description Default for lines without one. Defaults to the harvest activity.
+             */
+            activityId?: string;
+            items: {
+                /** Format: uuid */
+                id?: string;
+                /** Format: uuid */
+                activityId?: string;
+                /** Format: uuid */
+                workerId: string;
+                quantity: number;
+                /** Format: int64 */
+                rateCents?: number | null;
+                /** Format: date */
+                dateFrom: string;
+                /** Format: date */
+                dateTo?: string;
+                plotIds?: string[];
+                plotCropIds?: string[];
+                note?: string | null;
+                deviceId?: string | null;
+            }[];
+        };
+        WorkRecordBatchResult: {
+            items: components["schemas"]["WorkRecord"][];
+            /** @description Lines written by this request. */
+            created: number;
+            /** @description Lines whose id already existed. */
+            existing: number;
         };
         /**
          * @description The rejected fields are listed so the refusal has a sentence in it
@@ -7916,6 +7993,52 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /** @description NO_RATE_IN_FORCE — that activity has no price on that date. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createWorkRecordBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkRecordBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Every line already existed. Nothing was written. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkRecordBatchResult"];
+                };
+            };
+            /** @description Recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkRecordBatchResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description NO_RATE_IN_FORCE on some line, named in `details.line`. */
             409: {
                 headers: {
                     [name: string]: unknown;
