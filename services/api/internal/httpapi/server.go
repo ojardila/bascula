@@ -36,6 +36,10 @@ type Config struct {
 	// address they want an account at is the thing they came for, and they
 	// cannot vary it and still get what they wanted.
 	SignupsPerEmailPerHour int
+	// SignupsPerHour caps farms created by public signup across the whole
+	// platform, per hour. Zero means no cap; cmd/api sets the production
+	// value (SIGNUPS_PER_HOUR).
+	SignupsPerHour int
 	// MaxFarmsPerEmail caps how many farms one address can own.
 	MaxFarmsPerEmail int
 	// LoginFailuresPerEmailPerIP and LoginFailuresPerIP are the two axes of

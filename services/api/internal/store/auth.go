@@ -395,6 +395,17 @@ func RecordSignupAttempt(ctx context.Context, tx pgx.Tx, id, ip, email string, o
 	return err
 }
 
+// CountSuccessfulSignups counts the farms public signup created across the
+// whole platform in the window.
+func CountSuccessfulSignups(ctx context.Context, tx pgx.Tx, window time.Duration) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM signup_attempts
+		 WHERE succeeded AND at > now() - $1::interval`,
+		window.String()).Scan(&n)
+	return n, err
+}
+
 // CountSignupAttempts counts recent attempts from one IP. A floor of rate
 // limiting that survives a process restart, unlike an in-memory bucket.
 func CountSignupAttempts(ctx context.Context, tx pgx.Tx, ip string, window time.Duration) (int, error) {
