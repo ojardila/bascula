@@ -120,12 +120,17 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	price := seed.Farm.PriceMinor
+	confirmed := price > 0 && (seed.Farm.PriceConfirmed == nil || *seed.Farm.PriceConfirmed)
 	if price <= 0 {
 		price = 80000
 	}
+	// The tour itself does not hang on this (it starts for any owner who has
+	// not finished it), but "Sin confirmar" on the price card should say the
+	// same on the dedicated stack as it did on the platform.
 	if err := store.CreateFarm(fctx, tx, store.NewFarm{
 		ID: seed.Farm.ID, Name: seed.Farm.Name, Slug: seed.Farm.Slug,
 		Timezone: seed.Farm.Timezone, Currency: seed.Farm.Currency, PriceMinor: price,
+		PriceConfirmed: confirmed,
 	}); err != nil {
 		writeError(w, r, err)
 		return

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ThemeProvider } from "@mui/material";
 import { theme } from "../../theme";
-import { OWNER_DONE, OWNER_STEPS, TOTALS, WEIGHER_STEPS, ownerPartsDone, resumeIndex, stepOf } from "./steps";
+import { OWNER_DONE, OWNER_STEPS, TOTALS, WEIGHER_STEPS, autoStartAt, ownerPartsDone, resumeIndex, stepOf } from "./steps";
 import { TourCard } from "./TourCard";
 
 describe("the owner's tour, as approved", () => {
@@ -64,5 +64,23 @@ describe("the tour card", () => {
     expect(screen.queryByRole("button", { name: "Atrás" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Saltar" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuar" })).toBeInTheDocument();
+  });
+});
+
+describe("when a tour starts by itself", () => {
+  it("starts for anybody who has never seen it, whatever the farm looks like", () => {
+    expect(autoStartAt("owner", undefined)).toBe(0);
+    expect(autoStartAt("weigher", undefined)).toBe(1);
+  });
+
+  it("picks up a tour left open where it was", () => {
+    expect(autoStartAt("owner", { step: 7, status: "active" })).toBe(7);
+    expect(autoStartAt("owner", { step: 10, status: "active" })).toBe(9);
+  });
+
+  it("never again once finished or closed, and waits on the card after Saltar", () => {
+    expect(autoStartAt("owner", { step: OWNER_DONE, status: "done" })).toBeNull();
+    expect(autoStartAt("owner", { step: 3, status: "dismissed" })).toBeNull();
+    expect(autoStartAt("owner", { step: 3, status: "later" })).toBeNull();
   });
 });

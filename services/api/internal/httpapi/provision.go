@@ -243,6 +243,10 @@ type tenantSeed struct {
 		Timezone   string `json:"timezone"`
 		Currency   string `json:"currency"`
 		PriceMinor int64  `json:"priceMinor"`
+		// PriceConfirmed is whether the owner chose the price (migration
+		// 00030). A pointer so a seed from an older platform, which never
+		// sends it, reads as "chosen": before 00030 every price was.
+		PriceConfirmed *bool `json:"priceConfirmed,omitempty"`
 	} `json:"farm"`
 	Members []tenantSeedMember `json:"members"`
 }
@@ -292,10 +296,11 @@ func (s *Server) buildTenantSeed(ctx context.Context, slug string) (*tenantSeed,
 	}
 	var seed tenantSeed
 	if err := tx.QueryRow(ctx, `
-		SELECT f.id::text, f.name, f.slug, f.timezone, f.currency, coalesce(c.price_minor, 0)
+		SELECT f.id::text, f.name, f.slug, f.timezone, f.currency, coalesce(c.price_minor, 0),
+		       c.price_confirmed_at IS NOT NULL
 		  FROM farms f LEFT JOIN farm_config c ON c.farm_id = f.id
 		 WHERE f.id = $1`, farmID).Scan(&seed.Farm.ID, &seed.Farm.Name, &seed.Farm.Slug,
-		&seed.Farm.Timezone, &seed.Farm.Currency, &seed.Farm.PriceMinor); err != nil {
+		&seed.Farm.Timezone, &seed.Farm.Currency, &seed.Farm.PriceMinor, &seed.Farm.PriceConfirmed); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(ctx, `
