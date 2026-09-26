@@ -294,17 +294,21 @@ export interface paths {
          *     console. Public: the person who just registered has no session yet,
          *     and the only thing it reveals is whether a web address answers.
          *
-         *     Three steps, in order:
+         *     Three steps, in order (four when the platform issues a certificate per
+         *     farm address):
          *
          *     - `database` — the farm's own Postgres is up (dedicated stacks only;
          *       always done on the shared platform).
          *     - `app` — the farm, its members and their passwords have been copied
          *       into its own API, so the owner can log in there with the password
          *       they already chose.
+         *     - `certificate` — only when Cloudflare for SaaS is configured
+         *       (CF_SAAS_TOKEN): the farm address has its Cloudflare custom hostname
+         *       and edge certificate active. Absent otherwise.
          *     - `web` — `https://{slug}.bascula.engp.io/health` answers 200 over real
          *       DNS and TLS.
          *
-         *     `ready` is all three. `slow` turns true when the farm is older than
+         *     `ready` is every step. `slow` turns true when the farm is older than
          *     the provisioning budget (15 minutes) and still not ready: the screen
          *     should stop promising and send the owner to the shared address, where
          *     the farm already works. Cached for a few seconds per slug.
@@ -6188,7 +6192,7 @@ export interface operations {
                         dedicated: boolean;
                         steps: {
                             /** @enum {string} */
-                            key: "database" | "app" | "web";
+                            key: "database" | "app" | "certificate" | "web";
                             done: boolean;
                         }[];
                         ready: boolean;

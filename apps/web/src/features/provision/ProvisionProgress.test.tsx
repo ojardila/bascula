@@ -57,6 +57,31 @@ describe("Preparando su finca", () => {
     expect(spy.mock.calls.length).toBe(calls); // stops polling once ready
   });
 
+  it("shows the secure-connection step only when the platform reports it", async () => {
+    const withCert: ProvisionStatus = {
+      ...status([true, true, false]),
+      steps: [
+        { key: "database", done: true },
+        { key: "app", done: true },
+        { key: "certificate", done: false },
+        { key: "web", done: false },
+      ],
+    };
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(withCert);
+    renderIt();
+    const cert = await screen.findByTestId("step-certificate");
+    expect(cert).toHaveAttribute("data-done", "false");
+    expect(screen.getByText("Conexión segura")).toBeInTheDocument();
+    expect(screen.getByTestId("step-web")).toHaveAttribute("data-done", "false");
+  });
+
+  it("has no secure-connection step where the platform does not issue one", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, false, false]));
+    renderIt();
+    expect(await screen.findByTestId("step-web")).toBeInTheDocument();
+    expect(screen.queryByTestId("step-certificate")).toBeNull();
+  });
+
   it("falls back plainly when the address takes too long", async () => {
     vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, true, false], { slow: true }));
     renderIt();

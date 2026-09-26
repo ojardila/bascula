@@ -256,7 +256,8 @@ export interface ProvisionStatus {
   /** https://{slug}.bascula.engp.io */
   url: string;
   dedicated: boolean;
-  steps: Array<{ key: "database" | "app" | "web"; done: boolean }>;
+  /** `certificate` appears only when the platform issues one per farm address. */
+  steps: Array<{ key: "database" | "app" | "certificate" | "web"; done: boolean }>;
   ready: boolean;
   /** Past the provisioning budget and still not ready: offer the shared app. */
   slow: boolean;

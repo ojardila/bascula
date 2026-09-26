@@ -318,6 +318,11 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	rc.http.GitHubDispatchRepo = or("GITHUB_DISPATCH_REPO", "ojardila/bascula")
 	rc.http.TenantInternalURL = getenv("TENANT_INTERNAL_URL")
 	rc.http.TenantPublicURL = getenv("TENANT_PUBLIC_URL")
+	// Cloudflare for SaaS: one edge certificate per farm address. Off unless
+	// both are set (farm_certificate.go).
+	rc.http.CloudflareSaaSToken = getenv("CF_SAAS_TOKEN")
+	rc.http.CloudflareZoneID = getenv("CF_ZONE_ID")
+	rc.http.CloudflareDCVMethod = getenv("CF_SAAS_DCV_METHOD")
 	rc.internalPort = or("INTERNAL_PORT", "8081")
 	// A DEDICATED stack serves one farm, named by its own public address
 	// (or TENANT_SLUG). It opens the internal port that receives that farm
@@ -333,6 +338,7 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 		}
 		rc.http.TenantSlug = slug
 		rc.http.GitHubDispatchToken = ""
+		rc.http.CloudflareSaaSToken = ""
 	}
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {

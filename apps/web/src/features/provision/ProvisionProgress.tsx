@@ -4,7 +4,7 @@
  *
  * It polls GET /v1/farms/{slug}/provision-status until every step is done and
  * then shows the address, big, with one button. Nothing here is technical on
- * purpose: three steps in plain words, a spinner or a check next to each.
+ * purpose: three or four steps in plain words, a spinner or a check next to each.
  *
  * It never leaves the owner stuck. The farm works on the shared app from the
  * first second, so there is always a quiet "Entrar ya" link, and when the
@@ -22,9 +22,12 @@ import { ApiError } from "../../api/errors";
 import type { ProvisionStatus } from "../../api/types";
 import { farmProdUrl } from "../../lib/farmHost";
 
-const STEPS: Array<{ key: "database" | "app" | "web"; title: string; body: string }> = [
+type StepKey = ProvisionStatus["steps"][number]["key"];
+
+const STEPS: Array<{ key: StepKey; title: string; body: string }> = [
   { key: "database", title: "Base de datos", body: "Creamos el lugar donde se guardan los datos de su finca." },
   { key: "app", title: "Aplicación", body: "Ponemos a funcionar su finca con su usuario y su clave." },
+  { key: "certificate", title: "Conexión segura", body: "Preparamos el candado de su dirección para que nadie más pueda ver sus datos." },
   { key: "web", title: "Dirección web", body: "Abrimos su dirección en internet." },
 ];
 
@@ -67,6 +70,8 @@ export function ProvisionProgress({
   const url = status?.url ?? farmProdUrl(slug);
   const host = url.replace(/^https?:\/\//, "");
   const doneCount = status ? status.steps.filter((s) => s.done).length : 0;
+  // The certificate step exists only where the platform issues one per farm.
+  const steps = STEPS.filter((st) => st.key !== "certificate" || status?.steps.some((x) => x.key === "certificate"));
 
   if (missing) {
     return (
@@ -119,7 +124,7 @@ export function ProvisionProgress({
       </Box>
 
       <Stack spacing={2} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const done = status?.steps.find((s) => s.key === step.key)?.done ?? false;
           const current = !done && i === doneCount;
           return (

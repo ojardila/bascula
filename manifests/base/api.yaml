@@ -166,6 +166,20 @@ spec:
                   name: bascula-api
                   key: github-dispatch-token
                   optional: true
+            # Cloudflare for SaaS: an edge certificate per farm address
+            # ({slug}.bascula.engp.io is two levels deep, beyond the free
+            # *.engp.io certificate). Inert until the secret exists; a dedicated
+            # stack ignores it (TENANT_MODE=dedicated clears the token).
+            # kubectl -n bascula create secret generic bascula-cloudflare \
+            #   --from-literal=saas-token=... ; then restart bascula-api.
+            - name: CF_ZONE_ID
+              value: 9e51e762eba58f92ff7b6596e20b28d6
+            - name: CF_SAAS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: bascula-cloudflare
+                  key: saas-token
+                  optional: true
           volumeMounts:
             - name: uploads
               mountPath: /srv/uploads

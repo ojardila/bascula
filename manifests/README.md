@@ -157,3 +157,49 @@ before the farm's season lives here.**
 **Seasons from the retired phone app.** A farm that kept its season only on
 the Expo app uploads it through `/v1/import/season` from that app
 (`docs/archive/sincronizacion.md` §8). The web app has no equivalent.
+
+---
+
+## Farm addresses and their certificates
+
+Every farm has an address like `https://sanjose.bascula.engp.io`. The route
+already accepts `*.bascula.engp.io` (`base/route.yaml`), and Cloudflare sends
+those names to the tunnel through a proxied wildcard record:
+
+```
+*.bascula.engp.io  CNAME  8c362037-40d4-43be-af02-d0c2a22dc21c.cfargotunnel.com  (proxied)
+```
+
+The tunnel's `*.engp.io` ingress rule matches two-level names too (cloudflared
+matches wildcards by suffix), so no extra tunnel rule is needed.
+
+What the free plan does NOT give is a certificate: Universal SSL covers
+`engp.io` and `*.engp.io`, one level deep, so a browser gets a TLS handshake
+failure at Cloudflare for `sanjose.bascula.engp.io`. The fix is
+**Cloudflare for SaaS**: one custom hostname, with its own DV certificate, per
+farm (100 included on the free plan, then $0.10 each per month).
+
+- The zone has Cloudflare for SaaS enabled, with **fallback origin
+  `bascula.engp.io`** (the proxied CNAME to the tunnel).
+- The platform API creates the custom hostname when a farm is created
+  (`services/api/internal/httpapi/farm_certificate.go`, HTTP validation), polls
+  it until the hostname and its certificate are active, and the waiting screen
+  (`/empezar`) shows it as the «Conexión segura» step.
+- It is **off** unless `CF_SAAS_TOKEN` is set. The token lives in the secret
+  `bascula-cloudflare` (key `saas-token`), which is created by hand, never
+  committed:
+
+  ```
+  kubectl -n bascula create secret generic bascula-cloudflare --from-literal=saas-token=...
+  kubectl -n bascula rollout restart deploy/bascula-api
+  ```
+
+  The token needs **Zone → SSL and Certificates → Edit** on `engp.io`.
+  `CF_ZONE_ID` is in `base/api.yaml`. Dedicated farm stacks ignore the token.
+- By hand, for the first test or an existing farm:
+
+  ```
+  cd services/api
+  CF_SAAS_TOKEN=... CF_ZONE_ID=9e51e762eba58f92ff7b6596e20b28d6 \
+    go run ./cmd/cfhostname wait sanjose.bascula.engp.io   # or: check, create
+  ```
