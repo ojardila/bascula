@@ -227,7 +227,7 @@ export function PayWorkerPage() {
     // `ran: false` is a second click that was swallowed, or a failure already
     // reported above. Either way there is no new payment to show.
     if (!outcome.ran) return;
-    let slip: PaymentReceipt | null = null;
+    let slip: PaymentReceipt | null;
     try {
       slip = await api.getPayment(outcome.value.id);
     } catch {

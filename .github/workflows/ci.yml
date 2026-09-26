@@ -75,8 +75,16 @@ jobs:
 
   # Built on same-repo PRs only: a fork has no Harbor secrets. Skipped work
   # is cheap here: a key already in Harbor is not built twice.
+  #
+  # Not on Dependabot's PRs either: GitHub runs them without Actions secrets,
+  # so joining the tailnet failed and every Dependabot PR showed two red
+  # checks that said nothing about the change. CD builds any key that is
+  # missing after the merge (images.yml), so nothing is skipped for good.
   images:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     strategy:
       matrix:
         component: [api, web]

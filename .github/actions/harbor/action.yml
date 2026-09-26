@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: Join the tailnet
-      uses: tailscale/github-action@v3
+      uses: tailscale/github-action@v4
       with:
         oauth-client-id: ${{ inputs.ts-oauth-client-id }}
         oauth-secret: ${{ inputs.ts-oauth-secret }}

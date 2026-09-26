@@ -43,8 +43,10 @@ export default defineConfig({
     // One file at a time, one fork. The suite creates a farm and moves money
     // through it; concurrency here buys nothing and costs reproducibility.
     fileParallelism: false,
+    // Vitest 4 dropped poolOptions: singleFork is maxWorkers 1, not isolated.
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    maxWorkers: 1,
+    isolate: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,
     retry: 0,

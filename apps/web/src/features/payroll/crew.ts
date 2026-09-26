@@ -434,7 +434,7 @@ export const payCheckPassed = (c: PayCheck): boolean =>
  */
 export async function checkPayRun(approvals: PayApproval[]): Promise<PayCheck> {
   const out: PayCheck = { drifts: [], unreadable: [] };
-  let balances: Balance[] | null = null;
+  let balances: Balance[] | null;
   try {
     balances = await api.listBalances();
   } catch {

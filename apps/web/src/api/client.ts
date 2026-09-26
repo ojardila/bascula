@@ -83,7 +83,7 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
 }
 
 async function parseError(res: Response): Promise<ApiError> {
-  let body: ApiErrorBody | null = null;
+  let body: ApiErrorBody | null;
   try {
     body = (await res.json()) as ApiErrorBody;
   } catch {

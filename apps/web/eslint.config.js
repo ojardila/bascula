@@ -30,6 +30,15 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // eslint-plugin-react-hooks 7 folds React Compiler diagnostics into
+      // "recommended". This app does not run the compiler, and the patterns
+      // these flag (reading a ref while rendering, resetting state in an
+      // effect) work today; rewriting ~40 sites in screens that move money is
+      // a behaviour change with no user-visible gain. Warnings, so they stay
+      // visible and can be paid down one screen at a time.
+      "react-hooks/refs": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
       "react-refresh/only-export-components": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
