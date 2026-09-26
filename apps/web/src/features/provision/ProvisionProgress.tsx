@@ -17,6 +17,7 @@ import {
   Alert, Box, Button, CircularProgress, Link, Stack, Typography,
 } from "@mui/material";
 import CheckCircle from "@mui/icons-material/CheckCircle";
+import MailOutline from "@mui/icons-material/MailOutline";
 import { api } from "../../api/endpoints";
 import { ApiError } from "../../api/errors";
 import type { ProvisionStatus } from "../../api/types";
@@ -25,7 +26,11 @@ import { APP_HOME, farmProdUrl } from "../../lib/farmHost";
 type StepKey = ProvisionStatus["steps"][number]["key"];
 
 const STEPS: Array<{ key: StepKey; title: string; body: string }> = [
-  { key: "database", title: "Base de datos", body: "Creamos el lugar donde se guardan los datos de su finca." },
+  {
+    key: "database",
+    title: "Base de datos",
+    body: "Creamos una base de datos exclusiva para su finca. Sus datos quedan guardados de forma segura y separados de los de cualquier otra finca.",
+  },
   { key: "app", title: "Aplicación", body: "Ponemos a funcionar su finca con su usuario y su clave." },
   { key: "certificate", title: "Conexión segura", body: "Preparamos el candado de su dirección para que nadie más pueda ver sus datos." },
   { key: "web", title: "Dirección web", body: "Abrimos su dirección en internet." },
@@ -56,6 +61,9 @@ export function ProvisionProgress({
 }) {
   const [status, setStatus] = useState<ProvisionStatus | null>(null);
   const [missing, setMissing] = useState(false);
+  const [asked, setAsked] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [askFailed, setAskFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -184,6 +192,26 @@ export function ProvisionProgress({
         })}
       </Stack>
 
+      {status?.notifyAvailable && (
+        <ReadyEmail
+          requested={asked || Boolean(status.notifyRequested)}
+          busy={asking}
+          failed={askFailed}
+          onAsk={async () => {
+            setAsking(true);
+            setAskFailed(false);
+            try {
+              await api.requestReadyEmail(slug);
+              setAsked(true);
+            } catch {
+              setAskFailed(true);
+            } finally {
+              setAsking(false);
+            }
+          }}
+        />
+      )}
+
       {status?.slow ? (
         <Alert severity="info" sx={{ fontSize: "1.05rem" }}>
           Su dirección propia está tardando más de lo normal. Su finca ya funciona:
@@ -200,6 +228,50 @@ export function ProvisionProgress({
           ¿No quiere esperar? Su finca ya funciona:{" "}
           <Link href={loginUrl}>entre aquí con su correo</Link>.
         </Typography>
+      )}
+    </Stack>
+  );
+}
+
+/**
+ * "Avísenme por correo cuando esté lista". Shown only where the platform can
+ * send email (status.notifyAvailable); the email goes to the address the
+ * owner registered with, so nothing is typed here.
+ */
+function ReadyEmail({
+  requested, busy, failed, onAsk,
+}: {
+  requested: boolean;
+  busy: boolean;
+  failed: boolean;
+  onAsk: () => void;
+}) {
+  if (requested) {
+    return (
+      <Alert severity="success" icon={<MailOutline />} sx={{ fontSize: "1.1rem" }} data-testid="ready-email-done">
+        Listo. Le enviaremos un correo cuando su finca esté lista. Ya puede cerrar esta página.
+      </Alert>
+    );
+  }
+  return (
+    <Stack spacing={1} alignItems="center" textAlign="center" data-testid="ready-email">
+      <Button
+        onClick={onAsk}
+        disabled={busy}
+        variant="outlined"
+        size="large"
+        startIcon={<MailOutline />}
+        sx={{ minHeight: 56, fontSize: "1.1rem", borderRadius: 999, width: { xs: "100%", sm: "auto" } }}
+      >
+        Avísenme por correo cuando esté lista
+      </Button>
+      <Typography color="text.secondary" sx={{ fontSize: "1rem" }}>
+        Le escribimos al correo con el que se registró. Así no tiene que esperar aquí.
+      </Typography>
+      {failed && (
+        <Alert severity="error" sx={{ fontSize: "1rem" }}>
+          No pudimos guardar su pedido. Intente otra vez.
+        </Alert>
       )}
     </Stack>
   );

@@ -262,6 +262,10 @@ export interface ProvisionStatus {
   /** Past the provisioning budget and still not ready: offer the shared app. */
   slow: boolean;
   elapsedSeconds: number;
+  /** The platform can email the owner when ready (SMTP configured). */
+  notifyAvailable?: boolean;
+  /** The owner already asked for that email. */
+  notifyRequested?: boolean;
 }
 
 

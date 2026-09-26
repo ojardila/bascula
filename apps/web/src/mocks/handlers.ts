@@ -627,6 +627,9 @@ function pinnedFarm(request: Request): db.MockFarm | undefined {
 
 /* -- handlers -------------------------------------------------------- */
 
+/** Farms whose owner asked for the ready email (mock only). */
+const readyEmailAsked = new Set<string>();
+
 export const handlers = [
   http.get("*/health", () => HttpResponse.json({ status: "ok" })),
 
@@ -757,9 +760,17 @@ export const handlers = [
     return HttpResponse.json({
       slug, url: farmProdUrl(slug), dedicated: true, steps, ready,
       slow: !ready && elapsed > 900, elapsedSeconds: Math.floor(elapsed),
+      notifyAvailable: true, notifyRequested: readyEmailAsked.has(slug),
     });
   }),
 
+  /** `handleRequestReadyEmail`: the mock just remembers the request. */
+  http.post("*/v1/farms/:slug/ready-email", ({ params }) => {
+    const slug = String(params.slug).toLowerCase();
+    if (!db.farmOfSlug(slug)) return notFound();
+    readyEmailAsked.add(slug);
+    return HttpResponse.json({ slug, requested: true }, { status: 202 });
+  }),
 
   http.post("*/v1/auth/verify-email", async ({ request }) => {
     const body = (await request.json()) as VerifyEmailRequestBody;

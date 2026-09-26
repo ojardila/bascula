@@ -215,3 +215,34 @@ farm (100 included on the free plan, then $0.10 each per month).
   CF_SAAS_TOKEN=... CF_ZONE_ID=9e51e762eba58f92ff7b6596e20b28d6 \
     go run ./cmd/cfhostname wait sanjose.bascula.engp.io   # or: check, create
   ```
+
+---
+
+## Mail
+
+The platform API can send one email: "Su finca ya está lista", to a farm's
+owner who pressed «Avísenme por correo cuando esté lista» on the waiting
+screen. It is **off** until the ConfigMap `bascula-mail` exists; without it the
+screen does not offer the option and nothing is sent.
+
+| Variable | ConfigMap / Secret key | Default |
+|:--|:--|:--|
+| `SMTP_HOST` | ConfigMap `bascula-mail` `host` | — (required to turn mail on) |
+| `SMTP_PORT` | ConfigMap `bascula-mail` `port` | `25` |
+| `SMTP_FROM` | ConfigMap `bascula-mail` `from` | — (required), e.g. `Báscula <no-responder@bascula.engp.io>` |
+| `SMTP_TLS` | ConfigMap `bascula-mail` `tls` | `none` on 25, `starttls` on 587, `tls` on 465 |
+| `SMTP_USER` / `SMTP_PASSWORD` | Secret `bascula-mail` `user` / `password` | none; refused with `SMTP_TLS=none` |
+
+For the in-cluster relay (no auth):
+
+```
+kubectl -n bascula create configmap bascula-mail \
+  --from-literal=host=smtp.mail.svc.cluster.local --from-literal=port=25 \
+  --from-literal='from=Báscula <no-responder@bascula.engp.io>'
+kubectl -n bascula rollout restart deploy/bascula-api
+```
+
+The API logs `mail on` with the relay at boot. A value that is set and wrong
+(bad port, unknown `SMTP_TLS`, unparsable `SMTP_FROM`) stops the API from
+booting rather than dropping mail silently. Dedicated farm stacks never send.
+

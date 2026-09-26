@@ -448,6 +448,14 @@ export const api = {
       { anonymous: true },
     ),
 
+  /** "Avísenme por correo cuando esté lista". Public, like the status. */
+  requestReadyEmail: (slug: string) =>
+    http.post<{ slug: string; requested: boolean }>(
+      `/v1/farms/${encodeURIComponent(slug)}/ready-email`,
+      undefined,
+      { anonymous: true },
+    ),
+
   /** Another farm for the account that is signed in (POST /v1/farms). */
 
   verifyEmail: (token: string) =>

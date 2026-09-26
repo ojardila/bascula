@@ -27,6 +27,7 @@ import (
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/httpapi"
+	"github.com/ojardila/bascula/services/api/internal/mailer"
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
@@ -142,6 +143,10 @@ func run(migrateOnly, pruneOnly bool) error {
 	// the upload keeps making progress. See importReadBudget in
 	// internal/httpapi/handlers_import.go. Everything else keeps these.
 	api := httpapi.New(pool, auth.NewSigner(rc.secret, "bascula"), cfg)
+	if rc.mail != "" {
+		slog.Info("mail on", "relay", rc.mail)
+		api.ResumeReadyEmails(ctx)
+	}
 	if cfg.TenantSlug != "" {
 		internal := &http.Server{
 			Addr:              ":" + rc.internalPort,
@@ -243,9 +248,11 @@ type resolved struct {
 	// internalPort is where a dedicated stack listens for its farm (see
 	// httpapi.InternalHandler). Unused outside TENANT_MODE=dedicated.
 	internalPort string
-	secret       []byte
-	http         httpapi.Config
-	warnings     []string
+	// mail describes the SMTP relay for the startup log; empty means off.
+	mail     string
+	secret   []byte
+	http     httpapi.Config
+	warnings []string
 }
 
 // resolveConfig reads the environment and decides whether this process is
@@ -330,6 +337,16 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	rc.http.CloudflareSaaSToken = getenv("CF_SAAS_TOKEN")
 	rc.http.CloudflareZoneID = getenv("CF_ZONE_ID")
 	rc.http.CloudflareDCVMethod = getenv("CF_SAAS_DCV_METHOD")
+	// Outgoing mail. Off unless SMTP_HOST and SMTP_FROM are set; a value
+	// that is set and wrong refuses to boot (internal/mailer).
+	m, err := mailer.FromEnv(getenv)
+	if err != nil {
+		return resolved{}, err
+	}
+	if m != nil {
+		rc.http.Mailer = m
+		rc.mail = m.Describe()
+	}
 	rc.internalPort = or("INTERNAL_PORT", "8081")
 	// A DEDICATED stack serves one farm, named by its own public address
 	// (or TENANT_SLUG). It opens the internal port that receives that farm
@@ -346,6 +363,9 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 		rc.http.TenantSlug = slug
 		rc.http.GitHubDispatchToken = ""
 		rc.http.CloudflareSaaSToken = ""
+		// The platform sends the ready notice, never the farm's own stack.
+		rc.http.Mailer = nil
+		rc.mail = ""
 	}
 	rc.http.UploadDir = getenv("UPLOAD_DIR")
 	if rc.http.UploadDir == "" && !development {

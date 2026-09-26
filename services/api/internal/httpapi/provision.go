@@ -111,6 +111,7 @@ func (s *Server) kickTenantProvision(p tenantProvision) {
 type provisioner struct {
 	mu       sync.Mutex
 	watching map[string]bool
+	emailing map[string]bool
 	cache    map[string]cachedStatus
 	certs    map[string]*certState
 }
@@ -121,7 +122,7 @@ type cachedStatus struct {
 }
 
 func newProvisioner() *provisioner {
-	return &provisioner{watching: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{}}
+	return &provisioner{watching: map[string]bool{}, emailing: map[string]bool{}, cache: map[string]cachedStatus{}, certs: map[string]*certState{}}
 }
 
 func (s *Server) tenantInternalURL(slug string) string {
@@ -377,6 +378,10 @@ type provisionStatus struct {
 	Ready          bool            `json:"ready"`
 	Slow           bool            `json:"slow"`
 	ElapsedSeconds int64           `json:"elapsedSeconds"`
+	// NotifyAvailable: this platform can email the owner when the farm is
+	// ready (a mailer is configured). NotifyRequested: the owner asked.
+	NotifyAvailable bool `json:"notifyAvailable"`
+	NotifyRequested bool `json:"notifyRequested"`
 }
 
 // handleProvisionStatus answers the waiting screen. It is public: the caller
@@ -408,6 +413,27 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	st := s.computeProvisionStatus(r.Context(), slug, createdAt)
+	st.NotifyAvailable = s.readyEmailAvailable()
+	if st.NotifyAvailable {
+		requested, sent := s.readyEmailState(r.Context(), slug)
+		st.NotifyRequested = requested
+		if st.Ready && requested && !sent {
+			// Covers a restart that lost the watcher while the screen was
+			// still open. The claim keeps it to one email.
+			go s.sendReadyEmail(context.Background(), slug, st.URL)
+		}
+	}
+
+	s.prov.mu.Lock()
+	s.prov.cache[slug] = cachedStatus{at: time.Now(), status: st}
+	s.prov.mu.Unlock()
+	writeJSON(w, http.StatusOK, st)
+}
+
+// computeProvisionStatus asks every step where it stands. Both the waiting
+// screen and the ready-email watcher use it, so "ready" means one thing.
+func (s *Server) computeProvisionStatus(ctx context.Context, slug string, createdAt time.Time) provisionStatus {
 	st := provisionStatus{
 		Slug:           slug,
 		URL:            s.tenantPublicURL(slug),
@@ -416,7 +442,7 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	database, app := true, true
 	if st.Dedicated {
-		info, err := s.tenantInfo(r.Context(), slug)
+		info, err := s.tenantInfo(ctx, slug)
 		database = err == nil && info.Database
 		app = err == nil && info.Seeded
 		if !app {
@@ -424,7 +450,7 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 			s.watchTenant(slug)
 		}
 	}
-	web := s.probePublic(r.Context(), st.URL)
+	web := s.probePublic(ctx, st.URL)
 	st.Steps = []provisionStep{
 		{Key: "database", Done: database},
 		{Key: "app", Done: app},
@@ -444,11 +470,7 @@ func (s *Server) handleProvisionStatus(w http.ResponseWriter, r *http.Request) {
 	st.Steps = append(st.Steps, provisionStep{Key: "web", Done: web})
 	st.Ready = database && app && certificate && web
 	st.Slow = !st.Ready && time.Since(createdAt) > s.provisionSlowAfter()
-
-	s.prov.mu.Lock()
-	s.prov.cache[slug] = cachedStatus{at: time.Now(), status: st}
-	s.prov.mu.Unlock()
-	writeJSON(w, http.StatusOK, st)
+	return st
 }
 
 func (s *Server) provisionSlowAfter() time.Duration {
