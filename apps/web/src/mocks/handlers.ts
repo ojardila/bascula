@@ -760,54 +760,6 @@ export const handlers = [
     });
   }),
 
-  /** `handleCreateFarm`: another farm for the signed-in account. */
-  http.post("*/v1/farms", async ({ request }) => {
-    const g = authenticate(request);
-    if (!g.p) return g.deny;
-    const body = (await request.json()) as { id?: string; name?: string; slug?: string; priceCents?: number };
-    if (!body.name?.trim()) return badRequest("name is required");
-    if (!body.priceCents || body.priceCents <= 0) return badRequest("priceCents must be positive");
-    if (body.id) {
-      const existing = db.farms.find((f) => f.id === body.id);
-      if (existing) {
-        return HttpResponse.json({ farmId: existing.id, name: existing.name, slug: existing.slug, role: "owner", owned: 1, limit: 3 });
-      }
-    }
-    const slug = body.slug?.trim().toLowerCase();
-    if (slug) {
-      if (isReservedFarmSlug(slug)) return badRequest("that slug is reserved");
-      if (!isFarmSlug(slug)) return badRequest("slug must be 2–63 lowercase letters, digits and hyphens");
-      if (db.farmOfSlug(slug)) return conflict("CONFLICT", "that slug is already in use");
-    }
-    const owned = db.membershipsOf(g.p.user.id).filter((m) => m.role === "owner").length;
-    if (owned >= 3) {
-      return conflict("FARM_LIMIT_REACHED", "that account already owns as many farms as it may", { owned, limit: 3 });
-    }
-    const farmId = body.id || crypto.randomUUID();
-    const farm = {
-      id: farmId,
-      name: body.name.trim(),
-      slug: slug || db.allocateSlug(body.name.trim()),
-      timezone: "America/Bogota",
-      currency: "COP",
-      minorUnit: 2,
-      phone: null,
-      country: null,
-      city: null,
-      address: null,
-      areaHa: null,
-      suspendedAt: null,
-      createdAt: nowInstant(),
-      priceCents: body.priceCents,
-    };
-    db.farms.push(farm);
-    db.memberships.push({ farmId, userId: g.p.user.id, role: "owner" });
-    db.tenants.set(farmId, db.emptyTenant(farmId, body.priceCents, () => crypto.randomUUID()));
-    return HttpResponse.json(
-      { farmId, name: farm.name, slug: farm.slug, timezone: farm.timezone, currency: farm.currency, role: "owner", owned: owned + 1, limit: 3 },
-      { status: 201 },
-    );
-  }),
 
   http.post("*/v1/auth/verify-email", async ({ request }) => {
     const body = (await request.json()) as VerifyEmailRequestBody;
@@ -2291,7 +2243,14 @@ export const handlers = [
   http.get("*/v1/me/tours", ({ request }) => {
     const g = guard(request, "me.read");
     if (g.deny) return g.deny;
-    return HttpResponse.json({ items: g.p.tenant.tours?.[g.p.user.id] ?? [] });
+    const t = g.p.tenant;
+    const items = [...(t.tours?.[g.p.user.id] ?? [])];
+    if (!t.freshTours) {
+      for (const tour of ["owner", "weigher"]) {
+        if (!items.some((x) => x.tour === tour)) items.push({ tour, step: 0, status: "done", updatedAt: nowInstant() });
+      }
+    }
+    return HttpResponse.json({ items });
   }),
 
   http.put("*/v1/me/tours/:tour", async ({ request, params }) => {

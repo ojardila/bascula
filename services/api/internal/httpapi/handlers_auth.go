@@ -358,203 +358,21 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, body)
 }
 
-// handleCreateFarm adds another farm to the account that is already logged in.
+// handleCreateFarm used to add another farm to the account that is signed in.
+// It no longer does, for anybody.
 //
-// This is the half of the old signup that could not stay public. Creating a
-// second farm for an existing address needed proof that the caller owns that
-// address, the only proof a public endpoint could ask for was the password, and
-// asking for a password without issuing a session turned the registration form
-// into a place to test guesses. A session IS that proof, and it is one the
-// account can see, revoke and rate-limit.
+// Every farm is its own world: its own address, and on a dedicated stack its
+// own database. Inside a farm people create users, workers and everything
+// else OF THAT FARM, but never another farm. A new farm starts only from the
+// public registration on the main domain (/empezar → POST /v1/signup), and the
+// operator's own door stays the super-admin console (POST /v1/admin/farms).
 //
-// # What it means for the console
-//
-// The screen that used to POST /v1/signup with an existing owner's credentials
-// must now POST /v1/farms with that owner's access token, and drop the password
-// field from the form. The response carries the new farm's id; the caller's
-// current token is still pinned to the OLD farm — the tenant travels in the
-// token and this route does not mint one — so the console switches by logging in
-// again with `farmId`, exactly as it already does for an account that belongs to
-// several farms.
-//
-// # Who may call it
-//
-// Any member of any farm, and that is deliberate. Owning a farm is a property of
-// the ACCOUNT, not of the role it holds somewhere else: a person who keeps the
-// scale on a neighbour's farm and wants a farm of their own would otherwise have
-// to register a second email address to get one, which teaches exactly the habit
-// this cap exists to discourage. The cap is what bounds it, and the cap is per
-// account.
+// The route stays mounted, answering 403, so an app that still has the old
+// "Crear otra finca" screen cached gets a plain refusal instead of a 404 that
+// reads like the API vanished.
 func (s *Server) handleCreateFarm(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		// ID names the farm, and is what makes this write idempotent by
-		// (farm_id, id) like every other write in this service. A double click
-		// on a "create farm" button is a real event with real consequences —
-		// two farms, one of them empty and permanently counted against the cap
-		// — and the console has already been bitten once by a double click
-		// (web audit A1, which paid a worker twice).
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		Slug       string `json:"slug"`
-		Timezone   string `json:"timezone"`
-		Currency   string `json:"currency"`
-		PriceCents int64  `json:"priceCents"`
-	}
-	if err := decode(r, &req); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, r, domain.BadRequest("name is required"))
-		return
-	}
-	if req.PriceCents <= 0 {
-		writeError(w, r, domain.BadRequest("priceCents must be positive"))
-		return
-	}
-	if req.Timezone == "" {
-		req.Timezone = "America/Bogota"
-	}
-	if req.Currency == "" {
-		req.Currency = "COP"
-	}
-
-	tx, err := tenant.Tx(r.Context())
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	p, _ := auth.PrincipalFrom(r.Context())
-
-	// A bad IANA name is refused before the farm exists rather than after, for
-	// the reason handleUpdateFarm gives: the CHECK raises while it is being
-	// evaluated, which aborts the transaction and leaves nothing but a 500.
-	ok, err := store.IsKnownTimezone(r.Context(), tx, req.Timezone)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if !ok {
-		writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
-		return
-	}
-
-	// The idempotency check comes before the cap, and the order is the same one
-	// addLedgerEntry argues for: a retry of a farm this account already made
-	// must not be refused by a limit that its own first attempt filled up.
-	//
-	// It looks the farm up THROUGH the membership, so a resend answers only for
-	// a farm this account is actually in. An id that belongs to somebody else is
-	// invisible here and collides on the primary key below, where it is a 409
-	// and never a farm quietly handed over.
-	if req.ID != "" {
-		var name, slug, tz, currency, role string
-		err := tx.QueryRow(r.Context(), `
-			SELECT f.name, f.slug, f.timezone, f.currency, m.role::text
-			  FROM farms f
-			  JOIN memberships m ON m.farm_id = f.id AND m.user_id = $2
-			 WHERE f.id = $1`, req.ID, p.UserID).Scan(&name, &slug, &tz, &currency, &role)
-		if err == nil {
-			owned, err := store.CountOwnedFarms(r.Context(), tx, p.UserID)
-			if err != nil {
-				writeError(w, r, err)
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]any{
-				"farmId": req.ID, "name": name, "slug": slug, "timezone": tz, "currency": currency,
-				"role": role, "owned": owned, "limit": s.cfg.MaxFarmsPerEmail,
-			})
-			return
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, r, err)
-			return
-		}
-	}
-
-	// The cap, in the one place that knows whose account this is. The count runs
-	// against `memberships`, whose policy is `farm_id = current_farm() OR
-	// user_id = current_user_id()`, and app.user_id is set by the tenant
-	// middleware from the token — so unlike the signup this was lifted out of,
-	// it is a count of real rows and not RLS answering zero.
-	owned, err := store.CountOwnedFarms(r.Context(), tx, p.UserID)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if owned >= s.cfg.MaxFarmsPerEmail {
-		writeError(w, r, domain.Coded(http.StatusConflict, domain.CodeFarmLimitReached,
-			"that account already owns as many farms as it may").
-			WithDetails(map[string]any{"owned": owned, "limit": s.cfg.MaxFarmsPerEmail}))
-		return
-	}
-
-	// From here the transaction belongs to the NEW farm: its rows have to
-	// satisfy their own RLS policies, and the caller's old tenant would refuse
-	// every one of them. Nothing else runs in this request afterwards.
-	farmID := req.ID
-	if farmID == "" {
-		farmID = newID()
-	}
-	ctx, err := tenant.SetForSignup(r.Context(), tx, farmID, p.UserID)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	newFarm := store.NewFarm{
-		ID: farmID, Name: req.Name, Timezone: req.Timezone,
-		Currency: req.Currency, PriceMinor: req.PriceCents,
-		PriceConfirmed: true, // required and chosen by the caller
-	}
-	if err := createFarmRecord(ctx, tx, &newFarm, req.Slug); err != nil {
-		// The id exists and the lookup above could not see it, which means it
-		// belongs to a farm this account is not in. Naming it would confirm
-		// another account's id, so it gets the answer every other reused id
-		// gets here. A colliding slug is already a 409 from createFarmRecord.
-		if store.IsUniqueViolation(err, "") {
-			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
-				"that id is already in use"))
-			return
-		}
-		writeError(w, r, err)
-		return
-	}
-	if err := store.CreateMembership(ctx, tx, farmID, p.UserID, domain.RoleOwner); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := seedFarm(ctx, tx, farmID, req.PriceCents); err != nil {
-		writeError(w, r, err)
-		return
-	}
-
-	// A farm created from inside the app gets its own stack exactly like one
-	// created at signup. The dispatch runs after this response and its failure
-	// is only logged: the farm already works on the shared platform.
-	owner, err := store.FindUserByID(r.Context(), tx, p.UserID)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	s.kickTenantProvision(tenantProvision{
-		Slug: newFarm.Slug, FarmName: newFarm.Name,
-		Email: owner.Email, OwnerName: owner.Name, Phone: owner.Phone,
-	})
-
-	// No token comes back, and that is not an omission. The tenant travels in
-	// the access token; minting one here would hand the caller a second live
-	// session they did not ask for and cannot see in a list. They log in again
-	// with this farmId when they want to work in it.
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"farmId":   farmID,
-		"name":     req.Name,
-		"slug":     newFarm.Slug,
-		"timezone": req.Timezone,
-		"currency": req.Currency,
-		"role":     domain.RoleOwner,
-		"owned":    owned + 1,
-		"limit":    s.cfg.MaxFarmsPerEmail,
-	})
+	writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeForbidden,
+		"a farm cannot create another farm; new farms are registered at https://bascula.engp.io/empezar"))
 }
 
 // seedFarm gives a new farm the minimum it needs to weigh coffee on day one: a

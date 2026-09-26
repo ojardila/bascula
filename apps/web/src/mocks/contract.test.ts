@@ -1304,8 +1304,11 @@ describe("the base price and the tours (migration 00030)", () => {
 
   it("tour progress is the caller's own", async () => {
     expect((await put("/v1/me/tours/owner", OWNER, { step: 3, status: "later" })).status).toBe(200);
-    expect((await get("/v1/me/tours", OWNER)).body.items).toHaveLength(1);
-    expect((await get("/v1/me/tours", WEIGHER)).body.items).toHaveLength(0);
+    // The seeded farm reads as "already shown" for every tour nobody saved.
+    const mine = (await get("/v1/me/tours", OWNER)).body.items as { tour: string; step: number; status: string }[];
+    expect(mine.find((x) => x.tour === "owner")).toMatchObject({ step: 3, status: "later" });
+    const theirs = (await get("/v1/me/tours", WEIGHER)).body.items as { tour: string; status: string }[];
+    expect(theirs.find((x) => x.tour === "owner")?.status).toBe("done");
     expect((await put("/v1/me/tours/owner", OWNER, { step: 3, status: "maybe" })).status).toBe(400);
   });
 });

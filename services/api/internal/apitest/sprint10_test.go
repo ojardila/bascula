@@ -310,17 +310,8 @@ func TestRemovalDoesNotBreakCreatingAFarm(t *testing.T) {
 	f := h.signupFarm(t, "Finca recien creada", 90000)
 	h.mustDo(t, http.MethodGet, "/v1/farm", f.OwnerToken, nil, http.StatusOK)
 
-	// The second farm of an account that already exists goes through the same
-	// SetForSignup, behind a session.
-	res := h.mustDo(t, http.MethodPost, "/v1/farms", f.OwnerToken, map[string]any{
-		"name": "Segunda finca", "timezone": "America/Bogota",
-		"currency": "COP", "priceCents": 90000,
-	}, http.StatusCreated)
-	if id, _ := res.Body["farmId"].(string); id == "" {
-		if id, _ = res.Body["id"].(string); id == "" {
-			t.Fatalf("no farm id in %s", res.Raw)
-		}
-	}
+	// A farm cannot create another farm; the public signup is the door.
+	requireNoFarmCreate(t, h.server, f.OwnerToken)
 }
 
 // ---------------------------------------------------------------------------

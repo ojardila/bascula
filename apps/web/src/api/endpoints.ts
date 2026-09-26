@@ -133,8 +133,6 @@ import type {
   SignupResponse,
   SlugAvailability,
   ProvisionStatus,
-  FarmCreate,
-  FarmCreated,
   Uuid,
   WeekPrice,
   WorkRecord,
@@ -451,7 +449,6 @@ export const api = {
     ),
 
   /** Another farm for the account that is signed in (POST /v1/farms). */
-  createFarm: (body: FarmCreate) => http.post<FarmCreated>("/v1/farms", body),
 
   verifyEmail: (token: string) =>
     http.post<{ userId: Uuid; farmId: Uuid; verified: boolean }>(

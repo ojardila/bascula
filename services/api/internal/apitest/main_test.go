@@ -555,3 +555,42 @@ func (h *harness) loginFailureExists(t *testing.T, id string) bool {
 	}
 	return n > 0
 }
+
+// signupWithSlug registers a brand-new owner and farm on srv through the
+// public signup, the only way a farm starts (besides the super-admin console).
+// It returns the owner's email; the password is "una-clave-larga-1".
+func signupWithSlug(t *testing.T, srv http.Handler, name, slug string) string {
+	t.Helper()
+	email := fmt.Sprintf("dueno-%s@example.com", uuid.NewString()[:8])
+	res := call(t, srv, http.MethodPost, "/v1/signup", "", map[string]any{
+		"farm":  map[string]any{"name": name, "slug": slug, "priceCents": 90000},
+		"owner": map[string]any{"email": email, "name": "Owner", "password": "una-clave-larga-1"},
+	})
+	if res.Status != http.StatusCreated {
+		t.Fatalf("signup %s: %d %s", slug, res.Status, res.Raw)
+	}
+	return email
+}
+
+// addOwner makes an existing account an owner of another farm, straight in
+// the database. The app no longer lets a farm create another one, but an
+// account can still belong to several farms (an invitation, the super-admin),
+// and the login tests need one that does.
+func (h *harness) addOwner(t *testing.T, farmID, userID string) {
+	t.Helper()
+	if _, err := h.admin.Exec(context.Background(),
+		`INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'owner')`, farmID, userID); err != nil {
+		t.Fatalf("add owner: %v", err)
+	}
+}
+
+// requireNoFarmCreate asserts POST /v1/farms refuses a signed-in member.
+func requireNoFarmCreate(t *testing.T, srv http.Handler, token string) {
+	t.Helper()
+	res := call(t, srv, http.MethodPost, "/v1/farms", token, map[string]any{
+		"name": "Otra finca", "slug": "otra-" + uuid.NewString()[:6], "priceCents": 90000,
+	})
+	if res.Status != http.StatusForbidden {
+		t.Fatalf("a farm member created another farm: %d %s", res.Status, res.Raw)
+	}
+}

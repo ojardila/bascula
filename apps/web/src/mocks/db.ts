@@ -299,6 +299,12 @@ export interface Tenant {
   priceConfirmed?: boolean;
   /** `user_tours`, keyed by user id. */
   tours?: Record<string, { tour: string; step: number; status: "active" | "later" | "dismissed" | "done"; updatedAt: string }[]>;
+  /**
+   * A farm created in this session (signup, new farm). Its people have seen no
+   * tour yet. The seeded demo farms leave it unset: their people already know
+   * the app, so they read as "done" and no test meets a welcome it did not ask for.
+   */
+  freshTours?: boolean;
   ledger: WireLedgerEntry[];
   settlements: MockSettlement[];
   notes: WireNote[];
@@ -393,6 +399,7 @@ export function emptyTenant(farmId: string, priceCents: number, id: () => string
   const lastYear = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   return {
     farmId,
+    freshTours: true,
     workUnits: [kg],
     activityCategories: categories,
     cropTypes: [],

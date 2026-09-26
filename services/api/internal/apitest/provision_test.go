@@ -91,7 +91,6 @@ func scratchTenantDB(t *testing.T, h *harness) *pgxpool.Pool {
 // they already had, and the status the waiting screen polls says ready.
 func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	h := requireDB(t)
-	owner := h.signupFarm(t, "Finca madre", 90000)
 	slug := "prueba-url-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 
 	// GitHub: records the repository_dispatch it receives.
@@ -135,6 +134,8 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	pcfg := httpapi.DefaultConfig()
 	pcfg.UploadDir = uploads
 	pcfg.MaxFarmsPerEmail = 3
+	pcfg.SignupsPerIPPerHour = 1000
+	pcfg.SignupsPerEmailPerHour = 1000
 	pcfg.GitHubDispatchToken = "gh-test"
 	pcfg.GitHubDispatchRepo = "ojardila/bascula"
 	pcfg.GitHubAPIURL = gh.URL
@@ -150,15 +151,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 		t.Fatalf("slug should be available: %d %s", free.Status, free.Raw)
 	}
 
-	created := call(t, platform, http.MethodPost, "/v1/farms", owner.OwnerToken, map[string]any{
-		"name": "La Palma de prueba", "slug": slug, "priceCents": 95000,
-	})
-	if created.Status != http.StatusCreated {
-		t.Fatalf("create farm: %d %s", created.Status, created.Raw)
-	}
-	if created.Body["slug"] != slug {
-		t.Fatalf("created farm slug = %v, want %s", created.Body["slug"], slug)
-	}
+	ownerEmail := signupWithSlug(t, platform, "La Palma de prueba", slug)
 
 	// The dispatch names the slug, the owner and dedicated mode.
 	waitFor(t, 5*time.Second, "provision-tenant dispatch", func() bool {
@@ -171,7 +164,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	eventType := dispatched[0]["event_type"]
 	mu.Unlock()
 	if eventType != "provision-tenant" || payload["slug"] != slug || payload["mode"] != "dedicated" ||
-		payload["email"] != owner.OwnerEmail || payload["farmName"] != "La Palma de prueba" {
+		payload["email"] != ownerEmail || payload["farmName"] != "La Palma de prueba" {
 		t.Fatalf("dispatch payload = %v %v", eventType, payload)
 	}
 
@@ -190,7 +183,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	// The owner logs in on the new stack with the password they already had,
 	// pinned to the farm by its slug.
 	login := call(t, tenantAPI, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": owner.OwnerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
 	})
 	if login.Status != http.StatusOK || login.Body["slug"] != slug {
 		t.Fatalf("login on the dedicated stack: %d %s", login.Status, login.Raw)
@@ -198,6 +191,23 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	farm := call(t, tenantAPI, http.MethodGet, "/v1/farm", mustString(t, login.Body, "accessToken"), nil)
 	if farm.Status != http.StatusOK || farm.Body["name"] != "La Palma de prueba" {
 		t.Fatalf("farm on the dedicated stack: %d %s", farm.Status, farm.Raw)
+	}
+
+	// First login on the dedicated stack: no tour row yet, so the web app
+	// starts the owner tour; the price chosen on the platform arrives
+	// confirmed, and progress saves on the database of the stack itself.
+	tenantToken := mustString(t, login.Body, "accessToken")
+	tours := call(t, tenantAPI, http.MethodGet, "/v1/me/tours", tenantToken, nil)
+	if items, _ := tours.Body["items"].([]any); tours.Status != http.StatusOK || len(items) != 0 {
+		t.Fatalf("tours on a fresh dedicated stack: %d %s", tours.Status, tours.Raw)
+	}
+	base := call(t, tenantAPI, http.MethodGet, "/v1/prices/base", tenantToken, nil)
+	if base.Status != http.StatusOK || base.Body["confirmed"] != true || base.Body["currentCents"] != float64(90000) {
+		t.Fatalf("base price on the dedicated stack: %d %s", base.Status, base.Raw)
+	}
+	saved := call(t, tenantAPI, http.MethodPut, "/v1/me/tours/owner", tenantToken, map[string]any{"step": 3, "status": "active"})
+	if saved.Status != http.StatusOK {
+		t.Fatalf("save tour on the dedicated stack: %d %s", saved.Status, saved.Raw)
 	}
 
 	// The waiting screen sees every step done.
@@ -262,11 +272,8 @@ func TestProvisionStatusAndSlugChecksWithoutDedicatedStacks(t *testing.T) {
 		t.Fatalf("invalid: %s", invalid.Raw)
 	}
 
-	f := h.signupFarm(t, "Finca compartida", 90000)
 	slug := "compartida-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
-	h.mustDo(t, http.MethodPost, "/v1/farms", f.OwnerToken, map[string]any{
-		"name": "Compartida", "slug": slug, "priceCents": 90000,
-	}, http.StatusCreated)
+	signupWithSlug(t, h.server, "Compartida", slug)
 	st := h.do(t, http.MethodGet, "/v1/farms/"+slug+"/provision-status", "", nil)
 	if st.Status != http.StatusOK || st.Body["dedicated"] != false {
 		t.Fatalf("status: %d %s", st.Status, st.Raw)

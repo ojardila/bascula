@@ -224,3 +224,21 @@ export function resumeIndex(tour: TourName, n: number): number {
 export function ownerPartsDone(n: number): number {
   return (n > 2 ? 1 : 0) + (n > 7 ? 1 : 0) + (n > 11 ? 1 : 0);
 }
+
+/**
+ * Where a tour starts by itself when the app opens, or null when it does not.
+ *
+ * The trigger is the person, not the farm: a tour starts until THIS user has
+ * finished or closed it, and the row lives on the server so a second device
+ * does not ask again. No row: from the start. A tour left open (the page was
+ * closed mid-way): where it was. "Saltar" (later) is an explicit "not now", so
+ * it waits on the resume card instead of reappearing on every page load.
+ */
+export function autoStartAt(
+  tour: "owner" | "weigher",
+  row: { step: number; status: "active" | "later" | "dismissed" | "done" } | undefined,
+): number | null {
+  if (!row) return tour === "owner" ? 0 : 1;
+  if (row.status === "active") return resumeIndex(tour, row.step);
+  return null;
+}
