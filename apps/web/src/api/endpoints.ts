@@ -438,9 +438,13 @@ export const api = {
 
   /** Where a new farm's own address stands. Public: the owner has no session yet. */
   provisionStatus: (slug: string) =>
-    http.get<ProvisionStatus>(`/v1/farms/${encodeURIComponent(slug)}/provision-status`, {
-      anonymous: true,
-    }),
+    // `t` busts any cache between here and the API. The API answers
+    // Cache-Control: no-store, but a CDN rule with an edge TTL can override
+    // that, and a stale "not ready" leaves the owner waiting for nothing.
+    http.get<ProvisionStatus>(
+      `/v1/farms/${encodeURIComponent(slug)}/provision-status?t=${Date.now()}`,
+      { anonymous: true },
+    ),
 
   /** Another farm for the account that is signed in (POST /v1/farms). */
   createFarm: (body: FarmCreate) => http.post<FarmCreated>("/v1/farms", body),

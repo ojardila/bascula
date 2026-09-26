@@ -232,6 +232,7 @@ func (s *Server) buildRouter() chi.Router {
 			middleware.ClientIPFromXFF(s.cfg.TrustedProxyCIDRs...)))
 	}
 	r.Use(middleware.Recoverer)
+	r.Use(noStore)
 
 	for _, rt := range s.Routes() {
 		handler := rt.Handler
@@ -451,4 +452,32 @@ func bearerToken(r *http.Request) string {
 		return strings.TrimSpace(h[7:])
 	}
 	return ""
+}
+
+// noStorePrefixes are the paths whose answers depend on who asks and when:
+// the API, health, OAuth, MCP and the discovery documents.
+var noStorePrefixes = []string{"/v1/", "/health", "/oauth/", "/mcp", "/.well-known/"}
+
+// noStore marks every API answer as not cacheable anywhere. The bascula
+// hosts sit behind Cloudflare, and a zone rule with an edge TTL was caching
+// public /v1 answers — the provision status among them, so the waiting
+// screen kept seeing "not ready" long after the farm was. A handler that has
+// a better answer (an upload is "private, max-age=300") sets its own header
+// afterwards and wins, because it writes later.
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if wantsNoStore(r.URL.Path) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func wantsNoStore(path string) bool {
+	for _, p := range noStorePrefixes {
+		if strings.HasPrefix(path, p) || path+"/" == p {
+			return true
+		}
+	}
+	return false
 }
