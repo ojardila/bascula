@@ -32,13 +32,21 @@ spec:
         # already present and their IF NOT EXISTS turns into a no-op.
         - CREATE EXTENSION IF NOT EXISTS pgcrypto;
         - CREATE EXTENSION IF NOT EXISTS postgis;
+        # bascula_app must exist before CNPG reconciles the managed role
+        # below, whose inRoles names it. Left to migration 00001, a brand-new
+        # cluster (every dedicated farm stack) raced it: CNPG failed with
+        # `role "bascula_app" does not exist`, backed off for many minutes,
+        # and the API crash-looped on password auth meanwhile. 00001 keeps
+        # its IF NOT EXISTS, so it simply finds the role here.
+        - DO $$ BEGIN CREATE ROLE bascula_app NOLOGIN NOBYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
   managed:
     roles:
-      # Declared here rather than left to 00001, which creates it with a
-      # password that is committed to the repository and expects production to
-      # replace it out of band. Creating it first means the migration's
-      # IF NOT EXISTS skips it and that password never exists on this cluster.
+      # Declared here rather than left to 00001. The migration only creates
+      # bascula_api (with the development password committed to the
+      # repository) when it runs in local development; on a cluster it never
+      # does, so this managed role is the only way bascula_api comes to exist
+      # and its password is always the one in bascula-db-api.
       #
       # NOBYPASSRLS is the point: row level security is the tenant boundary,
       # so the role the API connects with must not be able to step over it.
@@ -60,8 +68,8 @@ spec:
         # role is reconciled declaratively — CNPG revokes any membership not
         # listed here, so leaving it out silently undid the migration and the
         # API got "permission denied for table login_failures" on its first
-        # request. bascula_app is created by that migration, so this cannot be
-        # satisfied until it has run; CNPG retries until it can.
+        # request. bascula_app is created at initdb (postInitApplicationSQL
+        # above), so this is satisfiable from the cluster's first second.
         inRoles:
           - bascula_app
 

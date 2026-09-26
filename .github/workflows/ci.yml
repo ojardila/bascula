@@ -130,6 +130,8 @@ jobs:
         run: go run ./cmd/api -migrate
         working-directory: services/api
         env:
+          # Creates bascula_api with the development password (store.MigrateDev).
+          APP_ENV: development
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
       - name: test
         run: go test ./...

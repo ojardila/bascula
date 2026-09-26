@@ -61,7 +61,14 @@ func run(migrateOnly, pruneOnly bool) error {
 	if migrateOnly {
 		migCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		if err := store.Migrate(migCtx, adminDSN); err != nil {
+		// Only APP_ENV=development creates bascula_api with the committed
+		// development password (store.MigrateDev). A cluster's migration Job
+		// never sets it: there the role is CNPG's, with a minted password.
+		migrate := store.Migrate
+		if os.Getenv("APP_ENV") == appEnvDevelopment {
+			migrate = store.MigrateDev
+		}
+		if err := migrate(migCtx, adminDSN); err != nil {
 			return fmt.Errorf("migrate: %w", err)
 		}
 		slog.Info("migrations applied")

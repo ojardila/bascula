@@ -19,15 +19,28 @@ BEGIN
 END $$;
 
 -- The login role the API actually connects as. It only inherits bascula_app.
--- The password here is a development default; production overrides it with
--- ALTER ROLE bascula_api PASSWORD '...' out of band and never reads it here.
+--
+-- The password below is committed to this repository, so this migration
+-- creates the role ONLY in local development: store.Migrate sets
+-- bascula.dev_role=on for `make migrate`, CI and the test suite, and nothing
+-- else does. On a cluster the role is a CNPG managed role
+-- (manifests/base/postgres.yaml) with a password minted in-cluster. That
+-- managed role can be reconciled after this runs, and creating it here first
+-- with the known password is exactly the bug that let a new farm's stack boot
+-- with 'bascula_api_dev' and crash-loop on password auth.
+--
+-- The GRANT is skipped when the role does not exist yet; CNPG grants it
+-- through the managed role's inRoles.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bascula_api') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bascula_api')
+     AND coalesce(current_setting('bascula.dev_role', true), '') = 'on' THEN
     CREATE ROLE bascula_api LOGIN PASSWORD 'bascula_api_dev' NOBYPASSRLS;
   END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bascula_api') THEN
+    GRANT bascula_app TO bascula_api;
+  END IF;
 END $$;
-GRANT bascula_app TO bascula_api;
 
 GRANT USAGE ON SCHEMA public TO bascula_app;
 
