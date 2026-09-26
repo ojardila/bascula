@@ -15,7 +15,7 @@ import { invalidateRefs } from "../../api/refs";
 import { theme } from "../../theme";
 import { server } from "../../mocks/node";
 import type { Worker } from "../../api/types";
-import { bulkEntries, registeredByWorker, soFarLabel } from "./bulk";
+import { bulkEntries, filterWorkers, foldName, matchesName, registeredByWorker, soFarLabel } from "./bulk";
 import { dayTitle } from "./RegistroMasivoPage";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
@@ -170,6 +170,98 @@ describe("Registro de recolección masivo", () => {
   }, 20000);
 });
 
+describe("Registro masivo: «Buscar por nombre»", () => {
+  /** The people whose kilos box is on screen, by name. */
+  const shownNames = () =>
+    screen.queryAllByLabelText(/, kilos$/).map((el) => (el.getAttribute("aria-label") ?? "").replace(/, kilos$/, ""));
+
+  it("sits next to the lote and narrows the list as you type, ignoring accents and case", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos");
+    const all = shownNames();
+    expect(all.length).toBeGreaterThan(2);
+    const search = screen.getByRole("textbox", { name: "Buscar por nombre" });
+    expect(search).toHaveAttribute("placeholder", "Buscar por nombre");
+
+    // «marin» finds «Édinson Marín Ríos»; so does «EDINSON».
+    await user.type(search, "marin");
+    expect(shownNames()).toEqual(["Édinson Marín Ríos"]);
+    expect(screen.getByText(`1 persona de ${all.length}`)).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, "EDINSON");
+    expect(shownNames()).toEqual(["Édinson Marín Ríos"]);
+
+    // Any part of a last name: both Ospinas.
+    await user.clear(search);
+    await user.type(search, "ospina");
+    expect(shownNames().sort()).toEqual(["Luz Dary Ospina Giraldo", "María Restrepo Ospina"]);
+
+    // Nobody: said plainly. People who left the farm are not offered.
+    await user.clear(search);
+    await user.type(search, "nubia");
+    expect(shownNames()).toEqual([]);
+    expect(screen.getByText("No hay nadie con ese nombre")).toBeInTheDocument();
+
+    // The clear button brings everyone back and leaves the search ready.
+    await user.click(screen.getByRole("button", { name: "Borrar la búsqueda" }));
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+    expect(shownNames()).toEqual(all);
+  }, 20000);
+
+  it("keeps kilos typed for someone hidden by the search", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await user.type(await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos"), "12");
+    await user.type(screen.getByRole("textbox", { name: "Buscar por nombre" }), "marin");
+    expect(screen.queryByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toBeNull();
+    expect(screen.getByText("1 pesada nueva sin guardar")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ver a todos" }));
+    expect(screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toHaveValue("12");
+  }, 20000);
+
+  it("finds a person, takes the kilos, saves, and is ready for the next one — all from the keyboard", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos");
+    const search = screen.getByRole("textbox", { name: "Buscar por nombre" });
+
+    // Enter picks the first match and moves to its kilos.
+    await user.type(search, "cardona{Enter}");
+    const kilos = screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos");
+    expect(kilos).toHaveFocus();
+
+    // Enter in the kilos asks to save; Enter again says «Sí, guardar».
+    await user.keyboard("22{Enter}");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Jhon Fredy Cardona Loaiza: 22 kg/)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Sí, guardar" })).toHaveFocus());
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText(/Se agregó 1 pesada nueva/, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(posted).toEqual([expect.objectContaining({ workerId: JHON, quantity: 22, dateFrom: DAY, plotIds: [ALTO] })]);
+    // The search is empty, everyone is back, and the cursor waits for the next name.
+    await waitFor(() => expect(search).toHaveFocus());
+    expect(search).toHaveValue("");
+    expect(screen.getByLabelText(/^María .*, kilos$/)).toBeInTheDocument();
+  }, 20000);
+
+  it("does nothing on Enter when nobody matches", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos");
+    const search = screen.getByRole("textbox", { name: "Buscar por nombre" });
+    await user.type(search, "zzz{Enter}");
+    expect(search).toHaveFocus();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }, 20000);
+});
+
 describe("bulk helpers", () => {
   const w = (id: string, name: string) => ({ id, name, lastName: "" }) as unknown as Worker;
   const people = [w("a", "Ana"), w("b", "Beto"), w("c", "Carla")];
@@ -194,6 +286,26 @@ describe("bulk helpers", () => {
     expect(soFarLabel(s.a, String)).toBe("2 pesadas · 38 kg");
     expect(soFarLabel(s.b, String)).toBe("1 pesada · 5 kg");
     expect(s.c).toBeUndefined();
+  });
+
+
+  it("folds names for searching: no accents, no case, single spaces", () => {
+    expect(foldName("  RAMÍREZ   Peña ")).toBe("ramirez pena");
+  });
+
+  it("matches any part of the first or last names, word by word", () => {
+    const pedro = { id: "p", name: "Pedro", lastName: "Ramírez" } as unknown as Worker;
+    expect(matchesName(pedro, "ramirez")).toBe(true);
+    expect(matchesName(pedro, "PED")).toBe(true);
+    expect(matchesName(pedro, "mír")).toBe(true);
+    expect(matchesName(pedro, "pedro ram")).toBe(true);
+    expect(matchesName(pedro, "ram pedro")).toBe(true);
+    expect(matchesName(pedro, "pablo")).toBe(false);
+    expect(matchesName(pedro, "   ")).toBe(true);
+    const list = [pedro, { id: "a", name: "Ana", lastName: "Pérez" } as unknown as Worker];
+    expect(filterWorkers(list, "pe").map((x) => x.id)).toEqual(["p", "a"]);
+    expect(filterWorkers(list, "perez").map((x) => x.id)).toEqual(["a"]);
+    expect(filterWorkers(list, "")).toEqual(list);
   });
 
   it("says the day in words", () => {

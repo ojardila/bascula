@@ -55,3 +55,30 @@ export function registeredByWorker(records: WorkRecord[]): Record<string, DaySoF
 export function soFarLabel(s: DaySoFar, fmt: (n: number) => string): string {
   return `${s.count} ${s.count === 1 ? "pesada" : "pesadas"} · ${fmt(s.kilos)} kg`;
 }
+
+/** Lower case, no accents, single spaces: «  RAMÍREZ » → «ramirez». */
+export function foldName(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Whether a person answers to what was typed in «Buscar por nombre». Accents
+ * and case don't matter, any part of the first or last names matches, and each
+ * word typed must appear: «pedro ram» finds Pedro Ramírez. Blank matches all.
+ */
+export function matchesName(w: Worker, query: string): boolean {
+  const words = foldName(query).split(" ").filter(Boolean);
+  if (!words.length) return true;
+  const name = foldName(workerLabel(w));
+  return words.every((word) => name.includes(word));
+}
+
+/** The people that answer to the search, in the order of the list. */
+export function filterWorkers(workers: Worker[], query: string): Worker[] {
+  return workers.filter((w) => matchesName(w, query));
+}
