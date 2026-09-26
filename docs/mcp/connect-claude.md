@@ -22,7 +22,9 @@ address followed by `/mcp`.
 1. In Claude open **Settings → Connectors → Add custom connector**.
 2. Name `Báscula`, paste the MCP address, and add it. Leave the OAuth client
    ID/secret fields empty: Báscula supports dynamic client registration.
-3. Click **Connect**. A Báscula page opens: «Conectar Báscula a un asistente».
+3. Click **Connect**. A Báscula page opens: «Conectar Báscula a un asistente»,
+   naming the application («Aplicación») and the site access returns to
+   («Le devolverá el acceso a», e.g. `claude.ai`).
    Enter «Correo» (email) and «Contraseña» (password), press «Autorizar»
    (authorize). On the main host, an account with several farms chooses one
    under «Finca» and presses «Continuar» (continue). A farm host shows

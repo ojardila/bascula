@@ -106,7 +106,10 @@ There are two ways to get that token:
 1. **OAuth 2.1** — what ChatGPT and Claude do. The client registers itself
    (dynamic client registration), sends the user to the Báscula sign-in page,
    and gets an access token plus a refresh token (60 days, rotated on every
-   use). Details in [oauth.md](oauth.md).
+   use, bound to that client). OAuth access tokens carry `aud: "mcp"` and are
+   accepted **only on `/mcp`** — sent straight to `/v1` they get `401`, so an
+   assistant's token cannot skip the tools' money confirmation. Details in
+   [oauth.md](oauth.md).
 2. **`POST /v1/auth/login`** — for scripts, the MCP Inspector or the «Try it»
    panel: `{"email":"…","password":"…"}` returns `accessToken` (15 minutes)
    and `refreshToken`. On `/mcp/docs`, «Use my Báscula session» reuses the

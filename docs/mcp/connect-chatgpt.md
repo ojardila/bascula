@@ -35,6 +35,9 @@ disponibles» (see available tools) link to the [tool reference](README.md#the-r
 4. Authentication: **OAuth**. Create the connector.
 5. ChatGPT opens a Báscula page, «Conectar Báscula a un asistente» (connect
    Báscula to an assistant):
+   - it names the application and where access goes: «Aplicación: …»
+     (application) and «Le devolverá el acceso a: chatgpt.com» (access will
+     be returned to). If you don't recognize them, stop;
    - on a farm host it shows «Finca: San José» (farm: San José);
    - enter your «Correo» (email) and «Contraseña» (password) and press
      «Autorizar» (authorize);

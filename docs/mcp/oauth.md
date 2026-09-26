@@ -2,11 +2,16 @@
 
 ChatGPT's connector UI will not take a pasted bearer token, and Claude's
 custom connectors use OAuth too. So Báscula runs a small OAuth 2.1
-authorization server on every host. The access token it issues is the **same
-JWT** `POST /v1/auth/login` issues: one user, one farm, one role, HS256,
-15 minutes. Code: `services/api/internal/httpapi/handlers_oauth.go`; tests:
-`internal/apitest/oauth_test.go`, `oauth_dcr_test.go`,
-`oauth_chatgpt_test.go`, `oauth_farm_pick_test.go`.
+authorization server on every host. The access token it issues is a Báscula
+session JWT like the one `POST /v1/auth/login` issues (one user, one farm, one
+role, HS256, 15 minutes) with one difference: it carries **`aud: "mcp"`**, and
+the API accepts such a token **only on `/mcp`** (PR #103). Sent straight to
+`/v1/…` it gets `401` «this token is for the MCP endpoint (/mcp) only»; the MCP
+tools still reach the REST routes in-process, where the two-step money
+confirmation lives. Code: `services/api/internal/httpapi/handlers_oauth.go`;
+tests: `internal/apitest/oauth_test.go`, `oauth_dcr_test.go`,
+`oauth_chatgpt_test.go`, `oauth_farm_pick_test.go`,
+`oauth_hardening_test.go`.
 
 `<base>` below is the host the client talks to (`https://bascula.engp.io` or
 `https://<slug>.bascula.engp.io`), or `PUBLIC_BASE_URL` when configured. It
@@ -31,7 +36,7 @@ sequenceDiagram
     B-->>C: 201 client_id (+ client_secret if confidential)
     C->>U: open /oauth/authorize?response_type=code&client_id&redirect_uri&state&code_challenge&code_challenge_method=S256&scope&resource
     U->>B: GET /oauth/authorize
-    B-->>U: Sign-in page «Conectar Báscula a un asistente» (farm host: «Finca: San José»)
+    B-->>U: Sign-in page «Conectar Báscula a un asistente»: client name, destination host, (farm host: «Finca: San José»)
     U->>B: POST /oauth/authorize (email, password)
     alt main host and several farms
         B-->>U: Farm picker (radio buttons, signed ticket, 10 min)
@@ -40,10 +45,10 @@ sequenceDiagram
     B-->>U: 302 redirect_uri?code=…&state=…&iss=<base>
     U->>C: code
     C->>B: POST /oauth/token grant_type=authorization_code, code, code_verifier, redirect_uri, client_id
-    B-->>C: access_token (JWT, 900 s), refresh_token, token_type=Bearer, scope
+    B-->>C: access_token (JWT, aud=mcp, 900 s), refresh_token, token_type=Bearer, scope
     C->>B: POST /mcp  Authorization: Bearer access_token  (tools/list, tools/call)
     B-->>C: JSON-RPC result (as the user's role, on the chosen farm)
-    C->>B: POST /oauth/token grant_type=refresh_token (rotated, single use)
+    C->>B: POST /oauth/token grant_type=refresh_token (bound to the client, rotated, single use)
     B-->>C: new access_token + refresh_token
     C->>B: POST /oauth/revoke token=refresh_token (optional)
 ```
@@ -91,7 +96,12 @@ endpoints send permissive CORS headers and answer `OPTIONS` preflights.
 ## Dynamic client registration — `POST /oauth/register`
 
 RFC 7591. The JSON body is decoded **leniently** and unknown metadata is
-ignored (a strict decoder once rejected ChatGPT's registration).
+ignored (a strict decoder once rejected ChatGPT's registration). Registration
+is open (no initial access token), so it is bounded: body at most 64 KB, at
+most 10 `redirect_uris` of at most 2 KB each, `client_name` truncated to 80
+characters, and 30 registrations per client IP per hour per API process
+(beyond that: `429` with `Retry-After: 3600` and
+`error=invalid_client_metadata`).
 
 - `redirect_uris` (required): each must be `https`, or `http` only on
   `localhost` / `127.0.0.1` / `::1`. Otherwise `400 invalid_redirect_uri`.
@@ -114,20 +124,32 @@ Query (GET) or form (POST): `response_type=code`, `client_id`,
 `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`,
 `scope`, `resource`.
 
-- `client_id` and `redirect_uri` are required; `redirect_uri` must exactly
-  match one registered for the client. Failures render the page with a Spanish
-  message (e.g. «Cliente OAuth desconocido. Vuelva a registrar el conector.»
-  — unknown OAuth client, register the connector again).
+- `client_id` and `redirect_uri` are required; the client must exist and
+  `redirect_uri` must exactly match one it registered. These are checked
+  **before** anything is sent to `redirect_uri` (no open redirect). Failures
+  render the page with a Spanish message (e.g. «Cliente OAuth desconocido.
+  Vuelva a registrar el conector.» — unknown OAuth client, register the
+  connector again).
 - **PKCE S256 is mandatory.** A missing `code_challenge` or a method other
   than `S256` (the method defaults to `S256` when omitted) redirects to the
-  client with `error=invalid_request`, `error_description=PKCE S256 is required`,
-  `state` and `iss`.
-- `GET` renders the sign-in page (Spanish, phone-friendly): «Correo» (email),
-  «Contraseña» (password), «Autorizar» (authorize).
-- `POST` checks the password (constant work for unknown emails), requires a
+  registered client with `error=invalid_request`,
+  `error_description=PKCE S256 is required`, `state` and `iss`.
+- `GET` renders the sign-in page (Spanish, phone-friendly). Because anyone can
+  register a client, it names the client and where the code goes:
+  «Aplicación: <client_name>» (application) and «Le devolverá el acceso a:
+  <redirect host>» (access will be returned to), with «Si no reconoce ese
+  sitio, no escriba su contraseña.» (if you don't recognize that site, don't
+  type your password). Then «Correo» (email), «Contraseña» (password),
+  «Autorizar» (authorize). The page is sent with `X-Frame-Options: DENY`, a
+  CSP with `frame-ancestors 'none'`, and `Referrer-Policy: no-referrer`.
+- `POST` checks the password (constant work for unknown emails) under the
+  **same failed-login limiter as `/v1/auth/login`** (per email+IP and per IP;
+  when exceeded: «Demasiados intentos fallidos. Espere unos minutos e intente
+  de nuevo.» — too many failed attempts, wait a few minutes), requires a
   **verified email**, resolves the farm (below), and redirects to
   `redirect_uri?code=…&state=…&iss=<base>` (RFC 9207 `iss` on every
-  response). The code is single-use and valid **10 minutes**.
+  response). The code is single-use and valid **10 minutes**; expired,
+  unexchanged codes are swept.
 
 ### Farm selection
 
@@ -164,18 +186,22 @@ authorization; `SHA256(code_verifier)` must equal the challenge. The
 membership is re-checked (suspended or removed → `invalid_grant`). Answer:
 
 ```json
-{ "access_token": "<JWT>", "refresh_token": "<opaque>", "token_type": "Bearer",
+{ "access_token": "<JWT, aud=mcp>", "refresh_token": "<opaque>", "token_type": "Bearer",
   "expires_in": 900, "scope": "mcp offline_access" }
 ```
 
 The session is recorded with the client's id, which is what makes it appear in
 «Conexiones» (`GET /v1/mcp/connections`).
 
-**`grant_type=refresh_token`**: `refresh_token` (+ client auth if a
-`client_id` is sent). Refresh tokens are **rotated and single-use**, with the
-same family rules as the mobile app: replaying a used refresh token revokes the
-whole family. Refresh tokens live 60 days. `scope` is omitted from the answer
-(RFC 6749 §5.1: unchanged). A bad token → `400 invalid_grant`.
+**`grant_type=refresh_token`**: `refresh_token`. The refresh token is
+**bound to the client it was issued to** (RFC 6749 §6): a `client_id` naming
+another client gets `400 invalid_grant` («the refresh token was issued to
+another client»), and a confidential client must authenticate even if it omits
+`client_id`. Refresh tokens are **rotated and single-use**, with the same
+family rules as the mobile app: replaying a used refresh token revokes the
+whole family. Refresh tokens live 60 days; the new access token keeps
+`aud=mcp`. `scope` is omitted from the answer (RFC 6749 §5.1: unchanged). A
+bad token → `400 invalid_grant`.
 
 Errors follow RFC 6749 §5.2: `{"error": "...", "error_description": "..."}`.
 
@@ -199,8 +225,9 @@ tool call.
 
 ## Using the token
 
-`POST <base>/mcp` with `Authorization: Bearer <access_token>`. An expired or
-invalid token gets `401` with
+`POST <base>/mcp` with `Authorization: Bearer <access_token>`. The OAuth
+token opens `/mcp` only; everything else answers `401`. An expired or invalid
+token on `/mcp` gets `401` with
 `WWW-Authenticate: Bearer realm="bascula", resource_metadata="…", scope="mcp", error="invalid_token", …`
 so the client knows to refresh or sign in again.
 
