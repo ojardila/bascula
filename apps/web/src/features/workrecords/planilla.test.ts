@@ -77,6 +77,20 @@ describe("cellsFromRecords", () => {
     expect(cells[cellKey(maria.id, "2026-08-24")].text).toBe("");
   });
 
+  it("adds up several weighings of one person on one day, and locks that cell", () => {
+    const days = daysOfWeek("2026-08-24");
+    const cells = cellsFromRecords([maria], days, [
+      record({ id: "r1", quantity: 41 }),
+      record({ id: "r2", quantity: 18.5 }),
+    ]);
+    const cell = cells[cellKey(maria.id, "2026-08-26")];
+    expect(cell.text).toBe("59,5");
+    expect(cell.records).toBe(2);
+    // Even if the box were edited, the sheet does not rewrite one of the two.
+    cells[cellKey(maria.id, "2026-08-26")] = { ...cell, text: "70" };
+    expect(plannedWrites([maria], days, cells, "2026-09-20").writes).toEqual([]);
+  });
+
   it("writes a decimal with a comma, the way the form types it", () => {
     expect(formatKg(38.5)).toBe("38,5");
   });

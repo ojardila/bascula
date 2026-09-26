@@ -261,7 +261,7 @@ export function PlanillaPage({
                       <TextField
                         value={cell.text}
                         onChange={(e) => setCell(w.id, day, e.target.value)}
-                        disabled={busy || cell.settled || future}
+                        disabled={busy || cell.settled || (cell.records ?? 0) > 1 || future}
                         placeholder="kg"
                         inputProps={{
                           inputMode: "decimal",
@@ -306,7 +306,7 @@ export function PlanillaPage({
                           <TextField
                             value={cell.text}
                             onChange={(e) => setCell(w.id, d, e.target.value)}
-                            disabled={busy || cell.settled || future}
+                            disabled={busy || cell.settled || (cell.records ?? 0) > 1 || future}
                             placeholder={future ? "—" : ""}
                             inputProps={{
                               inputMode: "decimal",

@@ -8,6 +8,9 @@
  * and the person clear and the lote and the day stay: the next person in the
  * line is on the same lote on the same day.
  *
+ *  - The lote weighed last on this device is picked again on the next visit.
+ *  - The same person can be weighed several times a day (one trip per lote,
+ *    or several trips): each weighing is its own record.
  *  - Lotes are big buttons when there are few of them. A dropdown is two taps
  *    and a scroll; a button is one tap.
  *  - The day is «Hoy» / «Ayer» / «Otro día». Nearly every weighing is one of
@@ -105,6 +108,7 @@ export function WeighingForm() {
   const offline = useOffline();
   const farmId = user?.farm?.id ?? "";
   const refsKey = `refs:${farmId}`;
+  const lastLoteKey = `bascula.pesada.lote:${farmId}`;
 
   const day = dayChoice === "hoy" ? today : dayChoice === "ayer" ? yesterday : otherDay;
 
@@ -115,7 +119,11 @@ export function WeighingForm() {
       setWorkers(r.workers);
       setPlots(r.plots);
       setActivity(pickHarvestActivity(r.activities));
-      if (r.plots.length === 1) setPlotId(r.plots[0].id);
+      // The lote weighed last on this device: the next person in line has
+      // most likely come back from the same one.
+      const last = localStorage.getItem(lastLoteKey);
+      if (last && r.plots.some((p) => p.id === last)) setPlotId(last);
+      else if (r.plots.length === 1) setPlotId(r.plots[0].id);
     };
     Promise.all([
       api.listWorkers({ status: "active" }),
@@ -148,6 +156,7 @@ export function WeighingForm() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refsKey]);
 
   function check(): number | null {
@@ -221,6 +230,7 @@ export function WeighingForm() {
       { id: outcome.value.id, who, plot: plot?.name ?? "", day, kg: qty, local: outcome.value.local },
       ...prev,
     ]);
+    localStorage.setItem(lastLoteKey, plotId);
     setKg("");
     setWorker(null);
     setTimeout(() => personRef.current?.focus(), 50);
