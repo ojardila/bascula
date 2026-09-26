@@ -156,7 +156,7 @@ user explicitly agrees.
 
 ## Tools
 
-39 tools today. This list is a snapshot; the live, always-current
+40 tools today. This list is a snapshot; the live, always-current
 reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/mcp/docs).
 
 ### Read tools
@@ -170,6 +170,7 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 | [`worker_balance`](https://bascula.engp.io/mcp/docs#tool-worker_balance) | read | `GET /v1/workers/{id}/balance` | owner, admin |
 | [`worker_ledger`](https://bascula.engp.io/mcp/docs#tool-worker_ledger) | read | `GET /v1/workers/{id}/ledger` | owner, admin |
 | [`worker_payables`](https://bascula.engp.io/mcp/docs#tool-worker_payables) | read | `GET /v1/workers/{id}/payables` | owner, admin |
+| [`worker_performance`](https://bascula.engp.io/mcp/docs#tool-worker_performance) | read | `GET /v1/workers/{id}/performance` | owner, admin |
 | [`list_plots`](https://bascula.engp.io/mcp/docs#tool-list_plots) | read | `GET /v1/plots` | owner, admin, weigher |
 | [`list_activities`](https://bascula.engp.io/mcp/docs#tool-list_activities) | read | `GET /v1/activities` | owner, admin, weigher |
 | [`list_work_records`](https://bascula.engp.io/mcp/docs#tool-list_work_records) | read | `GET /v1/work-records` | owner, admin, weigher |
