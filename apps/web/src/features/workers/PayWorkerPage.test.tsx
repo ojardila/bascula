@@ -212,6 +212,13 @@ describe("when the gross changes between looking at it and approving it", () => 
     ) as HTMLElement;
     expect(within(receipt).getByRole("button", { name: /Imprimir recibo/ })).toBeInTheDocument();
     expect(within(receipt).getByRole("button", { name: /Enviar por WhatsApp/ })).toBeInTheDocument();
+    // Five actions do not fit one row of an xs dialog: they stack full width,
+    // the primary (print) on top, every label whole.
+    const actions = within(receipt).getByTestId("receipt-actions");
+    expect(getComputedStyle(actions).flexDirection).toBe("column-reverse");
+    expect(within(actions).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Seguir aquí", "Ver el perfil", "Ver recibo", "Enviar por WhatsApp", "Imprimir recibo",
+    ]);
   }, 20000);
 });
 

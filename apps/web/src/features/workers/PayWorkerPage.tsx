@@ -840,7 +840,12 @@ export function PayWorkerPage() {
             </Stack>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        {/* Five actions never fit one row in an xs dialog, so they always
+            stack full width, primary (print) on top. */}
+        <DialogActions
+          data-testid="receipt-actions"
+          sx={{ px: 3, pb: 2, flexDirection: "column-reverse", alignItems: "stretch", "& > *": { width: "100%" } }}
+        >
           <Button onClick={() => setReceipt(null)} color="inherit">
             Seguir aquí
           </Button>

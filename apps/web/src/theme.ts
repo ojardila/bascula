@@ -65,6 +65,27 @@ export const theme = createTheme(
           root: { minWidth: 44, minHeight: 44 },
         },
       },
+      // Dialog buttons never shrink into a clipped, broken label. They wrap to
+      // a new row when the dialog is too narrow for all of them, and on a
+      // phone they stack full width with the primary action on top. A label
+      // only breaks onto a second line if it is wider than the dialog itself,
+      // and even then it stays whole. `disableSpacing` drops MUI's left margin
+      // between siblings (it would misalign a stack); `gap` spaces both layouts.
+      MuiDialogActions: {
+        defaultProps: { disableSpacing: true },
+        styleOverrides: {
+          root: ({ theme: t }) => ({
+            flexWrap: "wrap",
+            gap: t.spacing(1),
+            "& > *": { flexShrink: 0, maxWidth: "100%" },
+            [t.breakpoints.down("sm")]: {
+              flexDirection: "column-reverse",
+              alignItems: "stretch",
+              "& > *": { width: "100%" },
+            },
+          }),
+        },
+      },
       MuiPaper: { styleOverrides: { root: { backgroundImage: "none" } } },
       MuiCard: {
         styleOverrides: {
