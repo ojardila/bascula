@@ -42,7 +42,7 @@ RUN npm run build --workspace apps/web
 
 # nginx-unprivileged listens on 8080 as a non-root user, so the pod needs no
 # capabilities and no runAsUser override to satisfy the restricted policy.
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 USER root
 # The stock default.conf goes: ours is rendered from the template below. With
 # the stock file present (and owned by nginx), the entrypoint's
