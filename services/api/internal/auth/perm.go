@@ -21,12 +21,14 @@ const (
 	// reads around creating a farm with its own web address.
 	ActionProvisionStatus  Action = "farms.provisionStatus"
 	ActionSlugAvailability Action = "farms.slugAvailability"
-	ActionLogin            Action = "auth.login"
-	ActionRefresh          Action = "auth.refresh"
-	ActionVerifyEmail      Action = "auth.verify_email"
-	ActionLogout           Action = "auth.logout"
-	ActionMeRead           Action = "me.read"
-	ActionToursWrite       Action = "me.tours.write"
+	// ActionProvisionNotify asks for one email when the farm is ready.
+	ActionProvisionNotify Action = "farms.provisionNotify"
+	ActionLogin           Action = "auth.login"
+	ActionRefresh         Action = "auth.refresh"
+	ActionVerifyEmail     Action = "auth.verify_email"
+	ActionLogout          Action = "auth.logout"
+	ActionMeRead          Action = "me.read"
+	ActionToursWrite      Action = "me.tours.write"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -175,6 +177,7 @@ var Matrix = map[Action]Rule{
 	ActionSignup:           {Public: true, TenantOptional: true},
 	ActionProvisionStatus:  {Public: true, TenantOptional: true},
 	ActionSlugAvailability: {Public: true, TenantOptional: true},
+	ActionProvisionNotify:  {Public: true, TenantOptional: true},
 	ActionLogin:            {Public: true, TenantOptional: true},
 	ActionRefresh:          {Public: true, TenantOptional: true},
 	ActionVerifyEmail:      {Public: true, TenantOptional: true},

@@ -180,6 +180,46 @@ spec:
                   name: bascula-cloudflare
                   key: saas-token
                   optional: true
+            # Outgoing mail ("avísenme por correo cuando esté lista"). Inert
+            # until the ConfigMap bascula-mail exists: with no SMTP_HOST the
+            # API sends nothing and the waiting screen hides the option. A
+            # dedicated stack never sends. See manifests/README.md, "Mail".
+            - name: SMTP_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: host
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: port
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: from
+                  optional: true
+            - name: SMTP_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: tls
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: bascula-mail
+                  key: user
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bascula-mail
+                  key: password
+                  optional: true
           volumeMounts:
             - name: uploads
               mountPath: /srv/uploads

@@ -70,6 +70,16 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
+    # The planned in-cluster mail relay (smtp.mail.svc.cluster.local:25),
+    # for the "avísenme por correo" notice. Nothing listens there until the
+    # relay exists, and the API sends nothing until bascula-mail is set.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: mail
+      toPorts:
+        - ports:
+            - port: "25"
+              protocol: TCP
     - toEntities:
         - world
       toPorts:

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
 import { api } from "../../api/endpoints";
@@ -115,4 +115,37 @@ describe("Preparando su finca", () => {
     await new Promise((r) => setTimeout(r, REDIRECT_MS + 200));
     expect(assign).not.toHaveBeenCalled();
   }, REDIRECT_MS + 3000);
+
+  it("explains the database step in plain words", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([false, false, false]));
+    renderIt();
+    expect(await screen.findByText(/Creamos una base de datos exclusiva para su finca\./)).toBeInTheDocument();
+  });
+
+  it("hides the email option when the platform cannot send email", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, false, false], { notifyAvailable: false }));
+    renderIt();
+    expect(await screen.findByTestId("step-web")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Avísenme por correo/ })).toBeNull();
+  });
+
+  it("asks for the email and says the page can be closed", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(
+      status([true, false, false], { notifyAvailable: true, notifyRequested: false }),
+    );
+    const ask = vi.spyOn(api, "requestReadyEmail").mockResolvedValue({ slug: "lapalma", requested: true });
+    renderIt();
+    const button = await screen.findByRole("button", { name: /Avísenme por correo cuando esté lista/ });
+    fireEvent.click(button);
+    expect(await screen.findByText(/Ya puede cerrar esta página/)).toBeInTheDocument();
+    expect(ask).toHaveBeenCalledWith("lapalma");
+  });
+
+  it("remembers that the email was already asked for", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(
+      status([true, false, false], { notifyAvailable: true, notifyRequested: true }),
+    );
+    renderIt();
+    expect(await screen.findByTestId("ready-email-done")).toBeInTheDocument();
+  });
 });

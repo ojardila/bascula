@@ -49,6 +49,9 @@ func (s *Server) Routes() []Route {
 		// caller has no session yet, and a slug is a DNS label anybody sees.
 		{http.MethodGet, "/v1/farms/{slug}/provision-status", auth.ActionProvisionStatus, s.handleProvisionStatus},
 		{http.MethodGet, "/v1/farm-slugs", auth.ActionSlugAvailability, s.handleSlugAvailability},
+		// "Avísenme por correo cuando esté lista", from the same waiting
+		// screen. Public for the same reason; see ready_email.go.
+		{http.MethodPost, "/v1/farms/{slug}/ready-email", auth.ActionProvisionNotify, s.handleRequestReadyEmail},
 
 		// The super-admin console. Public signup is still the self-serve door;
 		// this is the operator door: list, create, suspend.

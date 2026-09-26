@@ -15,6 +15,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/blob"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/mailer"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
@@ -132,6 +133,10 @@ type Config struct {
 	CloudflareZoneID    string
 	CloudflareAPIURL    string
 	CloudflareDCVMethod string
+	// Mailer sends email. Nil means the platform cannot send any, and
+	// everything that would (the "avísenme por correo" notice) is not
+	// offered. cmd/api sets it only when SMTP_HOST and SMTP_FROM are set.
+	Mailer mailer.Sender
 }
 
 // DefaultConfig is the production posture.

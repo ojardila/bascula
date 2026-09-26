@@ -625,7 +625,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds]
+                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds, notifyAvailable, notifyRequested]
                 properties:
                   slug: { $ref: "#/components/schemas/FarmSlug" }
                   url:
@@ -648,6 +648,50 @@ paths:
                     type: integer
                     format: int64
                     description: Seconds since the farm was created.
+                  notifyAvailable:
+                    type: boolean
+                    description: |
+                      This platform can email the owner when the farm is ready
+                      (SMTP configured). False means the screen must not offer it.
+                  notifyRequested:
+                    type: boolean
+                    description: The owner asked for that email.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/farms/{slug}/ready-email:
+    post:
+      tags: [farm]
+      operationId: requestReadyEmail
+      summary: Email the owner once the farm's own address is ready
+      description: |
+        "Avísenme por correo cuando esté lista" on the waiting screen. The
+        email goes to the farm owner's address (never one the caller names),
+        at most once per farm, when every provisioning step is done. Public,
+        like the status: the person who just registered has no session.
+
+        Only while the farm is being prepared (the provisioning budget, 45
+        minutes). 404 when this platform has no mailer (`notifyAvailable`
+        false in the status) or the farm does not exist.
+      x-action: farms.provisionNotify
+      x-roles: [public]
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/FarmSlug" }
+      responses:
+        "202":
+          description: Noted; the email goes out when the farm is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slug, requested]
+                properties:
+                  slug: { $ref: "#/components/schemas/FarmSlug" }
+                  requested: { type: boolean }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 

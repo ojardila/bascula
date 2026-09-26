@@ -344,6 +344,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/farms/{slug}/ready-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email the owner once the farm's own address is ready
+         * @description "Avísenme por correo cuando esté lista" on the waiting screen. The
+         *     email goes to the farm owner's address (never one the caller names),
+         *     at most once per farm, when every provisioning step is done. Public,
+         *     like the status: the person who just registered has no session.
+         *
+         *     Only while the farm is being prepared (the provisioning budget, 45
+         *     minutes). 404 when this platform has no mailer (`notifyAvailable`
+         *     false in the status) or the farm does not exist.
+         */
+        post: operations["requestReadyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/farm-slugs": {
         parameters: {
             query?: never;
@@ -6497,6 +6524,40 @@ export interface operations {
                          * @description Seconds since the farm was created.
                          */
                         elapsedSeconds: number;
+                        /**
+                         * @description This platform can email the owner when the farm is ready
+                         *     (SMTP configured). False means the screen must not offer it.
+                         */
+                        notifyAvailable: boolean;
+                        /** @description The owner asked for that email. */
+                        notifyRequested: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    requestReadyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: components["schemas"]["FarmSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Noted; the email goes out when the farm is ready. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        slug: components["schemas"]["FarmSlug"];
+                        requested: boolean;
                     };
                 };
             };
