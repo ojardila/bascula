@@ -29,6 +29,9 @@ on:
         description: the source key the image is tagged with (src-<key>)
         value: ${{ jobs.build.outputs.key }}
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: harbor.int.engp.io
   PROJECT: bascula

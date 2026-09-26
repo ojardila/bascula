@@ -54,6 +54,11 @@ env:
   REGISTRY: harbor.int.engp.io
   PROJECT: bascula
 
+# Jobs get a read-only token unless they say otherwise (release creates the
+# tag and the GitHub release; plan reads PRs and runs).
+permissions:
+  contents: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -109,6 +114,10 @@ jobs:
   ci:
     needs: plan
     if: needs.plan.outputs.tested != 'true'
+    # What ci.yml asks for; a called workflow cannot exceed its caller.
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/ci.yml
 
   # Normally a no-op: the PR's CI already pushed src-<key>. Each builds only
