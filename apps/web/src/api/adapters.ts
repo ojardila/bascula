@@ -478,6 +478,10 @@ export function toPaymentReceipt(w: WirePaymentReceipt): PaymentReceipt {
     deductionsCents: w.deductionsCents,
     remainingCents: w.remainingCents,
     settlementId: w.settlementId ?? null,
+    settlementIds: w.settlementIds ?? (w.settlementId ? [w.settlementId] : []),
+    note: w.note ?? null,
+    reversed: w.reversed ?? false,
+    kind: w.kind ?? "pago",
   };
 }
 
@@ -623,10 +627,8 @@ export function toWorkRecord(r: WireWorkRecord, refs: Refs = EMPTY_REFS): WorkRe
  * debt — the exact class of bug a derived balance exists to prevent, arrived
  * at by being helpful.
  *
- * `plotNames` is empty because a payable is a row of the settlement, not of
- * the work record: it carries the activity and the money, and no plots. The
- * plot list for a piece of work lives on the work record, which the profile
- * screen shows separately.
+ * `plotNames` comes from the server, joined from the work record's lotes, so
+ * a receipt can say where each line of work was done.
  */
 /**
  * One `WirePayable` -> one `PayableLine`.
@@ -649,7 +651,8 @@ export function toPayableLine(refs: Refs): (p: WirePayable) => PayableLine {
     dateFrom: day(p.date),
     dateTo: day(p.date),
     weekStart: day(p.weekStart),
-    plotNames: [],
+    plotNames: p.plotNames ?? [],
+    payMode: payModeFromWire(p.payScheme),
     quantity: quantityFromWire(p.quantity),
     unitLabel: p.unitId ? (refs.units.get(p.unitId) ?? null) : null,
     rateCents: p.rateCents,

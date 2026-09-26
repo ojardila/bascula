@@ -32,9 +32,10 @@
  *   «provisional» en letra grande".
  */
 import { documentShell, esc } from "./documentCss";
-import { formatDate, formatDateRange, formatPeriod } from "../../lib/dates";
+import { formatDate, formatPeriod } from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
 import { shortReceiptNumber } from "../../lib/receipt";
+import { groupReceiptLines } from "../receipts/receiptLines";
 import type { PayableLine, Payment, Settlement, Worker } from "../../api/types";
 import {
   buildReceiptBreakdown,
@@ -81,23 +82,26 @@ const PROVISIONAL_NOTE =
   `pagan al precio de la semana, que todavía no está fijado. El valor ` +
   `definitivo se conoce al cerrar la semana, y este documento no lo reemplaza.</div>`;
 
+/**
+ * One row per week + labor + lote, with its quantity, price and value. The
+ * values are sums of the frozen amounts, so the rows add up to the total the
+ * settlement froze. See `receipts/receiptLines.ts`.
+ */
 function lineRows(lines: PayableLine[]): string {
-  return lines
-    .map((l, i) => {
-      const provisional = l.rateSource === "weekly_price";
-      const qty = l.unitLabel
-        ? `${formatQuantity(l.quantity)} ${esc(l.unitLabel)}`
-        : "contrato";
-      return `<tr class="${i % 2 ? "alt" : ""}">
-        <td>${esc(formatDateRange(l.dateFrom, l.dateTo))}</td>
-        <td>${esc(l.activityName)}${provisional ? '<span class="tag">provisional</span>' : ""}</td>
-        <td class="n">${qty}</td>
-        <td class="n">${esc(money(l.rateCents))}</td>
-        <td class="n amt">${esc(money(l.amountCents))}</td>
-      </tr>`;
-    })
+  return groupReceiptLines(lines)
+    .map((g, i) => `<tr class="${i % 2 ? "alt" : ""}">
+        <td>${esc(g.weekLabel)}</td>
+        <td>${esc(g.activityName)}${g.provisional ? '<span class="tag">provisional</span>' : ""}</td>
+        <td>${esc(g.plotLabel)}</td>
+        <td class="n">${esc(g.quantityLabel)}</td>
+        <td class="n">${esc(money(g.rateCents))}</td>
+        <td class="n amt">${esc(money(g.amountCents))}</td>
+      </tr>`)
     .join("");
 }
+
+const LINE_HEAD = `<tr><th>Semana</th><th>Labor</th><th>Lote</th><th class="n">Cantidad</th>
+                <th class="n">Precio</th><th class="n">Valor</th></tr>`;
 
 /* ------------------------------------------------------------------ */
 /* RSP-008 — the pay receipt                                          */
@@ -166,13 +170,15 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
   const rows = lineRows(r.lines);
 
   const detail = r.lines.length
-    ? `<p class="sub" style="margin-top:4mm">Labores de la semana</p>
+    ? `<p class="sub" style="margin-top:4mm">Labores</p>
         <table>
-          <thead>
-            <tr><th>Fecha</th><th>Actividad</th><th class="n">Cantidad</th>
-                <th class="n">Precio</th><th class="n">Valor</th></tr>
-          </thead>
-          <tbody>${rows}</tbody>
+          <thead>${LINE_HEAD}</thead>
+          <tbody>${rows}
+            <tr class="tot">
+              <td colspan="5">Total labores</td>
+              <td class="n">${esc(money(weekCents))}</td>
+            </tr>
+          </tbody>
         </table>`
     : "";
 
@@ -246,12 +252,16 @@ export function paymentReceiptText(r: ReceiptInput): string {
   L.push(`${name} — ${formatDate(payment.date)}`);
   if (r.lines.length) {
     L.push("");
-    const sorted = [...r.lines].sort((a, c) => (a.dateFrom < c.dateFrom ? 1 : a.dateFrom > c.dateFrom ? -1 : 0));
-    for (const l of sorted) {
-      const qty = l.unitLabel ? `${formatQuantity(l.quantity)} ${l.unitLabel}` : "contrato";
-      const prov = l.rateSource === "weekly_price" ? " (provisional)" : "";
-      L.push(`${formatDateRange(l.dateFrom, l.dateTo)} · ${l.activityName} · ${qty} · ${money(l.amountCents)}${prov}`);
+    // One line per week + labor + lote, newest week first.
+    const groups = groupReceiptLines(r.lines).reverse();
+    for (const g of groups) {
+      const prov = g.provisional ? " (provisional)" : "";
+      L.push(
+        `Semana ${g.weekLabel} · ${g.activityName} · Lote ${g.plotLabel} · ` +
+          `${g.quantityLabel} × ${money(g.rateCents)} = ${money(g.amountCents)}${prov}`,
+      );
     }
+    L.push(`Total labores: ${money(weekCents)}`);
   }
   L.push("");
   if (b.currentWeekCents !== 0) L.push(`Semana actual: ${money(b.currentWeekCents)}`);
@@ -339,14 +349,11 @@ export function settlementHtml(input: SettlementDocInput): string {
        }
      </div>
      <table>
-       <thead>
-         <tr><th>Fecha</th><th>Actividad</th><th class="n">Cantidad</th>
-             <th class="n">Precio</th><th class="n">Valor</th></tr>
-       </thead>
+       <thead>${LINE_HEAD}</thead>
        <tbody>
          ${rows}
          <tr class="tot">
-           <td colspan="4">Bruto</td>
+           <td colspan="5">Bruto</td>
            <td class="n">${esc(money(s.grossCents))}</td>
          </tr>
        </tbody>

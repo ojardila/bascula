@@ -517,6 +517,7 @@ func (s *Server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{
 		"id":                   slip.Entry.ID,
+		"kind":                 slip.Entry.Kind,
 		"workerId":             slip.Entry.EmployeeID,
 		"date":                 day(slip.Entry.LocalDay),
 		"method":               slip.Entry.Method,
@@ -528,6 +529,8 @@ func (s *Server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
 		"deductionsCents":      slip.DeductionsCents,
 		"remainingCents":       slip.RemainingCents,
 		"settlementId":         slip.SettlementID,
+		"settlementIds":        slip.SettlementIDs,
+		"reversed":             slip.Reversed,
 	}
 	if slip.CurrentWeekFrom != nil {
 		out["currentWeekFrom"] = day(*slip.CurrentWeekFrom)

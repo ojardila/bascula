@@ -60,7 +60,10 @@ const balanceSQL = `
 const pendingSQL = `
   SELECT l.id::text, l.activity_id::text, a.name, l.pay_scheme, l.rate_source,
          l.quantity::text, l.unit_id::text, l.price_minor, l.amount_minor,
-         l.local_day, l.week_start
+         l.local_day, l.week_start,
+         COALESCE((SELECT array_agg(pl.name ORDER BY pl.name)
+                     FROM work_record_plots wp JOIN plots pl ON pl.id = wp.plot_id
+                    WHERE wp.work_record_id = l.id), '{}')
     FROM work_records l
     JOIN activities a ON a.farm_id = l.farm_id AND a.id = l.activity_id
    WHERE l.employee_id = $1
@@ -95,6 +98,11 @@ type Payable struct {
 	PriceMinor   int64             `json:"rateCents"`
 	AmountMinor  int64             `json:"amountCents"`
 	Voided       bool              `json:"voided"`
+	// PlotNames are the lotes the work was done in, by name, sorted. Read
+	// from work_record_plots at the time of asking: a receipt names the lote
+	// next to the activity so the worker can check the line against their
+	// own memory of the week. Never nil, so the wire always carries a list.
+	PlotNames []string `json:"plotNames"`
 }
 
 // Pending lists what a worker is owed for but has not been settled, with each
@@ -123,10 +131,13 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 		var qty string
 		if err := rows.Scan(&r.PayableID, &r.ActivityID, &r.ActivityName, &r.PayScheme,
 			&r.RateSource, &qty, &r.UnitID, &r.frozenPrice, &r.frozenAmount,
-			&r.LocalDay, &r.WeekStart); err != nil {
+			&r.LocalDay, &r.WeekStart, &r.PlotNames); err != nil {
 			return nil, err
 		}
 		r.Quantity = json.Number(qty)
+		if r.PlotNames == nil {
+			r.PlotNames = []string{}
+		}
 		pending = append(pending, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -645,7 +656,10 @@ func GetSettlement(ctx context.Context, tx pgx.Tx, id string) (*Settlement, erro
 	rows, err := tx.Query(ctx, `
 		SELECT si.payable_id::text, l.activity_id::text, a.name, l.pay_scheme, l.rate_source,
 		       si.quantity::text, l.unit_id::text, l.local_day, si.week_start,
-		       si.price_minor, si.amount_minor, si.voided_at IS NOT NULL
+		       si.price_minor, si.amount_minor, si.voided_at IS NOT NULL,
+		       COALESCE((SELECT array_agg(pl.name ORDER BY pl.name)
+                     FROM work_record_plots wp JOIN plots pl ON pl.id = wp.plot_id
+                    WHERE wp.work_record_id = l.id), '{}')
 		  FROM settlement_items si
 		  JOIN work_records l ON l.id = si.payable_id
 		  JOIN activities a ON a.id = l.activity_id
@@ -662,10 +676,13 @@ func GetSettlement(ctx context.Context, tx pgx.Tx, id string) (*Settlement, erro
 		var qty string
 		if err := rows.Scan(&p.PayableID, &p.ActivityID, &p.ActivityName, &p.PayScheme,
 			&p.RateSource, &qty, &p.UnitID, &p.LocalDay, &p.WeekStart,
-			&p.PriceMinor, &p.AmountMinor, &p.Voided); err != nil {
+			&p.PriceMinor, &p.AmountMinor, &p.Voided, &p.PlotNames); err != nil {
 			return nil, err
 		}
 		p.Quantity = json.Number(qty)
+		if p.PlotNames == nil {
+			p.PlotNames = []string{}
+		}
 		s.Items = append(s.Items, p)
 	}
 	return &s, rows.Err()

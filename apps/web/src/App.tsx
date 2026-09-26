@@ -18,6 +18,7 @@ import { PlotDetailPage } from "./features/plots/PlotDetailPage";
 import { WorkersPage } from "./features/workers/WorkersPage";
 import { WorkerFormPage } from "./features/workers/WorkerFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
+import { ReceiptPage } from "./features/receipts/ReceiptPage";
 import { PayWorkerPage } from "./features/workers/PayWorkerPage";
 import { ActivitiesPage } from "./features/activities/ActivitiesPage";
 import { WeekPricePage } from "./features/prices/WeekPricePage";
@@ -152,6 +153,16 @@ function Shell() {
           element={
             <RequirePermission action="workers.write" moduleName="modificar empleados">
               <WorkerFormPage />
+            </RequirePermission>
+          }
+        />
+        {/* A receipt from the worker's history, as it stood that day. Money,
+            so `money.read`: the weigher never sees what anybody was paid. */}
+        <Route
+          path="empleados/:id/historial/:kind/:entryId"
+          element={
+            <RequirePermission action="money.read" moduleName="ver los recibos">
+              <ReceiptPage />
             </RequirePermission>
           }
         />

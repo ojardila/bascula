@@ -37,14 +37,19 @@ import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
 import { OwedFigure, owedDirection } from "./OwedFigure";
 import { totalOwedCents, type Owed } from "./owed";
-import { CORRECTION_GLOSS, LEDGER_KIND_LABEL, NOT_YET_EARNED } from "../../lib/vocab";
+import { CORRECTION_GLOSS, NOT_YET_EARNED } from "../../lib/vocab";
+import { WorkerHistory } from "../receipts/WorkerHistory";
+
+const HISTORY_LIMIT = 500;
 
 export function WorkerProfilePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { can } = useAuth();
   const [debtOpen, setDebtOpen] = useState(false);
-  const { data, error, denied, reload } = useAsync(() => api.workerProfile(id), [id]);
+  // The whole history, not the first page: it is where a worker's every
+  // receipt is found. 500 is the server's ceiling for one read.
+  const { data, error, denied, reload } = useAsync(() => api.workerProfile(id, HISTORY_LIMIT), [id]);
 
   if (denied) return <PermissionDenied moduleName="ver el perfil de un empleado" />;
   if (error) return <Alert severity="error">{error}</Alert>;
@@ -283,65 +288,33 @@ export function WorkerProfilePage() {
         </CardContent>
       </Card>
 
-      <Card sx={{ mt: 3 }}>
-        <CardContent>
-          <Typography variant="h3" gutterBottom>
-            Historial financiero
-          </Typography>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Tipo</TableCell>
-                <TableCell>Concepto</TableCell>
-                <TableCell>Fecha</TableCell>
-                <TableCell align="right">Monto</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {ledger.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={LEDGER_KIND_LABEL[l.kind]}
-                      color={l.amountCents >= 0 ? "success" : "default"}
-                    />
-                  </TableCell>
-                  <TableCell>{l.concept}</TableCell>
-                  <TableCell>{formatDate(l.date)}</TableCell>
-                  <TableCell align="right">
-                    <Money cents={l.amountCents} signed colored />
-                  </TableCell>
-                </TableRow>
-              ))}
-              {ledger.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} sx={{ color: "text.secondary" }}>
-                    Todavía no se le ha pagado ni descontado nada.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          {/* ── THE TABLE CLAIMED TO BE EVERYTHING AND WAS ONE PAGE ───────
-              "Historial financiero" is the last `ledgerLimit` entries: the
-              server cuts it there and the response does not mention it.
-              Somebody two seasons into the farm saw half their account under
-              a title that promised the whole of it. We say so, with the
-              number, and only when there really may be more — same as in
-              `/cosecha`. */}
-          {ledger.length >= data.ledgerLimit && (
-            <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
-              Se muestran los {data.ledgerLimit} movimientos más recientes. Puede haber
-              más atrás.
+      {can("money.read") && (
+        <Card sx={{ mt: 3 }} id="historial">
+          <CardContent>
+            <Typography variant="h3" gutterBottom>
+              Historial financiero
             </Typography>
-          )}
-          <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-            Nada de esto se edita ni se borra. Un error se corrige con {CORRECTION_GLOSS}
-          </Alert>
-        </CardContent>
-      </Card>
+            <Typography sx={{ fontSize: 16, mb: 1 }} color="text.secondary">
+              Pagos, liquidaciones, anticipos y descuentos, del más reciente al más antiguo.
+              Toque uno para ver el recibo completo y descargarlo en PDF.
+            </Typography>
+            <WorkerHistory workerId={worker.id} ledger={ledger} />
+            {/* ── THE LIST CLAIMED TO BE EVERYTHING AND WAS ONE PAGE ────────
+                The server cuts the ledger at `ledgerLimit`, and the response
+                does not mention it. We say so, with the number, and only when
+                there really may be more. */}
+            {ledger.length >= data.ledgerLimit && (
+              <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
+                Se muestran los {data.ledgerLimit} movimientos más recientes. Puede haber
+                más atrás.
+              </Typography>
+            )}
+            <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+              Nada de esto se edita ni se borra. Un error se corrige con {CORRECTION_GLOSS}
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
 
       <Card sx={{ mt: 3 }}>
         <CardContent>

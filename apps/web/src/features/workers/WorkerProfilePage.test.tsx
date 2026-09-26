@@ -117,13 +117,13 @@ describe("the history does not pretend to be longer than it is", () => {
   it("warns, with the number, when the ledger comes back truncated", async () => {
     const t = db.tenantOf(db.FARM_ID)!;
     const one = t.ledger.find((l) => l.workerId === MARIA)!;
-    // Sixty entries: more than the cap the screen asks for.
-    for (let i = 0; i < 60; i++) {
+    // More entries than the cap the screen asks for.
+    for (let i = 0; i < 510; i++) {
       t.ledger.push({ ...one, id: `${one.id}-filler-${i}` });
     }
     renderProfile();
     expect(
-      await screen.findByText(/Se muestran los 50 movimientos más recientes/),
+      await screen.findByText(/Se muestran los 500 movimientos más recientes/),
     ).toBeInTheDocument();
   }, 20000);
 
@@ -131,7 +131,7 @@ describe("the history does not pretend to be longer than it is", () => {
     renderProfile();
     await screen.findByText("Historial financiero");
     await waitFor(() =>
-      expect(screen.queryByText(/Se muestran los 50/)).not.toBeInTheDocument(),
+      expect(screen.queryByText(/Se muestran los 500/)).not.toBeInTheDocument(),
     );
   }, 20000);
 });

@@ -2558,11 +2558,19 @@ export const handlers = [
     const g = guard(request, "ledger.read");
     if (g.deny) return g.deny;
     const t = g.p.tenant;
-    const pago = t.ledger.find((l) => l.id === params.id && l.kind === "pago");
+    // Same as the server: a payment, an advance or a discount, read from the
+    // worker's ledger as it stood when the movement was written.
+    const pago = t.ledger.find(
+      (l) => l.id === params.id && (l.kind === "pago" || l.kind === "anticipo" || l.kind === "deduccion"),
+    );
     if (!pago) return notFound();
-    const reversed = new Set(t.ledger.filter((l) => l.reversesId).map((l) => l.reversesId as string));
+    const all = t.ledger
+      .filter((l) => l.workerId === pago.workerId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const at = all.findIndex((e) => e.id === pago.id);
+    const reversedEver = new Set(all.filter((l) => l.reversesId).map((l) => l.reversesId as string));
+    const reversed = new Set(all.slice(0, at).filter((l) => l.reversesId).map((l) => l.reversesId as string));
     const live = (e: typeof pago) => !e.reversesId && !reversed.has(e.id);
-    const all = [...t.ledger].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     let remaining = 0;
     let prevPagoId = "";
     let pagoIndex = -1;
@@ -2580,12 +2588,14 @@ export const handlers = [
     let week = 0;
     const deductions: { concept: string; amountCents: number; date: string }[] = [];
     let settlementId: string | null = null;
-    for (let i = afterPrev + 1; i < pagoIndex; i++) {
+    const settlementIds: string[] = [];
+    for (let i = afterPrev + 1; i < pagoIndex && pago.kind === "pago"; i++) {
       const e = all[i];
       if (!live(e)) continue;
       if (e.kind === "devengo") {
         week += e.amountCents;
         settlementId = e.settlementId;
+        if (e.settlementId) settlementIds.push(e.settlementId);
       }
       if (e.kind === "deduccion") {
         const amt = Math.abs(e.amountCents);
@@ -2600,6 +2610,7 @@ export const handlers = [
     const paid = Math.abs(pago.amountCents);
     return HttpResponse.json({
       id: pago.id,
+      kind: pago.kind,
       workerId: pago.workerId,
       date: pago.date.slice(0, 10),
       method: pago.method,
@@ -2611,6 +2622,8 @@ export const handlers = [
       deductionsCents: disc,
       remainingCents: remaining,
       settlementId,
+      settlementIds,
+      reversed: reversedEver.has(pago.id),
     });
   }),
   // No balance check on an advance: exceeding the balance is what an advance is.
