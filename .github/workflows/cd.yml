@@ -443,7 +443,8 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
           hostname: bascula-prod-${{ github.run_id }}-${{ github.run_attempt }}
-          args: --accept-routes
+          # No `args`: the action passes --accept-routes itself and Tailscale
+          # 1.94 rejects the flag given twice.
           timeout: 5m
 
       # Production and every dedicated farm move in ONE gitops commit, and
