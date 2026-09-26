@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -914,11 +915,30 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 // NOT NULL inet column beats failing a signup over it, and everything from
 // such a listener lands in the same bucket, which is the conservative way to
 // be wrong.
+//
+// What it returns is the address the per-IP limits count, and for IPv6 that
+// is the /64, not the /128. One subscriber line or one cloud VM is handed a
+// whole /64, so counting single addresses gave anyone with IPv6 2^64 fresh
+// buckets: the signup cap and both login axes were unlimited.
 func clientIP(r *http.Request) string {
 	if ip := middleware.GetClientIP(r.Context()); ip != "" {
-		return ip
+		return rateLimitBucket(ip)
 	}
 	return "127.0.0.1"
+}
+
+// rateLimitBucket keeps an IPv4 address as it is and reduces IPv6 to its /64
+// network address. Anything unparseable is returned unchanged.
+func rateLimitBucket(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is4() {
+		return addr.String()
+	}
+	return netip.PrefixFrom(addr, 64).Masked().Addr().String()
 }
 
 func newID() string {
