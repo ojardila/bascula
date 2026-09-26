@@ -93,6 +93,14 @@ export function ProvisionProgress({
   const appUrl = `${url}${APP_HOME}`;
   const loginUrl = `${url}/entrar`;
   const ready = status?.ready ?? false;
+  // The farm's own address only once its certificate is active and it
+  // answered over verified TLS; before that a browser gets a TLS error there,
+  // so "no quiere esperar" goes to the shared app, where the farm already works.
+  const addressOpens = Boolean(
+    status &&
+      status.steps.every((s) => (s.key === "certificate" || s.key === "web" ? s.done : true)) &&
+      status.steps.some((s) => s.key === "web"),
+  );
 
   useEffect(() => {
     if (!redirectWhenReady || !ready) return;
@@ -226,7 +234,12 @@ export function ProvisionProgress({
       ) : (
         <Typography textAlign="center" color="text.secondary" sx={{ fontSize: "1rem" }}>
           ¿No quiere esperar? Su finca ya funciona:{" "}
-          <Link href={loginUrl}>entre aquí con su correo</Link>.
+          {addressOpens ? (
+            <Link href={loginUrl}>entre aquí con su correo</Link>
+          ) : (
+            <Link component={RouterLink} to="/entrar">entre aquí con su correo</Link>
+          )}
+          .
         </Typography>
       )}
     </Stack>

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -390,6 +391,9 @@ type provisionStatus struct {
 	// ready (a mailer is configured). NotifyRequested: the owner asked.
 	NotifyAvailable bool `json:"notifyAvailable"`
 	NotifyRequested bool `json:"notifyRequested"`
+	// CertificateError is the last problem asking Cloudflare for the farm's
+	// certificate (API error or validation error), while it is not active.
+	CertificateError string `json:"certificateError,omitempty"`
 }
 
 // handleProvisionStatus answers the waiting screen. It is public: the caller
@@ -466,16 +470,23 @@ func (s *Server) computeProvisionStatus(ctx context.Context, slug string, create
 	certificate := true
 	if s.farmCertificates() {
 		cs := s.certStateOf(slug)
-		// A certificate that already answers over TLS is done, whatever this
-		// process remembers; otherwise (re)start the watcher, which also
-		// covers a restart of this process.
-		certificate = cs.Active || web
+		// Done only when Cloudflare itself says the custom hostname AND its
+		// certificate are active. The address answering is not enough: the
+		// wildcard route and Cloudflare's cache can answer /health for a
+		// hostname whose certificate is still pending. When the certificate
+		// is not active, (re)start the watcher; that also covers a restart
+		// of this process and a hostname whose creation failed.
+		certificate = cs.Active
 		if !certificate {
 			s.ensureFarmCertificate(slug)
+			st.CertificateError = cs.Error
 		}
 		st.Steps = append(st.Steps, provisionStep{Key: "certificate", Done: certificate})
 	}
 	st.Steps = append(st.Steps, provisionStep{Key: "web", Done: web})
+	// Never ready without a certificate a browser accepts: Cloudflare says it
+	// is active and a strictly verified TLS request to the real hostname
+	// answered 200.
 	st.Ready = database && app && certificate && web
 	st.Slow = !st.Ready && time.Since(createdAt) > s.provisionSlowAfter()
 	return st
@@ -488,20 +499,36 @@ func (s *Server) provisionSlowAfter() time.Duration {
 	return 15 * time.Minute
 }
 
+// strictProbeClient verifies the certificate chain against the system roots
+// and the request's own hostname, the way a browser does. Never skip
+// verification here: a farm whose certificate a browser rejects is not ready.
+func strictProbeClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	tr.DisableKeepAlives = true
+	return &http.Client{
+		Transport:     tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 // probePublic asks the farm's own address for /health the way a browser would:
-// real DNS, real TLS. Anything but a 200 is "not yet".
+// real DNS, strictly verified TLS for the real hostname, past any cache.
+// Anything but a 200 is "not yet".
 func (s *Server) probePublic(ctx context.Context, base string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)
+	// A unique query string so Cloudflare's cache (which keeps /health for
+	// an hour) cannot answer for the origin.
+	probe := fmt.Sprintf("%s/health?probe=%d", base, time.Now().UnixNano())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probe, nil)
 	if err != nil {
 		return false
 	}
+	req.Header.Set("Cache-Control", "no-cache")
 	client := s.cfg.PublicProbeClient
 	if client == nil {
-		client = &http.Client{
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
+		client = strictProbeClient()
 	}
 	res, err := client.Do(req)
 	if err != nil {

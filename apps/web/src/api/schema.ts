@@ -6599,6 +6599,12 @@ export interface operations {
                         notifyAvailable: boolean;
                         /** @description The owner asked for that email. */
                         notifyRequested: boolean;
+                        /**
+                         * @description While the certificate step is not done, the last problem
+                         *     asking Cloudflare for the farm's certificate (a failed API
+                         *     call or validation errors). Absent otherwise.
+                         */
+                        certificateError?: string;
                     };
                 };
             };
