@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -34,6 +35,10 @@ type Claims struct {
 	// "cid" claim). Empty on an ordinary session token. It is what the MCP
 	// audit trail records as "which assistant".
 	ClientID string `json:"cid,omitempty"`
+	// Scope is the OAuth scope an assistant was granted (space-separated).
+	// Empty means full access for the role: every token from before scopes,
+	// and every ordinary session token.
+	Scope string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -61,24 +66,24 @@ func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string,
 // IssueFor is Issue with an audience; "" issues an ordinary session token.
 func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	if audience == "" {
-		return s.issue(nil, "", userID, farmID, role, deviceID, superadmin)
+		return s.issue(nil, "", "", userID, farmID, role, deviceID, superadmin)
 	}
-	return s.issue([]string{audience}, "", userID, farmID, role, deviceID, superadmin)
+	return s.issue([]string{audience}, "", "", userID, farmID, role, deviceID, superadmin)
 }
 
 // IssueMCP mints an assistant's access token. Its audience is AudienceMCP
 // plus the MCP resource it was issued for (RFC 8707: https://<host>/mcp), so a
 // token obtained from one farm's address is refused on another's; clientID is
 // the OAuth client that holds the grant.
-func (s *Signer) IssueMCP(resource, clientID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+func (s *Signer) IssueMCP(resource, clientID, scope, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	aud := []string{AudienceMCP}
 	if resource != "" {
 		aud = append(aud, resource)
 	}
-	return s.issue(aud, clientID, userID, farmID, role, deviceID, superadmin)
+	return s.issue(aud, clientID, scope, userID, farmID, role, deviceID, superadmin)
 }
 
-func (s *Signer) issue(audience []string, clientID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+func (s *Signer) issue(audience []string, clientID, scope, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	now := s.now()
 	c := Claims{
 		FarmID:     farmID,
@@ -86,6 +91,7 @@ func (s *Signer) issue(audience []string, clientID, userID, farmID string, role 
 		DeviceID:   deviceID,
 		Superadmin: superadmin,
 		ClientID:   clientID,
+		Scope:      scope,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			Issuer:    s.issuer,
@@ -158,4 +164,31 @@ func (c *Claims) MCPResource() string {
 		}
 	}
 	return ""
+}
+
+// OAuth scopes an assistant can be granted. ScopeMCP consults and registers,
+// within the member's role; ScopeMCPRead only consults.
+const (
+	ScopeMCP     = "mcp"
+	ScopeMCPRead = "mcp:read"
+)
+
+// ReadOnly reports whether the token was granted consultation only: an
+// assistant's token whose scope names mcp:read and not mcp.
+func (c *Claims) ReadOnly() bool {
+	return ScopeIsReadOnly(c.Scope)
+}
+
+// ScopeIsReadOnly is ReadOnly for a scope string.
+func ScopeIsReadOnly(scope string) bool {
+	read, full := false, false
+	for _, s := range strings.Fields(scope) {
+		switch s {
+		case ScopeMCPRead:
+			read = true
+		case ScopeMCP:
+			full = true
+		}
+	}
+	return read && !full
 }

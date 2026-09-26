@@ -575,3 +575,24 @@ func ReleaseEarly(ctx context.Context) {
 		_ = tx.Rollback(ctx)
 	}
 }
+
+// RunAs runs fn in a transaction of its own, pinned to p's farm exactly as
+// Middleware pins a request (membership and suspension checked), and commits
+// it when fn succeeds. It is for work that happens outside any request
+// transaction — the MCP audit record, written after a tool's inner request
+// has returned its connection — and must never be called while the caller
+// holds a request transaction (see AfterRequest).
+func RunAs(ctx context.Context, pool *pgxpool.Pool, p *auth.Principal, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := setContext(ctx, tx, p, enforceMembership); err != nil {
+		return err
+	}
+	if err := fn(withFarm(withTx(ctx, tx), p.FarmID), tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

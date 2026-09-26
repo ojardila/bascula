@@ -4,7 +4,8 @@ How the MCP server (`/mcp`) and its OAuth authorization server (`/oauth/*`,
 `/.well-known/*`) are protected, what was reviewed, and what is left. Code:
 `services/api/internal/httpapi/handlers_mcp*.go`, `handlers_oauth.go`,
 `server.go` (`authenticate`), `auth/perm.go`, `auth/jwt.go`. Tests:
-`services/api/internal/apitest/mcp_security_test.go` plus the older
+`services/api/internal/apitest/mcp_security_test.go`,
+`mcp_scope_audit_test.go` plus the older
 `oauth_*_test.go` and `mcp_*_test.go`.
 
 ## Model
@@ -21,6 +22,8 @@ How the MCP server (`/mcp`) and its OAuth authorization server (`/oauth/*`,
 - **Money is two-step.** `set_kilo_price`, `register_advance`,
   `register_payment`, `create_settlement`, `void_settlement` first answer a
   preview and a confirmation token; only a second call with that token writes.
+- **The person chooses read-only or read-write** at sign-in (see Scopes).
+- **Every write is recorded** (see Audit).
 
 ## Controls
 
@@ -36,6 +39,32 @@ How the MCP server (`/mcp`) and its OAuth authorization server (`/oauth/*`,
 | Refresh token bound to its client (RFC 6749 §6); OAuth endpoint rotates only OAuth families; `/v1/auth/refresh` refuses assistant families | `handleOAuthToken`, `handleRefresh` |
 | Revocation (RFC 7009) scoped to the asking client; never touches web/handset sessions | `handleOAuthRevoke` |
 | Authorization code: 256-bit, 10 min, single use (`DELETE … RETURNING`), stored hashed, carries a purpose-bound proof (not a JWT) | `handleOAuthAuthorize`, `oauthExchangeCode` |
+
+### Scopes
+
+| Scope | Granted when | Effect |
+|---|---|---|
+| `mcp` | «Consultar y registrar» on the sign-in page (default) | All 40 tools, within the member's role |
+| `mcp:read` | «Solo consultar» on the page, or the client asked only for `mcp:read` | `tools/list` shows the 28 read tools only; a write tool call is refused and recorded |
+
+The scope is stored on the refresh-token family (`refresh_tokens.scope`), so
+rotation keeps it, and travels in the access token's `scope` claim. A family
+from before scopes existed has `NULL`, which means full access for the role:
+existing connections (the ChatGPT grant on San José among them) keep working
+unchanged. To narrow a connection, the person revokes it in «Conexiones» and
+reconnects choosing «Solo consultar». The role still decides what a write
+scope can do: a weigher's assistant cannot set prices whatever it was granted.
+
+### Audit
+
+Every write-tool execution through `/mcp` writes one `mcp_audit` row: user,
+OAuth client (`cid` claim), tool, outcome (`done`, `refused`, `failed`), the
+first line of the answer and the arguments (confirmation token removed,
+≤ 8 KiB). Previews write nothing and are not recorded; refusals (role,
+read-only) are. Owner and administrator read it at `GET /v1/mcp/activity`
+(«Conexiones» in the web); RLS limits reads to them and inserts to the calling
+user in the calling farm. A failure to record is logged and does not fail the
+write.
 
 ### Authorization endpoint and consent page
 
@@ -54,8 +83,9 @@ How the MCP server (`/mcp`) and its OAuth authorization server (`/oauth/*`,
 
 ### Dynamic client registration
 
-Anonymous by design (ChatGPT and Claude use it). 30/address/hour per process
-and 200/hour platform-wide (Postgres count); 64 KiB body; 10 redirect URIs of
+Anonymous by design (ChatGPT and Claude use it). 30/address/hour (IPv6 /64),
+counted both in memory and in Postgres (`oauth_clients.registered_from`), so a
+restart or another replica does not reset it; 200/hour platform-wide; 64 KiB body; 10 redirect URIs of
 ≤ 2 KiB; `client_name` ≤ 80 characters; stored metadata ≤ 8 KiB. Nothing a
 client registers except its name and redirect host is shown to a person.
 
@@ -121,9 +151,10 @@ error"}}`; causes are logged server-side only.
 
 ## Known limits
 
-- The per-address registration limit and the per-user MCP limits are in
-  memory, per API process (every stack runs one replica today). The
-  platform-wide registration cap is shared.
+- The per-user MCP limits are in memory, per API process (every stack runs
+  one replica today). Registration limits are in Postgres.
+- Existing grants keep full access (`NULL` scope) until the person reconnects;
+  nothing forces a re-consent.
 - A confirmation token is not bound to the OAuth client: another assistant of
   the same user on the same farm could use it within its 10 minutes. It
   cannot change what is written (arguments are bound).

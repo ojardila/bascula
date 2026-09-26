@@ -570,6 +570,7 @@ func (h *harness) serverWithSigner(t *testing.T, mutate func(cfg *httpapi.Config
 	cfg := httpapi.DefaultConfig()
 	cfg.UploadDir = t.TempDir()
 	cfg.OAuthRegistrationsPerHour = 1 << 20
+	cfg.OAuthRegistrationsPerIPPerHour = 1 << 20
 	mutate(&cfg)
 	return httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg)
 }

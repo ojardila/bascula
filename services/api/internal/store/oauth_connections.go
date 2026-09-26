@@ -17,6 +17,8 @@ type MCPConnection struct {
 	CreatedAt  time.Time // when the grant was first issued
 	LastUsedAt time.Time // when the newest token in the family was issued
 	ExpiresAt  time.Time // when the newest refresh token stops working
+	// ReadOnly: the person granted consultation only (scope mcp:read).
+	ReadOnly bool
 }
 
 // ListMCPConnections returns the caller's OAuth-issued families on this farm
@@ -26,14 +28,14 @@ func ListMCPConnections(ctx context.Context, tx pgx.Tx, userID, farmID string) (
 	rows, err := tx.Query(ctx, `
 		WITH latest AS (
 		  SELECT DISTINCT ON (t.family_id)
-		         t.family_id, t.oauth_client_id, t.issued_at, t.expires_at, t.revoked_at
+		         t.family_id, t.oauth_client_id, t.issued_at, t.expires_at, t.revoked_at, t.scope
 		    FROM refresh_tokens t
 		   WHERE t.user_id = $1 AND t.farm_id = $2 AND t.oauth_client_id IS NOT NULL
 		   ORDER BY t.family_id, t.issued_at DESC
 		)
 		SELECT l.family_id::text, l.oauth_client_id, coalesce(c.name, ''),
 		       (SELECT min(f.issued_at) FROM refresh_tokens f WHERE f.family_id = l.family_id),
-		       l.issued_at, l.expires_at
+		       l.issued_at, l.expires_at, coalesce(l.scope = 'mcp:read', false)
 		  FROM latest l
 		  LEFT JOIN oauth_clients c ON c.id = l.oauth_client_id
 		 WHERE l.revoked_at IS NULL
@@ -46,7 +48,7 @@ func ListMCPConnections(ctx context.Context, tx pgx.Tx, userID, farmID string) (
 	for rows.Next() {
 		var c MCPConnection
 		if err := rows.Scan(&c.ID, &c.ClientID, &c.ClientName, &c.CreatedAt,
-			&c.LastUsedAt, &c.ExpiresAt); err != nil {
+			&c.LastUsedAt, &c.ExpiresAt, &c.ReadOnly); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

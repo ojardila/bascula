@@ -140,6 +140,10 @@ const (
 	ActionMCPConnectionsRead   Action = "mcp.connections.read"
 	ActionMCPConnectionsRevoke Action = "mcp.connections.revoke"
 
+	// What assistants wrote on this farm (the MCP audit trail). The owner and
+	// the administrator, the two roles that answer for the farm's records.
+	ActionMCPActivityRead Action = "mcp.activity.read"
+
 	// OAuth discovery, registration and the authorization-code dance that
 	// ChatGPT's connector UI insists on. Public: there is no token yet.
 	ActionOAuth Action = "oauth"
@@ -377,6 +381,7 @@ var Matrix = map[Action]Rule{
 	ActionMCP:                  {Roles: everyone, TenantOptional: true},
 	ActionMCPConnectionsRead:   {Roles: everyone},
 	ActionMCPConnectionsRevoke: {Roles: everyone},
+	ActionMCPActivityRead:      {Roles: admins},
 	ActionOAuth:                {Public: true, TenantOptional: true},
 	ActionMCPDocs:              {Public: true, TenantOptional: true},
 }

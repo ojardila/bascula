@@ -332,13 +332,17 @@ type RefreshToken struct {
 	// OAuthClientID is the MCP client (ChatGPT, …) that obtained this
 	// family through /oauth/token; nil for a web or handset login.
 	OAuthClientID *string
+	// Scope is the OAuth scope granted to an assistant's family ("mcp" or
+	// "mcp:read", plus offline_access). nil: a web or handset family, or an
+	// assistant grant from before scopes, which is full access.
+	Scope *string
 }
 
 func InsertRefreshToken(ctx context.Context, tx pgx.Tx, t RefreshToken, hash []byte) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO refresh_tokens (id, family_id, user_id, farm_id, token_hash, device_id, expires_at, oauth_client_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		t.ID, t.FamilyID, t.UserID, t.FarmID, hash, t.DeviceID, t.ExpiresAt, t.OAuthClientID)
+		INSERT INTO refresh_tokens (id, family_id, user_id, farm_id, token_hash, device_id, expires_at, oauth_client_id, scope)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		t.ID, t.FamilyID, t.UserID, t.FarmID, hash, t.DeviceID, t.ExpiresAt, t.OAuthClientID, t.Scope)
 	return err
 }
 
@@ -346,10 +350,10 @@ func FindRefreshToken(ctx context.Context, tx pgx.Tx, hash []byte) (*RefreshToke
 	var t RefreshToken
 	err := tx.QueryRow(ctx, `
 		SELECT id::text, family_id::text, user_id::text, farm_id::text, device_id::text,
-		       expires_at, rotated_at, revoked_at, oauth_client_id
+		       expires_at, rotated_at, revoked_at, oauth_client_id, scope
 		  FROM refresh_tokens WHERE token_hash = $1`, hash).
 		Scan(&t.ID, &t.FamilyID, &t.UserID, &t.FarmID, &t.DeviceID,
-			&t.ExpiresAt, &t.RotatedAt, &t.RevokedAt, &t.OAuthClientID)
+			&t.ExpiresAt, &t.RotatedAt, &t.RevokedAt, &t.OAuthClientID, &t.Scope)
 	if err != nil {
 		return nil, err
 	}

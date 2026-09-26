@@ -267,16 +267,29 @@ func (s *Server) mcpWriteHandler(t mcpWriteTool) mcp.ToolHandler {
 		if err != nil {
 			return mcpFailure(`{"error":{"code":"UNAUTHORIZED","message":"authentication required"}}`), nil
 		}
+		if p.ReadOnly {
+			// The person granted this assistant consultation only. The
+			// read-only token is served a tool list without writes; this
+			// is the same rule for a client that calls one anyway.
+			res := mcpFailure(`{"error":{"code":"FORBIDDEN","message":"this connection was granted read-only access"}}` +
+				"\nEsta conexión se autorizó solo para consultar. Para registrar, desconecte el asistente y vuelva a conectarlo eligiendo «Consultar y registrar».")
+			s.mcpAudit(ctx, p, t.Name, "refused", res, a)
+			return res, nil
+		}
 		action, known := s.mcpActions[t.Method+" "+t.Pattern]
 		if !known || !auth.AllowedFor(p.Role, p.Superadmin, action) {
-			return mcpFailure(fmt.Sprintf(
+			res := mcpFailure(fmt.Sprintf(
 				`{"error":{"code":"FORBIDDEN","message":"your role may not perform this action"}}`+
-					"\nSu rol (%s) no puede usar %s.", p.Role, t.Name)), nil
+					"\nSu rol (%s) no puede usar %s.", p.Role, t.Name))
+			s.mcpAudit(ctx, p, t.Name, "refused", res, a)
+			return res, nil
 		}
 		c := &mcpCaller{s: s, ctx: ctx, req: req}
 
 		if !t.Money {
-			return t.run(c, a, "", ""), nil
+			res := t.run(c, a, "", "")
+			s.mcpAudit(ctx, p, t.Name, mcpOutcome(res), res, a)
+			return res, nil
 		}
 
 		token := a.str("confirmationToken")
@@ -289,8 +302,17 @@ func (s *Server) mcpWriteHandler(t mcpWriteTool) mcp.ToolHandler {
 			return mcpFailure(msg), nil
 		}
 		key := uuid.NewSHA1(mcpConfirmSpace, []byte(claim.Nonce)).String()
-		return t.run(c, a, key, claim.Bind), nil
+		res := t.run(c, a, key, claim.Bind)
+		s.mcpAudit(ctx, p, t.Name, mcpOutcome(res), res, a)
+		return res, nil
 	}
+}
+
+func mcpOutcome(res *mcp.CallToolResult) string {
+	if res == nil || res.IsError {
+		return "failed"
+	}
+	return "done"
 }
 
 // run executes the write. It is the only place a write tool writes.
@@ -353,7 +375,8 @@ func (s *Server) mcpPrincipal(req *mcp.CallToolRequest) (*auth.Principal, error)
 	}
 	return &auth.Principal{UserID: claims.Subject, FarmID: claims.FarmID,
 		Role: claims.Role, DeviceID: claims.DeviceID, Superadmin: claims.Superadmin,
-		ClientID: claims.ClientID, MCPOnly: claims.ForMCPOnly()}, nil
+		ClientID: claims.ClientID, MCPOnly: claims.ForMCPOnly(),
+		ReadOnly: claims.ForMCPOnly() && claims.ReadOnly()}, nil
 }
 
 // ── confirmation ──────────────────────────────────────────────────────────

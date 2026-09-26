@@ -492,6 +492,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			Superadmin: claims.Superadmin,
 			ClientID:   claims.ClientID,
 			MCPOnly:    claims.ForMCPOnly(),
+			ReadOnly:   claims.ForMCPOnly() && claims.ReadOnly(),
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})

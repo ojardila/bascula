@@ -4932,6 +4932,37 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/mcp/activity:
+    get:
+      tags: [auth]
+      operationId: listMcpActivity
+      summary: What assistants wrote on this farm
+      description: |
+        One record per write-tool execution through /mcp (previews write
+        nothing and are not recorded), including refusals: who, through which
+        OAuth client, which tool, the outcome and the arguments. Newest first.
+        Owner and administrator only.
+      x-action: mcp.activity.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: The records, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/McpActivity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /v1/mcp/connections/{id}:
     parameters:
       - name: id
@@ -7465,7 +7496,7 @@ components:
 
     McpConnection:
       type: object
-      required: [id, clientName, status, createdAt, lastUsedAt, expiresAt]
+      required: [id, clientName, status, createdAt, lastUsedAt, expiresAt, access]
       properties:
         id: { type: string, format: uuid }
         clientName: { type: string, example: ChatGPT }
@@ -7473,6 +7504,31 @@ components:
         createdAt: { type: string, format: date-time }
         lastUsedAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time }
+        access:
+          type: string
+          enum: [read, write]
+          description: |
+            What the person granted at sign-in: `write` (consult and, with
+            confirmation, register) or `read` (consult only; the assistant is
+            never offered a write tool). Grants from before scopes existed
+            are `write`.
+
+    McpActivity:
+      type: object
+      required: [id, userId, userName, clientId, clientName, tool, outcome, summary, args, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        userName: { type: string }
+        clientId: { type: string, nullable: true, description: The OAuth client, or null for a session token. }
+        clientName: { type: string, example: ChatGPT }
+        tool: { type: string, example: register_payment }
+        outcome: { type: string, enum: [done, refused, failed] }
+        summary: { type: string, description: First line of what the tool answered, at most 300 characters. }
+        args:
+          type: object
+          description: The arguments the assistant sent, without the confirmation token.
+        createdAt: { type: string, format: date-time }
 
     TourProgress:
       type: object
