@@ -48,13 +48,13 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: web
-          image: harbor.int.engp.io/bascula/web:v0.2.42
+          image: harbor.int.engp.io/bascula/web:v0.2.43
           env:
             # The release /version.json reports (nginx.conf). CD stamps it
             # together with the image tags: the image itself is promoted
             # unchanged across releases that did not touch the web.
             - name: BASCULA_VERSION
-              value: v0.2.42
+              value: v0.2.43
           ports:
             - containerPort: 8080
           livenessProbe:
