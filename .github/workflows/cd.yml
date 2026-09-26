@@ -146,6 +146,8 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.PROJECT }}/web:${{ steps.version.outputs.version }}

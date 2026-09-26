@@ -29,6 +29,10 @@ COPY services/api/openapi.yaml services/api/openapi.yaml
 # `build` runs types:check first, which diffs src/api/schema.ts against
 # openapi.yaml. A drifted client fails here rather than at runtime, which is
 # why openapi.yaml is copied in above.
+# The release (vX.Y.Z without the v), from CD. The bundle and /version.json
+# carry it so an old copy on a phone can see it is old.
+ARG VERSION=dev
+ENV VITE_APP_VERSION=$VERSION
 RUN npm run build --workspace apps/web
 
 # nginx-unprivileged listens on 8080 as a non-root user, so the pod needs no
