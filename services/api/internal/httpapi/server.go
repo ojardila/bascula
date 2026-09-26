@@ -59,6 +59,10 @@ type Config struct {
 	// has the argument and what it concedes.
 	LoginFailuresPerEmailPerIP int
 	LoginFailuresPerIP         int
+	// OAuthRegistrationsPerIPPerHour caps anonymous dynamic client
+	// registration (POST /oauth/register) per address, per API process.
+	// Zero means no cap.
+	OAuthRegistrationsPerIPPerHour int
 	// LoginFailureWindow is how far back the counts look. It is also how long
 	// a lockout lasts, because the two are the same fact: the count drains as
 	// the window slides, so nothing has to expire anything.
@@ -160,6 +164,9 @@ func DefaultConfig() Config {
 		LoginFailuresPerEmailPerIP: 10,
 		LoginFailuresPerIP:         50,
 		LoginFailureWindow:         15 * time.Minute,
+		// A person connects an assistant a handful of times; a connector
+		// retrying a failed setup registers again each time.
+		OAuthRegistrationsPerIPPerHour: 30,
 	}
 }
 
@@ -181,6 +188,8 @@ type Server struct {
 	// prov remembers which new farms are being watched and caches the
 	// provision status for a few seconds per slug.
 	prov *provisioner
+	// oauthRegs counts anonymous client registrations per address.
+	oauthRegs *windowLimiter
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -191,6 +200,7 @@ func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	s := &Server{
 		pool: pool, signer: signer, cfg: cfg, prov: newProvisioner(),
 		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
+		oauthRegs:   newWindowLimiter(cfg.OAuthRegistrationsPerIPPerHour, time.Hour),
 	}
 	disk, err := blob.NewDisk(cfg.UploadDir)
 	if err != nil {
