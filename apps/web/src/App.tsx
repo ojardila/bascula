@@ -7,6 +7,7 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
 import { SignupPage } from "./features/auth/SignupPage";
 import { LandingPage } from "./features/marketing/LandingPage";
+import { APP_HOME, isFarmHost } from "./lib/farmHost";
 import { OfflineProvider } from "./offline/OfflineContext";
 import { OfflineBar } from "./offline/OfflineBar";
 import { PlotsPage } from "./features/plots/PlotsPage";
@@ -358,7 +359,7 @@ function Shell() {
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<HomeRoute />} />
       <Route path="/entrar" element={<LoginPage />} />
       <Route path="/empezar" element={<SignupPage />} />
       <Route path="/registro" element={<SignupPage />} />
@@ -383,6 +384,18 @@ export function App() {
       />
     </Routes>
   );
+}
+
+/**
+ * `/`: the landing on the main domain only. On a farm's own address
+ * (`{slug}.bascula.engp.io`) there is nothing to sell: `/` is the farm's app,
+ * and the guard behind `/tablero` sends a visitor without a session to
+ * `/entrar`. The gateway already 302s a full load of `/` on farm hosts; this
+ * covers client-side navigation and an index.html the browser kept.
+ */
+function HomeRoute() {
+  if (isFarmHost()) return <Navigate to={APP_HOME} replace />;
+  return <LandingPage />;
 }
 
 /** A renamed route: same screen, same query string (`?lunes=`, `?lote=`). */

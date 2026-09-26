@@ -5,7 +5,7 @@ import { ThemeProvider } from "@mui/material";
 import { api } from "../../api/endpoints";
 import type { ProvisionStatus } from "../../api/types";
 import { theme } from "../../theme";
-import { ProvisionProgress } from "./ProvisionProgress";
+import { ProvisionProgress, REDIRECT_MS, goTo } from "./ProvisionProgress";
 
 function status(done: [boolean, boolean, boolean], extra: Partial<ProvisionStatus> = {}): ProvisionStatus {
   return {
@@ -24,11 +24,11 @@ function status(done: [boolean, boolean, boolean], extra: Partial<ProvisionStatu
   };
 }
 
-function renderIt() {
+function renderIt(redirectWhenReady = false) {
   return render(
     <ThemeProvider theme={theme}>
       <MemoryRouter>
-        <ProvisionProgress slug="lapalma" pollMs={10} />
+        <ProvisionProgress slug="lapalma" pollMs={10} redirectWhenReady={redirectWhenReady} />
       </MemoryRouter>
     </ThemeProvider>,
   );
@@ -50,7 +50,7 @@ describe("Preparando su finca", () => {
     expect(screen.getByText("lapalma.bascula.engp.io")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Entrar a mi finca" })).toHaveAttribute(
       "href",
-      "https://lapalma.bascula.engp.io/entrar",
+      "https://lapalma.bascula.engp.io/tablero",
     );
     const calls = spy.mock.calls.length;
     await new Promise((r) => setTimeout(r, 50));
@@ -88,4 +88,31 @@ describe("Preparando su finca", () => {
     expect(await screen.findByText(/está tardando más de lo normal/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Entrar ahora" })).toHaveAttribute("href", "/entrar");
   });
+
+  it("sends 'entre aquí con su correo' to the farm's own login", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, false, false]));
+    renderIt();
+    expect(await screen.findByRole("link", { name: "entre aquí con su correo" })).toHaveAttribute(
+      "href",
+      "https://lapalma.bascula.engp.io/entrar",
+    );
+  });
+
+  it("goes to the farm's own address once ready, on the waiting page only", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, true, true]));
+    const assign = vi.spyOn(goTo, "assign").mockImplementation(() => undefined);
+    renderIt(true);
+    expect(await screen.findByText("¡Su finca está lista!")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, REDIRECT_MS + 200));
+    expect(assign).toHaveBeenCalledWith("https://lapalma.bascula.engp.io/tablero");
+  }, REDIRECT_MS + 3000);
+
+  it("stays put when embedded (console, super-admin)", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, true, true]));
+    const assign = vi.spyOn(goTo, "assign").mockImplementation(() => undefined);
+    renderIt(false);
+    expect(await screen.findByText("¡Su finca está lista!")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, REDIRECT_MS + 200));
+    expect(assign).not.toHaveBeenCalled();
+  }, REDIRECT_MS + 3000);
 });

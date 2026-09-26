@@ -61,7 +61,23 @@ async function boot() {
     // The app's own worker: installable, and the shell opens with no signal.
     // Never alongside the mock worker, which owns the same scope in dev.
     void import("virtual:pwa-register")
-      .then(({ registerSW }) => registerSW({ immediate: true }))
+      .then(({ registerSW }) =>
+        registerSW({
+          immediate: true,
+          // The worker answers navigations from its precache, so a phone that
+          // keeps the app open never sees a deploy unless somebody asks. Ask
+          // on every return to the tab and once an hour; autoUpdate reloads
+          // onto the new version as soon as it is installed.
+          onRegisteredSW(_url, reg) {
+            if (!reg) return;
+            const check = () => void reg.update().catch(() => undefined);
+            setInterval(check, 60 * 60 * 1000);
+            document.addEventListener("visibilitychange", () => {
+              if (document.visibilityState === "visible") check();
+            });
+          },
+        }),
+      )
       .catch(() => undefined);
   }
 

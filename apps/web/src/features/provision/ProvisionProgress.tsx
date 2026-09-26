@@ -20,7 +20,7 @@ import CheckCircle from "@mui/icons-material/CheckCircle";
 import { api } from "../../api/endpoints";
 import { ApiError } from "../../api/errors";
 import type { ProvisionStatus } from "../../api/types";
-import { farmProdUrl } from "../../lib/farmHost";
+import { APP_HOME, farmProdUrl } from "../../lib/farmHost";
 
 type StepKey = ProvisionStatus["steps"][number]["key"];
 
@@ -32,14 +32,27 @@ const STEPS: Array<{ key: StepKey; title: string; body: string }> = [
 ];
 
 export const POLL_MS = 5000;
+/** How long the "¡Su finca está lista!" screen shows before going there. */
+export const REDIRECT_MS = 3000;
+
+/** Leaving for the farm's own address. A seam so tests can watch it. */
+export const goTo = {
+  assign: (href: string) => window.location.assign(href),
+};
 
 export function ProvisionProgress({
-  slug, pollMs = POLL_MS, compact = false,
+  slug, pollMs = POLL_MS, compact = false, redirectWhenReady = false,
 }: {
   slug: string;
   pollMs?: number;
   /** Inside a dialog: smaller headings, no page chrome. */
   compact?: boolean;
+  /**
+   * Once ready, send the browser to the farm's own address. The public
+   * waiting page does; the console and the super-admin dialog do not, since
+   * the person there may be creating the farm for somebody else.
+   */
+  redirectWhenReady?: boolean;
 }) {
   const [status, setStatus] = useState<ProvisionStatus | null>(null);
   const [missing, setMissing] = useState(false);
@@ -69,6 +82,15 @@ export function ProvisionProgress({
 
   const url = status?.url ?? farmProdUrl(slug);
   const host = url.replace(/^https?:\/\//, "");
+  const appUrl = `${url}${APP_HOME}`;
+  const loginUrl = `${url}/entrar`;
+  const ready = status?.ready ?? false;
+
+  useEffect(() => {
+    if (!redirectWhenReady || !ready) return;
+    const t = setTimeout(() => goTo.assign(appUrl), REDIRECT_MS);
+    return () => clearTimeout(t);
+  }, [redirectWhenReady, ready, appUrl]);
   const doneCount = status ? status.steps.filter((s) => s.done).length : 0;
   // The certificate step exists only where the platform issues one per farm.
   const steps = STEPS.filter((st) => st.key !== "certificate" || status?.steps.some((x) => x.key === "certificate"));
@@ -96,7 +118,7 @@ export function ProvisionProgress({
           {host}
         </Typography>
         <Button
-          href={`${url}/entrar`}
+          href={appUrl}
           variant="contained"
           size="large"
           sx={{ minHeight: 64, px: 5, fontSize: "1.25rem", borderRadius: 999, width: { xs: "100%", sm: "auto" } }}
@@ -176,7 +198,7 @@ export function ProvisionProgress({
       ) : (
         <Typography textAlign="center" color="text.secondary" sx={{ fontSize: "1rem" }}>
           ¿No quiere esperar? Su finca ya funciona:{" "}
-          <Link component={RouterLink} to="/entrar">entre aquí con su correo</Link>.
+          <Link href={loginUrl}>entre aquí con su correo</Link>.
         </Typography>
       )}
     </Stack>

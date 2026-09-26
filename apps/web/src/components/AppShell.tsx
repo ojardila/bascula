@@ -37,6 +37,7 @@ import { useAuth } from "../auth/AuthContext";
 import { visibleModules, type ModuleDef } from "../auth/permissions";
 import { ApiModeBanner } from "./ApiModeBanner";
 import { GREEN_DARK } from "../theme";
+import { APP_HOME } from "../lib/farmHost";
 
 /** Wide enough for large labels; still fits a phone drawer. */
 const WIDTH = 280;
@@ -214,7 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <Typography
             component={RouterLink}
-            to="/"
+            to={APP_HOME}
             sx={{
               fontWeight: 800,
               letterSpacing: "-0.02em",

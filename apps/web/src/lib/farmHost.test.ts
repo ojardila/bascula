@@ -4,6 +4,7 @@ import {
   farmProdUrl,
   farmSlugFromHost,
   farmUrlForHere,
+  isFarmHost,
   isFarmSlug,
   slugifyFarmName,
 } from "./farmHost";
@@ -76,5 +77,16 @@ describe("isFarmSlug and slugifyFarmName", () => {
     expect(farmUrlForHere("fincasanjose", "bascula.engp.io")).toBe(
       "https://fincasanjose.bascula.engp.io",
     );
+  });
+});
+
+describe("isFarmHost", () => {
+  it("is true only on a farm's own address", () => {
+    expect(isFarmHost("cafin3.bascula.engp.io")).toBe(true);
+    expect(isFarmHost("cafin3.int.dev.engp.io")).toBe(true);
+    expect(isFarmHost("bascula.engp.io")).toBe(false);
+    expect(isFarmHost("bascula.int.dev.engp.io")).toBe(false);
+    expect(isFarmHost("www.bascula.engp.io")).toBe(false);
+    expect(isFarmHost("localhost")).toBe(false);
   });
 });

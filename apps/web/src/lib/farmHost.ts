@@ -155,3 +155,16 @@ export function farmUrlForHere(slug: string, hostname?: string): string {
   }
   return farmProdUrl(slug);
 }
+
+/**
+ * True when this page is served on a farm's own address
+ * (`{slug}.bascula.engp.io`, `{slug}.int.dev.engp.io`), where there is no
+ * landing: `/` is the farm's app. The landing lives only on the main domain.
+ */
+export function isFarmHost(hostname?: string): boolean {
+  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+  return farmSlugFromHost(host) !== null;
+}
+
+/** Where the app starts: `/tablero` (the guard sends a visitor to `/entrar`). */
+export const APP_HOME = "/tablero";
