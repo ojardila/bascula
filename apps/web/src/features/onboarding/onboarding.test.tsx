@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material";
 import { theme } from "../../theme";
 import { OWNER_DONE, OWNER_STEPS, TOTALS, WEIGHER_STEPS, autoStartAt, ownerPartsDone, resumeIndex, stepOf } from "./steps";
 import { TourCard } from "./TourCard";
+import { TourContext, type TourContextValue } from "./TourContext";
 
 describe("the owner's tour, as approved", () => {
   it("is a welcome, eleven numbered steps and a closing screen", () => {
@@ -42,16 +44,42 @@ describe("the owner's tour, as approved", () => {
 });
 
 describe("the tour card", () => {
-  it("says which step of how many, and offers the owner step's own way out", () => {
+  it("says which step of how many, and offers «Soy el único dueño» as a full answer", () => {
     render(
       <ThemeProvider theme={theme}>
         <TourCard tour="owner" def={stepOf("owner", 3)!} />
       </ThemeProvider>,
     );
     expect(screen.getByText("Paso 3 de 11")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "No hay otros dueños" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Soy el único dueño" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Invitar a otro dueño" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Atrás" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Saltar" })).toBeInTheDocument();
+  });
+
+  it.each([
+    [3, "Soy el único dueño", "Invitar a otro dueño", 4],
+    [4, "Nadie me ayuda", "Invitar a alguien", 8],
+  ])("step %i: «%s» is as big as «%s» and moves the tour to step %i", async (n, no, yes, next) => {
+    const goTo = vi.fn();
+    const runAction = vi.fn(async () => true);
+    const ctx = { goTo, runAction, later: vi.fn(), finish: vi.fn() } as unknown as TourContextValue;
+    render(
+      <ThemeProvider theme={theme}>
+        <TourContext.Provider value={ctx}>
+          <TourCard tour="owner" def={stepOf("owner", n)!} />
+        </TourContext.Provider>
+      </ThemeProvider>,
+    );
+    const noBtn = screen.getByRole("button", { name: no });
+    const yesBtn = screen.getByRole("button", { name: yes });
+    // Same weight: one filled, one outlined, both the big 56-pixel answer.
+    expect(noBtn.parentElement).toBe(yesBtn.parentElement);
+    expect(noBtn.className).toMatch(/MuiButton-outlined/);
+    expect(yesBtn.className).toMatch(/MuiButton-contained/);
+    await userEvent.click(noBtn);
+    expect(goTo).toHaveBeenCalledWith(next);
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("has no «Atrás» on the first step, and always a «Saltar»", () => {

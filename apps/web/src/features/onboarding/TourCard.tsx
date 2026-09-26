@@ -51,6 +51,20 @@ export function TourCard({
   }
 
   const showBack = !def.noBack && def.n > 1;
+  const bigAnswer = {
+    flex: 1,
+    borderRadius: 999,
+    minHeight: 56,
+    px: 2,
+    fontSize: 18,
+    fontWeight: 700,
+    lineHeight: 1.2,
+  } as const;
+  const primaryButton = (sx: object) => (
+    <Button variant="contained" onClick={primary} disabled={busy} sx={sx}>
+      {busy ? "Un momento…" : def.primary}
+    </Button>
+  );
 
   return (
     <Box
@@ -115,6 +129,20 @@ export function TourCard({
       <Typography sx={{ fontSize: 15, color: "text.secondary", mt: 0.75 }}>
         Paso {def.n} de {total}
       </Typography>
+      {def.choice && (
+        // The two answers to the step's question, equal in size and weight.
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ mt: 2.25 }}>
+          {primaryButton(bigAnswer)}
+          <Button
+            variant="outlined"
+            onClick={() => t.goTo(def.choice!.next)}
+            disabled={busy}
+            sx={{ ...bigAnswer, borderWidth: 2, "&:hover": { borderWidth: 2 } }}
+          >
+            {def.choice.label}
+          </Button>
+        </Stack>
+      )}
       <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mt: 2 }}>
         {def.secondary ? (
           <Button
@@ -145,14 +173,8 @@ export function TourCard({
             Atrás
           </Button>
         )}
-        <Button
-          variant="contained"
-          onClick={primary}
-          disabled={busy}
-          sx={{ borderRadius: 999, minHeight: 48, px: 3, fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}
-        >
-          {busy ? "Un momento…" : def.primary}
-        </Button>
+        {!def.choice &&
+          primaryButton({ borderRadius: 999, minHeight: 48, px: 3, fontSize: 17, fontWeight: 700, lineHeight: 1.2 })}
       </Stack>
     </Box>
   );
