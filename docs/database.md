@@ -303,6 +303,7 @@ erDiagram
         timestamptz expires_at
         timestamptz rotated_at "null"
         timestamptz revoked_at "null"
+        text oauth_client_id FK "null"
     }
     sales {
         uuid id PK
@@ -549,6 +550,7 @@ erDiagram
     farms ||--o{ work_units : "farm_id"
     ledger |o--o{ ledger : "reverses_id"
     oauth_clients ||--o{ oauth_codes : "client_id"
+    oauth_clients |o--o{ refresh_tokens : "oauth_client_id"
     plot_crops |o--o{ expenses : "plot_crop_id"
     plot_crops |o--o{ stock_moves : "plot_crop_id"
     plot_crops ||--o{ work_record_plot_crops : "plot_crop_id"
@@ -629,7 +631,7 @@ erDiagram
 | `public.plots` | 11 |  |
 | `public.product_categories` | 5 |  |
 | `public.products` | 8 |  |
-| `public.refresh_tokens` | 10 |  |
+| `public.refresh_tokens` | 11 |  |
 | `public.sales` | 13 |  |
 | `public.settlement_items` | 10 |  |
 | `public.settlement_releases` | 9 |  |
