@@ -1,30 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Collapse, Divider,
+  Alert, Box, Button, Card, CardContent, Chip, Collapse, Divider,
   Link, Stack, Typography,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ShareIcon from "@mui/icons-material/Share";
 import { api, type McpConnection, type McpConnections } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 
 /**
- * Where «Conectar con ChatGPT» sends the owner.
+ * Where «Conectar con ChatGPT» sends the owner: ChatGPT's Plugins page, where
+ * the «+» button creates a developer-mode app from an MCP address. This is the
+ * address OpenAI's own docs link to as of September 2026 (the older
+ * `#settings/Connectors` hash no longer leads anywhere useful).
  *
- * ChatGPT has NO link that adds a custom connector with its URL filled in
- * (Claude has one; ChatGPT does not, as of September 2026). What it does have
- * is a stable address for its connector settings, the one OpenAI's own docs
- * link to. So the button opens that, and the farm's address waits here with a
- * copy button for the one paste ChatGPT still asks for. ChatGPT then runs the
- * OAuth sign-in against this farm by itself.
+ * ChatGPT has NO link that adds a custom connector with its URL filled in, so
+ * the farm's address waits here with a copy button for the one paste ChatGPT
+ * still asks for. ChatGPT then runs the OAuth sign-in against this farm.
  */
-export const CHATGPT_CONNECTORS_URL = "https://chatgpt.com/#settings/Connectors";
-
-/** How long «Conectando…» shows before ChatGPT opens. */
-export const CONNECTING_MS = 2000;
+export const CHATGPT_PLUGINS_URL = "https://chatgpt.com/plugins";
 
 /** How often the screen asks whether ChatGPT finished while the guide is open. */
 const POLL_MS = 4000;
@@ -32,6 +30,21 @@ const POLL_MS = 4000;
 /** This farm's MCP address: the host the owner is on, which is the farm's. */
 export function farmMcpUrl(origin: string = window.location.origin): string {
   return `${origin.replace(/\/+$/, "")}/mcp`;
+}
+
+/**
+ * A phone or small tablet. ChatGPT creates custom connectors only on the web
+ * at chatgpt.com from a computer: its iPhone and Android apps have no
+ * developer mode, and a chatgpt.com link on a phone is taken over by the app.
+ * Once created there, the connector works in the phone app too.
+ */
+export function isPhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPod|Android.*Mobile|Windows Phone/i.test(ua)) return true;
+  // iPadOS reports itself as a Mac; a Mac has no touch points.
+  if (/iPad|Android/i.test(ua)) return true;
+  return /Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
 }
 
 function CopyField({ value, label }: { value: string; label: string }) {
@@ -55,7 +68,7 @@ function CopyField({ value, label }: { value: string; label: string }) {
       <Typography
         component="code"
         aria-label={label}
-        sx={{ flex: 1, fontFamily: "monospace", fontSize: "1.1rem", wordBreak: "break-all" }}
+        sx={{ flex: 1, fontFamily: "monospace", fontSize: "1.1rem", wordBreak: "break-all", userSelect: "all" }}
       >
         {value}
       </Typography>
@@ -72,6 +85,37 @@ function CopyField({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** The steps, as plain text, for sending them to oneself from the phone. */
+export function guideText(mcpUrl: string): string {
+  return [
+    "Conectar Báscula con ChatGPT (hágalo una vez desde un computador):",
+    "1. Entre a chatgpt.com. En Configuración > Seguridad e inicio de sesión, active «Modo desarrollador» (Developer mode).",
+    `2. Abra ${CHATGPT_PLUGINS_URL} y toque el botón +.`,
+    `3. Nombre: Báscula. Dirección (URL) del servidor MCP: ${mcpUrl}`,
+    "4. Autenticación: OAuth. Cree la conexión y entre con su correo y clave de Báscula.",
+  ].join("\n");
+}
+
+function ShareGuide({ mcpUrl }: { mcpUrl: string }) {
+  const nav = navigator as Navigator & { share?: (d: { title?: string; text: string }) => Promise<void> };
+  const [done, setDone] = useState(false);
+  const shareFn = nav.share;
+  if (typeof shareFn !== "function") return null;
+  async function share() {
+    try {
+      await shareFn.call(navigator, { title: "Conectar Báscula con ChatGPT", text: guideText(mcpUrl) });
+      setDone(true);
+    } catch {
+      /* cancelled: nothing to say */
+    }
+  }
+  return (
+    <Button variant="contained" size="large" startIcon={<ShareIcon />} onClick={() => void share()}>
+      {done ? "Enviado" : "Enviarme estos pasos"}
+    </Button>
+  );
+}
+
 function formatWhen(iso: string, timeZone: string): string {
   try {
     return new Date(iso).toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short", timeZone });
@@ -81,8 +125,16 @@ function formatWhen(iso: string, timeZone: string): string {
 }
 
 /**
- * «Conexiones»: connect this farm to ChatGPT in one tap, see that it is
- * connected, and revoke it. The first thing on Configuración.
+ * «Conexiones»: connect this farm to ChatGPT, see that it is connected, and
+ * revoke it. The first thing on Configuración.
+ *
+ * The button is a plain link that the owner taps: the browser opens ChatGPT
+ * itself, with no script in between. (The first version opened a blank tab
+ * and pointed it at ChatGPT two seconds later; on an iPhone, and above all in
+ * the installed app, that tab came up blank or not at all, and the owner saw
+ * nothing happen.) The guide shows here at the same moment, so it is there
+ * even if no tab opened. On a phone the button does not leave Báscula: it
+ * says plainly that this one step is done from a computer.
  */
 export function ConnectionsCard() {
   const { user } = useAuth();
@@ -98,14 +150,13 @@ export function ConnectionsCard() {
     );
   }, []);
   useEffect(reload, [reload]);
-  const [connecting, setConnecting] = useState(false);
   const [guide, setGuide] = useState(false);
   const [manage, setManage] = useState(false);
   const [revoking, setRevoking] = useState<McpConnection | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [revoked, setRevoked] = useState(false);
-  const timer = useRef<number | null>(null);
+  const [phone] = useState(isPhone);
 
   const mcpUrl = farmMcpUrl();
   const items = data?.items ?? [];
@@ -118,9 +169,11 @@ export function ConnectionsCard() {
     const id = window.setInterval(reload, POLL_MS);
     const onFocus = () => reload();
     window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
     };
   }, [guide, connected, reload]);
 
@@ -128,39 +181,10 @@ export function ConnectionsCard() {
     if (connected) setGuide(false);
   }, [connected]);
 
-  useEffect(() => () => {
-    if (timer.current) window.clearTimeout(timer.current);
-  }, []);
-
-  function connect() {
+  function openGuide() {
     setActionError(null);
     setRevoked(false);
-    setConnecting(true);
-    // The tab is opened NOW, inside the tap, and pointed at ChatGPT after the
-    // pause: a window.open two seconds later is not a user gesture any more,
-    // and Safari on a phone blocks it.
-    let win: Window | null = null;
-    try {
-      win = window.open("", "_blank");
-      if (win) {
-        win.document.title = "Conectando…";
-        win.document.body.innerHTML =
-          '<p style="font:600 22px system-ui,sans-serif;text-align:center;margin-top:30vh">Conectando…</p>';
-      }
-    } catch {
-      win = null;
-    }
-    timer.current = window.setTimeout(() => {
-      setConnecting(false);
-      setGuide(true);
-      if (win && !win.closed) {
-        win.opener = null;
-        win.location.href = CHATGPT_CONNECTORS_URL;
-      } else {
-        // Pop-ups blocked: the guide below has the same link.
-        window.open(CHATGPT_CONNECTORS_URL, "_blank", "noopener");
-      }
-    }, CONNECTING_MS);
+    setGuide(true);
   }
 
   async function revoke() {
@@ -225,16 +249,30 @@ export function ConnectionsCard() {
               Administrar
             </Link>
           </Stack>
-        ) : (
+        ) : phone ? (
           <Button
             variant="contained"
             size="large"
-            onClick={connect}
-            disabled={connecting}
+            onClick={openGuide}
+            aria-expanded={guide}
             sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
-            startIcon={connecting ? <CircularProgress size={24} color="inherit" /> : undefined}
           >
-            {connecting ? "Conectando…" : "Conectar con ChatGPT"}
+            Conectar con ChatGPT
+          </Button>
+        ) : (
+          // A real link: the tap itself opens ChatGPT, which no pop-up
+          // blocker stops, and the guide below shows at the same time.
+          <Button
+            variant="contained"
+            size="large"
+            href={CHATGPT_PLUGINS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={openGuide}
+            endIcon={<OpenInNewIcon />}
+            sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
+          >
+            Conectar con ChatGPT
           </Button>
         )}
 
@@ -250,37 +288,58 @@ export function ConnectionsCard() {
           )}
         </Typography>
 
-        {/* After the tap: ChatGPT is open in another tab. What is left there. */}
+        {/* After the tap: what is left to do in ChatGPT. */}
         <Collapse in={guide && !connected} unmountOnExit>
           <Box sx={{ mt: 3, p: { xs: 2, sm: 2.5 }, border: 1, borderColor: "divider", borderRadius: 3 }}>
-            <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1.5 }}>
-              Termine en ChatGPT
-            </Typography>
+            {phone ? (
+              <>
+                <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1 }}>
+                  Hágalo desde un computador
+                </Typography>
+                <Alert severity="info" sx={{ mb: 2, fontSize: "1.05rem" }}>
+                  La aplicación de ChatGPT del celular todavía no deja agregar conectores. Este paso se hace
+                  una sola vez en <b>chatgpt.com</b> desde un computador. Después, Báscula funciona también
+                  en ChatGPT del celular.
+                </Alert>
+              </>
+            ) : (
+              <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1.5 }}>
+                Termine en ChatGPT
+              </Typography>
+            )}
             <Stack component="ol" spacing={1.5} sx={{ pl: 3, m: 0, fontSize: "1.1rem" }}>
               <li>
-                En ChatGPT, en <b>Aplicaciones y conectores</b>, toque <b>Crear</b>. Si no aparece, active
-                el <b>Modo desarrollador</b> en «Configuración avanzada».
+                En chatgpt.com, abra <b>Configuración → Seguridad e inicio de sesión</b> y active
+                el <b>Modo desarrollador</b> (Developer mode). Se necesita un plan Plus, Pro, Business
+                o Enterprise.
               </li>
               <li>
-                En <b>URL del servidor MCP</b> pegue esta dirección:
+                Vaya a <b>Plugins</b> ({CHATGPT_PLUGINS_URL.replace("https://", "")}) y toque el botón <b>+</b>.
+              </li>
+              <li>
+                Nombre: <b>Báscula</b>. En la <b>URL del servidor MCP</b> pegue esta dirección:
                 <Box sx={{ mt: 1 }}>
                   <CopyField value={mcpUrl} label="Dirección de la finca para ChatGPT" />
                 </Box>
               </li>
               <li>
-                Elija <b>OAuth</b>, guarde, y entre con su correo y clave de Báscula.
+                En autenticación elija <b>OAuth</b>, cree la conexión y entre con su correo y clave de Báscula.
               </li>
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }} alignItems={{ sm: "center" }}>
-              <Button
-                href={CHATGPT_CONNECTORS_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                endIcon={<OpenInNewIcon />}
-                size="large"
-              >
-                Abrir ChatGPT otra vez
-              </Button>
+              {phone ? (
+                <ShareGuide mcpUrl={mcpUrl} />
+              ) : (
+                <Button
+                  href={CHATGPT_PLUGINS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  endIcon={<OpenInNewIcon />}
+                  size="large"
+                >
+                  Abrir ChatGPT otra vez
+                </Button>
+              )}
               <Typography sx={{ color: "text.secondary" }}>
                 Cuando termine, aquí dirá «Conectado ✓».
               </Typography>
@@ -339,4 +398,3 @@ export function ConnectionsCard() {
     </Card>
   );
 }
-
