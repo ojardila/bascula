@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
 import { api } from "../../api/endpoints";
@@ -89,12 +89,42 @@ describe("Preparando su finca", () => {
     expect(screen.getByRole("link", { name: "Entrar ahora" })).toHaveAttribute("href", "/entrar");
   });
 
-  it("sends 'entre aquí con su correo' to the farm's own login", async () => {
+  it("keeps 'entre aquí con su correo' on the shared app while the address has no valid certificate", async () => {
     vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, false, false]));
     renderIt();
+    await waitFor(() => expect(screen.getByTestId("step-database")).toHaveAttribute("data-done", "true"));
     expect(await screen.findByRole("link", { name: "entre aquí con su correo" })).toHaveAttribute(
       "href",
-      "https://lapalma.bascula.engp.io/entrar",
+      "/entrar",
+    );
+  });
+
+  it("does not send anybody to the farm's address before its certificate step is done", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue({
+      ...status([true, false, true]),
+      steps: [
+        { key: "database", done: true },
+        { key: "app", done: false },
+        { key: "certificate", done: false },
+        { key: "web", done: true },
+      ],
+    });
+    renderIt();
+    await waitFor(() => expect(screen.getByTestId("step-database")).toHaveAttribute("data-done", "true"));
+    expect(await screen.findByRole("link", { name: "entre aquí con su correo" })).toHaveAttribute(
+      "href",
+      "/entrar",
+    );
+  });
+
+  it("sends 'entre aquí con su correo' to the farm's own login once the address opens", async () => {
+    vi.spyOn(api, "provisionStatus").mockResolvedValue(status([true, false, true]));
+    renderIt();
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "entre aquí con su correo" })).toHaveAttribute(
+        "href",
+        "https://lapalma.bascula.engp.io/entrar",
+      ),
     );
   });
 

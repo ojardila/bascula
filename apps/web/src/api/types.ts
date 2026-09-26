@@ -266,6 +266,8 @@ export interface ProvisionStatus {
   notifyAvailable?: boolean;
   /** The owner already asked for that email. */
   notifyRequested?: boolean;
+  /** Last problem getting the farm's certificate, while it is not active. */
+  certificateError?: string;
 }
 
 

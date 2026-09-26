@@ -21,10 +21,13 @@ import (
 
 // certState is what the platform last heard from Cloudflare about one farm.
 type certState struct {
-	ID       string
-	Active   bool
-	Failed   bool
-	Summary  string
+	ID      string
+	Active  bool
+	Failed  bool
+	Summary string
+	// Error is the last problem: a failed Cloudflare call or the
+	// validation errors Cloudflare reports. Empty once active.
+	Error    string
 	Checked  time.Time
 	Watching bool
 }
@@ -76,6 +79,20 @@ func (s *Server) setCertState(slug string, h *cfsaas.Hostname, watching bool) {
 	if h != nil {
 		st.ID, st.Active, st.Failed, st.Summary = h.ID, h.Active(), h.Failed(), h.Summary()
 		st.Checked = time.Now()
+		st.Error = ""
+		if !h.Active() && strings.Contains(h.Summary(), " errors=") {
+			st.Error = h.Summary()
+		}
+	}
+}
+
+// setCertError records a failed Cloudflare call so the status can show it.
+func (s *Server) setCertError(slug string, err error) {
+	s.prov.mu.Lock()
+	defer s.prov.mu.Unlock()
+	if st, ok := s.prov.certs[slug]; ok && !st.Active {
+		st.Error = err.Error()
+		st.Checked = time.Now()
 	}
 }
 
@@ -113,6 +130,7 @@ func (s *Server) ensureFarmCertificate(slug string) {
 		}
 		started := time.Now()
 		revalidated := false
+		var lastRevalidate time.Time
 		deadline := started.Add(s.provisionWatchFor())
 		for time.Now().Before(deadline) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -128,7 +146,9 @@ func (s *Server) ensureFarmCertificate(slug string) {
 			}
 			cancel()
 			if err != nil {
+				// Retried on the next tick; the status shows the error.
 				slog.Warn("farm hostname", "slug", slug, "hostname", host, "err", err)
+				s.setCertError(slug, err)
 			} else if h != nil {
 				last = h
 				s.setCertState(slug, h, true)
@@ -136,13 +156,17 @@ func (s *Server) ensureFarmCertificate(slug string) {
 					slog.Info("farm certificate active", "slug", slug, "hostname", host)
 					return
 				}
+				// A failed or timed-out certificate never fixes itself: ask
+				// Cloudflare to issue it again (at most once per revalidate
+				// window) instead of giving up and leaving the farm without
+				// one. HTTP validation also needs the hostname to point at the
+				// zone when Cloudflare checks; ask once more if still pending.
 				if h.Failed() {
-					slog.Warn("farm certificate failed", "slug", slug, "state", h.Summary())
-					return
+					slog.Warn("farm certificate failed; asking again", "slug", slug, "state", h.Summary())
 				}
-				// HTTP validation needs the hostname to point at the zone when
-				// Cloudflare checks; ask once more if it is still pending.
-				if !revalidated && time.Since(started) > revalidateAfter {
+				if (h.Failed() && time.Since(lastRevalidate) > revalidateAfter) ||
+					(!revalidated && time.Since(started) > revalidateAfter) {
+					lastRevalidate = time.Now()
 					revalidated = true
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					if _, err := c.Revalidate(ctx, h.ID); err != nil {
