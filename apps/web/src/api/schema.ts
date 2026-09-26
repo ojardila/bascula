@@ -2967,6 +2967,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/oauth-authorization-server/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** RFC 8414 metadata, path-suffixed variant */
+        get: operations["oauthAuthorizationServerMcp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        /** CORS preflight */
+        options: operations["oauthAuthorizationServerMcpPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/openid-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OpenID discovery alias of the authorization server metadata */
+        get: operations["openidConfiguration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        /** CORS preflight */
+        options: operations["openidConfigurationPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/openid-configuration/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OpenID discovery, path-suffixed variant */
+        get: operations["openidConfigurationMcp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        /** CORS preflight */
+        options: operations["openidConfigurationMcpPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/jwks.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** JWKS (empty; access tokens are verified only by this server) */
+        get: operations["oauthJwks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        /** CORS preflight */
+        options: operations["oauthJwksPreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/register": {
         parameters: {
             query?: never;
@@ -3000,6 +3072,24 @@ export interface paths {
         delete?: never;
         /** CORS preflight */
         options: operations["oauthAuthorizePreflight"];
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Token revocation (RFC 7009) */
+        post: operations["oauthRevoke"];
+        delete?: never;
+        /** CORS preflight */
+        options: operations["oauthRevokePreflight"];
         head?: never;
         patch?: never;
         trace?: never;
@@ -10969,6 +11059,158 @@ export interface operations {
             };
         };
     };
+    oauthAuthorizationServerMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Same document as /.well-known/oauth-authorization-server. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    oauthAuthorizationServerMcpPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openidConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Same document as /.well-known/oauth-authorization-server. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    openidConfigurationPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openidConfigurationMcp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Same document as /.well-known/oauth-authorization-server. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    openidConfigurationMcpPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthJwks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An empty key set. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    oauthJwksPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     oauthRegister: {
         parameters: {
             query?: never;
@@ -10982,7 +11224,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Public client_id, no secret. */
+            /** @description RFC 7591 client information; a client_secret only when a secret auth method was requested. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -11056,6 +11298,46 @@ export interface operations {
         };
     };
     oauthAuthorizePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthRevoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Always 200; a refresh token closes its session family. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    oauthRevokePreflight: {
         parameters: {
             query?: never;
             header?: never;

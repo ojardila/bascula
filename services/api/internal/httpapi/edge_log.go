@@ -74,8 +74,20 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 				}
 				return ""
 			}
+			clientID, clientAuth := get("client_id"), ""
+			if u, _, ok := r.BasicAuth(); ok {
+				clientAuth = "basic"
+				if clientID == "" {
+					if v, err := url.QueryUnescape(u); err == nil {
+						clientID = v
+					}
+				}
+			} else if r.Form != nil && r.Form.Get("client_secret") != "" {
+				clientAuth = "post"
+			}
 			attrs = append(attrs,
-				"client_id", get("client_id"),
+				"client_id", clientID,
+				"client_auth", clientAuth,
 				"grant_type", get("grant_type"),
 				"redirect_uri", get("redirect_uri"),
 				"resource", get("resource"),

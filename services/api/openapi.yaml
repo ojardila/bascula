@@ -4991,6 +4991,102 @@ paths:
       responses:
         "204": { description: Allowed. }
 
+  /.well-known/oauth-authorization-server/mcp:
+    get:
+      tags: [mcp]
+      operationId: oauthAuthorizationServerMcp
+      summary: RFC 8414 metadata, path-suffixed variant
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Same document as /.well-known/oauth-authorization-server.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: oauthAuthorizationServerMcpPreflight
+      summary: CORS preflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/openid-configuration:
+    get:
+      tags: [mcp]
+      operationId: openidConfiguration
+      summary: OpenID discovery alias of the authorization server metadata
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Same document as /.well-known/oauth-authorization-server.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: openidConfigurationPreflight
+      summary: CORS preflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/openid-configuration/mcp:
+    get:
+      tags: [mcp]
+      operationId: openidConfigurationMcp
+      summary: OpenID discovery, path-suffixed variant
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Same document as /.well-known/oauth-authorization-server.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: openidConfigurationMcpPreflight
+      summary: CORS preflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /.well-known/jwks.json:
+    get:
+      tags: [mcp]
+      operationId: oauthJwks
+      summary: JWKS (empty; access tokens are verified only by this server)
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: An empty key set.
+          content:
+            application/json:
+              schema: { type: object }
+    options:
+      tags: [mcp]
+      operationId: oauthJwksPreflight
+      summary: CORS preflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
   /oauth/register:
     post:
       tags: [mcp]
@@ -5006,7 +5102,7 @@ paths:
             schema: { type: object }
       responses:
         "201":
-          description: Public client_id, no secret.
+          description: RFC 7591 client information; a client_secret only when a secret auth method was requested.
           content:
             application/json:
               schema: { type: object }
@@ -5044,6 +5140,32 @@ paths:
     options:
       tags: [mcp]
       operationId: oauthAuthorizePreflight
+      summary: CORS preflight
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      responses:
+        "204": { description: Allowed. }
+
+  /oauth/revoke:
+    post:
+      tags: [mcp]
+      operationId: oauthRevoke
+      summary: Token revocation (RFC 7009)
+      x-action: oauth
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Always 200; a refresh token closes its session family.
+    options:
+      tags: [mcp]
+      operationId: oauthRevokePreflight
       summary: CORS preflight
       x-action: oauth
       x-roles: [public]
