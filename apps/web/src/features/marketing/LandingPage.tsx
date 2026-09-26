@@ -189,6 +189,13 @@ function Lead(props: { children: ReactNode; center?: boolean; color?: string }) 
   );
 }
 
+/**
+ * Pill buttons keep their label on one centered line: a two-line pill with
+ * left-aligned text looks broken, most of all on a phone. The label is short
+ * enough to fit a 320px screen with the phone padding below.
+ */
+const PILL_LABEL = { whiteSpace: "nowrap", textAlign: "center", lineHeight: 1.2, flexShrink: 0 } as const;
+
 /** The one primary action of the page. Always scrolls to the form. */
 function DemoButton(props: { light?: boolean; fullWidthOnMobile?: boolean }) {
   const light = Boolean(props.light);
@@ -199,7 +206,10 @@ function DemoButton(props: { light?: boolean; fullWidthOnMobile?: boolean }) {
       variant="contained"
       size="large"
       sx={{
-        fontFamily: SANS, fontWeight: 700, fontSize: { xs: "1.15rem", md: "1.2rem" }, minHeight: 60, px: 4, borderRadius: 999,
+        ...PILL_LABEL,
+        // On a phone the label never outgrows the screen, even with a
+        // larger system font: it tracks the viewport width, up to 1.15rem.
+        fontFamily: SANS, fontWeight: 700, fontSize: { xs: "min(1.15rem, 5.2vw)", md: "1.2rem" }, minHeight: { xs: 56, sm: 60 }, px: { xs: 2, sm: 4 }, borderRadius: 999,
         width: props.fullWidthOnMobile ? { xs: "100%", sm: "auto" } : undefined,
         bgcolor: light ? CREAM : GREEN, color: light ? GREEN_DARK : "#fff",
         "&:hover": { bgcolor: light ? "#fff" : GREEN_DARK },
@@ -261,18 +271,19 @@ function NavBar(props: { signedIn: boolean; landing: string }) {
           <Typography component="a" href="#" sx={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 26, letterSpacing: "-0.03em", color: INK, textDecoration: "none" }}>
             Báscula
           </Typography>
-          <Box component="nav" aria-label="Secciones" sx={{ display: { xs: "none", md: "flex" }, gap: 3, flex: 1, justifyContent: "center" }}>
+          {/* Section links only where they fit next to the one-line demo button. */}
+          <Box component="nav" aria-label="Secciones" sx={{ display: { xs: "none", lg: "flex" }, gap: 3, flex: 1, justifyContent: "center", whiteSpace: "nowrap" }}>
             {NAV_LINKS.map((l) => (
               <Box key={l.href} component="a" href={l.href} sx={{ color: MUTED, fontSize: "1.05rem", fontWeight: 500, textDecoration: "none", "&:hover": { color: GREEN_DARK, textDecoration: "underline" } }}>
                 {l.label}
               </Box>
             ))}
           </Box>
-          <Box sx={{ flex: { xs: 1, md: "none" } }} />
+          <Box sx={{ flex: { xs: 1, lg: "none" } }} />
           <Button component={RouterLink} to={signedIn ? landing : "/entrar"} sx={{ color: GREEN_DARK, fontSize: "1.05rem", fontWeight: 700 }}>
             {signedIn ? "Ir a mi finca" : "Iniciar sesión"}
           </Button>
-          <Button component="a" href="#demo" variant="contained" sx={{ display: { xs: "none", md: "inline-flex" }, borderRadius: 999, fontSize: "1.05rem", px: 3 }}>
+          <Button component="a" href="#demo" variant="contained" sx={{ ...PILL_LABEL, display: { xs: "none", md: "inline-flex" }, borderRadius: 999, fontSize: "1.05rem", px: 3 }}>
             {DEMO_CTA}
           </Button>
         </Stack>
@@ -298,9 +309,14 @@ function Hero() {
             <Typography sx={{ fontSize: { xs: "1.25rem", md: "1.4rem" }, lineHeight: 1.5, color: MUTED, mb: 4, maxWidth: 600 }}>
               Lleve los kilos por persona y lote, descuente anticipos y consulte el saldo pendiente de cada recolector.
             </Typography>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }}>
+            {/* Phone: the button full width, the link centered below it. Wider: side by side. */}
+            <Stack direction={{ xs: "column", sm: "row" }} useFlexGap flexWrap="wrap" rowGap={1} columnGap={2} alignItems={{ xs: "stretch", sm: "center" }}>
               <DemoButton fullWidthOnMobile />
-              <Button component="a" href="#como-funciona" sx={{ fontSize: "1.15rem", color: GREEN_DARK, textDecoration: "underline", minHeight: 56 }}>
+              <Button
+                component="a"
+                href="#como-funciona"
+                sx={{ ...PILL_LABEL, alignSelf: { xs: "center", sm: "auto" }, fontSize: "1.15rem", color: GREEN_DARK, textDecoration: "underline", textUnderlineOffset: "4px", minHeight: 52, px: 2, "&:hover": { textDecoration: "underline" } }}
+              >
                 Ver cómo funciona
               </Button>
             </Stack>
@@ -308,7 +324,7 @@ function Hero() {
               Le mostramos una cuenta semanal de principio a fin. Demostración gratuita y sin compromiso.
             </Typography>
           </Box>
-          <Box component="figure" sx={{ flex: 1.25, m: 0, width: "100%", textAlign: "center" }}>
+          <Box component="figure" sx={{ flex: 1.1, m: 0, width: "100%", textAlign: "center" }}>
             <Screenshot src="/landing/app/cosecha.jpg" alt="Báscula abierta en el navegador: la cosecha de la finca, con los kilos de la semana, el valor, los recolectores y los botones para registrar una recolección o el registro masivo de un día" eager />
             <Typography component="figcaption" sx={{ mt: 2.5, fontSize: "1.05rem", color: MUTED }}>
               Se abre en el navegador del celular o del computador. No hay nada que instalar.
@@ -609,7 +625,7 @@ function Closing(props: { signedIn: boolean; landing: string }) {
               to="/empezar"
               variant="outlined"
               size="large"
-              sx={{ fontFamily: SANS, fontWeight: 700, minHeight: 60, px: 4, borderRadius: 999, fontSize: "1.15rem", color: CREAM, borderColor: "rgba(244,241,234,.6)", borderWidth: 2, width: { xs: "100%", sm: "auto" }, "&:hover": { borderColor: "#fff", borderWidth: 2, bgcolor: "rgba(255,255,255,.08)" } }}
+              sx={{ ...PILL_LABEL, fontFamily: SANS, fontWeight: 700, minHeight: 60, px: { xs: 2, sm: 4 }, borderRadius: 999, fontSize: "1.15rem", color: CREAM, borderColor: "rgba(244,241,234,.6)", borderWidth: 2, width: { xs: "100%", sm: "auto" }, "&:hover": { borderColor: "#fff", borderWidth: 2, bgcolor: "rgba(255,255,255,.08)" } }}
             >
               Cree su finca gratis
             </Button>
@@ -727,7 +743,7 @@ function DemoForm() {
             />
           </Box>
         ))}
-        <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ fontFamily: SANS, fontWeight: 700, minHeight: 64, borderRadius: 999, fontSize: "1.2rem" }}>
+        <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ ...PILL_LABEL, fontFamily: SANS, fontWeight: 700, minHeight: 64, px: 2, borderRadius: 999, fontSize: { xs: "min(1.2rem, 4.8vw)", sm: "1.2rem" } }}>
           {busy ? "Enviando solicitud…" : DEMO_CTA}
         </Button>
         <Typography sx={{ textAlign: "center", fontSize: "1.05rem", color: MUTED, mt: "12px !important" }}>{DEMO_NOTE}</Typography>
