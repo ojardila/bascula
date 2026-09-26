@@ -109,6 +109,14 @@ make dev                  # the API on :8099 (the web dev server proxies /v1 to 
 make test                 # Go suite against that Postgres
 ```
 
+**Database diagram.** [`docs/database.md`](docs/database.md) is a Mermaid ER
+diagram generated from the migrations. A PR that adds or changes a migration
+must include it regenerated: run `make db-diagram` (needs Docker; it uses a
+throwaway Postgres, not your local one) and commit the result. CI fails when it
+is out of date. Rules for migrations:
+[`services/api/migrations/README.md`](services/api/migrations/README.md) and
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 Then set `VITE_USE_MOCKS=false` and restart `npm run dev`. See
 [`apps/web/README.md`](apps/web/README.md) and
 [`services/api/README.md`](services/api/README.md).
@@ -117,6 +125,7 @@ Then set `VITE_USE_MOCKS=false` and restart `npm run dev`. See
 
 - **CI** (`.github/workflows/ci.yml`) runs on every PR:
   - the migration order check;
+  - the database diagram is up to date (`docs/database.md`, `make db-diagram`);
   - the shared money rules;
   - web lint, tests and build;
   - typecheck;
@@ -125,7 +134,10 @@ Then set `VITE_USE_MOCKS=false` and restart `npm run dev`. See
   - builds the images and tags a release;
   - deploys to **dev** (`bascula.int.dev.engp.io`) automatically;
   - deploys to **production** (`bascula.engp.io`) only after manual approval in
-    the GitHub `production` environment.
+    the GitHub `production` environment. The same step bumps the tenants'
+    `targetRevision` (gitops `applications/bascula-tenants.yaml`), so every
+    dedicated farm (`{slug}.bascula.engp.io`) moves to the release and runs its
+    migrations too.
 
   Details in [`manifests/README.md`](manifests/README.md).
 
@@ -143,6 +155,7 @@ installed can upload their season. Documents from that era are in
 - [API and auth design](docs/arquitectura-api.md): Go layout, REST contract,
   roles, and the cross-tenant worker registry.
 - [Data model](docs/modelo-datos.md): the PostgreSQL schema and row-level security.
+- [Database diagram](docs/database.md): generated from the migrations, always current.
 - [Owner decisions](docs/decisiones.md): the calls the team couldn't make on
   its own, with what each one costs.
 - Diagrams: [system](docs/diagramas/sistema.md) · [web app](docs/diagramas/web.md)
