@@ -99,10 +99,43 @@ $fn$;
 
 COMMENT ON FUNCTION kilo_price(uuid, uuid, uuid, date) IS
   'Kilo price of one weighing and its source: persona > lote > semana > finca. See migration 00032.';
+
+-- The two special rules alone (persona, then lote), or NULL: the part of
+-- kilo_price() that the reports add in front of their own week/farm price.
+-- PL/pgSQL on purpose. A SQL function would be inlined into the report query,
+-- and the planner then prices its correlated subqueries once per weighing:
+-- over a season that estimate crosses jit_above_cost and every report pays
+-- for compiling JIT code it never needed (seen as 130ms -> 800ms on /weeks).
+CREATE FUNCTION special_kilo_price(p_farm uuid, p_employee uuid, p_record uuid, p_week date)
+RETURNS bigint
+LANGUAGE plpgsql STABLE AS $fn$
+DECLARE
+  v bigint;
+BEGIN
+  SELECT ep.price_minor INTO v FROM employee_prices ep
+   WHERE ep.farm_id = p_farm AND ep.employee_id = p_employee AND ep.valid_from <= p_week
+   ORDER BY ep.valid_from DESC LIMIT 1;
+  IF v IS NOT NULL THEN
+    RETURN v;
+  END IF;
+  SELECT CASE WHEN count(*) > 0 AND count(x.price) = count(*) AND count(DISTINCT x.price) = 1
+              THEN max(x.price) END INTO v
+    FROM (SELECT (SELECT pp.price_minor FROM plot_prices pp
+                   WHERE pp.farm_id = w.farm_id AND pp.plot_id = w.plot_id AND pp.valid_from <= p_week
+                   ORDER BY pp.valid_from DESC LIMIT 1) AS price
+            FROM work_record_plots w
+           WHERE w.farm_id = p_farm AND w.work_record_id = p_record) x;
+  RETURN v;
+END
+$fn$;
+
+COMMENT ON FUNCTION special_kilo_price(uuid, uuid, uuid, date) IS
+  'Persona or lote kilo price of one weighing, NULL when neither applies. See migration 00032.';
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+DROP FUNCTION IF EXISTS special_kilo_price(uuid, uuid, uuid, date);
 DROP FUNCTION IF EXISTS kilo_price(uuid, uuid, uuid, date);
 DROP TABLE IF EXISTS employee_prices;
 DROP TABLE IF EXISTS plot_prices;
