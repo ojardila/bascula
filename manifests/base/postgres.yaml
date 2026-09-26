@@ -38,7 +38,14 @@ spec:
         # `role "bascula_app" does not exist`, backed off for many minutes,
         # and the API crash-looped on password auth meanwhile. 00001 keeps
         # its IF NOT EXISTS, so it simply finds the role here.
-        - DO $$ BEGIN CREATE ROLE bascula_app NOLOGIN NOBYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        #
+        # No dollar signs in this list. CNPG passes inline postInit*SQL to
+        # the initdb job as container arguments, and Kubernetes expands
+        # $(VAR) there and collapses `$$` to `$`: a `DO $$ ... $$` block
+        # reached Postgres as `DO $ ... $` and failed with `syntax error at
+        # or near "$"`, stopping every new dedicated farm at initdb. The DO
+        # body is a plain single-quoted string instead.
+        - DO 'BEGIN CREATE ROLE bascula_app NOLOGIN NOBYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END';
 
   managed:
     roles:
