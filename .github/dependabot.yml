@@ -1,0 +1,25 @@
+# Weekly, grouped, so updates arrive as a handful of PRs rather than dozens.
+# CI (ci.yml) is what decides whether each one is safe to merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}
+  - package-ecosystem: npm
+    directory: /
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: gomod
+    directory: /services/api
+    schedule: {interval: weekly}
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directories: [/services/api, /apps/web]
+    schedule: {interval: weekly}

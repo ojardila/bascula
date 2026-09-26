@@ -30,6 +30,12 @@ on:
   # does not get a Harbor tag or a gitops pin.
   workflow_call:
 
+# Read-only token. paths-filter lists the PR's files through the API, hence
+# pull-requests: read. A workflow_call caller must grant at least this.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   # A new push cancels the run still going for the same branch. Nobody reads
   # the result of a commit that has already been replaced. CD's call is a
@@ -110,6 +116,22 @@ jobs:
       - name: shared — formatters, week keys, enums against the schema
         run: node --test src/*.test.ts
         working-directory: packages/shared
+
+  # Production dependencies with a known high or critical advisory. A separate
+  # job, so a fresh advisory upstream shows up red on the PR without blocking
+  # unrelated work unless branch protection is told to require it.
+  npm-audit:
+    name: npm audit
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm audit --omit=dev --audit-level=high --package-lock-only
 
   web:
     name: console
