@@ -264,22 +264,6 @@ export interface ProvisionStatus {
   elapsedSeconds: number;
 }
 
-/** POST /v1/farms — another farm for the account that is signed in. */
-export interface FarmCreate {
-  id?: Uuid;
-  name: string;
-  slug: string;
-  priceCents: number;
-}
-
-export interface FarmCreated {
-  farmId: Uuid;
-  name: string;
-  slug: string;
-  role: string;
-  owned: number;
-  limit: number;
-}
 
 /* -- catalogs -------------------------------------------------------- */
 

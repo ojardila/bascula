@@ -557,7 +557,7 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 	}, http.StatusCreated)
 	verified := h.mustDo(t, http.MethodPost, "/v1/auth/verify-email", "",
 		map[string]any{"token": first.Body["verificationToken"]}, http.StatusOK)
-	firstFarm := mustString(t, verified.Body, "farmId")
+	_ = mustString(t, verified.Body, "farmId")
 
 	t.Run("the right password and a wrong one are the same answer", func(t *testing.T) {
 		right := signup("Finca dos", password)
@@ -669,68 +669,8 @@ func TestSignupIsNoLongerAnOracleAndTheCapMovedBehindASession(t *testing.T) {
 	}, http.StatusOK)
 	token, _ := login.Body["accessToken"].(string)
 
-	t.Run("a second farm is created through the session instead", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/farms", token, map[string]any{
-			"name": "Finca dos", "priceCents": 90000,
-		}, http.StatusCreated)
-		if res.Body["role"] != string(domain.RoleOwner) {
-			t.Errorf("the caller is not the owner of the farm they just made: %s", res.Raw)
-		}
-		newFarm, _ := res.Body["farmId"].(string)
-		if newFarm == "" || newFarm == firstFarm {
-			t.Fatalf("no new farm: %s", res.Raw)
-		}
-		// The old token still points at the old farm — the tenant travels in
-		// the token and this route mints none. Logging in with the new farmId
-		// is how the console switches.
-		next := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": email, "password": password, "farmId": newFarm,
-		}, http.StatusOK)
-		if next.Body["farmId"] != newFarm {
-			t.Fatalf("cannot log in to the new farm: %s", next.Raw)
-		}
-	})
-
-	t.Run("the cap applies to the account, and it is a real count", func(t *testing.T) {
-		// The harness caps at three, and two exist.
-		h.mustDo(t, http.MethodPost, "/v1/farms", token, map[string]any{
-			"name": "Finca tres", "priceCents": 90000,
-		}, http.StatusCreated)
-		over := h.do(t, http.MethodPost, "/v1/farms", token, map[string]any{
-			"name": "Finca de mas", "priceCents": 90000,
-		})
-		if over.code() != string(domain.CodeFarmLimitReached) {
-			t.Fatalf("the fourth farm on one account: got %d %s, want FARM_LIMIT_REACHED",
-				over.Status, over.Raw)
-		}
-	})
-
-	t.Run("a double click makes one farm, not two", func(t *testing.T) {
-		// The account is at the cap by now, which is the point: an id that is
-		// already this account's answers with the farm it named, and is not
-		// refused by a limit its own first attempt filled.
-		id := uuid.NewString()
-		// Free a slot by using a fresh account for the click itself.
-		other := h.signupFarm(t, "Finca del doble clic", 80000)
-		first := h.mustDo(t, http.MethodPost, "/v1/farms", other.OwnerToken, map[string]any{
-			"id": id, "name": "Finca clicada", "priceCents": 1000,
-		}, http.StatusCreated)
-		second := h.mustDo(t, http.MethodPost, "/v1/farms", other.OwnerToken, map[string]any{
-			"id": id, "name": "Finca clicada", "priceCents": 1000,
-		}, http.StatusOK)
-		if first.Body["farmId"] != second.Body["farmId"] || second.Body["farmId"] != id {
-			t.Fatalf("a double click made a second farm: %s / %s", first.Raw, second.Raw)
-		}
-		// And somebody else's id is never handed over — to an account with
-		// room to spare, so it is the id and not the cap that refuses.
-		stranger := h.signupFarm(t, "Finca del extrano", 80000)
-		theirs := h.do(t, http.MethodPost, "/v1/farms", stranger.OwnerToken, map[string]any{
-			"id": id, "name": "Ajena", "priceCents": 1000,
-		})
-		if theirs.code() != string(domain.CodeIdempotencyKeyReused) {
-			t.Fatalf("another account's farm id: got %d %s, want IDEMPOTENCY_KEY_REUSED",
-				theirs.Status, theirs.Raw)
-		}
+	t.Run("the session cannot create another farm either", func(t *testing.T) {
+		requireNoFarmCreate(t, h.server, token)
 	})
 
 	t.Run("and it needs a token", func(t *testing.T) {

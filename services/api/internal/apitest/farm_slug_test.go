@@ -1,6 +1,7 @@
 package apitest
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -72,28 +73,28 @@ func TestFarmSlug(t *testing.T) {
 		}
 	})
 
-	t.Run("signup and POST /v1/farms accept a slug", func(t *testing.T) {
+	t.Run("signup accepts a slug; POST /v1/farms refuses", func(t *testing.T) {
 		f := h.signupFarm(t, "Finca Nueva", 80000)
 		got := h.mustDo(t, http.MethodGet, "/v1/farm", f.OwnerToken, nil, http.StatusOK)
 		if got.Body["slug"] != "finca-nueva" {
 			t.Fatalf("signup slug: %s", got.Raw)
 		}
-		second := h.mustDo(t, http.MethodPost, "/v1/farms", f.OwnerToken,
-			map[string]any{"name": "Otra", "slug": "otra-finca", "priceCents": 70000},
-			http.StatusCreated)
-		if second.Body["slug"] != "otra-finca" {
-			t.Fatalf("POST /v1/farms slug: %s", second.Raw)
-		}
+		requireNoFarmCreate(t, h.server, f.OwnerToken)
 	})
 }
 
 func TestLoginHostPinsFarm(t *testing.T) {
 	h := requireDB(t)
 	first := h.signupFarm(t, "Finca Ancla", 80000)
-	second := h.mustDo(t, http.MethodPost, "/v1/farms", first.OwnerToken, map[string]any{
-		"name": "Finca Pin", "slug": "finca-pin", "priceCents": 70000,
-	}, http.StatusCreated)
-	pinID := mustString(t, second.Body, "farmId")
+	// The same account on a second farm (an invitation or the super-admin;
+	// a farm can no longer create another one).
+	signupWithSlug(t, h.server, "Finca Pin", "finca-pin")
+	pinFarm, _, _, err := h.farmIDBySlug("finca-pin")
+	if err != nil {
+		t.Fatalf("finca-pin: %v", err)
+	}
+	h.addOwner(t, pinFarm, first.OwnerUserID)
+	pinID := pinFarm
 	anchor := h.mustDo(t, http.MethodGet, "/v1/farm", first.OwnerToken, nil, http.StatusOK)
 	anchorSlug := mustString(t, anchor.Body, "slug")
 
@@ -186,4 +187,10 @@ func TestLoginHostPinsFarm(t *testing.T) {
 			t.Fatalf("/v1/me: %s", me.Raw)
 		}
 	})
+}
+
+func (h *harness) farmIDBySlug(slug string) (string, string, string, error) {
+	var id string
+	err := h.admin.QueryRow(context.Background(), `SELECT id::text FROM farms WHERE slug = $1`, slug).Scan(&id)
+	return id, "", "", err
 }
