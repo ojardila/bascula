@@ -639,7 +639,13 @@ func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 	m *store.Membership, deviceID, familyID string, oauthClientID *string) (*sessionResponse, error) {
 
-	access, err := s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+	// A family an assistant holds gets tokens for /mcp only; see
+	// auth.AudienceMCP. The refresh grant keeps the family, so it keeps this.
+	audience := ""
+	if oauthClientID != nil {
+		audience = auth.AudienceMCP
+	}
+	access, err := s.signer.IssueFor(audience, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	if err != nil {
 		return nil, domain.Internal("could not issue the access token").WithCause(err)
 	}

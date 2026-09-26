@@ -397,6 +397,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeError(w, r, err)
 			return
 		}
+		// An assistant's token opens /mcp. Its tools reach the REST routes
+		// in-process (mcpDispatched), where the money confirmation lives;
+		// the same token sent straight to /v1 would skip it.
+		if claims.ForMCPOnly() && r.URL.Path != "/mcp" && !mcpDispatched(r.Context()) {
+			writeError(w, r, domain.Unauthorized("this token is for the MCP endpoint (/mcp) only"))
+			return
+		}
 		p := &auth.Principal{
 			UserID:     claims.Subject,
 			FarmID:     claims.FarmID,

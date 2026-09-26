@@ -45,7 +45,17 @@ func NewSigner(key []byte, issuer string) *Signer {
 }
 
 // Issue mints an access token carrying sub, farm_id and role.
+// AudienceMCP marks an access token issued to an assistant through OAuth. It
+// opens /mcp, and the REST API only through the MCP tools (which add the
+// two-step confirmation on anything that moves money), never directly.
+const AudienceMCP = "mcp"
+
 func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+	return s.IssueFor("", userID, farmID, role, deviceID, superadmin)
+}
+
+// IssueFor is Issue with an audience; "" issues an ordinary session token.
+func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	now := s.now()
 	c := Claims{
 		FarmID:     farmID,
@@ -59,6 +69,9 @@ func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTTL)),
 		},
+	}
+	if audience != "" {
+		c.Audience = jwt.ClaimStrings{audience}
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
 	return tok.SignedString(s.key)
@@ -99,4 +112,14 @@ func NewOpaqueToken() (secret string, hash []byte, err error) {
 func HashToken(secret string) []byte {
 	sum := sha256.Sum256([]byte(secret))
 	return sum[:]
+}
+
+// ForMCPOnly reports whether the token was issued to an assistant.
+func (c *Claims) ForMCPOnly() bool {
+	for _, a := range c.Audience {
+		if a == AudienceMCP {
+			return true
+		}
+	}
+	return false
 }

@@ -96,9 +96,15 @@ func TestOAuthIssuesTheSameJWTLoginWould(t *testing.T) {
 		t.Fatalf("no access_token: %s", tokRec.Body.String())
 	}
 
-	me := h.mustDo(t, http.MethodGet, "/v1/me", access, nil, http.StatusOK)
-	if mustString(t, me.Body, "id") == "" {
-		t.Fatalf("token did not open a session: %s", me.Raw)
+	// The assistant's token opens /mcp and only /mcp: sent straight to the
+	// REST API it would skip the tools' two-step money confirmation.
+	for _, probe := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/me"},
+		{http.MethodPost, "/v1/payments"},
+	} {
+		if res := h.do(t, probe.method, probe.path, access, map[string]any{}); res.Status != http.StatusUnauthorized {
+			t.Fatalf("%s %s with an assistant's token: %d %s", probe.method, probe.path, res.Status, res.Raw)
+		}
 	}
 
 	sess := h.mcpClient(t, access)
