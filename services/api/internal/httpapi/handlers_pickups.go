@@ -17,7 +17,7 @@ import (
 // two anti double-pay locks and no way for one settlement to take both, and a
 // picker who also cleared brush the same week needs one settlement, not two.
 // A pickup is a work record of a work-unit activity with dateFrom = dateTo, and
-// that is the whole of it (docs/arquitectura-api.md §1).
+// that is the whole of it (docs/api-architecture.md §1).
 //
 // So this file is a translation, not a second implementation. Every write goes
 // through the same handler the web uses, which is the property that matters:

@@ -345,7 +345,7 @@ function Shell() {
           }
         />
         {/* User management. OWNER ONLY, and that is stricter than
-            `casos-de-uso.md` reads on its own: `docs/diagramas/sistema.md`
+            `use-cases.md` reads on its own: `docs/diagrams/system.md`
             §3.3 puts this in the owner column and not the administrator's, so
             an admin who reaches the URL is shown the door rather than a
             screen the server would refuse anyway. */}

@@ -2,7 +2,7 @@
  * Every call this app makes, against the routes `services/api` actually
  * serves.
  *
- * Sprint 1 wrote this file against `docs/arquitectura-api.md`. Sprint 2
+ * Sprint 1 wrote this file against `docs/api-architecture.md`. Sprint 2
  * pointed it at the running server and rewrote it against
  * `internal/httpapi/routes.go`, which is the only source of truth that can be
  * wrong in a way anybody notices.
@@ -560,9 +560,9 @@ export const api = {
   /**
    * WHO CAN GET INTO THIS FARM, AND AS WHAT.
    *
-   * `docs/casos-de-uso.md` §8 lists "Gestión de usuarios — listar y agregar
+   * `docs/use-cases.md` §8 lists "Gestión de usuarios — listar y agregar
    * usuarios" and then says "pendiente de detallar", and
-   * `docs/arquitectura-api.md` §329 answers it with the minimum that unblocks:
+   * `docs/api-architecture.md` §329 answers it with the minimum that unblocks:
    * `GET|POST|PATCH /v1/users`, owner only. That is the shape written against
    * here, and it is written against the DOCUMENT rather than invented, which
    * is the difference between anticipating a route and making one up.
@@ -582,9 +582,9 @@ export const api = {
    * `toFarmUser` — because rendering "no lo sé" as "nunca" is what told the
    * owner they had never logged in.
    *
-   * Only the owner. `docs/diagramas/sistema.md` §3.3 puts user management in
+   * Only the owner. `docs/diagrams/system.md` §3.3 puts user management in
    * the owner column and NOT the administrator column, which is stricter than
-   * `casos-de-uso.md` reads on its own; `permissions.ts` has said so since
+   * `use-cases.md` reads on its own; `permissions.ts` has said so since
    * sprint 1 (`config.users` is in OWNER and in neither of the others).
    */
   listFarmUsers: async (): Promise<FarmUser[]> => {
@@ -1422,7 +1422,7 @@ export const api = {
    * which is what releases their payables; the earning is cancelled by a
    * reversal, never deleted.
    *
-   * `docs/archive/diagrama-movil.md`: "No hay void -> open. Anular es definitivo."
+   * `docs/archive/mobile-diagrams.md`: "No hay void -> open. Anular es definitivo."
    * The screen asks before calling this, and says that sentence while asking.
    */
   voidSettlement: async (id: Uuid, reversalId?: Uuid): Promise<Settlement> => {
@@ -1558,7 +1558,7 @@ export const api = {
    * there is no field on `ProductInput` that carries a quantity. The only way
    * a number moves is `createStockMove`, which appends a fact. Anybody looking
    * for the missing "set the stock to 40" function: it is missing on purpose,
-   * and `docs/modelo-datos.md` says why — "un stock materializado es un total
+   * and `docs/data-model.md` says why — "un stock materializado es un total
    * que se desincroniza de sus hechos".
    */
   listProducts: async (params?: {

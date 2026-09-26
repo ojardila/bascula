@@ -273,3 +273,35 @@ func boundedParam(r *http.Request, name string, def, max int) int {
 	}
 	return n
 }
+
+const (
+	defaultPerformanceWeeks = 12
+	maxPerformanceWeeks     = 52
+)
+
+// handleWorkerPerformance is the «Rendimiento» section of a worker's profile:
+// what this person picked, by week, by day of the running week and by lote,
+// with the farm's average per picker beside the weeks. Kilos only.
+//
+// Like every report addressed by id, it confirms the person is ours before it
+// adds anything up: another farm's worker is the ordinary 404, never a chart of
+// zeros that reads as "this person picked nothing".
+func (s *Server) handleWorkerPerformance(w http.ResponseWriter, r *http.Request) {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if _, err := store.GetEmployee(r.Context(), tx, id); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	perf, err := store.EmployeeHarvestPerformance(r.Context(), tx, id,
+		boundedParam(r, "weeks", defaultPerformanceWeeks, maxPerformanceWeeks))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, perf)
+}

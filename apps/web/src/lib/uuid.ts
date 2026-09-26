@@ -1,7 +1,7 @@
 /**
  * UUIDv7 generated on the client.
  *
- * Every POST in this app carries its own id (arquitectura-api.md §7): writes
+ * Every POST in this app carries its own id (api-architecture.md §7): writes
  * are idempotent by (farm_id, id), so retrying after a timeout returns 200
  * with the existing resource instead of creating a second pickup. v7 rather
  * than v4 because the leading 48 bits are the timestamp, which keeps the

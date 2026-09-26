@@ -118,7 +118,7 @@ CREATE UNIQUE INDEX ux_employees_tag ON employees (farm_id, tag)
 
 -- Notes are born private and have no exit route out of the farm. There is no
 -- column here that the registry service reads, and that is deliberate:
--- see decision 1 in docs/decisiones.md.
+-- see decision 1 in docs/decisions.md.
 CREATE TABLE employee_notes (
   id          uuid PRIMARY KEY,
   farm_id     uuid NOT NULL REFERENCES farms(id),

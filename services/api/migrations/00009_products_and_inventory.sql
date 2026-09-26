@@ -18,7 +18,7 @@
 -- enum and not a catalogue because the server branches on it: `stock_sign`
 -- below reads it, the sales module writes 'venta' and nothing else, and a farm
 -- inventing 'donacion' would be a value no code knows what to do with. The
--- rule from docs/decisiones.md holds: what the code branches on is an enum,
+-- rule from docs/decisions.md holds: what the code branches on is an enum,
 -- what a form offers with an "add it" button is a table.
 CREATE TYPE stock_reason AS ENUM
   ('cosecha', 'compra', 'venta', 'consumo', 'merma', 'traslado', 'ajuste');
@@ -57,7 +57,7 @@ CREATE UNIQUE INDEX ux_product_categories_name ON product_categories (farm_id, l
 
 -- Bulto, kilo, litro, caja.
 --
--- docs/modelo-datos.md gives this table `code` + `label`, the shape of
+-- docs/data-model.md gives this table `code` + `label`, the shape of
 -- `work_units`. It gets one `name` instead, and the difference is not
 -- cosmetic: `work_units` carries `kg_factor` because a "canasta" weighs
 -- something different on every farm and the factor is what makes two farms
@@ -267,7 +267,7 @@ CREATE INDEX ix_label_batches_move ON label_batches (farm_id, stock_move_id);
 -- Row level security
 -- ---------------------------------------------------------------------------
 -- The generated loop in 00008 has already run, so these say it themselves. And
--- they say more than "same farm": docs/modelo-datos.md §9 puts stock_moves out
+-- they say more than "same farm": docs/data-model.md §9 puts stock_moves out
 -- of the weigher's reach with the same shape as the ledger, and the permission
 -- table says the same thing one layer up. Denying it in the middleware is the
 -- message; denying it here is the guarantee.

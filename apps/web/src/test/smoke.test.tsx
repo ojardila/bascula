@@ -4,7 +4,7 @@
  * This is the one test that would catch "it compiles and every unit passes,
  * but the app is a white screen". It signs in through the real form, walks the
  * sprint-1 path — lotes, empleados, perfil, pagar — and checks the figures
- * that `docs/diagramas/web.md` §8 promises to the peso.
+ * that `docs/diagrams/web.md` §8 promises to the peso.
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";

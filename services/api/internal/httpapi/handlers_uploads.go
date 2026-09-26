@@ -275,6 +275,10 @@ func (s *Server) handleGetUploadContent(w http.ResponseWriter, r *http.Request) 
 	// The bytes are a farm's private photograph. No shared cache gets a copy.
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// A PDF can carry script. Opened directly, the file renders in a sandbox
+	// with no scripts and no access to this origin's storage or cookies.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox; frame-ancestors 'self'")
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
 }

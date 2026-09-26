@@ -12,7 +12,7 @@
  *   contract                 -> no quantity at all (the contract is the whole
  *                               job); the price IS the total.
  *
- * The single-day rule is not a UI preference. `arquitectura-api.md` §1 makes
+ * The single-day rule is not a UI preference. `api-architecture.md` §1 makes
  * it a CHECK constraint: a jornal from Tuesday to Tuesday has no single Monday,
  * so deriving a weekly price over a range is the ambiguity that ends in a
  * mis-paid week. The web collapses the range to a day and says so, rather than
@@ -107,7 +107,7 @@ export function estimateCents(
  * Validates the draft and, if it passes, hands back the request body.
  *
  * Every message names the field and says why, which is the convention of
- * `casos-de-uso.md`: "indica cuáles y por qué, y deja volver al formulario".
+ * `use-cases.md`: "indica cuáles y por qué, y deja volver al formulario".
  */
 export function validateWorkRecord(
   draft: WorkRecordDraft,

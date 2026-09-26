@@ -191,7 +191,7 @@ unknown area that turned into «0,00 ha» and was added to the farm's total; a
 total that added sacks to kilos and labelled the result with the first unit it
 came across; a failed stock read painted as an empty warehouse, which
 **pushed people towards disabling the server's guard**; and a request fan-out
-that turned a failure into «todavía no se ha liquidado nada en esta finca»
+that turned a failure into «todavía no se ha liquidado nada en esta finca» (nothing has been settled at this farm yet)
 (*nothing has been settled at this farm yet*).
 
 ## What these two audits teach

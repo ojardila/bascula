@@ -16,7 +16,7 @@ import (
 //
 // This is the third instance of one family in a day: `location` on plots got it
 // right, `kgFactor` on work units got it wrong, and this was found by grepping
-// for the rest, which is what docs/auditorias.md now says to do.
+// for the rest, which is what docs/audits.md now says to do.
 func TestAWorkerFieldCanBeClearedAndNotOnlyReplaced(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca del telefono", 80000)

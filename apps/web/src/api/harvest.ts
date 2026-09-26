@@ -34,6 +34,7 @@ import type {
   WireReportPerformanceResult,
   WireReportWeekDetail,
   WireReportWeeksResult,
+  WireWorkerPerformanceReport,
 } from "./wire";
 
 /**
@@ -61,6 +62,7 @@ export type ReportRoutes = [
   Route<Has<"/v1/reports/performance">>,
   Route<Has<"/v1/reports/anomalies">>,
   Route<Has<"/v1/reports/harvest-curve">>,
+  Route<Has<"/v1/workers/{id}/performance">>,
 ];
 
 const q = (params: Record<string, string | number | undefined>): string => {
@@ -100,3 +102,10 @@ export const reportAnomalies = (params: { days?: number; maxKg?: number; limit?:
 /** The weekly series and the reading of it: peak, decline, end of season. */
 export const reportHarvestCurve = (params: { plotCropId?: Uuid; weeks?: number } = {}) =>
   http.get<WireHarvestCurve>(`/v1/reports/harvest-curve${q(params)}`);
+
+/**
+ * One person's harvest: weeks with the farm's average beside them, the days of
+ * the running week, and the lotes of the last four weeks. Kilos only.
+ */
+export const workerPerformance = (workerId: Uuid, weeks?: number) =>
+  http.get<WireWorkerPerformanceReport>(`/v1/workers/${workerId}/performance${q({ weeks })}`);

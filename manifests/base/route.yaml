@@ -3,7 +3,7 @@
 # sanjose.bascula.engp.io are routing only (Gateway API leftmost wildcard).
 # The tenant is still the JWT farm_id, never the Host.
 #
-# This is the "same origin" answer to the question docs/decisiones.md left
+# This is the "same origin" answer to the question docs/decisions.md left
 # open before deploying. The browser never makes a cross-origin request, so
 # the API needs no CORS middleware and no origin allowlist to maintain. It is
 # also why apps/web/Dockerfile passes no VITE_API_BASE_URL: the default of ""
@@ -17,7 +17,7 @@ spec:
   parentRefs:
     # The public Gateway, reached through the Cloudflare tunnel. Public because
     # the farm's phone syncs against this API from the field, where there is no
-    # tailnet — see docs/archive/sincronizacion.md.
+    # tailnet — see docs/archive/synchronization.md.
     - name: public
       namespace: gateway
   hostnames:

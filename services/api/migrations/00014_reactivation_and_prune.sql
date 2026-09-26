@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 
 -- ---------------------------------------------------------------------------
--- Decision 8 (docs/decisiones.md): a worker who was taken off the payroll and
+-- Decision 8 (docs/decisions.md): a worker who was taken off the payroll and
 -- turns up with NEW work comes back on by himself.
 --
 -- The owner decided that against the team's advice, and he attached one
@@ -65,7 +65,7 @@ CREATE POLICY p_employee_reactivations_write ON employee_reactivations FOR INSER
   WITH CHECK (farm_id = current_farm());
 
 -- ---------------------------------------------------------------------------
--- Pruning the feed (docs/sincronizacion.md §3.4).
+-- Pruning the feed (docs/synchronization.md §3.4).
 --
 -- sync_log is append-only and DELETE is revoked from bascula_app, which is
 -- right and which also means nothing can prune it. Both defences stay; what
@@ -95,7 +95,7 @@ END $fn$;
 CREATE INDEX ix_sync_log_farm_at ON sync_log (farm_id, at);
 
 -- ---------------------------------------------------------------------------
--- The phase 4 switch (docs/sincronizacion.md §8, "el corte").
+-- The phase 4 switch (docs/synchronization.md §8, "el corte").
 --
 -- For the hour the season import runs, the handsets go into money-read-only by
 -- remote control: weighings keep being recorded, because the cut cannot stop

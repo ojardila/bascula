@@ -135,3 +135,65 @@ describe("the history does not pretend to be longer than it is", () => {
     );
   }, 20000);
 });
+
+describe("«Rendimiento»", () => {
+  const perf = (over: Record<string, unknown> = {}) => ({
+    scope: "harvest",
+    employeeId: MARIA,
+    today: "2026-09-24",
+    thisWeek: "2026-09-21",
+    lastRecordOn: "2026-09-22",
+    summary: {
+      thisWeekKg: 112, lastWeekToDateKg: 100, lastWeekKg: 260, recentFrom: "2026-09-01",
+      recentKg: 690, recentDaysWorked: 15, kgPerDayWorked: 46,
+    },
+    weeks: Array.from({ length: 12 }, (_, i) => ({
+      weekStart: new Date(Date.UTC(2026, 8, 21 - 7 * (11 - i))).toISOString().slice(0, 10),
+      records: 5, kg: 200 + i, recordsNotInKg: 0, daysWorked: 5, farmAvgKg: 180, farmPickers: 9,
+      finished: i < 11,
+    })),
+    days: ["21", "22", "23", "24", "25", "26", "27"].map((d, i) => ({
+      day: `2026-09-${d}`, records: i < 2 ? 1 : 0, kg: i < 2 ? 56 : null, future: i > 3,
+    })),
+    plots: [{ plotId: "0192f3a0-0002-7000-8000-000000000001", name: "La Loma", kg: 400, records: 9 }],
+    unattributedKg: null,
+    recordsNotInKg: 0,
+    ...over,
+  });
+
+  it("shows the three figures and says the change in words", async () => {
+    server.use(http.get("*/v1/workers/:id/performance", () => HttpResponse.json(perf())));
+    renderProfile();
+    expect(await screen.findByText("Rendimiento")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Frente a la semana pasada: 12 kg más que la semana pasada.")).toBeInTheDocument();
+    expect(screen.getByText("↑ 12 kg")).toBeInTheDocument();
+    expect(screen.getByText("46 kg")).toBeInTheDocument();
+    expect(screen.getByText("Comparando de lunes a jueves en las dos semanas.")).toBeInTheDocument();
+    expect(screen.getByText("Kilos por semana")).toBeInTheDocument();
+    expect(screen.getByText("La Loma")).toBeInTheDocument();
+  }, 20000);
+
+  it("has a friendly empty state for somebody who never picked", async () => {
+    server.use(
+      http.get("*/v1/workers/:id/performance", () =>
+        HttpResponse.json(perf({ lastRecordOn: null, plots: [] })),
+      ),
+    );
+    renderProfile();
+    expect(
+      await screen.findByText("Todavía no hay recolecciones registradas para esta persona"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Kilos por semana")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("a failure there does not take the profile down", async () => {
+    server.use(
+      http.get("*/v1/workers/:id/performance", () =>
+        HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+      ),
+    );
+    renderProfile();
+    await screen.findByText(/Restrepo Ospina/);
+    expect(await screen.findByText("Historial financiero")).toBeInTheDocument();
+  }, 20000);
+});

@@ -123,7 +123,7 @@ type settlementRequest struct {
 	Note       *string  `json:"note"`
 
 	// ExpectedGrossCents is what /v1/settlements/preview showed the person who
-	// is about to press the button. §5.5 of docs/archive/sincronizacion.md.
+	// is about to press the button. §5.5 of docs/archive/synchronization.md.
 	//
 	// A pointer and not an int64, because zero is a number a client could send
 	// and "absent" has to be distinguishable from it — the rule of this
@@ -204,7 +204,7 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 // WHEN this lands. §8 phase 0 puts these three server changes deliberately
 // BEFORE the phone is touched: "cambios de servidor que no afectan a nadie
 // hasta que alguien los use". Today nobody settles through this endpoint in
-// production — the phone still settles locally (decisiones.md, "El teléfono
+// production — the phone still settles locally (decisions.md, "El teléfono
 // todavía liquida en local") and the web is under the "pay from one side only"
 // mitigation of decision 3. The only callers are in this repository, in this
 // sprint, and the two pairs that own them are sitting here. The alternative —
@@ -476,7 +476,7 @@ type ledgerRequest struct {
 	Note        *string `json:"note"`
 	Date        string  `json:"date"`
 	// AllowOverpayment resolves a straight contradiction between the two
-	// sources of truth. docs/arquitectura-api.md says a payment larger than
+	// sources of truth. docs/api-architecture.md says a payment larger than
 	// the balance is 409 AMOUNT_EXCEEDS_BALANCE; golden case 07
 	// (pago-mayor-al-saldo) says the phone lets it through and the worker ends
 	// up owing the difference, "el saldo no se recorta".

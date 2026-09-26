@@ -403,6 +403,21 @@ describe("the mock is the server", () => {
     expect((await get(`/v1/workers/${MARIA}/payables`, WEIGHER)).status).toBe(403);
   });
 
+  it("serves one person's harvest performance, to administrators only", async () => {
+    const r = await get(`/v1/workers/${MARIA}/performance?weeks=12`, OWNER);
+    expect(r.status).toBe(200);
+    expect(r.body.scope).toBe("harvest");
+    expect(r.body.weeks).toHaveLength(12);
+    expect(r.body.days).toHaveLength(7);
+    expect(r.body.weeks[11].weekStart).toBe(r.body.thisWeek);
+    expect(r.body.weeks[11].finished).toBe(false);
+    // The server's floor: the recent window is four weeks, so fewer is four.
+    expect((await get(`/v1/workers/${MARIA}/performance?weeks=2`, OWNER)).body.weeks).toHaveLength(4);
+    expect((await get("/v1/workers/0192f3a0-0006-7000-8000-0000000000ff/performance", OWNER)).status)
+      .toBe(404);
+    expect((await get(`/v1/workers/${MARIA}/performance`, WEIGHER)).status).toBe(403);
+  });
+
   it("keeps notes append-only and private", async () => {
     const l = await get(`/v1/workers/${MARIA}/notes`, OWNER);
     expect(l.body.items.length).toBe(2);
@@ -1254,7 +1269,7 @@ describe("products, stock, sales and expenses", () => {
   /* -- the weigher -------------------------------------------------- */
 
   it("keeps the weigher off all four surfaces", async () => {
-    // docs/modelo-datos.md §790: ventas, gastos and stock_moves sit outside the
+    // docs/data-model.md §790: ventas, gastos and stock_moves sit outside the
     // weigher's projection with the same shape as the ledger. The movements go
     // with the money because a movement names the plot and the crop it came
     // out of, which makes the list of them a yield report.

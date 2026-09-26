@@ -79,6 +79,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodDelete, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleDeleteWorker},
 		{http.MethodGet, "/v1/workers/{id}/profile", auth.ActionWorkersPrivate, s.handleWorkerProfile},
 		{http.MethodGet, "/v1/workers/{id}/payables", auth.ActionWorkerPayables, s.handleWorkerPayables},
+		{http.MethodGet, "/v1/workers/{id}/performance", auth.ActionWorkerPerformance, s.handleWorkerPerformance},
 		{http.MethodGet, "/v1/workers/{id}/notes", auth.ActionWorkerNotesRead, s.handleListWorkerNotes},
 		{http.MethodPost, "/v1/workers/{id}/notes", auth.ActionWorkerNotesAdd, s.handleAddWorkerNote},
 
@@ -185,7 +186,7 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/adjustments", auth.ActionLedgerAdjust, s.handleAdjustment},
 		{http.MethodPost, "/v1/ledger/{id}/reverse", auth.ActionLedgerReverse, s.handleReverseLedger},
 
-		// Synchronisation (docs/archive/sincronizacion.md §3). Three routes and one
+		// Synchronisation (docs/archive/synchronization.md §3). Three routes and one
 		// integer: the handset carries `cursor` and nothing else. Every role
 		// reaches all three — the weigher's handset is the one that spends
 		// days without signal — and what a weigher gets back is narrowed by

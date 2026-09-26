@@ -29,7 +29,7 @@ built at all, and vice versa.
 The release number is therefore not baked into the images. The web's
 `/version.json` is answered by nginx from the pod's environment
 (`BASCULA_VERSION`, stamped into `manifests/base/web.yaml` by CD), and the
-«versión nueva» banner compares **build keys**: a release that only changed
+«versión nueva» (new version) banner compares **build keys**: a release that only changed
 the API does not ask anyone to reload an identical page.
 
 **CI is not run twice.** Before, master ran CI on push and again inside CD.
@@ -42,11 +42,13 @@ tenant ApplicationSet can. CD is on the tailnet already, so it posts a GitHub
 push event to Argo's webhook right after each gitops push
 (`scripts/ci/argocd-refresh.sh`).
 
-**Runs do not queue behind each other.** The workflow-wide `concurrency: cd`
-lock made a new run (tests, builds) wait for the previous run's production
-approval. Now only `release` and `production` are serialized per job; a newer
-run waiting for either replaces an older one still waiting. A guard stops an
-older run from releasing after a newer one (it would move dev/prod back).
+**Tests and builds do not queue behind production approval.** The old
+workflow-wide `concurrency: cd` lock made a new run wait for the previous run's
+production approval. Now only `release` and `production` are serialized per
+job, and the release lock never cancels a queued run. While holding that lock,
+release fetches the latest master and tags, retries a rebased push, and lets a
+run whose commit is already in the newest release finish as a no-op. This
+keeps rapid merges in order without moving dev or production backwards.
 
 ## Before (last 7 CD runs, 2026-09-26)
 

@@ -10,7 +10,7 @@ import (
 
 // Note is a written remark: what the farm wrote down about one of its people.
 //
-// It is append-only and it is born private. Decision 1 in docs/decisiones.md
+// It is append-only and it is born private. Decision 1 in docs/decisions.md
 // is explicit that these never leave the farm, and the schema is the defence
 // rather than a policy somebody could relax: employee_notes has no visibility
 // value other than 'private', no flag and no score, and no route here writes

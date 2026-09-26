@@ -11,7 +11,7 @@
 # apps/web/src/api/mode.ts), which makes the browser fetch /v1 and /health
 # relative to wherever the page was served from — and the HTTPRoute puts the
 # API on those two prefixes of the same hostname. That is the "same origin"
-# half of the choice docs/decisiones.md left open, and it is what lets the API
+# half of the choice docs/decisions.md left open, and it is what lets the API
 # keep having no CORS middleware at all.
 FROM node:24-alpine AS build
 WORKDIR /src
@@ -56,6 +56,7 @@ COPY --from=build /src/apps/web/dist /usr/share/nginx/html
 # at start (only variables that are set, so nginx's own $uri is left alone).
 # That is how /version.json answers with the release from the pod's env.
 COPY apps/web/nginx.conf /etc/nginx/templates/default.conf.template
+COPY apps/web/security-headers.conf /etc/nginx/snippets/security-headers.conf
 ARG BUILD=dev
 ENV BASCULA_BUILD=$BUILD \
     BASCULA_VERSION=dev

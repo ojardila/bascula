@@ -144,7 +144,7 @@ func render(ctx context.Context, conn *pgx.Conn) ([]byte, error) {
 	w("`services/api/migrations` applied, so it shows what the database really is,\n")
 	w("not what someone remembered to draw. Any pull request that adds a migration\n")
 	w("must include this file regenerated (`make db-diagram`); the `api` CI job\n")
-	w("checks it. The narrative design lives in [modelo-datos.md](modelo-datos.md).\n\n")
+	w("checks it. The narrative design lives in [data-model.md](data-model.md).\n\n")
 	w("Legend: `PK` primary key, `FK` foreign key, `UK` unique. A quoted note after a\n")
 	w("column gives the exact Postgres type when the diagram had to shorten it, and\n")
 	w("`null` when the column accepts NULL. Relations point from the referenced table\n")

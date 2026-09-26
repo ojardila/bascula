@@ -1,5 +1,5 @@
 /**
- * RSP-015, the wireframe of `docs/diagramas/web.md` §8.2, in three numbered
+ * RSP-015, the wireframe of `docs/diagrams/web.md` §8.2, in three numbered
  * blocks: what work, who and where, how much and when.
  *
  * The read-only grey card under the activity is required by RSP-015 and does

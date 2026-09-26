@@ -941,7 +941,7 @@ comments cite it; what changes is the status of each one.
 | **9.3** | Payments did not point at their settlement and the receipt **guessed** by filtering on date | `payments.pay` accepts a `settlementId` and `PAID_AGAINST_SQL` queries it. It stopped being a guess. |
 | **9.4** | The balance was implemented twice, and only one of them was covered by tests | `BALANCE_COLUMNS(alias)` in `schema.ts`. There were **three**, not two: `BALANCE_SQL`, the list on the payroll screen and the `seasonExport` summary — the figure `POST /v1/import/season` reconciles to the cent before writing a year of payroll. A test compares the two doors. |
 | **9.5** | Harvested value was implemented twice, one of them with an N+1 | `HARVEST_VALUE_EXPR` / `HARVEST_VALUE_SQL(where)`. `totalPayout` and `workerReports.payout` stopped grouping by week in a JavaScript loop with one query per week. A test pins that the five doors give the same figure. |
-| **9.7** | Nothing could be synced: local keys, no metadata, no `farmId`, no soft delete on `pickups` | UUIDv7 on every table that travels, an outbox driven by triggers, `farmId` in `config` with a guard, `pickups.deletedAt` and the `pickups_live` view. §3 of `sincronizacion.md` runs on top of this. |
+| **9.7** | Nothing could be synced: local keys, no metadata, no `farmId`, no soft delete on `pickups` | UUIDv7 on every table that travels, an outbox driven by triggers, `farmId` in `config` with a guard, `pickups.deletedAt` and the `pickups_live` view. §3 of `synchronization.md` runs on top of this. |
 | **9.8** | The time zone was the phone's, and changing it recategorised weeks that had already been settled | The farm decides: `adoptTimezone` takes it from the handshake, `localDay` and `week` are materialised, and `dayInZone`/`weekInZone` live in `packages/shared`. |
 | **9.10** | `setWeight` validated the weight and `add` validated nothing | One single guard, both doors. |
 | **9.11** | Soft delete was applied inconsistently | Closed in sprint 8 with **the server's rule**: "people with a position, not active people". The home counters count the active list; the rankings filter nobody out — if they did, they would stop adding up to the farm total shown right above them — and they carry `active` so the row can say so. `reports.byCrop` and `weekCrops` **did** filter, so the crops tab did not agree with the pickers tab: two tabs on the same card contradicting each other. |
@@ -1097,7 +1097,7 @@ season. **The figures are measured, not estimated** (`seasonImport.test.ts`,
 | Packing (`seasonExport`) | ~60 ms |
 | Verifying (`verifySeasonExport`) | ~40 ms |
 | Serialising | ~30 ms |
-| **Body** | **11.7 MB** — exactly the figure in `simplificacion.md` §4 |
+| **Body** | **11.7 MB** — exactly the figure in `simplification.md` §4 |
 
 What was checked, and what adds up:
 
@@ -1130,7 +1130,7 @@ size limit is fine (`maxImportBytes = 64 MB`).
 
 **It is a server change and it has to be made before Tuesday.** We do not touch
 it: it is `services/api`. Without it, the move only works if the farm uploads at
-more than ~400 kB/s sustained, which is exactly what `simplificacion.md` §4 says
+more than ~400 kB/s sustained, which is exactly what `simplification.md` §4 says
 cannot be taken for granted. On top of that, if TLS terminates behind a proxy that
 is not in this repository, its `client_max_body_size` and its
 `proxy_read_timeout` are a third, unverified ceiling.
@@ -1146,7 +1146,7 @@ season and read a 403 at the end. Now the screen says no before the upload.
 calls `Payments.runPayroll` **without checking anything**: no `useSync`, no
 `ensureFresh`, no outbox. The rule protects the path of one worker and leaves the
 path of thirty wide open. It is the pending half of the P0 in
-`simplificacion.md` §4.
+`simplification.md` §4.
 
 **It was left open on purpose and it has to be decided with the owner, not in the
 code.** Putting the §6.1 guard on it is not "two conditionals": today the farm
@@ -1179,7 +1179,7 @@ for the web.
 *Sections 2 and 9 regenerated in sprint 8 by reading `apps/mobile/src/db.ts`
 (100 lines), `data/repository.ts`, `data/sqliteRepository.ts`,
 `data/syncStore.ts`, `schema.ts`, `sync/` and the 20 screens in
-`apps/mobile/src/screens/`, against `services/api` and `docs/archive/sincronizacion.md`.*
+`apps/mobile/src/screens/`, against `services/api` and `docs/archive/synchronization.md`.*
 
 *The rest of the document — §1 the data model, §3 navigation, §4 to §7 the flows
 and the state machine, §8 the event book — was **not** touched. The refactor did

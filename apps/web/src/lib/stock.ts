@@ -2,7 +2,7 @@
  * The arithmetic of the warehouse, such as it is.
  *
  * There is one rule and it is the whole file: **A QUANTITY IN STOCK IS NEVER
- * SET, ONLY MOVED.** `docs/modelo-datos.md` puts it as "existencias derivadas
+ * SET, ONLY MOVED.** `docs/data-model.md` puts it as "existencias derivadas
  * de movimientos, igual que el saldo se deriva del ledger", and the database
  * enforces it with an append-only table. What that means for the interface is
  * that there is no field anywhere in this app that reads "cantidad en stock"

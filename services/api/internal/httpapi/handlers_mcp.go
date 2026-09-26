@@ -159,6 +159,10 @@ var mcpTools = []mcpTool{
 		Description: "Lo que se le puede pagar a un trabajador en un rango de fechas: labores sin liquidar, semana por semana." + moneyNote,
 		Params:      []mcpParam{pID, pFrom, pTo}},
 
+	{Name: "worker_performance", Method: http.MethodGet, Path: "/v1/workers/{id}/performance",
+		Description: "Rendimiento de recolección de un trabajador: kilos por semana (con el promedio por persona de la finca al lado), kilos por día de esta semana, promedio por día trabajado y kilos por lote en las últimas 4 semanas.",
+		Params:      []mcpParam{pID, pWeeks}},
+
 	{Name: "list_plots", Method: http.MethodGet, Path: "/v1/plots",
 		Description: "Los lotes de la finca con sus cultivos (plotCrop). El UUID del cultivo es el que piden los reportes por cultivo.",
 		Params:      []mcpParam{pQ, pStatus}},

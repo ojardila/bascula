@@ -23,7 +23,7 @@
 # CONVENTIONS THAT APPLY EVERYWHERE, stated once instead of on sixty operations:
 #
 #   * The tenant travels in the access token and never in a path. There is no
-#     {farmId} anywhere below, deliberately (§6 of docs/arquitectura-api.md):
+#     {farmId} anywhere below, deliberately (§6 of docs/api-architecture.md):
 #     a farm id in a path invites somebody to trust it.
 #   * A resource of another farm answers 404, never an empty list and never a
 #     zero total. An endpoint that adds something up confirms the resource
@@ -1187,7 +1187,7 @@ paths:
       operationId: listReactivations
       summary: Every worker the server put back on the payroll by itself
       description: |
-        Decision 8 of docs/decisiones.md: a worker who was taken off the
+        Decision 8 of docs/decisions.md: a worker who was taken off the
         payroll and turns up with NEW work comes back on by himself, because if
         he is working he is still on the farm. The owner took that decision
         against the team's advice and attached one condition to it — that it is
@@ -1316,7 +1316,7 @@ paths:
             handset writes to one and the web to the other, the balance is
             split in two, and nothing says so. Restore the existing one with
             PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
-            conflict in docs/archive/sincronizacion.md with no automatic repair.
+            conflict in docs/archive/synchronization.md with no automatic repair.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1443,6 +1443,50 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Payables" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/workers/{id}/performance:
+    parameters:
+      - $ref: "#/components/parameters/PathID"
+    get:
+      tags: [workers, reports]
+      operationId: workerPerformance
+      summary: One person's harvest — the «Rendimiento» section of the profile
+      description: |
+        What this person picked, in kilos: per settlement week (keyed by its
+        Monday, in the farm's zone) for the last `weeks` weeks, with the farm's
+        average per picker beside each week; per day of the running week; and
+        per lote over the last four weeks. Plus the three figures at the top of
+        the section.
+
+        Scope is harvest: work paid by the unit of work. Kilos only — no money.
+        A weighing in a unit without a kg_factor is left out of every kilo
+        figure and counted in `recordsNotInKg`; kilos with nothing behind them
+        are null, never zero.
+
+        This is not the comparative index of `/v1/reports/performance`, and it
+        ranks nobody. It is still administrator-only and on the weigher's deny
+        list: a chart of one worker against the farm is a judgement about a
+        person.
+
+        Another farm's worker is a 404, never a chart of zeros.
+      x-action: workers.performance.read
+      x-roles: [owner, admin]
+      parameters:
+        - name: weeks
+          in: query
+          description: |
+            How many settlement weeks, the running one included. Default 12,
+            at least 4 (the recent window), at most 52.
+          schema: { type: integer, minimum: 1, maximum: 52 }
+      responses:
+        "200":
+          description: The person's harvest.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkerPerformanceReport" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3523,7 +3567,7 @@ paths:
   # facts underneath it, and when it does nothing can say which one is lying.
   #
   # The whole module is on the weigher's deny list, alongside payroll:
-  # docs/modelo-datos.md §9 puts sales, expenses and stock_moves outside his
+  # docs/data-model.md §9 puts sales, expenses and stock_moves outside his
   # reach "the same way the ledger is", and RSP-018 puts stock on hand on the
   # very first product screen, so there is no reduced projection worth having.
   # ---------------------------------------------------------------------------
@@ -5199,7 +5243,7 @@ paths:
         "204": { description: Allowed. }
 
   # ---------------------------------------------------------------------------
-  # Mobile ↔ server synchronisation (docs/archive/sincronizacion.md §3)
+  # Mobile ↔ server synchronisation (docs/archive/synchronization.md §3)
   #
   # A change feed with a per-farm sequence. The handset carries ONE number,
   # `cursor`, and what it is missing is "everything with a seq greater than
@@ -5426,7 +5470,7 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
 
   # ---------------------------------------------------------------------------
-  # The season import (docs/archive/sincronizacion.md §8, phases 3 and 4)
+  # The season import (docs/archive/synchronization.md §8, phases 3 and 4)
   # ---------------------------------------------------------------------------
   /v1/import/season:
     post:
@@ -6026,7 +6070,7 @@ components:
         moneyReadOnly:
           type: boolean
           description: |
-            The phase 4 switch of docs/archive/sincronizacion.md §8. While it is on the
+            The phase 4 switch of docs/archive/synchronization.md §8. While it is on the
             handsets may still record weighings — the cut cannot stop the scale
             — and may not settle, pay or void. It rides down in the handshake's
             `capabilities`.
@@ -8079,6 +8123,81 @@ components:
                 unless both halves carry at least four days, or the arrow would
                 be decided against a single outlying day.
 
+    WorkerPerformanceReport:
+      type: object
+      required: [scope, employeeId, today, thisWeek, lastRecordOn, summary, weeks, days, plots, unattributedKg, recordsNotInKg]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        employeeId: { type: string, format: uuid }
+        today: { type: string, format: date, description: Today in the farm's zone. }
+        thisWeek: { type: string, format: date, description: Monday of the running week. }
+        lastRecordOn:
+          type: string
+          format: date
+          nullable: true
+          description: The person's latest harvest record, ever. Null means none at all.
+        summary:
+          type: object
+          required: [thisWeekKg, lastWeekToDateKg, lastWeekKg, recentFrom, recentKg, recentDaysWorked, kgPerDayWorked]
+          properties:
+            thisWeekKg: { type: number, nullable: true, description: The running week so far. }
+            lastWeekToDateKg:
+              type: number
+              nullable: true
+              description: |
+                Last week over the same weekdays the running week has had so
+                far. The fair comparison for a week that is not over.
+            lastWeekKg: { type: number, nullable: true, description: Last week, whole. }
+            recentFrom: { type: string, format: date, description: First Monday of the four-week window. }
+            recentKg: { type: number, nullable: true }
+            recentDaysWorked: { type: integer, description: Distinct days with kilos in the four-week window. }
+            kgPerDayWorked: { type: number, nullable: true, description: recentKg / recentDaysWorked. }
+        weeks:
+          type: array
+          description: Oldest first; the running week is last and `finished` false.
+          items:
+            type: object
+            required: [weekStart, records, kg, recordsNotInKg, daysWorked, farmAvgKg, farmPickers, finished]
+            properties:
+              weekStart: { type: string, format: date }
+              records: { type: integer }
+              kg: { type: number, nullable: true }
+              recordsNotInKg: { type: integer }
+              daysWorked: { type: integer }
+              farmAvgKg:
+                type: number
+                nullable: true
+                description: The farm's kilos that week divided by the people who picked them.
+              farmPickers: { type: integer }
+              finished: { type: boolean }
+        days:
+          type: array
+          description: Monday to Sunday of the running week, always seven.
+          items:
+            type: object
+            required: [day, records, kg, future]
+            properties:
+              day: { type: string, format: date }
+              records: { type: integer }
+              kg: { type: number, nullable: true }
+              future: { type: boolean }
+        plots:
+          type: array
+          description: Kilos per lote over the four-week window, most first.
+          items:
+            type: object
+            required: [plotId, name, kg, records]
+            properties:
+              plotId: { type: string, format: uuid }
+              name: { type: string }
+              kg: { type: number }
+              records: { type: integer }
+        unattributedKg:
+          type: number
+          nullable: true
+          description: Recent kilos whose record names no lote, or more than one.
+        recordsNotInKg: { type: integer }
+
     ReportPerformanceResult:
       type: object
       required: [scope, days, since, minComparableDays, items]
@@ -8275,7 +8394,7 @@ components:
         server's: the handset knows `worker`, `crop` and `workRecord`.
 
         Direction is per entity and is not symmetric (§2 of
-        docs/archive/sincronizacion.md). `worker`, `workRecord` and `ledgerEntry` travel
+        docs/archive/synchronization.md). `worker`, `workRecord` and `ledgerEntry` travel
         both ways. `farmConfig`, `plot`, `crop`, `weekPrice` and `settlement`
         only come down; pushing one is refused with its reason.
       enum: [farmConfig, worker, plot, crop, weekPrice, workRecord, settlement, ledgerEntry]

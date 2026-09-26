@@ -209,7 +209,7 @@ describe("anonymous", () => {
 describe("the server enforces it too, not just the UI", () => {
   it("does not send the weigher a worker's document or balance", async () => {
     // The weigher's projection is a different response, not the same one with
-    // fields hidden in CSS: `arquitectura-api.md` §6.
+    // fields hidden in CSS: `api-architecture.md` §6.
     signInAs("pesador@laesperanza.co");
     renderApp("/labores");
     await screen.findByRole("heading", { name: "Labores" });

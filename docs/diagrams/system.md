@@ -9,8 +9,8 @@ farms.
 
 Sources of truth for this document, in this order:
 
-1. `docs/casos-de-uso.md` — scope (RSP-001 … RSP-033), written by the owner.
-2. `docs/arquitectura-api.md` — API design, auth, PostGIS, `work_records`, `registry`.
+1. `docs/use-cases.md` — scope (RSP-001 … RSP-033), written by the owner.
+2. `docs/api-architecture.md` — API design, auth, PostGIS, `work_records`, `registry`.
 3. `docs/archive/plan-sprint-1.md` — the cut for the first delivery.
 4. `docs/archive/sync-and-roles.md` — roles and sync notes.
 5. `apps/mobile/src/schema.ts` and `db.ts` — the accounting domain that must be preserved.
@@ -68,12 +68,12 @@ graph TD
 ```
 
 **How to read the dotted lines.** Everything dotted is **out of Sprint 1**: `registry` is a
-different product with its own legal risk (`arquitectura-api.md` §3), and the employee has
+different product with its own legal risk (`api-architecture.md` §3), and the employee has
 no session in any farm — his only relationship with the system is with `registry`, which is
 exactly what makes it defensible.
 
 **The employee is not a farm role.** The four roles with a session are super-admin, owner,
-administrator and weigher (`docs/archive/sync-and-roles.md`, `arquitectura-api.md` §6). The employee
+administrator and weigher (`docs/archive/sync-and-roles.md`, `api-architecture.md` §6). The employee
 appears as an actor because RSP-009 gives him three rights that do get built: read who
 looked him up, grant or revoke consent, and open a dispute.
 
@@ -692,7 +692,7 @@ Seven decisions the ER freezes, worth reading slowly:
    unique `reverses_id`. `BALANCE_SQL` is ported literally; the `golden/*.json` files force
    Go to return **exactly the same cents** as the phone.
 4. **`work_record_plots` is the normalized form of the `plot_ids[]` and `crop_ids[]`** in
-   the sketch in `arquitectura-api.md` §1. Same semantics; it is normalized because an array
+   the sketch in `api-architecture.md` §1. Same semantics; it is normalized because an array
    cannot be indexed by RLS nor joined against `expenses` by plot.
 5. **`stock` and `balance` are not tables.** Stock is derived from `stock_movements` the
    same way the balance is derived from `ledger`. Same discipline, same reason: a stored
@@ -793,7 +793,7 @@ with a different role and a different set of routes (`/v1/admin/farms`); he cann
 anyone's ledger, and that is a property of the schema, not a promise from the UI.
 
 > **Naming note.** `docs/archive/plan-sprint-1.md` H3 says `app.current_farm` and
-> `arquitectura-api.md` §6 says `app.farm_id`. `app.farm_id` wins. H3 needs fixing.
+> `api-architecture.md` §6 says `app.farm_id`. `app.farm_id` wins. H3 needs fixing.
 
 ---
 
@@ -866,7 +866,7 @@ They are unresolved on purpose. Resolving them on our own is inventing product.
 ### 7.1 RSP-009 wants farm names; the design forbids them
 
 RSP-009 says to show *"the farms where he has worked with their periods, and the notes
-written about him"*. `arquitectura-api.md` §3 says farm names and free-text notes are
+written about him"*. `api-architecture.md` §3 says farm names and free-text notes are
 **never** shared, only `farmsWorked: 3`, months, and `disputes: 0`.
 
 This is a head-on clash, and you cannot split the difference. Farm names plus free-text
@@ -883,7 +883,7 @@ the `registry` design: without a recorded consent from the worker, the `lookup` 
 the free-text "safety alerts" **are not built**.
 
 On top of that, RSP-004 says that with no internet the system creates "an analysis request
-that syncs later", and `arquitectura-api.md` §8 puts **offline sync out of delivery 1**. In
+that syncs later", and `api-architecture.md` §8 puts **offline sync out of delivery 1**. In
 Sprint 1, creating an employee is online and without a lookup.
 
 **Practical effect:** the check step during creation is mocked up and skipped. RSP-004 being
@@ -902,7 +902,7 @@ repository stays an open question for the owner.
 
 ### 7.4 The use cases give everything to the administrator; the roles do not
 
-`casos-de-uso.md` §Convenciones says the actor for all 33 use cases is the **Farm
+`use-cases.md` §Convenciones says the actor for all 33 use cases is the **Farm
 Administrator**, including RSP-003/006/013 (delete) and "define prices". `docs/archive/sync-and-roles.md`
 says the administrator **does not change prices and does not delete people**.
 
@@ -912,7 +912,7 @@ administrator who cannot fix a wrong price will phone the owner every week.
 
 ### 7.5 RSP-015 asks for a date range; the weekly price demands a single day
 
-RSP-015 requires a *"date range"*. `arquitectura-api.md` §1 requires that a `work_record`
+RSP-015 requires a *"date range"*. `api-architecture.md` §1 requires that a `work_record`
 with `rate_source='weekly_price'` be **for a single day**: a `jornal` from Tuesday to
 Tuesday has no single week, and deriving a weekly price over a range ends in a miscalculated
 payment.
@@ -923,8 +923,8 @@ so. With a frozen price the range is legitimate. It is drawn in `web.md` §3.
 
 ### 7.6 RSP numbering: two errors the documents carry around
 
-- **`arquitectura-api.md` §5 and §8 call farm self-registration "RSP-033".** RSP-033 is
-  *Delete Expense*. Self-registration is in `casos-de-uso.md` §9 *Register farm*, which the
+- **`api-architecture.md` §5 and §8 call farm self-registration "RSP-033".** RSP-033 is
+  *Delete Expense*. Self-registration is in `use-cases.md` §9 *Register farm*, which the
   owner left **pending specification**. In other words: the decision to self-register with
   `status='trial'` **is backed by no written use case**; it is option (c) of decision 2 in
   `docs/archive/plan-sprint-1.md` §7 and is still waiting for an answer.
@@ -936,7 +936,7 @@ so. With a frozen price the range is legitimate. It is drawn in `web.md` §3.
 ### 7.7 "Field inside plot": a hierarchy that does not exist
 
 `docs/archive/plan-sprint-1.md` H4 says *"fields inside the plot"*. RSP-001 calls the plot's name *"the
-name of the field"*, and `arquitectura-api.md` models a single level: `plots`.
+name of the field"*, and `api-architecture.md` models a single level: `plots`.
 
 **One level only.** Field = plot = `plots`; the planting detail is `plot_crops`. H4 is badly
 worded. A second level would duplicate the keys of `work_records`, `expenses` and
@@ -961,4 +961,4 @@ but he loses the `anticipo`, which during harvest gets used every week.
 
 ---
 
-See also: `docs/diagramas/web.md` (web app) and `docs/archive/diagrama-movil.md` (mobile app).
+See also: `docs/diagrams/web.md` (web app) and `docs/archive/mobile-diagrams.md` (mobile app).

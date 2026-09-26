@@ -12,8 +12,8 @@
  *
  * Sources of truth, in this order:
  *   - what the phone already enforces  -> `apps/mobile/src/schema.ts` CHECKs
- *   - `docs/arquitectura-api.md`       -> the new server-side sets
- *   - `docs/modelo-datos.md`           -> the Postgres ENUM DDL
+ *   - `docs/api-architecture.md`       -> the new server-side sets
+ *   - `docs/data-model.md`           -> the Postgres ENUM DDL
  */
 
 /** Ledger movement kinds. `schema.ts` enforces exactly these in a CHECK. */
@@ -32,7 +32,7 @@ export const PAY_METHODS = ["efectivo", "transferencia", "otro"] as const;
 export type PayMethod = (typeof PAY_METHODS)[number];
 
 /**
- * Membership of a person in a farm — `farm_role` in `docs/modelo-datos.md`.
+ * Membership of a person in a farm — `farm_role` in `docs/data-model.md`.
  * `superadmin` is deliberately NOT here: it is a flag on the user
  * (`users.is_superadmin`), not a role inside a farm, and it must never be
  * assignable through the same field that grants access to a farm's money.
@@ -42,14 +42,14 @@ export type Role = (typeof ROLES)[number];
 
 /**
  * A settlement is open or annulled; there is no third state and no way back
- * from `void` (see `docs/archive/diagrama-movil.md` §7). A correction is a new
+ * from `void` (see `docs/archive/mobile-diagrams.md` §7). A correction is a new
  * settlement, never an edit of the old one.
  */
 export const SETTLEMENT_STATUSES = ["open", "void"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
 
 /**
- * How an activity is paid — `docs/arquitectura-api.md` §1.
+ * How an activity is paid — `docs/api-architecture.md` §1.
  *   contract   a whole job for a price   (quantity = 1)
  *   time_unit  jornal / week / fortnight (quantity = number of time units)
  *   work_unit  kg / arroba / basket      (quantity = the weight or count)
@@ -62,7 +62,7 @@ export type PayMode = (typeof PAY_MODES)[number];
 /**
  * Activity families — and the one set here that is deliberately NOT closed.
  *
- * `arquitectura-api.md` lists three, `modelo-datos.md` declares four with
+ * `api-architecture.md` lists three, `data-model.md` declares four with
  * `otra`, and both are wrong: RSP-011 says the category picker comes "with
  * an option to create a new one". A farm that grows cocoa alongside coffee will
  * invent categories nobody here thought of, and a closed set would make that

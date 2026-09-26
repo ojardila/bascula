@@ -3,7 +3,7 @@
  * the server disagree, which is the whole reason the package exists.
  *
  * Two invariants inherited from the phone and kept by the API
- * (`docs/arquitectura-api.md` §0):
+ * (`docs/api-architecture.md` §0):
  *
  *   1. Amounts are INTEGER cents. A REAL balance drifts, and these balances
  *      carry over for months — a worker's savings held by the farm.
@@ -119,7 +119,7 @@ export function amountCents(quantity: number | string, rateCents: number): numbe
 
 /**
  * The sign a `kind` is allowed to carry. This is the table in
- * `docs/archive/diagrama-movil.md` §8, and it is enforced by a CHECK in
+ * `docs/archive/mobile-diagrams.md` §8, and it is enforced by a CHECK in
  * `apps/mobile/src/schema.ts` — this constant exists so a client can refuse
  * the movement before the database does, and so Go enforces the same table.
  *
