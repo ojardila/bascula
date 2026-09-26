@@ -133,6 +133,20 @@ jobs:
           # Creates bascula_api with the development password (store.MigrateDev).
           APP_ENV: development
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+      # docs/database.md is generated from the migrations. This database has
+      # just had every migration applied and nothing else, which is exactly
+      # what `make db-diagram` builds locally, so regenerate and compare.
+      - name: database diagram is up to date
+        run: |
+          go run ./cmd/dbdiagram -out ../../docs/database.md
+          if [ -n "$(git status --porcelain -- ../../docs/database.md)" ]; then
+            git --no-pager diff -- ../../docs/database.md | head -n 80
+            echo "::error file=docs/database.md::docs/database.md does not match the migrations. Run 'make db-diagram' and commit docs/database.md."
+            exit 1
+          fi
+        working-directory: services/api
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
       - name: test
         run: go test ./...
         working-directory: services/api
