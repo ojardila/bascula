@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
+import { TourProvider } from "./features/onboarding/TourContext";
+import { TourHost } from "./features/onboarding/TourHost";
 import { RequireAuth, RequirePermission, RequireSuperAdmin } from "./components/Guards";
 import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -59,8 +61,10 @@ function Shell() {
   const { landing } = useAuth();
   return (
     <OfflineProvider>
+    <TourProvider>
     <AppShell>
       <OfflineBar />
+      <TourHost />
       <Routes>
         <Route index element={<Navigate to={landing} replace />} />
         {/* Tablero left the day-to-day product. Old bookmarks still work:
@@ -346,6 +350,7 @@ function Shell() {
         <Route path="*" element={<Navigate to={landing} replace />} />
       </Routes>
     </AppShell>
+    </TourProvider>
     </OfflineProvider>
   );
 }

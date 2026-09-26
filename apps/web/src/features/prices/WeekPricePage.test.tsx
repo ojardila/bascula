@@ -123,7 +123,7 @@ describe("setting the week's price per kilo", () => {
     // The seeded farm pays $800 a kilo. It shows large at the top and again in
     // the table of recent weeks, which is the history.
     expect((await screen.findAllByText("$800")).length).toBeGreaterThan(0);
-    expect(screen.getByText("por kilo")).toBeInTheDocument();
+    expect(screen.getAllByText("por kilo").length).toBeGreaterThan(0);
   }, 20000);
 
   it("saves the new price, and only after somebody confirms it", async () => {

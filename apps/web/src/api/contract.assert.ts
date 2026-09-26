@@ -47,6 +47,7 @@ import type {
   WireCatalogItem, WireCustomer, WireExpense, WireLabelBatch, WireLedgerEntry, WirePaymentReceipt,
   WireNote, WirePlot, WirePlotCrop, WireProduct, WireSale, WireStockLevel,
   WireStockMove, WireWeekPrice, WireWorkUnit,
+  WireBasePrice, WireBasePriceState, WireBasePriceImpact, WireTourProgress,
   WireAnomaly, WireHarvestCurve, WireHarvestShape, WireHarvestWeekTotal,
   WireReportAnomaliesResult, WireReportCrop, WireReportGrid, WireReportGridCell,
   WireReportGridColumn, WireReportGridRow, WireReportPerformanceResult,
@@ -129,6 +130,22 @@ type _Balance = [
 type _LedgerEntry = [
   Check<SameKeys<WireLedgerEntry, Schemas["LedgerEntry"]>>,
   Assignable<WireLedgerEntry, Schemas["LedgerEntry"]>,
+];
+type _BasePrice = [
+  Check<SameKeys<WireBasePrice, Schemas["BasePrice"]>>,
+  Assignable<WireBasePrice, Schemas["BasePrice"]>,
+];
+type _BasePriceState = [
+  Check<SameKeys<WireBasePriceState, Schemas["BasePriceState"]>>,
+  Assignable<WireBasePriceState, Schemas["BasePriceState"]>,
+];
+type _BasePriceImpact = [
+  Check<SameKeys<WireBasePriceImpact, Schemas["BasePriceImpact"]>>,
+  Assignable<WireBasePriceImpact, Schemas["BasePriceImpact"]>,
+];
+type _TourProgress = [
+  Check<SameKeys<WireTourProgress, Schemas["TourProgress"]>>,
+  Assignable<WireTourProgress, Schemas["TourProgress"]>,
 ];
 type _WeekPrice = [
   Check<SameKeys<WireWeekPrice, Schemas["WeekPrice"]>>,
@@ -266,6 +283,7 @@ export type ContractAssertions = [
   _Plot, _PlotCrop, _Boundary,
   _CatalogItem, _WorkUnit, _ActivityRate, _Activity,
   _Balance, _LedgerEntry, _WeekPrice, _PaymentReceipt,
+  _BasePrice, _BasePriceState, _BasePriceImpact, _TourProgress,
   _Note, _AdminFarm, _AdminFarmCreated,
   _Product, _Customer, _StockLevel, _StockMove, _LabelBatch, _Sale, _Expense,
   _ReportTotals, _ReportWeek, _ReportWeeksResult,

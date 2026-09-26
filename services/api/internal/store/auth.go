@@ -90,6 +90,9 @@ type NewFarm struct {
 	Timezone   string
 	Currency   string
 	PriceMinor int64
+	// PriceConfirmed is false when nobody chose the price (the landing signup
+	// seeds a default); the onboarding tour then asks the owner to confirm it.
+	PriceConfirmed bool
 }
 
 func CreateFarm(ctx context.Context, tx pgx.Tx, f NewFarm) error {
@@ -98,8 +101,15 @@ func CreateFarm(ctx context.Context, tx pgx.Tx, f NewFarm) error {
 		f.ID, f.Name, f.Slug, f.Timezone, f.Currency); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO farm_config (farm_id, price_minor, price_confirmed_at)
+		VALUES ($1, $2, CASE WHEN $3 THEN now() END)`, f.ID, f.PriceMinor, f.PriceConfirmed); err != nil {
+		return err
+	}
+	// The base price history starts "since always" (see migration 00030).
 	_, err := tx.Exec(ctx, `
-		INSERT INTO farm_config (farm_id, price_minor) VALUES ($1, $2)`, f.ID, f.PriceMinor)
+		INSERT INTO farm_prices (farm_id, valid_from, price_minor) VALUES ($1, DATE '2000-01-03', $2)`,
+		f.ID, f.PriceMinor)
 	return err
 }
 

@@ -48,6 +48,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { addDays, formatWeekRange, mondayOf, parseDay, todayInFarm, weekTag } from "../../lib/dates";
 import { amountCents, formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import type { WorkRecord } from "../../api/types";
+import { BasePriceCard, PriceExceptionsCard } from "./BasePriceCard";
 
 /** How many Mondays back we offer. A harvest is corrected, not rewritten. */
 const WEEKS_BACK = 8;
@@ -205,6 +206,16 @@ export function WeekPricePage() {
           {saveError}
         </Alert>
       )}
+
+      <BasePriceCard onSaved={() => setTick((t) => t + 1)} />
+      <PriceExceptionsCard />
+
+      <Typography variant="h2" sx={{ fontSize: 22, fontWeight: 800, mt: 1 }}>
+        Precio de una semana
+      </Typography>
+      <Typography color="text.secondary" sx={{ mb: 2, fontSize: 16, maxWidth: 720 }}>
+        Solo si una semana se paga distinto al precio de la finca, por ejemplo en cosecha alta.
+      </Typography>
 
       <Card sx={{ mb: 3 }}>
         <CardContent>

@@ -89,7 +89,7 @@ describe("the list", () => {
    */
   it("does not invent a last sign-in the server never sent", async () => {
     renderUsers();
-    const row = (await screen.findByText("Oscar Jaramillo")).closest("tr")!;
+    const row = (await screen.findByText("Gloria Betancur")).closest("tr")!;
     expect(within(row).queryByText("Nunca ha entrado")).not.toBeInTheDocument();
     expect(within(row).getByText("—")).toBeInTheDocument();
   }, 20000);
@@ -129,13 +129,16 @@ describe("the list", () => {
 
   it("will not let the owner's role be changed, nor your own", async () => {
     renderUsers();
-    const row = (await screen.findByText("Oscar Jaramillo")).closest("tr")!;
-    // The owner's row shows the role as text, with no control: a farm with no
-    // owner, or an owner who has just demoted themselves, is a farm nobody can
-    // administer. The server says the same.
-    expect(within(row).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(within(row).getByText("Dueño")).toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: /Quitar acceso/ })).not.toBeInTheDocument();
+    await screen.findByText("Oscar Jaramillo");
+    // Owners live in their own section, with no role control and no «Quitar
+    // acceso»: a farm with no owner, or an owner who has just demoted
+    // themselves, is a farm nobody can administer. The server says the same.
+    const owners = document.querySelector('[data-tour="owners"]') as HTMLElement;
+    expect(within(owners).getByText("Oscar Jaramillo")).toBeInTheDocument();
+    expect(within(owners).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(within(owners).queryByRole("button", { name: /Quitar acceso/ })).not.toBeInTheDocument();
+    // And the owner is not a row of the table of administrators and weighers.
+    expect(screen.getByText("Oscar Jaramillo").closest("tr")).toBeNull();
   }, 20000);
 });
 
@@ -220,6 +223,34 @@ describe("inviting somebody", () => {
     await user.click(within(dialog).getByRole("button", { name: /Sí, quitar el acceso/ }));
     expect(await screen.findByText("Sin acceso")).toBeInTheDocument();
     expect(screen.getByText("Gloria Betancur")).toBeInTheDocument();
+  }, 20000);
+});
+
+describe("inviting another owner", () => {
+  it("has its own button, warns that an owner can do everything, and asks to confirm", async () => {
+    const user = userEvent.setup();
+    renderUsers();
+    await screen.findByText("Gloria Betancur");
+
+    await user.click(screen.getByRole("button", { name: /Invitar a otro dueño/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Un dueño puede todo")).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("Correo"), "ana@laesperanza.co");
+    await user.type(within(dialog).getByLabelText("Nombre"), "Ana Ardila");
+    const invite = within(dialog).getByRole("button", { name: "Invitar como dueño" });
+    // Not without the checkbox: making somebody an owner is never an accident.
+    expect(invite).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox"));
+    expect(invite).toBeEnabled();
+    await user.click(invite);
+
+    const done = await screen.findByRole("dialog");
+    expect(within(done).getByText(/temporal-/)).toBeInTheDocument();
+    await user.click(within(done).getByRole("button", { name: "Ya la apunté" }));
+
+    const owners = document.querySelector('[data-tour="owners"]') as HTMLElement;
+    expect(await within(owners).findByText("Ana Ardila")).toBeInTheDocument();
   }, 20000);
 });
 

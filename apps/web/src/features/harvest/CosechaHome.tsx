@@ -32,6 +32,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useHarvest } from "./HarvestLayout";
 import { Kg, Value } from "./Figures";
 import { kgForDrawing } from "./totals";
+import { ResumeCard } from "../onboarding/ResumeCard";
 
 const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
 
@@ -57,6 +58,8 @@ export function CosechaHome() {
         </Typography>
       </Box>
 
+      <ResumeCard />
+
       {canWrite && (
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
           <BigAction
@@ -66,6 +69,7 @@ export function CosechaHome() {
             hint="Un día, todos los empleados a la vez"
           />
           <BigAction
+            tour="record-one"
             to="/cosecha/recoleccion"
             icon={<ScaleIcon sx={{ fontSize: 40 }} />}
             title="Registrar una recolección"
@@ -74,6 +78,7 @@ export function CosechaHome() {
         </Box>
       )}
 
+      <Box data-tour="week-summary">
       {denied ? (
         <PermissionDenied moduleName="ver la cosecha" />
       ) : error ? (
@@ -89,6 +94,7 @@ export function CosechaHome() {
           canSeeMoney={canSeeMoney}
         />
       )}
+      </Box>
 
       <Box sx={{ pt: 1 }}>
         <Link
@@ -108,11 +114,12 @@ export function CosechaHome() {
   );
 }
 
-function BigAction({ to, icon, title, hint }: { to: string; icon: ReactNode; title: string; hint: string }) {
+function BigAction({ to, icon, title, hint, tour }: { to: string; icon: ReactNode; title: string; hint: string; tour?: string }) {
   return (
     <ButtonBase
       component={RouterLink}
       to={to}
+      data-tour={tour}
       focusRipple
       sx={{
         justifyContent: "flex-start",

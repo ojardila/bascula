@@ -259,6 +259,7 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 	if err := createFarmRecord(ctx, tx, &store.NewFarm{
 		ID: farmID, Name: req.Name, Timezone: req.Timezone,
 		Currency: req.Currency, PriceMinor: req.PriceCents,
+		PriceConfirmed: true, // required and chosen by the caller
 	}, req.Slug); err != nil {
 		if store.IsUniqueViolation(err, "") {
 			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,

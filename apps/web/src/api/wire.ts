@@ -719,6 +719,41 @@ export interface WireWeekPrice {
   priceCents: number;
 }
 
+/**
+ * The farm's base price, effective-dated (migration 00030). Each history row
+ * applies from its Monday until the next one; a week with its own price keeps
+ * it. `confirmed` is false for a landing signup whose default nobody chose.
+ */
+export interface WireBasePrice {
+  validFrom: DayISO;
+  priceCents: number;
+  createdAt: string;
+}
+
+export interface WireBasePriceState {
+  currentCents: number;
+  confirmed: boolean;
+  thisWeek: DayISO;
+  history: WireBasePrice[];
+}
+
+/** What a new base price from a Monday would move, and what it would not. */
+export interface WireBasePriceImpact {
+  unsettledRecords: number;
+  settledRecords: number;
+  weeksWithOwnPrice: number;
+}
+
+export type WireTourStatus = "active" | "later" | "dismissed" | "done";
+
+/** One user's progress through one guided tour, kept on the server. */
+export interface WireTourProgress {
+  tour: string;
+  step: number;
+  status: WireTourStatus;
+  updatedAt: string;
+}
+
 /* ------------------------------------------------------------------ */
 /* Products, warehouses, sales and expenses  (RSP-018 … RSP-033)       */
 /* ------------------------------------------------------------------ */

@@ -207,6 +207,7 @@ func WeekPrice(ctx context.Context, tx pgx.Tx, weekStart time.Time) (int64, erro
 		SELECT COALESCE(
 			(SELECT wp.price_minor FROM week_prices wp
 			  WHERE wp.farm_id = current_farm() AND wp.week_start = $1),
+			`+basePriceSQL("current_farm()", "$1::date")+`,
 			(SELECT fc.price_minor FROM farm_config fc WHERE fc.farm_id = current_farm()))`,
 		weekStart).Scan(&price)
 	return price, err

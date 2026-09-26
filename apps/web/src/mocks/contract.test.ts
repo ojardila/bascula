@@ -1283,3 +1283,29 @@ describe("products, stock, sales and expenses", () => {
     expect((await del(`/v1/sales/${SALE}`, WEIGHER)).status).toBe(403);
   });
 });
+
+async function put(path: string, id: string, body?: unknown) {
+  const res = await fetch(path, { method: "PUT", headers: H(id), body: JSON.stringify(body ?? {}) });
+  return { status: res.status, body: res.status === 204 ? null : await res.json() };
+}
+
+describe("the base price and the tours (migration 00030)", () => {
+  it("the base price is money: the weigher cannot read it, only the owner writes it", async () => {
+    expect((await get("/v1/prices/base", WEIGHER)).status).toBe(403);
+    const before = await get("/v1/prices/base", OWNER);
+    expect(before.status).toBe(200);
+    expect(before.body.history.at(-1).validFrom).toBe("2000-01-03");
+    expect((await put("/v1/prices/base/2026-08-25", OWNER, { priceCents: 90000 })).status).toBe(400);
+    const saved = await put("/v1/prices/base/2026-08-24", OWNER, { priceCents: 90000 });
+    expect(saved.status).toBe(200);
+    expect(saved.body.confirmed).toBe(true);
+    expect((await get("/v1/prices/weeks/2026-08-17", OWNER)).body.priceCents).not.toBe(90000);
+  });
+
+  it("tour progress is the caller's own", async () => {
+    expect((await put("/v1/me/tours/owner", OWNER, { step: 3, status: "later" })).status).toBe(200);
+    expect((await get("/v1/me/tours", OWNER)).body.items).toHaveLength(1);
+    expect((await get("/v1/me/tours", WEIGHER)).body.items).toHaveLength(0);
+    expect((await put("/v1/me/tours/owner", OWNER, { step: 3, status: "maybe" })).status).toBe(400);
+  });
+});

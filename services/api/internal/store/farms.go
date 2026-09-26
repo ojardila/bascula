@@ -131,9 +131,19 @@ func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm, cleared map[string]bool)
 		return nil, err
 	}
 	if f.PriceMinor != nil {
-		if _, err := tx.Exec(ctx,
-			`UPDATE farm_config SET price_minor = $1 WHERE farm_id = current_farm()`,
+		// The legacy "standing price" write now lands in the base price
+		// history as "from this week", so it keeps meaning what it meant (the
+		// price from now on) without rewriting weeks that already had one.
+		if _, err := tx.Exec(ctx, `
+			WITH `+boundsCTE+`
+			INSERT INTO farm_prices (farm_id, valid_from, price_minor, created_by)
+			SELECT current_farm(), b.this_week, $1, current_user_id() FROM bounds b
+			ON CONFLICT (farm_id, valid_from) DO UPDATE
+			  SET price_minor = EXCLUDED.price_minor, created_at = now()`,
 			*f.PriceMinor); err != nil {
+			return nil, err
+		}
+		if err := syncCurrentBasePrice(ctx, tx, true); err != nil {
 			return nil, err
 		}
 	}

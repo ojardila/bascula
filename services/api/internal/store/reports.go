@@ -90,10 +90,14 @@ harvest AS (
            sl.amount_minor,
            l.amount_minor,
            CASE WHEN l.rate_source = 'weekly_price'
-                THEN round(l.quantity * COALESCE(wp.price_minor, fc.price_minor))::bigint
+                THEN round(l.quantity * COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
+                            WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
+                            ORDER BY fp.valid_from DESC LIMIT 1), fc.price_minor))::bigint
            END) AS value_minor,
          (sl.amount_minor IS NULL AND l.amount_minor IS NULL) AS value_is_estimate,
-         COALESCE(wp.price_minor, fc.price_minor) AS week_price_minor
+         COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
+                            WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
+                            ORDER BY fp.valid_from DESC LIMIT 1), fc.price_minor) AS week_price_minor
     FROM work_records l
     LEFT JOIN work_units u ON u.id = l.unit_id
     LEFT JOIN LATERAL (
@@ -360,6 +364,9 @@ SELECT s.week_start, ` + totalsColsOuter + `,
        COALESCE(max(h.week_price_minor),
                 (SELECT wp.price_minor FROM week_prices wp
                   WHERE wp.farm_id = current_farm() AND wp.week_start = s.week_start),
+                (SELECT fp.price_minor FROM farm_prices fp
+                  WHERE fp.farm_id = current_farm() AND fp.valid_from <= s.week_start
+                  ORDER BY fp.valid_from DESC LIMIT 1),
                 (SELECT fc.price_minor FROM farm_config fc
                   WHERE fc.farm_id = current_farm())) AS price_minor,
        (s.week_start < (SELECT this_week FROM bounds)) AS finished,

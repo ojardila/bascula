@@ -26,6 +26,9 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PlotLocationField, pointOf, type PlotPoint } from "./PlotLocationField";
+import { useTour, useTourAction } from "../onboarding/TourContext";
+import { TourCallout } from "../onboarding/TourCallout";
+import { OWNER_DONE } from "../onboarding/steps";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { uuidv7 } from "../../lib/uuid";
@@ -100,6 +103,19 @@ export function PlotFormPage() {
    * sends nothing and the stored point stays; null is sent and erases it.
    */
   const [location, setLocation] = useState<PlotPoint | null | undefined>(undefined);
+  const tour = useTour();
+  const tourN = tour.current?.tour === "owner" && !tour.paused ? tour.current.n : null;
+
+  // The owner's tour, steps 9–11, follows the form and the form follows it.
+  useEffect(() => {
+    if (step === 1 && tourN === 9) tour.goTo(10);
+    if (step === 0 && (tourN === 10 || tourN === 11)) tour.goTo(9);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+  useEffect(() => {
+    if (tourN === 9 && step === 1) setStep(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourN]);
 
   useEffect(() => {
     Promise.all([api.cropTypes(), api.varieties()])
@@ -197,8 +213,8 @@ export function PlotFormPage() {
     return created;
   }
 
-  async function save() {
-    if (!validateStep2()) return;
+  async function save(): Promise<boolean> {
+    if (!validateStep2()) return false;
     // `plotId` is already stable across clicks — `useState(() => id ?? uuidv7())`
     // — so the server's idempotency covers the data. This is the other half:
     // the second request that never leaves. See `lib/writeOnce.ts`.
@@ -238,9 +254,19 @@ export function PlotFormPage() {
       setError(messageFor(e));
       return { ran: false } as const;
     });
-    if (!outcome.ran) return;
+    if (!outcome.ran) return false;
+    tour.note({ plot: name.trim() });
+    if (tourN === 10 || tourN === 11) tour.goTo(OWNER_DONE);
     navigate(`${PLOT.path}/${outcome.value.id}`, { replace: true });
+    return true;
   }
+
+  useTourAction("plot-next", () => {
+    if (!validateStep1()) return false;
+    setStep(1);
+    return true;
+  });
+  useTourAction("plot-save", () => save());
 
   return (
     <Box>
@@ -271,6 +297,7 @@ export function PlotFormPage() {
         </Alert>
       )}
 
+      {step === 0 && !editing && <TourCallout tour="owner" n={9} />}
       {step === 0 && (
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 7 }}>
@@ -368,6 +395,7 @@ export function PlotFormPage() {
         </Grid>
       )}
 
+      {step === 1 && !editing && <TourCallout tour="owner" n={10} />}
       {step === 1 && (
         <Card>
           <CardContent>
@@ -493,6 +521,7 @@ export function PlotFormPage() {
         </Card>
       )}
 
+      {step === 1 && !editing && <TourCallout tour="owner" n={11} />}
       <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
         {step === 1 && (
           <Button color="inherit" onClick={() => setStep(0)}>
@@ -510,7 +539,7 @@ export function PlotFormPage() {
           </Button>
         )}
         {step === 1 && (
-          <Button variant="contained" onClick={save} disabled={busy}>
+          <Button data-tour="plot-save" variant="contained" onClick={() => void save()} disabled={busy}>
             {busy ? "Guardando…" : `Guardar ${PLOT.one}`}
           </Button>
         )}
