@@ -43,6 +43,7 @@ import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SalesPage } from "./features/sales/SalesPage";
 import { ExpensesPage } from "./features/expenses/ExpensesPage";
 import { ConfigPage } from "./features/config/ConfigPage";
+import { ConnectionsPage } from "./features/config/ConnectionsPage";
 import { WorkUnitsPage } from "./features/units/WorkUnitsPage";
 import { SuperAdminPage } from "./features/admin/SuperAdminPage";
 import { ProvisionPage } from "./features/provision/ProvisionPage";
@@ -333,6 +334,16 @@ function Shell() {
           element={
             <RequirePermission action="activities.read" moduleName="ver las unidades">
               <WorkUnitsPage />
+            </RequirePermission>
+          }
+        />
+        {/* «Conexiones» for every role: a weigher can connect an assistant
+            with their own account, so they can see and revoke it too. */}
+        <Route
+          path="conexiones"
+          element={
+            <RequirePermission action="connections.manage" moduleName="ver sus conexiones">
+              <ConnectionsPage />
             </RequirePermission>
           }
         />

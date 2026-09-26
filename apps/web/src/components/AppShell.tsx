@@ -32,6 +32,7 @@ import HarvestIcon from "@mui/icons-material/Grass";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import LinkIcon from "@mui/icons-material/Link";
 import { useTour } from "../features/onboarding/TourContext";
 import { useAuth } from "../auth/AuthContext";
 import { visibleModules, type ModuleDef } from "../auth/permissions";
@@ -55,6 +56,7 @@ const ICONS: Record<string, ReactNode> = {
   price: <PriceChangeIcon fontSize="medium" />,
   inventory: <InventoryIcon fontSize="medium" />,
   settings: <SettingsIcon fontSize="medium" />,
+  link: <LinkIcon fontSize="medium" />,
 };
 
 const ROLE_LABEL: Record<string, string> = {

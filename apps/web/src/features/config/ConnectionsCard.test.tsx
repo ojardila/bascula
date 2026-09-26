@@ -237,6 +237,7 @@ describe("Conectado ✓", () => {
     expect(await screen.findByLabelText("Dirección MCP de la finca")).toHaveTextContent(/\/mcp$/);
     expect(screen.getByText("Activa")).toBeInTheDocument();
     expect(screen.getByText(/Creada el/)).toBeInTheDocument();
+    expect(screen.getByText("Consulta y, si usted lo confirma, registra.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Revocar conexión" }));
     const dialog = await screen.findByRole("dialog");

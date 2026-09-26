@@ -107,7 +107,8 @@ const ASSISTANT_CHAT = [
 const ASSISTANT_POINTS = [
   "Pregunte con sus palabras, como le preguntaría a una persona.",
   "El asistente solo ve lo que el rol de ese usuario permite: el pesador no ve dinero.",
-  "Solo consulta. No cambia ni borra nada de la finca.",
+  "Consulta y, si usted lo confirma, registra: pesadas, anticipos o pagos. Antes de mover plata siempre le pregunta.",
+  "Usted decide al conectarlo: solo consultar, o consultar y registrar. Puede quitarle el acceso cuando quiera.",
 ];
 
 const FOR_WHOM = [
@@ -130,7 +131,7 @@ const FAQ = [
   { q: "¿Puedo llevar anticipos y pagos parciales?", a: "Sí. Puede registrar anticipos, aplicarlos a la cuenta y dejar constancia de pagos parciales. El saldo muestra cuánto queda pendiente." },
   { q: "¿Báscula transfiere el dinero al recolector?", a: "Báscula permite registrar el dinero que usted entrega y consultar el saldo. El pago al recolector lo realiza por el medio que utiliza en su finca." },
   { q: "¿Puedo consultar cuánto se recoge en cada lote?", a: "Sí. Puede revisar los kilos por lote, recolector y semana." },
-  { q: "¿Funciona con ChatGPT o Claude?", a: "Sí. Báscula se conecta con ChatGPT, Claude y otros asistentes de IA. Cada persona entra con su usuario de Báscula y el asistente solo puede consultar lo que su rol le permite ver." },
+  { q: "¿Funciona con ChatGPT o Claude?", a: "Sí. Báscula se conecta con ChatGPT, Claude y otros asistentes de IA. Cada persona entra con su usuario de Báscula y el asistente solo ve y hace lo que su rol le permite. Puede consultar y, si usted lo confirma, registrar cosas como pesadas o pagos; al conectarlo también puede elegir que solo consulte." },
   { q: "¿Cuánto cuesta?", a: "La demostración es gratuita. Solicítela para conocer las condiciones de uso y el costo del servicio antes de empezar." },
   { q: "¿Tengo que llevar los datos de mi finca a la demostración?", a: "Puede conocer el recorrido con datos de ejemplo. Cuéntenos cómo registra los kilos y paga la recolección para enfocar la conversación en su operación." },
 ];
