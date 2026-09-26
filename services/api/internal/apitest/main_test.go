@@ -110,7 +110,9 @@ func setupAndRun(m *testing.M) (int, error) {
 		_, _ = drop.Exec(ctx, "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
 	}()
 
-	if err := store.Migrate(ctx, adminDSN); err != nil {
+	// MigrateDev: the suite connects as bascula_api with the development
+	// password, which only the development migration creates.
+	if err := store.MigrateDev(ctx, adminDSN); err != nil {
 		return 0, fmt.Errorf("migrate scratch database: %w", err)
 	}
 
@@ -185,7 +187,8 @@ func replaceDBName(dsn, name string) string {
 }
 
 // appDSNFor swaps the superuser credentials for the application role's. The
-// password is the development default set by migration 00001.
+// password is the development default set by migration 00001 under
+// store.MigrateDev.
 func appDSNFor(adminDSN string) string {
 	at := strings.Index(adminDSN, "@")
 	scheme := strings.Index(adminDSN, "://")

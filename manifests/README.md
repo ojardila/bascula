@@ -66,17 +66,20 @@ Three roles, three different jobs:
 |:--|:--|:--|
 | `postgres` | CNPG (`enableSuperuserAccess`) | the migration Job only |
 | `bascula_api` | CNPG managed role | the API at runtime |
-| `bascula_app` | migration 00001 | nothing connects as it; it is the privilege bundle |
+| `bascula_app` | CNPG initdb (`postInitApplicationSQL`); 00001 on a local database | nothing connects as it; it is the privilege bundle |
 
 The migration Job connects as the superuser because 00001 creates an extension
 and a role, and the database owner may do neither.
 
 > [!IMPORTANT]
 > `bascula_api` is declared in `postgres.yaml` under `managed.roles` rather
-> than left to migration 00001, which creates it with a password that is
-> committed to this repository and expects production to replace it out of
-> band. Creating it first means the migration's `IF NOT EXISTS` skips it and
-> that password never exists on this cluster.
+> than left to migration 00001. 00001 creates it (with the development
+> password committed to this repository) only under `APP_ENV=development`
+> (`store.MigrateDev`); the migration Job on a cluster never does, so the
+> managed role, with its password from `bascula-db-api`, is the only way the
+> role comes to exist here. `bascula_app` is created at initdb so the managed
+> role's `inRoles` is satisfiable from the first second; before that, a new
+> cluster raced migration 00001 and CNPG backed off for many minutes.
 
 `NOBYPASSRLS` on that role is load-bearing: row level security is the tenant
 boundary, so the role the API connects with must not be able to step over it.

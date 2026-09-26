@@ -47,8 +47,10 @@ up:
 down:
 	docker compose down
 
+# APP_ENV=development makes 00001 create bascula_api with the development
+# password DATABASE_URL uses. A cluster's migration Job never sets it.
 migrate:
-	go run ./cmd/api -migrate
+	APP_ENV=development go run ./cmd/api -migrate
 
 # The retention sweep. It runs on ADMIN_DATABASE_URL, like migrations and for
 # the same reason: sync_log is append-only and DELETE is revoked from the
