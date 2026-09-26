@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
-import type { WireTourStatus } from "../../api/wire";
+import type { WireTourProgress, WireTourStatus } from "../../api/wire";
 import { OWNER_DONE, autoStartAt, resumeIndex, stepOf, type TourName, type TourStepDef } from "./steps";
 
 export interface SavedTour {
@@ -58,6 +58,13 @@ export const TourContext = createContext<TourContextValue | null>(null);
 
 const EMPTY_SUMMARY: TourSummary = { owners: 0, people: 0, plot: null, priceCents: null };
 
+/**
+ * How long to wait before asking the server again when the saved progress
+ * could not be loaded: about a minute in all, the time a deploy takes to
+ * bring the API back.
+ */
+export const TOUR_LOAD_RETRY_MS: readonly number[] = [1000, 2000, 4000, 8000, 15000, 30000];
+
 function storageKey(userId: string, farm: string) {
   return `bascula.tours.${userId}.${farm}`;
 }
@@ -81,6 +88,8 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const actions = useRef(new Map<string, ActionFn>());
   const currentRef = useRef(current);
   currentRef.current = current;
+  /** What this page load has saved itself, newest first over the server's copy. */
+  const written = useRef<Partial<Record<TourName, SavedTour>>>({});
 
   const role = principal.role;
   const available: TourName | null =
@@ -89,6 +98,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
 
   const persist = useCallback(
     (tour: TourName, step: number, status: WireTourStatus) => {
+      written.current = { ...written.current, [tour]: { step, status } };
       setSaved((prev) => {
         const next = { ...prev, [tour]: { step, status } };
         if (key) {
@@ -108,40 +118,73 @@ export function TourProvider({ children }: { children: ReactNode }) {
   );
 
   // Load the saved progress, then decide whether a tour starts by itself.
+  //
+  // Only the server's answer can start a tour. A deploy restarts the API
+  // (one replica, Recreate) at the same moment the service worker reloads
+  // every open page onto the new build, so the first `/v1/me/tours` of that
+  // page load often fails. That failure used to fall back to this device's
+  // localStorage — empty on a new device or on a farm's own address — and an
+  // empty answer read as "never seen": the tour came back after every
+  // deploy. Now a failed load is retried for about a minute, and while the
+  // server has not answered, nothing starts by itself.
   useEffect(() => {
     if (!user || !key) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    written.current = {};
     setLoaded(false);
-    (async () => {
-      let rows: Partial<Record<TourName, SavedTour>>;
+
+    const attempt = async (n: number) => {
+      let items: WireTourProgress[];
       try {
-        const items = await api.listTours();
-        rows = {};
-        for (const it of items) {
-          if (it.tour === "owner" || it.tour === "weigher") rows[it.tour] = { step: it.step, status: it.status };
-        }
-        // A save that never reached the server is still the newest fact.
-        const local = readLocal(key);
-        for (const t of ["owner", "weigher"] as TourName[]) {
-          if (!rows[t] && local[t]) rows[t] = local[t];
-        }
+        items = await api.listTours();
       } catch {
-        rows = readLocal(key);
+        if (cancelled) return;
+        if (n === 0) {
+          // Enough for the resume card; not enough to start anything.
+          setSaved({ ...readLocal(key), ...written.current });
+          setLoaded(true);
+        }
+        if (n < TOUR_LOAD_RETRY_MS.length) {
+          timer = setTimeout(() => void attempt(n + 1), TOUR_LOAD_RETRY_MS[n]);
+        }
+        return;
       }
       if (cancelled) return;
-      setSaved(rows);
+      const rows: Partial<Record<TourName, SavedTour>> = {};
+      for (const it of items) {
+        if (it.tour === "owner" || it.tour === "weigher") rows[it.tour] = { step: it.step, status: it.status };
+      }
+      // A save that never reached the server is still the newest fact: keep
+      // it, and hand it to the server now so the next device knows too.
+      const local = readLocal(key);
+      for (const t of ["owner", "weigher"] as TourName[]) {
+        const l = local[t];
+        if (!rows[t] && l) {
+          rows[t] = l;
+          api.saveTour(t, l.step, l.status).catch(() => {
+            /* still offline: try again on the next load */
+          });
+        }
+      }
+      // Whatever this page already wrote (a tour started by hand while the
+      // load was retrying) is newer than what the server just said.
+      setSaved({ ...rows, ...written.current });
       setLoaded(true);
 
-      // Every owner and weigher who has not finished or closed their tour
-      // gets it by themselves (the first login of a new farm included, on the
-      // shared app or a dedicated stack alike). Everybody else finds it in
-      // «Ayuda y recorrido».
       if (user.isSuperAdmin || readOnly || !available) return;
+      if (currentRef.current || written.current[available]) return;
       const at = autoStartAt(available, rows[available]);
-      if (at !== null) setCurrent({ tour: available, n: at });
-    })();
+      if (at === null) return;
+      setCurrent({ tour: available, n: at });
+      // Mark it as shown the moment it shows: closing the page, a reload or
+      // the next deploy must not bring it back by itself.
+      persist(available, at, "active");
+    };
+    void attempt(0);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, key, available]);

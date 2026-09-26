@@ -101,9 +101,10 @@ describe("when a tour starts by itself", () => {
     expect(autoStartAt("weigher", undefined)).toBe(1);
   });
 
-  it("picks up a tour left open where it was", () => {
-    expect(autoStartAt("owner", { step: 7, status: "active" })).toBe(7);
-    expect(autoStartAt("owner", { step: 10, status: "active" })).toBe(9);
+  it("does not take over the screen again for a tour left open (a deploy reloads the page mid-way)", () => {
+    expect(autoStartAt("owner", { step: 0, status: "active" })).toBeNull();
+    expect(autoStartAt("owner", { step: 7, status: "active" })).toBeNull();
+    expect(autoStartAt("weigher", { step: 1, status: "active" })).toBeNull();
   });
 
   it("never again once finished or closed, and waits on the card after Saltar", () => {
