@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w" \
       -o /out/api ./cmd/api
 
-FROM alpine:3.21
+FROM alpine:3.24
 # ca-certificates only: the binary is static, but TLS to anything outside needs
 # the root store. tzdata because settlement periods are farm-local dates and a
 # container with no zones resolves America/Bogota to UTC, which moves a week.
