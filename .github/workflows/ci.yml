@@ -158,7 +158,7 @@ jobs:
       # only because that one publishes no arm64 manifest and half the team is
       # on Apple silicon. Runners are x86.
       postgres:
-        image: postgis/postgis:17-3.5
+        image: postgis/postgis:17-3.6-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
