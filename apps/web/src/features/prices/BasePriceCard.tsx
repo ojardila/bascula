@@ -146,7 +146,7 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
     : null;
 
   return (
-    <Card data-tour="base-price" sx={{ mb: 3, borderRadius: 4 }}>
+    <Card sx={{ mb: 3, borderRadius: 4 }}>
       <CardContent sx={{ p: { xs: 2.25, sm: 3 } }}>
         <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }} flexWrap="wrap">
           <Typography variant="h3" component="h2" sx={{ fontSize: 22, fontWeight: 800 }}>
@@ -178,7 +178,10 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
           </Alert>
         )}
 
-        <Box sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+        {/* The tour points at the two fields, not the whole card: the card is
+            taller than a phone once the history grows, and the globe then has
+            nowhere to go but off the screen. */}
+        <Box data-tour="base-price" sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
           <TextField
             label="Precio por kilo"
             value={text}
