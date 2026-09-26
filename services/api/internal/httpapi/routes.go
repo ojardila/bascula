@@ -151,6 +151,10 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/prices/base", auth.ActionPricesRead, s.handleGetBasePrice},
 		{http.MethodGet, "/v1/prices/base/{monday}/impact", auth.ActionPricesRead, s.handleBasePriceImpact},
 		{http.MethodPut, "/v1/prices/base/{monday}", auth.ActionPricesWrite, s.handleSetBasePrice},
+		{http.MethodGet, "/v1/prices/special", auth.ActionPricesRead, s.handleListSpecialPrices},
+		{http.MethodGet, "/v1/prices/special/{kind}/{id}/{monday}/impact", auth.ActionPricesRead, s.handleSpecialPriceImpact},
+		{http.MethodPut, "/v1/prices/special/{kind}/{id}/{monday}", auth.ActionPricesWrite, s.handleSetSpecialPrice},
+		{http.MethodDelete, "/v1/prices/special/{kind}/{id}/{monday}", auth.ActionPricesWrite, s.handleDeleteSpecialPrice},
 
 		// Money. Every one of these is Money:true in the permission table, and
 		// the contract test asserts 403 for the weigher on all of them.

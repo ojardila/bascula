@@ -90,9 +90,30 @@ harvest AS (
            sl.amount_minor,
            l.amount_minor,
            CASE WHEN l.rate_source = 'weekly_price'
-                THEN round(l.quantity * COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
-                            WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
-                            ORDER BY fp.valid_from DESC LIMIT 1), fc.price_minor))::bigint
+                THEN round(l.quantity * COALESCE(
+                  -- The same rule as kilo_price() (migration 00032), written
+                  -- inline so COALESCE stops at the first match and a farm
+                  -- with no special prices pays nothing for them: sp's flags
+                  -- are evaluated once per query, not once per weighing.
+                  CASE WHEN sp.has_person THEN
+                    (SELECT ep.price_minor FROM employee_prices ep
+                      WHERE ep.farm_id = l.farm_id AND ep.employee_id = l.employee_id
+                        AND ep.valid_from <= l.week_start
+                      ORDER BY ep.valid_from DESC LIMIT 1) END,
+                  CASE WHEN sp.has_plot THEN
+                    (SELECT CASE WHEN count(*) > 0 AND count(x.price) = count(*)
+                                      AND count(DISTINCT x.price) = 1 THEN max(x.price) END
+                       FROM (SELECT (SELECT pp.price_minor FROM plot_prices pp
+                                      WHERE pp.farm_id = w.farm_id AND pp.plot_id = w.plot_id
+                                        AND pp.valid_from <= l.week_start
+                                      ORDER BY pp.valid_from DESC LIMIT 1) AS price
+                               FROM work_record_plots w
+                              WHERE w.farm_id = l.farm_id AND w.work_record_id = l.id) x) END,
+                  wp.price_minor,
+                  (SELECT fp.price_minor FROM farm_prices fp
+                    WHERE fp.farm_id = l.farm_id AND fp.valid_from <= l.week_start
+                    ORDER BY fp.valid_from DESC LIMIT 1),
+                  fc.price_minor))::bigint
            END) AS value_minor,
          (sl.amount_minor IS NULL AND l.amount_minor IS NULL) AS value_is_estimate,
          COALESCE(wp.price_minor, (SELECT fp.price_minor FROM farm_prices fp
@@ -105,6 +126,13 @@ harvest AS (
        WHERE si.payable_id = l.id AND si.voided_at IS NULL LIMIT 1) sl ON true
     LEFT JOIN week_prices wp ON wp.farm_id = l.farm_id AND wp.week_start = l.week_start
     LEFT JOIN farm_config fc ON fc.farm_id = l.farm_id
+    -- Whether this farm has any special price at all (migration 00032).
+    -- week_price_minor above stays the week's own price: it is what a week's
+    -- row shows as "el precio de la semana".
+    CROSS JOIN (SELECT EXISTS (SELECT 1 FROM employee_prices WHERE farm_id = current_farm()
+                                 AND price_minor IS NOT NULL) AS has_person,
+                       EXISTS (SELECT 1 FROM plot_prices WHERE farm_id = current_farm()
+                                 AND price_minor IS NOT NULL) AS has_plot) sp
    WHERE l.deleted_at IS NULL
      AND l.pay_scheme = 'unidad_trabajo'
      AND ($1::date IS NULL OR l.local_day >= $1)

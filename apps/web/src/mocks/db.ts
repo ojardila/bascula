@@ -307,6 +307,8 @@ export interface Tenant {
    * the app, so they read as "done" and no test meets a welcome it did not ask for.
    */
   freshTours?: boolean;
+  /** `plot_prices` and `employee_prices` (migration 00032). A null price ends one. */
+  specialPrices?: MockSpecialPrice[];
   ledger: WireLedgerEntry[];
   settlements: MockSettlement[];
   notes: WireNote[];
@@ -547,7 +549,7 @@ export function projectWorkRecord(t: Tenant, r: MockWorkRecord): WireWorkRecord 
   const settled = isSettled(t, r.id);
   const stillOnTheWeek = !settled && r.rateSource === "weekly_price" && r.rateCents === null;
   if (!stillOnTheWeek) return { ...r, settled };
-  const rateCents = weekPriceOf(t, dayOf(r.weekStart));
+  const rateCents = kiloPriceOf(t, r, dayOf(r.weekStart)).priceCents;
   return {
     ...r,
     settled,
@@ -568,6 +570,43 @@ export function weekPriceOf(t: Tenant, weekStart: string): number {
   const base = basePriceOn(t, weekStart);
   if (base !== null) return base;
   return farmOf(t.farmId)?.priceCents ?? 0;
+}
+
+export interface MockSpecialPrice {
+  kind: "lote" | "persona";
+  targetId: string;
+  validFrom: string;
+  priceCents: number | null;
+  createdAt: string;
+}
+
+/** The entry in force for one lote or person on a Monday, or undefined. */
+export function specialOn(t: Tenant, kind: "lote" | "persona", targetId: string, monday: string): MockSpecialPrice | undefined {
+  return (t.specialPrices ?? [])
+    .filter((p) => p.kind === kind && p.targetId === targetId && p.validFrom <= monday)
+    .sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1))[0];
+}
+
+/**
+ * `kilo_price()`: persona > lote > semana > finca. A weighing in several lotes
+ * takes the lote price only if they all agree.
+ */
+export function kiloPriceOf(
+  t: Tenant,
+  r: { workerId: string; plotIds?: string[] | null },
+  weekStart: string,
+): { priceCents: number; source: "persona" | "lote" | "semana" | "finca" } {
+  const person = specialOn(t, "persona", r.workerId, weekStart);
+  if (person && person.priceCents !== null) return { priceCents: person.priceCents, source: "persona" };
+  const plots = r.plotIds ?? [];
+  if (plots.length > 0) {
+    const prices = plots.map((id) => specialOn(t, "lote", id, weekStart)?.priceCents ?? null);
+    if (prices.every((x) => x !== null) && new Set(prices).size === 1) {
+      return { priceCents: prices[0]!, source: "lote" };
+    }
+  }
+  if (t.weekPrices.some((p) => p.weekStart === weekStart)) return { priceCents: weekPriceOf(t, weekStart), source: "semana" };
+  return { priceCents: weekPriceOf(t, weekStart), source: "finca" };
 }
 
 export interface MockBasePrice {
@@ -623,9 +662,10 @@ export function pending(
     .map((r) => {
       const activity = t.activities.find((a) => a.id === r.activityId);
       const weekStart = dayOf(r.weekStart);
-      const rateCents =
-        r.rateSource === "weekly_price" ? weekPriceOf(t, weekStart) : (r.rateCents ?? 0);
+      const kilo = r.rateSource === "weekly_price" ? kiloPriceOf(t, r, weekStart) : null;
+      const rateCents = kilo ? kilo.priceCents : (r.rateCents ?? 0);
       return {
+        ...(kilo ? { priceSource: kilo.source } : {}),
         payableId: r.id,
         activityId: r.activityId,
         activity: activity?.name ?? "",

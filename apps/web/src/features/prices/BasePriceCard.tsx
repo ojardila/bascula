@@ -299,30 +299,3 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
     </Card>
   );
 }
-
-/**
- * Tour step 2: special prices, told and not asked. Per-lote and per-person
- * prices arrive in the next phase; a week's own price already exists below.
- */
-export function PriceExceptionsCard() {
-  return (
-    <Card data-tour="price-exceptions" variant="outlined" sx={{ mb: 3, borderRadius: 4 }}>
-      <CardContent sx={{ p: { xs: 2.25, sm: 3 } }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" sx={{ mb: 1 }}>
-          <Typography variant="h3" component="h2" sx={{ fontSize: 21, fontWeight: 800 }}>
-            Precios especiales
-          </Typography>
-          <Chip label="Puede hacerlo después" variant="outlined" sx={{ fontSize: 14 }} />
-        </Stack>
-        <Typography sx={{ fontSize: 17 }}>
-          Si un lote, una persona o una semana de cosecha alta se paga distinto, se le pone un
-          precio fijo que reemplaza al de la finca.
-        </Typography>
-        <Stack spacing={0.75} sx={{ mt: 1.5 }}>
-          <Typography sx={{ fontSize: 16 }}>• <strong>Una semana:</strong> más abajo, en «Precio de una semana».</Typography>
-          <Typography sx={{ fontSize: 16 }}>• <strong>Un lote o una persona:</strong> muy pronto, aquí mismo.</Typography>
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}

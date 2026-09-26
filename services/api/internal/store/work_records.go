@@ -203,10 +203,12 @@ func GetWorkRecord(ctx context.Context, tx pgx.Tx, id string) (*WorkRecord, erro
 // quantity at the price in force for that week — the number the settlement
 // would post if it ran now. Everything else already froze its own amount.
 //
-// Week prices are looked up once per distinct week, not once per record: a
-// season list is thousands of rows over a few dozen weeks.
+// Kilo prices are resolved in one query for the whole list, not once per
+// record: a season list is thousands of rows.
 func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) error {
-	prices := map[string]int64{}
+	// Kilo prices come from kilo_price() (persona > lote > semana > finca),
+	// fetched once for every record that needs one, and only if one does.
+	var kilo map[string]KiloPrice
 	// Whether the caller may read a price at all, asked once and only if some
 	// record actually needs one. Under migration 00022 the weigher's SELECT on
 	// week_prices returns no row, and WeekPrice COALESCEs a missing override to
@@ -236,16 +238,26 @@ func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) erro
 				r.EffectiveMinor, r.AmountIsEstimate, r.PriceWithheld = 0, true, true
 				continue
 			}
-			key := r.WeekStart.Format("2006-01-02")
-			price, ok := prices[key]
-			if !ok {
-				p, err := WeekPrice(ctx, tx, r.WeekStart)
+			if kilo == nil {
+				var ids []string
+				for j := range records {
+					if records[j].settledAmount == nil && records[j].AmountMinor == nil &&
+						records[j].RateSource == domain.RateWeeklyPrice {
+						ids = append(ids, records[j].ID)
+					}
+				}
+				k, err := KiloPrices(ctx, tx, ids)
 				if err != nil {
 					return err
 				}
-				price = p
-				prices[key] = price
+				kilo = k
 			}
+			kp, ok := kilo[r.ID]
+			if !ok {
+				r.EffectiveMinor, r.AmountIsEstimate = 0, true
+				continue
+			}
+			price := kp.PriceMinor
 			qty, ok := new(big.Rat).SetString(r.Quantity.String())
 			if !ok {
 				return fmt.Errorf("work record %s has an unreadable quantity %q", r.ID, r.Quantity)
