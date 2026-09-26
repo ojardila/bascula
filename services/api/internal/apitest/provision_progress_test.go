@@ -3,6 +3,7 @@ package apitest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -324,7 +325,11 @@ func TestProvisionProgressFallsBackWithoutCluster(t *testing.T) {
 	if stages["pipeline_started"] != "done" || stages["pipeline_done"] == "done" || p <= 0 || p >= 100 {
 		t.Fatalf("fallback stages: %s", st.Raw)
 	}
-	if strings.Contains(st.Raw, "403") || strings.Contains(strings.ToLower(st.Raw), "forbidden") {
+	// The farm's URL is a test server on a random port, which can itself
+	// contain "403" (127.0.0.1:40361 failed CI once); only the text the
+	// waiting screen shows is checked.
+	shown := strings.ToLower(fmt.Sprint(st.Body["note"], st.Body["current"], st.Body["stages"], st.Body["steps"]))
+	if strings.Contains(shown, "403") || strings.Contains(shown, "forbidden") {
 		t.Fatalf("internal details leaked: %s", st.Raw)
 	}
 }
