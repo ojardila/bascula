@@ -406,3 +406,31 @@ func TestSignupsAreAlsoCappedPerEmail(t *testing.T) {
 			back.Status, back.Raw)
 	}
 }
+
+// TestIPv6RotationInsideOneSlash64StillHitsTheSignupCap: an IPv6 subscriber
+// line or cloud VM holds a whole /64. Counting single addresses gave it 2^64
+// buckets; the limit now counts the /64.
+func TestIPv6RotationInsideOneSlash64StillHitsTheSignupCap(t *testing.T) {
+	h := requireDB(t)
+	srv := h.serverWithConfig(t, func(cfg *httpapi.Config) {
+		cfg.SignupsPerIPPerHour = 5
+		cfg.TrustedProxyCIDRs = nil
+	})
+	for i := 0; i < 6; i++ {
+		socket := fmt.Sprintf("[2001:db8:77:1::%x]:50001", i+1)
+		res, _ := signupFrom(t, srv, socket, nil)
+		if i < 5 {
+			if res.Status != http.StatusCreated {
+				t.Fatalf("signup %d from %s: got %d %s, want 201", i+1, socket, res.Status, res.Raw)
+			}
+			continue
+		}
+		if res.Status != http.StatusTooManyRequests {
+			t.Fatalf("a sixth address in the same /64 got a fresh bucket: %d %s", res.Status, res.Raw)
+		}
+	}
+	// A different /64 is somebody else.
+	if res, _ := signupFrom(t, srv, "[2001:db8:77:2::1]:50001", nil); res.Status != http.StatusCreated {
+		t.Fatalf("another /64 was refused: %d %s", res.Status, res.Raw)
+	}
+}
