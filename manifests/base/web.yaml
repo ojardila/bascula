@@ -30,6 +30,8 @@ spec:
       labels:
         app: bascula-web
     spec:
+      # nginx never talks to the Kubernetes API.
+      automountServiceAccountToken: false
       # Two replicas on one node is not redundancy.
       topologySpreadConstraints:
         - maxSkew: 1
@@ -70,12 +72,30 @@ spec:
             limits: {memory: 128Mi}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
           volumeMounts:
-            # nginx writes its pid and temp bodies; the image's root is
-            # otherwise left read-only.
+            # nginx writes its pid and temp bodies, and the entrypoint renders
+            # the nginx.conf template into conf.d at start; everything else
+            # is read-only.
             - {name: cache, mountPath: /var/cache/nginx}
             - {name: run, mountPath: /tmp}
+            - {name: conf, mountPath: /etc/nginx/conf.d}
       volumes:
         - {name: cache, emptyDir: {}}
         - {name: run, emptyDir: {}}
+        - {name: conf, emptyDir: {}}
+---
+# A node drain takes at most one web pod at a time. maxUnavailable rather
+# than minAvailable, so the single-replica overlays (dev, tenant) can still
+# be drained.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bascula-web
+  namespace: bascula
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: bascula-web

@@ -36,31 +36,18 @@ on:
   repository_dispatch:
     types: [provision-tenant]
 
+# Signup data (farm name, owner, email, phone) is chosen by an anonymous
+# stranger. It never reaches a shell through ${{ }}: every value arrives as an
+# environment variable, and the YAML is written with every value JSON-quoted
+# (JSON is YAML), so neither a quote nor a newline can add a command or a key.
+permissions:
+  contents: read
+
 jobs:
   catalog:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Resolve inputs
-        id: in
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "slug=${{ github.event.client_payload.slug }}" >> "$GITHUB_OUTPUT"
-            echo "farmName=${{ github.event.client_payload.farmName }}" >> "$GITHUB_OUTPUT"
-            echo "email=${{ github.event.client_payload.email }}" >> "$GITHUB_OUTPUT"
-            echo "ownerName=${{ github.event.client_payload.ownerName }}" >> "$GITHUB_OUTPUT"
-            echo "phone=${{ github.event.client_payload.phone }}" >> "$GITHUB_OUTPUT"
-            echo "mode=${{ github.event.client_payload.mode || 'dedicated' }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "slug=${{ inputs.slug }}" >> "$GITHUB_OUTPUT"
-            echo "farmName=${{ inputs.farmName }}" >> "$GITHUB_OUTPUT"
-            echo "email=${{ inputs.email }}" >> "$GITHUB_OUTPUT"
-            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
-            echo "ownerName=" >> "$GITHUB_OUTPUT"
-            echo "phone=" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Checkout gitops
         uses: actions/checkout@v4
         with:
@@ -70,42 +57,62 @@ jobs:
 
       - name: Write tenant file
         env:
-          SLUG: ${{ steps.in.outputs.slug }}
-          NAME: ${{ steps.in.outputs.farmName }}
-          EMAIL: ${{ steps.in.outputs.email }}
-          OWNER: ${{ steps.in.outputs.ownerName }}
-          PHONE: ${{ steps.in.outputs.phone }}
-          MODE: ${{ steps.in.outputs.mode }}
+          SLUG: ${{ github.event.client_payload.slug || inputs.slug }}
+          NAME: ${{ github.event.client_payload.farmName || inputs.farmName }}
+          EMAIL: ${{ github.event.client_payload.email || inputs.email }}
+          OWNER: ${{ github.event.client_payload.ownerName }}
+          PHONE: ${{ github.event.client_payload.phone }}
+          MODE: ${{ github.event.client_payload.mode || inputs.mode || (github.event_name == 'repository_dispatch' && 'dedicated') || 'shared' }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import os, re, datetime
+          import datetime, json, os, re
           from pathlib import Path
-          slug = os.environ["SLUG"].strip().lower()
-          if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 63:
+
+          def field(name, limit):
+              v = os.environ.get(name, "").strip()
+              if len(v) > limit or re.search(r"[\x00-\x1f\x7f]", v):
+                  raise SystemExit(f"bad {name}: too long or has control characters")
+              return v
+
+          slug = field("SLUG", 63).lower()
+          if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
               raise SystemExit(f"bad slug {slug!r}")
-          mode = os.environ["MODE"].strip() or "shared"
+          mode = field("MODE", 16) or "shared"
           if mode not in ("shared", "dedicated"):
               raise SystemExit(f"bad mode {mode!r}")
+          doc = {
+              "slug": slug,
+              "farmName": field("NAME", 200),
+              "email": field("EMAIL", 320),
+              "ownerName": field("OWNER", 200),
+              "phone": field("PHONE", 40),
+              "mode": mode,
+              "url": f"https://{slug}.bascula.engp.io",
+              "createdAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+          }
           folder = Path("gitops/tenants") / mode
           folder.mkdir(parents=True, exist_ok=True)
-          body = (
-              f"slug: {slug}\n"
-              f"farmName: {os.environ['NAME']}\n"
-              f"email: {os.environ['EMAIL']}\n"
-              f"ownerName: {os.environ.get('OWNER', '')}\n"
-              f"phone: {os.environ.get('PHONE', '')}\n"
-              f"mode: {mode}\n"
-              f"url: https://{slug}.bascula.engp.io\n"
-              f"createdAt: {datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}\n"
-          )
+          body = "".join(f"{k}: {json.dumps(v, ensure_ascii=False)}\n" for k, v in doc.items())
           (folder / f"{slug}.yaml").write_text(body)
           print(body)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"TENANT_FILE=tenants/{mode}/{slug}.yaml\nTENANT_SLUG={slug}\nTENANT_MODE={mode}\n")
           PY
-          cd gitops
+
+      - name: Commit and push
+        working-directory: gitops
+        run: |
+          set -euo pipefail
           git config user.email "bascula-cd@users.noreply.github.com"
           git config user.name "bascula-cd"
-          git add "tenants/${MODE}/${SLUG}.yaml"
+          git add "$TENANT_FILE"
           git diff --cached --quiet && echo "nothing to commit" && exit 0
-          git commit -m "tenant ${SLUG} (${MODE})"
-          git push origin HEAD:main
+          git commit -m "tenant ${TENANT_SLUG} (${TENANT_MODE})"
+          # Two signups in the same minute race for main; the loser rebases.
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 2))
+            git pull --rebase origin main
+          done
+          exit 1

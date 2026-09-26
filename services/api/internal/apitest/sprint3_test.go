@@ -896,6 +896,11 @@ func TestUploadLimitIsEnforcedOnTheBytesThatArrive(t *testing.T) {
 		if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
 			t.Fatalf("Content-Type is %q, want image/png", ct)
 		}
+		// Opened directly, an upload renders sandboxed: a PDF's script gets
+		// no access to this origin.
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") {
+			t.Fatalf("an upload is served without a sandbox: %q", csp)
+		}
 	})
 
 	t.Run("another farm's attachment is 404 before the disk is touched", func(t *testing.T) {
