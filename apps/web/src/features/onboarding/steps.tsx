@@ -236,17 +236,21 @@ export function ownerPartsDone(n: number): number {
 /**
  * Where a tour starts by itself when the app opens, or null when it does not.
  *
- * The trigger is the person, not the farm: a tour starts until THIS user has
- * finished or closed it, and the row lives on the server so a second device
- * does not ask again. No row: from the start. A tour left open (the page was
- * closed mid-way): where it was. "Saltar" (later) is an explicit "not now", so
- * it waits on the resume card instead of reappearing on every page load.
+ * The trigger is the person, not the farm: a tour starts by itself exactly
+ * ONCE per user and farm, the first time they open that farm. The moment it
+ * starts, a row is written on the server, and any row at all means "already
+ * shown": finished, closed with the ×, «Saltar», or left open when the page
+ * went away (a deploy reloads every open page onto the new build). A tour
+ * that was not finished waits on the resume card and in «Ayuda y recorrido»;
+ * it never takes over the screen again on its own.
+ *
+ * `row` must come from the server. When the server could not be asked, the
+ * caller must not call this at all: "unknown" is not "never seen".
  */
 export function autoStartAt(
   tour: "owner" | "weigher",
   row: { step: number; status: "active" | "later" | "dismissed" | "done" } | undefined,
 ): number | null {
   if (!row) return tour === "owner" ? 0 : 1;
-  if (row.status === "active") return resumeIndex(tour, row.step);
   return null;
 }
