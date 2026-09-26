@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert, Box, Button, Card, CardContent, Chip, Collapse, Divider,
   Link, Stack, Typography,
@@ -26,6 +26,14 @@ export const CHATGPT_PLUGINS_URL = "https://chatgpt.com/plugins";
 
 /** How often the screen asks whether ChatGPT finished while the guide is open. */
 const POLL_MS = 4000;
+
+/**
+ * Waits before retrying the «already connected?» check. On an iPhone the
+ * first request after the app comes back from the background, or while a new
+ * version of the app is being swapped in, often fails with "Load failed"
+ * even though the server is fine. A retry a moment later goes through.
+ */
+export const CHECK_RETRY_MS = [800, 2000, 5000];
 
 /** This farm's MCP address: the host the owner is on, which is the farm's. */
 export function farmMcpUrl(origin: string = window.location.origin): string {
@@ -142,14 +150,39 @@ export function ConnectionsCard() {
   // Not useAsync: that blanks the data on every reload, and the poll below
   // would make «Conectado ✓» blink. The last answer stays until a new one.
   const [data, setData] = useState<McpConnections | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Only after every retry failed, and only as a quiet note: the check is a
+  // nicety, never a gate. Connecting works the same whether or not it answered.
+  const [checkFailed, setCheckFailed] = useState(false);
+  const retryTimer = useRef<number | null>(null);
   const reload = useCallback(() => {
-    api.listMcpConnections().then(
-      (d) => { setData(d); setError(null); },
-      (e) => setError(messageFor(e)),
-    );
+    if (retryTimer.current) window.clearTimeout(retryTimer.current);
+    const attempt = (n: number) => {
+      api.listMcpConnections().then(
+        (d) => { setData(d); setCheckFailed(false); },
+        () => {
+          if (n < CHECK_RETRY_MS.length) {
+            retryTimer.current = window.setTimeout(() => attempt(n + 1), CHECK_RETRY_MS[n]);
+          } else {
+            setCheckFailed(true);
+          }
+        },
+      );
+    };
+    attempt(0);
   }, []);
-  useEffect(reload, [reload]);
+  useEffect(() => {
+    reload();
+    // Coming back to the app (from ChatGPT, or from the background on a
+    // phone) or back online: ask again.
+    const onBack = () => { if (document.visibilityState !== "hidden") reload(); };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("online", onBack);
+    return () => {
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("online", onBack);
+      if (retryTimer.current) window.clearTimeout(retryTimer.current);
+    };
+  }, [reload]);
   const [guide, setGuide] = useState(false);
   const [manage, setManage] = useState(false);
   const [revoking, setRevoking] = useState<McpConnection | null>(null);
@@ -169,11 +202,9 @@ export function ConnectionsCard() {
     const id = window.setInterval(reload, POLL_MS);
     const onFocus = () => reload();
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
     };
   }, [guide, connected, reload]);
 
@@ -181,10 +212,14 @@ export function ConnectionsCard() {
     if (connected) setGuide(false);
   }, [connected]);
 
+  const guideRef = useRef<HTMLDivElement | null>(null);
   function openGuide() {
     setActionError(null);
     setRevoked(false);
     setGuide(true);
+    // On a phone the button does not leave Báscula: it brings the data into
+    // view. (scrollIntoView is missing in some test DOMs.)
+    if (phone) guideRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }
 
   async function revoke() {
@@ -212,11 +247,6 @@ export function ConnectionsCard() {
           Conexiones
         </Typography>
 
-        {error && !data && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            No se pudo consultar si esta finca ya está conectada. {error}
-          </Alert>
-        )}
         {actionError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
             {actionError}
@@ -278,6 +308,15 @@ export function ConnectionsCard() {
 
         <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5, fontSize: "1rem" }}>
           Crea una conexión segura solo para esta finca. Puedes revocarla cuando quieras.
+          {checkFailed && !connected && (
+            <>
+              {" "}
+              <span>Todavía no pudimos confirmar si ya está conectada; puede conectar igual.</span>{" "}
+              <Link component="button" type="button" onClick={reload} sx={{ fontSize: "1rem" }}>
+                Revisar otra vez
+              </Link>
+            </>
+          )}
           {!connected && items.length > 0 && (
             <>
               {" "}
@@ -288,9 +327,21 @@ export function ConnectionsCard() {
           )}
         </Typography>
 
-        {/* After the tap: what is left to do in ChatGPT. */}
-        <Collapse in={guide && !connected} unmountOnExit>
-          <Box sx={{ mt: 3, p: { xs: 2, sm: 2.5 }, border: 1, borderColor: "divider", borderRadius: 3 }}>
+        {/* The data for ChatGPT is always on screen while not connected: it
+            must not depend on the tap, on a tab opening, or on the check. */}
+        {!connected && (
+          <Box
+            ref={guideRef}
+            component="section"
+            aria-label="Datos para ChatGPT"
+            sx={{
+              mt: 3, p: { xs: 2, sm: 2.5 }, border: 1, borderRadius: 3, scrollMarginTop: 80,
+              borderColor: guide ? "primary.main" : "divider",
+            }}
+          >
+            <Typography sx={{ fontWeight: 700, color: "text.secondary", mb: 0.5 }}>
+              Datos para ChatGPT
+            </Typography>
             {phone ? (
               <>
                 <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1 }}>
@@ -304,7 +355,7 @@ export function ConnectionsCard() {
               </>
             ) : (
               <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1.5 }}>
-                Termine en ChatGPT
+                {guide ? "Termine en ChatGPT" : "Cómo conectar"}
               </Typography>
             )}
             <Stack component="ol" spacing={1.5} sx={{ pl: 3, m: 0, fontSize: "1.1rem" }}>
@@ -337,7 +388,7 @@ export function ConnectionsCard() {
                   endIcon={<OpenInNewIcon />}
                   size="large"
                 >
-                  Abrir ChatGPT otra vez
+                  {guide ? "Abrir ChatGPT otra vez" : "Abrir ChatGPT"}
                 </Button>
               )}
               <Typography sx={{ color: "text.secondary" }}>
@@ -345,7 +396,7 @@ export function ConnectionsCard() {
               </Typography>
             </Stack>
           </Box>
-        </Collapse>
+        )}
 
         {/* Advanced: only for whoever goes looking. */}
         <Collapse in={manage && items.length > 0} unmountOnExit>

@@ -75,6 +75,11 @@ async function boot() {
             document.addEventListener("visibilitychange", () => {
               if (document.visibilityState === "visible") check();
             });
+            // iOS restores an installed app from its page cache without
+            // always firing visibilitychange; pageshow does fire. And a phone
+            // that just got signal back should look for a deploy too.
+            window.addEventListener("pageshow", check);
+            window.addEventListener("online", check);
           },
         }),
       )

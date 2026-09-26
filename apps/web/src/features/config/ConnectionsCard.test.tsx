@@ -4,10 +4,12 @@
  * that goes to the server.
  */
 import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
-import { CHATGPT_PLUGINS_URL, ConnectionsCard, farmMcpUrl, guideText, isPhone } from "./ConnectionsCard";
+import { CHATGPT_PLUGINS_URL, CHECK_RETRY_MS, ConnectionsCard, farmMcpUrl, guideText, isPhone } from "./ConnectionsCard";
+import { api } from "../../api/endpoints";
+import { ApiError } from "../../api/errors";
 import { AuthProvider } from "../../auth/AuthContext";
 import { setTokens } from "../../api/client";
 import { invalidateRefs } from "../../api/refs";
@@ -107,8 +109,15 @@ describe("Conectar con ChatGPT on a computer", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
     expect(screen.getByText(/Crea una conexión segura solo para esta finca/)).toBeInTheDocument();
-    // No address to copy in the main path.
-    expect(screen.queryByText(/\/mcp$/)).not.toBeInTheDocument();
+  });
+
+  it("always shows the data for ChatGPT, before any tap", async () => {
+    renderCard();
+    await screen.findByRole("link", { name: /Conectar con ChatGPT/ });
+    expect(screen.getByRole("region", { name: "Datos para ChatGPT" })).toBeInTheDocument();
+    expect(screen.getByText("Cómo conectar")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dirección de la finca para ChatGPT")).toHaveTextContent(/\/mcp$/);
+    expect(screen.getByRole("button", { name: "Copiar" })).toBeInTheDocument();
   });
 
   it("shows the guide right away, without scripting any window", async () => {
@@ -120,6 +129,47 @@ describe("Conectar con ChatGPT on a computer", () => {
     expect(screen.getByText(/Seguridad e inicio de sesión/)).toBeInTheDocument();
     expect(screen.getByLabelText("Dirección de la finca para ChatGPT")).toHaveTextContent(/\/mcp$/);
     expect(screen.getByRole("link", { name: /Abrir ChatGPT otra vez/ })).toHaveAttribute("href", CHATGPT_PLUGINS_URL);
+  });
+});
+
+describe("the «already connected?» check", () => {
+  beforeEach(() => asDevice(IPHONE_UA, 5));
+
+  it("retries a failed check quietly and succeeds", async () => {
+    const real = api.listMcpConnections;
+    const spy = vi.spyOn(api, "listMcpConnections")
+      .mockRejectedValueOnce(new ApiError(0, { error: { code: "NETWORK", message: "network" } }))
+      .mockImplementation(real);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderCard();
+      await act(async () => { await vi.advanceTimersByTimeAsync(CHECK_RETRY_MS[0] + 50); });
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(screen.queryByText(/No se pudo/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no pudimos confirmar/i)).not.toBeInTheDocument();
+  });
+
+  it("never blocks connecting: after every retry fails, a quiet note and the button and data still work", async () => {
+    const spy = vi.spyOn(api, "listMcpConnections")
+      .mockRejectedValue(new ApiError(0, { error: { code: "NETWORK", message: "network" } }));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderCard();
+      const total = CHECK_RETRY_MS.reduce((a, b) => a + b, 0);
+      await act(async () => { await vi.advanceTimersByTimeAsync(total + 100); });
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(CHECK_RETRY_MS.length + 1));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await screen.findByText(/Todavía no pudimos confirmar/)).toBeInTheDocument();
+    expect(screen.queryByText(/No se pudo/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No se pudo contactar/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Dirección de la finca para ChatGPT")).toHaveTextContent(/\/mcp$/);
+    fireEvent.click(screen.getByRole("button", { name: "Conectar con ChatGPT" }));
+    expect(screen.getByText("Hágalo desde un computador")).toBeInTheDocument();
   });
 });
 
@@ -158,7 +208,8 @@ describe("Conectado ✓", () => {
     asDevice(MAC_UA);
     grant();
     renderCard();
-    expect(await screen.findByText(/Conectado ✓/)).toBeInTheDocument();
+    // role=status: the guide also mentions «Conectado ✓» while not connected.
+    expect(await screen.findByRole("status")).toHaveTextContent("Conectado ✓");
     expect(screen.queryByRole("link", { name: /Conectar con ChatGPT/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Administrar" }));
