@@ -2291,7 +2291,14 @@ export const handlers = [
   http.get("*/v1/me/tours", ({ request }) => {
     const g = guard(request, "me.read");
     if (g.deny) return g.deny;
-    return HttpResponse.json({ items: g.p.tenant.tours?.[g.p.user.id] ?? [] });
+    const t = g.p.tenant;
+    const items = [...(t.tours?.[g.p.user.id] ?? [])];
+    if (!t.freshTours) {
+      for (const tour of ["owner", "weigher"]) {
+        if (!items.some((x) => x.tour === tour)) items.push({ tour, step: 0, status: "done", updatedAt: nowInstant() });
+      }
+    }
+    return HttpResponse.json({ items });
   }),
 
   http.put("*/v1/me/tours/:tour", async ({ request, params }) => {

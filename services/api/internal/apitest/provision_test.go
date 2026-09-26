@@ -200,6 +200,23 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 		t.Fatalf("farm on the dedicated stack: %d %s", farm.Status, farm.Raw)
 	}
 
+	// First login on the dedicated stack: no tour row yet, so the web app
+	// starts the owner tour; the price chosen on the platform arrives
+	// confirmed, and progress saves on the database of the stack itself.
+	tenantToken := mustString(t, login.Body, "accessToken")
+	tours := call(t, tenantAPI, http.MethodGet, "/v1/me/tours", tenantToken, nil)
+	if items, _ := tours.Body["items"].([]any); tours.Status != http.StatusOK || len(items) != 0 {
+		t.Fatalf("tours on a fresh dedicated stack: %d %s", tours.Status, tours.Raw)
+	}
+	base := call(t, tenantAPI, http.MethodGet, "/v1/prices/base", tenantToken, nil)
+	if base.Status != http.StatusOK || base.Body["confirmed"] != true || base.Body["currentCents"] != float64(95000) {
+		t.Fatalf("base price on the dedicated stack: %d %s", base.Status, base.Raw)
+	}
+	saved := call(t, tenantAPI, http.MethodPut, "/v1/me/tours/owner", tenantToken, map[string]any{"step": 3, "status": "active"})
+	if saved.Status != http.StatusOK {
+		t.Fatalf("save tour on the dedicated stack: %d %s", saved.Status, saved.Raw)
+	}
+
 	// The waiting screen sees every step done.
 	var status response
 	waitFor(t, 10*time.Second, "provision status ready", func() bool {

@@ -13,7 +13,7 @@ import {
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
 import type { WireTourStatus } from "../../api/wire";
-import { OWNER_DONE, resumeIndex, stepOf, type TourName, type TourStepDef } from "./steps";
+import { OWNER_DONE, autoStartAt, resumeIndex, stepOf, type TourName, type TourStepDef } from "./steps";
 
 export interface SavedTour {
   step: number;
@@ -132,19 +132,13 @@ export function TourProvider({ children }: { children: ReactNode }) {
       setSaved(rows);
       setLoaded(true);
 
-      // Only a new owner (price never confirmed) and a weigher who never saw
-      // it get the tour by themselves. Everybody else finds it in the menu.
-      if (user.isSuperAdmin || readOnly) return;
-      if (available === "owner" && !rows.owner) {
-        try {
-          const price = await api.getBasePrice();
-          if (!cancelled && !price.confirmed) setCurrent({ tour: "owner", n: 0 });
-        } catch {
-          /* no price, no tour: nothing to confirm */
-        }
-      } else if (available === "weigher" && !rows.weigher) {
-        setCurrent({ tour: "weigher", n: 1 });
-      }
+      // Every owner and weigher who has not finished or closed their tour
+      // gets it by themselves (the first login of a new farm included, on the
+      // shared app or a dedicated stack alike). Everybody else finds it in
+      // «Ayuda y recorrido».
+      if (user.isSuperAdmin || readOnly || !available) return;
+      const at = autoStartAt(available, rows[available]);
+      if (at !== null) setCurrent({ tour: available, n: at });
     })();
     return () => {
       cancelled = true;
