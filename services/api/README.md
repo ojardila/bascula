@@ -358,8 +358,10 @@ before the summary, so a weigher is never shown one. Elicitation is not used:
 the transport is stateless, and a server-to-client request needs a session.
 
 A browser that opens `/mcp` (Accept `text/html`, no token) gets a Spanish
-page explaining how to add the connector; MCP clients never ask for HTML and
-still get the 401 with its `WWW-Authenticate` challenge — which is now also
+page explaining how to add the connector (still a 401 with the challenge, so
+a URL-keyed edge cache can never serve it to a client as a success); MCP
+clients never ask for HTML and get the plain 401 with its `WWW-Authenticate`
+challenge — which is now also
 sent when a token has expired (`error="invalid_token"`). The OAuth token
 endpoint issues a refresh token and supports the `refresh_token` grant, with
 the same single-use rotation as the handsets, so a connector survives the

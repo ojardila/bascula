@@ -408,8 +408,13 @@ func TestMCPBrowserGetExplainsItself(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:12345"
 	rec := httptest.NewRecorder()
 	h.server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Conector de Báscula") {
+	if !strings.Contains(rec.Body.String(), "Conector de Báscula") {
 		t.Fatalf("browser GET /mcp: %d %s", rec.Code, rec.Body.String())
+	}
+	// Still a 401 with the challenge: a cache keyed on the URL can never turn
+	// it into something an MCP client would mistake for a success.
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Header().Get("WWW-Authenticate"), "resource_metadata") {
+		t.Errorf("the browser page must stay a 401 with the challenge: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
 	}
 	if !strings.Contains(rec.Body.String(), "cafin3.bascula.engp.io/mcp") {
 		t.Errorf("the page should show this host's connector address")

@@ -19,6 +19,14 @@ import (
 // clients never ask for text/html — their GET asks for text/event-stream and
 // their POST for JSON — so nothing a client does can land here, and the 401
 // with the challenge is untouched for them.
+//
+// The page is still a 401 carrying the same WWW-Authenticate challenge, on
+// purpose. The bascula hosts sit behind a Cloudflare rule that caches
+// aggressively and keys on the URL, not on Accept: a 200 HTML page stored
+// for GET /mcp could be handed to a client that asked for an event stream.
+// Cloudflare does not cache a 401, and if anything ever did, a client would
+// still read the status and the challenge rather than the body. Browsers
+// render the body of a Bearer 401 without prompting for anything.
 func (s *Server) mcpBrowserPage(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" || !strings.Contains(r.Header.Get("Accept"), "text/html") {
@@ -28,7 +36,8 @@ func (s *Server) mcpBrowserPage(next http.Handler) http.Handler {
 		url := html.EscapeString(s.mcpResource(r))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
+		s.writeMCPChallenge(w, r, "")
+		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = fmt.Fprintf(w, `<!doctype html>
 <html lang="es">
 <meta charset="utf-8">
