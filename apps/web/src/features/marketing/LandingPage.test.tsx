@@ -125,14 +125,21 @@ describe("the public landing", () => {
     expect(within(section).getByText(/EJEMPLO · CIFRAS ILUSTRATIVAS/)).toBeInTheDocument();
   });
 
-  it("keeps the free self-serve signup and the sign-in link", async () => {
+  it("keeps the free self-serve signup and offers no sign-in", async () => {
     renderApp("/");
     const cta = await screen.findByRole("link", { name: "Cree su finca gratis" });
     expect(cta).toHaveAttribute("href", "/empezar");
     expect(screen.getByRole("link", { name: "Crear mi finca" })).toHaveAttribute("href", "/empezar");
-    for (const link of screen.getAllByRole("link", { name: "Iniciar sesión" })) {
-      expect(link).toHaveAttribute("href", "/entrar");
-    }
+    // Farms sign in at their own address; the landing has no login entry.
+    expect(screen.queryByText(/Iniciar sesión/i)).toBeNull();
+    expect(screen.queryByText(/¿Ya tiene cuenta\?/)).toBeNull();
+    expect(document.querySelector("a[href=\"/entrar\"]")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ir a mi finca" })).toBeNull();
+  });
+
+  it("still opens the login screen at /entrar directly", async () => {
+    renderApp("/entrar");
+    expect(await screen.findByLabelText(/Contraseña/)).toBeInTheDocument();
   });
 
   it("asks for each missing field by name", async () => {
