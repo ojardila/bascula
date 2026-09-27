@@ -125,7 +125,9 @@ type Config struct {
 	// dedicated tenant into gitops (own Postgres + pods). Empty means the
 	// farm stays on the shared platform only.
 	GitHubDispatchToken string
-	GitHubDispatchRepo  string
+	// GitHubDispatchRepo (owner/name) holds the provision-tenant workflow:
+	// the private ojardila/gitops, so farm data stays out of public runs.
+	GitHubDispatchRepo string
 	// GitHubAPIURL is https://api.github.com unless a test points it at a
 	// stand-in.
 	GitHubAPIURL string

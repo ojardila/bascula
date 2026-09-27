@@ -97,7 +97,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	var mu sync.Mutex
 	var dispatched []map[string]any
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/ojardila/bascula/dispatches" || r.Header.Get("Authorization") != "Bearer gh-test" {
+		if r.URL.Path != "/repos/ojardila/gitops/dispatches" || r.Header.Get("Authorization") != "Bearer gh-test" {
 			http.Error(w, "unexpected", http.StatusBadRequest)
 			return
 		}
@@ -137,7 +137,7 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	pcfg.SignupsPerIPPerHour = 1000
 	pcfg.SignupsPerEmailPerHour = 1000
 	pcfg.GitHubDispatchToken = "gh-test"
-	pcfg.GitHubDispatchRepo = "ojardila/bascula"
+	pcfg.GitHubDispatchRepo = "ojardila/gitops"
 	pcfg.GitHubAPIURL = gh.URL
 	pcfg.TenantInternalURL = internal.URL
 	pcfg.TenantPublicURL = public.URL
@@ -338,7 +338,7 @@ func TestASecondFarmForTheSameAddressGetsItsOwnStackWithTheNewPassword(t *testin
 	pcfg.SignupsPerIPPerHour = 1000
 	pcfg.SignupsPerEmailPerHour = 1000
 	pcfg.GitHubDispatchToken = "gh-test"
-	pcfg.GitHubDispatchRepo = "ojardila/bascula"
+	pcfg.GitHubDispatchRepo = "ojardila/gitops"
 	pcfg.GitHubAPIURL = gh.URL
 	pcfg.TenantInternalURL = internal.URL
 	pcfg.TenantPublicURL = public.URL

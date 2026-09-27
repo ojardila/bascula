@@ -222,9 +222,8 @@ type pipelineView struct {
 }
 
 // readPipeline finds the provision-tenant run for this slug (its run-name is
-// "Provision tenant {ref}", ref = provisionRunRef(slug), never the slug: the
-// run list of a public repository is public) created after the farm, cached
-// for 4 s.
+// "Provision tenant {ref}", ref = provisionRunRef(slug), never the slug)
+// in GitHubDispatchRepo, created after the farm, cached for 4 s.
 func (s *Server) readPipeline(ctx context.Context, slug string, createdAt time.Time) pipelineView {
 	if !s.dedicatedProvisioning() {
 		return pipelineView{}

@@ -330,7 +330,7 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// nothing else, which is why it is warned about.
 	rc.http.PublicBaseURL = strings.TrimRight(getenv("PUBLIC_BASE_URL"), "/")
 	rc.http.GitHubDispatchToken = getenv("GITHUB_DISPATCH_TOKEN")
-	rc.http.GitHubDispatchRepo = or("GITHUB_DISPATCH_REPO", "ojardila/bascula")
+	rc.http.GitHubDispatchRepo = or("GITHUB_DISPATCH_REPO", "ojardila/gitops")
 	rc.http.TenantInternalURL = getenv("TENANT_INTERNAL_URL")
 	rc.http.TenantPublicURL = getenv("TENANT_PUBLIC_URL")
 	// Cloudflare for SaaS: one edge certificate per farm address. Off unless
