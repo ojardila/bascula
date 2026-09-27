@@ -48,8 +48,8 @@ func (s *Server) dedicatedProvisioning() bool {
 		strings.TrimSpace(s.cfg.GitHubDispatchRepo) != ""
 }
 
-// kickTenantProvision asks GitHub Actions to commit a dedicated tenant into
-// gitops. Argo then creates namespace, Postgres and API/web pods. Failures
+// kickTenantProvision asks GitHub Actions (the provision-tenant workflow in
+// GitHubDispatchRepo, ojardila/gitops) to commit a dedicated tenant there. Argo then creates namespace, Postgres and API/web pods. Failures
 // are logged: the farm already exists on the shared platform.
 func (s *Server) kickTenantProvision(p tenantProvision) {
 	// The farm address needs its certificate on the shared platform too.
@@ -68,8 +68,7 @@ func (s *Server) kickTenantProvision(p tenantProvision) {
 			"event_type": "provision-tenant",
 			"client_payload": map[string]string{
 				"slug": p.Slug,
-				// ref, not slug, titles the run: the repository's run list is
-				// public. See provisionRunRef.
+				// ref, not slug, titles the run. See provisionRunRef.
 				"ref":       s.provisionRunRef(p.Slug),
 				"farmName":  p.FarmName,
 				"email":     p.Email,

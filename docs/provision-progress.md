@@ -10,7 +10,7 @@ renders them as a progress bar with a step list.
 | key | weight | done when | read from |
 |---|---|---|---|
 | received | 2 | always (the farm row exists) | platform DB |
-| pipeline_started | 5 | a `provision-tenant` run named `Provision tenant {slug}` exists | GitHub Actions |
+| pipeline_started | 5 | a `provision-tenant` run named `Provision tenant {ref}` (keyed hash of the slug) exists in ojardila/gitops | GitHub Actions |
 | pipeline_done | 8 | that run succeeded, or the Argo Application exists | GitHub Actions / Argo CD |
 | deployment | 10 | Application `argocd/bascula-{slug}` is Synced (or its last operation succeeded) | Argo CD |
 | namespace | 5 | namespace `bascula-{slug}` is Active | Kubernetes |
@@ -58,8 +58,13 @@ shown.
   - Network: CiliumNetworkPolicy `bascula-api` allows egress to the
     `kube-apiserver` entity (6443/443).
 - **GitHub**: the existing `GITHUB_DISPATCH_TOKEN` (secret `bascula-api`,
-  key `github-dispatch-token`). Reading runs needs `actions: read` on
-  ojardila/bascula; without it the pipeline stages are inferred from the
+  key `github-dispatch-token`) against `GITHUB_DISPATCH_REPO`
+  (`ojardila/gitops`, set in manifests/base/api.yaml). The workflow itself,
+  `.github/workflows/provision-tenant.yml`, lives in that private repo so farm
+  names never appear in this public repo's Actions runs or logs. Dispatching
+  needs write access (`repo` scope, or fine-grained `contents: write`) and
+  reading runs needs `actions: read` on ojardila/gitops; without the latter the
+  pipeline stages are inferred from the
   cluster.
 - **Cloudflare**: the existing `CF_SAAS_TOKEN` (secret `bascula-cloudflare`,
   key `saas-token`), "SSL and Certificates: Edit" on zone engp.io.

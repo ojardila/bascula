@@ -86,9 +86,9 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch {
-		case r.URL.Path == "/repos/ojardila/bascula/dispatches":
+		case r.URL.Path == "/repos/ojardila/gitops/dispatches":
 			w.WriteHeader(http.StatusNoContent)
-		case r.URL.Path == "/repos/ojardila/bascula/actions/workflows/provision-tenant.yml/runs":
+		case r.URL.Path == "/repos/ojardila/gitops/actions/workflows/provision-tenant.yml/runs":
 			runs := []any{map[string]any{"display_title": "Provision tenant otra-finca", "status": "completed", "conclusion": "success"}}
 			if runStatus != "" {
 				conclusion := ""
@@ -155,7 +155,7 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	pcfg.SignupsPerIPPerHour = 1000
 	pcfg.SignupsPerEmailPerHour = 1000
 	pcfg.GitHubDispatchToken = "gh-test"
-	pcfg.GitHubDispatchRepo = "ojardila/bascula"
+	pcfg.GitHubDispatchRepo = "ojardila/gitops"
 	pcfg.GitHubAPIURL = gh.URL
 	pcfg.TenantInternalURL = internal.URL
 	pcfg.TenantPublicURL = public.URL
@@ -308,7 +308,7 @@ func TestProvisionProgressFallsBackWithoutCluster(t *testing.T) {
 	pcfg.SignupsPerIPPerHour = 1000
 	pcfg.SignupsPerEmailPerHour = 1000
 	pcfg.GitHubDispatchToken = "gh-test"
-	pcfg.GitHubDispatchRepo = "ojardila/bascula"
+	pcfg.GitHubDispatchRepo = "ojardila/gitops"
 	pcfg.GitHubAPIURL = gh.URL
 	pcfg.TenantInternalURL = "http://127.0.0.1:1"
 	pcfg.TenantPublicURL = public.URL

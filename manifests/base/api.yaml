@@ -172,8 +172,10 @@ spec:
             # OAuth issuer / MCP resource identifier for ChatGPT connectors.
             - name: PUBLIC_BASE_URL
               value: https://bascula.engp.io
+            # The provision-tenant workflow lives in the private gitops repo,
+            # so farm names never appear in this public repo's Actions runs.
             - name: GITHUB_DISPATCH_REPO
-              value: ojardila/bascula
+              value: ojardila/gitops
             - name: GITHUB_DISPATCH_TOKEN
               valueFrom:
                 secretKeyRef:

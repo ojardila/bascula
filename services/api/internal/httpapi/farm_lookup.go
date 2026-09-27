@@ -90,9 +90,10 @@ func (s *Server) allowFarmLookup(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // provisionRunRef names a farm's provision-tenant workflow run without naming
-// the farm. The repository is public and so are its run titles; a keyed ref
-// lets this server find the run for a slug while a stranger reading the run
-// list learns nothing, not even by hashing guesses (they lack the key).
+// the farm. The workflow now runs in the private gitops repo, but run titles
+// still carry only a keyed ref (defense in depth): this server can find the
+// run for a slug while anyone reading the run list learns nothing, not even by
+// hashing guesses (they lack the key).
 func (s *Server) provisionRunRef(slug string) string {
 	if s.signer == nil || slug == "" {
 		return ""
