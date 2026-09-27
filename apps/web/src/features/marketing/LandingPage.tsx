@@ -281,10 +281,15 @@ function NavBar(props: { signedIn: boolean; landing: string }) {
             ))}
           </Box>
           <Box sx={{ flex: { xs: 1, lg: "none" } }} />
-          <Button component={RouterLink} to={signedIn ? landing : "/entrar"} sx={{ color: GREEN_DARK, fontSize: "1.05rem", fontWeight: 700 }}>
-            {signedIn ? "Ir a mi finca" : "Iniciar sesión"}
-          </Button>
-          <Button component="a" href="#demo" variant="contained" sx={{ ...PILL_LABEL, display: { xs: "none", md: "inline-flex" }, borderRadius: 999, fontSize: "1.05rem", px: 3 }}>
+          {/* No sign-in link: each farm enters at its own address
+              ({slug}.bascula.engp.io/entrar). Only someone already signed in
+              gets a way back to the farm. */}
+          {signedIn ? (
+            <Button component={RouterLink} to={landing} sx={{ color: GREEN_DARK, fontSize: "1.05rem", fontWeight: 700 }}>
+              Ir a mi finca
+            </Button>
+          ) : null}
+          <Button component="a" href="#demo" variant="contained" sx={{ ...PILL_LABEL, display: { xs: "none", sm: "inline-flex" }, borderRadius: 999, fontSize: "1.05rem", px: 3 }}>
             {DEMO_CTA}
           </Button>
         </Stack>
@@ -615,7 +620,6 @@ function Faq() {
 
 function Closing(props: { signedIn: boolean; landing: string }) {
   const { signedIn } = props;
-  const linkSx = { color: "#fff", fontWeight: 700, textDecoration: "underline" } as const;
   return (
     <Box component="section" id="demo" sx={{ bgcolor: GREEN_DARK, color: CREAM, py: { xs: 7, md: 11 } }}>
       <Container maxWidth="sm">
@@ -638,10 +642,6 @@ function Closing(props: { signedIn: boolean; landing: string }) {
             >
               Cree su finca gratis
             </Button>
-            <Typography sx={{ mt: 4, fontSize: "1.1rem" }}>
-              ¿Ya tiene cuenta?{" "}
-              <Box component={RouterLink} to="/entrar" sx={linkSx}>Iniciar sesión</Box>
-            </Typography>
           </Box>
         ) : null}
       </Container>
@@ -775,7 +775,7 @@ function Footer(props: { signedIn: boolean; landing: string }) {
             <Typography sx={{ opacity: 0.8, fontSize: "1.05rem", mt: 0.5 }}>Registro de cosecha y cuentas por recolector.</Typography>
           </Box>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 3 }} alignItems={{ sm: "center" }}>
-            <Box component={RouterLink} to={signedIn ? landing : "/entrar"} sx={linkSx}>{signedIn ? "Ir a mi finca" : "Iniciar sesión"}</Box>
+            {signedIn ? <Box component={RouterLink} to={landing} sx={linkSx}>Ir a mi finca</Box> : null}
             <Box component={RouterLink} to="/empezar" sx={linkSx}>Crear mi finca</Box>
           </Stack>
         </Stack>
