@@ -29,3 +29,5 @@ export * from "./harvest.ts";
 // reason the money is: the three sides have to agree on what an id means, and
 // a v7 means "this happened at this millisecond".
 export * from "./uuid.ts";
+
+export * from "./kiloPrice.ts";

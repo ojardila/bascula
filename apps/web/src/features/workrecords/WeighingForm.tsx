@@ -45,6 +45,7 @@ import type { Activity, Plot, Worker } from "../../api/types";
 import { parseQuantity } from "./validation";
 import { useOffline } from "../../offline/OfflineContext";
 import { getCache, putCache } from "../../offline/store";
+import { recentMondays, syncPriceBook } from "../../offline/priceBook";
 import { pickHarvestActivity, workerLabel } from "./planilla";
 
 /** Above this, one load is almost certainly a typing mistake. */
@@ -87,7 +88,7 @@ const chosen = {
 } as const;
 
 export function WeighingForm() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const today = todayInFarm(user?.farm?.timezone ?? "America/Bogota");
   const yesterday = addDays(parseDay(today), -1).toISOString().slice(0, 10);
   const { busy, run } = useWriteOnce();
@@ -134,6 +135,12 @@ export function WeighingForm() {
         const r = { workers, plots, activities };
         show(r);
         void putCache(refsKey, r).catch(() => undefined);
+        // With signal, refresh the kilo price rules kept on this device too,
+        // so the value of a weighing can be estimated later without signal.
+        // Only for roles that see money: a weigher's phone never holds a price.
+        if (can("money.read") && farmId) {
+          void syncPriceBook(farmId, recentMondays(today)).catch(() => undefined);
+        }
       })
       .catch(async (e: unknown) => {
         if (!noSignal(e)) {
