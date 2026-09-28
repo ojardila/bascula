@@ -9,7 +9,7 @@
  * Validation lives in ./validation.ts, not here, and the tests walk it. What
  * is left in this file is layout and state.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Alert, Autocomplete, Box, Button, Card, CardContent, Chip, Grid, MenuItem,
@@ -33,6 +33,16 @@ import {
 import { PAY_MODE_LABEL } from "../../lib/vocab";
 import type { Activity, Plot, Worker } from "../../api/types";
 import { DateField } from "../../components/DateField";
+import {
+  ensureWeek, kiloPriceFor, recentMondays, syncPriceBook, type KiloPriceBook,
+} from "../../offline/priceBook";
+import { getCache } from "../../offline/store";
+
+interface CachedRefs {
+  workers: Worker[];
+  plots: Plot[];
+  activities: Activity[];
+}
 
 export function WorkRecordFormPage() {
   const navigate = useNavigate();
@@ -43,7 +53,9 @@ export function WorkRecordFormPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [plots, setPlots] = useState<Plot[]>([]);
-  const [weekPriceCents, setWeekPriceCents] = useState<number | null>(null);
+  const [priceBook, setPriceBook] = useState<KiloPriceBook | null>(null);
+  const farmId = user?.farm?.id ?? "";
+  const readsPrices = can("money.read");
 
   const [category, setCategory] = useState<string>("");
   const [draft, setDraft] = useState<WorkRecordDraft>(() => emptyDraft(today));
@@ -66,37 +78,73 @@ export function WorkRecordFormPage() {
         setWorkers(w);
         setPlots(p);
       })
-      .catch((e) => {
-        if (e instanceof ApiError && e.isPermissionDenied) setDenied(true);
-        else setLoadError(messageFor(e));
+      .catch(async (e: unknown) => {
+        if (e instanceof ApiError && e.isPermissionDenied) {
+          setDenied(true);
+          return;
+        }
+        // No signal: the lists the weighing screen keeps on this device are
+        // the same three, so the form (and its estimate) still opens.
+        const noSignal = e instanceof ApiError && (e.status === 0 || e.status >= 502);
+        const cached = noSignal && farmId
+          ? await getCache<CachedRefs>(`refs:${farmId}`).catch(() => null)
+          : null;
+        if (cached) {
+          setActivities(cached.value.activities);
+          setWorkers(cached.value.workers);
+          setPlots(cached.value.plots);
+        } else {
+          setLoadError(messageFor(e));
+        }
       });
-  }, []);
+  }, [farmId]);
+
+  // The kilo price rules (special prices per person and per lote, base price
+  // history, recent week prices), fresh when online and kept on the device
+  // for when it is not. See offline/priceBook.ts.
+  useEffect(() => {
+    if (!farmId || !readsPrices) return;
+    let cancelled = false;
+    void syncPriceBook(farmId, recentMondays(today)).then((b) => {
+      if (!cancelled) setPriceBook(b);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [farmId, readsPrices, today]);
 
   const activity = useMemo(
     () => activities.find((a) => a.id === draft.activityId) ?? null,
     [activities, draft.activityId],
   );
 
-  // The weekly price is fetched for the Monday of the chosen date, because it
-  // is what the record will actually be worth — it is not the activity's.
+  // A record paid by the kilo price is worth what the server's kilo_price()
+  // would give it for the Monday of its date: persona > lote > semana > finca.
+  // Not the activity's rate, and not the farm's base price alone.
+  const weekly = activity?.rateSource === "weekly_price";
+  const monday = draft.dateFrom ? mondayOf(draft.dateFrom) : "";
+  const weeksAsked = useRef(new Set<string>());
   useEffect(() => {
-    if (!activity || activity.rateSource !== "weekly_price" || !draft.dateFrom) {
-      setWeekPriceCents(null);
-      return;
-    }
+    if (!weekly || !priceBook || !monday || !farmId) return;
+    if (weeksAsked.current.has(monday)) return;
+    weeksAsked.current.add(monday);
     let cancelled = false;
-    api
-      .weekPrice(mondayOf(draft.dateFrom))
-      .then((p) => {
-        if (!cancelled) setWeekPriceCents(p.costPerUnitCents);
-      })
-      .catch(() => {
-        if (!cancelled) setWeekPriceCents(null);
-      });
+    void ensureWeek(farmId, priceBook, monday).then((b) => {
+      if (!cancelled && b !== priceBook) setPriceBook(b);
+    });
     return () => {
       cancelled = true;
     };
-  }, [activity, draft.dateFrom]);
+  }, [weekly, priceBook, monday, farmId]);
+
+  const kiloPriceCents =
+    weekly && priceBook && draft.dateFrom
+      ? (kiloPriceFor(priceBook, {
+          workerId: draft.workerId,
+          plotIds: draft.plotIds,
+          day: draft.dateFrom,
+        })?.priceCents ?? null)
+      : null;
 
   // Selecting an activity resets the price field to the activity's default.
   useEffect(() => {
@@ -126,7 +174,7 @@ export function WorkRecordFormPage() {
   );
 
   const effectiveRate =
-    activity && !needsRateField(activity) ? weekPriceCents : draft.rateCents;
+    activity && !needsRateField(activity) ? kiloPriceCents : draft.rateCents;
   const estimate = activity
     ? estimateCents(activity, parseQuantity(draft.quantity), effectiveRate)
     : null;
@@ -261,11 +309,11 @@ export function WorkRecordFormPage() {
               {activity.rateSource === "weekly_price" ? (
                 <>
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    Precio de la semana del {formatMonday(mondayOf(draft.dateFrom || today))}:{" "}
-                    {weekPriceCents === null ? (
+                    Precio del kilo, semana del {formatMonday(mondayOf(draft.dateFrom || today))}:{" "}
+                    {kiloPriceCents === null ? (
                       "—"
                     ) : (
-                      <Money cents={weekPriceCents} variant="small" />
+                      <Money cents={kiloPriceCents} variant="small" />
                     )}{" "}
                     / {activity.workUnit}
                   </Typography>

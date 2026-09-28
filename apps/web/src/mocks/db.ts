@@ -34,6 +34,7 @@
  *      a plot out of use has a `deletedAt`. The old mock's `status: "active"`
  *      does not exist on the wire.
  */
+import { resolveKiloPrice } from "../../../../packages/shared/src/kiloPrice";
 import type { McpActivity } from "../api/endpoints";
 import { mondayOf } from "../lib/dates";
 import { isFarmSlug, slugifyFarmName } from "../lib/farmHost";
@@ -592,24 +593,31 @@ export function specialOn(t: Tenant, kind: "lote" | "persona", targetId: string,
 
 /**
  * `kilo_price()`: persona > lote > semana > finca. A weighing in several lotes
- * takes the lote price only if they all agree.
+ * takes the lote price only if they all agree. Resolved by the same shared
+ * function the device uses for its offline estimate, so the mock server and
+ * the phone cannot drift apart.
  */
 export function kiloPriceOf(
   t: Tenant,
   r: { workerId: string; plotIds?: string[] | null },
   weekStart: string,
 ): { priceCents: number; source: "persona" | "lote" | "semana" | "finca" } {
-  const person = specialOn(t, "persona", r.workerId, weekStart);
-  if (person && person.priceCents !== null) return { priceCents: person.priceCents, source: "persona" };
-  const plots = r.plotIds ?? [];
-  if (plots.length > 0) {
-    const prices = plots.map((id) => specialOn(t, "lote", id, weekStart)?.priceCents ?? null);
-    if (prices.every((x) => x !== null) && new Set(prices).size === 1) {
-      return { priceCents: prices[0]!, source: "lote" };
-    }
-  }
-  if (t.weekPrices.some((p) => p.weekStart === weekStart)) return { priceCents: weekPriceOf(t, weekStart), source: "semana" };
-  return { priceCents: weekPriceOf(t, weekStart), source: "finca" };
+  const specials = t.specialPrices ?? [];
+  const kp = resolveKiloPrice(
+    {
+      employeePrices: specials
+        .filter((p) => p.kind === "persona")
+        .map((p) => ({ employeeId: p.targetId, validFrom: p.validFrom, priceCents: p.priceCents })),
+      plotPrices: specials
+        .filter((p) => p.kind === "lote")
+        .map((p) => ({ plotId: p.targetId, validFrom: p.validFrom, priceCents: p.priceCents })),
+      weekPrices: t.weekPrices,
+      basePrices: t.basePrices ?? [],
+      farmPriceCents: farmOf(t.farmId)?.priceCents ?? null,
+    },
+    { employeeId: r.workerId, plotIds: r.plotIds ?? [], weekStart },
+  );
+  return kp ?? { priceCents: 0, source: "finca" };
 }
 
 export interface MockBasePrice {
