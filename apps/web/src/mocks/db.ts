@@ -140,6 +140,8 @@ export interface MockFarm {
   createdAt: string;
   /** The farm's standing price per kilo. `WeekPrice` falls back to it. */
   priceCents: number;
+  /** «Modo cosecha». Absent is off, as on the server. */
+  harvestMode?: boolean;
 }
 
 export interface MockUser {

@@ -21,7 +21,7 @@
  * what the number does NOT mean, and that the review screen speaks Spanish
  * rather than rule names.
  */
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -33,11 +33,12 @@ import { setTokens } from "../../api/client";
 import { invalidateRefs } from "../../api/refs";
 import { theme } from "../../theme";
 import { server } from "../../mocks/node";
-import { users } from "../../mocks/db";
+import { FARM_ID, farms, resetDb, users } from "../../mocks/db";
+import { belowAverageText, lastSeenText, plotTrend } from "./dashboardText";
 import { addDays, mondayOf, parseDay } from "../../lib/dates";
 import type {
   WireHarvestCurve, WireReportAnomaliesResult, WireReportGrid, WireReportPerformanceResult,
-  WireReportTotals, WireReportWeekDetail, WireReportWeeksResult,
+  WireReportTotals, WireReportWeekDetail, WireReportWeeksResult, WireHarvestDashboard,
 } from "../../api/wire";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
@@ -664,4 +665,119 @@ describe("the module says what its figures cover, and who may see them", () => {
     renderApp("/cosecha");
     expect(await screen.findByText(/No tiene permiso para ver la cosecha/)).toBeInTheDocument();
   }, 20000);
+});
+
+/* ------------------------------------------------------------------ */
+
+describe("«Modo cosecha» on the home screen", () => {
+  beforeEach(() => resetDb());
+  afterEach(() => resetDb());
+
+  const today = new Date().toISOString().slice(0, 10);
+  const ownFarm = () => farms.find((f) => f.id === FARM_ID)!;
+  const dashboard = (): WireHarvestDashboard => ({
+    scope: "harvest",
+    today,
+    thisWeek: thisMonday,
+    lastWeek: weekOf(1),
+    belowAverageRatio: 0.7,
+    summary: {
+      thisWeek: priced(300, 6),
+      lastWeekToDate: priced(250, 5),
+      lastWeek: priced(500, 9),
+      today: priced(120, 3),
+      pickersToday: 3,
+      pickersThisWeek: 4,
+      personDays: 6,
+      kgPerPersonDay: 50,
+    },
+    days: Array.from({ length: 7 }, (_, i) => ({
+      ...(i === 0 ? priced(180, 3) : totals()),
+      day: addDays(parseDay(thisMonday), i).toISOString().slice(0, 10),
+      pickers: i === 0 ? 3 : 0,
+      future: i > 0,
+    })),
+    plots: [
+      { ...priced(200, 4), plotId: "p1", name: "La Loma", lastWeekToDateKg: 100, lastWeekKg: 300, share: 2 / 3, pickers: 3 },
+      { ...priced(100, 2), plotId: "p2", name: "El Bajo", lastWeekToDateKg: 150, lastWeekKg: 200, share: 1 / 3, pickers: 1 },
+    ],
+    unattributed: totals(),
+    people: [
+      { ...priced(180, 3), employeeId: "e1", name: "Ana Restrepo", daysWorked: 2, kgPerDay: 90, pickedToday: true, belowAverage: false },
+      { ...priced(20, 1), employeeId: "e2", name: "Beto Marín", daysWorked: 1, kgPerDay: 20, pickedToday: false, belowAverage: true },
+    ],
+    notToday: [{ employeeId: "e2", name: "Beto Marín", lastRecordOn: weekOf(1) }],
+  });
+
+  it("is off by default: the switch says so and the home screen is the usual one", async () => {
+    signIn();
+    renderApp("/cosecha");
+    const sw = await screen.findByRole("switch", { name: "Modo cosecha" });
+    expect(sw).not.toBeChecked();
+    expect(screen.getByText("Apagado")).toBeInTheDocument();
+    expect(await screen.findByText("Recolectores")).toBeInTheDocument();
+    expect(screen.queryByTestId("harvest-dashboard")).toBeNull();
+  }, 20000);
+
+  it("turned on, shows the harvest week: lotes, people and who has nothing today", async () => {
+    signIn();
+    server.use(http.get("*/v1/reports/harvest-dashboard", () => HttpResponse.json(dashboard())));
+    renderApp("/cosecha");
+    const sw = await screen.findByRole("switch", { name: "Modo cosecha" });
+    await waitFor(() => expect(sw).not.toBeDisabled());
+    await userEvent.click(sw);
+
+    const dash = await screen.findByTestId("harvest-dashboard");
+    expect(screen.getByRole("switch", { name: "Modo cosecha" })).toBeChecked();
+    expect(screen.getByText("Encendido")).toBeInTheDocument();
+    const d = within(dash);
+    expect(d.getByText("Kilos esta semana")).toBeInTheDocument();
+    expect(d.getByText(/50 kg más que la semana pasada/)).toBeInTheDocument();
+    expect(d.getByText("Pago de la semana")).toBeInTheDocument();
+    expect(d.getByRole("link", { name: /La Loma: 200 kg/ })).toHaveAttribute("href", "/lotes/p1");
+    expect(d.getByText(/67% del total · 3 personas · ↑ 100% más que la semana pasada/)).toBeInTheDocument();
+    expect(d.getByText(/↓ 33% menos que la semana pasada/)).toBeInTheDocument();
+    expect(d.getByRole("link", { name: /1\. Ana Restrepo: 180 kg/ })).toHaveAttribute("href", "/empleados/e1");
+    expect(d.getByText("Muy por debajo del promedio")).toBeInTheDocument();
+    expect(d.getByText("Muy por debajo del promedio: Beto Marín.")).toBeInTheDocument();
+    expect(d.getByText("Hoy sin registro")).toBeInTheDocument();
+    // The switch is stored on the farm, not only in this browser.
+    expect(ownFarm().harvestMode).toBe(true);
+    // Nothing unknown printed as a zero.
+    expect(dash.textContent).not.toMatch(/\$0(?!\d)/);
+  }, 20000);
+
+  it("says plainly when there is nothing to show yet", async () => {
+    signIn();
+    ownFarm().harvestMode = true;
+    const empty = dashboard();
+    empty.summary = { ...empty.summary, thisWeek: totals(), lastWeek: totals(), lastWeekToDate: totals(), today: totals() };
+    server.use(http.get("*/v1/reports/harvest-dashboard", () => HttpResponse.json(empty)));
+    renderApp("/cosecha");
+    expect(await screen.findByText(/Todavía no hay kilos registrados esta semana ni la semana pasada/)).toBeInTheDocument();
+  }, 20000);
+});
+
+describe("the lote trend, in words", () => {
+  it("compares with the same weekdays of last week", () => {
+    expect(plotTrend({ kg: 150, lastWeekToDateKg: 100, lastWeekKg: 400 })).toBe("↑ 50% más que la semana pasada");
+    expect(plotTrend({ kg: 50, lastWeekToDateKg: 100, lastWeekKg: 400 })).toBe("↓ 50% menos que la semana pasada");
+    expect(plotTrend({ kg: 100, lastWeekToDateKg: 100, lastWeekKg: 400 })).toBe("= igual que la semana pasada");
+    expect(plotTrend({ kg: 80, lastWeekToDateKg: null, lastWeekKg: null })).toBe("nuevo esta semana");
+    expect(plotTrend({ kg: null, lastWeekToDateKg: 90, lastWeekKg: 90 })).toMatch(/nada todavía/);
+    expect(plotTrend({ kg: null, lastWeekToDateKg: null, lastWeekKg: 70 })).toBe("la semana pasada: 70 kg");
+  });
+});
+
+describe("the dashboard's other sentences", () => {
+  it("says when somebody last picked the way a person would", () => {
+    expect(lastSeenText("2026-09-29", "2026-09-30")).toBe("ayer");
+    expect(lastSeenText("2026-09-28", "2026-09-30")).toBe("anteayer");
+    expect(lastSeenText("2026-09-24", "2026-09-30")).toBe("el jueves 24");
+  });
+  it("names who is well below the average", () => {
+    expect(belowAverageText([])).toBeNull();
+    expect(belowAverageText(["Ana"])).toBe("Muy por debajo del promedio: Ana.");
+    expect(belowAverageText(["Ana", "Beto", "Carla"])).toBe("Muy por debajo del promedio: Ana, Beto y Carla.");
+  });
 });

@@ -190,6 +190,8 @@ export interface FarmSummary {
   country?: string | null;
   phone?: string | null;
   address?: string | null;
+  /** «Modo cosecha». Only `GET /v1/farm` knows it; `/v1/me` does not say. */
+  harvestMode?: boolean;
 }
 
 export interface LoginRequest {

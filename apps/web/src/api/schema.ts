@@ -278,6 +278,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/farm/harvest-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn «Modo cosecha» on or off
+         * @description «Modo cosecha» puts the harvest-week dashboard
+         *     (`GET /v1/reports/harvest-dashboard`) on the farm's home screen. Off,
+         *     the home screen is what it always was. Default off.
+         *
+         *     A display preference, never a permission: nothing on the server reads
+         *     it to allow or refuse anything. Its own route rather than a field of
+         *     `PUT /v1/farm`, because that route is the owner's alone and the
+         *     administrator running the harvest should be able to flip this switch.
+         */
+        put: operations["setHarvestMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/farms": {
         parameters: {
             query?: never;
@@ -2881,6 +2908,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reports/harvest-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The harvest week at a glance — the home screen in «Modo cosecha»
+         * @description The running week (Monday to today, in the farm's zone) and the one
+         *     before it, in one request: the big figures (kilos this week, last week
+         *     over the same weekdays and whole, today, people today, kilos per person
+         *     per day, and the week's estimated harvest value), the seven days, the
+         *     lotes with their trend, share and pickers, the people ranked by kilos
+         *     with who is well below the farm's average, and who picked recently but
+         *     has nothing registered today.
+         *
+         *     Scope is harvest: work paid by the unit of work, priced exactly as
+         *     every other report (settled amount, else frozen amount, else the kilo
+         *     price rules persona > lote > semana > finca). A weighing in a unit with
+         *     no `kgFactor` is left out of every kilo figure and counted; kilos with
+         *     nothing behind them are null, never zero. A weighing is attributed to
+         *     a lote only when it resolves to exactly one; the rest are in
+         *     `unattributed`.
+         */
+        get: operations["reportHarvestDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mcp/connections": {
         parameters: {
             query?: never;
@@ -3703,6 +3764,12 @@ export interface components {
              *     the weigher.
              */
             priceCents?: number;
+            /**
+             * @description «Modo cosecha»: the home screen shows the harvest-week dashboard.
+             *     Written through `PUT /v1/farm/harvest-mode`, not through this
+             *     record's PUT. A display preference, never a permission.
+             */
+            harvestMode?: boolean;
         };
         FarmPatch: {
             name?: string;
@@ -5798,6 +5865,105 @@ export interface components {
             unattributedKg: number | null;
             recordsNotInKg: number;
         };
+        /** @description The response of `GET /v1/reports/harvest-dashboard`. */
+        HarvestDashboard: {
+            scope: components["schemas"]["ReportScope"];
+            /**
+             * Format: date
+             * @description Today in the farm's zone.
+             */
+            today: string;
+            /**
+             * Format: date
+             * @description Monday of the running week.
+             */
+            thisWeek: string;
+            /**
+             * Format: date
+             * @description Monday of last week.
+             */
+            lastWeek: string;
+            /**
+             * @description A person is flagged `belowAverage` when their kilos per day are
+             *     under this fraction of the farm's kilos per person per day.
+             */
+            belowAverageRatio: number;
+            summary: {
+                /**
+                 * @description The running week so far. Its `valueCents` is the week's
+                 *     estimated harvest payroll; `valueIsEstimate` says whether any
+                 *     of it is priced by the week rather than settled.
+                 */
+                thisWeek: components["schemas"]["ReportTotals"];
+                /** @description Last week over the same weekdays the running week has had so far. */
+                lastWeekToDate: components["schemas"]["ReportTotals"];
+                /** @description Last week, whole. */
+                lastWeek: components["schemas"]["ReportTotals"];
+                today: components["schemas"]["ReportTotals"];
+                /** @description Distinct people with a harvest weighing today. */
+                pickersToday: number;
+                /** @description Distinct people with a harvest weighing this week. */
+                pickersThisWeek: number;
+                /** @description Distinct (person */
+                personDays: number;
+                /** @description This week's kilos over `personDays`. Null when nothing this week is in kilos. */
+                kgPerPersonDay: number | null;
+            };
+            /** @description Monday to Sunday of the running week, always seven. */
+            days: (components["schemas"]["ReportTotals"] & {
+                /** Format: date */
+                day: string;
+                pickers: number;
+                /** @description A day of this week that has not happened yet. */
+                future: boolean;
+            })[];
+            /**
+             * @description Every lote with harvest this week or last week, most kilos this
+             *     week first. The figures are this week's.
+             */
+            plots: (components["schemas"]["ReportTotals"] & {
+                /** Format: uuid */
+                plotId: string;
+                name: string;
+                /** @description Last week over the same weekdays as the running week so far. */
+                lastWeekToDateKg: number | null;
+                /** @description Last week */
+                lastWeekKg: number | null;
+                /** @description Fraction (0..1) of the week's kilos. Null when either has no kilos. */
+                share: number | null;
+                /** @description Distinct people who picked this lote this week. */
+                pickers: number;
+            })[];
+            /** @description This week's weighings that name no lote, or more than one. */
+            unattributed: components["schemas"]["ReportTotals"];
+            /** @description Everybody who picked this week, most kilos first. */
+            people: (components["schemas"]["ReportTotals"] & {
+                /** Format: uuid */
+                employeeId: string;
+                name: string;
+                /** @description Distinct days with kilos this week. */
+                daysWorked: number;
+                kgPerDay: number | null;
+                pickedToday: boolean;
+                /**
+                 * @description Kilos per day under `belowAverageRatio` of the farm's
+                 *     kilos per person per day. Never true when fewer than
+                 *     three people picked this week.
+                 */
+                belowAverage: boolean;
+            })[];
+            /**
+             * @description People still on the books who picked last week or this week and
+             *     have no harvest weighing today, by name.
+             */
+            notToday: {
+                /** Format: uuid */
+                employeeId: string;
+                name: string;
+                /** Format: date */
+                lastRecordOn: string;
+            }[];
+        };
         ReportPerformanceResult: {
             scope: components["schemas"]["ReportScope"];
             days: number;
@@ -6929,6 +7095,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Farm"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setHarvestMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The switch as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        harvestMode: boolean;
+                    };
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -11135,6 +11332,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    reportHarvestDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The harvest week. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HarvestDashboard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMcpConnections: {

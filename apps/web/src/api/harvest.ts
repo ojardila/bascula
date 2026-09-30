@@ -29,6 +29,7 @@ import type { paths } from "./schema";
 import type { DayISO, Uuid } from "./types";
 import type {
   WireHarvestCurve,
+  WireHarvestDashboard,
   WireReportAnomaliesResult,
   WireReportCrop,
   WireReportPerformanceResult,
@@ -63,6 +64,8 @@ export type ReportRoutes = [
   Route<Has<"/v1/reports/anomalies">>,
   Route<Has<"/v1/reports/harvest-curve">>,
   Route<Has<"/v1/workers/{id}/performance">>,
+  Route<Has<"/v1/reports/harvest-dashboard">>,
+  Route<Has<"/v1/farm/harvest-mode">>,
 ];
 
 const q = (params: Record<string, string | number | undefined>): string => {
@@ -109,3 +112,15 @@ export const reportHarvestCurve = (params: { plotCropId?: Uuid; weeks?: number }
  */
 export const workerPerformance = (workerId: Uuid, weeks?: number) =>
   http.get<WireWorkerPerformanceReport>(`/v1/workers/${workerId}/performance${q({ weeks })}`);
+
+/**
+ * «Modo cosecha»: the harvest week at a glance — this week against last week,
+ * today, the lotes, the people and the days. Everything is added up on the
+ * server; the screen only words it.
+ */
+export const reportHarvestDashboard = () =>
+  http.get<WireHarvestDashboard>("/v1/reports/harvest-dashboard");
+
+/** Turns «Modo cosecha» on or off for the farm. Owner or administrator. */
+export const setHarvestMode = (enabled: boolean) =>
+  http.put<{ harvestMode: boolean }>("/v1/farm/harvest-mode", { enabled });

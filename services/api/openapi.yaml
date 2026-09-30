@@ -483,6 +483,45 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/farm/harvest-mode:
+    put:
+      tags: [farm]
+      operationId: setHarvestMode
+      summary: Turn «Modo cosecha» on or off
+      description: |
+        «Modo cosecha» puts the harvest-week dashboard
+        (`GET /v1/reports/harvest-dashboard`) on the farm's home screen. Off,
+        the home screen is what it always was. Default off.
+
+        A display preference, never a permission: nothing on the server reads
+        it to allow or refuse anything. Its own route rather than a field of
+        `PUT /v1/farm`, because that route is the owner's alone and the
+        administrator running the harvest should be able to flip this switch.
+      x-action: farm.harvest_mode.write
+      x-roles: [owner, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: The switch as it now stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [harvestMode]
+                properties:
+                  harvestMode: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /v1/farms:
     post:
       tags: [farm]
@@ -4901,6 +4940,38 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
 
+  /v1/reports/harvest-dashboard:
+    get:
+      tags: [reports]
+      operationId: reportHarvestDashboard
+      summary: The harvest week at a glance — the home screen in «Modo cosecha»
+      description: |
+        The running week (Monday to today, in the farm's zone) and the one
+        before it, in one request: the big figures (kilos this week, last week
+        over the same weekdays and whole, today, people today, kilos per person
+        per day, and the week's estimated harvest value), the seven days, the
+        lotes with their trend, share and pickers, the people ranked by kilos
+        with who is well below the farm's average, and who picked recently but
+        has nothing registered today.
+
+        Scope is harvest: work paid by the unit of work, priced exactly as
+        every other report (settled amount, else frozen amount, else the kilo
+        price rules persona > lote > semana > finca). A weighing in a unit with
+        no `kgFactor` is left out of every kilo figure and counted; kilos with
+        nothing behind them are null, never zero. A weighing is attributed to
+        a lote only when it resolves to exactly one; the rest are in
+        `unattributed`.
+      x-action: reports.read
+      x-roles: [owner, admin]
+      responses:
+        "200":
+          description: The harvest week.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HarvestDashboard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   # ---------------------------------------------------------------------------
   # MCP — the API as tools for an assistant (internal/httpapi/handlers_mcp.go)
   # ---------------------------------------------------------------------------
@@ -6273,6 +6344,12 @@ components:
           description: |
             The standing price per unit of collection. Absent — not null — for
             the weigher.
+        harvestMode:
+          type: boolean
+          description: |
+            «Modo cosecha»: the home screen shows the harvest-week dashboard.
+            Written through `PUT /v1/farm/harvest-mode`, not through this
+            record's PUT. A display preference, never a permission.
 
     FarmPatch:
       type: object
@@ -8412,6 +8489,115 @@ components:
           nullable: true
           description: Recent kilos whose record names no lote, or more than one.
         recordsNotInKg: { type: integer }
+
+    HarvestDashboard:
+      type: object
+      description: The response of `GET /v1/reports/harvest-dashboard`.
+      required: [scope, today, thisWeek, lastWeek, belowAverageRatio, summary, days, plots, unattributed, people, notToday]
+      properties:
+        scope: { $ref: "#/components/schemas/ReportScope" }
+        today: { type: string, format: date, description: Today in the farm's zone. }
+        thisWeek: { type: string, format: date, description: Monday of the running week. }
+        lastWeek: { type: string, format: date, description: Monday of last week. }
+        belowAverageRatio:
+          type: number
+          description: |
+            A person is flagged `belowAverage` when their kilos per day are
+            under this fraction of the farm's kilos per person per day.
+        summary:
+          type: object
+          required: [thisWeek, lastWeekToDate, lastWeek, today, pickersToday, pickersThisWeek, personDays, kgPerPersonDay]
+          properties:
+            thisWeek:
+              allOf: [{ $ref: "#/components/schemas/ReportTotals" }]
+              description: |
+                The running week so far. Its `valueCents` is the week's
+                estimated harvest payroll; `valueIsEstimate` says whether any
+                of it is priced by the week rather than settled.
+            lastWeekToDate:
+              allOf: [{ $ref: "#/components/schemas/ReportTotals" }]
+              description: Last week over the same weekdays the running week has had so far.
+            lastWeek:
+              allOf: [{ $ref: "#/components/schemas/ReportTotals" }]
+              description: Last week, whole.
+            today: { $ref: "#/components/schemas/ReportTotals" }
+            pickersToday: { type: integer, description: Distinct people with a harvest weighing today. }
+            pickersThisWeek: { type: integer, description: Distinct people with a harvest weighing this week. }
+            personDays: { type: integer, description: Distinct (person, day) pairs with kilos this week. }
+            kgPerPersonDay:
+              type: number
+              nullable: true
+              description: This week's kilos over `personDays`. Null when nothing this week is in kilos.
+        days:
+          type: array
+          description: Monday to Sunday of the running week, always seven.
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ReportTotals"
+              - type: object
+                required: [day, pickers, future]
+                properties:
+                  day: { type: string, format: date }
+                  pickers: { type: integer }
+                  future: { type: boolean, description: A day of this week that has not happened yet. }
+        plots:
+          type: array
+          description: |
+            Every lote with harvest this week or last week, most kilos this
+            week first. The figures are this week's.
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ReportTotals"
+              - type: object
+                required: [plotId, name, lastWeekToDateKg, lastWeekKg, share, pickers]
+                properties:
+                  plotId: { type: string, format: uuid }
+                  name: { type: string }
+                  lastWeekToDateKg:
+                    type: number
+                    nullable: true
+                    description: Last week over the same weekdays as the running week so far.
+                  lastWeekKg: { type: number, nullable: true, description: Last week, whole. }
+                  share:
+                    type: number
+                    nullable: true
+                    description: Fraction (0..1) of the week's kilos. Null when either has no kilos.
+                  pickers: { type: integer, description: Distinct people who picked this lote this week. }
+        unattributed:
+          allOf: [{ $ref: "#/components/schemas/ReportTotals" }]
+          description: This week's weighings that name no lote, or more than one.
+        people:
+          type: array
+          description: Everybody who picked this week, most kilos first.
+          items:
+            allOf:
+              - $ref: "#/components/schemas/ReportTotals"
+              - type: object
+                required: [employeeId, name, daysWorked, kgPerDay, pickedToday, belowAverage]
+                properties:
+                  employeeId: { type: string, format: uuid }
+                  name: { type: string }
+                  daysWorked: { type: integer, description: Distinct days with kilos this week. }
+                  kgPerDay: { type: number, nullable: true }
+                  pickedToday: { type: boolean }
+                  belowAverage:
+                    type: boolean
+                    description: |
+                      Kilos per day under `belowAverageRatio` of the farm's
+                      kilos per person per day. Never true when fewer than
+                      three people picked this week.
+        notToday:
+          type: array
+          description: |
+            People still on the books who picked last week or this week and
+            have no harvest weighing today, by name.
+          items:
+            type: object
+            required: [employeeId, name, lastRecordOn]
+            properties:
+              employeeId: { type: string, format: uuid }
+              name: { type: string }
+              lastRecordOn: { type: string, format: date }
 
     ReportPerformanceResult:
       type: object

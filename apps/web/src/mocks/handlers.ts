@@ -216,6 +216,7 @@ type Action =
   | "auth.logout"
   | "farm.read"
   | "farm.write"
+  | "farm.harvest_mode.write"
   | "users.read"
   | "users.write"
   | "admin.farms.read"
@@ -290,6 +291,8 @@ const MATRIX: Record<Action, Rule> = {
   // his projection. Only the owner writes it.
   "farm.read": { roles: everyone },
   "farm.write": { roles: owners },
+  // «Modo cosecha»: a display preference; the administrator may flip it too.
+  "farm.harvest_mode.write": { roles: admins },
 
   /**
    * OWNER ONLY, and that is not a transcription — `perm.go` has no such action
@@ -1076,9 +1079,22 @@ export const handlers = [
     const farm = db.farmOf(g.p.farmId);
     if (!farm) return notFound();
     const { priceCents, ...rest } = farm;
+    const out = { ...rest, harvestMode: farm.harvestMode ?? false };
     return seesPrivateData(g.p)
-      ? HttpResponse.json({ ...rest, priceCents })
-      : HttpResponse.json(rest);
+      ? HttpResponse.json({ ...out, priceCents })
+      : HttpResponse.json(out);
+  }),
+
+  /** «Modo cosecha», as `handleSetHarvestMode`: owner or administrator. */
+  http.put("*/v1/farm/harvest-mode", async ({ request }) => {
+    const g = guard(request, "farm.harvest_mode.write");
+    if (g.deny) return g.deny;
+    const farm = db.farmOf(g.p.farmId);
+    if (!farm) return notFound();
+    const body = (await request.json().catch(() => ({}))) as { enabled?: unknown };
+    if (typeof body.enabled !== "boolean") return badRequest("enabled is required (true or false)");
+    farm.harvestMode = body.enabled;
+    return HttpResponse.json({ harvestMode: farm.harvestMode });
   }),
 
   http.put("*/v1/farm", async ({ request }) => {
@@ -3666,6 +3682,122 @@ export const handlers = [
   }),
 
   /* -- reports (cosecha) --------------------------------------------- */
+
+  /**
+   * «Modo cosecha», as `internal/store/harvest_dashboard.go` computes it:
+   * last week and this week, one pass, folded per day, lote and person.
+   */
+  http.get("*/v1/reports/harvest-dashboard", ({ request }) => {
+    const g = guard(request, "reports.read");
+    if (g.deny) return g.deny;
+    const t = g.p.tenant;
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    const todayD = today();
+    const thisWeek = mondayOf(todayD);
+    const lastWeek = day(addDays(parseDay(thisWeek), -7));
+    const sunday = day(addDays(parseDay(thisWeek), 6));
+    const sameDayLastWeek = day(addDays(parseDay(todayD), -7));
+    const kgOf = (r: db.MockWorkRecord): number | null => {
+      const unit = t.workUnits.find((u) => u.id === r.unitId);
+      return unit?.kgFactor != null ? r.quantity * unit.kgFactor : null;
+    };
+    const plotOf = (r: db.MockWorkRecord): string | null => {
+      const ids = new Set([
+        ...(r.plotIds ?? []),
+        ...(r.plotCropIds ?? []).map((c) => t.plots.find((p) => (p.crops ?? []).some((x) => x.id === c))?.id),
+      ].filter((x): x is string => !!x));
+      return ids.size === 1 ? [...ids][0] : null;
+    };
+    const tot = (rows: db.MockWorkRecord[]) => ({ ...totalsOf(t, rows), recordsSpanningWeeks: 0 });
+    const kgSum = (rows: db.MockWorkRecord[]) => tot(rows).kg;
+    const nameOf = (id: string) => {
+      const w = t.workers.find((x) => x.id === id);
+      return w ? `${w.name} ${w.lastName ?? ""}`.trim() : "";
+    };
+
+    const rows = t.workRecords.filter(
+      (r) => r.deletedAt === null && r.payScheme === "unidad_trabajo" &&
+        db.dayOf(r.dateFrom) >= lastWeek && db.dayOf(r.dateFrom) <= sunday,
+    );
+    const dayOfR = (r: db.MockWorkRecord) => db.dayOf(r.dateFrom);
+    const week = rows.filter((r) => dayOfR(r) >= thisWeek);
+    const last = rows.filter((r) => dayOfR(r) < thisWeek);
+    const lastToDate = last.filter((r) => dayOfR(r) <= sameDayLastWeek);
+    const todays = week.filter((r) => dayOfR(r) === todayD);
+
+    const personDays = new Set(week.filter((r) => kgOf(r) !== null).map((r) => `${r.workerId}|${dayOfR(r)}`));
+    const weekTotals = tot(week);
+    const pickersWeek = new Set(week.map((r) => r.workerId));
+    const kgPerPersonDay = weekTotals.kg !== null && personDays.size > 0 ? weekTotals.kg / personDays.size : null;
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = day(addDays(parseDay(thisWeek), i));
+      const list = week.filter((r) => dayOfR(r) === d);
+      return { day: d, ...tot(list), pickers: new Set(list.map((r) => r.workerId)).size, future: d > todayD };
+    });
+
+    const plotIds = new Set(rows.map(plotOf).filter((x): x is string => !!x));
+    const weekKg = weekTotals.kg;
+    const plots = [...plotIds].map((plotId) => {
+      const mine = week.filter((r) => plotOf(r) === plotId);
+      const tt = tot(mine);
+      return {
+        plotId,
+        name: t.plots.find((p) => p.id === plotId)?.name ?? "",
+        ...tt,
+        lastWeekToDateKg: kgSum(lastToDate.filter((r) => plotOf(r) === plotId)),
+        lastWeekKg: kgSum(last.filter((r) => plotOf(r) === plotId)),
+        share: weekKg && tt.kg !== null ? tt.kg / weekKg : null,
+        pickers: new Set(mine.map((r) => r.workerId)).size,
+      };
+    }).sort((a, b) => (b.kg ?? 0) - (a.kg ?? 0) || (b.lastWeekKg ?? 0) - (a.lastWeekKg ?? 0) || a.name.localeCompare(b.name));
+
+    const compare = kgPerPersonDay !== null && pickersWeek.size >= 3;
+    const people = [...pickersWeek].map((employeeId) => {
+      const mine = week.filter((r) => r.workerId === employeeId);
+      const tt = tot(mine);
+      const daysWorked = new Set(mine.filter((r) => kgOf(r) !== null).map(dayOfR)).size;
+      const kgPerDay = tt.kg !== null && daysWorked > 0 ? tt.kg / daysWorked : null;
+      return {
+        employeeId, name: nameOf(employeeId), ...tt, daysWorked, kgPerDay,
+        pickedToday: mine.some((r) => dayOfR(r) === todayD),
+        belowAverage: compare && kgPerDay !== null && kgPerDay < (kgPerPersonDay as number) * 0.7,
+      };
+    }).sort((a, b) => (b.kg ?? 0) - (a.kg ?? 0) || a.name.localeCompare(b.name));
+
+    const todayIds = new Set(todays.map((r) => r.workerId));
+    const notToday = [...new Set(rows.map((r) => r.workerId))]
+      .filter((id) => !todayIds.has(id) && !t.workers.find((w) => w.id === id)?.deletedAt)
+      .map((employeeId) => ({
+        employeeId,
+        name: nameOf(employeeId),
+        lastRecordOn: rows.filter((r) => r.workerId === employeeId).map(dayOfR).sort().pop() as string,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return HttpResponse.json({
+      scope: "harvest",
+      today: todayD,
+      thisWeek,
+      lastWeek,
+      belowAverageRatio: 0.7,
+      summary: {
+        thisWeek: weekTotals,
+        lastWeekToDate: tot(lastToDate),
+        lastWeek: tot(last),
+        today: tot(todays),
+        pickersToday: todayIds.size,
+        pickersThisWeek: pickersWeek.size,
+        personDays: personDays.size,
+        kgPerPersonDay,
+      },
+      days,
+      plots,
+      unattributed: tot(week.filter((r) => plotOf(r) === null)),
+      people,
+      notToday,
+    });
+  }),
 
   http.get("*/v1/reports/weeks", ({ request }) => {
     const g = guard(request, "reports.read");

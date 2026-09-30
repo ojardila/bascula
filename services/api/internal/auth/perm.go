@@ -57,6 +57,9 @@ const (
 
 	ActionFarmRead  Action = "farm.read"
 	ActionFarmWrite Action = "farm.write"
+	// «Modo cosecha»: the switch that puts the harvest-week dashboard on the
+	// farm's home screen.
+	ActionHarvestModeWrite Action = "farm.harvest_mode.write"
 
 	// Adding another farm to an account that already exists. It used to be the
 	// second half of the public signup, where it could only ask for a password
@@ -260,6 +263,13 @@ var Matrix = map[Action]Rule{
 	// kilo. Only the owner writes it.
 	ActionFarmRead:  {Roles: everyone},
 	ActionFarmWrite: {Roles: owners},
+
+	// «Modo cosecha» is a display preference for the home screen, not a
+	// setting that changes what anybody is paid or allowed, so the
+	// administrator — who runs the harvest day to day — may switch it too.
+	// Not Money: it writes one boolean and reads nothing. The weigher has no
+	// harvest home screen to switch.
+	ActionHarvestModeWrite: {Roles: admins},
 
 	// Every role, and it is not an oversight. Owning a farm is a property of
 	// the ACCOUNT and not of the role it holds on somebody else's farm: a

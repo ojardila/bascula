@@ -38,6 +38,8 @@ func (s *Server) Routes() []Route {
 		// The farm's own record. The weigher reads it without the price.
 		{http.MethodGet, "/v1/farm", auth.ActionFarmRead, s.handleGetFarm},
 		{http.MethodPut, "/v1/farm", auth.ActionFarmWrite, s.handleUpdateFarm},
+		// «Modo cosecha»: one switch, owner or administrator.
+		{http.MethodPut, "/v1/farm/harvest-mode", auth.ActionHarvestModeWrite, s.handleSetHarvestMode},
 
 		// Another farm for an account that already exists. This is the half of
 		// the public signup that could not stay public: proving ownership of an
@@ -273,6 +275,8 @@ func (s *Server) Routes() []Route {
 		{http.MethodGet, "/v1/reports/performance", auth.ActionReportsRead, s.handleReportPerformance},
 		{http.MethodGet, "/v1/reports/anomalies", auth.ActionReportsRead, s.handleReportAnomalies},
 		{http.MethodGet, "/v1/reports/harvest-curve", auth.ActionReportsRead, s.handleReportHarvestCurve},
+		// The harvest week at a glance, for the home screen in «Modo cosecha».
+		{http.MethodGet, "/v1/reports/harvest-dashboard", auth.ActionReportsRead, s.handleReportHarvestDashboard},
 
 		// MCP. Streamable HTTP, stateless. POST is the JSON-RPC; GET is the
 		// optional SSE stream; OPTIONS is CORS for browser hosts (ChatGPT).

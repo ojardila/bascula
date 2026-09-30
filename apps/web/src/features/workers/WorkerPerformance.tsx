@@ -394,8 +394,17 @@ function Legend({ swatch, text }: { swatch: React.ReactNode; text: string }) {
   );
 }
 
-/** Seven bars, the kilos written on top; no axis to read. */
-function DaysChart({ days }: { days: WirePerformanceDay[] }) {
+/**
+ * Seven bars, the kilos written on top; no axis to read. Also the daily chart
+ * of the farm's harvest week in «Modo cosecha» (features/harvest/HarvestDashboard).
+ */
+export function DaysChart({
+  days,
+  caption = "Kilos recogidos cada día, de lunes a domingo.",
+}: {
+  days: Pick<WirePerformanceDay, "day" | "kg" | "future">[];
+  caption?: string;
+}) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const height = 200;
   const pad = { top: 26, bottom: 30 };
@@ -432,7 +441,7 @@ function DaysChart({ days }: { days: WirePerformanceDay[] }) {
           })}
         </Box>
       )}
-      <Typography sx={{ fontSize: 15, color: INK_MUTED }}>Kilos recogidos cada día, de lunes a domingo.</Typography>
+      <Typography sx={{ fontSize: 15, color: INK_MUTED }}>{caption}</Typography>
     </Box>
   );
 }
