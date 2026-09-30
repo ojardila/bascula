@@ -3,7 +3,7 @@
  * box is a NEW pesada. People come to the scale several times a day, so the
  * screen must add, never replace or block.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -14,8 +14,9 @@ import { setTokens } from "../../api/client";
 import { invalidateRefs } from "../../api/refs";
 import { theme } from "../../theme";
 import { server } from "../../mocks/node";
-import type { Worker } from "../../api/types";
-import { bulkEntries, filterWorkers, foldName, matchesName, registeredByWorker, soFarLabel } from "./bulk";
+import type { Worker, WorkRecord } from "../../api/types";
+import { api } from "../../api/endpoints";
+import { bulkEntries, filterWorkers, foldName, matchesName, plannedCorrections, registeredByWorker, soFarLabel, weekLocks } from "./bulk";
 import { dayTitle } from "./RegistroMasivoPage";
 
 const OWNER = "0192f3a0-0001-7000-8000-000000000001";
@@ -41,9 +42,15 @@ function signIn() {
 
 /** Every POST /v1/work-records body, as the server received it. */
 let posted: { id: string; workerId: string; quantity: number; dateFrom: string; plotIds: string[] }[] = [];
+/** Every PATCH /v1/work-records/{id}: a correction or a removal. */
+let patched: { id: string; body: { quantity?: number; status?: string } }[] = [];
 const onRequest = async ({ request }: { request: Request }) => {
-  if (request.method === "POST" && new URL(request.url).pathname.endsWith("/v1/work-records")) {
+  const path = new URL(request.url).pathname;
+  if (request.method === "POST" && path.endsWith("/v1/work-records")) {
     posted.push(await request.clone().json());
+  }
+  if (request.method === "PATCH" && /\/v1\/work-records\/[^/]+$/.test(path)) {
+    patched.push({ id: path.split("/").pop() ?? "", body: await request.clone().json() });
   }
 };
 
@@ -52,10 +59,12 @@ beforeEach(() => {
   invalidateRefs();
   localStorage.clear();
   posted = [];
+  patched = [];
   server.events.on("request:start", onRequest);
 });
 afterEach(() => {
   server.events.removeListener("request:start", onRequest);
+  vi.restoreAllMocks();
 });
 
 /** «Ya tiene: 2 pesadas · 38 kg» for one person, or null. */
@@ -167,6 +176,129 @@ describe("Registro de recolección masivo", () => {
     renderApp(`/cosecha/registrar-semana?lunes=${DAY}&lote=${ALTO}`);
     expect(await screen.findByRole("heading", { name: "Registro de recolección masivo" })).toBeInTheDocument();
     expect(await screen.findByText("Lunes 24 de agosto")).toBeInTheDocument();
+  }, 20000);
+});
+
+/** Adds one pesada for Jhon on DAY through the screen, and waits for it. */
+async function addForJhon(user: ReturnType<typeof userEvent.setup>, kilos: string) {
+  await user.type(await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos"), kilos);
+  await user.click(screen.getByRole("button", { name: "Guardar" }));
+  await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Sí, guardar" }));
+  await screen.findByText(/Se agregó 1 pesada nueva/, {}, { timeout: 5000 });
+}
+
+/** A harvest pesada as the screen reads it, for the settled-week cases. */
+function pesada(over: Partial<WorkRecord> & Pick<WorkRecord, "id" | "workerId" | "quantity" | "settled">): WorkRecord {
+  return {
+    workerName: "", activityId: "", activityName: "Recolección", category: "cosecha" as never,
+    payMode: "work_unit" as never, unitLabel: "kg", plotIds: [ALTO], plotNames: ["Alto"],
+    plotCropIds: [], plotCropNames: [], dateFrom: DAY, dateTo: DAY, rateCents: null,
+    estimatedAmountCents: null, amountIsEstimate: null, note: null, status: "active",
+    ...over,
+  } as WorkRecord;
+}
+
+describe("Registro masivo on an earlier day", () => {
+  it("loads what the day already has and lets the owner correct it", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    expect(await screen.findByText("Lunes 24 de agosto")).toBeInTheDocument();
+    await addForJhon(user, "30");
+    const created = posted[0].id;
+
+    // The row offers «Corregir», and the box is still open for another pesada.
+    const card = screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos").closest(".MuiCard-root") as HTMLElement;
+    expect(screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toBeEnabled();
+    await user.click(within(card).getByRole("button", { name: "Corregir las pesadas de Jhon Fredy Cardona Loaiza" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Corregir pesadas")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Lunes 24 de agosto/)).toBeInTheDocument();
+    const boxes = within(dialog).getAllByLabelText(/^Pesada \d+, kilos$/);
+    const mine = boxes.find((b) => (b as HTMLInputElement).value === "30") as HTMLInputElement;
+    expect(mine).toBeDefined();
+    await user.clear(mine);
+    await user.type(mine, "32");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+    expect(await screen.findByText(/Se corrigió 1 pesada de Jhon Fredy Cardona Loaiza/, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(patched).toEqual([{ id: created, body: { quantity: 32 } }]);
+    expect(posted).toHaveLength(1);
+  }, 20000);
+
+  it("takes a pesada out from «Corregir»", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await addForJhon(user, "27");
+    const created = posted[0].id;
+    await user.click(screen.getByRole("button", { name: "Corregir las pesadas de Jhon Fredy Cardona Loaiza" }));
+    const dialog = await screen.findByRole("dialog");
+    const boxes = within(dialog).getAllByLabelText(/^Pesada \d+, kilos$/);
+    const n = boxes.findIndex((b) => (b as HTMLInputElement).value === "27") + 1;
+    await user.click(within(dialog).getByRole("button", { name: `Quitar la pesada ${n}` }));
+    expect(within(dialog).getByText(/Se quita · era 27 kg/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+    await screen.findByText(/Se corrigió 1 pesada/, {}, { timeout: 5000 });
+    expect(patched).toEqual([{ id: created, body: { status: "inactive" } }]);
+  }, 20000);
+
+  it("asks before moving to another day with kilos typed, and never carries them over", async () => {
+    signIn();
+    const user = userEvent.setup();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    await user.type(await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos"), "12");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    await user.click(screen.getByRole("button", { name: "Martes 25 de agosto" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Lunes 24 de agosto")).toBeInTheDocument();
+    expect(screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toHaveValue("12");
+
+    confirm.mockReturnValueOnce(true);
+    await user.click(screen.getByRole("button", { name: "Martes 25 de agosto" }));
+    expect(await screen.findByText("Martes 25 de agosto")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toHaveValue("");
+  }, 20000);
+
+  it("keeps a settled week read-only and says why, plainly", async () => {
+    vi.spyOn(api, "listWorkRecords").mockResolvedValue([
+      pesada({ id: "s1", workerId: JHON, quantity: 40, settled: true }),
+    ]);
+    signIn();
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    expect(await screen.findByText("Esta semana ya se liquidó, no se puede cambiar.")).toBeInTheDocument();
+    for (const box of await screen.findAllByLabelText(/, kilos$/)) expect(box).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /^Corregir/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Guardar" })).toBeNull();
+    // What was registered is still there to read.
+    expect(soFarOf(/Jhon Fredy Cardona Loaiza, kilos/)).toEqual({ count: 1, kilos: 40 });
+  }, 20000);
+
+  it("locks only the people already settled when the rest of the week is open", async () => {
+    const MARIA_ROW = /^María .*, kilos$/;
+    signIn();
+    const probe = renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    const mariaId = await (async () => {
+      await screen.findByLabelText(MARIA_ROW);
+      const workers = await api.listWorkers({ status: "active" });
+      return workers.find((w) => w.name.startsWith("María"))!.id;
+    })();
+    probe.unmount();
+
+    vi.spyOn(api, "listWorkRecords").mockResolvedValue([
+      pesada({ id: "s1", workerId: JHON, quantity: 40, settled: true, dateFrom: "2026-08-25", dateTo: "2026-08-25" }),
+      pesada({ id: "o1", workerId: mariaId, quantity: 22, settled: false }),
+    ]);
+    renderApp(`/cosecha/registro-masivo?dia=${DAY}&lote=${ALTO}`);
+    expect(await screen.findByText(/A 1 persona ya se le liquidó esta semana/)).toBeInTheDocument();
+    expect(screen.queryByText("Esta semana ya se liquidó, no se puede cambiar.")).toBeNull();
+    // Jhon: settled on the Tuesday, so his Monday is locked too.
+    expect(screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos")).toBeDisabled();
+    const jhonCard = screen.getByLabelText("Jhon Fredy Cardona Loaiza, kilos").closest(".MuiCard-root") as HTMLElement;
+    expect(within(jhonCard).getByText("Semana liquidada: no se puede cambiar")).toBeInTheDocument();
+    // María: open, can add and correct.
+    expect(screen.getByLabelText(MARIA_ROW)).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Corregir las pesadas de María/ })).toBeInTheDocument();
   }, 20000);
 });
 
@@ -306,6 +438,30 @@ describe("bulk helpers", () => {
     expect(filterWorkers(list, "pe").map((x) => x.id)).toEqual(["p", "a"]);
     expect(filterWorkers(list, "perez").map((x) => x.id)).toEqual(["a"]);
     expect(filterWorkers(list, "")).toEqual(list);
+  });
+
+  it("knows whose week is settled, and when the whole week is", () => {
+    const r = (workerId: string, settled: boolean) => ({ workerId, settled }) as never;
+    expect(weekLocks([])).toEqual({ settledWorkers: new Set(), weekSettled: false });
+    const some = weekLocks([r("a", true), r("a", false), r("b", false)]);
+    expect([...some.settledWorkers]).toEqual(["a"]);
+    expect(some.weekSettled).toBe(false);
+    expect(weekLocks([r("a", true), r("b", true), r("b", false)]).weekSettled).toBe(true);
+  });
+
+  it("turns «Corregir» into changes, skipping what did not change and what is settled", () => {
+    const r = (id: string, quantity: number, settled = false) => ({ id, quantity, settled }) as never;
+    const records = [r("x", 20), r("y", 15.5), r("z", 10), r("s", 30, true)];
+    expect(plannedCorrections(records, { x: "20", y: "15,5", z: "10", s: "99" }, {})).toEqual({ corrections: [], errors: [] });
+    expect(plannedCorrections(records, { x: "22", y: "15,5", z: "10" }, { z: true, s: true })).toEqual({
+      corrections: [{ kind: "update", recordId: "x", quantity: 22 }, { kind: "remove", recordId: "z" }],
+      errors: [],
+    });
+    expect(plannedCorrections(records, { x: "", y: "abc", z: "0" }, {}).errors).toEqual([
+      "Escriba los kilos de la pesada 1, o toque «Quitar».",
+      "Revise la pesada 2: «abc» no es un número.",
+      "Revise la pesada 3: deben ser más de cero.",
+    ]);
   });
 
   it("says the day in words", () => {

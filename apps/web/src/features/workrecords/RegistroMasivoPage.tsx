@@ -17,8 +17,13 @@
  *  3. One row per employee: what that person ALREADY has on the day (any
  *     lote, e.g. «2 pesadas · 38 kg») and one big empty box to ADD another.
  *     People come to the scale several times a day, so a filled box is always
- *     a new pesada — nothing registered is replaced or blocked. Blank writes
- *     nothing. Corrections are done in Labores.
+ *     a new pesada — nothing registered is replaced. Blank writes nothing.
+ *     To fix a wrong number, «Corregir» on the row (owners and
+ *     administrators) opens that person's pesadas of the day to change or
+ *     take out — on today or any earlier day of a week that is not settled.
+ *     A settled week («liquidada») is read-only and says so plainly: a
+ *     person with a settled pesada in the week cannot be changed there, and
+ *     when the whole week is settled nothing on the screen can be written.
  *  4. «Guardar» asks first — the day, the lote, who and how many kilos — and
  *     then lists exactly what was added.
  *
@@ -50,7 +55,8 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { useOffline } from "../../offline/OfflineContext";
 import { DAY_LETTERS, daysOfWeek, isIsoDay, pickHarvestActivity, workerLabel } from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
-import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, type BulkEntry } from "./bulk";
+import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, weekLocks, type BulkEntry } from "./bulk";
+import { CorregirPesadasDialog } from "./CorregirPesadasDialog";
 
 const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
 const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"] as const;
@@ -95,7 +101,11 @@ export function RegistroMasivoPage() {
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [plots, setPlots] = useState<Plot[] | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
-  const [dayRecords, setDayRecords] = useState<WorkRecord[] | null>(null);
+  // Every harvest pesada of the week around the day: the day's own are shown,
+  // and the week's say whether it is already settled.
+  const [weekRecords, setWeekRecords] = useState<{ monday: string; records: WorkRecord[] } | null>(null);
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const [corrected, setCorrected] = useState<string | null>(null);
   const [texts, setTexts] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -127,8 +137,17 @@ export function RegistroMasivoPage() {
   }
 
   const setDay = (d: string) => {
+    const next = d > today ? today : d;
+    if (next === day) return;
+    // Kilos typed for one day must never be saved on another.
+    if (Object.values(texts).some((t) => t.trim() !== "")) {
+      if (!window.confirm("Hay kilos escritos sin guardar. Si cambia de día se borran. ¿Cambiar de día?")) return;
+      setTexts({});
+    }
     setAdded(null);
-    patch({ dia: d > today ? today : d });
+    setCorrected(null);
+    setSaveError(null);
+    patch({ dia: next });
   };
 
   useEffect(() => {
@@ -155,14 +174,14 @@ export function RegistroMasivoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // What is already registered on the day, on every lote.
+  // What is already registered in the week of the day, on every lote.
+  const monday = week[0];
   useEffect(() => {
     if (!activity) return;
     let cancelled = false;
-    setDayRecords(null);
-    loadDay(activity.id, day)
+    loadWeek(activity.id, monday)
       .then((r) => {
-        if (!cancelled) setDayRecords(r);
+        if (!cancelled) setWeekRecords({ monday, records: r });
       })
       .catch((e) => {
         if (!cancelled) setLoadError(messageFor(e));
@@ -170,7 +189,7 @@ export function RegistroMasivoPage() {
     return () => {
       cancelled = true;
     };
-  }, [activity, day]);
+  }, [activity, monday]);
 
   if (denied || !can("workRecords.write")) {
     return <PermissionDenied moduleName="el registro de recolección masivo" />;
@@ -188,8 +207,8 @@ export function RegistroMasivoPage() {
       </Typography>
       <Typography sx={{ mb: 2, fontSize: "1.1rem" }} color="text.secondary">
         Las pesadas de todos los empleados en un día. Elija el día y el lote, y escriba los
-        kilos de cada persona. Cada número es una pesada nueva; lo ya registrado no se cambia.
-        Si no pesó, déjelo en blanco.
+        kilos de cada persona. Cada número es una pesada nueva. Si no pesó, déjelo en blanco.
+        {can("workRecords.correct") && " Para cambiar una pesada ya registrada, toque «Corregir»."}
       </Typography>
     </>
   );
@@ -216,14 +235,20 @@ export function RegistroMasivoPage() {
   }
 
   const plot = plots.find((p) => p.id === plotId) ?? null;
+  const loadedWeek = weekRecords && weekRecords.monday === monday ? weekRecords.records : null;
+  const dayRecords = loadedWeek ? recordsOn(loadedWeek, day) : null;
+  const { settledWorkers, weekSettled } = weekLocks(loadedWeek ?? []);
+  const locked = (workerId: string) => weekSettled || settledWorkers.has(workerId);
+  const canCorrect = can("workRecords.correct");
   const soFar = registeredByWorker(dayRecords ?? []);
-  const { entries, errors } = bulkEntries(workers, texts);
+  const { entries, errors } = bulkEntries(workers.filter((w) => !locked(w.id)), texts);
   const shown = filterWorkers(workers, search);
   const newKilos = entries.reduce((s, e) => s + e.quantity, 0);
-  const dirty = Object.values(texts).some((t) => t.trim() !== "");
+  const dirty = Object.entries(texts).some(([id, t]) => t.trim() !== "" && !locked(id));
   const dayKilos = (dayRecords ?? []).reduce((s, r) => s + r.quantity, 0);
   const prevMonday = iso(addDays(parseDay(week[0]), -7));
   const nextMonday = iso(addDays(parseDay(week[0]), 7));
+  const correctingWorker = correcting ? workers.find((w) => w.id === correcting) ?? null : null;
   const pesadas = (n: number) => (n === 1 ? "1 pesada nueva" : `${n} pesadas nuevas`);
 
   function askToSave() {
@@ -275,7 +300,7 @@ export function RegistroMasivoPage() {
     }
     setAdded({ day, plotName: plot.name, entries: batch });
     try {
-      setDayRecords(await loadDay(activity.id, day));
+      setWeekRecords({ monday, records: await loadWeek(activity.id, monday) });
     } catch {
       // the pesadas are saved; the list refreshes next time
     }
@@ -401,6 +426,24 @@ export function RegistroMasivoPage() {
         />
       </Stack>
 
+      {loadedWeek && weekSettled && (
+        <Alert severity="warning" sx={{ mb: 2, fontSize: "1.15rem" }}>
+          <strong>Esta semana ya se liquidó, no se puede cambiar.</strong> Los kilos de una semana
+          liquidada quedan como se pagaron. Puede ver lo registrado, pero no agregar ni corregir.
+        </Alert>
+      )}
+      {loadedWeek && !weekSettled && settledWorkers.size > 0 && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: "1.05rem" }}>
+          {settledWorkers.size === 1
+            ? "A 1 persona ya se le liquidó esta semana: sus kilos no se pueden cambiar."
+            : `A ${settledWorkers.size} personas ya se les liquidó esta semana: sus kilos no se pueden cambiar.`}
+        </Alert>
+      )}
+      {corrected && (
+        <Alert severity="success" sx={{ mb: 2, fontSize: "1.1rem" }} onClose={() => setCorrected(null)}>
+          <strong>Listo.</strong> {corrected}
+        </Alert>
+      )}
       {!offline.online && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           Sin conexión. Para guardar el registro masivo se necesita señal. Para registrar sin
@@ -459,6 +502,7 @@ export function RegistroMasivoPage() {
             {shown.map((w) => {
               const name = workerLabel(w);
               const has = soFar[w.id];
+              const isLocked = locked(w.id);
               return (
                 <Card key={w.id} variant="outlined">
                   <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
@@ -476,6 +520,27 @@ export function RegistroMasivoPage() {
                           "Sin pesadas este día"
                         )}
                       </Typography>
+                      {isLocked && !weekSettled && (
+                        <Typography sx={{ fontSize: "0.95rem", fontWeight: 600, color: "warning.dark" }}>
+                          Semana liquidada: no se puede cambiar
+                        </Typography>
+                      )}
+                      {has && canCorrect && !isLocked && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={busy || !offline.online}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCorrected(null);
+                            setCorrecting(w.id);
+                          }}
+                          aria-label={`Corregir las pesadas de ${name}`}
+                          sx={{ mt: 0.75, minHeight: 40, fontSize: "1rem" }}
+                        >
+                          Corregir
+                        </Button>
+                      )}
                     </Box>
                     <TextField
                       value={texts[w.id] ?? ""}
@@ -495,7 +560,7 @@ export function RegistroMasivoPage() {
                           askToSave();
                         }
                       }}
-                      disabled={busy}
+                      disabled={busy || isLocked}
                       inputRef={(el: HTMLInputElement | null) => {
                         kilosRefs.current[w.id] = el;
                       }}
@@ -516,7 +581,7 @@ export function RegistroMasivoPage() {
       )}
 
       {/* 4. Save. Stuck to the bottom only while there is something to save. */}
-      {plotId && workers.length > 0 && (
+      {plotId && workers.length > 0 && !(loadedWeek && weekSettled) && (
         <Paper
           elevation={dirty ? 6 : 0}
           variant={dirty ? "elevation" : "outlined"}
@@ -584,12 +649,38 @@ export function RegistroMasivoPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {correctingWorker && (
+        <CorregirPesadasDialog
+          key={correctingWorker.id}
+          open
+          name={workerLabel(correctingWorker)}
+          dayLabel={dayTitle(day, today)}
+          records={soFar[correctingWorker.id]?.records ?? []}
+          onClose={() => setCorrecting(null)}
+          onSaved={(n) => {
+            setCorrecting(null);
+            setCorrected(
+              `${n === 1 ? "Se corrigió 1 pesada" : `Se corrigieron ${n} pesadas`} de ${workerLabel(correctingWorker)} · ${dayTitle(day, today)}.`,
+            );
+            void loadWeek(activity.id, monday)
+              .then((r) => setWeekRecords({ monday, records: r }))
+              .catch(() => undefined);
+          }}
+        />
+      )}
     </Box>
   );
 }
 
-/** Every harvest pesada of the day, on any lote. */
-async function loadDay(activityId: string, day: string): Promise<WorkRecord[]> {
-  const records = await api.listWorkRecords({ activityId, from: day, to: day, status: "active" });
-  return records.filter((r) => r.dateFrom <= day && r.dateTo >= day);
+/** Every harvest pesada of the week that starts on `monday`, on any lote. */
+async function loadWeek(activityId: string, monday: string): Promise<WorkRecord[]> {
+  const sunday = iso(addDays(parseDay(monday), 6));
+  const records = await api.listWorkRecords({ activityId, from: monday, to: sunday, status: "active" });
+  return records.filter((r) => r.dateFrom <= sunday && r.dateTo >= monday);
+}
+
+/** The pesadas of one day, oldest first so «Pesada 1» is the first weighing. */
+function recordsOn(records: WorkRecord[], day: string): WorkRecord[] {
+  return records.filter((r) => r.dateFrom <= day && r.dateTo >= day).slice().reverse();
 }
