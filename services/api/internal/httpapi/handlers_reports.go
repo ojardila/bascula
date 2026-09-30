@@ -305,3 +305,21 @@ func (s *Server) handleWorkerPerformance(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, perf)
 }
+
+// handleReportHarvestDashboard is the harvest week at a glance: the home
+// screen of a farm in «Modo cosecha». This week against last week, today, the
+// lotes, the people and the days, in one request. Kilos, and the estimated
+// value of the week's harvest (Money: administrator only, like every report).
+func (s *Server) handleReportHarvestDashboard(w http.ResponseWriter, r *http.Request) {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	out, err := store.ReportHarvestDashboard(r.Context(), tx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}

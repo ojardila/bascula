@@ -93,6 +93,36 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// handleSetHarvestMode turns «Modo cosecha» on or off. Owner or administrator.
+//
+// A route of its own rather than a field of PUT /v1/farm, because that route
+// is the owner's alone (it carries the price and the timezone) and this switch
+// is one the administrator running the harvest should be able to flip.
+func (s *Server) handleSetHarvestMode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if body.Enabled == nil {
+		writeError(w, r, domain.BadRequest("enabled is required (true or false)"))
+		return
+	}
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	on, err := store.SetHarvestMode(r.Context(), tx, *body.Enabled)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"harvestMode": on})
+}
+
 // ---------------------------------------------------------------------------
 // The super-admin console
 // ---------------------------------------------------------------------------

@@ -242,6 +242,12 @@ export interface WireFarm {
   suspendedAt: Instant | null;
   createdAt: Instant;
   priceCents?: number;
+  /**
+   * «Modo cosecha»: the home screen shows the harvest-week dashboard. Written
+   * through `PUT /v1/farm/harvest-mode`. A display preference, never a
+   * permission.
+   */
+  harvestMode?: boolean;
 }
 
 /**
@@ -1348,4 +1354,72 @@ export interface WireHarvestCurve {
   coveredFrom: DayISO | null;
   coveredTo: DayISO | null;
   partialWindow: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/* «Modo cosecha» — GET /v1/reports/harvest-dashboard                  */
+/* ------------------------------------------------------------------ */
+
+export interface WireHarvestDashboardSummary {
+  /** The running week so far. `valueCents` is the week's estimated harvest pay. */
+  thisWeek: WireReportTotals;
+  /** Last week over the same weekdays the running week has had so far. */
+  lastWeekToDate: WireReportTotals;
+  /** Last week, whole. */
+  lastWeek: WireReportTotals;
+  today: WireReportTotals;
+  pickersToday: number;
+  pickersThisWeek: number;
+  /** Distinct (person, day) pairs with kilos this week. */
+  personDays: number;
+  /** This week's kilos over `personDays`. Null when nothing is in kilos. */
+  kgPerPersonDay: number | null;
+}
+
+export interface WireHarvestDashboardDay extends WireReportTotals {
+  day: DayISO;
+  pickers: number;
+  future: boolean;
+}
+
+export interface WireHarvestDashboardPlot extends WireReportTotals {
+  plotId: Uuid;
+  name: string;
+  lastWeekToDateKg: number | null;
+  lastWeekKg: number | null;
+  /** Fraction (0..1) of the week's kilos. */
+  share: number | null;
+  pickers: number;
+}
+
+export interface WireHarvestDashboardPerson extends WireReportTotals {
+  employeeId: Uuid;
+  name: string;
+  daysWorked: number;
+  kgPerDay: number | null;
+  pickedToday: boolean;
+  belowAverage: boolean;
+}
+
+export interface WireHarvestDashboardAbsent {
+  employeeId: Uuid;
+  name: string;
+  lastRecordOn: DayISO;
+}
+
+export interface WireHarvestDashboard {
+  scope: WireReportScope;
+  today: DayISO;
+  thisWeek: DayISO;
+  lastWeek: DayISO;
+  belowAverageRatio: number;
+  summary: WireHarvestDashboardSummary;
+  /** Monday to Sunday of the running week. */
+  days: WireHarvestDashboardDay[];
+  /** Most kilos this week first. */
+  plots: WireHarvestDashboardPlot[];
+  unattributed: WireReportTotals;
+  /** Most kilos this week first. */
+  people: WireHarvestDashboardPerson[];
+  notToday: WireHarvestDashboardAbsent[];
 }

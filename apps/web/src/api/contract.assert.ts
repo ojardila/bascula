@@ -54,6 +54,7 @@ import type {
   WireReportGridColumn, WireReportGridRow, WireReportPerformanceResult,
   WireReportTotals, WireReportUnattributed, WireReportWeek, WireReportWeekDetail,
   WireReportWeeksResult, WireWorkerPerformance, WireWorkerPerformanceReport,
+  WireHarvestDashboard,
 } from "./wire";
 
 type Schemas = components["schemas"];
@@ -277,6 +278,15 @@ type _PerformanceWeek = [
   Check<SameKeys<WireWorkerPerformanceReport["plots"][number], Schemas["WorkerPerformanceReport"]["plots"][number]>>,
   Check<SameKeys<WireWorkerPerformanceReport["summary"], Schemas["WorkerPerformanceReport"]["summary"]>>,
 ];
+type _HarvestDashboard = [
+  Check<SameKeys<WireHarvestDashboard, Schemas["HarvestDashboard"]>>,
+  Assignable<WireHarvestDashboard, Schemas["HarvestDashboard"]>,
+  Check<SameKeys<WireHarvestDashboard["summary"], Schemas["HarvestDashboard"]["summary"]>>,
+  Check<SameKeys<WireHarvestDashboard["days"][number], Schemas["HarvestDashboard"]["days"][number]>>,
+  Check<SameKeys<WireHarvestDashboard["plots"][number], Schemas["HarvestDashboard"]["plots"][number]>>,
+  Check<SameKeys<WireHarvestDashboard["people"][number], Schemas["HarvestDashboard"]["people"][number]>>,
+  Check<SameKeys<WireHarvestDashboard["notToday"][number], Schemas["HarvestDashboard"]["notToday"][number]>>,
+];
 type _ReportPerformanceResult = [
   Check<SameKeys<WireReportPerformanceResult, Schemas["ReportPerformanceResult"]>>,
   Assignable<WireReportPerformanceResult, Schemas["ReportPerformanceResult"]>,
@@ -316,4 +326,5 @@ export type ContractAssertions = [
   _WorkerPerformance, _ReportPerformanceResult, _WorkerPerformanceReport, _PerformanceWeek,
   _Anomaly, _ReportAnomaliesResult,
   _HarvestWeekTotal, _HarvestShape, _HarvestCurve,
+  _HarvestDashboard,
 ];

@@ -709,6 +709,7 @@ export function toFarmSummary(f: WireFarm): FarmSummary {
     country: f.country,
     phone: f.phone,
     address: f.address,
+    harvestMode: f.harvestMode ?? false,
   };
 }
 

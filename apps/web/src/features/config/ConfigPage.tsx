@@ -15,6 +15,8 @@ import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
+import { HarvestModeSwitch } from "../harvest/HarvestModeSwitch";
+import { useHarvestMode } from "../harvest/harvestMode";
 
 /** In Spanish, because this is a label somebody reads and not an enum. */
 const FARM_STATUS: Record<"active" | "suspended", string> = {
@@ -45,6 +47,7 @@ export function ConfigPage() {
    * is no state to show, and "—" says that rather than guessing.
    */
   const { data: farmDetail, error: farmError } = useAsync(() => api.getFarm(), []);
+  const harvestMode = useHarvestMode();
 
   // The permission check comes after the hooks, not before: an early return
   // above a `useAsync` changes the hook order between renders.
@@ -60,6 +63,23 @@ export function ConfigPage() {
       </Typography>
 
       <Grid container spacing={3}>
+        {/* «Modo cosecha» first: it is the one switch on this screen that
+            changes what the farm sees every day on its home screen. */}
+        <Grid size={{ xs: 12 }}>
+          <Card>
+            <CardContent>
+              <Typography variant="h3" gutterBottom>
+                Modo cosecha
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 2 }}>
+                Encendido, la pantalla de inicio muestra la semana de cosecha: kilos de hoy y de
+                la semana, lotes, personas y lo que se va pagando. Apagado, el inicio queda como siempre.
+              </Typography>
+              <HarvestModeSwitch mode={harvestMode} />
+            </CardContent>
+          </Card>
+        </Grid>
+
         {/* «Conexiones» first: connecting the farm to ChatGPT is the one
             thing here an owner comes to do rather than to check. */}
         <Grid size={{ xs: 12 }}>

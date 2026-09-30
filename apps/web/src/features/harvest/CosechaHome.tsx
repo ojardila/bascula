@@ -16,6 +16,12 @@
  *
  * A figure the server could not establish is a dash with its reason, never
  * a zero — the same `Kg`/`Value` readers the detailed screens use.
+ *
+ * «MODO COSECHA». The owner and the administrator see one switch at the top.
+ * Off (the default) this screen is exactly the one described above. On, the
+ * short week summary is replaced by the harvest-week dashboard
+ * (`HarvestDashboard`): lotes, people, today and the week's estimated pay.
+ * The switch is also in Configuración.
  */
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Box, ButtonBase, CircularProgress, Link, Stack, Typography } from "@mui/material";
@@ -33,6 +39,9 @@ import { useHarvest } from "./HarvestLayout";
 import { Kg, Value } from "./Figures";
 import { kgForDrawing } from "./totals";
 import { ResumeCard } from "../onboarding/ResumeCard";
+import { HarvestDashboard } from "./HarvestDashboard";
+import { HarvestModeSwitch } from "./HarvestModeSwitch";
+import { useHarvestMode } from "./harvestMode";
 
 const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
 
@@ -42,10 +51,9 @@ export function CosechaHome() {
   const thisMonday = mondayOf(today);
   const lastMonday = addDays(parseDay(thisMonday), -7).toISOString().slice(0, 10);
 
-  const { data, error, denied } = useAsync(
-    async () => Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
-    [thisMonday],
-  );
+  const mode = useHarvestMode();
+  const harvestOn = mode.on === true;
+  const canSwitch = can("config.farm");
 
   const canWrite = can("workRecords.write");
 
@@ -57,6 +65,8 @@ export function CosechaHome() {
           Esta semana · {formatWeekRange(thisMonday)}
         </Typography>
       </Box>
+
+      {canSwitch && <HarvestModeSwitch mode={mode} compact />}
 
       <ResumeCard />
 
@@ -79,20 +89,14 @@ export function CosechaHome() {
       )}
 
       <Box data-tour="week-summary">
-      {denied ? (
-        <PermissionDenied moduleName="ver la cosecha" />
-      ) : error ? (
-        <Alert severity="error">
-          No se pudo consultar la cosecha: {error}. Las cifras no se pudieron calcular — no son cero.
-        </Alert>
-      ) : !data ? (
+      {mode.on === null ? (
+        // Not known yet (first visit on this device): wait rather than show
+        // one screen and swap it for the other a second later.
         <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress /></Stack>
+      ) : harvestOn ? (
+        <HarvestDashboard canSeeMoney={canSeeMoney} />
       ) : (
-        <WeekSummary
-          week={data[0]}
-          lastWeek={data[1].items.find((w) => w.weekStart === lastMonday) ?? null}
-          canSeeMoney={canSeeMoney}
-        />
+        <WeekSummaryLoader thisMonday={thisMonday} lastMonday={lastMonday} canSeeMoney={canSeeMoney} />
       )}
       </Box>
 
@@ -111,6 +115,41 @@ export function CosechaHome() {
         </Typography>
       </Box>
     </Stack>
+  );
+}
+
+/** The ordinary week summary, as it always was (Modo cosecha off). */
+function WeekSummaryLoader({
+  thisMonday,
+  lastMonday,
+  canSeeMoney,
+}: {
+  thisMonday: string;
+  lastMonday: string;
+  canSeeMoney: boolean;
+}) {
+  const { data, error, denied } = useAsync(
+    async () => Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
+    [thisMonday],
+  );
+  return (
+    <>
+      {denied ? (
+        <PermissionDenied moduleName="ver la cosecha" />
+      ) : error ? (
+        <Alert severity="error">
+          No se pudo consultar la cosecha: {error}. Las cifras no se pudieron calcular — no son cero.
+        </Alert>
+      ) : !data ? (
+        <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress /></Stack>
+      ) : (
+        <WeekSummary
+          week={data[0]}
+          lastWeek={data[1].items.find((w) => w.weekStart === lastMonday) ?? null}
+          canSeeMoney={canSeeMoney}
+        />
+      )}
+    </>
   );
 }
 

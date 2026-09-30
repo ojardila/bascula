@@ -36,6 +36,12 @@ type Farm struct {
 	// PriceMinor is a pointer so the weigher's projection can omit it
 	// entirely rather than send a zero, which would read as "free".
 	PriceMinor *int64 `json:"priceCents,omitempty"`
+	// HarvestMode is «Modo cosecha» (farm_config.harvest_mode, migration
+	// 00039): the home screen shows the harvest-week dashboard. A display
+	// preference, never a permission. It is not written through PUT /v1/farm
+	// (owner only) but through PUT /v1/farm/harvest-mode, which the
+	// administrator may use too; see SetHarvestMode.
+	HarvestMode *bool `json:"harvestMode,omitempty"`
 }
 
 const farmCols = `f.id::text, f.name, f.slug, f.timezone, f.currency, f.minor_unit, f.phone,
@@ -63,13 +69,27 @@ func GetFarm(ctx context.Context, tx pgx.Tx) (*Farm, error) {
 		return nil, err
 	}
 	var price int64
+	var harvestMode bool
 	err = tx.QueryRow(ctx,
-		`SELECT price_minor FROM farm_config WHERE farm_id = current_farm()`).Scan(&price)
+		`SELECT price_minor, harvest_mode FROM farm_config WHERE farm_id = current_farm()`).
+		Scan(&price, &harvestMode)
 	if err != nil {
 		return nil, err
 	}
 	f.PriceMinor = &price
+	f.HarvestMode = &harvestMode
 	return f, nil
+}
+
+// SetHarvestMode turns «Modo cosecha» on or off for the farm this request is
+// pinned to and returns the value as stored.
+func SetHarvestMode(ctx context.Context, tx pgx.Tx, on bool) (bool, error) {
+	var stored bool
+	err := tx.QueryRow(ctx, `
+		UPDATE farm_config SET harvest_mode = $1
+		 WHERE farm_id = current_farm()
+		 RETURNING harvest_mode`, on).Scan(&stored)
+	return stored, err
 }
 
 // GetFarmBySlug is the login pin: the farm this slug names, if the caller can
@@ -148,11 +168,14 @@ func UpdateFarm(ctx context.Context, tx pgx.Tx, f Farm, cleared map[string]bool)
 		}
 	}
 	var price int64
+	var harvestMode bool
 	if err := tx.QueryRow(ctx,
-		`SELECT price_minor FROM farm_config WHERE farm_id = current_farm()`).Scan(&price); err != nil {
+		`SELECT price_minor, harvest_mode FROM farm_config WHERE farm_id = current_farm()`).
+		Scan(&price, &harvestMode); err != nil {
 		return nil, err
 	}
 	out.PriceMinor = &price
+	out.HarvestMode = &harvestMode
 	return out, nil
 }
 
