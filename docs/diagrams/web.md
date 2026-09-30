@@ -698,8 +698,9 @@ reads "notes never leave this farm, they never travel to the national registry".
 Notes: the balance is **derived from the ledger** on every load, never a stored total — the
 same discipline as stock. «Pendientes de liquidar» (*pending settlement*) and «saldo»
 (*balance*) are different figures and are shown separately: what is pending is not a
-`devengo` yet. The *Agregar anotación* (*Add note*) button exists from Sprint 1 but the
-section is enabled in Sprint 2. The footnote on notes is not decorative: it is the promise
+`devengo` yet. The *Agregar anotación* (*Add note*) button opens a dialog (full screen on
+phones) that appends a note via `POST /v1/workers/{id}/notes`; owner and administrator only,
+and it warns before saving that a note cannot be edited or deleted. The footnote on notes is not decorative: it is the promise
 that makes the whole cross-tenant module defensible.
 
 ---

@@ -16,6 +16,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { http, HttpResponse } from "msw";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
 import { WorkerProfilePage } from "./WorkerProfilePage";
@@ -195,5 +196,75 @@ describe("«Rendimiento»", () => {
     renderProfile();
     await screen.findByText(/Restrepo Ospina/);
     expect(await screen.findByText("Historial financiero")).toBeInTheDocument();
+  }, 20000);
+});
+
+/**
+ * «Agregar anotación» was a disabled button with a tooltip ("Todavía no se
+ * pueden escribir anotaciones desde aquí") over a POST route that already
+ * worked, so the owner could see the feature and never use it.
+ */
+describe("«Agregar anotación»", () => {
+  it("is enabled for the owner and saves a note that then shows on the profile", async () => {
+    const user = userEvent.setup();
+    let posted: Record<string, unknown> | null = null;
+    server.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && /\/v1\/workers\/[^/]+\/notes$/.test(request.url)) {
+        posted = (await request.clone().json()) as Record<string, unknown>;
+      }
+    });
+    renderProfile();
+    const button = await screen.findByRole("button", { name: "Agregar anotación" });
+    expect(button).toBeEnabled();
+    await user.click(button);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/no se puede cambiar ni borrar/)).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Anotación"), "Pidió permiso para el viernes.");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar anotación" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByText("Pidió permiso para el viernes.")).toBeInTheDocument();
+    expect(posted).not.toBeNull();
+    expect(posted!.text).toBe("Pidió permiso para el viernes.");
+    expect(typeof posted!.id).toBe("string");
+    expect(posted!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    server.events.removeAllListeners();
+  }, 20000);
+
+  it("does not send an empty note and says why", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(
+      http.post("*/v1/workers/:id/notes", () => {
+        calls++;
+        return HttpResponse.json({}, { status: 500 });
+      }),
+    );
+    renderProfile();
+    await user.click(await screen.findByRole("button", { name: "Agregar anotación" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Anotación"), "   ");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar anotación" }));
+    expect(await within(dialog).findByText("Escriba la anotación.")).toBeInTheDocument();
+    expect(calls).toBe(0);
+  }, 20000);
+
+  it("keeps the dialog and the text when the server refuses, with the reason", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/v1/workers/:id/notes", () =>
+        HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+      ),
+    );
+    renderProfile();
+    await user.click(await screen.findByRole("button", { name: "Agregar anotación" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Anotación"), "Llegó tarde.");
+    await user.click(within(dialog).getByRole("button", { name: "Guardar anotación" }));
+    expect(
+      await within(dialog).findByText("El servidor tuvo un problema. Intente de nuevo en un momento."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Anotación")).toHaveValue("Llegó tarde.");
   }, 20000);
 });

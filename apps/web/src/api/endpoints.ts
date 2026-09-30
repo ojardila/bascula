@@ -950,8 +950,19 @@ export const api = {
     items(await http.get<WireList<WireNote>>(`/v1/workers/${id}/notes`)).map(toNote),
 
   /** Append-only: there is no edit and no delete on a note, by design. */
-  addNote: async (id: Uuid, text: string): Promise<WorkerNote> =>
-    toNote(await http.post<WireNote>(`/v1/workers/${id}/notes`, { id: uuidv7(), text })),
+  addNote: async (
+    id: Uuid,
+    text: string,
+    opts: { id?: Uuid; date?: string } = {},
+  ): Promise<WorkerNote> =>
+    toNote(
+      await http.post<WireNote>(`/v1/workers/${id}/notes`, {
+        // Pass the id when the caller retries the same note (see writeOnce).
+        id: opts.id ?? uuidv7(),
+        text,
+        ...(opts.date ? { date: opts.date } : {}),
+      }),
+    ),
 
   /* -- activities ---------------------------------------------------- */
 

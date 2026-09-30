@@ -35,6 +35,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
+import { AddNoteDialog } from "./AddNoteDialog";
 import { OwedFigure, owedDirection } from "./OwedFigure";
 import { totalOwedCents, type Owed } from "./owed";
 import { CORRECTION_GLOSS, NOT_YET_EARNED } from "../../lib/vocab";
@@ -48,6 +49,7 @@ export function WorkerProfilePage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const [debtOpen, setDebtOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   // The whole history, not the first page: it is where a worker's every
   // receipt is found. 500 is the server's ceiling for one read.
   const { data, error, denied, reload } = useAsync(() => api.workerProfile(id, HISTORY_LIMIT), [id]);
@@ -129,17 +131,15 @@ export function WorkerProfilePage() {
                     Registrar deuda
                   </Button>
                 )}
-                {/* The button exists from Sprint 1; the section it writes into
-                    is later work. Disabled and labelled beats absent — but the
-                    label a user reads must not name our sprint numbers. */}
-                <Tooltip title="Todavía no se pueden escribir anotaciones desde aquí.">
-
-                  <span>
-                    <Button variant="outlined" startIcon={<NoteAddIcon />} disabled>
-                      Agregar anotación
-                    </Button>
-                  </span>
-                </Tooltip>
+                {can("workers.notes") && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<NoteAddIcon />}
+                    onClick={() => setNoteOpen(true)}
+                  >
+                    Agregar anotación
+                  </Button>
+                )}
               </Stack>
             </Box>
           </Stack>
@@ -331,9 +331,12 @@ export function WorkerProfilePage() {
           </Typography>
           {notes.map((n) => (
             <Box key={n.id} sx={{ py: 1, borderBottom: 1, borderColor: "divider" }}>
-              <Typography variant="body2">{n.text}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {formatDate(n.date)} · {n.authorName}
+              <Typography sx={{ fontSize: "1.05rem", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {n.text}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {formatDate(n.date)}
+                {n.authorName ? ` · ${n.authorName}` : ""}
               </Typography>
             </Box>
           ))}
@@ -348,6 +351,16 @@ export function WorkerProfilePage() {
           </Alert>
         </CardContent>
       </Card>
+
+      <AddNoteDialog
+        open={noteOpen}
+        workerId={worker.id}
+        onClose={() => setNoteOpen(false)}
+        onSaved={() => {
+          setNoteOpen(false);
+          reload();
+        }}
+      />
 
       <RegisterDebtDialog
         open={debtOpen}
