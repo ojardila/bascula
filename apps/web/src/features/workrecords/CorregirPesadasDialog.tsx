@@ -80,37 +80,42 @@ export function CorregirPesadasDialog({
           {records.map((r, i) => {
             const out = !!removed[r.id];
             return (
-              <Stack key={r.id} direction="row" alignItems="center" spacing={1.5}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 600, fontSize: "1.05rem" }}>Pesada {i + 1}</Typography>
-                  <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>
-                    {out ? <>Se quita · era {formatQuantity(r.quantity)} kg</> : r.plotNames.join(", ")}
-                  </Typography>
-                </Box>
-                {!out && (
-                  <TextField
-                    value={texts[r.id] ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setTexts((prev) => ({ ...prev, [r.id]: v }));
-                      setError(null);
-                    }}
+              <Box key={r.id}>
+                <Typography sx={{ fontSize: "1.05rem", mb: 0.5 }}>
+                  <strong>Pesada {i + 1}</strong>
+                  {r.plotNames.length > 0 && <> · {r.plotNames.join(", ")}</>}
+                </Typography>
+                <Stack direction="row" alignItems="center" spacing={1.5}>
+                  {out ? (
+                    <Typography sx={{ flex: 1, fontSize: "1.05rem", color: "error.main", py: 1.5 }}>
+                      Se quita · era {formatQuantity(r.quantity)} kg
+                    </Typography>
+                  ) : (
+                    <TextField
+                      value={texts[r.id] ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setTexts((prev) => ({ ...prev, [r.id]: v }));
+                        setError(null);
+                      }}
+                      disabled={busy}
+                      inputProps={{ inputMode: "decimal", "aria-label": `Pesada ${i + 1}, kilos` }}
+                      InputProps={{ endAdornment: <Typography sx={{ ml: 0.5, color: "text.secondary" }}>kg</Typography> }}
+                      sx={{ flex: 1, "& input": { textAlign: "right", fontSize: 26, fontWeight: 600, py: 1.5 } }}
+                    />
+                  )}
+                  <Button
+                    variant="outlined"
+                    onClick={() => setRemoved((prev) => ({ ...prev, [r.id]: !out }))}
                     disabled={busy}
-                    inputProps={{ inputMode: "decimal", "aria-label": `Pesada ${i + 1}, kilos` }}
-                    InputProps={{ endAdornment: <Typography sx={{ ml: 0.5, color: "text.secondary" }}>kg</Typography> }}
-                    sx={{ width: 128, flexShrink: 0, "& input": { textAlign: "right", fontSize: 24, fontWeight: 600, py: 1.25 } }}
-                  />
-                )}
-                <Button
-                  onClick={() => setRemoved((prev) => ({ ...prev, [r.id]: !out }))}
-                  disabled={busy}
-                  color={out ? "primary" : "error"}
-                  aria-label={out ? `Dejar la pesada ${i + 1}` : `Quitar la pesada ${i + 1}`}
-                  sx={{ minWidth: 72, minHeight: 48, fontSize: "1rem" }}
-                >
-                  {out ? "Dejar" : "Quitar"}
-                </Button>
-              </Stack>
+                    color={out ? "primary" : "error"}
+                    aria-label={out ? `Dejar la pesada ${i + 1}` : `Quitar la pesada ${i + 1}`}
+                    sx={{ minWidth: 92, minHeight: 56, fontSize: "1.05rem", flexShrink: 0 }}
+                  >
+                    {out ? "Dejar" : "Quitar"}
+                  </Button>
+                </Stack>
+              </Box>
             );
           })}
         </Stack>
