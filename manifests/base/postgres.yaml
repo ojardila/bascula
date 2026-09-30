@@ -10,6 +10,12 @@ metadata:
   namespace: bascula
 spec:
   instances: 2
+  # Roll the primary with a switchover to the already-updated replica instead
+  # of restarting it in place (the default, ~15 s without a primary). On
+  # 2026-09-30 a new barman-cloud sidecar image rolled both pods and the
+  # primary restarted in place. Single-instance tenants have nothing to switch
+  # to and still restart.
+  primaryUpdateMethod: switchover
   # Debian 13 based CNPG PostGIS image, pinned by tag + digest. 17-3.5 was
   # Debian 11 (EOL). No maintained 3.5 build exists, so this is PostGIS 3.6:
   # existing clusters need `ALTER EXTENSION postgis UPDATE` once after the
