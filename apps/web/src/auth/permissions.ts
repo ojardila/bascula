@@ -36,6 +36,9 @@ export type Action =
   | "workRecords.read"
   | "workRecords.readAll"
   | "workRecords.write"
+  // Changing or taking out a pesada already registered (PATCH/DELETE
+  // /v1/work-records/{id}, `work_records.admin` on the server): admins only.
+  | "workRecords.correct"
   // Reading the harvest: the season curve, the week detail, the crop report,
   // the yield index and the weighing review. A read of everybody's figures at
   // once, so it sits with the money surface rather than with `workRecords.read`
@@ -72,7 +75,7 @@ const OWNER: Action[] = [
   "workers.read", "workers.readFull", "workers.write", "workers.delete",
   "workers.profile", "workers.notes",
   "activities.read", "activities.write", "activities.setRate",
-  "workRecords.read", "workRecords.readAll", "workRecords.write",
+  "workRecords.read", "workRecords.readAll", "workRecords.write", "workRecords.correct",
   "harvest.read",
   "money.read", "money.pay",
   "products.read", "products.write",
@@ -94,7 +97,7 @@ const ADMINISTRATOR: Action[] = [
   "workers.read", "workers.readFull", "workers.write",
   "workers.profile", "workers.notes",
   "activities.read", "activities.write",
-  "workRecords.read", "workRecords.readAll", "workRecords.write",
+  "workRecords.read", "workRecords.readAll", "workRecords.write", "workRecords.correct",
   "harvest.read",
   "money.read", "money.pay",
   "products.read", "products.write",
@@ -141,7 +144,7 @@ const WRITE_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   "plots.write", "plots.delete",
   "workers.write", "workers.delete", "workers.notes",
   "activities.write", "activities.setRate",
-  "workRecords.write",
+  "workRecords.write", "workRecords.correct",
   "money.pay",
   "products.write", "stock.write", "sales.write", "expenses.write",
   "config.farm", "config.users", "config.prices",

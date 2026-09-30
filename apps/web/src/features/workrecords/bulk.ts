@@ -82,3 +82,60 @@ export function matchesName(w: Worker, query: string): boolean {
 export function filterWorkers(workers: Worker[], query: string): Worker[] {
   return workers.filter((w) => matchesName(w, query));
 }
+
+/**
+ * Which people's week is already settled (liquidada).
+ *
+ * A settled week never changes (a new price does not move it, and neither may
+ * a weighing typed afterwards), so on this screen a person with ANY settled
+ * pesada in the week of the day is read-only for that day. The whole week is
+ * «ya se liquidó» when somebody has pesadas in it and every such person is
+ * settled — then nothing on the screen can be written.
+ *
+ * `weekRecords` is every harvest pesada of the Monday–Sunday around the day.
+ */
+export function weekLocks(weekRecords: WorkRecord[]): { settledWorkers: Set<string>; weekSettled: boolean } {
+  const settledWorkers = new Set<string>();
+  const withRecords = new Set<string>();
+  for (const r of weekRecords) {
+    withRecords.add(r.workerId);
+    if (r.settled) settledWorkers.add(r.workerId);
+  }
+  const weekSettled = withRecords.size > 0 && [...withRecords].every((w) => settledWorkers.has(w));
+  return { settledWorkers, weekSettled };
+}
+
+export type Correction =
+  | { kind: "update"; recordId: string; quantity: number }
+  | { kind: "remove"; recordId: string };
+
+/**
+ * What «Corregir» asks for: the pesadas whose kilos were changed, and the ones
+ * marked to be taken out. An unchanged box writes nothing; a settled pesada is
+ * never touched.
+ */
+export function plannedCorrections(
+  records: WorkRecord[],
+  texts: Record<string, string>,
+  removed: Record<string, boolean>,
+): { corrections: Correction[]; errors: string[] } {
+  const corrections: Correction[] = [];
+  const errors: string[] = [];
+  records.forEach((r, i) => {
+    if (r.settled) return;
+    if (removed[r.id]) {
+      corrections.push({ kind: "remove", recordId: r.id });
+      return;
+    }
+    const raw = (texts[r.id] ?? "").trim();
+    if (raw === "") {
+      errors.push(`Escriba los kilos de la pesada ${i + 1}, o toque «Quitar».`);
+      return;
+    }
+    const q = parseQuantity(raw);
+    if (q === null) errors.push(`Revise la pesada ${i + 1}: «${raw}» no es un número.`);
+    else if (q <= 0) errors.push(`Revise la pesada ${i + 1}: deben ser más de cero.`);
+    else if (q !== r.quantity) corrections.push({ kind: "update", recordId: r.id, quantity: q });
+  });
+  return { corrections, errors };
+}

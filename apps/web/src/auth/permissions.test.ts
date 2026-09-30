@@ -50,6 +50,13 @@ describe("what each role can do", () => {
     expect(can(weigher, "activities.read")).toBe(true);
   });
 
+  it("lets only owners and administrators correct a pesada already registered", () => {
+    // PATCH/DELETE /v1/work-records/{id} is `work_records.admin` on the server.
+    expect(can(owner, "workRecords.correct")).toBe(true);
+    expect(can(admin, "workRecords.correct")).toBe(true);
+    expect(can(weigher, "workRecords.correct")).toBe(false);
+  });
+
   it("gives the weigher a narrow read of people, not the full record", () => {
     expect(can(weigher, "workers.read")).toBe(true);
     expect(can(weigher, "workers.readFull")).toBe(false);
