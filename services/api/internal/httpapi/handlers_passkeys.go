@@ -79,31 +79,58 @@ func (s *Server) passkeyRPFor(r *http.Request) (passkeyRP, error) {
 	}
 	host := strings.ToLower(u.Hostname())
 	scheme := strings.ToLower(u.Scheme)
-	if net.ParseIP(host) != nil {
-		// WebAuthn has no relying party for a bare IP address.
-		return passkeyRP{}, bad
-	}
-	local := host == "localhost" || strings.HasSuffix(host, ".localhost")
 	switch {
 	case scheme == "https":
-	case scheme == "http" && local:
+	case scheme == "http" && isLocalHostname(host):
 	default:
 		return passkeyRP{}, bad
 	}
+	if err := s.passkeyHostAllowed(host); err != nil {
+		return passkeyRP{}, err
+	}
+	return passkeyRP{ID: host, Origin: scheme + "://" + strings.ToLower(u.Host)}, nil
+}
 
+// passkeyRPIDFor is the relying party id alone, for reads that run no
+// ceremony. A browser sends no Origin on a same-origin GET, so the host the
+// request came to stands in for it, under the same rules.
+func (s *Server) passkeyRPIDFor(r *http.Request) (string, error) {
+	if strings.TrimSpace(r.Header.Get("Origin")) != "" {
+		rp, err := s.passkeyRPFor(r)
+		return rp.ID, err
+	}
+	host := strings.ToLower(requestHostname(r))
+	if err := s.passkeyHostAllowed(host); err != nil {
+		return "", err
+	}
+	return host, nil
+}
+
+func isLocalHostname(host string) bool {
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
+}
+
+// passkeyHostAllowed accepts PUBLIC_BASE_URL's host and its subdomains, or
+// only localhost in development (no PUBLIC_BASE_URL). Never a bare IP:
+// WebAuthn has no relying party for one.
+func (s *Server) passkeyHostAllowed(host string) error {
+	bad := domain.BadRequest("passkeys need a browser on this site's address")
+	if host == "" || net.ParseIP(host) != nil {
+		return bad
+	}
 	if base := strings.TrimSpace(s.cfg.PublicBaseURL); base != "" {
 		b, err := url.Parse(base)
 		if err != nil || b.Hostname() == "" {
-			return passkeyRP{}, domain.Internal("PUBLIC_BASE_URL is not a URL")
+			return domain.Internal("PUBLIC_BASE_URL is not a URL")
 		}
 		apex := strings.ToLower(b.Hostname())
 		if host != apex && !strings.HasSuffix(host, "."+apex) {
-			return passkeyRP{}, bad
+			return bad
 		}
-	} else if !local {
-		return passkeyRP{}, bad
+	} else if !isLocalHostname(host) {
+		return bad
 	}
-	return passkeyRP{ID: host, Origin: scheme + "://" + strings.ToLower(u.Host)}, nil
+	return nil
 }
 
 func (rp passkeyRP) webauthn() (*webauthn.WebAuthn, error) {
@@ -188,7 +215,7 @@ func passkeyViewOf(p store.Passkey) passkeyView {
 // shown here either.
 func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
-	rp, err := s.passkeyRPFor(r)
+	rpID, err := s.passkeyRPIDFor(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -198,7 +225,7 @@ func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	list, err := store.ListPasskeys(r.Context(), tx, p.UserID, rp.ID)
+	list, err := store.ListPasskeys(r.Context(), tx, p.UserID, rpID)
 	if err != nil {
 		writeError(w, r, err)
 		return

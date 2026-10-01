@@ -220,6 +220,18 @@ func TestPasskeySignIn(t *testing.T) {
 		}
 	})
 
+	// A browser sends no Origin on a same-origin GET: the host stands in.
+	t.Run("it is listed without an Origin header, by the host", func(t *testing.T) {
+		res := h.doAt(t, "localhost:5173", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+		if items, _ := res.Body["items"].([]any); res.Status != http.StatusOK || len(items) != 1 {
+			t.Fatalf("list by host: %d %s", res.Status, res.Raw)
+		}
+		res = h.doAt(t, "evil.example", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("list on a foreign host: %d %s", res.Status, res.Raw)
+		}
+	})
+
 	t.Run("and not for anybody else on the farm", func(t *testing.T) {
 		res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodGet, "/v1/me/passkeys", f.AdminToken, nil)
 		if items, _ := res.Body["items"].([]any); res.Status != http.StatusOK || len(items) != 0 {
