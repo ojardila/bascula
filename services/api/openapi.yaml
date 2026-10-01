@@ -1535,6 +1535,12 @@ paths:
         Idempotent by (farm_id, id): posting the same client-generated id twice
         answers 200 with the existing row rather than 409, so a retry after a
         timeout is safe.
+
+        `tag` — the basket number («número de canasto») — is REQUIRED here, for
+        a person and for a team alike (400 with `details.fields.tag` when it is
+        missing or blank). It is trimmed, and unique among the farm's ACTIVE
+        workers and teams, compared ignoring case: 409 DUPLICATE_TAG names who
+        has it. A team has its own number; its members keep theirs.
       x-action: workers.write
       x-roles: [owner, admin]
       requestBody:
@@ -1569,6 +1575,10 @@ paths:
             split in two, and nothing says so. Restore the existing one with
             PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
             conflict in docs/archive/synchronization.md with no automatic repair.
+
+            DUPLICATE_TAG with `details.employeeId`, `details.name`,
+            `details.lastName` and `details.tag` — an active worker or team
+            already carries that basket number.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1601,6 +1611,13 @@ paths:
         off the payroll and back on for the next harvest: the row and its
         financial history stay put, which is the whole reason a delete here is
         logical.
+
+        `tag` (the basket number) can be changed but not removed from a worker
+        who has one (400). Workers registered before the number was required
+        may stay without one until somebody gives them one. A new number, or
+        coming back on the payroll with the old one, is refused with 409
+        DUPLICATE_TAG when another active worker carries it; send a new `tag`
+        together with `status: active` to come back under a different number.
       x-action: workers.write
       x-roles: [owner, admin]
       requestBody:
@@ -1618,6 +1635,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: DUPLICATE_TAG — another active worker carries that basket number (see POST).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     delete:
       tags: [workers]
       operationId: deleteWorker
@@ -6245,6 +6267,7 @@ components:
         - SETTLEMENT_ALREADY_VOID
         - ALREADY_REVERSED
         - WORKER_IN_TEAM
+        - DUPLICATE_TAG
         - SETTLEMENT_NOT_VOID
         - NOTHING_TO_RELEASE
         - NOTHING_TO_SETTLE
@@ -6770,7 +6793,11 @@ components:
         tag:
           type: string
           nullable: true
-          description: The number on the basket, unique within the farm.
+          description: |
+            The basket number («número de canasto»): how the scale finds a person
+            or a team. Required on create, unique among the farm's ACTIVE
+            workers and teams. A team has its own; its members keep theirs.
+            Null only on workers registered before it was required.
         documentType: { type: string, nullable: true }
         docId: { type: string, nullable: true }
         phone: { type: string, nullable: true }
@@ -6837,7 +6864,10 @@ components:
         lastName: { type: string, nullable: true }
         documentType: { type: string, nullable: true }
         docId: { type: string, nullable: true }
-        tag: { type: string, nullable: true }
+        tag:
+          type: string
+          nullable: true
+          description: The basket number. Required on create; cannot be removed once set.
         phone: { type: string, nullable: true }
         address: { type: string, nullable: true }
         city: { type: string, nullable: true }
@@ -8871,10 +8901,11 @@ components:
             allOf:
               - $ref: "#/components/schemas/ReportTotals"
               - type: object
-                required: [employeeId, name, kind, members, kgEach, daysWorked, kgPerDay, pickedToday, belowAverage]
+                required: [employeeId, name, tag, kind, members, kgEach, daysWorked, kgPerDay, pickedToday, belowAverage]
                 properties:
                   employeeId: { type: string, format: uuid }
                   name: { type: string }
+                  tag: { type: string, nullable: true, description: The basket number («número de canasto»); null when none. }
                   kind: { $ref: "#/components/schemas/WorkerKind" }
                   members: { type: integer, description: People behind the row (1 for a person). }
                   kgEach: { type: number, nullable: true, description: Kilos per member. }
@@ -8894,10 +8925,11 @@ components:
             have no harvest weighing today, by name.
           items:
             type: object
-            required: [employeeId, name, lastRecordOn]
+            required: [employeeId, name, tag, lastRecordOn]
             properties:
               employeeId: { type: string, format: uuid }
               name: { type: string }
+              tag: { type: string, nullable: true, description: The basket number; null when none. }
               lastRecordOn: { type: string, format: date }
 
     ReportPerformanceResult:

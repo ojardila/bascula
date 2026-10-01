@@ -1,19 +1,16 @@
 /** The team parts of a worker's profile (docs/use-cases/teams.md, TEAM-05/06). */
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, Avatar, Button, Card, CardContent, List, ListItemButton, ListItemText, Typography,
+  Alert, Button, Card, CardContent, List, ListItemButton, ListItemText, Typography,
 } from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import type { TeamRef, Worker } from "../../api/types";
 import { formatDate } from "../../lib/dates";
+import { BasketTile } from "../workers/Basket";
 
 /** «Yorman y Sergio», «Ana & Luis»: a name that is probably two people. */
 export function looksLikeTwoPeople(name: string): boolean {
   return /\S\s+(y|&|e)\s+\S/i.test(name.trim());
-}
-
-function initials(name: string, lastName?: string | null): string {
-  return `${name[0] ?? ""}${(lastName ?? name.split(/\s+/)[1] ?? "")[0] ?? ""}`.toUpperCase();
 }
 
 export function TeamMembersCard({ team, canEdit }: { team: Worker; canEdit: boolean }) {
@@ -31,12 +28,10 @@ export function TeamMembersCard({ team, canEdit }: { team: Worker; canEdit: bool
           <List disablePadding>
             {members.map((m) => (
               <ListItemButton key={m.id} divider onClick={() => navigate(`/empleados/${m.id}`)} sx={{ py: 1.25 }}>
-                <Avatar sx={{ width: 40, height: 40, mr: 1.5, bgcolor: "action.selected", color: "text.primary", fontSize: "0.95rem" }}>
-                  {initials(m.name, m.lastName)}
-                </Avatar>
+                <BasketTile tag={m.tag} size={44} sx={{ mr: 1.5 }} />
                 <ListItemText
                   primary={`${m.name} ${m.lastName ?? ""}`.trim()}
-                  secondary={`Desde ${formatDate(m.from)}${m.to ? ` hasta ${formatDate(m.to)}` : ""}${m.tag ? ` · canasto ${m.tag}` : ""}`}
+                  secondary={`Desde ${formatDate(m.from)}${m.to ? ` hasta ${formatDate(m.to)}` : ""}${m.tag ? ` · canasto ${m.tag}` : " · sin canasto"}`}
                   primaryTypographyProps={{ fontWeight: 700, fontSize: "1.1rem" }}
                   secondaryTypographyProps={{ fontSize: "0.95rem" }}
                 />

@@ -47,7 +47,8 @@ import { useOffline } from "../../offline/OfflineContext";
 import { getCache, putCache } from "../../offline/store";
 import { recentMondays, syncPriceBook } from "../../offline/priceBook";
 import { pickHarvestActivity, workerLabel } from "./planilla";
-import { matchesName } from "./bulk";
+import { filterWorkers } from "./bulk";
+import { BasketTile, basketText } from "../workers/Basket";
 import { isTeam, memberCount, teamLine } from "../teams/team";
 
 /** Above this, one load is almost certainly a typing mistake. */
@@ -293,31 +294,50 @@ export function WeighingForm() {
               value={worker}
               // A member of a team is weighed WITH the team: picking them picks it.
               onChange={(_, v) => setWorker(v?.team ? workers?.find((t) => t.id === v.team!.id) ?? v : v)}
-              filterOptions={(opts, s) => opts.filter((w) => matchesName(w, s.inputValue)).slice(0, 50)}
+              filterOptions={(opts, s) => filterWorkers(opts, s.inputValue).slice(0, 50)}
               renderOption={(props, w) => {
                 const { key, ...rest } = props as typeof props & { key: string };
                 return (
-                  <li key={key} {...rest}>
+                  <li key={key} {...rest} style={{ gap: 12 }}>
+                    <BasketTile tag={w.tag} team={isTeam(w)} size={46} />
                     <Box>
                       <Typography sx={{ fontSize: "1.15rem", fontWeight: isTeam(w) ? 700 : 500 }}>{workerLabel(w)}</Typography>
                       {isTeam(w) ? (
                         <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">{teamLine(w)}</Typography>
                       ) : w.team ? (
                         <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">Pesa con el equipo {w.team.name}</Typography>
-                      ) : w.tag ? (
-                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">Canasto {w.tag}</Typography>
+                      ) : !w.tag ? (
+                        <Typography sx={{ fontSize: "0.95rem" }} color="warning.dark">Sin canasto</Typography>
                       ) : null}
                     </Box>
                   </li>
                 );
               }}
               loading={!workers}
-              noOptionsText="No hay nadie con ese nombre"
+              noOptionsText="No hay nadie con ese nombre o canasto"
               ListboxProps={{ style: { fontSize: "1.15rem" } }}
               renderInput={(p) => (
-                <TextField {...p} inputRef={personRef} label="Persona" required sx={{ "& input": big }} />
+                <TextField
+                  {...p}
+                  inputRef={personRef}
+                  label="Persona o número de canasto"
+                  required
+                  sx={{ "& input": big }}
+                />
               )}
             />
+            {worker && (
+              <Stack direction="row" spacing={1.5} alignItems="center" aria-live="polite">
+                <BasketTile tag={worker.tag} team={isTeam(worker)} size={64} />
+                <Box>
+                  <Typography sx={{ fontSize: "1.3rem", fontWeight: 800, lineHeight: 1.2 }}>{workerLabel(worker)}</Typography>
+                  <Typography sx={{ fontSize: "1rem" }} color={worker.tag ? "text.secondary" : "warning.dark"}>
+                    {basketText(worker.tag)}
+                    {isTeam(worker) ? ` · ${teamLine(worker)}` : ""}
+                  </Typography>
+                </Box>
+              </Stack>
+            )}
 
             {fewLotes ? (
               <Box>

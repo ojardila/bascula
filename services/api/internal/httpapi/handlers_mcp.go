@@ -127,6 +127,7 @@ func (p mcpParam) schema() *jsonschema.Schema {
 var (
 	pID       = mcpParam{Name: "id", In: "path", Type: "string", Format: "uuid", Required: true, Description: "Identificador (UUID)."}
 	pQ        = mcpParam{Name: "q", In: "query", Type: "string", Description: "Texto a buscar en el nombre."}
+	pWorkerQ  = mcpParam{Name: "q", In: "query", Type: "string", Description: "Texto a buscar: nombre, documento o NÚMERO DE CANASTO (p. ej. 46)."}
 	pStatus   = mcpParam{Name: "status", In: "query", Type: "string", Enum: []string{"active", "inactive", "all"}, Description: "Filtra por estado. Por defecto, activos."}
 	pFrom     = mcpParam{Name: "from", In: "query", Type: "string", Format: "date", Description: "Desde esta fecha (YYYY-MM-DD), inclusive."}
 	pTo       = mcpParam{Name: "to", In: "query", Type: "string", Format: "date", Description: "Hasta esta fecha (YYYY-MM-DD), inclusive."}
@@ -149,8 +150,11 @@ var mcpTools = []mcpTool{
 	{Name: "list_workers", Method: http.MethodGet, Path: "/v1/workers",
 		Description: "Lista los trabajadores (recolectores) y los EQUIPOS de la finca. Sirve para encontrar el UUID de una persona o equipo por nombre. " +
 			"Cada fila trae kind: persona o equipo. Un equipo trae members (sus integrantes actuales, con from/to) y es la cuenta a la que se pesa, liquida y paga; " +
-			"una persona que está en un equipo trae team (el equipo) y no se pesa ni se le paga por separado: use el id del equipo.",
-		Params: []mcpParam{pQ, pStatus}},
+			"una persona que está en un equipo trae team (el equipo) y no se pesa ni se le paga por separado: use el id del equipo. " +
+			"tag es el NÚMERO DE CANASTO (único entre los activos de la finca; un equipo tiene el suyo y sus integrantes conservan el propio). " +
+			"Para encontrar a alguien por su canasto use q con el número; si el canasto es de un integrante, pese a su equipo. " +
+			"tag null = «Sin canasto» (registrado antes de que fuera obligatorio): sugiera ponérselo con update_worker.",
+		Params: []mcpParam{pWorkerQ, pStatus}},
 	{Name: "get_worker", Method: http.MethodGet, Path: "/v1/workers/{id}",
 		Description: "Un trabajador o equipo por su UUID, con kind, members (si es equipo) y team (si la persona está en un equipo).", Params: []mcpParam{pID}},
 	{Name: "worker_balance", Method: http.MethodGet, Path: "/v1/workers/{id}/balance",

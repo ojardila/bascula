@@ -56,6 +56,7 @@ import { useOffline } from "../../offline/OfflineContext";
 import { DAY_LETTERS, daysOfWeek, isIsoDay, pickHarvestActivity, workerLabel } from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
 import { isTeam, teamLine, weighable } from "../teams/team";
+import { BasketTile } from "../workers/Basket";
 import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, weekLocks, type BulkEntry } from "./bulk";
 import { CorregirPesadasDialog } from "./CorregirPesadasDialog";
 
@@ -388,7 +389,7 @@ export function RegistroMasivoPage() {
         <TextField
           fullWidth
           value={search}
-          placeholder="Buscar por nombre"
+          placeholder="Buscar por nombre o canasto"
           disabled={!plotId || workers.length === 0}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={(e) => {
@@ -497,7 +498,7 @@ export function RegistroMasivoPage() {
               sx={{ fontSize: "1.1rem", alignItems: "center" }}
               action={<Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>Ver a todos</Button>}
             >
-              No hay nadie con ese nombre
+              No hay nadie con ese nombre o canasto
             </Alert>
           )}
           <Stack spacing={1.25}>
@@ -508,6 +509,7 @@ export function RegistroMasivoPage() {
               return (
                 <Card key={w.id} variant="outlined">
                   <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
+                    <BasketTile tag={w.tag} team={isTeam(w)} size={48} />
                     <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => focusKilos(w.id)}>
                       <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>{name}</Typography>
                       {isTeam(w) && (

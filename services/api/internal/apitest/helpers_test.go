@@ -12,7 +12,7 @@ import (
 func (h *harness) createWorker(t *testing.T, f *farmFixture, name, docID string) string {
 	t.Helper()
 	res := h.mustDo(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": name, "documentType": "CC", "docId": docID,
+		"name": name, "documentType": "CC", "docId": docID, "tag": "C" + docID,
 	}, http.StatusCreated)
 	id, _ := res.Body["id"].(string)
 	if id == "" {

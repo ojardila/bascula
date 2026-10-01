@@ -50,7 +50,8 @@ are the single definition every report uses.
 
 ### TEAM-01 Create a team
 Actor: owner or admin. Workers → «Nuevo» → choose «Equipo», name it, give it
-the tag on the sack, tick the members («¿Quiénes son?») and the date they start
+its own basket number («Número de canasto», required; the members keep
+theirs — see [basket-numbers.md](basket-numbers.md)), tick the members («¿Quiénes son?») and the date they start
 (default today). Each member must already exist as a person; the form can
 create them on the spot. Route: `POST /v1/workers` with `kind: "equipo"`,
 `memberIds`, `membersFrom`. MCP: `create_team`.

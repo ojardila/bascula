@@ -67,7 +67,9 @@ Asks for confirmation. On accept, the plot becomes **inactive**, not deleted.
 > statement, settlement history and WhatsApp contact are specified with
 > activity diagrams in [use-cases/employees.md](use-cases/employees.md)
 > (EMP-01…EMP-10). Teams («Equipos») are in
-> [use-cases/teams.md](use-cases/teams.md) (TEAM-01…TEAM-08).
+> [use-cases/teams.md](use-cases/teams.md) (TEAM-01…TEAM-08). Basket numbers
+> («Número de canasto») are in
+> [use-cases/basket-numbers.md](use-cases/basket-numbers.md) (BASKET-01…BASKET-07).
 
 ### RSP-004 Register an Employee
 

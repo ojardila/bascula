@@ -7,7 +7,8 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PhotoField } from "./PhotoField";
 import { api } from "../../api/endpoints";
-import { ApiError, messageFor } from "../../api/errors";
+import { ApiError, duplicateTagField, messageFor } from "../../api/errors";
+import { BASKET_LABEL, BASKET_REQUIRED } from "./Basket";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
 import type { DocumentType } from "../../api/types";
@@ -27,6 +28,9 @@ export function WorkerFormPage() {
   const editing = Boolean(id);
 
   const [workerId] = useState(() => id ?? uuidv7());
+  const [tag, setTag] = useState("");
+  /** Whether the worker had a number when the form opened: once set, it cannot be emptied. */
+  const [hadTag, setHadTag] = useState(false);
   const [name, setName] = useState("");
   const [lastName, setLastName] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("CC");
@@ -74,6 +78,8 @@ export function WorkerFormPage() {
           navigate(`/empleados/${w.id}/equipo`, { replace: true });
           return;
         }
+        setTag(w.tag ?? "");
+        setHadTag(!!w.tag);
         setName(w.name);
         setLastName(w.lastName);
         setDocumentType(w.documentType);
@@ -90,6 +96,10 @@ export function WorkerFormPage() {
 
   function validate(): boolean {
     const e: Record<string, string> = {};
+    // Required for a new person and for anybody who already has one. A
+    // worker from before the rule may be saved without it (they get the
+    // «Sin canasto» badge), so editing their phone is never blocked.
+    if (!tag.trim() && (!editing || hadTag)) e.tag = BASKET_REQUIRED;
     if (!name.trim()) e.name = "Escriba el nombre.";
     if (!lastName.trim()) e.lastName = "Escriba los apellidos.";
     if (!documentNumber.trim()) e.documentNumber = "Escriba el número de identificación.";
@@ -110,6 +120,8 @@ export function WorkerFormPage() {
     const outcome = await runOnce(`empleado|${workerId}|${documentNumber.trim()}`, async () => {
       const body = {
         id: workerId,
+        // Not sent when left empty on a worker who never had one: nothing to change.
+        ...(tag.trim() || hadTag || !editing ? { tag: tag.trim() } : {}),
         name: name.trim(),
         lastName: lastName.trim(),
         documentType,
@@ -132,6 +144,9 @@ export function WorkerFormPage() {
           id: existingId,
           name: who ? `${who.name} ${who.lastName}`.trim() : "",
         });
+      } else if (e instanceof ApiError && e.code === "DUPLICATE_TAG") {
+        // Under the box, naming who has it: «Ese número ya lo tiene Yorman.»
+        setFields({ tag: duplicateTagField(e) });
       } else {
         if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
         setError(messageFor(e));
@@ -204,6 +219,33 @@ export function WorkerFormPage() {
         </Alert>
       )}
 
+      <Card sx={{ mb: 3, borderLeft: 6, borderColor: "#E8C468" }}>
+        <CardContent>
+          <TextField
+            label={BASKET_LABEL}
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            error={!!fields.tag}
+            helperText={
+              fields.tag ??
+              (editing && !hadTag
+                ? "Esta persona todavía no tiene número de canasto. Escríbalo aquí."
+                : "El número pintado en su canasto. Con él se encuentra rápido en la báscula.")
+            }
+            required={!editing || hadTag}
+            fullWidth
+            autoFocus={!editing}
+            slotProps={{ htmlInput: { autoCapitalize: "characters" } }}
+            sx={{
+              maxWidth: 360,
+              "& input": { fontSize: "2rem", fontWeight: 800, py: 1.5, letterSpacing: "0.02em" },
+              "& .MuiInputLabel-root": { fontSize: "1.1rem" },
+              "& .MuiFormHelperText-root": { fontSize: "0.95rem" },
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 7 }}>
           <Card>
@@ -228,7 +270,6 @@ export function WorkerFormPage() {
                       size="medium"
                       fullWidth
                       required
-                      autoFocus
                     />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>

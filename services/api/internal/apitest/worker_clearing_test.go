@@ -22,7 +22,7 @@ func TestAWorkerFieldCanBeClearedAndNotOnlyReplaced(t *testing.T) {
 	f := h.signupFarm(t, "Finca del telefono", 80000)
 
 	res := h.mustDo(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": "Ana", "lastName": "Ruiz", "docId": "123",
+		"name": "Ana", "lastName": "Ruiz", "docId": "123", "tag": "7",
 		"phone": "3001112233", "address": "Vereda equivocada",
 	}, http.StatusCreated)
 	id, _ := res.Body["id"].(string)

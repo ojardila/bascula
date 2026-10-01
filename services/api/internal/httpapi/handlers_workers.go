@@ -128,6 +128,15 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("memberIds is only for a team (kind equipo)"))
 		return
 	}
+	// The basket number («número de canasto») is how the scale finds a
+	// person or a team, so a new one is not created without it. Rows from
+	// before this rule may still have none; they are not refused anywhere
+	// else, only offered a number («Sin canasto»).
+	body.Tag = store.NormalizeTag(body.Tag)
+	if body.Tag == nil {
+		writeError(w, r, errTagRequired())
+		return
+	}
 	if body.ID == "" {
 		body.ID = newID()
 	}
@@ -173,11 +182,20 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := store.CheckTagFree(r.Context(), tx, body.Tag, body.ID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
 	created, err := store.CreateEmployee(r.Context(), tx, farmID, body)
 	if err != nil {
 		if store.IsUniqueViolation(err, "ux_employees_doc") {
 			writeError(w, r, domain.Conflict(domain.CodeDuplicateDocument,
 				"another worker on this farm already has that document"))
+			return
+		}
+		if store.IsUniqueViolation(err, "ux_employees_tag") {
+			writeError(w, r, errTagTaken())
 			return
 		}
 		writeError(w, r, err)
@@ -236,6 +254,29 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The basket number can be changed but not taken away: a worker who has
+	// one keeps one. Somebody who never had one (rows from before the rule)
+	// may stay without it, so an explicit null on them is a no-op.
+	if cleared["tag"] || (body.Tag != nil && store.NormalizeTag(body.Tag) == nil) {
+		current, err := store.GetEmployee(r.Context(), tx, id)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if current.Tag != nil {
+			writeError(w, r, errTagRequired())
+			return
+		}
+		delete(cleared, "tag")
+	}
+	body.Tag = store.NormalizeTag(body.Tag)
+	if body.Tag != nil {
+		if err := store.CheckTagFree(r.Context(), tx, body.Tag, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
 	p, _ := auth.PrincipalFrom(r.Context())
 
 	// The status transition runs first, so a body that both reactivates and
@@ -251,7 +292,22 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "active":
-		if _, err := store.RestoreEmployee(r.Context(), tx, id); err != nil {
+		// Coming back with the old number only works if nobody active was
+		// given it meanwhile; say who has it rather than a bare 409.
+		if body.Tag == nil {
+			current, err := store.GetEmployee(r.Context(), tx, id)
+			if err != nil {
+				writeError(w, r, err)
+				return
+			}
+			if current.DeletedAt != nil {
+				if err := store.CheckTagFree(r.Context(), tx, current.Tag, id); err != nil {
+					writeError(w, r, err)
+					return
+				}
+			}
+		}
+		if _, err := store.RestoreEmployee(r.Context(), tx, id, body.Tag); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -265,6 +321,10 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := store.UpdateEmployee(r.Context(), tx, id, body.Employee, cleared)
+	if err != nil && store.IsUniqueViolation(err, "ux_employees_tag") {
+		writeError(w, r, errTagTaken())
+		return
+	}
 	if err != nil {
 		if body.Status == "inactive" {
 			// Deactivating and nothing else: UpdateEmployee skips deleted
@@ -305,6 +365,20 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// errTagRequired is the 400 for a missing basket number, with the field
+// named so the form can put the sentence under the box.
+func errTagRequired() error {
+	return domain.BadRequest("tag (the basket number) is required").
+		WithDetails(map[string]any{"fields": map[string]any{"tag": "Escriba el número de canasto."}})
+}
+
+// errTagTaken is DUPLICATE_TAG when only the index saw the collision (two
+// saves racing), so there is no holder to name.
+func errTagTaken() error {
+	return domain.Conflict(domain.CodeDuplicateTag,
+		"another active worker of this farm already carries that basket number")
 }
 
 // closeMembershipsToday ends the memberships of somebody taken off the
