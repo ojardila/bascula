@@ -264,8 +264,11 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 	// It has to be there and not here: a retry finds its own payables already
 	// locked, so a check that ran after Pending would answer NOTHING_TO_SETTLE
 	// — a business error standing in for a dropped connection.
-	settlement, created, err := store.Settle(r.Context(), tx, farmID, body.WorkerID, body.ID,
-		from, to, body.PayableIDs, body.ExpectedGrossCents, body.Note, p.UserID, nil)
+	settlement, created, err := store.Settle(r.Context(), tx, store.SettleParams{
+		FarmID: farmID, EmployeeID: body.WorkerID, SettlementID: body.ID,
+		From: from, To: to, PayableIDs: body.PayableIDs,
+		ExpectedGross: body.ExpectedGrossCents, Note: body.Note, CreatedBy: p.UserID,
+	})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -448,8 +451,10 @@ func (s *Server) handleReleaseSettlement(w http.ResponseWriter, r *http.Request)
 	p, _ := auth.PrincipalFrom(r.Context())
 
 	settlementID := chi.URLParam(r, "id")
-	release, created, err := store.ReleaseSettlement(r.Context(), tx, farmID,
-		settlementID, body.ID, strings.TrimSpace(body.Reason), p.UserID, nil)
+	release, created, err := store.ReleaseSettlement(r.Context(), tx, store.ReleaseParams{
+		FarmID: farmID, SettlementID: settlementID, ReleaseID: body.ID,
+		Reason: strings.TrimSpace(body.Reason), ReleasedBy: p.UserID,
+	})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -796,8 +801,10 @@ func (s *Server) handleReverseLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
-	entry, created, err := store.ReverseLedgerEntry(r.Context(), tx, farmID,
-		chi.URLParam(r, "id"), body.ID, p.UserID, body.Note, nil)
+	entry, created, err := store.ReverseLedgerEntry(r.Context(), tx, store.ReverseParams{
+		FarmID: farmID, EntryID: chi.URLParam(r, "id"), ReversalID: body.ID,
+		CreatedBy: p.UserID, Note: body.Note,
+	})
 	if err != nil {
 		writeError(w, r, err)
 		return

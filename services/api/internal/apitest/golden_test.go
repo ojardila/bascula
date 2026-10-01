@@ -301,9 +301,11 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 				// never had a preview screen, so there is no figure it was
 				// shown. The HTTP layer requires one; this is the one caller
 				// that legitimately has none.
-				_, _, err := store.Settle(ctx, tx, farmID, r.people[ev.PersonID], id,
-					day(ev.From), day(ev.To), nil, nil, optionalText(ev.Note),
-					r.farm.OwnerUserID, on)
+				_, _, err := store.Settle(ctx, tx, store.SettleParams{
+					FarmID: farmID, EmployeeID: r.people[ev.PersonID], SettlementID: id,
+					From: day(ev.From), To: day(ev.To), Note: optionalText(ev.Note),
+					CreatedBy: r.farm.OwnerUserID, On: on,
+				})
 				if err != nil {
 					return err
 				}
@@ -354,8 +356,10 @@ func (r *goldenRun) apply(t *testing.T, ev goldenEvent, loc *time.Location) erro
 
 			case "reverse":
 				target := r.ledgerOrder[ev.LedgerID-1]
-				if _, _, err := store.ReverseLedgerEntry(ctx, tx, farmID, target, "",
-					r.farm.OwnerUserID, optionalText(ev.Note), on); err != nil {
+				if _, _, err := store.ReverseLedgerEntry(ctx, tx, store.ReverseParams{
+					FarmID: farmID, EntryID: target, CreatedBy: r.farm.OwnerUserID,
+					Note: optionalText(ev.Note), On: on,
+				}); err != nil {
 					return err
 				}
 				r.recordLedgerSince(ctx, tx)

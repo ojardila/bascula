@@ -285,6 +285,18 @@ type SettlementSummary struct {
 }
 
 // SettlementFilter is what the console narrows the list by.
+// SettleParams are the arguments of Settle. Each field means exactly what the
+// positional argument of the same name used to.
+type SettleParams struct {
+	FarmID, EmployeeID, SettlementID string
+	From, To                         time.Time
+	PayableIDs                       []string
+	ExpectedGross                    *int64 // nil only in the golden cases
+	Note                             *string
+	CreatedBy                        string
+	On                               *time.Time // nil: today in the farm timezone
+}
+
 type SettlementFilter struct {
 	EmployeeID string
 	// Status is "open", "void" or "" for both. It is validated by the handler:
@@ -391,9 +403,13 @@ func ListSettlements(ctx context.Context, tx pgx.Tx, f SettlementFilter) ([]Sett
 // which are a replay of a phone that never had a preview screen, still run
 // against this function unchanged. Nothing else may pass nil — see the note on
 // handleCreateSettlement.
-func Settle(ctx context.Context, tx pgx.Tx, farmID, employeeID, settlementID string,
-	from, to time.Time, payableIDs []string, expectedGross *int64, note *string, createdBy string,
-	on *time.Time) (*Settlement, bool, error) {
+//
+// The arguments travel in a struct (SettleParams) so that two ids or two
+// dates cannot be swapped at a call site without the field names saying so.
+func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, bool, error) {
+	farmID, employeeID, settlementID := args.FarmID, args.EmployeeID, args.SettlementID
+	from, to, payableIDs := args.From, args.To, args.PayableIDs
+	expectedGross, note, createdBy, on := args.ExpectedGross, args.Note, args.CreatedBy, args.On
 
 	// The idempotency check comes FIRST, before anything is derived. It has to:
 	// on a retry the payables are already locked by the very settlement being
@@ -810,6 +826,13 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, revers
 
 // SettlementRelease is the record of one repair. See migration 00016 for why
 // it is a row and not a psql session at midnight.
+// ReleaseParams are the arguments of ReleaseSettlement.
+type ReleaseParams struct {
+	FarmID, SettlementID, ReleaseID string
+	Reason, ReleasedBy              string
+	On                              *time.Time
+}
+
 type SettlementRelease struct {
 	ID            string    `json:"id"`
 	SettlementID  string    `json:"settlementId"`
@@ -880,8 +903,9 @@ func FindSettlementRelease(ctx context.Context, tx pgx.Tx, id string) (*Settleme
 // Without it there is no way to tell a retry from a second repair, and the
 // second repair of an already-repaired settlement is refused as
 // NOTHING_TO_RELEASE — correctly, because by then there is nothing to release.
-func ReleaseSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, releaseID,
-	reason, releasedBy string, on *time.Time) (*SettlementRelease, bool, error) {
+func ReleaseSettlement(ctx context.Context, tx pgx.Tx, args ReleaseParams) (*SettlementRelease, bool, error) {
+	farmID, settlementID, releaseID := args.FarmID, args.SettlementID, args.ReleaseID
+	reason, releasedBy, on := args.Reason, args.ReleasedBy, args.On
 
 	// First, before anything is derived or locked: the key. Same position and
 	// same reason as in Settle — a retry finds the work already done, and a
@@ -1223,8 +1247,17 @@ func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEn
 //	                             there is no way to tell those two apart, and
 //	                             guessing in favour of "it was a retry" is
 //	                             guessing with somebody's wages.
-func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, farmID, entryID, reversalID, createdBy string,
-	note *string, on *time.Time) (*LedgerEntry, bool, error) {
+//
+// ReverseParams are the arguments of ReverseLedgerEntry.
+type ReverseParams struct {
+	FarmID, EntryID, ReversalID, CreatedBy string
+	Note                                   *string
+	On                                     *time.Time
+}
+
+func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, args ReverseParams) (*LedgerEntry, bool, error) {
+	farmID, entryID, reversalID, createdBy := args.FarmID, args.EntryID, args.ReversalID, args.CreatedBy
+	note, on := args.Note, args.On
 	if reversalID != "" {
 		existing, err := FindLedgerEntry(ctx, tx, reversalID)
 		if err != nil {
