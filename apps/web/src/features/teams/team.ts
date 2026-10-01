@@ -47,7 +47,3 @@ export function teamSearchText(w: Worker): string {
   return (w.members ?? []).map((m) => `${m.name} ${m.lastName ?? ""} ${m.tag ?? ""}`).join(" ");
 }
 
-/** Kilos per member, for «c/u». Null when the team has nobody yet. */
-export function perMember(kg: number, members: number): number {
-  return members > 0 ? kg / members : kg;
-}

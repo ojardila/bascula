@@ -74,15 +74,6 @@ func VerifyUserEmail(ctx context.Context, tx pgx.Tx, userID string) error {
 	return err
 }
 
-// CountOwnedFarms is the per-email cap on the open signup: the most exposed
-// surface in the system needs a ceiling that is not just a rate limit.
-func CountOwnedFarms(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
-	var n int
-	err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM memberships WHERE user_id = $1 AND role = 'owner'`, userID).Scan(&n)
-	return n, err
-}
-
 type NewFarm struct {
 	ID         string
 	Name       string
@@ -384,12 +375,6 @@ func RevokeFamily(ctx context.Context, tx pgx.Tx, familyID string) error {
 	return err
 }
 
-func RevokeRefreshToken(ctx context.Context, tx pgx.Tx, id string) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, id)
-	return err
-}
-
 // ---------------------------------------------------------------------------
 // Email verification and signup throttling.
 // ---------------------------------------------------------------------------
@@ -419,13 +404,6 @@ func ConsumeEmailVerification(ctx context.Context, tx pgx.Tx, hash []byte) (user
 	_, err = tx.Exec(ctx, `
 		UPDATE users SET email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1`, userID)
 	return userID, farmID, err
-}
-
-func RecordSignupAttempt(ctx context.Context, tx pgx.Tx, id, ip, email string, ok bool) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
-		id, ip, email, ok)
-	return err
 }
 
 // CountSuccessfulSignups counts the farms public signup created across the

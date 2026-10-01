@@ -249,12 +249,6 @@ func (s *Server) handleReportHarvestCurve(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, curve)
 }
 
-// withScope wraps a typed report so the response carries the same `scope`
-// marker the list endpoints do, without every struct growing a constant field.
-func withScope(v any) map[string]any {
-	return map[string]any{"scope": store.ScopeHarvest, "report": v}
-}
-
 // boundedParam reads a positive integer query parameter, falling back to the
 // default and refusing to let a caller ask for a season of the whole world.
 // A bad value is the default rather than a 400, matching limitParam: the
