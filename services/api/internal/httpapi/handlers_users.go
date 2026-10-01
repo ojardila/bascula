@@ -141,12 +141,14 @@ type inviteUserRequest struct {
 //
 // # Why this is not an emailed invitation
 //
-// There is no mail sender in this service. Signup already works around that by
-// echoing the verification token in development, and an "invitation" that mints
-// a token nothing can deliver would be a screen that appears to work and never
-// does. So the administrator creates the account and hands over the password,
-// which is how the farm already works: the person who buys the weighing app is
-// the person who sets up the weigher's phone, standing next to them.
+// A mailer is optional (Config.Mailer), and an "invitation" that mints a token
+// nothing can deliver would be a screen that appears to work and never does.
+// So the administrator creates the account and hands over the password, which
+// is how the farm already works: the person who buys the weighing app is the
+// person who sets up the weigher's phone, standing next to them. Where there is
+// a mailer, the person can change that password later with "olvidé mi clave",
+// and the farm's other owners hear about a new owner or administrator
+// (noticeRoleRaised).
 //
 // The address is marked verified because somebody with a session on this farm
 // vouched for it. That is a different act from the open signup, where
@@ -275,6 +277,7 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		"role": created.Role, "emailVerifiedAt": created.EmailVerifiedAt,
 		"createdAt": created.CreatedAt,
 	}
+	s.noticeRoleRaised(r, tx, created.Email, created.Name, created.Role)
 	if temporary != "" && body.Password == "" {
 		// Returned once, here, and stored nowhere in readable form — the row
 		// keeps an argon2id hash like every other password. The administrator
@@ -362,6 +365,9 @@ func (s *Server) handleUpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, r, err)
 		return
+	}
+	if roleRank(role) > roleRank(target.Role) {
+		s.noticeRoleRaised(r, tx, updated.Email, updated.Name, role)
 	}
 	writeJSON(w, http.StatusOK, updated)
 }

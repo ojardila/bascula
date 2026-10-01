@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
 import { theme } from "../../theme";
 import { FarmEntryPage } from "./FarmEntryPage";
 import { ForgotPasswordPage } from "../auth/ForgotPasswordPage";
+import { api } from "../../api/endpoints";
 
 function renderAt(hostname: string) {
   return render(
@@ -43,7 +44,10 @@ describe("the farm's front door", () => {
     expect(screen.getByRole("link", { name: "Registrar" })).toHaveAttribute("href", "/empezar");
   });
 
-  it("says who resets a forgotten password", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("says who resets a forgotten password where no email can be sent", async () => {
+    vi.spyOn(api, "passwordResetAvailable").mockResolvedValue(false);
     render(
       <ThemeProvider theme={theme}>
         <MemoryRouter>
@@ -51,7 +55,7 @@ describe("the farm's front door", () => {
         </MemoryRouter>
       </ThemeProvider>,
     );
-    expect(screen.getByText(/Configuración → Usuarios/)).toBeInTheDocument();
+    expect(await screen.findByText(/Configuración → Usuarios/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Volver a entrar" })).toHaveAttribute("href", "/entrar");
   });
 });

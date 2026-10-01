@@ -31,6 +31,10 @@ const (
 	ActionLogout          Action = "auth.logout"
 	ActionMeRead          Action = "me.read"
 	ActionToursWrite      Action = "me.tours.write"
+	// ActionPasswordWrite changes the caller's own password.
+	ActionPasswordWrite Action = "me.password.write"
+	// ActionPasswordReset is "olvidé mi clave": ask for a link, spend it.
+	ActionPasswordReset Action = "auth.password_reset"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -210,6 +214,8 @@ var Matrix = map[Action]Rule{
 	ActionLogout:           {Roles: everyone},
 	ActionMeRead:           {Roles: everyone},
 	ActionToursWrite:       {Roles: everyone},
+	ActionPasswordWrite:    {Roles: everyone},
+	ActionPasswordReset:    {Public: true, TenantOptional: true},
 
 	// The weigher reads workers, but the handler hands him a reduced
 	// projection: id, name, lastName, tag. No document, no phone, no photo.

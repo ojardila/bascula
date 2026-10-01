@@ -530,6 +530,38 @@ export const api = {
     }
   },
 
+  /**
+   * Change the caller's own password (POST /v1/me/password). The server
+   * closes every other session and answers with a new one for this device,
+   * which is installed here: the old refresh token no longer works.
+   */
+  changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
+    const session = await http.post<WireSession>("/v1/me/password", {
+      currentPassword,
+      newPassword,
+      deviceId: deviceId(),
+    });
+    setTokens({ accessToken: session.accessToken, refreshToken: session.refreshToken });
+  },
+
+  /** Whether «olvidé mi clave» can mail a link on this deployment. */
+  passwordResetAvailable: async (): Promise<boolean> => {
+    const out = await http.get<{ available: boolean }>("/v1/auth/password-reset", { anonymous: true });
+    return out.available === true;
+  },
+
+  /** Ask for a reset link. The answer is the same whether or not the address has an account. */
+  requestPasswordReset: (email: string) =>
+    http.post<{ requested: boolean; resetToken?: string }>(
+      "/v1/auth/password-reset/request",
+      { email },
+      { anonymous: true },
+    ),
+
+  /** Spend a mailed reset link. Does not sign in. */
+  resetPassword: (token: string, password: string) =>
+    http.post<void>("/v1/auth/password-reset", { token, password }, { anonymous: true }),
+
   logout: async (): Promise<void> => {
     invalidateRefs();
     const tokens = getTokens();

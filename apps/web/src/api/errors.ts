@@ -44,13 +44,15 @@ export class ApiError extends Error {
    *   FORBIDDEN           your role may not do this      -> leave the module
    *   FARM_SUSPENDED      the farm is frozen, read-only  -> banner, stay
    *   EMAIL_NOT_VERIFIED  you have not confirmed yet     -> login screen, stay
+   *   INVALID_CREDENTIALS the current password is wrong   -> «Cambiar clave», stay
    *
    * Treating the last two as "you may not be here" would throw somebody out of
    * the login screen for the crime of not having opened their mail yet.
    */
   get isPermissionDenied(): boolean {
     if (this.status !== 403) return false;
-    return this.code !== "FARM_SUSPENDED" && this.code !== "EMAIL_NOT_VERIFIED";
+    return this.code !== "FARM_SUSPENDED" && this.code !== "EMAIL_NOT_VERIFIED" &&
+      this.code !== "INVALID_CREDENTIALS";
   }
 
   /** A local refusal that never left the browser: a route we know is absent. */

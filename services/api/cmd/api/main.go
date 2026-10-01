@@ -364,9 +364,9 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 		rc.http.TenantSlug = slug
 		rc.http.GitHubDispatchToken = ""
 		rc.http.CloudflareSaaSToken = ""
-		// The platform sends the ready notice, never the farm's own stack.
-		rc.http.Mailer = nil
-		rc.mail = ""
+		// The farm's own stack keeps the mailer: its people reset their
+		// password and get security notices there. The ready notice stays
+		// the platform's (readyEmailAvailable).
 	}
 	// Only the platform reads the cluster (read-only) for provisioning
 	// progress; a farm's own stack has no business there.

@@ -221,10 +221,20 @@ farm (100 included on the free plan, then $0.10 each per month).
 
 ## Mail
 
-The platform API can send one email: "Su finca ya está lista", to a farm's
-owner who pressed «Avísenme por correo cuando esté lista» (Notify me by email when it is ready) on the waiting
-screen. It is **off** until the ConfigMap `bascula-mail` exists; without it the
-screen does not offer the option and nothing is sent.
+Mail is **off** until the ConfigMap `bascula-mail` exists in the namespace;
+without it nothing is sent and nothing that depends on it fails. With it, the
+API sends:
+
+- "Su finca ya está lista", to an owner who pressed «Avísenme por correo cuando
+  esté lista» on the waiting screen (platform API only; the screen does not
+  offer the option without mail).
+- The «¿Olvidó su clave?» link. Self-service reset also needs `PUBLIC_BASE_URL`,
+  which the link is built from; without either, the screen says who to ask.
+- Security notices: the password changed, an assistant (ChatGPT, …) was
+  connected, somebody was made owner or administrator (to the other owners).
+
+Dedicated farm stacks send the last two as well, so each `bascula-<slug>`
+namespace needs its own `bascula-mail` ConfigMap (and Secret, with auth).
 
 | Variable | ConfigMap / Secret key | Default |
 |:--|:--|:--|
@@ -245,5 +255,5 @@ kubectl -n bascula rollout restart deploy/bascula-api
 
 The API logs `mail on` with the relay at boot. A value that is set and wrong
 (bad port, unknown `SMTP_TLS`, unparsable `SMTP_FROM`) stops the API from
-booting rather than dropping mail silently. Dedicated farm stacks never send.
+booting rather than dropping mail silently.
 

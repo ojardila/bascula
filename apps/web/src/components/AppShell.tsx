@@ -122,7 +122,7 @@ function NavItem({
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, principal, logout, readOnly } = useAuth();
+  const { user, principal, logout, readOnly, can } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -276,6 +276,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Consola de soporte
               </MenuItem>
             )}
+            {/* The card lives in Configuración, or in Conexiones for a weigher,
+                who has no Configuración. */}
+            <MenuItem
+              sx={{ fontSize: 17, minHeight: 48 }}
+              onClick={() => {
+                setUserMenu(null);
+                navigate(can("config.farm") ? "/configuracion#clave" : "/conexiones#clave");
+              }}
+            >
+              Cambiar clave
+            </MenuItem>
             {tour.available && (
               <MenuItem sx={{ fontSize: 17, minHeight: 48 }} onClick={startTour}>
                 Ayuda y recorrido

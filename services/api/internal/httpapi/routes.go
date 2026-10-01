@@ -30,8 +30,14 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/auth/login", auth.ActionLogin, s.handleLogin},
 		{http.MethodPost, "/v1/auth/refresh", auth.ActionRefresh, s.handleRefresh},
 		{http.MethodPost, "/v1/auth/verify-email", auth.ActionVerifyEmail, s.handleVerifyEmail},
+		// "Olvidé mi clave": whether a link can be mailed here, ask for one,
+		// spend it. See handlers_password.go.
+		{http.MethodGet, "/v1/auth/password-reset", auth.ActionPasswordReset, s.handlePasswordResetInfo},
+		{http.MethodPost, "/v1/auth/password-reset/request", auth.ActionPasswordReset, s.handleRequestPasswordReset},
+		{http.MethodPost, "/v1/auth/password-reset", auth.ActionPasswordReset, s.handleResetPassword},
 		{http.MethodPost, "/v1/auth/logout", auth.ActionLogout, s.handleLogout},
 		{http.MethodGet, "/v1/me", auth.ActionMeRead, s.handleMe},
+		{http.MethodPost, "/v1/me/password", auth.ActionPasswordWrite, s.handleChangePassword},
 		{http.MethodGet, "/v1/me/tours", auth.ActionMeRead, s.handleListTours},
 		{http.MethodPut, "/v1/me/tours/{tour}", auth.ActionToursWrite, s.handleSaveTour},
 

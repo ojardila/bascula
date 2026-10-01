@@ -15,6 +15,7 @@ import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
+import { ChangePasswordCard } from "./ChangePasswordCard";
 import { HarvestModeSwitch } from "../harvest/HarvestModeSwitch";
 import { useHarvestMode } from "../harvest/harvestMode";
 
@@ -232,6 +233,10 @@ export function ConfigPage() {
             <ExportCard />
           </Grid>
         )}
+
+        <Grid size={{ xs: 12, md: 6 }}>
+          <ChangePasswordCard />
+        </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>
