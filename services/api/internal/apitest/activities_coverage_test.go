@@ -21,122 +21,150 @@ func TestActivityRoutes(t *testing.T) {
 	}
 	unitID := items[0].(map[string]any)["id"].(string)
 
-	t.Run("create is refused when", func(t *testing.T) {
-		cases := map[string]map[string]any{
-			"the body is not JSON":     nil,
-			"there is no name":         {"payScheme": "tiempo", "category": "Labores"},
-			"the scheme is unknown":    {"name": "x", "payScheme": "a destajo", "category": "Labores"},
-			"there is no category":     {"name": "x", "payScheme": "tiempo"},
-			"weekly price not by unit": {"name": "x", "payScheme": "tiempo", "category": "Labores", "rateSource": "weekly_price"},
-			"explicit rate":            {"name": "x", "payScheme": "tiempo", "category": "Labores", "rateSource": "explicit"},
-			"the rate is not positive": {"name": "x", "payScheme": "tiempo", "category": "Labores",
-				"rate": map[string]any{"rateCents": 0}},
-			"a unit scheme has no unit": {"name": "x", "payScheme": "unidad_trabajo", "category": "Labores",
-				"rate": map[string]any{"rateCents": 100}},
-			"a time scheme has a unit": {"name": "x", "payScheme": "tiempo", "category": "Labores", "unitId": unitID,
-				"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal"}},
-			"the custom quantity has too many decimals": {"name": "x", "payScheme": "tiempo", "category": "Labores",
-				"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal", "customQty": 1.234}},
-			"the valid-from date is not a date": {"name": "x", "payScheme": "tiempo", "category": "Labores",
-				"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal", "validFrom": "ayer"}},
-		}
-		for name, body := range cases {
-			t.Run(name, func(t *testing.T) {
-				var res response
-				if body == nil {
-					res = h.doRaw(t, http.MethodPost, "/v1/activities", f.OwnerToken, "{not json")
-				} else {
-					res = h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, body)
-				}
-				if res.Status < 400 || res.Status >= 500 {
-					t.Fatalf("want a 4xx, got %d: %s", res.Status, res.Raw)
-				}
-			})
-		}
-	})
+	a := activityFixture{h: h, f: f, unitID: unitID}
+	t.Run("create is refused when", func(t *testing.T) { activityCreateRefusals(t, a) })
 
 	created := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
 		"name": "Plateo", "payScheme": "tiempo", "category": "Labores",
 		"rate": map[string]any{"rateCents": 60000, "timeUnit": "jornal"},
 	}, http.StatusCreated)
-	actID := mustString(t, created.Body, "id")
+	a.actID = mustString(t, created.Body, "id")
 
-	t.Run("create is idempotent by id and refuses a duplicate name", func(t *testing.T) {
-		again := h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
-			"id": actID, "name": "Plateo", "payScheme": "tiempo", "category": "Labores",
-			"rate": map[string]any{"rateCents": 60000, "timeUnit": "jornal"},
+	t.Run("create is idempotent by id and refuses a duplicate name", func(t *testing.T) { activityCreateIdempotent(t, a) })
+
+	t.Run("list on a given day, and a bad day", func(t *testing.T) { activityListByDay(t, a) })
+
+	t.Run("patch", func(t *testing.T) { activityPatch(t, a) })
+
+	t.Run("rates", func(t *testing.T) { activityRates(t, a) })
+
+	t.Run("archive", func(t *testing.T) { activityArchive(t, a) })
+}
+
+// activityFixture is what the TestActivityRoutes subtests share: one farm,
+// one seeded work unit, and the activity created halfway through.
+type activityFixture struct {
+	h      *harness
+	f      *farmFixture
+	unitID string
+	actID  string
+}
+
+func activityCreateRefusals(t *testing.T, a activityFixture) {
+	h, f, unitID := a.h, a.f, a.unitID
+	cases := map[string]map[string]any{
+		"the body is not JSON":     nil,
+		"there is no name":         {"payScheme": "tiempo", "category": "Labores"},
+		"the scheme is unknown":    {"name": "x", "payScheme": "a destajo", "category": "Labores"},
+		"there is no category":     {"name": "x", "payScheme": "tiempo"},
+		"weekly price not by unit": {"name": "x", "payScheme": "tiempo", "category": "Labores", "rateSource": "weekly_price"},
+		"explicit rate":            {"name": "x", "payScheme": "tiempo", "category": "Labores", "rateSource": "explicit"},
+		"the rate is not positive": {"name": "x", "payScheme": "tiempo", "category": "Labores",
+			"rate": map[string]any{"rateCents": 0}},
+		"a unit scheme has no unit": {"name": "x", "payScheme": "unidad_trabajo", "category": "Labores",
+			"rate": map[string]any{"rateCents": 100}},
+		"a time scheme has a unit": {"name": "x", "payScheme": "tiempo", "category": "Labores", "unitId": unitID,
+			"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal"}},
+		"the custom quantity has too many decimals": {"name": "x", "payScheme": "tiempo", "category": "Labores",
+			"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal", "customQty": 1.234}},
+		"the valid-from date is not a date": {"name": "x", "payScheme": "tiempo", "category": "Labores",
+			"rate": map[string]any{"rateCents": 100, "timeUnit": "jornal", "validFrom": "ayer"}},
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			var res response
+			if body == nil {
+				res = h.doRaw(t, http.MethodPost, "/v1/activities", f.OwnerToken, "{not json")
+			} else {
+				res = h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, body)
+			}
+			if res.Status < 400 || res.Status >= 500 {
+				t.Fatalf("want a 4xx, got %d: %s", res.Status, res.Raw)
+			}
 		})
-		if again.Status >= 300 {
-			t.Fatalf("replay by id: %d %s", again.Status, again.Raw)
-		}
-		dup := h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
-			"name": "Plateo", "payScheme": "tiempo", "category": "Labores",
-			"rate": map[string]any{"rateCents": 60000, "timeUnit": "jornal"},
-		})
-		if dup.Status != http.StatusConflict && dup.Status != http.StatusUnprocessableEntity {
-			t.Fatalf("duplicate name: want 409/422, got %d %s", dup.Status, dup.Raw)
-		}
-	})
+	}
+}
 
-	t.Run("list on a given day, and a bad day", func(t *testing.T) {
-		h.mustDo(t, http.MethodGet, "/v1/activities?on=2026-01-05", f.OwnerToken, nil, http.StatusOK)
-		h.mustDo(t, http.MethodGet, "/v1/activities?on=hoy", f.OwnerToken, nil, http.StatusBadRequest)
+func activityCreateIdempotent(t *testing.T, a activityFixture) {
+	h, f, actID := a.h, a.f, a.actID
+	again := h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
+		"id": actID, "name": "Plateo", "payScheme": "tiempo", "category": "Labores",
+		"rate": map[string]any{"rateCents": 60000, "timeUnit": "jornal"},
 	})
-
-	t.Run("patch", func(t *testing.T) {
-		path := "/v1/activities/" + actID
-		h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "borrado"}, http.StatusBadRequest)
-		h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"payScheme": "contrato"}, http.StatusBadRequest)
-		h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"rateSource": "explicit"}, http.StatusBadRequest)
-		if res := h.doRaw(t, http.MethodPatch, path, f.OwnerToken, "{"); res.Status != http.StatusBadRequest {
-			t.Fatalf("bad json: %d", res.Status)
-		}
-		renamed := h.mustDo(t, http.MethodPatch, path, f.OwnerToken,
-			map[string]any{"name": "Plateo y limpia", "category": "Mantenimiento"}, http.StatusOK)
-		if renamed.Body["name"] != "Plateo y limpia" {
-			t.Fatalf("rename: %s", renamed.Raw)
-		}
-		h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "inactive"}, http.StatusOK)
-		h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "active"}, http.StatusOK)
-
-		other := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
-			"name": "Guadaña", "payScheme": "contrato", "category": "Labores",
-			"rate": map[string]any{"rateCents": 200000},
-		}, http.StatusCreated)
-		dup := h.do(t, http.MethodPatch, "/v1/activities/"+mustString(t, other.Body, "id"), f.OwnerToken,
-			map[string]any{"name": "Plateo y limpia"})
-		if dup.Status != http.StatusConflict && dup.Status != http.StatusUnprocessableEntity {
-			t.Fatalf("rename onto another: want 409/422, got %d %s", dup.Status, dup.Raw)
-		}
-		// The weigher's projection of the same activity carries no rate.
-		if res := h.do(t, http.MethodPatch, path, f.WeigherToken, map[string]any{"name": "x"}); res.Status != http.StatusForbidden {
-			t.Fatalf("weigher patch: want 403, got %d", res.Status)
-		}
+	if again.Status >= 300 {
+		t.Fatalf("replay by id: %d %s", again.Status, again.Raw)
+	}
+	dup := h.do(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
+		"name": "Plateo", "payScheme": "tiempo", "category": "Labores",
+		"rate": map[string]any{"rateCents": 60000, "timeUnit": "jornal"},
 	})
+	if dup.Status != http.StatusConflict && dup.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("duplicate name: want 409/422, got %d %s", dup.Status, dup.Raw)
+	}
+}
 
-	t.Run("rates", func(t *testing.T) {
-		path := "/v1/activities/" + actID + "/rate"
-		h.mustDo(t, http.MethodPut, path, f.OwnerToken, map[string]any{"rateCents": 0}, http.StatusBadRequest)
-		if res := h.doRaw(t, http.MethodPut, path, f.OwnerToken, "{"); res.Status != http.StatusBadRequest {
-			t.Fatalf("bad json: %d", res.Status)
-		}
-		h.mustDo(t, http.MethodPut, path, f.OwnerToken,
-			map[string]any{"rateCents": 65000, "timeUnit": "jornal", "validFrom": "2026-02-01"}, http.StatusOK)
-		h.mustDo(t, http.MethodPut, path, f.OwnerToken,
-			map[string]any{"rateCents": 66000, "timeUnit": "jornal"}, http.StatusOK)
-		rates := h.mustDo(t, http.MethodGet, "/v1/activities/"+actID+"/rates", f.OwnerToken, nil, http.StatusOK)
-		if list, _ := rates.Body["items"].([]any); len(list) < 2 {
-			t.Fatalf("want at least two rates: %s", rates.Raw)
-		}
-		missing := "/v1/activities/0192f3a0-dead-7000-8000-000000000000/rate"
-		if res := h.do(t, http.MethodPut, missing, f.OwnerToken, map[string]any{"rateCents": 1, "timeUnit": "jornal"}); res.Status != http.StatusNotFound {
-			t.Fatalf("missing activity: want 404, got %d %s", res.Status, res.Raw)
-		}
-	})
+func activityListByDay(t *testing.T, a activityFixture) {
+	h, f := a.h, a.f
+	h.mustDo(t, http.MethodGet, "/v1/activities?on=2026-01-05", f.OwnerToken, nil, http.StatusOK)
+	h.mustDo(t, http.MethodGet, "/v1/activities?on=hoy", f.OwnerToken, nil, http.StatusBadRequest)
+}
 
-	t.Run("archive", func(t *testing.T) {
-		h.mustDo(t, http.MethodDelete, "/v1/activities/"+actID, f.OwnerToken, nil, http.StatusNoContent)
-	})
+func activityPatch(t *testing.T, a activityFixture) {
+	h, f, actID := a.h, a.f, a.actID
+	path := "/v1/activities/" + actID
+	h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "borrado"}, http.StatusBadRequest)
+	h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"payScheme": "contrato"}, http.StatusBadRequest)
+	h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"rateSource": "explicit"}, http.StatusBadRequest)
+	if res := h.doRaw(t, http.MethodPatch, path, f.OwnerToken, "{"); res.Status != http.StatusBadRequest {
+		t.Fatalf("bad json: %d", res.Status)
+	}
+	renamed := h.mustDo(t, http.MethodPatch, path, f.OwnerToken,
+		map[string]any{"name": "Plateo y limpia", "category": "Mantenimiento"}, http.StatusOK)
+	if renamed.Body["name"] != "Plateo y limpia" {
+		t.Fatalf("rename: %s", renamed.Raw)
+	}
+	h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "inactive"}, http.StatusOK)
+	h.mustDo(t, http.MethodPatch, path, f.OwnerToken, map[string]any{"status": "active"}, http.StatusOK)
+
+	other := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
+		"name": "Guadaña", "payScheme": "contrato", "category": "Labores",
+		"rate": map[string]any{"rateCents": 200000},
+	}, http.StatusCreated)
+	dup := h.do(t, http.MethodPatch, "/v1/activities/"+mustString(t, other.Body, "id"), f.OwnerToken,
+		map[string]any{"name": "Plateo y limpia"})
+	if dup.Status != http.StatusConflict && dup.Status != http.StatusUnprocessableEntity {
+		t.Fatalf("rename onto another: want 409/422, got %d %s", dup.Status, dup.Raw)
+	}
+	// The weigher's projection of the same activity carries no rate.
+	if res := h.do(t, http.MethodPatch, path, f.WeigherToken, map[string]any{"name": "x"}); res.Status != http.StatusForbidden {
+		t.Fatalf("weigher patch: want 403, got %d", res.Status)
+	}
+}
+
+func activityRates(t *testing.T, a activityFixture) {
+	h, f, actID := a.h, a.f, a.actID
+	path := "/v1/activities/" + actID + "/rate"
+	h.mustDo(t, http.MethodPut, path, f.OwnerToken, map[string]any{"rateCents": 0}, http.StatusBadRequest)
+	if res := h.doRaw(t, http.MethodPut, path, f.OwnerToken, "{"); res.Status != http.StatusBadRequest {
+		t.Fatalf("bad json: %d", res.Status)
+	}
+	h.mustDo(t, http.MethodPut, path, f.OwnerToken,
+		map[string]any{"rateCents": 65000, "timeUnit": "jornal", "validFrom": "2026-02-01"}, http.StatusOK)
+	h.mustDo(t, http.MethodPut, path, f.OwnerToken,
+		map[string]any{"rateCents": 66000, "timeUnit": "jornal"}, http.StatusOK)
+	rates := h.mustDo(t, http.MethodGet, "/v1/activities/"+actID+"/rates", f.OwnerToken, nil, http.StatusOK)
+	if list, _ := rates.Body["items"].([]any); len(list) < 2 {
+		t.Fatalf("want at least two rates: %s", rates.Raw)
+	}
+	missing := "/v1/activities/0192f3a0-dead-7000-8000-000000000000/rate"
+	if res := h.do(t, http.MethodPut, missing, f.OwnerToken, map[string]any{"rateCents": 1, "timeUnit": "jornal"}); res.Status != http.StatusNotFound {
+		t.Fatalf("missing activity: want 404, got %d %s", res.Status, res.Raw)
+	}
+}
+
+func activityArchive(t *testing.T, a activityFixture) {
+	h, f, actID := a.h, a.f, a.actID
+	h.mustDo(t, http.MethodDelete, "/v1/activities/"+actID, f.OwnerToken, nil, http.StatusNoContent)
 }
 
 // Work units: create, idempotent by code, rename, factor, archive and delete.
