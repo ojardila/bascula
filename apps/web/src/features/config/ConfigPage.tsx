@@ -13,6 +13,7 @@ import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";
+import { PasskeysCard } from "./PasskeysCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
 import { ChangePasswordCard } from "./ChangePasswordCard";
@@ -91,6 +92,9 @@ export function ConfigPage() {
             <McpActivityCard />
           </Grid>
         )}
+        <Grid size={{ xs: 12 }}>
+          <PasskeysCard />
+        </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
           <Card>

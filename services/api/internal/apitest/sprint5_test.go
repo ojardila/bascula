@@ -188,7 +188,7 @@ func TestASecondFileForOnePersonIsRefused(t *testing.T) {
 	// The unique index on the document is partial on deleted_at, so nothing in
 	// the database stops this. That is the whole point of the check.
 	res := h.do(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": "Juan", "documentType": "CC", "docId": "5005005005",
+		"name": "Juan", "documentType": "CC", "docId": "5005005005", "tag": "J2",
 	})
 	if res.code() != string(domain.CodeEmployeeExistsDeleted) {
 		t.Fatalf("re-registering a deactivated worker: got %d %s, want EMPLOYEE_EXISTS_DELETED",

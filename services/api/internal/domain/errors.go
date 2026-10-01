@@ -119,6 +119,12 @@ const (
 	// details.teamId and details.teamName name it so the caller can redirect.
 	CodeWorkerInTeam Code = "WORKER_IN_TEAM"
 
+	// DUPLICATE_TAG refuses a basket number («número de canasto») that an
+	// ACTIVE worker or team of the farm already carries. details.employeeId,
+	// details.name and details.lastName name who has it, so the screen can say
+	// «Ese número ya lo tiene Yorman» instead of a bare refusal.
+	CodeDuplicateTag Code = "DUPLICATE_TAG"
+
 	// The two answers of POST /v1/settlements/{id}/release, which exists
 	// because a void settlement that still claims a weighing had no way out.
 	//
@@ -241,7 +247,7 @@ const (
 // undocumented one is a branch nobody wrote.
 func AllCodes() []Code {
 	return []Code{
-		CodeWorkerInTeam,
+		CodeWorkerInTeam, CodeDuplicateTag,
 		CodeBadRequest, CodeUnauthorized, CodeForbidden, CodeNotFound,
 		CodeConflict, CodeInternal, CodeTenantNotSet,
 

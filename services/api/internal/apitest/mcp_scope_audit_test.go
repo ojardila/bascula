@@ -59,7 +59,7 @@ func TestMCPReadOnlyGrant(t *testing.T) {
 	if !names["list_workers"] || names["create_worker"] || names["register_payment"] {
 		t.Fatalf("read-only tool list: %v", names)
 	}
-	out := mcpRaw(h.server, host, access, toolCallBody("create_worker", map[string]any{"name": "No Debe"})).Body.String()
+	out := mcpRaw(h.server, host, access, toolCallBody("create_worker", map[string]any{"name": "No Debe", "tag": "ND-1"})).Body.String()
 	if !strings.Contains(out, `"isError":true`) && !strings.Contains(out, `"error"`) {
 		t.Fatalf("a read-only token ran a write: %s", out)
 	}
@@ -96,7 +96,7 @@ func TestMCPReadOnlyGrant(t *testing.T) {
 	if tok == "" {
 		t.Fatalf("legacy refresh: %d %s", rec.Code, rec.Body.String())
 	}
-	out = mcpRaw(h.server, host, tok, toolCallBody("create_worker", map[string]any{"name": "Legado Sigue"})).Body.String()
+	out = mcpRaw(h.server, host, tok, toolCallBody("create_worker", map[string]any{"name": "Legado Sigue", "tag": "LS-1"})).Body.String()
 	if strings.Contains(out, `"isError":true`) {
 		t.Fatalf("a legacy grant lost write access: %s", out)
 	}
@@ -112,7 +112,7 @@ func TestMCPWritesAreAudited(t *testing.T) {
 	g := h.oauthGrantAt(t, h.server, f, host, "ChatGPT", nil)
 	access := g["access_token"].(string)
 
-	out := mcpRaw(h.server, host, access, toolCallBody("create_worker", map[string]any{"name": "Auditado Uno"})).Body.String()
+	out := mcpRaw(h.server, host, access, toolCallBody("create_worker", map[string]any{"name": "Auditado Uno", "tag": "AU-1"})).Body.String()
 	if strings.Contains(out, `"isError":true`) {
 		t.Fatalf("create_worker: %s", out)
 	}

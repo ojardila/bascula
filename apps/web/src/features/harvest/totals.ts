@@ -78,9 +78,6 @@ export function valueState(t: Totals): ValueState {
  */
 export const kgForDrawing = (t: Totals): number => t.kg ?? 0;
 
-/** True when nothing at all is known about this row's kilos. */
-export const hasNoKilos = (t: Totals): boolean => t.kg === null;
-
 /**
  * Fold a set of rows into one total, propagating the admissions.
  *

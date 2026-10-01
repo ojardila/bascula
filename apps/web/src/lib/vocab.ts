@@ -135,13 +135,6 @@ export const PAY_MODE_CHOICE: Record<PayMode, string> = {
   contract: "Por contrato",
 };
 
-/** A sentence, for where it has to be explained inside running text. */
-export const PAY_MODE_SENTENCE: Record<PayMode, string> = {
-  work_unit: "se paga a destajo: por lo que la persona haga",
-  time_unit: "se paga al jornal: por el tiempo que la persona esté",
-  contract: "se paga por contrato: un total acordado de antemano",
-};
-
 /** "jornales", "semanas"… what gets counted when the pay is by time. */
 export const TIME_UNIT_LABEL: Record<TimeUnit, string> = {
   jornal: "Jornal (día)",

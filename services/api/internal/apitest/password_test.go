@@ -125,19 +125,22 @@ func TestChangePasswordSharesTheLoginLimit(t *testing.T) {
 	ip := "10.0.7.3"
 	for i := 0; i < h.loginFailuresPerPair; i++ {
 		res := h.doFrom(t, ip, http.MethodPost, "/v1/me/password", f.WeigherToken, map[string]any{
-			"currentPassword": "adivinando-" + string(rune('a'+i)), "newPassword": newSecret,
+			"currentPassword": wrongGuess(i), "newPassword": newSecret,
 		})
 		if res.Status != http.StatusForbidden {
 			t.Fatalf("guess %d: %d %s", i, res.Status, res.Raw)
 		}
 	}
 	res := h.doFrom(t, ip, http.MethodPost, "/v1/me/password", f.WeigherToken, map[string]any{
-		"currentPassword": "una-mas-de-la-cuenta", "newPassword": newSecret,
+		"currentPassword": wrongGuess(h.loginFailuresPerPair), "newPassword": newSecret,
 	})
 	if res.Status != http.StatusTooManyRequests {
 		t.Fatalf("past the limit: %d %s", res.Status, res.Raw)
 	}
 }
+
+// wrongGuess is a made-up wrong current password for the limiter test.
+func wrongGuess(i int) string { return "wrong-guess-" + string(rune('a'+i)) }
 
 // TestPasswordResetIsNotOfferedWithoutAMailer: the shared harness has none.
 func TestPasswordResetIsNotOfferedWithoutAMailer(t *testing.T) {

@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ojardila/bascula/services/api/internal/domain"
 )
 
 // Employee is a worker. The table is `employees` and the route is
@@ -154,6 +157,71 @@ func FindDeletedByDocument(ctx context.Context, tx pgx.Tx, documentType, docID *
 	return e, nil
 }
 
+// NormalizeTag trims a basket number («número de canasto»). Blank is no
+// number at all, so it comes back nil.
+func NormalizeTag(tag *string) *string {
+	if tag == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*tag)
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
+// FindActiveByTag is the active worker or team (deleted_at IS NULL) carrying
+// tag, other than exceptID, or nil. The comparison ignores case and the
+// spaces around it, so «46 » and «46» are the same basket.
+//
+// ux_employees_tag is the backstop for the same rule; this lookup exists so
+// the refusal can NAME who has the number, which a unique violation cannot.
+func FindActiveByTag(ctx context.Context, tx pgx.Tx, tag, exceptID string) (*Employee, error) {
+	e, err := scanEmployee(tx.QueryRow(ctx, `
+		SELECT `+employeeCols+` FROM employees
+		 WHERE deleted_at IS NULL
+		   AND lower(btrim(tag)) = lower(btrim($1))
+		   AND id::text <> $2
+		 ORDER BY created_at
+		 LIMIT 1`, tag, exceptID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return e, err
+}
+
+// DuplicateTagError is the DUPLICATE_TAG refusal naming the holder.
+func DuplicateTagError(tag string, holder *Employee) *domain.Error {
+	name := holder.Name
+	if holder.LastName != nil && *holder.LastName != "" {
+		name += " " + *holder.LastName
+	}
+	return domain.Conflict(domain.CodeDuplicateTag,
+		"basket number "+tag+" is already carried by "+name+", an active worker of this farm").
+		WithDetails(map[string]any{
+			"employeeId": holder.ID,
+			"name":       holder.Name,
+			"lastName":   holder.LastName,
+			"kind":       holder.Kind,
+			"tag":        tag,
+		})
+}
+
+// CheckTagFree refuses tag when another active worker carries it.
+func CheckTagFree(ctx context.Context, tx pgx.Tx, tag *string, exceptID string) error {
+	if tag == nil {
+		return nil
+	}
+	holder, err := FindActiveByTag(ctx, tx, *tag, exceptID)
+	if err != nil {
+		return err
+	}
+	if holder != nil {
+		return DuplicateTagError(*tag, holder)
+	}
+	return nil
+}
+
 func CreateEmployee(ctx context.Context, tx pgx.Tx, farmID string, e Employee) (*Employee, error) {
 	return scanEmployee(tx.QueryRow(ctx, `
 		INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
@@ -226,10 +294,14 @@ func SoftDeleteEmployee(ctx context.Context, tx pgx.Tx, id, by string) error {
 // RestoreEmployee is the other half of the logical delete: "Eliminar nunca
 // borra" means the row is still there, so bringing somebody back on for the
 // next harvest is a PATCH and not a re-registration under a second id.
-func RestoreEmployee(ctx context.Context, tx pgx.Tx, id string) (*Employee, error) {
+//
+// newTag, when not nil, is the basket number the worker comes back with, set
+// in the same statement: their old number may have been given to somebody
+// else meanwhile, and restoring first would trip ux_employees_tag.
+func RestoreEmployee(ctx context.Context, tx pgx.Tx, id string, newTag *string) (*Employee, error) {
 	return scanEmployee(tx.QueryRow(ctx, `
-		UPDATE employees SET deleted_at = NULL, deleted_by = NULL WHERE id = $1
-		 RETURNING `+employeeCols, id))
+		UPDATE employees SET deleted_at = NULL, deleted_by = NULL, tag = coalesce($2, tag) WHERE id = $1
+		 RETURNING `+employeeCols, id, newTag))
 }
 
 // ---------------------------------------------------------------------------
@@ -301,8 +373,18 @@ func ReactivateForWork(ctx context.Context, tx pgx.Tx, farmID string, n NewReact
 		return false, nil
 	}
 
+	// The basket number comes back with the worker unless somebody active was
+	// given it while they were off the payroll: then the returning worker comes
+	// back WITHOUT a number («Sin canasto») rather than failing the weigher's
+	// push on ux_employees_tag. The office gives them a new one.
 	if _, err := tx.Exec(ctx, `
-		UPDATE employees SET deleted_at = NULL, deleted_by = NULL WHERE id = $1`,
+		UPDATE employees e SET deleted_at = NULL, deleted_by = NULL,
+		       tag = CASE WHEN EXISTS (
+		                   SELECT 1 FROM employees o
+		                    WHERE o.deleted_at IS NULL AND o.id <> e.id
+		                      AND lower(btrim(o.tag)) = lower(btrim(e.tag)))
+		                  THEN NULL ELSE e.tag END
+		 WHERE id = $1`,
 		n.EmployeeID); err != nil {
 		return false, err
 	}

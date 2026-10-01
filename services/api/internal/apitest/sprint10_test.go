@@ -286,7 +286,7 @@ func TestRemovingSomebodyFromAFarmStopsTheirLiveToken(t *testing.T) {
 	// A write, because a read that is refused and a write that is not is the
 	// worst of both.
 	res := h.do(t, http.MethodPost, "/v1/workers", adminToken, map[string]any{
-		"name": "Nadie", "documentType": "CC", "docId": "7099099099",
+		"name": "Nadie", "documentType": "CC", "docId": "7099099099", "tag": "99",
 	})
 	if res.code() != string(domain.CodeMembershipRevoked) {
 		t.Errorf("POST /v1/workers after removal: got %d %s, want MEMBERSHIP_REVOKED",

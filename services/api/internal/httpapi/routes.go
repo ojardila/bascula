@@ -28,6 +28,8 @@ func (s *Server) Routes() []Route {
 		// anybody at the platform intervening, after the address is verified.
 		{http.MethodPost, "/v1/signup", auth.ActionSignup, s.handleSignup},
 		{http.MethodPost, "/v1/auth/login", auth.ActionLogin, s.handleLogin},
+		{http.MethodPost, "/v1/auth/passkeys/login/options", auth.ActionPasskeyLogin, s.handlePasskeyLoginOptions},
+		{http.MethodPost, "/v1/auth/passkeys/login", auth.ActionPasskeyLogin, s.handlePasskeyLogin},
 		{http.MethodPost, "/v1/auth/refresh", auth.ActionRefresh, s.handleRefresh},
 		{http.MethodPost, "/v1/auth/verify-email", auth.ActionVerifyEmail, s.handleVerifyEmail},
 		// "Olvidé mi clave": whether a link can be mailed here, ask for one,
@@ -38,6 +40,10 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/auth/logout", auth.ActionLogout, s.handleLogout},
 		{http.MethodGet, "/v1/me", auth.ActionMeRead, s.handleMe},
 		{http.MethodPost, "/v1/me/password", auth.ActionPasswordWrite, s.handleChangePassword},
+		{http.MethodGet, "/v1/me/passkeys", auth.ActionPasskeysRead, s.handleListPasskeys},
+		{http.MethodPost, "/v1/me/passkeys/options", auth.ActionPasskeysWrite, s.handlePasskeyRegisterOptions},
+		{http.MethodPost, "/v1/me/passkeys", auth.ActionPasskeysWrite, s.handlePasskeyRegister},
+		{http.MethodDelete, "/v1/me/passkeys/{id}", auth.ActionPasskeysWrite, s.handleDeletePasskey},
 		{http.MethodGet, "/v1/me/tours", auth.ActionMeRead, s.handleListTours},
 		{http.MethodPut, "/v1/me/tours/{tour}", auth.ActionToursWrite, s.handleSaveTour},
 

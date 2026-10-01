@@ -103,6 +103,8 @@ type HarvestDashboardPlot struct {
 type HarvestDashboardPerson struct {
 	EmployeeID string `json:"employeeId"`
 	Name       string `json:"name"`
+	// Tag is the basket number («número de canasto»), nil when they have none.
+	Tag *string `json:"tag"`
 	// Kind is "persona" or "equipo". Members is how many people the row
 	// stands for (1 for a person; a team's members on the days it picked,
 	// averaged and rounded).
@@ -130,6 +132,7 @@ type HarvestDashboardPerson struct {
 type HarvestDashboardAbsent struct {
 	EmployeeID   string     `json:"employeeId"`
 	Name         string     `json:"name"`
+	Tag          *string    `json:"tag"`
 	LastRecordOn domain.Day `json:"lastRecordOn"`
 }
 
@@ -359,7 +362,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	if err != nil {
 		return nil, err
 	}
-	kinds, err := employeeKinds(ctx, tx, keys(people))
+	kinds, tags, err := employeeKinds(ctx, tx, keys(people))
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +404,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 				kind = KindPersona
 			}
 			row := HarvestDashboardPerson{
-				EmployeeID: id, Name: names[id], Kind: kind, Members: 1, Totals: p.t,
+				EmployeeID: id, Name: names[id], Tag: tags[id], Kind: kind, Members: 1, Totals: p.t,
 				DaysWorked: len(p.kgDays), PickedToday: p.today,
 			}
 			if p.t.Kg != nil && row.DaysWorked > 0 && len(p.heads) > 0 {
@@ -420,7 +423,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		}
 		if !p.today && active[id] {
 			out.NotToday = append(out.NotToday, HarvestDashboardAbsent{
-				EmployeeID: id, Name: names[id], LastRecordOn: domain.Day{Time: p.lastSeen},
+				EmployeeID: id, Name: names[id], Tag: tags[id], LastRecordOn: domain.Day{Time: p.lastSeen},
 			})
 		}
 	}
@@ -501,22 +504,25 @@ func plotNamesOf(ctx context.Context, tx pgx.Tx, ids []string) (map[string]strin
 }
 
 // employeeKinds returns persona/equipo for the given ids.
-func employeeKinds(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error) {
+func employeeKinds(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, map[string]*string, error) {
 	out := map[string]string{}
+	tags := map[string]*string{}
 	if len(ids) == 0 {
-		return out, nil
+		return out, tags, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text, kind FROM employees WHERE id = ANY($1::uuid[])`, ids)
+	rows, err := tx.Query(ctx, `SELECT id::text, kind, tag FROM employees WHERE id = ANY($1::uuid[])`, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id, kind string
-		if err := rows.Scan(&id, &kind); err != nil {
-			return nil, err
+		var tag *string
+		if err := rows.Scan(&id, &kind, &tag); err != nil {
+			return nil, nil, err
 		}
 		out[id] = kind
+		tags[id] = tag
 	}
-	return out, rows.Err()
+	return out, tags, rows.Err()
 }

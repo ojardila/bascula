@@ -81,12 +81,3 @@ func ConfirmAttachment(ctx context.Context, tx pgx.Tx, id, mime string, bytes in
 		 WHERE id = $1
 		 RETURNING `+attachmentCols, id, mime, bytes, sha))
 }
-
-// DeleteAttachment removes a row whose bytes never arrived, or whose upload
-// was refused. It only ever touches a pending one: a ready attachment may be
-// referenced by an employee or a sale, and the foreign keys would refuse
-// anyway — loudly, which is right.
-func DeleteAttachment(ctx context.Context, tx pgx.Tx, id string) error {
-	_, err := tx.Exec(ctx, `DELETE FROM attachments WHERE id = $1 AND status = 'pending'`, id)
-	return err
-}

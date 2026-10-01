@@ -399,11 +399,11 @@ func TestMCPRateLimitsPerUser(t *testing.T) {
 		return mcpRaw(srv, "", token, toolCallBody(name, args)).Body.String()
 	}
 	for i := 0; i < 2; i++ {
-		if out := call(f.OwnerToken, "create_worker", map[string]any{"name": fmt.Sprintf("W%d", i)}); strings.Contains(out, "RATE_LIMITED") {
+		if out := call(f.OwnerToken, "create_worker", map[string]any{"name": fmt.Sprintf("W%d", i), "tag": fmt.Sprintf("W%d", i)}); strings.Contains(out, "RATE_LIMITED") {
 			t.Fatalf("write %d limited too early: %s", i, out)
 		}
 	}
-	if out := call(f.OwnerToken, "create_worker", map[string]any{"name": "W3"}); !strings.Contains(out, "RATE_LIMITED") {
+	if out := call(f.OwnerToken, "create_worker", map[string]any{"name": "W3", "tag": "W3"}); !strings.Contains(out, "RATE_LIMITED") {
 		t.Fatalf("third write in a minute was not limited: %s", out)
 	}
 	for i := 0; i < 2; i++ {

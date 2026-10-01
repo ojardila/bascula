@@ -124,6 +124,26 @@ const conflict = (code: string, message: string, details?: Record<string, unknow
 
 const noContent = () => new HttpResponse(null, { status: 204 });
 
+/**
+ * «Número de canasto», as the server enforces it: required on create, trimmed,
+ * unique among the ACTIVE workers ignoring case, and a clash names the holder.
+ */
+const foldTag = (t: string | null | undefined) => (t ?? "").trim().toLowerCase();
+function tagHolder(workers: WireEmployee[], tag: string, exceptId: string): WireEmployee | undefined {
+  return workers.find((w) => w.deletedAt == null && w.id !== exceptId && w.tag && foldTag(w.tag) === foldTag(tag));
+}
+function duplicateTag(holder: WireEmployee, tag: string) {
+  return conflict("DUPLICATE_TAG", `basket number ${tag} is already carried by ${holder.name}`, {
+    employeeId: holder.id,
+    name: holder.name,
+    lastName: holder.lastName,
+    kind: holder.kind,
+    tag,
+  });
+}
+const tagRequired = () =>
+  badRequest("tag (the basket number) is required", { fields: { tag: "Escriba el número de canasto." } });
+
 /* -- tokens ---------------------------------------------------------- */
 
 const ACCESS_PREFIX = "mock-access.";
@@ -212,6 +232,8 @@ type Action =
   | "me.tours.write"
   | "me.password.write"
   | "mcp.connections.read"
+  | "me.passkeys.read"
+  | "me.passkeys.write"
   | "mcp.connections.revoke"
   | "mcp.activity.read"
   | "auth.logout"
@@ -284,6 +306,8 @@ const MATRIX: Record<Action, Rule> = {
   "me.tours.write": { roles: everyone },
   "me.password.write": { roles: everyone },
   "mcp.connections.read": { roles: everyone },
+  "me.passkeys.read": { roles: everyone },
+  "me.passkeys.write": { roles: everyone },
   "mcp.connections.revoke": { roles: everyone },
   "mcp.activity.read": { roles: admins },
   "auth.logout": { roles: everyone },
@@ -438,6 +462,12 @@ function guard(request: Request, action: Action): Guarded {
 const seesPrivateData = (p: Principal) => p.role === "owner" || p.role === "admin";
 
 /* -- small helpers --------------------------------------------------- */
+
+/** 32 random bytes, base64url, as a WebAuthn challenge is sent. */
+function mockChallenge(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const nowInstant = () => new Date().toISOString();
@@ -892,6 +922,46 @@ export const handlers = [
     if (db.farmOf(chosen.farmId)?.suspendedAt) {
       return fail(403, "FARM_SUSPENDED", "that farm is suspended");
     }
+    return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID()));
+  }),
+
+  /**
+   * Passkey sign-in. The mock checks no signature — there is no key to check
+   * it with in a browser-only demo — but it does what the API does with the
+   * answer: find the passkey by credential id, then the same farm rules as
+   * the password.
+   */
+  http.post("*/v1/auth/passkeys/login/options", () =>
+    HttpResponse.json({
+      challenge: `mock-${crypto.randomUUID()}`,
+      publicKey: {
+        challenge: mockChallenge(),
+        rpId: location.hostname,
+        timeout: 300000,
+        userVerification: "required",
+      },
+    }),
+  ),
+
+  http.post("*/v1/auth/passkeys/login", async ({ request }) => {
+    await delay(200);
+    const body = (await request.json()) as { credential?: { id?: string }; farmId?: string };
+    const key = db.passkeys.find((k) => k.credentialId === body.credential?.id);
+    const user = key && db.users.find((u) => u.id === key.userId);
+    if (!key || !user) return fail(401, "INVALID_CREDENTIALS", "that passkey is not recognised");
+    const owned = db.membershipsOf(user.id);
+    let chosen: db.MockMembership | undefined;
+    const pinned = pinnedFarm(request);
+    if (pinned) chosen = owned.find((m) => m.farmId === pinned.id);
+    else if (body.farmId) chosen = owned.find((m) => m.farmId === body.farmId);
+    else if (owned.length === 1) chosen = owned[0];
+    else {
+      return badRequest("choose a farm", {
+        farms: owned.map((m) => ({ id: m.farmId, name: db.farmOf(m.farmId)?.name ?? "", role: m.role })),
+      });
+    }
+    if (!chosen) return fail(403, "FORBIDDEN", "that passkey does not open that farm");
+    key.lastUsedAt = nowInstant();
     return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID()));
   }),
 
@@ -1592,8 +1662,12 @@ export const handlers = [
     const t = g.p.tenant;
 
     const id = body.id ?? crypto.randomUUID();
+    const tag = (body.tag ?? "").trim();
+    if (!tag) return tagRequired();
     const already = t.workers.find((w) => w.id === id);
     if (already) return HttpResponse.json(already);
+    const holder = tagHolder(t.workers, tag, id);
+    if (holder) return duplicateTag(holder, tag);
 
     // `ux_employees_doc`. The same cedula twice is one person with two
     // ledgers, which is how somebody gets paid twice.
@@ -1632,7 +1706,7 @@ export const handlers = [
       lastName: body.lastName ?? null,
       documentType: body.documentType ?? null,
       docId: body.docId ?? null,
-      tag: body.tag ?? null,
+      tag,
       phone: body.phone ?? null,
       address: body.address ?? null,
       city: body.city ?? null,
@@ -1666,8 +1740,27 @@ export const handlers = [
     if (bad) return bad;
     const worker = g.p.tenant.workers.find((w) => w.id === params.id);
     if (!worker) return notFound();
+    if (body.tag !== undefined) {
+      const next = (body.tag ?? "").trim();
+      if (!next) {
+        // Can be changed, not removed; a worker from before the rule stays without.
+        if (worker.tag) return tagRequired();
+        delete body.tag;
+      } else {
+        const holder = tagHolder(g.p.tenant.workers, next, worker.id);
+        if (holder) return duplicateTag(holder, next);
+        body.tag = next;
+      }
+    }
+    if (body.status === "active" && worker.deletedAt != null && body.tag === undefined && worker.tag) {
+      const holder = tagHolder(g.p.tenant.workers, worker.tag, worker.id);
+      if (holder) return duplicateTag(holder, worker.tag);
+    }
     if (body.status === "inactive" && worker.deletedAt == null) worker.deletedAt = nowInstant();
-    if (body.status === "active") worker.deletedAt = null;
+    if (body.status === "active") {
+      worker.deletedAt = null;
+      if (body.tag) worker.tag = body.tag;
+    }
     // `UpdateEmployee` skips deleted rows by design; a deactivation on its own
     // still answers with the row it changed.
     if (worker.deletedAt != null) return HttpResponse.json(worker);
@@ -2504,6 +2597,65 @@ export const handlers = [
     if (i >= 0) mine[i] = { ...row };
     else mine.push({ ...row });
     return HttpResponse.json(row);
+  }),
+
+  /* ---- passkeys («Llaves de acceso») ---- */
+
+  http.get("*/v1/me/passkeys", ({ request }) => {
+    const g = guard(request, "me.passkeys.read");
+    if (g.deny) return g.deny;
+    const items = db.passkeys
+      .filter((k) => k.userId === g.p.user.id)
+      .map(({ id, name, createdAt, lastUsedAt }) => ({ id, name, createdAt, lastUsedAt }));
+    return HttpResponse.json({ items });
+  }),
+
+  http.post("*/v1/me/passkeys/options", ({ request }) => {
+    const g = guard(request, "me.passkeys.write");
+    if (g.deny) return g.deny;
+    return HttpResponse.json({
+      challenge: `mock-${crypto.randomUUID()}`,
+      publicKey: {
+        challenge: mockChallenge(),
+        rp: { name: "Báscula", id: location.hostname },
+        user: { id: mockChallenge(), name: g.p.user.email, displayName: g.p.user.name || g.p.user.email },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        timeout: 300000,
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        attestation: "none",
+      },
+    });
+  }),
+
+  http.post("*/v1/me/passkeys", async ({ request }) => {
+    const g = guard(request, "me.passkeys.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as { credential?: { id?: string }; name?: string };
+    const credentialId = body.credential?.id;
+    if (!credentialId) return badRequest("credential is required");
+    if (db.passkeys.some((k) => k.credentialId === credentialId)) {
+      return conflict("CONFLICT", "that passkey is already registered");
+    }
+    const row: db.MockPasskey = {
+      id: crypto.randomUUID(),
+      userId: g.p.user.id,
+      credentialId,
+      name: body.name?.trim() || "Llave de acceso",
+      createdAt: nowInstant(),
+      lastUsedAt: null,
+    };
+    db.passkeys.push(row);
+    const { id, name, createdAt, lastUsedAt } = row;
+    return HttpResponse.json({ id, name, createdAt, lastUsedAt }, { status: 201 });
+  }),
+
+  http.delete("*/v1/me/passkeys/:id", ({ request, params }) => {
+    const g = guard(request, "me.passkeys.write");
+    if (g.deny) return g.deny;
+    const i = db.passkeys.findIndex((k) => k.id === String(params.id) && k.userId === g.p.user.id);
+    if (i < 0) return fail(404, "NOT_FOUND", "no passkey with that id");
+    db.passkeys.splice(i, 1);
+    return noContent();
   }),
 
   /* ---- MCP connections («Conexiones» in Configuración) ---- */
@@ -3810,6 +3962,7 @@ export const handlers = [
       const w = t.workers.find((x) => x.id === id);
       return w ? `${w.name} ${w.lastName ?? ""}`.trim() : "";
     };
+    const tagOf = (id: string) => t.workers.find((x) => x.id === id)?.tag ?? null;
 
     const rows = t.workRecords.filter(
       (r) => r.deletedAt === null && r.payScheme === "unidad_trabajo" &&
@@ -3855,7 +4008,7 @@ export const handlers = [
       const daysWorked = new Set(mine.filter((r) => kgOf(r) !== null).map(dayOfR)).size;
       const kgPerDay = tt.kg !== null && daysWorked > 0 ? tt.kg / daysWorked : null;
       return {
-        employeeId, name: nameOf(employeeId), kind: "persona" as const, members: 1, kgEach: tt.kg,
+        employeeId, name: nameOf(employeeId), tag: tagOf(employeeId), kind: "persona" as const, members: 1, kgEach: tt.kg,
         ...tt, daysWorked, kgPerDay,
         pickedToday: mine.some((r) => dayOfR(r) === todayD),
         belowAverage: compare && kgPerDay !== null && kgPerDay < (kgPerPersonDay as number) * 0.7,
@@ -3868,6 +4021,7 @@ export const handlers = [
       .map((employeeId) => ({
         employeeId,
         name: nameOf(employeeId),
+        tag: tagOf(employeeId),
         lastRecordOn: rows.filter((r) => r.workerId === employeeId).map(dayOfR).sort().pop() as string,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));

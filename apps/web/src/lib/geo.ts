@@ -215,9 +215,6 @@ export function areaHaOf(g: Geometry): number {
   return Math.max(0, m2) / 10_000;
 }
 
-/** Hectares of one open ring, which is what the editor holds while drawing. */
-export const areaHaOfRing = (ring: LinearRing): number => ringAreaM2(ring) / 10_000;
-
 /**
  * The perimeter in metres, so the panel can say "1.240 m de linde".
  *
@@ -446,12 +443,6 @@ export function parseDegrees(raw: string): number | null {
   if (!cleaned || !/^[+-]?\d*\.?\d*$/.test(cleaned)) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
-}
-
-/** Metres, grouped the Colombian way, with no decimals below a kilometre. */
-export function formatMetres(m: number): string {
-  if (m >= 1000) return `${(m / 1000).toFixed(2).replace(".", ",")} km`;
-  return `${Math.round(m).toLocaleString("es-CO")} m`;
 }
 
 /* ------------------------------------------------------------------ */

@@ -337,6 +337,17 @@ export const farms: MockFarm[] = [];
 export const users: MockUser[] = [];
 export const memberships: MockMembership[] = [];
 export const refreshTokens: MockRefreshToken[] = [];
+
+/** A passkey, as the mock keeps it: the credential id is all a sign-in names. */
+export interface MockPasskey {
+  id: string;
+  userId: string;
+  credentialId: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+export const passkeys: MockPasskey[] = [];
 export const verifications: MockEmailVerification[] = [];
 export const tenants = new Map<string, Tenant>();
 
@@ -791,6 +802,7 @@ export function resetDb(): void {
   users.length = 0;
   memberships.length = 0;
   refreshTokens.length = 0;
+  passkeys.length = 0;
   verifications.length = 0;
   tenants.clear();
   accessTokenEpoch = 0;

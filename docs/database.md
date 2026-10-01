@@ -278,6 +278,21 @@ erDiagram
         timestamptz expires_at
         text scope
     }
+    passkey_used_challenges {
+        bytea challenge_hash PK
+        timestamptz expires_at
+    }
+    passkeys {
+        uuid id PK
+        uuid user_id FK
+        text rp_id
+        bytea credential_id UK
+        uuid only_farm_id FK "null"
+        text name
+        jsonb record
+        timestamptz created_at
+        timestamptz last_used_at "null"
+    }
     password_resets {
         uuid id PK
         uuid user_id FK
@@ -589,6 +604,7 @@ erDiagram
     farms ||--o{ ledger : "farm_id"
     farms ||--o{ mcp_audit : "farm_id"
     farms ||--o{ memberships : "farm_id"
+    farms |o--o{ passkeys : "only_farm_id"
     farms ||--o{ plot_crops : "farm_id"
     farms ||--o{ plot_prices : "farm_id"
     farms ||--o{ plots : "farm_id"
@@ -646,6 +662,7 @@ erDiagram
     users |o--o{ ledger : "created_by"
     users ||--o{ mcp_audit : "user_id"
     users ||--o{ memberships : "user_id"
+    users ||--o{ passkeys : "user_id"
     users ||--o{ password_resets : "user_id"
     users |o--o{ plot_prices : "created_by"
     users ||--o{ refresh_tokens : "user_id"
@@ -698,6 +715,8 @@ erDiagram
 | `public.memberships` | 3 |  |
 | `public.oauth_clients` | 9 |  |
 | `public.oauth_codes` | 9 |  |
+| `public.passkey_used_challenges` | 2 |  |
+| `public.passkeys` | 9 |  |
 | `public.password_resets` | 6 |  |
 | `public.plot_crops` | 10 |  |
 | `public.plot_prices` | 6 | Fixed kilo price for one lote, effective from a Monday; NULL price ends it. Money: owner and administrator read, owner writes. See migration 00034. |

@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Avatar, Box, Button, Card, CardContent, Checkbox, Dialog, DialogActions, DialogContent,
+  Alert, Box, Button, Card, CardContent, Checkbox, Dialog, DialogActions, DialogContent,
   DialogTitle, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, Stack, TextField,
   Typography,
 } from "@mui/material";
@@ -19,7 +19,8 @@ import GroupsIcon from "@mui/icons-material/Groups";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import { api } from "../../api/endpoints";
-import { messageFor } from "../../api/errors";
+import { ApiError, duplicateTagField, messageFor } from "../../api/errors";
+import { BASKET_LABEL, BASKET_REQUIRED, BasketTile } from "../workers/Basket";
 import { useAuth } from "../../auth/AuthContext";
 import { uuidv7 } from "../../lib/uuid";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -30,10 +31,6 @@ import { foldName } from "../workrecords/bulk";
 import { isTeam } from "./team";
 
 const big = { fontSize: "1.15rem" } as const;
-
-function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
-}
 
 export function TeamFormPage() {
   const navigate = useNavigate();
@@ -52,6 +49,8 @@ export function TeamFormPage() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [hadTag, setHadTag] = useState(false);
   const [adding, setAdding] = useState(false);
   const { busy, run } = useWriteOnce();
 
@@ -67,6 +66,7 @@ export function TeamFormPage() {
       if (team) {
         setName(`${team.name} ${team.lastName}`.trim());
         setTag(team.tag ?? "");
+        setHadTag(!!team.tag);
         setWasPerson(!isTeam(team));
         const ids = new Set((team.members ?? []).map((m) => m.id));
         setSelected(ids);
@@ -106,11 +106,11 @@ export function TeamFormPage() {
   async function onSubmit(ev: FormEvent) {
     ev.preventDefault();
     setError(null);
-    if (!name.trim()) {
-      setNameError("Escriba el nombre del equipo.");
-      return;
-    }
-    setNameError(null);
+    const missingName = !name.trim();
+    const missingTag = !tag.trim() && (!editing || hadTag);
+    setNameError(missingName ? "Escriba el nombre del equipo." : null);
+    setTagError(missingTag ? BASKET_REQUIRED : null);
+    if (missingName || missingTag) return;
     const memberIds = [...selected];
     const outcome = await run(`equipo|${teamId}|${memberIds.join(",")}|${from}`, async () => {
       if (!editing) {
@@ -131,11 +131,12 @@ export function TeamFormPage() {
       return api.updateWorker(teamId, {
         name: name.trim(),
         lastName: "",
-        tag: tag.trim() || null,
+        ...(tag.trim() || hadTag ? { tag: tag.trim() } : {}),
         ...(changed || wasPerson ? { memberIds, membersFrom: from } : {}),
       });
     }).catch((e: unknown) => {
-      setError(messageFor(e));
+      if (e instanceof ApiError && e.code === "DUPLICATE_TAG") setTagError(duplicateTagField(e));
+      else setError(messageFor(e));
       return { ran: false } as const;
     });
     if (!outcome.ran) return;
@@ -173,10 +174,23 @@ export function TeamFormPage() {
           sx={{ "& input": big }}
         />
         <TextField
-          label="Número de canasto (opcional)"
+          label={BASKET_LABEL}
           value={tag}
           onChange={(e) => setTag(e.target.value)}
-          sx={{ "& input": big }}
+          error={!!tagError}
+          helperText={
+            tagError ??
+            (editing && !hadTag
+              ? "Este equipo todavía no tiene número de canasto. Escríbalo aquí."
+              : "El equipo tiene su propio número, por ejemplo 46-63. Cada persona conserva el suyo.")
+          }
+          required={!editing || hadTag}
+          slotProps={{ htmlInput: { autoCapitalize: "characters" } }}
+          sx={{
+            maxWidth: 360,
+            "& input": { fontSize: "2rem", fontWeight: 800, py: 1.5 },
+            "& .MuiFormHelperText-root": { fontSize: "0.95rem" },
+          }}
         />
 
         <Box>
@@ -219,9 +233,7 @@ export function TeamFormPage() {
                           sx={{ "& .MuiSvgIcon-root": { fontSize: 30 } }}
                         />
                       </ListItemIcon>
-                      <Avatar sx={{ width: 40, height: 40, mr: 1.5, bgcolor: "action.selected", color: "text.primary", fontSize: "0.95rem" }}>
-                        {initials(label)}
-                      </Avatar>
+                      <BasketTile tag={p.tag} size={44} sx={{ mr: 1.5 }} />
                       <ListItemText
                         primary={label}
                         secondary={other ? `Ya está en el equipo ${other.name}` : p.tag ? `Canasto ${p.tag}` : "Sin canasto"}
@@ -279,13 +291,14 @@ export function TeamFormPage() {
   );
 }
 
-/** The quickest way to put a member on the list: a name, and the tag if there is one. */
+/** The quickest way to put a member on the list: a name and their basket number. */
 function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Worker) => void }) {
   const [workerId] = useState(() => uuidv7());
   const [name, setName] = useState("");
   const [lastName, setLastName] = useState("");
   const [tag, setTag] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [tagError, setTagError] = useState<string | null>(null);
   const { busy, run } = useWriteOnce();
 
   async function save() {
@@ -293,6 +306,11 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
       setError("Escriba el nombre.");
       return;
     }
+    if (!tag.trim()) {
+      setTagError(BASKET_REQUIRED);
+      return;
+    }
+    setTagError(null);
     const outcome = await run(`persona|${workerId}`, () =>
       api.createWorker({
         id: workerId,
@@ -301,10 +319,11 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         documentType: "CC",
         documentNumber: "",
         phone: "",
-        tag: tag.trim() || null,
+        tag: tag.trim(),
       }),
     ).catch((e: unknown) => {
-      setError(messageFor(e));
+      if (e instanceof ApiError && e.code === "DUPLICATE_TAG") setTagError(duplicateTagField(e));
+      else setError(messageFor(e));
       return { ran: false } as const;
     });
     if (outcome.ran) onCreated(outcome.value);
@@ -318,7 +337,15 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           {error && <Alert severity="error">{error}</Alert>}
           <TextField label="Nombres" value={name} onChange={(e) => setName(e.target.value)} autoFocus required sx={{ "& input": big }} />
           <TextField label="Apellidos (opcional)" value={lastName} onChange={(e) => setLastName(e.target.value)} sx={{ "& input": big }} />
-          <TextField label="Número de canasto (opcional)" value={tag} onChange={(e) => setTag(e.target.value)} sx={{ "& input": big }} />
+          <TextField
+            label={BASKET_LABEL}
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            error={!!tagError}
+            helperText={tagError ?? "El número de su propio canasto."}
+            required
+            sx={{ "& input": { fontSize: "1.6rem", fontWeight: 800 } }}
+          />
           <Typography color="text.secondary">La cédula y el teléfono se pueden completar después en su ficha.</Typography>
         </Stack>
       </DialogContent>

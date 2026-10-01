@@ -97,22 +97,6 @@ func EnsureCatalogItem(ctx context.Context, tx pgx.Tx, c Catalog, farmID, id, na
 	return &out, nil
 }
 
-// FindCatalogItem looks a name up without creating it.
-func FindCatalogItem(ctx context.Context, tx pgx.Tx, c Catalog, name string) (*CatalogItem, error) {
-	table, ok := catalogTable(c)
-	if !ok {
-		return nil, fmt.Errorf("unknown catalog %q", c)
-	}
-	var out CatalogItem
-	err := tx.QueryRow(ctx, `
-		SELECT id::text, name FROM `+table+` WHERE lower(name) = lower($1) AND deleted_at IS NULL`,
-		name).Scan(&out.ID, &out.Name)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 // SeedCatalogs gives a new farm the categories it starts with.
 func SeedCatalogs(ctx context.Context, tx pgx.Tx, farmID string, newID func() string) error {
 	for _, name := range SeedActivityCategories {

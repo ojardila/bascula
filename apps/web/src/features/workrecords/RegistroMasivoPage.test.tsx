@@ -315,7 +315,7 @@ describe("Registro masivo: «Buscar por nombre»", () => {
     const all = shownNames();
     expect(all.length).toBeGreaterThan(2);
     const search = screen.getByRole("textbox", { name: "Buscar por nombre" });
-    expect(search).toHaveAttribute("placeholder", "Buscar por nombre");
+    expect(search).toHaveAttribute("placeholder", "Buscar por nombre o canasto");
 
     // «marin» finds «Édinson Marín Ríos»; so does «EDINSON».
     await user.type(search, "marin");
@@ -334,7 +334,7 @@ describe("Registro masivo: «Buscar por nombre»", () => {
     await user.clear(search);
     await user.type(search, "nubia");
     expect(shownNames()).toEqual([]);
-    expect(screen.getByText("No hay nadie con ese nombre")).toBeInTheDocument();
+    expect(screen.getByText("No hay nadie con ese nombre o canasto")).toBeInTheDocument();
 
     // The clear button brings everyone back and leaves the search ready.
     await user.click(screen.getByRole("button", { name: "Borrar la búsqueda" }));

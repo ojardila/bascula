@@ -2,6 +2,7 @@ import { Box, Stack, Typography } from "@mui/material";
 import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";
 import { ChangePasswordCard } from "./ChangePasswordCard";
+import { PasskeysCard } from "./PasskeysCard";
 
 /**
  * «Conexiones» as a page of its own, for the weigher: they have no
@@ -20,6 +21,7 @@ export function ConnectionsPage() {
         <ConnectionsCard />
         <McpActivityCard />
         <ChangePasswordCard />
+        <PasskeysCard />
       </Stack>
     </Box>
   );

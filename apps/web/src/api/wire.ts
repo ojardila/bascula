@@ -1435,6 +1435,8 @@ export interface WireHarvestDashboardPlot extends WireReportTotals {
 export interface WireHarvestDashboardPerson extends WireReportTotals {
   employeeId: Uuid;
   name: string;
+  /** The basket number («número de canasto»); null when they have none. */
+  tag: string | null;
   kind: WireWorkerKind;
   /** People behind the row: 1 for a person, the team's average members. */
   members: number;
@@ -1449,6 +1451,7 @@ export interface WireHarvestDashboardPerson extends WireReportTotals {
 export interface WireHarvestDashboardAbsent {
   employeeId: Uuid;
   name: string;
+  tag: string | null;
   lastRecordOn: DayISO;
 }
 

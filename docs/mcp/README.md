@@ -214,7 +214,7 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 
 ## Teams («Equipos»)
 
-Some farms pay a pair or a family as one account: one tag, one weighing, one
+Some farms pay a pair or a family as one account: one basket number, one weighing, one
 payment. Báscula models that as a worker of `kind: "equipo"` with members
 (real people, `kind: "persona"`). See
 [`docs/use-cases/teams.md`](../use-cases/teams.md). For the assistant:
@@ -238,6 +238,28 @@ payment. Báscula models that as a worker of `kind: "equipo"` with members
   rows carry `members` and `kgEach` (kilos each) beside `kg` (together).
   `worker_performance` for a member returns their share (team kilos ÷ members
   that day) and the team.
+
+## Basket numbers («Número de canasto»)
+
+The worker field `tag` is the **basket number** — the number painted on the
+basket, which is how the scale finds a person or a team.
+
+- `create_worker` and `create_team` **require** `tag`. It is trimmed and must be
+  unique among the farm's **active** workers and teams (compared ignoring case).
+  A clash is `409 DUPLICATE_TAG`; `details.name`/`details.employeeId` say who
+  has it, and the assistant should ask the user for another number rather than
+  invent one.
+- A team has **its own** basket number (e.g. `46-63`, or the number of the
+  basket they share); its members keep theirs. Searching a member's number
+  finds the member, whose `team` says which account to weigh.
+- `update_worker` can change `tag` but not remove it. Workers registered before
+  the number was required may have `tag: null` («Sin canasto»); give them one
+  with `update_worker`. To reactivate somebody whose old number was given to
+  another active worker, send `status: "active"` with a new `tag`.
+- `list_workers` returns `tag` on every row and `q` matches it, so «el 46»
+  resolves with `list_workers q=46`. `register_weighing` and
+  `register_harvest_week` tell the assistant to translate basket numbers this
+  way and confirm the name before writing.
 
 ## The reference page (`/mcp/docs`)
 

@@ -30,7 +30,13 @@ const (
 	ActionVerifyEmail     Action = "auth.verify_email"
 	ActionLogout          Action = "auth.logout"
 	ActionMeRead          Action = "me.read"
-	ActionToursWrite      Action = "me.tours.write"
+	// Passkeys: signing in with one is the fourth door into a session; the
+	// other two are a person managing their own, so they are open to every
+	// role and never reach anybody else's.
+	ActionPasskeyLogin  Action = "auth.passkey"
+	ActionPasskeysRead  Action = "me.passkeys.read"
+	ActionPasskeysWrite Action = "me.passkeys.write"
+	ActionToursWrite    Action = "me.tours.write"
 	// ActionPasswordWrite changes the caller's own password.
 	ActionPasswordWrite Action = "me.password.write"
 	// ActionPasswordReset is "olvidé mi clave": ask for a link, spend it.
@@ -214,6 +220,9 @@ var Matrix = map[Action]Rule{
 	ActionLogout:           {Roles: everyone},
 	ActionMeRead:           {Roles: everyone},
 	ActionToursWrite:       {Roles: everyone},
+	ActionPasskeyLogin:     {Public: true, TenantOptional: true},
+	ActionPasskeysRead:     {Roles: everyone},
+	ActionPasskeysWrite:    {Roles: everyone},
 	ActionPasswordWrite:    {Roles: everyone},
 	ActionPasswordReset:    {Public: true, TenantOptional: true},
 

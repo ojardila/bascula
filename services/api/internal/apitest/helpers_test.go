@@ -1,7 +1,6 @@
 package apitest
 
 import (
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -13,7 +12,7 @@ import (
 func (h *harness) createWorker(t *testing.T, f *farmFixture, name, docID string) string {
 	t.Helper()
 	res := h.mustDo(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": name, "documentType": "CC", "docId": docID,
+		"name": name, "documentType": "CC", "docId": docID, "tag": "C" + docID,
 	}, http.StatusCreated)
 	id, _ := res.Body["id"].(string)
 	if id == "" {
@@ -170,5 +169,3 @@ func mustInt(t *testing.T, m map[string]any, key string) int64 {
 	}
 	return int64(v)
 }
-
-func describe(v any) string { return fmt.Sprintf("%v", v) }

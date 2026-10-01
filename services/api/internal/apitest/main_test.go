@@ -393,12 +393,6 @@ func (f *farmFixture) loginSecret() string {
 	return string(b)
 }
 
-func (h *harness) addUser(t *testing.T, farmID string, role domain.Role, _ string) string {
-	t.Helper()
-	_, token := h.addUserWithID(t, farmID, role)
-	return token
-}
-
 // addUserWithID seeds a member directly. There is no user management endpoint
 // in this sprint, and inventing one just to have fixtures would be building
 // the wrong thing for the wrong reason.

@@ -608,7 +608,8 @@ var cropItemSchema = &jsonschema.Schema{
 var mcpWriteTools = []mcpWriteTool{
 	{
 		Name: "create_worker", Title: "Crear trabajador",
-		Description: "Registra UNA persona (recolector) nueva en la finca. Solo el nombre es obligatorio. " +
+		Description: "Registra UNA persona (recolector) nueva en la finca. Son obligatorios el nombre y el número de canasto (tag), " +
+			"que no puede tenerlo otro trabajador o equipo activo de la finca (DUPLICATE_TAG dice quién lo tiene: pida otro número al usuario, no invente uno). " +
 			"Si ya existe uno desactivado con el mismo documento, la finca responde EMPLOYEE_EXISTS_DELETED: reactívelo con update_worker status=active en vez de crear otro. " +
 			"IMPORTANTE: si son dos o más personas que recogen juntas y cobran juntas (p. ej. «Yorman y Sergio», «Ana / Luis», «Pedro & Juan»), " +
 			"NO cree un solo trabajador con los dos nombres: cree cada persona con create_worker y después el equipo con create_team. " +
@@ -617,7 +618,7 @@ var mcpWriteTools = []mcpWriteTool{
 		Params: []mcpParam{
 			{Name: "name", Type: "string", Required: true, Description: "Nombre(s)."},
 			{Name: "lastName", Type: "string", Description: "Apellidos."},
-			{Name: "tag", Type: "string", Description: "El número de su canasto; único en la finca."},
+			{Name: "tag", Type: "string", Required: true, Description: "Número de canasto (obligatorio), p. ej. 46. Único entre los trabajadores y equipos activos de la finca."},
 			{Name: "documentType", Type: "string", Description: "Tipo de documento (CC, CE, TI, PPT…)."},
 			{Name: "docId", Type: "string", Description: "Número de documento."},
 			{Name: "phone", Type: "string", Description: "Teléfono."},
@@ -635,7 +636,7 @@ var mcpWriteTools = []mcpWriteTool{
 			if status == http.StatusOK {
 				return "Ese id ya existía: no se creó otro trabajador (" + workerName(b) + ")."
 			}
-			msg := "Trabajador creado: " + workerName(b) + " (id " + strField(b, "id") + ")."
+			msg := "Trabajador creado: " + workerName(b) + ", canasto " + strField(b, "tag") + " (id " + strField(b, "id") + ")."
 			if looksLikeTeamName(workerName(b)) {
 				msg += " Atención: el nombre parece de VARIAS personas. Si recogen y cobran juntas, " +
 					"conviértalo en equipo (update_worker kind=equipo) y agregue cada persona con create_worker y set_team_members."
@@ -647,6 +648,8 @@ var mcpWriteTools = []mcpWriteTool{
 		Name: "update_worker", Title: "Actualizar o desactivar trabajador o equipo",
 		Description: "Cambia los datos de un trabajador o de un equipo, o lo desactiva (status=inactive) o reactiva (status=active). " +
 			"Desactivar no borra nada: su historia y su saldo se conservan. Solo se cambian los campos que envíe. " +
+			"tag es el número de canasto: se puede cambiar pero no quitar, y no puede repetir el de otro activo (DUPLICATE_TAG). " +
+			"Úselo para ponerle canasto a quien aparece con tag null («Sin canasto»). Para reactivar a alguien cuyo número ya tiene otro, envíe status=active con un tag nuevo. " +
 			"kind=equipo convierte un registro que en realidad es de varias personas (p. ej. «Yorman y Sergio») en un equipo, " +
 			"conservando su id, sus pesadas y su saldo; luego cree cada persona y agréguelas con set_team_members.",
 		Method: http.MethodPatch, Pattern: "/v1/workers/{id}",
@@ -654,7 +657,7 @@ var mcpWriteTools = []mcpWriteTool{
 			{Name: "id", Type: "string", Format: "uuid", Required: true, Description: "El trabajador (UUID)."},
 			{Name: "name", Type: "string", Description: "Nombre(s)."},
 			{Name: "lastName", Type: "string", Description: "Apellidos."},
-			{Name: "tag", Type: "string", Description: "Número de canasto."},
+			{Name: "tag", Type: "string", Description: "Número de canasto nuevo. Único entre los activos; no se puede dejar vacío."},
 			{Name: "documentType", Type: "string", Description: "Tipo de documento."},
 			{Name: "docId", Type: "string", Description: "Número de documento."},
 			{Name: "phone", Type: "string", Description: "Teléfono."},
@@ -691,11 +694,13 @@ var mcpWriteTools = []mcpWriteTool{
 			"El equipo es una sola cuenta: se pesa al equipo (register_weighing / register_harvest_week con el id del equipo), " +
 			"se liquida y se paga al equipo, y su saldo es uno solo. Para los promedios y el ranking, sus kilos se dividen entre los integrantes. " +
 			"Cada integrante debe existir antes como persona (create_worker) y no puede estar en otro equipo. " +
+			"El equipo necesita SU PROPIO número de canasto (tag, obligatorio; p. ej. 46-63 o el número del canasto que comparten), distinto del de cualquier otro activo; " +
+			"sus integrantes conservan el suyo. " +
 			"Mientras esté en el equipo, a un integrante no se le registran pesadas, anticipos ni descuentos propios (WORKER_IN_TEAM).",
 		Method: http.MethodPost, Pattern: "/v1/workers",
 		Params: []mcpParam{
 			{Name: "name", Type: "string", Required: true, Description: "Nombre del equipo, p. ej. «Yorman y Sergio»."},
-			{Name: "tag", Type: "string", Description: "Opcional: número(s) de canasto del equipo, p. ej. 46-63."},
+			{Name: "tag", Type: "string", Required: true, Description: "Número de canasto del equipo (obligatorio), p. ej. 46-63. Único entre los activos de la finca."},
 			{Name: "memberIds", Required: true, Schema: &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Type: "string", Format: "uuid"},
 				MinItems: jsonschemaInt(1), Description: "Los integrantes (UUID de personas, ver list_workers)."}},
 			{Name: "membersFrom", Type: "string", Format: "date", Description: "Desde qué día son equipo (YYYY-MM-DD). Por defecto, hoy."},
@@ -718,7 +723,7 @@ var mcpWriteTools = []mcpWriteTool{
 			if status == http.StatusOK {
 				return "Ese id ya existía: no se creó otro equipo (" + workerName(b) + ")."
 			}
-			return "Equipo creado: " + workerName(b) + " con " + memberNames(b) + " (id " + strField(b, "id") + ")."
+			return "Equipo creado: " + workerName(b) + ", canasto " + strField(b, "tag") + ", con " + memberNames(b) + " (id " + strField(b, "id") + ")."
 		},
 	},
 	{
@@ -803,7 +808,8 @@ var mcpWriteTools = []mcpWriteTool{
 		Name: "register_weighing", Title: "Registrar una pesada",
 		Description: "Registra UNA pesada: cuántos kilos recogió un trabajador o un EQUIPO un día. Se paga al precio de la semana cuando se liquide. " +
 			"Si la persona está en un equipo, pese al equipo (workerId del equipo, ver list_workers): a un integrante no se le registran pesadas propias (WORKER_IN_TEAM). " +
-			"Aunque ese día venga un solo integrante, se pesa al equipo. Para una semana completa de varias personas use register_harvest_week.",
+			"Aunque ese día venga un solo integrante, se pesa al equipo. Si el usuario dice un número de canasto (p. ej. «el 46 trajo 30 kg»), " +
+			"búsquelo con list_workers q=46 (tag es el canasto) y confirme el nombre antes de registrar. Para una semana completa de varias personas use register_harvest_week.",
 		Method: http.MethodPost, Pattern: "/v1/pickups",
 		Params: []mcpParam{
 			wWorkerID,
@@ -839,6 +845,7 @@ var mcpWriteTools = []mcpWriteTool{
 		Description: "Registra de una sola vez todas las pesadas de una semana (varias personas, varios días). Es atómico: si una línea falla, " +
 			"no se guarda ninguna y el error dice cuál línea (details.line, desde 0). Todas las fechas deben caer en la semana del lunes indicado. " +
 			"Un equipo (kind=equipo en list_workers) es una sola fila: use el workerId del equipo, nunca el de sus integrantes (WORKER_IN_TEAM). " +
+			"Si la planilla trae números de canasto en vez de nombres, tradúzcalos con list_workers (tag = canasto). " +
 			"Envíe un id (UUID) propio para poder reintentar sin duplicar.",
 		Method: http.MethodPost, Pattern: "/v1/work-records/batch",
 		Params: []mcpParam{

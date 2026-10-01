@@ -119,8 +119,8 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	}
 	// Idempotent by id.
 	key := uuid.NewString()
-	a := mustTool(t, sess, "create_worker", map[string]any{"name": "Otra", "id": key})
-	b := mustTool(t, sess, "create_worker", map[string]any{"name": "Otra", "id": key})
+	a := mustTool(t, sess, "create_worker", map[string]any{"name": "Otra", "id": key, "tag": "O-1"})
+	b := mustTool(t, sess, "create_worker", map[string]any{"name": "Otra", "id": key, "tag": "O-1"})
 	if a["status"].(float64) != 201 || b["status"].(float64) != 200 {
 		t.Errorf("create_worker with the same id twice: %v then %v", a["status"], b["status"])
 	}
@@ -350,7 +350,7 @@ func TestMCPWriteToolsKeepThePermissionTable(t *testing.T) {
 		"create_settlement": {"workerId": workerID, "from": "2026-08-24", "to": "2026-08-30"},
 		"void_settlement":   {"id": uuid.NewString()},
 		"set_kilo_price":    {"scope": "week", "monday": "2026-08-24", "priceCents": 1},
-		"create_worker":     {"name": "No"},
+		"create_worker":     {"name": "No", "tag": "N-1"},
 		"correct_weighing":  {"id": uuid.NewString(), "kg": 1},
 	} {
 		res := callTool(t, weigher, name, args)

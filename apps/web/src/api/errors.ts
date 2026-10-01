@@ -32,6 +32,10 @@ export class ApiError extends Error {
 
   /** The sentence to put in front of the user. */
   get spanishMessage(): string {
+    if (this.code === "DUPLICATE_TAG") {
+      const holder = duplicateTagHolder(this);
+      if (holder) return `Ese número de canasto ya lo tiene ${holder}. Escriba otro número.`;
+    }
     return ERROR_MESSAGES[this.code] ?? this.message;
   }
 
@@ -59,6 +63,25 @@ export class ApiError extends Error {
   get isUnsupported(): boolean {
     return this.status === 0 && this.code.startsWith("NOT_IMPLEMENTED");
   }
+}
+
+/**
+ * Who already carries the basket number a DUPLICATE_TAG refused: «Yorman
+ * Pérez», from the error's details. Null when the server could not say (two
+ * saves racing on the index).
+ */
+export function duplicateTagHolder(err: ApiError): string | null {
+  if (err.code !== "DUPLICATE_TAG") return null;
+  const name = typeof err.details.name === "string" ? err.details.name : "";
+  const last = typeof err.details.lastName === "string" ? err.details.lastName : "";
+  const who = `${name} ${last}`.trim();
+  return who || null;
+}
+
+/** The sentence under the «Número de canasto» box for a DUPLICATE_TAG. */
+export function duplicateTagField(err: ApiError): string {
+  const holder = duplicateTagHolder(err);
+  return holder ? `Ese número ya lo tiene ${holder}.` : "Ese número ya lo tiene otro trabajador.";
 }
 
 function extractFieldErrors(details: Record<string, unknown>): Record<string, string> {
@@ -166,6 +189,10 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda " +
     "con dos cuentas y el saldo se parte en dos.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
+  // The screens put the holder's name in the sentence (duplicateTagHolder);
+  // this is the fallback when the server could not name them.
+  DUPLICATE_TAG:
+    "Ese número de canasto ya lo tiene otro trabajador activo de la finca. Escriba otro número.",
   // docs/use-cases/teams.md: while a person is in a team, the kilos, the
   // advances and the payments go to the team. `details.teamId` names it.
   WORKER_IN_TEAM:

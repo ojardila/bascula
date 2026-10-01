@@ -703,10 +703,10 @@ describe("«Modo cosecha» on the home screen", () => {
     ],
     unattributed: totals(),
     people: [
-      { ...priced(180, 3), employeeId: "e1", name: "Ana Restrepo", kind: "persona", members: 1, kgEach: 180, daysWorked: 2, kgPerDay: 90, pickedToday: true, belowAverage: false },
-      { ...priced(20, 1), employeeId: "e2", name: "Beto Marín", kind: "persona", members: 1, kgEach: 20, daysWorked: 1, kgPerDay: 20, pickedToday: false, belowAverage: true },
+      { ...priced(180, 3), employeeId: "e1", name: "Ana Restrepo", tag: "7", kind: "persona", members: 1, kgEach: 180, daysWorked: 2, kgPerDay: 90, pickedToday: true, belowAverage: false },
+      { ...priced(20, 1), employeeId: "e2", name: "Beto Marín", tag: null, kind: "persona", members: 1, kgEach: 20, daysWorked: 1, kgPerDay: 20, pickedToday: false, belowAverage: true },
     ],
-    notToday: [{ employeeId: "e2", name: "Beto Marín", lastRecordOn: weekOf(1) }],
+    notToday: [{ employeeId: "e2", name: "Beto Marín", tag: null, lastRecordOn: weekOf(1) }],
   });
 
   it("is off by default: the switch says so and the home screen is the usual one", async () => {
@@ -737,7 +737,7 @@ describe("«Modo cosecha» on the home screen", () => {
     expect(d.getByRole("link", { name: /La Loma: 200 kg/ })).toHaveAttribute("href", "/lotes/p1");
     expect(d.getByText(/67% del total · 3 personas · ↑ 100% más que la semana pasada/)).toBeInTheDocument();
     expect(d.getByText(/↓ 33% menos que la semana pasada/)).toBeInTheDocument();
-    expect(d.getByRole("link", { name: /1\. Ana Restrepo: 180 kg/ })).toHaveAttribute("href", "/empleados/e1");
+    expect(d.getByRole("link", { name: /1\. Ana Restrepo \(canasto 7\): 180 kg/ })).toHaveAttribute("href", "/empleados/e1");
     expect(d.getByText("Muy por debajo del promedio")).toBeInTheDocument();
     expect(d.getByText("Muy por debajo del promedio: Beto Marín.")).toBeInTheDocument();
     expect(d.getByText("Hoy sin registro")).toBeInTheDocument();
@@ -752,14 +752,16 @@ describe("«Modo cosecha» on the home screen", () => {
     ownFarm().harvestMode = true;
     const d0 = dashboard();
     d0.people = [
-      { ...priced(785, 2), employeeId: "t1", name: "Yorman y Sergio", kind: "equipo", members: 2, kgEach: 392.5, daysWorked: 2, kgPerDay: 196.25, pickedToday: true, belowAverage: false },
+      { ...priced(785, 2), employeeId: "t1", name: "Yorman y Sergio", tag: "46-63", kind: "equipo", members: 2, kgEach: 392.5, daysWorked: 2, kgPerDay: 196.25, pickedToday: true, belowAverage: false },
       ...d0.people,
     ];
     server.use(http.get("*/v1/reports/harvest-dashboard", () => HttpResponse.json(d0)));
     renderApp("/cosecha");
     const dash = await screen.findByTestId("harvest-dashboard");
     const d = within(dash);
-    expect(d.getByRole("link", { name: /1\. Yorman y Sergio: 393 kg cada uno, 785 kg juntos/ })).toHaveAttribute("href", "/empleados/t1");
+    expect(d.getByRole("link", { name: /1\. Yorman y Sergio \(canasto 46-63\): 393 kg cada uno, 785 kg juntos/ })).toHaveAttribute("href", "/empleados/t1");
+    // The basket number is on the row, big, as on the scale.
+    expect(d.getByLabelText("Canasto 46-63")).toBeInTheDocument();
     expect(d.getByText(/Equipo de 2 · 785 kg juntos/)).toBeInTheDocument();
   }, 20000);
 

@@ -16,7 +16,7 @@
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Avatar, Box, Button, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Stack, Tooltip, Typography } from "@mui/material";
 import GroupsIcon from "@mui/icons-material/Groups";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
@@ -30,6 +30,7 @@ import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
 import { EMPLOYEE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
 import { isTeam, memberNames, memberCount, teamSize } from "../teams/team";
+import { BasketTile, NoBasketChip, basketOf } from "./Basket";
 
 export function WorkersPage() {
   const navigate = useNavigate();
@@ -82,16 +83,22 @@ export function WorkersPage() {
         header: EMPLOYEE.One,
         render: (w) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar
-              src={w.photoUrl ?? undefined}
-              sx={{ width: 36, height: 36, ...(isTeam(w) ? { bgcolor: "primary.main" } : {}) }}
-            >
-              {isTeam(w) ? <GroupsIcon fontSize="small" /> : w.name[0]}
-            </Avatar>
+            <BasketTile tag={w.tag} team={isTeam(w)} />
             <Box>
-              <Typography sx={{ fontWeight: 600 }}>
-                {w.name} {w.lastName}
-              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography sx={{ fontWeight: 600, fontSize: "1.05rem" }}>
+                  {w.name} {w.lastName}
+                </Typography>
+                {!basketOf(w.tag) && (
+                  <NoBasketChip
+                    onClick={
+                      can("workers.write")
+                        ? () => navigate(`${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`)
+                        : undefined
+                    }
+                  />
+                )}
+              </Stack>
               {isTeam(w) ? (
                 <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                   <Chip size="small" color="success" variant="outlined" label={teamSize(memberCount(w))} />
@@ -132,7 +139,7 @@ export function WorkersPage() {
     // `accountOf` closes over `ledger` and `accounts`, which are the cell's
     // real dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [full, money, ledger, accounts]);
+  }, [full, money, ledger, accounts, can, navigate]);
 
   if (denied) return <PermissionDenied moduleName="ver los empleados" />;
 
@@ -163,7 +170,7 @@ export function WorkersPage() {
         isInactive={(w) => w.status === "inactive"}
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Buscar por nombre o identificación"
+        searchPlaceholder="Buscar por nombre, canasto o cédula"
         statusFilter={status}
         onStatusFilterChange={setStatus}
         onCreate={can("workers.write") ? () => navigate(`${EMPLOYEE.path}/nuevo`) : undefined}
@@ -208,8 +215,14 @@ export function WorkersPage() {
         onReactivate={
           can("workers.delete")
             ? async (w) => {
-                await api.reactivateWorker(w.id);
-                reload();
+                // Their old basket number may have been given to somebody
+                // else meanwhile: the message says who has it.
+                try {
+                  await api.reactivateWorker(w.id);
+                  reload();
+                } catch (e) {
+                  setActionError(messageFor(e));
+                }
               }
             : undefined
         }

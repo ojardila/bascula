@@ -34,6 +34,9 @@ history, WhatsApp contact) is specified the same way in
 [`docs/use-cases/employees.md`](docs/use-cases/employees.md).
 Teams («Equipos»: a pair or family paid as one account, counted as people in
 the statistics) are in [`docs/use-cases/teams.md`](docs/use-cases/teams.md).
+Basket numbers («Número de canasto»: required, unique among active workers,
+shown big on every picking and paying screen) are in
+[`docs/use-cases/basket-numbers.md`](docs/use-cases/basket-numbers.md).
 
 - **A simple harvest home.** `/cosecha` shows this week in big figures (kilos,
   value, pickers, kilos per day) and two big buttons: «Registro de recolección masivo» (Bulk harvest registration) and «Registrar una recolección» (Register a harvest). The detailed reports sit behind «Ver más detalles» (See more details).
