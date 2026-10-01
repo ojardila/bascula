@@ -25,6 +25,9 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PaymentsIcon from "@mui/icons-material/Payments";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
+import GroupsIcon from "@mui/icons-material/Groups";
+import { TeamMembersCard, MemberBanner, looksLikeTwoPeople } from "../teams/TeamProfile";
+import { isTeam, memberCount, teamSize } from "../teams/team";
 import { Money } from "../../components/Money";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
@@ -71,6 +74,10 @@ export function WorkerProfilePage() {
     pendingIsEstimate: workRecords.some((r) => !r.settled && r.amountIsEstimate),
   };
   const inFavour = (totalOwedCents(owed) ?? balance.balanceCents) >= 0;
+  const team = isTeam(worker);
+  // While somebody is in a team their kilos and money go to the team's
+  // account; an advance or a deduction of their own is refused by the API.
+  const member = !!worker.team;
 
   return (
     <Box>
@@ -88,9 +95,9 @@ export function WorkerProfilePage() {
           <Stack direction="row" spacing={2.5} alignItems="flex-start">
             <Avatar
               src={worker.photoUrl ?? undefined}
-              sx={{ width: 88, height: 88, fontSize: 34 }}
+              sx={{ width: 88, height: 88, fontSize: 34, ...(team ? { bgcolor: "primary.main" } : {}) }}
             >
-              {worker.name[0]}
+              {team ? <GroupsIcon sx={{ fontSize: 44 }} /> : worker.name[0]}
             </Avatar>
             <Box>
               <Stack direction="row" spacing={1} alignItems="center">
@@ -99,10 +106,18 @@ export function WorkerProfilePage() {
                 </Typography>
                 {worker.status === "inactive" && <Chip size="small" label="Inactivo" />}
               </Stack>
+              {team && (
+                <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                  <Chip color="success" label={teamSize(memberCount(worker))} />
+                  {worker.tag && <Chip variant="outlined" label={`Canasto ${worker.tag}`} />}
+                </Stack>
+              )}
+              {!team && (
               <Typography color="text.secondary">
                 {worker.documentType} {worker.documentNumber}
                 {worker.phone ? ` · ${worker.phone}` : ""}
               </Typography>
+              )}
               <Typography color="text.secondary">
                 {[worker.city, worker.country].filter(Boolean).join(", ")}
               </Typography>
@@ -113,16 +128,34 @@ export function WorkerProfilePage() {
               )}
 
               <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
-                {can("money.pay") && (
+                {can("money.pay") && (!member || balance.balanceCents !== 0) && (
                   <Button
                     variant="contained"
                     startIcon={<PaymentsIcon />}
                     onClick={() => navigate(`/empleados/${worker.id}/pagar`)}
                   >
-                    Pagar empleado
+                    {team ? "Liquidar y pagar al equipo" : "Pagar empleado"}
                   </Button>
                 )}
-                {can("money.pay") && (
+                {can("workers.write") && team && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<GroupsIcon />}
+                    onClick={() => navigate(`/empleados/${worker.id}/equipo`)}
+                  >
+                    Cambiar integrantes
+                  </Button>
+                )}
+                {can("workers.write") && !team && !member && looksLikeTwoPeople(`${worker.name} ${worker.lastName}`) && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<GroupsIcon />}
+                    onClick={() => navigate(`/empleados/${worker.id}/equipo`)}
+                  >
+                    Convertir en equipo
+                  </Button>
+                )}
+                {can("money.pay") && !member && (
                   <Button
                     variant="outlined"
                     startIcon={<RemoveCircleOutlineIcon />}
@@ -159,7 +192,7 @@ export function WorkerProfilePage() {
           <Card sx={{ bgcolor: inFavour ? "#eaf3e8" : "#fdecea" }}>
             <CardContent>
               <Typography variant="overline" color="text.secondary">
-                Lo que se le debe hoy
+                {team ? "Cuenta del equipo · lo que se le debe hoy" : "Lo que se le debe hoy"}
               </Typography>
               <OwedFigure owed={owed} variant="big" align="flex-start" />
               <Typography variant="body2" color="text.secondary">
@@ -214,6 +247,9 @@ export function WorkerProfilePage() {
           </Card>
         </Grid>
       </Grid>
+
+      {member && worker.team && <MemberBanner team={worker.team} />}
+      {team && <TeamMembersCard team={worker} canEdit={can("workers.write")} />}
 
       {/* «Rendimiento»: what this person picked, week by week. Harvest
           figures of one person against the farm, so it follows the harvest

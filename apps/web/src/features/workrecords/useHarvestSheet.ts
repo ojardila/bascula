@@ -11,6 +11,7 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
 import type { Activity, Plot, Worker } from "../../api/types";
+import { weighable } from "../teams/team";
 import {
   cellKey, cellsFromRecords, emptyCell, pickHarvestActivity, plannedWrites, type SheetCell,
 } from "./planilla";
@@ -73,7 +74,8 @@ export function useHarvestSheet({
       api.listActivities({ status: "active" }),
     ])
       .then(([w, p, a]) => {
-        setWorkers(w);
+        // People in a team are weighed with it: one row, the team's.
+        setWorkers(weighable(w));
         setPlots(p);
         setActivity(pickHarvestActivity(a));
         onCatalogues?.(p);

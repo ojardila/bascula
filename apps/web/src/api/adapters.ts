@@ -375,6 +375,7 @@ export function toWorker(input: WireEmployee | WireWorkerPublic): Worker {
       startedAt: null,
       status: "active",
       tag: w.tag,
+      ...teamFields(w),
     };
   }
   const w = input as WireEmployee;
@@ -401,6 +402,16 @@ export function toWorker(input: WireEmployee | WireWorkerPublic): Worker {
     startedAt: null,
     status: statusOf(w.deletedAt),
     tag: w.tag,
+    ...teamFields(w),
+  };
+}
+
+/** The team half of a worker, the same on both projections. */
+function teamFields(w: WireEmployee | WireWorkerPublic): Pick<Worker, "kind" | "members" | "team"> {
+  return {
+    kind: w.kind ?? "persona",
+    members: (w.members ?? []).map((m) => ({ ...m, lastName: m.lastName ?? null, tag: m.tag ?? null })),
+    team: w.team ?? null,
   };
 }
 
@@ -482,6 +493,7 @@ export function toPaymentReceipt(w: WirePaymentReceipt): PaymentReceipt {
     note: w.note ?? null,
     reversed: w.reversed ?? false,
     kind: w.kind ?? "pago",
+    receivedByName: w.receivedByName ?? null,
   };
 }
 

@@ -50,6 +50,8 @@ export interface ReceiptDoc {
   balanceSentence: string | null;
   provisional: boolean;
   note: string | null;
+  /** «Recibió: Yorman», on a team's payment. */
+  receivedBy?: string | null;
   fileName: string;
 }
 
@@ -153,6 +155,7 @@ export function movementReceiptDoc(args: {
     balanceSentence: balanceSentence(slip.remainingCents),
     provisional: lines.some((l) => l.provisional),
     note: kind === "deduccion" ? null : slip.note,
+    receivedBy: slip.receivedByName ?? null,
     fileName: fileNameOf(kind, workerName, slip.date, number),
   };
 }

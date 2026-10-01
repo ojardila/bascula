@@ -87,6 +87,8 @@ export function PayWorkerPage() {
 
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [method, setMethod] = useState<PayMethod>("efectivo");
+  /** «¿Quién recibe la plata?» — only on a team; "" means not said. */
+  const [receivedBy, setReceivedBy] = useState("");
   const [partial, setPartial] = useState("");
   /**
    * The one-write-per-approved-figure gate. `busy` is only for the button's
@@ -174,6 +176,7 @@ export function PayWorkerPage() {
       amountCents,
       alsoAdvance,
       method,
+      receivedBy,
       [...checked].sort().join("+"),
     ].join("|");
 
@@ -187,6 +190,7 @@ export function PayWorkerPage() {
         workerId: id,
         amountCents,
         method,
+        receivedBy: receivedBy || null,
         payableIds: [...checked],
         expectedGrossCents: selectedCents,
         expectedLines: approved,
@@ -316,8 +320,23 @@ export function PayWorkerPage() {
         Perfil de {worker.name}
       </Button>
       <Typography variant="h1" gutterBottom>
-        Pagar a {worker.name} {worker.lastName}
+        {worker.kind === "equipo" ? "Pagar al equipo " : "Pagar a "}{worker.name} {worker.lastName}
       </Typography>
+      {worker.kind === "equipo" && (
+        <Alert severity="success" icon={false} sx={{ mb: 2, fontSize: "1.1rem" }}>
+          <strong>Cuenta del equipo</strong>
+          {(worker.members?.length ?? 0) > 0
+            ? ` · ${(worker.members ?? []).map((m) => m.name).join(" y ")}. `
+            : ". "}
+          Se liquida y se paga una sola vez, al equipo. Cómo se reparten la plata es cosa de ellos.
+        </Alert>
+      )}
+      {worker.team && (
+        <Alert severity="info" sx={{ mb: 2, fontSize: "1.1rem" }}>
+          {worker.name} está en el equipo <strong>{worker.team.name}</strong>: sus kilos se pagan en la
+          cuenta del equipo. Aquí solo queda lo que tenía antes de entrar.
+        </Alert>
+      )}
 
       {payError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setPayError(null)}>
@@ -497,6 +516,26 @@ export function PayWorkerPage() {
                 <MenuItem value="otro">Otro</MenuItem>
               </TextField>
 
+              {worker.kind === "equipo" && (worker.members?.length ?? 0) > 0 && (
+                <TextField
+                  select
+                  label="¿Quién recibe la plata? (opcional)"
+                  value={receivedBy}
+                  onChange={(e) => setReceivedBy(e.target.value)}
+                  fullWidth
+                  size="medium"
+                  sx={{ mb: 2 }}
+                  helperText="Sale en el recibo. El pago es para todo el equipo."
+                >
+                  <MenuItem value="">No decir</MenuItem>
+                  {(worker.members ?? []).map((m) => (
+                    <MenuItem key={m.id} value={m.id}>
+                      {`${m.name} ${m.lastName ?? ""}`.trim()}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+
               {/* "Revisar y…", as in payroll: the button writes nothing, it
                   opens the list of what is about to be signed. */}
               <Button
@@ -623,6 +662,14 @@ export function PayWorkerPage() {
               <Typography variant="h3">Se entrega</Typography>
               <Money cents={shownConfirm?.amountCents ?? 0} variant="big" />
             </Stack>
+            {receivedBy && (
+              <Typography sx={{ fontSize: "1.05rem" }}>
+                Recibe:{" "}
+                <strong>
+                  {(worker.members ?? []).find((m) => m.id === receivedBy)?.name ?? ""}
+                </strong>
+              </Typography>
+            )}
             <Typography variant="body2" color="text.secondary">
               En {method}.
             </Typography>

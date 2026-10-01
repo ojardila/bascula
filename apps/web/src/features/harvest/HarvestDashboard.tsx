@@ -229,20 +229,31 @@ function PlotRow({ p }: { p: WireHarvestDashboardPlot }) {
 }
 
 function PersonRow({ p, rank }: { p: WireHarvestDashboardPerson; rank: number }) {
+  // A team is one row, ranked by kilos EACH: «392 kg c/u · 785 kg juntos».
+  const team = p.kind === "equipo";
+  const n = Math.round(p.members);
+  const main = team ? p.kgEach : p.kg;
+  const label = `${rank}. ${p.name}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
   return (
-    <RowLink to={`${EMPLOYEE.path}/${p.employeeId}`} label={`${rank}. ${p.name}: ${p.kg === null ? "sin kilos" : kgText(p.kg)}`} warn={p.belowAverage}>
+    <RowLink to={`${EMPLOYEE.path}/${p.employeeId}`} label={label} warn={p.belowAverage}>
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
         <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, mr: 1 }}>{rank}.</Box>
           {p.name}
         </Typography>
         <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, whiteSpace: "nowrap", ...moneyFont }}>
-          {p.kg === null ? "—" : kgText(p.kg)}
+          {main === null ? "—" : kgText(main)}
+          {team && <Box component="span" sx={{ fontSize: "0.95rem", fontWeight: 600, ml: 0.5 }}>c/u</Box>}
         </Typography>
       </Stack>
+      {team && (
+        <Typography sx={{ fontSize: "1rem", fontWeight: 600, color: "success.dark" }}>
+          Equipo de {n}{p.kg !== null ? ` · ${kgText(p.kg)} juntos` : ""}
+        </Typography>
+      )}
       <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>
         {count(p.daysWorked, "día", "días")}
-        {p.kgPerDay !== null ? ` · ${kgText(p.kgPerDay)} al día` : ""}
+        {p.kgPerDay !== null ? ` · ${kgText(p.kgPerDay)} al día${team ? " c/u" : ""}` : ""}
       </Typography>
       {p.belowAverage && (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, color: "warning.dark" }}>

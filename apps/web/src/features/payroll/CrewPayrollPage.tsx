@@ -34,6 +34,7 @@
  *     the paper says so top and bottom. It is the bite `SettlementsPage` took
  *     out of us, which here has two more ways to happen.
  */
+import { TeamChip } from "../teams/TeamProfile";
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -592,6 +593,7 @@ export function CrewPayrollPage() {
                             sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
                           />
                         )}
+                        <TeamChip worker={member?.worker} />
                       </TableCell>
                       <TableCell align="right">{a.lines.length}</TableCell>
                       <TableCell align="right">
@@ -756,7 +758,10 @@ export function CrewPayrollPage() {
                         inputProps={{ "aria-label": `Pagar a ${a.name}` }}
                       />
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>{a.name}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>
+                      {a.name}
+                      <TeamChip worker={member?.worker} />
+                    </TableCell>
                     <TableCell>{a.documentNumber ?? "—"}</TableCell>
                     <TableCell>
                       {member?.balance?.lastMovementOn

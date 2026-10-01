@@ -5,6 +5,7 @@
  * times a day, so nothing already registered is ever changed or replaced from
  * this screen; a blank box writes nothing.
  */
+import { teamSearchText } from "../teams/team";
 import type { Worker, WorkRecord } from "../../api/types";
 import { workerLabel } from "./planilla";
 import { parseQuantity } from "./validation";
@@ -74,7 +75,7 @@ export function foldName(s: string): string {
 export function matchesName(w: Worker, query: string): boolean {
   const words = foldName(query).split(" ").filter(Boolean);
   if (!words.length) return true;
-  const name = foldName(workerLabel(w));
+  const name = foldName(`${workerLabel(w)} ${teamSearchText(w)}`);
   return words.every((word) => name.includes(word));
 }
 

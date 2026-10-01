@@ -333,7 +333,7 @@ export interface WireEmployee {
   /** `equipo`: a pair or family paid as one account (docs/use-cases/teams.md). */
   kind?: WireWorkerKind;
   /** A team's members as of today. Only on an `equipo`. */
-  members?: WireTeamMember[];
+  members?: WireTeamMember[] | null;
   /** The team a person belongs to today; absent when none. */
   team?: WireTeamRef | null;
 }
@@ -363,6 +363,9 @@ export interface WireWorkerPublic {
   name: string;
   lastName: string | null;
   tag: string | null;
+  kind?: WireWorkerKind;
+  members?: WireTeamMember[] | null;
+  team?: WireTeamRef | null;
 }
 
 /** `GET /v1/workers/{id}/profile`. Note `tasks`, not `workRecords`. */
@@ -755,6 +758,8 @@ export interface WireLedgerRequest {
    * instead, so the extra money keeps its correct name in the ledger.
    */
   allowOverpayment?: boolean;
+  /** A team's pago/anticipo: the member who takes the cash. */
+  receivedBy?: Uuid | null;
 }
 
 export interface WireSettlementRequest {

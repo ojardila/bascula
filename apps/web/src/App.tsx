@@ -18,6 +18,7 @@ import { PlotFormPage } from "./features/plots/PlotFormPage";
 import { PlotDetailPage } from "./features/plots/PlotDetailPage";
 import { WorkersPage } from "./features/workers/WorkersPage";
 import { WorkerFormPage } from "./features/workers/WorkerFormPage";
+import { TeamFormPage } from "./features/teams/TeamFormPage";
 import { WorkerProfilePage } from "./features/workers/WorkerProfilePage";
 import { ReceiptPage } from "./features/receipts/ReceiptPage";
 import { PayWorkerPage } from "./features/workers/PayWorkerPage";
@@ -139,6 +140,22 @@ function Shell() {
           element={
             <RequirePermission action="workers.write" moduleName="registrar empleados">
               <WorkerFormPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="empleados/equipo/nuevo"
+          element={
+            <RequirePermission action="workers.write" moduleName="crear equipos">
+              <TeamFormPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="empleados/:id/equipo"
+          element={
+            <RequirePermission action="workers.write" moduleName="cambiar un equipo">
+              <TeamFormPage />
             </RequirePermission>
           }
         />

@@ -47,6 +47,8 @@ import { useOffline } from "../../offline/OfflineContext";
 import { getCache, putCache } from "../../offline/store";
 import { recentMondays, syncPriceBook } from "../../offline/priceBook";
 import { pickHarvestActivity, workerLabel } from "./planilla";
+import { matchesName } from "./bulk";
+import { isTeam, memberCount, teamLine } from "../teams/team";
 
 /** Above this, one load is almost certainly a typing mistake. */
 export const MAX_PLAUSIBLE_KG = 120;
@@ -192,7 +194,8 @@ export function WeighingForm() {
   function onSave() {
     const qty = check();
     if (qty === null) return;
-    if (qty > MAX_PLAUSIBLE_KG) {
+    // A team fills one sack between several people: the doubt is per person.
+    if (qty > MAX_PLAUSIBLE_KG * Math.max(1, worker && isTeam(worker) ? memberCount(worker) : 1)) {
       setDoubt(qty);
       return;
     }
@@ -288,7 +291,26 @@ export function WeighingForm() {
               options={workers ?? []}
               getOptionLabel={(w) => workerLabel(w)}
               value={worker}
-              onChange={(_, v) => setWorker(v)}
+              // A member of a team is weighed WITH the team: picking them picks it.
+              onChange={(_, v) => setWorker(v?.team ? workers?.find((t) => t.id === v.team!.id) ?? v : v)}
+              filterOptions={(opts, s) => opts.filter((w) => matchesName(w, s.inputValue)).slice(0, 50)}
+              renderOption={(props, w) => {
+                const { key, ...rest } = props as typeof props & { key: string };
+                return (
+                  <li key={key} {...rest}>
+                    <Box>
+                      <Typography sx={{ fontSize: "1.15rem", fontWeight: isTeam(w) ? 700 : 500 }}>{workerLabel(w)}</Typography>
+                      {isTeam(w) ? (
+                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">{teamLine(w)}</Typography>
+                      ) : w.team ? (
+                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">Pesa con el equipo {w.team.name}</Typography>
+                      ) : w.tag ? (
+                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">Canasto {w.tag}</Typography>
+                      ) : null}
+                    </Box>
+                  </li>
+                );
+              }}
               loading={!workers}
               noOptionsText="No hay nadie con ese nombre"
               ListboxProps={{ style: { fontSize: "1.15rem" } }}
@@ -356,6 +378,19 @@ export function WeighingForm() {
               sx={{ "& input": { fontSize: 40, fontWeight: 700, py: 1.5 } }}
               required
             />
+
+            {worker && isTeam(worker) && (
+              <Alert severity="success" icon={false} sx={big}>
+                {(() => {
+                  const n = memberCount(worker);
+                  const qty = parseQuantity(kg);
+                  if (qty === null || qty <= 0) return `${teamLine(worker)}. Se pesa todo junto, a nombre del equipo.`;
+                  return n > 1
+                    ? <>Se anotan <strong>{formatQuantity(qty)} kg al equipo</strong>. Eso es <strong>{formatQuantity(qty / n)} kg por persona</strong> para los promedios.</>
+                    : <>Se anotan <strong>{formatQuantity(qty)} kg al equipo</strong>.</>;
+                })()}
+              </Alert>
+            )}
 
             <Button
               variant="contained"
@@ -434,7 +469,9 @@ export function WeighingForm() {
         <DialogTitle>¿{doubt !== null ? formatQuantity(doubt) : ""} kg en una sola pesada?</DialogTitle>
         <DialogContent>
           <Typography sx={big}>
-            Es más de lo que carga una persona ({MAX_PLAUSIBLE_KG} kg). Revise que no sobre un cero.
+            {worker && isTeam(worker) && memberCount(worker) > 1
+              ? `Es más de lo que cargan ${memberCount(worker)} personas (${MAX_PLAUSIBLE_KG} kg cada una). Revise que no sobre un cero.`
+              : `Es más de lo que carga una persona (${MAX_PLAUSIBLE_KG} kg). Revise que no sobre un cero.`}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

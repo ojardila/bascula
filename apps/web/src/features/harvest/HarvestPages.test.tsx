@@ -747,6 +747,22 @@ describe("«Modo cosecha» on the home screen", () => {
     expect(dash.textContent).not.toMatch(/\$0(?!\d)/);
   }, 20000);
 
+  it("shows a team as one row, by kilos each and together", async () => {
+    signIn();
+    ownFarm().harvestMode = true;
+    const d0 = dashboard();
+    d0.people = [
+      { ...priced(785, 2), employeeId: "t1", name: "Yorman y Sergio", kind: "equipo", members: 2, kgEach: 392.5, daysWorked: 2, kgPerDay: 196.25, pickedToday: true, belowAverage: false },
+      ...d0.people,
+    ];
+    server.use(http.get("*/v1/reports/harvest-dashboard", () => HttpResponse.json(d0)));
+    renderApp("/cosecha");
+    const dash = await screen.findByTestId("harvest-dashboard");
+    const d = within(dash);
+    expect(d.getByRole("link", { name: /1\. Yorman y Sergio: 393 kg cada uno, 785 kg juntos/ })).toHaveAttribute("href", "/empleados/t1");
+    expect(d.getByText(/Equipo de 2 · 785 kg juntos/)).toBeInTheDocument();
+  }, 20000);
+
   it("says plainly when there is nothing to show yet", async () => {
     signIn();
     ownFarm().harvestMode = true;

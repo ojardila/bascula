@@ -1500,6 +1500,7 @@ export const api = {
       amountCents: Math.abs(body.amountCents),
       method: body.method,
       note: body.note ?? null,
+      ...(body.receivedBy ? { receivedBy: body.receivedBy } : {}),
     });
     const after = await api.workerBalance(body.workerId);
     return {
@@ -2022,6 +2023,9 @@ function workerToWire(body: Partial<WorkerInput>): Record<string, unknown> {
   if (body.address !== undefined) out.address = body.address || null;
   if (body.city !== undefined) out.city = body.city || null;
   if (body.country !== undefined) out.country = body.country || null;
+  if (body.kind !== undefined) out.kind = body.kind;
+  if (body.memberIds !== undefined) out.memberIds = body.memberIds;
+  if (body.membersFrom) out.membersFrom = body.membersFrom;
   // `photoDataUrl` and `startedAt` have nowhere to go: there is no media store
   // and no start-date column. Dropped here rather than sent and rejected.
   return out;
