@@ -411,6 +411,108 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/auth/password-reset:
+    get:
+      tags: [auth]
+      operationId: passwordResetInfo
+      summary: Whether a reset link can be mailed here
+      description: |
+        True only where a mailer is configured and PUBLIC_BASE_URL is set. The
+        "olvidé mi clave" screen asks before offering the email form.
+      x-action: auth.password_reset
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Availability.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available]
+                properties:
+                  available: { type: boolean }
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      summary: Spend a mailed reset link and set a new password
+      description: |
+        The link is single use and lives 30 minutes. Holding it proves the
+        address, so this also marks it verified, drops any farm-specific owner
+        password (the new one opens every farm of the account), and closes
+        every session of the account. It does not sign in.
+      x-action: auth.password_reset
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 10, maxLength: 128 }
+      responses:
+        "204": { description: Changed. }
+        "400":
+          description: The password is too short or too long, or the link is not valid any more.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Reset by email is not available on this deployment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/password-reset/request:
+    post:
+      tags: [auth]
+      operationId: requestPasswordReset
+      summary: Mail a reset link
+      description: |
+        Always 202, whether or not the address has an account, so the answer
+        cannot be used to find out. The email goes out after the response.
+        Asking again spends every earlier link.
+      x-action: auth.password_reset
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requested]
+                properties:
+                  requested: { type: boolean }
+                  resetToken:
+                    type: string
+                    description: Development only (DEV_ECHO).
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: Reset by email is not available on this deployment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: RATE_LIMITED, per caller and per address.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/auth/logout:
     post:
       tags: [auth]
@@ -538,6 +640,54 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/me/password:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      summary: Change the caller's password
+      description: |
+        Changes the password that opens this farm: the farm's own owner
+        password where it has one, otherwise the account's. A wrong current
+        password counts as a failed sign-in and shares login's limit.
+
+        Every other session of the account is closed (on every farm when the
+        account's password changed), and a fresh session is returned for this
+        device.
+      x-action: me.password.write
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, maxLength: 128 }
+                newPassword: { type: string, minLength: 10, maxLength: 128 }
+                deviceId: { type: string }
+      responses:
+        "200":
+          description: Changed; the new session for this device.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            INVALID_CREDENTIALS: the current password is wrong. A 403 and not
+            a 401, because the session itself is valid and a client treats a
+            401 as a dead token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: RATE_LIMITED, shared with login.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /v1/me/tours:
     get:

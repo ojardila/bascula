@@ -196,10 +196,10 @@ spec:
                   name: bascula-cloudflare
                   key: saas-token
                   optional: true
-            # Outgoing mail ("avísenme por correo cuando esté lista"). Inert
-            # until the ConfigMap bascula-mail exists: with no SMTP_HOST the
-            # API sends nothing and the waiting screen hides the option. A
-            # dedicated stack never sends. See manifests/README.md, "Mail".
+            # Outgoing mail: "su finca ya está lista", password-reset links
+            # and security notices. Inert until the ConfigMap bascula-mail
+            # exists in this namespace: with no SMTP_HOST the API sends nothing
+            # and hides what needs mail. See manifests/README.md, "Mail".
             - name: SMTP_HOST
               valueFrom:
                 configMapKeyRef:

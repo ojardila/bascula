@@ -29,7 +29,11 @@ import (
 // stranger can do with it is make the owner of a farm created minutes ago
 // receive the one message that farm would have received anyway.
 
-func (s *Server) readyEmailAvailable() bool { return s.cfg.Mailer != nil }
+// The notice is the shared platform's: a dedicated stack (TenantSlug set)
+// keeps its mailer for its own people's password resets and security
+// notices, but it is not where a farm is created, so it has nothing to
+// announce.
+func (s *Server) readyEmailAvailable() bool { return s.cfg.Mailer != nil && s.cfg.TenantSlug == "" }
 
 // POST /v1/farms/{slug}/ready-email
 func (s *Server) handleRequestReadyEmail(w http.ResponseWriter, r *http.Request) {

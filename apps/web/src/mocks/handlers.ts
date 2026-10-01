@@ -230,6 +230,7 @@ function authenticate(request: Request): Guarded {
 type Action =
   | "me.read"
   | "me.tours.write"
+  | "me.password.write"
   | "mcp.connections.read"
   | "me.passkeys.read"
   | "me.passkeys.write"
@@ -303,6 +304,7 @@ interface Rule {
 const MATRIX: Record<Action, Rule> = {
   "me.read": { roles: everyone },
   "me.tours.write": { roles: everyone },
+  "me.password.write": { roles: everyone },
   "mcp.connections.read": { roles: everyone },
   "me.passkeys.read": { roles: everyone },
   "me.passkeys.write": { roles: everyone },
@@ -691,6 +693,12 @@ function pinnedFarm(request: Request): db.MockFarm | undefined {
 /** Farms whose owner asked for the ready email (mock only). */
 const readyEmailAsked = new Set<string>();
 
+/**
+ * «Olvidé mi clave» secrets: secret → user id. The mock has a mailer, so the
+ * reset is offered; the secret comes back in the 202 like DEV_ECHO does.
+ */
+const passwordResets = new Map<string, string>();
+
 export const handlers = [
   http.get("*/health", () => HttpResponse.json({ status: "ok" })),
 
@@ -1002,6 +1010,61 @@ export const handlers = [
       }
     }
     // Logging out an unknown token is still a successful logout.
+    return noContent();
+  }),
+
+  /**
+   * `handleChangePassword`. The current password must match; every other
+   * session of the account is closed and a fresh one comes back.
+   */
+  http.post("*/v1/me/password", async ({ request }) => {
+    const g = guard(request, "me.password.write");
+    if (g.deny) return g.deny;
+    const body = (await request.json()) as { currentPassword?: string; newPassword?: string };
+    const next = body.newPassword ?? "";
+    if (next.length < 10) return badRequest("the new password must be at least 10 characters");
+    if (next.length > 128) return badRequest("password is too long");
+    if (g.p.user.password !== body.currentPassword) {
+      return fail(403, "INVALID_CREDENTIALS", "the current password is not correct");
+    }
+    g.p.user.password = next;
+    for (const t of db.refreshTokens) {
+      if (t.userId === g.p.user.id && t.revokedAt === null) t.revokedAt = Date.now();
+    }
+    const membership = db.membershipFor(g.p.farmId, g.p.user.id);
+    if (!membership) return fail(401, "TOKEN_EXPIRED", "that session is not valid");
+    return HttpResponse.json(issueSession(g.p.user, membership, crypto.randomUUID()));
+  }),
+
+  http.get("*/v1/auth/password-reset", () => HttpResponse.json({ available: true })),
+
+  /** Always 202, for an address with an account and for one without. */
+  http.post("*/v1/auth/password-reset/request", async ({ request }) => {
+    const body = (await request.json()) as { email?: string };
+    const email = body.email?.trim().toLowerCase() ?? "";
+    if (!email.includes("@")) return badRequest("email is required");
+    const user = db.users.find((u) => u.email === email);
+    if (!user) return HttpResponse.json({ requested: true }, { status: 202 });
+    for (const [k, v] of passwordResets) if (v === user.id) passwordResets.delete(k);
+    const secret = crypto.randomUUID();
+    passwordResets.set(secret, user.id);
+    return HttpResponse.json({ requested: true, resetToken: secret }, { status: 202 });
+  }),
+
+  http.post("*/v1/auth/password-reset", async ({ request }) => {
+    const body = (await request.json()) as { token?: string; password?: string };
+    const next = body.password ?? "";
+    if (next.length < 10) return badRequest("the new password must be at least 10 characters");
+    if (next.length > 128) return badRequest("password is too long");
+    const userId = passwordResets.get(body.token ?? "");
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) return badRequest("that reset link is not valid any more");
+    passwordResets.delete(body.token ?? "");
+    user.password = next;
+    user.emailVerified = true;
+    for (const t of db.refreshTokens) {
+      if (t.userId === user.id && t.revokedAt === null) t.revokedAt = Date.now();
+    }
     return noContent();
   }),
 

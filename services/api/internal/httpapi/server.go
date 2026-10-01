@@ -72,6 +72,11 @@ type Config struct {
 	// address, per API process, so they cannot be used to test a dictionary
 	// of farm names. Zero means no cap.
 	FarmLookupsPerIPPerHour int
+	// PasswordResetsPerIPPerHour and PasswordResetsPerEmailPerHour cap
+	// "olvidé mi clave". Each request is an email to somebody; the per-address
+	// cap is what keeps a stranger from filling one inbox.
+	PasswordResetsPerIPPerHour    int
+	PasswordResetsPerEmailPerHour int
 	// OAuthRegistrationsPerHour caps registrations platform-wide, counted
 	// in the database so every replica shares it.
 	OAuthRegistrationsPerHour int
@@ -167,9 +172,11 @@ type Config struct {
 	KubeClient     *kube.Client
 	ArgoNamespace  string
 	ReconcileEvery time.Duration
-	// Mailer sends email. Nil means the platform cannot send any, and
-	// everything that would (the "avísenme por correo" notice) is not
-	// offered. cmd/api sets it only when SMTP_HOST and SMTP_FROM are set.
+	// Mailer sends email. Nil means this stack cannot send any, and
+	// everything that would is not offered: the "avísenme por correo" notice
+	// (shared platform only), "olvidé mi clave" by email, and the security
+	// notices of notices.go. cmd/api sets it only when SMTP_HOST and
+	// SMTP_FROM are set.
 	Mailer mailer.Sender
 }
 
@@ -188,8 +195,11 @@ func DefaultConfig() Config {
 		OAuthRegistrationsPerIPPerHour: 30,
 		// Typing one address checks it a handful of times (debounced); a
 		// dictionary of farm names is thousands of checks.
-		FarmLookupsPerIPPerHour:   120,
-		OAuthRegistrationsPerHour: 200,
+		FarmLookupsPerIPPerHour: 120,
+		// A person who lost the email asks again once or twice.
+		PasswordResetsPerIPPerHour:    10,
+		PasswordResetsPerEmailPerHour: 3,
+		OAuthRegistrationsPerHour:     200,
 		// An assistant answering one question makes a handful of calls; a
 		// week of payroll a few dozen. These are far above that and far
 		// below what it takes to hurt the database.
@@ -228,6 +238,9 @@ type Server struct {
 	// mcpCalls and mcpWrites count MCP tool calls per user.
 	mcpCalls  *windowLimiter
 	mcpWrites *windowLimiter
+	// resetsByIP and resetsByEmail meter "olvidé mi clave".
+	resetsByIP    *windowLimiter
+	resetsByEmail *windowLimiter
 }
 
 // New builds the server. A failure to prepare the upload directory is fatal
@@ -237,11 +250,13 @@ type Server struct {
 func New(pool *pgxpool.Pool, signer *auth.Signer, cfg Config) *Server {
 	s := &Server{
 		pool: pool, signer: signer, cfg: cfg, prov: newProvisioner(),
-		importSlots: make(chan struct{}, store.MaxImportsAtOnce),
-		oauthRegs:   newWindowLimiter(cfg.OAuthRegistrationsPerIPPerHour, time.Hour),
-		farmLookups: newWindowLimiter(cfg.FarmLookupsPerIPPerHour, time.Hour),
-		mcpCalls:    newWindowLimiter(cfg.MCPCallsPerUserPerMinute, time.Minute),
-		mcpWrites:   newWindowLimiter(cfg.MCPWritesPerUserPerMinute, time.Minute),
+		importSlots:   make(chan struct{}, store.MaxImportsAtOnce),
+		oauthRegs:     newWindowLimiter(cfg.OAuthRegistrationsPerIPPerHour, time.Hour),
+		farmLookups:   newWindowLimiter(cfg.FarmLookupsPerIPPerHour, time.Hour),
+		mcpCalls:      newWindowLimiter(cfg.MCPCallsPerUserPerMinute, time.Minute),
+		mcpWrites:     newWindowLimiter(cfg.MCPWritesPerUserPerMinute, time.Minute),
+		resetsByIP:    newWindowLimiter(cfg.PasswordResetsPerIPPerHour, time.Hour),
+		resetsByEmail: newWindowLimiter(cfg.PasswordResetsPerEmailPerHour, time.Hour),
 	}
 	disk, err := blob.NewDisk(cfg.UploadDir)
 	if err != nil {

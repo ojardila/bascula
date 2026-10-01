@@ -983,7 +983,8 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		oauthTokenError(w, "invalid_request", "code, code_verifier, redirect_uri and client_id are required")
 		return
 	}
-	if _, err := oauthAuthenticateClient(r, tx, clientID, clientSecret); err != nil {
+	client, err := oauthAuthenticateClient(r, tx, clientID, clientSecret)
+	if err != nil {
 		oauthClientError(w, basic, err.Error())
 		return
 	}
@@ -1040,6 +1041,10 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		writeError(w, r, err)
 		return
 	}
+	// A new connection is a new family, minted here and only here (a refresh
+	// keeps its family), so this is once per connection. See notices.go.
+	s.mailLater(r, assistantConnectedMessage(user.Email, user.Name, client.Name, m.FarmName,
+		auth.ScopeIsReadOnly(scope)))
 	writeOAuthSession(w, session, scope)
 }
 

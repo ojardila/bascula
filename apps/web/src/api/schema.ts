@@ -220,6 +220,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether a reset link can be mailed here
+         * @description True only where a mailer is configured and PUBLIC_BASE_URL is set. The
+         *     "olvidé mi clave" screen asks before offering the email form.
+         */
+        get: operations["passwordResetInfo"];
+        put?: never;
+        /**
+         * Spend a mailed reset link and set a new password
+         * @description The link is single use and lives 30 minutes. Holding it proves the
+         *     address, so this also marks it verified, drops any farm-specific owner
+         *     password (the new one opens every farm of the account), and closes
+         *     every session of the account. It does not sign in.
+         */
+        post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mail a reset link
+         * @description Always 202, whether or not the address has an account, so the answer
+         *     cannot be used to find out. The email goes out after the response.
+         *     Asking again spends every earlier link.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -317,6 +367,32 @@ export interface paths {
         post?: never;
         /** Remove one of the caller's passkeys */
         delete: operations["deletePasskey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the caller's password
+         * @description Changes the password that opens this farm: the farm's own owner
+         *     password where it has one, otherwise the account's. A wrong current
+         *     password counts as a failed sign-in and shares login's limit.
+         *
+         *     Every other session of the account is closed (on every farm when the
+         *     account's password changed), and a fresh session is returned for this
+         *     device.
+         */
+        post: operations["changePassword"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7308,6 +7384,121 @@ export interface operations {
             };
         };
     };
+    passwordResetInfo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        available: boolean;
+                    };
+                };
+            };
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The password is too short or too long, or the link is not valid any more. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Reset by email is not available on this deployment. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        requested: boolean;
+                        /** @description Development only (DEV_ECHO). */
+                        resetToken?: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Reset by email is not available on this deployment. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description RATE_LIMITED, per caller and per address. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     logout: {
         parameters: {
             query?: never;
@@ -7460,6 +7651,58 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    currentPassword: string;
+                    newPassword: string;
+                    deviceId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Changed; the new session for this device. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /**
+             * @description INVALID_CREDENTIALS: the current password is wrong. A 403 and not
+             *     a 401, because the session itself is valid and a client treats a
+             *     401 as a dead token.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description RATE_LIMITED, shared with login. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listTours: {
