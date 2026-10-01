@@ -86,6 +86,7 @@ import { mondayOf } from "../lib/dates";
 import { uuidv7 } from "../lib/uuid";
 import { provisionTicketHeaders, saveProvisionTicket } from "../lib/provisionTicket";
 import { shortReceiptNumber } from "../lib/receipt";
+import { createPasskey, getPasskey } from "../lib/passkeys";
 import type {
   Activity,
   ActivityInput,
@@ -511,23 +512,46 @@ export const api = {
       if (choice) return choice;
       throw e;
     }
+    return installSession(session);
+  },
 
-    setTokens({ accessToken: session.accessToken, refreshToken: session.refreshToken });
-    invalidateRefs();
+  /**
+   * Open a session with a passkey instead of the password (optional; see
+   * migration 00041). Without `pending` it runs the whole ceremony: ask for a
+   * challenge, let the phone sign it, send the answer. An account on several
+   * farms answers with the same choice as `login`, carrying the signed answer
+   * so the second half re-sends it with `farmId` instead of asking the phone
+   * a second time.
+   */
+  loginWithPasskey: async (
+    pending?: PasskeyAnswer,
+    farmId?: string,
+  ): Promise<Session | PasskeyLoginChoice> => {
+    let answer = pending;
+    if (!answer) {
+      const opts = await http.post<PasskeyOptions>("/v1/auth/passkeys/login/options", undefined, {
+        anonymous: true,
+      });
+      answer = { challenge: opts.challenge, credential: await getPasskey(opts.publicKey) };
+    }
+    let session: WireSession;
     try {
-      const user = await api.me();
-      return {
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        expiresIn: session.expiresIn,
-        user,
-      };
+      session = await http.post<WireSession>(
+        "/v1/auth/passkeys/login",
+        {
+          challenge: answer.challenge,
+          credential: answer.credential,
+          farmId: farmId ?? "",
+          deviceId: deviceId(),
+        },
+        { anonymous: true },
+      );
     } catch (e) {
-      // A token we cannot use is worse than no token: it would leave the shell
-      // showing a splash for ever on the next reload.
-      setTokens(null);
+      const choice = farmChoiceFrom(e);
+      if (choice) return { ...choice, passkey: answer };
       throw e;
     }
+    return installSession(session);
   },
 
   logout: async (): Promise<void> => {
@@ -1164,6 +1188,26 @@ export const api = {
 
   saveTour: async (tour: string, step: number, status: WireTourStatus): Promise<WireTourProgress> =>
     http.put<WireTourProgress>(`/v1/me/tours/${encodeURIComponent(tour)}`, { step, status }),
+
+  /* -- passkeys («Llaves de acceso» in Configuración) ----------------- */
+
+  listPasskeys: async (): Promise<PasskeyItem[]> =>
+    (await http.get<{ items: PasskeyItem[] }>("/v1/me/passkeys")).items,
+
+  /** Asks the phone for a new passkey and stores it on the account. */
+  addPasskey: async (name: string): Promise<PasskeyItem> => {
+    const opts = await http.post<PasskeyOptions>("/v1/me/passkeys/options");
+    const credential = await createPasskey(opts.publicKey);
+    return http.post<PasskeyItem>("/v1/me/passkeys", {
+      challenge: opts.challenge,
+      credential,
+      name,
+    });
+  },
+
+  deletePasskey: async (id: string): Promise<void> => {
+    await http.del<void>(`/v1/me/passkeys/${encodeURIComponent(id)}`);
+  },
 
   /* -- MCP connections («Conexiones» in Configuración) ---------------- */
 
@@ -2206,6 +2250,29 @@ async function activityToWire(body: ActivityInput): Promise<Record<string, unkno
 /* ------------------------------------------------------------------ */
 
 /**
+ * Installs a session the server just issued and fetches who it belongs to.
+ * Shared by the password and the passkey sign-in.
+ */
+async function installSession(session: WireSession): Promise<Session> {
+  setTokens({ accessToken: session.accessToken, refreshToken: session.refreshToken });
+  invalidateRefs();
+  try {
+    const user = await api.me();
+    return {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresIn: session.expiresIn,
+      user,
+    };
+  } catch (e) {
+    // A token we cannot use is worse than no token: it would leave the shell
+    // showing a splash for ever on the next reload.
+    setTokens(null);
+    throw e;
+  }
+}
+
+/**
  * An address belonging to several farms produces
  * `400 {code: BAD_REQUEST, details: {farms: [{id, name, role}]}}`.
  * Recognising it is what turns an error into a screen with buttons on it.
@@ -2251,6 +2318,30 @@ function deviceId(): string {
 
 /** Kept for the screens that still import it. */
 export { unsupported };
+
+/** WebAuthn options as the API sends them, with the sealed challenge. */
+export interface PasskeyOptions {
+  challenge: string;
+  publicKey: Record<string, unknown>;
+}
+
+/** A signed passkey answer, kept to finish a sign-in after choosing a farm. */
+export interface PasskeyAnswer {
+  challenge: string;
+  credential: Record<string, unknown>;
+}
+
+export interface PasskeyLoginChoice extends LoginChoice {
+  passkey: PasskeyAnswer;
+}
+
+/** One of the caller's passkeys. */
+export interface PasskeyItem {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
 
 /** One OAuth grant an MCP client (ChatGPT, …) holds for the caller on this farm. */
 export interface McpConnection {

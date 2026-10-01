@@ -118,6 +118,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/passkeys/login/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a passkey sign-in
+         * @description Optional alternative to the password. Returns WebAuthn request options
+         *     for a discoverable (usernameless) sign-in on the address in the
+         *     browser's `Origin`, plus `challenge`: the sealed ceremony state, to be
+         *     sent back unchanged with the answer. No email is asked for, so the
+         *     reply says nothing about whether an address has a passkey, and
+         *     nothing is written.
+         */
+        post: operations["passkeyLoginOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/passkeys/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a session with a passkey
+         * @description Same answers as `login`, with a passkey assertion in place of email
+         *     and password: 400 with `details.farms` when a farm has to be chosen
+         *     (send the same challenge and credential again with `farmId`), 403
+         *     EMAIL_NOT_VERIFIED / FARM_SUSPENDED, 401 INVALID_CREDENTIALS for an
+         *     assertion that does not verify, 429 RATE_LIMITED on the per-IP axis
+         *     of the login limiter.
+         *
+         *     A passkey never opens a farm guarded by its own owner password unless
+         *     it was added from a session on that farm, and then it opens only that
+         *     farm. Each challenge opens one session at most.
+         */
+        post: operations["passkeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -200,6 +254,69 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's passkeys on this address
+         * @description Only the caller's own, and only those made for the address in the
+         *     browser's `Origin` (a passkey belongs to one address).
+         */
+        get: operations["listPasskeys"];
+        put?: never;
+        /** Finish adding a passkey to the caller's account */
+        post: operations["createPasskey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/passkeys/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start adding a passkey to the caller's account
+         * @description WebAuthn creation options for `navigator.credentials.create`, plus
+         *     the sealed `challenge` to send back with the result. Passkeys the
+         *     caller already has on this address are excluded.
+         */
+        post: operations["passkeyRegisterOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/passkeys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove one of the caller's passkeys */
+        delete: operations["deletePasskey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3682,6 +3799,47 @@ export interface components {
             farmSlug?: components["schemas"]["FarmSlug"];
             deviceId?: string;
         };
+        PasskeyOptions: {
+            /** @description Sealed ceremony state. Send it back unchanged; it expires in five minutes. */
+            challenge: string;
+            /**
+             * @description WebAuthn options in their JSON form (binary members base64url),
+             *     as `PublicKeyCredential.parseCreationOptionsFromJSON` /
+             *     `parseRequestOptionsFromJSON` read them.
+             */
+            publicKey: {
+                [key: string]: unknown;
+            };
+        };
+        PasskeyCreateRequest: {
+            challenge: string;
+            /** @description The `PublicKeyCredential` from `navigator.credentials.create`, as `toJSON()` gives it. */
+            credential: {
+                [key: string]: unknown;
+            };
+            /** @description A label for the person, e.g. the phone's name. */
+            name?: string;
+        };
+        PasskeyLoginRequest: {
+            challenge: string;
+            /** @description The `PublicKeyCredential` from `navigator.credentials.get`, as `toJSON()` gives it. */
+            credential: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            farmId?: string;
+            farmSlug?: components["schemas"]["FarmSlug"];
+            deviceId?: string;
+        };
+        Passkey: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+        };
         RefreshRequest: {
             refreshToken: string;
             deviceId?: string;
@@ -6952,6 +7110,90 @@ export interface operations {
             };
         };
     };
+    passkeyLoginOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Options for `navigator.credentials.get`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyOptions"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    passkeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description A token pair. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /**
+             * @description Malformed, or a farm has to be chosen — then `details.farms`
+             *     lists them.
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description INVALID_CREDENTIALS. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description EMAIL_NOT_VERIFIED, FARM_SUSPENDED, or the passkey opens no farm. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description RATE_LIMITED. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     refresh: {
         parameters: {
             query?: never;
@@ -7088,6 +7330,113 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Passkey"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Added. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description CONFLICT — that passkey is already registered. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    passkeyRegisterOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Options for `navigator.credentials.create`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyOptions"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deletePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listTours: {
