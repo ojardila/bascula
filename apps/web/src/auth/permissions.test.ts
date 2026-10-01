@@ -28,7 +28,8 @@ describe("what each role can do", () => {
     expect(can(admin, "activities.setRate")).toBe(false);
     expect(can(admin, "workers.delete")).toBe(false);
     expect(can(admin, "plots.delete")).toBe(false);
-    expect(can(admin, "config.users")).toBe(false);
+    // The administrator manages weighers and other admins; inviting owners stays with the owner (#151).
+    expect(can(admin, "config.users")).toBe(true);
   });
 
   it("keeps the weigher away from every peso", () => {

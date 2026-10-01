@@ -373,11 +373,8 @@ function Shell() {
             </RequirePermission>
           }
         />
-        {/* User management. OWNER ONLY, and that is stricter than
-            `use-cases.md` reads on its own: `docs/diagrams/system.md`
-            §3.3 puts this in the owner column and not the administrator's, so
-            an admin who reaches the URL is shown the door rather than a
-            screen the server would refuse anyway. */}
+        {/* User management: owners and administrators (#151), matching the
+            server. An administrator cannot invite or act on an owner. */}
         <Route
           path="configuracion/usuarios"
           element={

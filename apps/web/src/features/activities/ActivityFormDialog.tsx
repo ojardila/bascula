@@ -23,6 +23,8 @@ import { SEED_ACTIVITY_CATEGORIES } from "../../api/types";
 import { PAY_MODE_CHOICE, TIME_UNIT_LABEL } from "../../lib/vocab";
 import type { Activity, ActivityCategory, PayMode, TimeUnit } from "../../api/types";
 import { DateField } from "../../components/DateField";
+import { useAuth } from "../../auth/AuthContext";
+import { todayInFarm } from "../../lib/dates";
 
 const WORK_UNITS = ["kg", "arroba", "canasta", "bulto", "caja"];
 const TIME_UNITS: Array<{ value: TimeUnit; label: string }> = (
@@ -40,6 +42,9 @@ export function ActivityFormDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // The farm's calendar day, not UTC: after 7 p.m. in Colombia UTC is tomorrow (#152).
+  const { user } = useAuth();
+  const farmToday = () => todayInFarm(user?.farm?.timezone ?? "America/Bogota");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<ActivityCategory>("cosecha");
   const [payMode, setPayMode] = useState<PayMode>("work_unit");
@@ -47,7 +52,7 @@ export function ActivityFormDialog({
   const [timeUnit, setTimeUnit] = useState<TimeUnit>("jornal");
   const [weekly, setWeekly] = useState(false);
   const [rate, setRate] = useState("");
-  const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [validFrom, setValidFrom] = useState(farmToday());
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const { busy, run: runOnce } = useWriteOnce();
@@ -56,6 +61,8 @@ export function ActivityFormDialog({
     if (!open) return;
     setError(null);
     setFields({});
+    // A dialog left mounted overnight would keep yesterday's date.
+    setValidFrom(farmToday());
     if (activity) {
       setName(activity.name);
       setCategory(activity.category);

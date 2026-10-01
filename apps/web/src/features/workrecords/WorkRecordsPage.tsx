@@ -137,7 +137,8 @@ export function WorkRecordsPage() {
           ) : null
         }
         onDeactivate={
-          can("workRecords.write")
+          // Deactivating needs workRecords.correct on the server (#150).
+          can("workRecords.correct")
             ? async (r) => {
                 try {
                   await api.deactivateWorkRecord(r.id);

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -22,7 +23,12 @@ func (s *Server) handleListActivities(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	on := time.Now().UTC()
+	// The farm's calendar day, not the server's UTC one (#152).
+	on, err := store.LocalToday(r.Context(), tx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if raw := r.URL.Query().Get("on"); raw != "" {
 		parsed, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
@@ -59,7 +65,7 @@ type rateRequest struct {
 	CustomUnit *string  `json:"customUnit"`
 }
 
-func (rr rateRequest) toStore() (store.ActivityRate, error) {
+func (rr rateRequest) toStore(ctx context.Context) (store.ActivityRate, error) {
 	out := store.ActivityRate{
 		RateMinor: rr.RateCents, TimeUnit: rr.TimeUnit,
 		CustomQty: rr.CustomQty, CustomUnit: rr.CustomUnit,
@@ -70,7 +76,17 @@ func (rr rateRequest) toStore() (store.ActivityRate, error) {
 		return out, err
 	}
 	if rr.ValidFrom == "" {
-		out.ValidFrom = time.Now().UTC().Truncate(24 * time.Hour)
+		// Default to the farm's today, not UTC: at 8 p.m. in Colombia UTC is
+		// already tomorrow and the new price would skip a day (#152).
+		tx, err := tenant.Tx(ctx)
+		if err != nil {
+			return out, err
+		}
+		day, err := store.LocalToday(ctx, tx)
+		if err != nil {
+			return out, err
+		}
+		out.ValidFrom = day
 		return out, nil
 	}
 	parsed, err := time.Parse(time.DateOnly, rr.ValidFrom)
@@ -123,7 +139,7 @@ func (s *Server) handleCreateActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("only a work-unit activity has a unit"))
 		return
 	}
-	rate, err := body.Rate.toStore()
+	rate, err := body.Rate.toStore(r.Context())
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -260,7 +276,7 @@ func (s *Server) handleSetActivityRate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("rateCents must be positive"))
 		return
 	}
-	rate, err := body.toStore()
+	rate, err := body.toStore(r.Context())
 	if err != nil {
 		writeError(w, r, err)
 		return

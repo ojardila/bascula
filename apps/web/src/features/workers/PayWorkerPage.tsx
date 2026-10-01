@@ -201,6 +201,7 @@ export function PayWorkerPage() {
           workerId: id,
           amountCents: alsoAdvance,
           method,
+          receivedBy: receivedBy || null,
           note: "Excedente del pago, registrado como anticipo",
         });
       }

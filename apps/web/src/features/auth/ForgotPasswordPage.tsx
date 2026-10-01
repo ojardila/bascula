@@ -40,7 +40,7 @@ function NoEmailHelp() {
     <Stack spacing={2.5}>
       <Typography sx={TEXT}>Su usuario es el correo con el que entra a la finca.</Typography>
       <Typography sx={TEXT}>
-        Si no recuerda la clave, pídale al <strong>dueño</strong> de la finca que lo quite en{" "}
+        Si no recuerda la clave, pídale al <strong>dueño</strong> o al <strong>administrador</strong> de la finca que lo quite en{" "}
         <strong>Configuración → Usuarios</strong> y lo vuelva a agregar con una clave nueva.
       </Typography>
       <Typography sx={TEXT}>

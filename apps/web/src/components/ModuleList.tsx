@@ -116,7 +116,7 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         spacing={2}
         sx={{ mb: 2 }}
       >
-        <Typography variant="h1">{title}</Typography>
+        <Typography variant="h1" data-tour="module-title">{title}</Typography>
         {onCreate && (
           <Button data-tour="module-create" variant="contained" startIcon={<AddIcon />} onClick={onCreate}>
             {createLabel ?? `Nueva ${singular}`}

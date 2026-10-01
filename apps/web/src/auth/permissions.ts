@@ -105,6 +105,10 @@ const ADMINISTRATOR: Action[] = [
   "sales.read", "sales.write",
   "expenses.read", "expenses.write",
   "config.farm",
+  // Users too: a farm must be able to add a weigher while the owner is away.
+  // The server allows it (auth/perm.go) and still stops an administrator from
+  // touching an owner or granting a role above their own.
+  "config.users",
   "connections.manage", "mcp.activity",
 ];
 

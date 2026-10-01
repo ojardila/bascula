@@ -190,17 +190,18 @@ export const OWNER_STEPS: TourStepDef[] = [
 
 export const WEIGHER_STEPS: TourStepDef[] = [
   {
-    n: 1, kind: "spot", route: "/cosecha", target: '[data-tour="record-one"]',
+    // Weighers land on /labores and cannot open /cosecha (#149).
+    n: 1, kind: "spot", route: "/labores", target: '[data-tour="module-create"]',
     section: "Bienvenido", title: "Aquí anota cada pesada",
     body: <>Toque este botón, escoja a la persona, el lote y escriba los kilos. Eso es todo.</>,
     primary: "Entendido", noBack: true,
   },
   {
-    n: 2, kind: "spot", route: "/cosecha", target: '[data-tour="week-summary"]',
-    section: "Bienvenido", title: "Lo que lleva la semana",
+    n: 2, kind: "spot", route: "/labores", target: '[data-tour="module-title"]', placement: "bottom",
+    section: "Bienvenido", title: "Lo que ha anotado",
     body: (
       <>
-        Aquí ve los kilos de la semana. Si quiere ver esta ayuda otra vez, está en el menú,
+        En esta lista ve las pesadas que ha anotado. Si quiere ver esta ayuda otra vez, está en el menú,
         en {b("Ayuda y recorrido")}.
       </>
     ),
