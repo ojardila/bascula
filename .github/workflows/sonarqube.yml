@@ -48,7 +48,9 @@ jobs:
         image: postgis/postgis:17-3.6-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          # A throwaway service container: trust auth, so there is no
+          # password in this file for secret scanners to flag.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: bascula
           TZ: UTC
           PGTZ: UTC
@@ -99,12 +101,14 @@ jobs:
         working-directory: services/api
         env:
           APP_ENV: development
-          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
-          TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+          ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
+          TEST_ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
         run: |
           set -euo pipefail
           go run ./cmd/api -migrate
-          go test -covermode=atomic -coverprofile=coverage.raw ./...
+          # -coverpkg: most of store/, auth/ and tenant/ is exercised through
+          # the httpapi and apitest suites, not by tests in those packages.
+          go test -covermode=atomic -coverpkg=./... -coverprofile=coverage.raw ./...
           # The profile names files by import path; SonarQube wants paths
           # relative to the repo root.
           sed 's#^github.com/ojardila/bascula/##' coverage.raw > coverage.out
@@ -178,6 +182,7 @@ jobs:
         with:
           args: >-
             -Dsonar.projectKey=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+            -Dsonar.projectName=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
             -Dsonar.projectVersion=${{ steps.version.outputs.value }}
 
       - name: Changed files
