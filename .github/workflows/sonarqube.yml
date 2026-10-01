@@ -4,9 +4,14 @@
 #
 # Community Build analyses one branch per project, so:
 #   push to master -> project `bascula`, the dashboard everyone looks at.
-#   pull request   -> scratch project `bascula-pr`, compared with `bascula`
-#                     by scripts/sonar-report.py, posted as one PR comment
-#                     (updated in place) and as the job summary.
+#   pull request   -> a throwaway project `bascula-pr-<run id>`, compared
+#                     with `bascula` by scripts/sonar-report.py, posted as
+#                     one PR comment (updated in place) and as the job
+#                     summary, then deleted. Only `bascula` stays on the
+#                     server. The CI user may create projects, and the
+#                     permission template "bascula PR scratch" (key pattern
+#                     bascula-pr-.*) makes it admin of the ones it creates,
+#                     so it can delete those and nothing else.
 #
 # The tests run here again, with coverage, instead of handing coverage over
 # from ci.yml: CI on master is called by CD and skips suites a PR already
@@ -62,6 +67,7 @@ jobs:
           --health-retries 30
     env:
       PR_SCAN: ${{ github.event_name == 'pull_request' }}
+      SONAR_PROJECT_KEY: ${{ github.event_name == 'pull_request' && format('bascula-pr-{0}-{1}', github.run_id, github.run_attempt) || 'bascula' }}
     steps:
       - name: secrets present
         id: secrets
@@ -173,6 +179,15 @@ jobs:
           if [ "$PR_SCAN" = "true" ]; then v="pr-${PR}"; else v="$(cat VERSION)"; fi
           echo "value=${v}" >> "$GITHUB_OUTPUT"
 
+      - name: Create the throwaway PR project
+        if: steps.secrets.outputs.ok == 'true' && env.PR_SCAN == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          curl -fsS -u "${SONAR_TOKEN}:" -X POST "${SONAR_HOST_URL%/}/api/projects/create" \
+            -d project="${SONAR_PROJECT_KEY}" -d name="${SONAR_PROJECT_KEY}" -d visibility=private >/dev/null
+
       - name: Scan
         if: steps.secrets.outputs.ok == 'true'
         uses: SonarSource/sonarqube-scan-action@v8
@@ -181,8 +196,8 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >-
-            -Dsonar.projectKey=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
-            -Dsonar.projectName=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.projectName=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.projectVersion=${{ steps.version.outputs.value }}
 
       - name: Changed files
@@ -200,7 +215,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_PROJECT: ${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+          SONAR_PROJECT: ${{ env.SONAR_PROJECT_KEY }}
           SONAR_BASE_PROJECT: ${{ env.PR_SCAN == 'true' && 'bascula' || '' }}
           CHANGED_FILES: ${{ env.PR_SCAN == 'true' && 'changed-files.txt' || '' }}
           OUT: sonar-report.md
@@ -222,3 +237,12 @@ jobs:
           else
             gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@sonar-report.md >/dev/null
           fi
+
+      - name: Delete the throwaway PR project
+        if: always() && steps.secrets.outputs.ok == 'true' && env.PR_SCAN == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          curl -sS -u "${SONAR_TOKEN}:" -X POST "${SONAR_HOST_URL%/}/api/projects/delete" \
+            -d project="${SONAR_PROJECT_KEY}" -o /dev/null -w "delete ${SONAR_PROJECT_KEY}: %{http_code}\n"

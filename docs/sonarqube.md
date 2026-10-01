@@ -9,7 +9,7 @@ lives in the gitops repo, `apps/sonarqube`).
 | Workflow | [`.github/workflows/sonarqube.yml`](../.github/workflows/sonarqube.yml) — PRs, pushes to `master`, manual |
 | Config | [`sonar-project.properties`](../sonar-project.properties) — sources, tests, exclusions, coverage paths |
 | Summary | [`scripts/sonar-report.py`](../scripts/sonar-report.py) — quality gate + measures via the Web API |
-| Secrets | `SONAR_TOKEN` (token of the SonarQube user `github-ci`: Browse + Execute Analysis on `bascula` and `bascula-pr` only), `SONAR_HOST_URL`, and the existing `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` |
+| Secrets | `SONAR_TOKEN` (token of the SonarQube user `github-ci`: Browse + Execute Analysis on `bascula`, plus Create Projects; the permission template `bascula PR scratch` makes it admin only of the `bascula-pr-*` projects it creates), `SONAR_HOST_URL`, and the existing `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` |
 
 ## How it runs
 
@@ -27,8 +27,9 @@ Community Build analyses a single branch per project. So:
 
 - **`master`** → project **`bascula`**, versioned by `VERSION`. That is the
   dashboard; "new code" is everything since the last release.
-- **PRs** → scratch project **`bascula-pr`**, overwritten by every PR scan.
-  The comment compares it with `bascula`: deltas in bugs, vulnerabilities,
+- **PRs** → a throwaway project **`bascula-pr-<run id>-<attempt>`**, created
+  before the scan and deleted at the end of the job, so `bascula` is the only
+  project left on the server. The comment compares it with `bascula`: deltas in bugs, vulnerabilities,
   hotspots, smells, coverage and duplication, and the open issues in the
   files the PR touches that master does not have. More bugs, vulnerabilities
   or hotspots, or coverage down by more than a point, is flagged as a
@@ -37,5 +38,6 @@ Community Build analyses a single branch per project. So:
 It is **advisory**: the job fails only if SonarQube cannot be reached, and it
 is not a required check. Forks and Dependabot PRs skip it (no secrets).
 
-Two PRs scanned at the same moment share `bascula-pr`; the comment says so
-when its numbers may belong to the other one.
+Each PR run has its own project, so two PRs scanned at the same moment no
+longer overwrite each other. If a job dies before its last step, delete the
+leftover `bascula-pr-*` project by hand.

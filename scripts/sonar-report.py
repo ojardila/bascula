@@ -5,8 +5,8 @@ Run by .github/workflows/sonarqube.yml right after the scanner. Waits for the
 Compute Engine to finish the report the scanner uploaded, then asks the Web
 API for the quality gate of *that* analysis and the project's measures.
 
-Community Build has no PR analysis, so a PR is scanned into the scratch
-project `bascula-pr` and compared here against `bascula` (master): measure
+Community Build has no PR analysis, so a PR is scanned into a throwaway
+project `bascula-pr-<run id>` and compared here against `bascula` (master): measure
 deltas, and the open issues in the files the PR touches that master does not
 have. It is advisory: this script always exits 0 unless the API is
 unreachable, and the workflow does not gate on it either.
