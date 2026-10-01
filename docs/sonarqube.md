@@ -1,0 +1,41 @@
+# SonarQube
+
+Static analysis and coverage on https://sonarqube.int.engp.io (SonarQube
+Community Build, self-hosted on the k8 cluster, **tailnet only**; the server
+lives in the gitops repo, `apps/sonarqube`).
+
+| | |
+|:--|:--|
+| Workflow | [`.github/workflows/sonarqube.yml`](../.github/workflows/sonarqube.yml) — PRs, pushes to `master`, manual |
+| Config | [`sonar-project.properties`](../sonar-project.properties) — sources, tests, exclusions, coverage paths |
+| Summary | [`scripts/sonar-report.py`](../scripts/sonar-report.py) — quality gate + measures via the Web API |
+| Secrets | `SONAR_TOKEN` (token of the SonarQube user `github-ci`: Browse + Execute Analysis on `bascula` and `bascula-pr` only), `SONAR_HOST_URL`, and the existing `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` |
+
+## How it runs
+
+1. Go (`go test -coverprofile`), web (vitest + v8 → lcov) and `packages/shared`
+   (`node --test` → lcov) run with coverage. Failures do not stop the scan:
+   `ci.yml` is what reports broken tests.
+2. Only then the runner joins the tailnet as `tag:ci` (same OAuth client as
+   the Harbor pushes) and the scanner uploads to SonarQube.
+3. `sonar-report.py` waits for the server to process the report and writes
+   the job summary; on a PR it also posts (and later updates) one comment.
+
+## Branches and PRs
+
+Community Build analyses a single branch per project. So:
+
+- **`master`** → project **`bascula`**, versioned by `VERSION`. That is the
+  dashboard; "new code" is everything since the last release.
+- **PRs** → scratch project **`bascula-pr`**, overwritten by every PR scan.
+  The comment compares it with `bascula`: deltas in bugs, vulnerabilities,
+  hotspots, smells, coverage and duplication, and the open issues in the
+  files the PR touches that master does not have. More bugs, vulnerabilities
+  or hotspots, or coverage down by more than a point, is flagged as a
+  regression.
+
+It is **advisory**: the job fails only if SonarQube cannot be reached, and it
+is not a required check. Forks and Dependabot PRs skip it (no secrets).
+
+Two PRs scanned at the same moment share `bascula-pr`; the comment says so
+when its numbers may belong to the other one.

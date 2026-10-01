@@ -17,3 +17,9 @@ services/api/*.env
 # Local env
 .env
 .env.local
+
+# Coverage and SonarQube scanner output
+services/api/coverage.*
+apps/web/coverage/
+packages/shared/lcov.info
+.scannerwork/
