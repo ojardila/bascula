@@ -208,335 +208,13 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 	in SeasonImport, newID func() string) (*ImportReport, error) {
 
 	var rep ImportReport
-	now := time.Now()
-
-	// 1. People. The handset's uuid becomes the employee's id.
-	for _, wkr := range in.Workers {
-		if wkr.ID == "" || wkr.Name == "" {
-			return nil, domain.BadRequest("every imported worker needs an id and a name")
-		}
-		if !isUUID(wkr.ID) {
-			return nil, domain.BadRequest("worker " + wkr.ID + ": ids travel as the handset's own uuids")
-		}
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
-			                       created_at, deleted_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8, now()), $9)
-			ON CONFLICT (id) DO NOTHING`,
-			wkr.ID, farmID, wkr.Name, wkr.LastName, wkr.DocumentType, wkr.DocID, wkr.Tag,
-			wkr.CreatedAt, wkr.DeletedAt)
-		if err != nil {
-			return nil, importFailure("worker "+wkr.ID, err)
-		}
-		count(&rep.Workers, tag.RowsAffected())
-	}
-
-	// 2. Lots. One plot per crop, and the plot_crop inherits the crop's uuid
-	//    because that is the id the weighings carry.
-	for _, pl := range in.Plots {
-		if pl.CropID == "" || pl.Name == "" {
-			return nil, domain.BadRequest("every imported lot needs a cropId and a name")
-		}
-		if pl.AreaHa != nil {
-			if err := domain.CheckNumericFloat("lot "+pl.Name+" areaHa", *pl.AreaHa,
-				domain.AreaPrecision, domain.AreaScale); err != nil {
-				return nil, err
-			}
-		}
-		// Already imported? The crop's id is what says so, not the plot's,
-		// because the plot's id is invented here and a retry would invent a
-		// different one.
-		var existingPlot *string
-		err := tx.QueryRow(ctx,
-			`SELECT plot_id::text FROM plot_crops WHERE id = $1`, pl.CropID).Scan(&existingPlot)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, importFailure("lot "+pl.Name, err)
-		}
-		if existingPlot != nil {
-			rep.Plots.Skipped++
-			rep.Crops.Skipped++
-			continue
-		}
-
-		plotID := newID()
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO plots (id, farm_id, name, area_ha, deleted_at)
-			VALUES ($1, $2, $3, $4, $5)`,
-			plotID, farmID, pl.Name, pl.AreaHa, pl.DeletedAt); err != nil {
-			return nil, importFailure("lot "+pl.Name, err)
-		}
-		rep.Plots.Written++
-
-		cropType := pl.CropType
-		if cropType == "" {
-			cropType = "Cafe"
-		}
-		ct, err := EnsureCatalogItem(ctx, tx, CatalogCropTypes, farmID, newID(), cropType)
-		if err != nil {
-			return nil, importFailure("lot "+pl.Name, err)
-		}
-		var varietyID *string
-		if pl.Variety != nil && *pl.Variety != "" {
-			v, err := EnsureCatalogItem(ctx, tx, CatalogVarieties, farmID, newID(), *pl.Variety)
-			if err != nil {
-				return nil, importFailure("lot "+pl.Name, err)
-			}
-			varietyID = &v.ID
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO plot_crops (id, farm_id, plot_id, crop_type_id, variety_id, area_ha, deleted_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			pl.CropID, farmID, plotID, ct.ID, varietyID, pl.AreaHa, pl.DeletedAt); err != nil {
-			return nil, importFailure("lot "+pl.Name, err)
-		}
-		rep.Crops.Written++
-	}
-
-	// 3. Prices. cost_overrides -> week_prices, keyed by the Monday.
-	for _, wp := range in.WeekPrices {
-		week, err := time.Parse(time.DateOnly, wp.WeekStart)
-		if err != nil {
-			return nil, domain.BadRequest("weekStart must be YYYY-MM-DD: " + wp.WeekStart)
-		}
-		if !domain.MondayOf(week).Equal(week) {
-			return nil, domain.BadRequest("a week price is named by its Monday: " + wp.WeekStart)
-		}
-		if wp.PriceCents <= 0 {
-			return nil, domain.BadRequest("a week price must be positive: " + wp.WeekStart)
-		}
-		if err := checkImportDay("the week price of "+wp.WeekStart, week, now); err != nil {
+	im := &seasonImporter{ctx: ctx, tx: tx, farmID: farmID, createdBy: createdBy,
+		newID: newID, now: time.Now(), rep: &rep}
+	for _, phase := range []func(SeasonImport) error{
+		im.workers, im.plots, im.weekPrices, im.workRecords, im.settlements, im.ledger,
+	} {
+		if err := phase(in); err != nil {
 			return nil, err
-		}
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO week_prices (farm_id, week_start, price_minor) VALUES ($1, $2, $3)
-			ON CONFLICT (farm_id, week_start) DO NOTHING`, farmID, week, wp.PriceCents)
-		if err != nil {
-			return nil, importFailure("week price "+wp.WeekStart, err)
-		}
-		count(&rep.WeekPrices, tag.RowsAffected())
-	}
-
-	// 4. The weighings. §8 phase 3 fixes their shape exactly: the seeded
-	//    "Recolección" activity, rate_source = weekly_price, the unit off the
-	//    activity, quantity = weight. local_day is NOT written here — the
-	//    trigger computes it from the farm's timezone, which is the whole
-	//    reason golden case 04 comes out the same on both sides.
-	activityID, err := HarvestActivityID(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	activity, err := GetActivity(ctx, tx, activityID)
-	if err != nil {
-		return nil, err
-	}
-	for _, wr := range in.WorkRecords {
-		if wr.ID == "" || wr.WorkerID == "" {
-			return nil, domain.BadRequest("every imported weighing needs an id and a workerId")
-		}
-		if wr.OccurredAt.IsZero() {
-			return nil, domain.BadRequest("weighing " + wr.ID + " has no occurredAt")
-		}
-		if !isUUID(wr.ID) || !isUUID(wr.WorkerID) {
-			return nil, domain.BadRequest("weighing " + wr.ID + ": ids travel as the handset's own uuids")
-		}
-		if err := checkImportDay("weighing "+wr.ID, wr.OccurredAt, now); err != nil {
-			return nil, err
-		}
-		if err := domain.CheckNumeric("weighing "+wr.ID+" quantity", wr.Quantity.String(),
-			domain.QuantityPrecision, domain.QuantityScale); err != nil {
-			return nil, err
-		}
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO work_records (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
-			                          started_at, quantity, unit_id, note, device_id,
-			                          created_by, created_at, deleted_at)
-			VALUES ($1, $2, $3, $4, $5, 'weekly_price', $6, $7::numeric, $8, $9, $10, $11, coalesce($12, now()), $13)
-			ON CONFLICT (id) DO NOTHING`,
-			wr.ID, farmID, wr.WorkerID, activity.ID, activity.PayScheme,
-			wr.OccurredAt, wr.Quantity.String(), activity.UnitID, wr.Note,
-			nilUUID(deref(wr.DeviceID)), nilUUID(createdBy), wr.OccurredAt, wr.DeletedAt)
-		if err != nil {
-			return nil, importFailure("weighing "+wr.ID, err)
-		}
-		count(&rep.WorkRecords, tag.RowsAffected())
-		if tag.RowsAffected() == 1 && wr.CropID != "" {
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO work_record_plot_crops (work_record_id, plot_crop_id, farm_id)
-				VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-				wr.ID, wr.CropID, farmID); err != nil {
-				return nil, importFailure("weighing "+wr.ID, err)
-			}
-		}
-	}
-
-	// 5. The settlements, with their lines. The lines are what the anti
-	//    double-pay index acts on, and payable_id is the handset's own uuid:
-	//    the money is not remapped.
-	for _, st := range in.Settlements {
-		if st.ID == "" || st.WorkerID == "" {
-			return nil, domain.BadRequest("every imported settlement needs an id and a workerId")
-		}
-		subject := "settlement " + st.ID
-		periodStart, err := time.Parse(time.DateOnly, st.PeriodStart)
-		if err != nil {
-			return nil, domain.BadRequest(subject + ": periodStart must be YYYY-MM-DD")
-		}
-		periodEnd, err := time.Parse(time.DateOnly, st.PeriodEnd)
-		if err != nil {
-			return nil, domain.BadRequest(subject + ": periodEnd must be YYYY-MM-DD")
-		}
-		status := st.Status
-		if status == "" {
-			status = "open"
-		}
-		if status != "open" && status != "void" {
-			return nil, domain.BadRequest(subject + ": status must be open or void")
-		}
-		if (status == "void") != (st.VoidedAt != nil) {
-			return nil, domain.BadRequest(
-				subject + ": a void settlement carries voidedAt and an open one does not")
-		}
-		if !isUUID(st.ID) || !isUUID(st.WorkerID) {
-			return nil, domain.BadRequest(subject + ": ids travel as the handset's own uuids")
-		}
-		if err := checkImportDay(subject, periodStart, now); err != nil {
-			return nil, err
-		}
-		if err := checkImportDay(subject, periodEnd, now); err != nil {
-			return nil, err
-		}
-		if periodEnd.Before(periodStart) {
-			return nil, domain.BadRequest(subject + ": periodEnd is before periodStart")
-		}
-		// A void settlement with a live line is the one shape from which
-		// there is no way back. VoidSettlement answers SETTLEMENT_ALREADY_VOID
-		// before it reaches the lines, DELETE is revoked on settlement_items,
-		// and ux_items_payable_live keeps that line's payable claimed for
-		// ever — the day's picking earns nothing and no route on this server
-		// frees it. It is refused here because here is the only place it can
-		// still be refused.
-		if status == "void" {
-			for _, it := range st.Items {
-				if it.VoidedAt == nil {
-					return nil, domain.BadRequest(subject +
-						": a void settlement cannot carry a live line — payable " + it.PayableID +
-						" would stay claimed by a settlement no route can void again")
-				}
-			}
-		}
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO settlements (id, farm_id, employee_id, period_start, period_end,
-			                         gross_minor, status, note, created_by, created_at, voided_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7::settlement_status, $8, $9, coalesce($10, now()), $11)
-			ON CONFLICT (id) DO NOTHING`,
-			st.ID, farmID, st.WorkerID, periodStart, periodEnd, st.GrossCents, status,
-			st.Note, nilUUID(createdBy), st.CreatedAt, st.VoidedAt)
-		if err != nil {
-			return nil, importFailure(subject, err)
-		}
-		count(&rep.Settlements, tag.RowsAffected())
-
-		for _, it := range st.Items {
-			if !isUUID(it.PayableID) {
-				return nil, domain.BadRequest(subject +
-					": a line's payableId travels as the handset's own uuid")
-			}
-			// A rounded line quantity would break the column's own CHECK
-			// (amount_minor = round(quantity * price_minor)) and come back as
-			// a 500 that names nothing.
-			if err := domain.CheckNumeric(subject+" line quantity",
-				it.Quantity.String(), domain.QuantityPrecision, domain.QuantityScale); err != nil {
-				return nil, err
-			}
-			// A line's identity for the purpose of "have I already imported
-			// this" is (settlement, payable) and not the line's own uuid. The
-			// handset does have a uuid per line, but a file that omits one
-			// would otherwise get a fresh id on every run — and the second run
-			// would then collide with ux_items_payable_live and report the
-			// import's own first pass as a double claim.
-			var existing *string
-			if err := tx.QueryRow(ctx, `
-				SELECT id::text FROM settlement_items
-				 WHERE settlement_id = $1 AND payable_id = $2`,
-				st.ID, it.PayableID).Scan(&existing); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return nil, importFailure(subject+" line "+it.PayableID, err)
-			}
-			if existing != nil {
-				rep.SettlementItems.Skipped++
-				continue
-			}
-
-			itemID := it.ID
-			if itemID == "" {
-				itemID = newID()
-			}
-			week, err := time.Parse(time.DateOnly, it.WeekStart)
-			if err != nil {
-				return nil, domain.BadRequest(subject + ": a line's weekStart must be YYYY-MM-DD")
-			}
-			itemTag, err := tx.Exec(ctx, `
-				INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id, week_start,
-				                              quantity, price_minor, amount_minor, voided_at)
-				VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9)
-				ON CONFLICT (id) DO NOTHING`,
-				itemID, farmID, st.ID, it.PayableID, week,
-				it.Quantity.String(), it.PriceCents, it.AmountCents, it.VoidedAt)
-			if err != nil {
-				if IsUniqueViolation(err, "ux_items_payable_live") {
-					// The lock did its job. On an import it means the same
-					// payable is claimed by two live settlements in the file
-					// itself, which is a handset whose own lock was bypassed —
-					// and it is not something to paper over.
-					return nil, domain.Conflict(domain.CodePayableAlreadyClaimed,
-						"payable "+it.PayableID+" is claimed by more than one live settlement in this import").
-						WithDetails(map[string]any{
-							"settlementId": st.ID, "payableId": it.PayableID,
-						}).WithCause(err)
-				}
-				return nil, importFailure(subject+" line "+it.PayableID, err)
-			}
-			count(&rep.SettlementItems, itemTag.RowsAffected())
-		}
-	}
-
-	// 6. The ledger, in id order, with settlement_id and reverses_id resolved
-	//    by uuid. Reversals last: check_reverso() reads the row it cancels.
-	ordered := append([]ImportLedger(nil), in.Ledger...)
-	for pass := 0; pass < 2; pass++ {
-		for _, l := range ordered {
-			isReversal := domain.LedgerKind(l.Kind) == domain.KindReversal
-			if (pass == 0) == isReversal {
-				continue
-			}
-			if l.ID == "" || l.WorkerID == "" {
-				return nil, domain.BadRequest("every imported movement needs an id and a workerId")
-			}
-			if l.AmountCents == 0 {
-				return nil, domain.BadRequest("movement " + l.ID + " has an amount of zero")
-			}
-			if !isUUID(l.ID) || !isUUID(l.WorkerID) {
-				return nil, domain.BadRequest("movement " + l.ID + ": ids travel as the handset's own uuids")
-			}
-			kind := domain.LedgerKind(l.Kind)
-			day, err := time.Parse(time.DateOnly, l.Date)
-			if err != nil {
-				return nil, domain.BadRequest("movement " + l.ID + ": date must be YYYY-MM-DD")
-			}
-			if err := checkImportDay("movement "+l.ID, day, now); err != nil {
-				return nil, err
-			}
-			tag, err := tx.Exec(ctx, `
-				INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
-				                    settlement_id, method, note, reverses_id, created_by, created_at)
-				VALUES ($1, $2, $3, $4::ledger_kind, $5, $6, $7, $8::pay_method, $9, $10, $11, coalesce($12, now()))
-				ON CONFLICT (id) DO NOTHING`,
-				l.ID, farmID, l.WorkerID, string(kind), l.AmountCents, day,
-				nilUUID(deref(l.SettlementID)), l.Method, l.Note,
-				nilUUID(deref(l.ReversesID)), nilUUID(createdBy), l.CreatedAt)
-			if err != nil {
-				return nil, importFailure("movement "+l.ID, err)
-			}
-			count(&rep.Ledger, tag.RowsAffected())
 		}
 	}
 
@@ -544,6 +222,426 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		return nil, err
 	}
 	return &rep, nil
+}
+
+// seasonImporter carries what every phase of ImportSeason writes with. The
+// phases run in the order ImportSeason lists them, in one transaction.
+type seasonImporter struct {
+	ctx       context.Context
+	tx        pgx.Tx
+	farmID    string
+	createdBy string
+	newID     func() string
+	now       time.Time
+	rep       *ImportReport
+}
+
+func (im *seasonImporter) workers(in SeasonImport) error {
+	for _, x := range in.Workers {
+		if err := im.worker(x); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (im *seasonImporter) plots(in SeasonImport) error {
+	for _, x := range in.Plots {
+		if err := im.plot(x); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (im *seasonImporter) weekPrices(in SeasonImport) error {
+	for _, x := range in.WeekPrices {
+		if err := im.weekPrice(x); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (im *seasonImporter) settlements(in SeasonImport) error {
+	for _, x := range in.Settlements {
+		if err := im.settlement(x); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Step 1. People. The handset's uuid becomes the employee's id.
+func (im *seasonImporter) worker(wkr ImportWorker) error {
+	ctx, tx, farmID, rep := im.ctx, im.tx, im.farmID, im.rep
+	if wkr.ID == "" || wkr.Name == "" {
+		return domain.BadRequest("every imported worker needs an id and a name")
+	}
+	if !isUUID(wkr.ID) {
+		return domain.BadRequest("worker " + wkr.ID + ": ids travel as the handset's own uuids")
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
+		                       created_at, deleted_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8, now()), $9)
+		ON CONFLICT (id) DO NOTHING`,
+		wkr.ID, farmID, wkr.Name, wkr.LastName, wkr.DocumentType, wkr.DocID, wkr.Tag,
+		wkr.CreatedAt, wkr.DeletedAt)
+	if err != nil {
+		return importFailure("worker "+wkr.ID, err)
+	}
+	count(&rep.Workers, tag.RowsAffected())
+	return nil
+}
+
+// Step 2. Lots. One plot per crop, and the plot_crop inherits the crop's uuid
+// because that is the id the weighings carry.
+func (im *seasonImporter) plot(pl ImportPlot) error {
+	ctx, tx, farmID, newID, rep := im.ctx, im.tx, im.farmID, im.newID, im.rep
+	if pl.CropID == "" || pl.Name == "" {
+		return domain.BadRequest("every imported lot needs a cropId and a name")
+	}
+	if pl.AreaHa != nil {
+		if err := domain.CheckNumericFloat("lot "+pl.Name+" areaHa", *pl.AreaHa,
+			domain.AreaPrecision, domain.AreaScale); err != nil {
+			return err
+		}
+	}
+	// Already imported? The crop's id is what says so, not the plot's,
+	// because the plot's id is invented here and a retry would invent a
+	// different one.
+	var existingPlot *string
+	err := tx.QueryRow(ctx,
+		`SELECT plot_id::text FROM plot_crops WHERE id = $1`, pl.CropID).Scan(&existingPlot)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return importFailure("lot "+pl.Name, err)
+	}
+	if existingPlot != nil {
+		rep.Plots.Skipped++
+		rep.Crops.Skipped++
+		return nil
+	}
+
+	plotID := newID()
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO plots (id, farm_id, name, area_ha, deleted_at)
+		VALUES ($1, $2, $3, $4, $5)`,
+		plotID, farmID, pl.Name, pl.AreaHa, pl.DeletedAt); err != nil {
+		return importFailure("lot "+pl.Name, err)
+	}
+	rep.Plots.Written++
+
+	cropType := pl.CropType
+	if cropType == "" {
+		cropType = "Cafe"
+	}
+	ct, err := EnsureCatalogItem(ctx, tx, CatalogCropTypes, farmID, newID(), cropType)
+	if err != nil {
+		return importFailure("lot "+pl.Name, err)
+	}
+	var varietyID *string
+	if pl.Variety != nil && *pl.Variety != "" {
+		v, err := EnsureCatalogItem(ctx, tx, CatalogVarieties, farmID, newID(), *pl.Variety)
+		if err != nil {
+			return importFailure("lot "+pl.Name, err)
+		}
+		varietyID = &v.ID
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO plot_crops (id, farm_id, plot_id, crop_type_id, variety_id, area_ha, deleted_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		pl.CropID, farmID, plotID, ct.ID, varietyID, pl.AreaHa, pl.DeletedAt); err != nil {
+		return importFailure("lot "+pl.Name, err)
+	}
+	rep.Crops.Written++
+	return nil
+}
+
+// Step 3. Prices. cost_overrides -> week_prices, keyed by the Monday.
+func (im *seasonImporter) weekPrice(wp ImportWeekPrice) error {
+	ctx, tx, farmID, now, rep := im.ctx, im.tx, im.farmID, im.now, im.rep
+	week, err := time.Parse(time.DateOnly, wp.WeekStart)
+	if err != nil {
+		return domain.BadRequest("weekStart must be YYYY-MM-DD: " + wp.WeekStart)
+	}
+	if !domain.MondayOf(week).Equal(week) {
+		return domain.BadRequest("a week price is named by its Monday: " + wp.WeekStart)
+	}
+	if wp.PriceCents <= 0 {
+		return domain.BadRequest("a week price must be positive: " + wp.WeekStart)
+	}
+	if err := checkImportDay("the week price of "+wp.WeekStart, week, now); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO week_prices (farm_id, week_start, price_minor) VALUES ($1, $2, $3)
+		ON CONFLICT (farm_id, week_start) DO NOTHING`, farmID, week, wp.PriceCents)
+	if err != nil {
+		return importFailure("week price "+wp.WeekStart, err)
+	}
+	count(&rep.WeekPrices, tag.RowsAffected())
+	return nil
+}
+
+// workRecord writes one weighing with the harvest activity's shape.
+func (im *seasonImporter) workRecord(activity *Activity, wr ImportWorkRecord) error {
+	ctx, tx, farmID, createdBy, now, rep := im.ctx, im.tx, im.farmID, im.createdBy, im.now, im.rep
+	if wr.ID == "" || wr.WorkerID == "" {
+		return domain.BadRequest("every imported weighing needs an id and a workerId")
+	}
+	if wr.OccurredAt.IsZero() {
+		return domain.BadRequest("weighing " + wr.ID + " has no occurredAt")
+	}
+	if !isUUID(wr.ID) || !isUUID(wr.WorkerID) {
+		return domain.BadRequest("weighing " + wr.ID + ": ids travel as the handset's own uuids")
+	}
+	if err := checkImportDay("weighing "+wr.ID, wr.OccurredAt, now); err != nil {
+		return err
+	}
+	if err := domain.CheckNumeric("weighing "+wr.ID+" quantity", wr.Quantity.String(),
+		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO work_records (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
+		                          started_at, quantity, unit_id, note, device_id,
+		                          created_by, created_at, deleted_at)
+		VALUES ($1, $2, $3, $4, $5, 'weekly_price', $6, $7::numeric, $8, $9, $10, $11, coalesce($12, now()), $13)
+		ON CONFLICT (id) DO NOTHING`,
+		wr.ID, farmID, wr.WorkerID, activity.ID, activity.PayScheme,
+		wr.OccurredAt, wr.Quantity.String(), activity.UnitID, wr.Note,
+		nilUUID(deref(wr.DeviceID)), nilUUID(createdBy), wr.OccurredAt, wr.DeletedAt)
+	if err != nil {
+		return importFailure("weighing "+wr.ID, err)
+	}
+	count(&rep.WorkRecords, tag.RowsAffected())
+	if tag.RowsAffected() == 1 && wr.CropID != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO work_record_plot_crops (work_record_id, plot_crop_id, farm_id)
+			VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+			wr.ID, wr.CropID, farmID); err != nil {
+			return importFailure("weighing "+wr.ID, err)
+		}
+	}
+	return nil
+}
+
+// Step 4. The weighings. §8 phase 3 fixes their shape exactly: the seeded
+// "Recolección" activity, rate_source = weekly_price, the unit off the
+// activity, quantity = weight. local_day is NOT written here — the
+// trigger computes it from the farm's timezone, which is the whole
+// reason golden case 04 comes out the same on both sides.
+func (im *seasonImporter) workRecords(in SeasonImport) error {
+	ctx, tx := im.ctx, im.tx
+	activityID, err := HarvestActivityID(ctx, tx)
+	if err != nil {
+		return err
+	}
+	activity, err := GetActivity(ctx, tx, activityID)
+	if err != nil {
+		return err
+	}
+	for _, wr := range in.WorkRecords {
+		if err := im.workRecord(activity, wr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// settlementItem writes one line of an imported settlement.
+func (im *seasonImporter) settlementItem(st ImportSettlement, subject string, it ImportSettlementItem) error {
+	ctx, tx, farmID, newID, rep := im.ctx, im.tx, im.farmID, im.newID, im.rep
+	if !isUUID(it.PayableID) {
+		return domain.BadRequest(subject +
+			": a line's payableId travels as the handset's own uuid")
+	}
+	// A rounded line quantity would break the column's own CHECK
+	// (amount_minor = round(quantity * price_minor)) and come back as
+	// a 500 that names nothing.
+	if err := domain.CheckNumeric(subject+" line quantity",
+		it.Quantity.String(), domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		return err
+	}
+	// A line's identity for the purpose of "have I already imported
+	// this" is (settlement, payable) and not the line's own uuid. The
+	// handset does have a uuid per line, but a file that omits one
+	// would otherwise get a fresh id on every run — and the second run
+	// would then collide with ux_items_payable_live and report the
+	// import's own first pass as a double claim.
+	var existing *string
+	if err := tx.QueryRow(ctx, `
+		SELECT id::text FROM settlement_items
+		 WHERE settlement_id = $1 AND payable_id = $2`,
+		st.ID, it.PayableID).Scan(&existing); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return importFailure(subject+" line "+it.PayableID, err)
+	}
+	if existing != nil {
+		rep.SettlementItems.Skipped++
+		return nil
+	}
+
+	itemID := it.ID
+	if itemID == "" {
+		itemID = newID()
+	}
+	week, err := time.Parse(time.DateOnly, it.WeekStart)
+	if err != nil {
+		return domain.BadRequest(subject + ": a line's weekStart must be YYYY-MM-DD")
+	}
+	itemTag, err := tx.Exec(ctx, `
+		INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id, week_start,
+		                              quantity, price_minor, amount_minor, voided_at)
+		VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9)
+		ON CONFLICT (id) DO NOTHING`,
+		itemID, farmID, st.ID, it.PayableID, week,
+		it.Quantity.String(), it.PriceCents, it.AmountCents, it.VoidedAt)
+	if err != nil {
+		if IsUniqueViolation(err, "ux_items_payable_live") {
+			// The lock did its job. On an import it means the same
+			// payable is claimed by two live settlements in the file
+			// itself, which is a handset whose own lock was bypassed —
+			// and it is not something to paper over.
+			return domain.Conflict(domain.CodePayableAlreadyClaimed,
+				"payable "+it.PayableID+" is claimed by more than one live settlement in this import").
+				WithDetails(map[string]any{
+					"settlementId": st.ID, "payableId": it.PayableID,
+				}).WithCause(err)
+		}
+		return importFailure(subject+" line "+it.PayableID, err)
+	}
+	count(&rep.SettlementItems, itemTag.RowsAffected())
+	return nil
+}
+
+// Step 5. The settlements, with their lines. The lines are what the anti
+// double-pay index acts on, and payable_id is the handset's own uuid:
+// the money is not remapped.
+func (im *seasonImporter) settlement(st ImportSettlement) error {
+	ctx, tx, farmID, createdBy, now, rep := im.ctx, im.tx, im.farmID, im.createdBy, im.now, im.rep
+	if st.ID == "" || st.WorkerID == "" {
+		return domain.BadRequest("every imported settlement needs an id and a workerId")
+	}
+	subject := "settlement " + st.ID
+	periodStart, err := time.Parse(time.DateOnly, st.PeriodStart)
+	if err != nil {
+		return domain.BadRequest(subject + ": periodStart must be YYYY-MM-DD")
+	}
+	periodEnd, err := time.Parse(time.DateOnly, st.PeriodEnd)
+	if err != nil {
+		return domain.BadRequest(subject + ": periodEnd must be YYYY-MM-DD")
+	}
+	status := st.Status
+	if status == "" {
+		status = "open"
+	}
+	if status != "open" && status != "void" {
+		return domain.BadRequest(subject + ": status must be open or void")
+	}
+	if (status == "void") != (st.VoidedAt != nil) {
+		return domain.BadRequest(
+			subject + ": a void settlement carries voidedAt and an open one does not")
+	}
+	if !isUUID(st.ID) || !isUUID(st.WorkerID) {
+		return domain.BadRequest(subject + ": ids travel as the handset's own uuids")
+	}
+	if err := checkImportDay(subject, periodStart, now); err != nil {
+		return err
+	}
+	if err := checkImportDay(subject, periodEnd, now); err != nil {
+		return err
+	}
+	if periodEnd.Before(periodStart) {
+		return domain.BadRequest(subject + ": periodEnd is before periodStart")
+	}
+	// A void settlement with a live line is the one shape from which
+	// there is no way back. VoidSettlement answers SETTLEMENT_ALREADY_VOID
+	// before it reaches the lines, DELETE is revoked on settlement_items,
+	// and ux_items_payable_live keeps that line's payable claimed for
+	// ever — the day's picking earns nothing and no route on this server
+	// frees it. It is refused here because here is the only place it can
+	// still be refused.
+	if status == "void" {
+		for _, it := range st.Items {
+			if it.VoidedAt == nil {
+				return domain.BadRequest(subject +
+					": a void settlement cannot carry a live line — payable " + it.PayableID +
+					" would stay claimed by a settlement no route can void again")
+			}
+		}
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO settlements (id, farm_id, employee_id, period_start, period_end,
+		                         gross_minor, status, note, created_by, created_at, voided_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::settlement_status, $8, $9, coalesce($10, now()), $11)
+		ON CONFLICT (id) DO NOTHING`,
+		st.ID, farmID, st.WorkerID, periodStart, periodEnd, st.GrossCents, status,
+		st.Note, nilUUID(createdBy), st.CreatedAt, st.VoidedAt)
+	if err != nil {
+		return importFailure(subject, err)
+	}
+	count(&rep.Settlements, tag.RowsAffected())
+
+	for _, it := range st.Items {
+		if err := im.settlementItem(st, subject, it); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ledgerEntry writes one movement.
+func (im *seasonImporter) ledgerEntry(l ImportLedger) error {
+	ctx, tx, farmID, createdBy, now, rep := im.ctx, im.tx, im.farmID, im.createdBy, im.now, im.rep
+	if l.ID == "" || l.WorkerID == "" {
+		return domain.BadRequest("every imported movement needs an id and a workerId")
+	}
+	if l.AmountCents == 0 {
+		return domain.BadRequest("movement " + l.ID + " has an amount of zero")
+	}
+	if !isUUID(l.ID) || !isUUID(l.WorkerID) {
+		return domain.BadRequest("movement " + l.ID + ": ids travel as the handset's own uuids")
+	}
+	kind := domain.LedgerKind(l.Kind)
+	day, err := time.Parse(time.DateOnly, l.Date)
+	if err != nil {
+		return domain.BadRequest("movement " + l.ID + ": date must be YYYY-MM-DD")
+	}
+	if err := checkImportDay("movement "+l.ID, day, now); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
+		                    settlement_id, method, note, reverses_id, created_by, created_at)
+		VALUES ($1, $2, $3, $4::ledger_kind, $5, $6, $7, $8::pay_method, $9, $10, $11, coalesce($12, now()))
+		ON CONFLICT (id) DO NOTHING`,
+		l.ID, farmID, l.WorkerID, string(kind), l.AmountCents, day,
+		nilUUID(deref(l.SettlementID)), l.Method, l.Note,
+		nilUUID(deref(l.ReversesID)), nilUUID(createdBy), l.CreatedAt)
+	if err != nil {
+		return importFailure("movement "+l.ID, err)
+	}
+	count(&rep.Ledger, tag.RowsAffected())
+	return nil
+}
+
+// Step 6. The ledger, in id order, with settlement_id and reverses_id resolved
+// by uuid. Reversals last: check_reverso() reads the row it cancels.
+func (im *seasonImporter) ledger(in SeasonImport) error {
+	ordered := append([]ImportLedger(nil), in.Ledger...)
+	for pass := 0; pass < 2; pass++ {
+		for _, l := range ordered {
+			isReversal := domain.LedgerKind(l.Kind) == domain.KindReversal
+			if (pass == 0) == isReversal {
+				continue
+			}
+			if err := im.ledgerEntry(l); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // reconcileImport is §8 phase 3's three queries, and it is the reason this

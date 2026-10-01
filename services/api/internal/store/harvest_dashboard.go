@@ -198,13 +198,57 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		return nil, err
 	}
 	lastWeek := thisWeek.AddDate(0, 0, -7)
-	sameDayLastWeek := today.AddDate(0, 0, -7)
 	sunday := thisWeek.AddDate(0, 0, 6)
 
-	rows, err := tx.Query(ctx, harvestDashboardSQL, lastWeek, sunday)
+	all, err := readDashRows(ctx, tx, lastWeek, sunday)
 	if err != nil {
 		return nil, err
 	}
+
+	out := &HarvestDashboard{
+		Scope:             ScopeHarvest,
+		Today:             domain.Day{Time: today},
+		ThisWeek:          domain.Day{Time: thisWeek},
+		LastWeek:          domain.Day{Time: lastWeek},
+		BelowAverageRatio: HarvestBelowAverageRatio,
+		Days:              []HarvestDashboardDay{},
+		Plots:             []HarvestDashboardPlot{},
+		People:            []HarvestDashboardPerson{},
+		NotToday:          []HarvestDashboardAbsent{},
+	}
+	acc := newDashAcc(out, today, thisWeek)
+	for _, r := range all {
+		acc.add(r)
+	}
+	acc.summarize()
+
+	// Names. Deleted people and lotes keep their name: their kilos are real.
+	names, active, err := employeeNames(ctx, tx, keys(acc.people))
+	if err != nil {
+		return nil, err
+	}
+	kinds, tags, err := employeeKinds(ctx, tx, keys(acc.people))
+	if err != nil {
+		return nil, err
+	}
+	plotNames, err := plotNamesOf(ctx, tx, keys(acc.plots))
+	if err != nil {
+		return nil, err
+	}
+
+	acc.plotRows(plotNames)
+	acc.personRows(dashNames{names: names, active: active, kinds: kinds, tags: tags})
+	return out, nil
+}
+
+// readDashRows runs harvestDashboardSQL over [from, to] and turns each
+// weighing into a dashRow.
+func readDashRows(ctx context.Context, tx pgx.Tx, from, to time.Time) ([]dashRow, error) {
+	rows, err := tx.Query(ctx, harvestDashboardSQL, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	var all []dashRow
 	for rows.Next() {
 		var r dashRow
@@ -212,7 +256,6 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		var value *int64
 		var estimate, spans bool
 		if err := rows.Scan(&r.employee, &r.day, &kg, &value, &estimate, &spans, &r.plot, &r.people); err != nil {
-			rows.Close()
 			return nil, err
 		}
 		r.t = Totals{Records: 1, Kg: kg, ValueCents: value, ValueIsEstimate: estimate}
@@ -231,148 +274,170 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	return all, nil
+}
 
-	out := &HarvestDashboard{
-		Scope:             ScopeHarvest,
-		Today:             domain.Day{Time: today},
-		ThisWeek:          domain.Day{Time: thisWeek},
-		LastWeek:          domain.Day{Time: lastWeek},
-		BelowAverageRatio: HarvestBelowAverageRatio,
-		Days:              []HarvestDashboardDay{},
-		Plots:             []HarvestDashboardPlot{},
-		People:            []HarvestDashboardPerson{},
-		NotToday:          []HarvestDashboardAbsent{},
-	}
+type dashPersonAcc struct {
+	t        Totals
+	kgDays   map[string]bool
+	heads    map[string]bool // person|day with kilos, for a team's per-member figures
+	today    bool
+	lastSeen time.Time
+}
 
-	type personAcc struct {
-		t        Totals
-		kgDays   map[string]bool
-		heads    map[string]bool // person|day with kilos, for a team's per-member figures
-		today    bool
-		lastSeen time.Time
+type dashPlotAcc struct {
+	t              Totals
+	lastWeekToDate *float64
+	lastWeek       *float64
+	pickers        map[string]bool
+}
+
+// dashAcc accumulates the dashboard's figures one weighing at a time.
+type dashAcc struct {
+	out                              *HarvestDashboard
+	today, thisWeek, sameDayLastWeek time.Time
+
+	days         map[string]*HarvestDashboardDay
+	dayPickers   map[string]map[string]bool
+	people       map[string]*dashPersonAcc
+	plots        map[string]*dashPlotAcc
+	pickersToday map[string]bool
+	pickersWeek  map[string]bool // people (heads)
+	weekAccounts map[string]bool // employee ids with a weighing this week
+	personDays   map[string]bool
+}
+
+func newDashAcc(out *HarvestDashboard, today, thisWeek time.Time) *dashAcc {
+	a := &dashAcc{
+		out: out, today: today, thisWeek: thisWeek, sameDayLastWeek: today.AddDate(0, 0, -7),
+		days:         map[string]*HarvestDashboardDay{},
+		dayPickers:   map[string]map[string]bool{},
+		people:       map[string]*dashPersonAcc{},
+		plots:        map[string]*dashPlotAcc{},
+		pickersToday: map[string]bool{},
+		pickersWeek:  map[string]bool{},
+		weekAccounts: map[string]bool{},
+		personDays:   map[string]bool{},
 	}
-	type plotAcc struct {
-		t              Totals
-		lastWeekToDate *float64
-		lastWeek       *float64
-		pickers        map[string]bool
-	}
-	days := map[string]*HarvestDashboardDay{}
-	dayPickers := map[string]map[string]bool{}
-	people := map[string]*personAcc{}
-	plots := map[string]*plotAcc{}
-	pickersToday := map[string]bool{}
-	pickersWeek := map[string]bool{}  // people (heads)
-	weekAccounts := map[string]bool{} // employee ids with a weighing this week
-	personDays := map[string]bool{}
 	for i := 0; i < 7; i++ {
 		d := thisWeek.AddDate(0, 0, i)
-		days[dayKey(d)] = &HarvestDashboardDay{Day: domain.Day{Time: d}, Future: d.After(today)}
-		dayPickers[dayKey(d)] = map[string]bool{}
+		a.days[dayKey(d)] = &HarvestDashboardDay{Day: domain.Day{Time: d}, Future: d.After(today)}
+		a.dayPickers[dayKey(d)] = map[string]bool{}
 	}
+	return a
+}
 
-	for _, r := range all {
-		p := people[r.employee]
-		if p == nil {
-			p = &personAcc{kgDays: map[string]bool{}, heads: map[string]bool{}}
-			people[r.employee] = p
-		}
-		if r.day.After(p.lastSeen) {
-			p.lastSeen = r.day
-		}
-		var pl *plotAcc
-		if r.plot != nil {
-			pl = plots[*r.plot]
-			if pl == nil {
-				pl = &plotAcc{pickers: map[string]bool{}}
-				plots[*r.plot] = pl
-			}
-		}
+// person is the accumulator of the row's employee, made on first sight.
+func (a *dashAcc) person(r dashRow) *dashPersonAcc {
+	p := a.people[r.employee]
+	if p == nil {
+		p = &dashPersonAcc{kgDays: map[string]bool{}, heads: map[string]bool{}}
+		a.people[r.employee] = p
+	}
+	if r.day.After(p.lastSeen) {
+		p.lastSeen = r.day
+	}
+	return p
+}
 
-		if r.day.Before(thisWeek) {
-			// Last week.
-			out.Summary.LastWeek.add(r.t)
-			toDate := !r.day.After(sameDayLastWeek)
-			if toDate {
-				out.Summary.LastWeekToDate.add(r.t)
-			}
-			if pl != nil {
-				pl.lastWeek = addKg(pl.lastWeek, r.t.Kg)
-				if toDate {
-					pl.lastWeekToDate = addKg(pl.lastWeekToDate, r.t.Kg)
-				}
-			}
-			continue
-		}
+// plot is the accumulator of the row's lote, or nil when it names none.
+func (a *dashAcc) plot(r dashRow) *dashPlotAcc {
+	if r.plot == nil {
+		return nil
+	}
+	pl := a.plots[*r.plot]
+	if pl == nil {
+		pl = &dashPlotAcc{pickers: map[string]bool{}}
+		a.plots[*r.plot] = pl
+	}
+	return pl
+}
 
-		// This week.
-		k := dayKey(r.day)
-		out.Summary.ThisWeek.add(r.t)
-		weekAccounts[r.employee] = true
-		p.t.add(r.t)
+func (a *dashAcc) add(r dashRow) {
+	p := a.person(r)
+	pl := a.plot(r)
+	if r.day.Before(a.thisWeek) {
+		a.addLastWeek(r, pl)
+		return
+	}
+	a.addThisWeek(r, p, pl)
+}
+
+func (a *dashAcc) addLastWeek(r dashRow, pl *dashPlotAcc) {
+	a.out.Summary.LastWeek.add(r.t)
+	toDate := !r.day.After(a.sameDayLastWeek)
+	if toDate {
+		a.out.Summary.LastWeekToDate.add(r.t)
+	}
+	if pl != nil {
+		pl.lastWeek = addKg(pl.lastWeek, r.t.Kg)
+		if toDate {
+			pl.lastWeekToDate = addKg(pl.lastWeekToDate, r.t.Kg)
+		}
+	}
+}
+
+func (a *dashAcc) addThisWeek(r dashRow, p *dashPersonAcc, pl *dashPlotAcc) {
+	out := a.out
+	k := dayKey(r.day)
+	out.Summary.ThisWeek.add(r.t)
+	a.weekAccounts[r.employee] = true
+	p.t.add(r.t)
+	if r.t.Kg != nil {
+		p.kgDays[k] = true
+	}
+	for _, who := range r.people {
+		a.pickersWeek[who] = true
 		if r.t.Kg != nil {
-			p.kgDays[k] = true
-		}
-		for _, who := range r.people {
-			pickersWeek[who] = true
-			if r.t.Kg != nil {
-				personDays[who+"|"+k] = true
-				p.heads[who+"|"+k] = true
-			}
-		}
-		if d := days[k]; d != nil {
-			d.Totals.add(r.t)
-			for _, who := range r.people {
-				dayPickers[k][who] = true
-			}
-		}
-		if r.day.Equal(today) {
-			out.Summary.Today.add(r.t)
-			for _, who := range r.people {
-				pickersToday[who] = true
-			}
-			p.today = true
-		}
-		if pl != nil {
-			pl.t.add(r.t)
-			for _, who := range r.people {
-				pl.pickers[who] = true
-			}
-		} else {
-			out.Unattributed.add(r.t)
+			a.personDays[who+"|"+k] = true
+			p.heads[who+"|"+k] = true
 		}
 	}
+	if d := a.days[k]; d != nil {
+		d.Totals.add(r.t)
+		for _, who := range r.people {
+			a.dayPickers[k][who] = true
+		}
+	}
+	if r.day.Equal(a.today) {
+		out.Summary.Today.add(r.t)
+		for _, who := range r.people {
+			a.pickersToday[who] = true
+		}
+		p.today = true
+	}
+	if pl != nil {
+		pl.t.add(r.t)
+		for _, who := range r.people {
+			pl.pickers[who] = true
+		}
+	} else {
+		out.Unattributed.add(r.t)
+	}
+}
 
-	out.Summary.PickersToday = len(pickersToday)
-	out.Summary.PickersThisWeek = len(pickersWeek)
-	out.Summary.PersonDays = len(personDays)
+// summarize fills the counts and the seven days once every row is in.
+func (a *dashAcc) summarize() {
+	out := a.out
+	out.Summary.PickersToday = len(a.pickersToday)
+	out.Summary.PickersThisWeek = len(a.pickersWeek)
+	out.Summary.PersonDays = len(a.personDays)
 	if out.Summary.ThisWeek.Kg != nil && out.Summary.PersonDays > 0 {
 		v := *out.Summary.ThisWeek.Kg / float64(out.Summary.PersonDays)
 		out.Summary.KgPerPersonDay = &v
 	}
 	for i := 0; i < 7; i++ {
-		k := dayKey(thisWeek.AddDate(0, 0, i))
-		d := days[k]
-		d.Pickers = len(dayPickers[k])
+		k := dayKey(a.thisWeek.AddDate(0, 0, i))
+		d := a.days[k]
+		d.Pickers = len(a.dayPickers[k])
 		out.Days = append(out.Days, *d)
 	}
+}
 
-	// Names. Deleted people and lotes keep their name: their kilos are real.
-	names, active, err := employeeNames(ctx, tx, keys(people))
-	if err != nil {
-		return nil, err
-	}
-	kinds, tags, err := employeeKinds(ctx, tx, keys(people))
-	if err != nil {
-		return nil, err
-	}
-	plotNames, err := plotNamesOf(ctx, tx, keys(plots))
-	if err != nil {
-		return nil, err
-	}
-
+func (a *dashAcc) plotRows(plotNames map[string]string) {
+	out := a.out
 	weekKg := out.Summary.ThisWeek.Kg
-	for id, pl := range plots {
+	for id, pl := range a.plots {
 		row := HarvestDashboardPlot{
 			PlotID: id, Name: plotNames[id], Totals: pl.t,
 			LastWeekToDateKg: pl.lastWeekToDate, LastWeekKg: pl.lastWeek,
@@ -394,36 +459,27 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		}
 		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
+}
 
+// dashNames is what the people rows read about each employee.
+type dashNames struct {
+	names  map[string]string
+	active map[string]bool
+	kinds  map[string]string
+	tags   map[string]*string
+}
+
+func (a *dashAcc) personRows(n dashNames) {
+	out := a.out
 	avg := out.Summary.KgPerPersonDay
 	compare := avg != nil && out.Summary.PickersThisWeek >= HarvestMinPickersToCompare
-	for id, p := range people {
-		if weekAccounts[id] {
-			kind := kinds[id]
-			if kind == "" {
-				kind = KindPersona
-			}
-			row := HarvestDashboardPerson{
-				EmployeeID: id, Name: names[id], Tag: tags[id], Kind: kind, Members: 1, Totals: p.t,
-				DaysWorked: len(p.kgDays), PickedToday: p.today,
-			}
-			if p.t.Kg != nil && row.DaysWorked > 0 && len(p.heads) > 0 {
-				// Per person per day: the row's kilos over its person-days
-				// (for a person, its days).
-				v := *p.t.Kg / float64(len(p.heads))
-				row.KgPerDay = &v
-				row.BelowAverage = compare && v < *avg*HarvestBelowAverageRatio
-				// Average heads per day worked.
-				heads := float64(len(p.heads)) / float64(row.DaysWorked)
-				row.Members = int(heads + 0.5)
-				each := *p.t.Kg / heads
-				row.KgEach = &each
-			}
-			out.People = append(out.People, row)
+	for id, p := range a.people {
+		if a.weekAccounts[id] {
+			out.People = append(out.People, personRow(id, p, n, avg, compare))
 		}
-		if !p.today && active[id] {
+		if !p.today && n.active[id] {
 			out.NotToday = append(out.NotToday, HarvestDashboardAbsent{
-				EmployeeID: id, Name: names[id], Tag: tags[id], LastRecordOn: domain.Day{Time: p.lastSeen},
+				EmployeeID: id, Name: n.names[id], Tag: n.tags[id], LastRecordOn: domain.Day{Time: p.lastSeen},
 			})
 		}
 	}
@@ -440,7 +496,30 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	sort.Slice(out.NotToday, func(i, j int) bool {
 		return strings.ToLower(out.NotToday[i].Name) < strings.ToLower(out.NotToday[j].Name)
 	})
-	return out, nil
+}
+
+func personRow(id string, p *dashPersonAcc, n dashNames, avg *float64, compare bool) HarvestDashboardPerson {
+	kind := n.kinds[id]
+	if kind == "" {
+		kind = KindPersona
+	}
+	row := HarvestDashboardPerson{
+		EmployeeID: id, Name: n.names[id], Tag: n.tags[id], Kind: kind, Members: 1, Totals: p.t,
+		DaysWorked: len(p.kgDays), PickedToday: p.today,
+	}
+	if p.t.Kg != nil && row.DaysWorked > 0 && len(p.heads) > 0 {
+		// Per person per day: the row's kilos over its person-days
+		// (for a person, its days).
+		v := *p.t.Kg / float64(len(p.heads))
+		row.KgPerDay = &v
+		row.BelowAverage = compare && v < *avg*HarvestBelowAverageRatio
+		// Average heads per day worked.
+		heads := float64(len(p.heads)) / float64(row.DaysWorked)
+		row.Members = int(heads + 0.5)
+		each := *p.t.Kg / heads
+		row.KgEach = &each
+	}
+	return row
 }
 
 func kgOrZero(v *float64) float64 {
