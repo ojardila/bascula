@@ -23,7 +23,7 @@ function renderApp(path: string) {
 
 async function fillDemoForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole("textbox", { name: "Nombre" }), "Ana Rodríguez");
-  await user.type(screen.getByRole("textbox", { name: "Teléfono de contacto" }), "+57 300 123 4567");
+  await user.type(screen.getByRole("textbox", { name: "Teléfono de contacto" }), "310 482 7391");
   await user.type(screen.getByRole("textbox", { name: "Correo electrónico" }), "ana@correo.com");
   await user.type(screen.getByRole("textbox", { name: "Nombre de la finca" }), "La Esperanza");
 }
@@ -153,6 +153,34 @@ describe("the public landing", () => {
     expect(screen.getByText("Revise el correo electrónico. Ejemplo: nombre@correo.com.")).toBeInTheDocument();
     expect(screen.getByText("Escriba el nombre de su finca.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a phone number nobody can call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderApp("/");
+    await screen.findByRole("heading", { level: 1 });
+    await fillDemoForm(user);
+    const phone = screen.getByRole("textbox", { name: "Teléfono de contacto" });
+    await user.clear(phone);
+    await user.type(phone, "1234567");
+    await user.click(screen.getByRole("button", { name: "Solicitar una demostración" }));
+    expect(screen.getByText(/un celular tiene 10 dígitos y empieza por 3/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends the phone ready to dial, however it was typed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderApp("/");
+    await screen.findByRole("heading", { level: 1 });
+    await fillDemoForm(user);
+    await user.click(screen.getByRole("button", { name: "Solicitar una demostración" }));
+    await screen.findByText(/Recibimos su solicitud/);
+    const sent = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(sent.phone).toBe("+57 310 482 7391");
   });
 
   it("confirms only after the request is received", async () => {

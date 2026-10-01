@@ -24,10 +24,6 @@ type OAuthClient struct {
 	Metadata []byte
 }
 
-func InsertOAuthClient(ctx context.Context, tx pgx.Tx, c OAuthClient) error {
-	return InsertOAuthClientFrom(ctx, tx, c, "")
-}
-
 // InsertOAuthClientFrom records a registration and the rate-limit bucket it
 // came from.
 func InsertOAuthClientFrom(ctx context.Context, tx pgx.Tx, c OAuthClient, from string) error {
