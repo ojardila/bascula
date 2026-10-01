@@ -186,7 +186,7 @@ type dashRow struct {
 	people []string
 }
 
-func dayKey(t time.Time) string { return t.Format("2006-01-02") }
+func dayKey(t time.Time) string { return t.Format(time.DateOnly) }
 
 // ReportHarvestDashboard reads the running week and the one before it.
 func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, error) {

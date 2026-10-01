@@ -325,7 +325,7 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 			drows.Close()
 			return nil, err
 		}
-		byDay[d.Day.Format("2006-01-02")] = d
+		byDay[d.Day.Format(time.DateOnly)] = d
 	}
 	drows.Close()
 	if err := drows.Err(); err != nil {
@@ -333,13 +333,13 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 	}
 	sameDayLastWeek := today.AddDate(0, 0, -7)
 	for day := lastMonday; !day.After(sameDayLastWeek); day = day.AddDate(0, 0, 1) {
-		if d, ok := byDay[day.Format("2006-01-02")]; ok {
+		if d, ok := byDay[day.Format(time.DateOnly)]; ok {
 			out.Summary.LastWeekToDateKg = addKg(out.Summary.LastWeekToDateKg, d.Kg)
 		}
 	}
 	for i := 0; i < 7; i++ {
 		day := thisWeek.AddDate(0, 0, i)
-		d, ok := byDay[day.Format("2006-01-02")]
+		d, ok := byDay[day.Format(time.DateOnly)]
 		if !ok {
 			d = PerformanceDay{Day: domain.Day{Time: day}}
 		}

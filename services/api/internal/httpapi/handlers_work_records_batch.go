@@ -58,7 +58,7 @@ func (s *Server) handleCreateWorkRecordBatch(w http.ResponseWriter, r *http.Requ
 	}
 	var monday, sunday time.Time
 	if body.WeekStart != "" {
-		d, err := time.Parse("2006-01-02", body.WeekStart)
+		d, err := time.Parse(time.DateOnly, body.WeekStart)
 		if err != nil || d.Weekday() != time.Monday {
 			writeError(w, r, domain.BadRequest("weekStart must be a Monday, YYYY-MM-DD"))
 			return

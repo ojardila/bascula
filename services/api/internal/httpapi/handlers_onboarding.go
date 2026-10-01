@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,7 +26,7 @@ func basePriceJSON(st *store.BasePriceState) map[string]any {
 	hist := make([]map[string]any, 0, len(st.History))
 	for _, p := range st.History {
 		hist = append(hist, map[string]any{
-			"validFrom":  p.ValidFrom.Format("2006-01-02"),
+			"validFrom":  p.ValidFrom.Format(time.DateOnly),
 			"priceCents": p.PriceMinor,
 			"createdAt":  p.CreatedAt,
 		})
@@ -33,7 +34,7 @@ func basePriceJSON(st *store.BasePriceState) map[string]any {
 	return map[string]any{
 		"currentCents": st.CurrentMinor,
 		"confirmed":    st.Confirmed,
-		"thisWeek":     st.ThisWeek.Format("2006-01-02"),
+		"thisWeek":     st.ThisWeek.Format(time.DateOnly),
 		"history":      hist,
 	}
 }

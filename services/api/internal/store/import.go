@@ -32,9 +32,9 @@ func importHorizon(now time.Time) time.Time { return now.UTC().AddDate(1, 0, 0) 
 func checkImportDay(what string, day, now time.Time) error {
 	horizon := importHorizon(now)
 	if day.Before(importEarliestDay) || day.After(horizon) {
-		return domain.BadRequest(what + " is dated " + day.Format("2006-01-02") +
+		return domain.BadRequest(what + " is dated " + day.Format(time.DateOnly) +
 			", outside the window an import may cover (" +
-			importEarliestDay.Format("2006-01-02") + " to " + horizon.Format("2006-01-02") + ")")
+			importEarliestDay.Format(time.DateOnly) + " to " + horizon.Format(time.DateOnly) + ")")
 	}
 	return nil
 }
@@ -294,7 +294,7 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 
 	// 3. Prices. cost_overrides -> week_prices, keyed by the Monday.
 	for _, wp := range in.WeekPrices {
-		week, err := time.Parse("2006-01-02", wp.WeekStart)
+		week, err := time.Parse(time.DateOnly, wp.WeekStart)
 		if err != nil {
 			return nil, domain.BadRequest("weekStart must be YYYY-MM-DD: " + wp.WeekStart)
 		}
@@ -376,36 +376,37 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		if st.ID == "" || st.WorkerID == "" {
 			return nil, domain.BadRequest("every imported settlement needs an id and a workerId")
 		}
-		periodStart, err := time.Parse("2006-01-02", st.PeriodStart)
+		subject := "settlement " + st.ID
+		periodStart, err := time.Parse(time.DateOnly, st.PeriodStart)
 		if err != nil {
-			return nil, domain.BadRequest("settlement " + st.ID + ": periodStart must be YYYY-MM-DD")
+			return nil, domain.BadRequest(subject + ": periodStart must be YYYY-MM-DD")
 		}
-		periodEnd, err := time.Parse("2006-01-02", st.PeriodEnd)
+		periodEnd, err := time.Parse(time.DateOnly, st.PeriodEnd)
 		if err != nil {
-			return nil, domain.BadRequest("settlement " + st.ID + ": periodEnd must be YYYY-MM-DD")
+			return nil, domain.BadRequest(subject + ": periodEnd must be YYYY-MM-DD")
 		}
 		status := st.Status
 		if status == "" {
 			status = "open"
 		}
 		if status != "open" && status != "void" {
-			return nil, domain.BadRequest("settlement " + st.ID + ": status must be open or void")
+			return nil, domain.BadRequest(subject + ": status must be open or void")
 		}
 		if (status == "void") != (st.VoidedAt != nil) {
 			return nil, domain.BadRequest(
-				"settlement " + st.ID + ": a void settlement carries voidedAt and an open one does not")
+				subject + ": a void settlement carries voidedAt and an open one does not")
 		}
 		if !isUUID(st.ID) || !isUUID(st.WorkerID) {
-			return nil, domain.BadRequest("settlement " + st.ID + ": ids travel as the handset's own uuids")
+			return nil, domain.BadRequest(subject + ": ids travel as the handset's own uuids")
 		}
-		if err := checkImportDay("settlement "+st.ID, periodStart, now); err != nil {
+		if err := checkImportDay(subject, periodStart, now); err != nil {
 			return nil, err
 		}
-		if err := checkImportDay("settlement "+st.ID, periodEnd, now); err != nil {
+		if err := checkImportDay(subject, periodEnd, now); err != nil {
 			return nil, err
 		}
 		if periodEnd.Before(periodStart) {
-			return nil, domain.BadRequest("settlement " + st.ID + ": periodEnd is before periodStart")
+			return nil, domain.BadRequest(subject + ": periodEnd is before periodStart")
 		}
 		// A void settlement with a live line is the one shape from which
 		// there is no way back. VoidSettlement answers SETTLEMENT_ALREADY_VOID
@@ -417,7 +418,7 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 		if status == "void" {
 			for _, it := range st.Items {
 				if it.VoidedAt == nil {
-					return nil, domain.BadRequest("settlement " + st.ID +
+					return nil, domain.BadRequest(subject +
 						": a void settlement cannot carry a live line — payable " + it.PayableID +
 						" would stay claimed by a settlement no route can void again")
 				}
@@ -431,19 +432,19 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 			st.ID, farmID, st.WorkerID, periodStart, periodEnd, st.GrossCents, status,
 			st.Note, nilUUID(createdBy), st.CreatedAt, st.VoidedAt)
 		if err != nil {
-			return nil, importFailure("settlement "+st.ID, err)
+			return nil, importFailure(subject, err)
 		}
 		count(&rep.Settlements, tag.RowsAffected())
 
 		for _, it := range st.Items {
 			if !isUUID(it.PayableID) {
-				return nil, domain.BadRequest("settlement " + st.ID +
+				return nil, domain.BadRequest(subject +
 					": a line's payableId travels as the handset's own uuid")
 			}
 			// A rounded line quantity would break the column's own CHECK
 			// (amount_minor = round(quantity * price_minor)) and come back as
 			// a 500 that names nothing.
-			if err := domain.CheckNumeric("settlement "+st.ID+" line quantity",
+			if err := domain.CheckNumeric(subject+" line quantity",
 				it.Quantity.String(), domain.QuantityPrecision, domain.QuantityScale); err != nil {
 				return nil, err
 			}
@@ -458,7 +459,7 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 				SELECT id::text FROM settlement_items
 				 WHERE settlement_id = $1 AND payable_id = $2`,
 				st.ID, it.PayableID).Scan(&existing); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return nil, importFailure("settlement "+st.ID+" line "+it.PayableID, err)
+				return nil, importFailure(subject+" line "+it.PayableID, err)
 			}
 			if existing != nil {
 				rep.SettlementItems.Skipped++
@@ -469,9 +470,9 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 			if itemID == "" {
 				itemID = newID()
 			}
-			week, err := time.Parse("2006-01-02", it.WeekStart)
+			week, err := time.Parse(time.DateOnly, it.WeekStart)
 			if err != nil {
-				return nil, domain.BadRequest("settlement " + st.ID + ": a line's weekStart must be YYYY-MM-DD")
+				return nil, domain.BadRequest(subject + ": a line's weekStart must be YYYY-MM-DD")
 			}
 			itemTag, err := tx.Exec(ctx, `
 				INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id, week_start,
@@ -492,7 +493,7 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 							"settlementId": st.ID, "payableId": it.PayableID,
 						}).WithCause(err)
 				}
-				return nil, importFailure("settlement "+st.ID+" line "+it.PayableID, err)
+				return nil, importFailure(subject+" line "+it.PayableID, err)
 			}
 			count(&rep.SettlementItems, itemTag.RowsAffected())
 		}
@@ -517,7 +518,7 @@ func ImportSeason(ctx context.Context, tx pgx.Tx, farmID, createdBy string,
 				return nil, domain.BadRequest("movement " + l.ID + ": ids travel as the handset's own uuids")
 			}
 			kind := domain.LedgerKind(l.Kind)
-			day, err := time.Parse("2006-01-02", l.Date)
+			day, err := time.Parse(time.DateOnly, l.Date)
 			if err != nil {
 				return nil, domain.BadRequest("movement " + l.ID + ": date must be YYYY-MM-DD")
 			}
@@ -645,6 +646,7 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 	grossBad := []map[string]any{}
 	strays := []map[string]any{}
 	for _, st := range in.Settlements {
+		subject := "settlement " + st.ID
 		var gross, lines int64
 		var employeeID string
 		err := tx.QueryRow(ctx, `
@@ -654,10 +656,10 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 			  FROM settlements s WHERE s.id = $1`, st.ID).Scan(&gross, &employeeID, &lines)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Conflict(domain.CodeImportMismatch,
-				"settlement "+st.ID+" is not on this farm after the import; nothing was written")
+				subject+" is not on this farm after the import; nothing was written")
 		}
 		if err != nil {
-			return importFailure("settlement "+st.ID, err)
+			return importFailure(subject, err)
 		}
 		if gross != lines {
 			grossBad = append(grossBad, map[string]any{
@@ -672,13 +674,13 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 			  JOIN work_records w ON w.id = i.payable_id
 			 WHERE i.settlement_id = $1 AND w.employee_id <> $2`, st.ID, employeeID)
 		if err != nil {
-			return importFailure("settlement "+st.ID, err)
+			return importFailure(subject, err)
 		}
 		for rows.Next() {
 			var payableID, owner string
 			if err := rows.Scan(&payableID, &owner); err != nil {
 				rows.Close()
-				return importFailure("settlement "+st.ID, err)
+				return importFailure(subject, err)
 			}
 			strays = append(strays, map[string]any{
 				"settlementId": st.ID, "payableId": payableID,
@@ -687,7 +689,7 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
-			return importFailure("settlement "+st.ID, err)
+			return importFailure(subject, err)
 		}
 	}
 	if len(strays) > 0 {

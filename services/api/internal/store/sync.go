@@ -346,7 +346,7 @@ func composeWeekPrice(ctx context.Context, tx pgx.Tx, rowID string) (any, error)
 		return nil, err
 	}
 	return map[string]any{
-		"weekStart": week.Format("2006-01-02"), "priceCents": price,
+		"weekStart": week.Format(time.DateOnly), "priceCents": price,
 	}, nil
 }
 
@@ -386,7 +386,7 @@ func composeWorkRecord(ctx context.Context, tx pgx.Tx, id string) (any, error) {
 	return map[string]any{
 		"id": id, "workerId": employeeID, "cropId": cropID,
 		"quantity": json.Number(qty), "occurredAt": startedAt,
-		"localDay": localDay.Format("2006-01-02"), "weekStart": weekStart.Format("2006-01-02"),
+		"localDay": localDay.Format(time.DateOnly), "weekStart": weekStart.Format(time.DateOnly),
 		"note": note, "deviceId": deviceID, "deletedAt": deletedAt,
 	}, nil
 }
@@ -409,15 +409,15 @@ func composeSettlement(ctx context.Context, tx pgx.Tx, id string) (any, error) {
 	items := make([]map[string]any, 0, len(s.Items))
 	for _, it := range s.Items {
 		items = append(items, map[string]any{
-			"payableId": it.PayableID, "weekStart": it.WeekStart.Format("2006-01-02"),
+			"payableId": it.PayableID, "weekStart": it.WeekStart.Format(time.DateOnly),
 			"quantity": it.Quantity, "priceCents": it.PriceMinor,
 			"amountCents": it.AmountMinor, "voided": it.Voided,
 		})
 	}
 	return map[string]any{
 		"id": s.ID, "workerId": s.EmployeeID,
-		"periodStart": s.PeriodStart.Format("2006-01-02"),
-		"periodEnd":   s.PeriodEnd.Format("2006-01-02"),
+		"periodStart": s.PeriodStart.Format(time.DateOnly),
+		"periodEnd":   s.PeriodEnd.Format(time.DateOnly),
 		"grossCents":  s.GrossMinor, "status": s.Status, "note": s.Note,
 		"createdAt": s.CreatedAt, "voidedAt": s.VoidedAt, "items": items,
 	}, nil
@@ -430,7 +430,7 @@ func composeLedgerEntry(ctx context.Context, tx pgx.Tx, id string) (any, error) 
 	}
 	return map[string]any{
 		"id": e.ID, "workerId": e.EmployeeID, "kind": e.Kind,
-		"amountCents": e.AmountMinor, "date": e.LocalDay.Format("2006-01-02"),
+		"amountCents": e.AmountMinor, "date": e.LocalDay.Format(time.DateOnly),
 		"settlementId": e.SettlementID, "method": e.Method, "note": e.Note,
 		"reversesId": e.ReversesID, "createdAt": e.CreatedAt,
 		"receivedBy": e.ReceivedBy,

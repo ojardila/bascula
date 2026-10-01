@@ -56,7 +56,7 @@ func (s *Server) handleReportWeeks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var from, to *time.Time
 	if raw := q.Get("from"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
+		d, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
 			writeError(w, r, domain.BadRequest("from must be YYYY-MM-DD"))
 			return
@@ -64,7 +64,7 @@ func (s *Server) handleReportWeeks(w http.ResponseWriter, r *http.Request) {
 		from = &d
 	}
 	if raw := q.Get("to"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
+		d, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
 			writeError(w, r, domain.BadRequest("to must be YYYY-MM-DD"))
 			return
@@ -184,7 +184,7 @@ func (s *Server) handleReportPerformance(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scope": store.ScopeHarvest, "days": days,
-		"since":             since.Format("2006-01-02"),
+		"since":             since.Format(time.DateOnly),
 		"minComparableDays": store.MinComparableDays,
 		"items":             items,
 	})
@@ -215,7 +215,7 @@ func (s *Server) handleReportAnomalies(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scope": store.ScopeHarvest, "days": days, "maxKg": maxKg, "limit": limit,
-		"since": since.Format("2006-01-02"),
+		"since": since.Format(time.DateOnly),
 		"items": items,
 	})
 }

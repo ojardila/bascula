@@ -620,7 +620,7 @@ func grossChangedDetails(ctx context.Context, tx pgx.Tx, expected, actual int64,
 	weeks := []map[string]any{}
 	seen := map[string]bool{}
 	for _, p := range chosen {
-		key := p.WeekStart.Format("2006-01-02")
+		key := p.WeekStart.Format(time.DateOnly)
 		if seen[key] {
 			continue
 		}

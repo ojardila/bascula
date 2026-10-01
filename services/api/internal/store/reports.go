@@ -1482,7 +1482,7 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 		if err := rows.Scan(&monday, &w.Kg, &w.Records); err != nil {
 			return nil, err
 		}
-		w.WeekStart = monday.Format("2006-01-02")
+		w.WeekStart = monday.Format(time.DateOnly)
 		out.Weeks = append(out.Weeks, w)
 	}
 	if err := rows.Err(); err != nil {
@@ -1503,11 +1503,11 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 		}
 	}
 	if n := len(out.Weeks); n > 0 {
-		oldest, err := time.Parse("2006-01-02", out.Weeks[n-1].WeekStart)
+		oldest, err := time.Parse(time.DateOnly, out.Weeks[n-1].WeekStart)
 		if err != nil {
 			return nil, err
 		}
-		newest, err := time.Parse("2006-01-02", out.Weeks[0].WeekStart)
+		newest, err := time.Parse(time.DateOnly, out.Weeks[0].WeekStart)
 		if err != nil {
 			return nil, err
 		}
@@ -1515,7 +1515,7 @@ func ReportHarvestCurve(ctx context.Context, tx pgx.Tx, plotCropID *string, week
 		out.CoveredTo = &domain.Day{Time: newest.AddDate(0, 0, 6)}
 	}
 
-	out.Shape = domain.ReadHarvest(out.Weeks, out.CurrentWeek.Format("2006-01-02"),
+	out.Shape = domain.ReadHarvest(out.Weeks, out.CurrentWeek.Format(time.DateOnly),
 		domain.DefaultDropThreshold)
 	return &out, nil
 }

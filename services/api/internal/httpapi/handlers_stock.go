@@ -370,7 +370,7 @@ func optionalDate(raw string) (*time.Time, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	d, err := time.Parse("2006-01-02", raw)
+	d, err := time.Parse(time.DateOnly, raw)
 	if err != nil {
 		return nil, domain.BadRequest("dates must be YYYY-MM-DD")
 	}
