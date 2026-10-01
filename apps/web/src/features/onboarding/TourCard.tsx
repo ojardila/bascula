@@ -8,17 +8,10 @@
  * dialogs and forms (callout steps), so both look the same.
  */
 import { useState } from "react";
-import { Box, Button, IconButton, LinearProgress, Stack, Typography, type SxProps, type Theme } from "@mui/material";
+import { Box, Button, IconButton, LinearProgress, Stack, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTour } from "./TourContext";
 import { TOTALS, type TourName, type TourStepDef } from "./steps";
-
-/** The yellow ring the mockups put around whatever a step is about. */
-export const TOUR_RING: SxProps<Theme> = {
-  outline: "4px solid #F2C94C",
-  outlineOffset: "4px",
-  borderRadius: 3,
-};
 
 export function TourCard({
   tour,

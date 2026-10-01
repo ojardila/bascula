@@ -1,7 +1,6 @@
 package apitest
 
 import (
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -170,5 +169,3 @@ func mustInt(t *testing.T, m map[string]any, key string) int64 {
 	}
 	return int64(v)
 }
-
-func describe(v any) string { return fmt.Sprintf("%v", v) }

@@ -54,10 +54,6 @@ func (c *fakeCluster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(obj)
 }
 
-type stageView struct {
-	Key, State string
-}
-
 func stagesOf(t *testing.T, st response) (map[string]string, float64) {
 	t.Helper()
 	raw, _ := st.Body["stages"].([]any)

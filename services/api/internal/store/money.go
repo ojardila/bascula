@@ -850,29 +850,6 @@ func FindSettlementRelease(ctx context.Context, tx pgx.Tx, id string) (*Settleme
 	return out, err
 }
 
-// ListSettlementReleases is the repairs done to one settlement, newest first.
-// A settlement can only really be released once — the second call has nothing
-// left to free — but the list is a list because an audit that can only ever
-// show one row is an audit somebody will eventually trim to fit.
-func ListSettlementReleases(ctx context.Context, tx pgx.Tx, settlementID string) ([]SettlementRelease, error) {
-	rows, err := tx.Query(ctx,
-		`SELECT `+releaseCols+` FROM settlement_releases
-		  WHERE settlement_id = $1 ORDER BY at DESC`, settlementID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []SettlementRelease{}
-	for rows.Next() {
-		r, err := scanRelease(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *r)
-	}
-	return out, rows.Err()
-}
-
 // ReleaseSettlement frees the payables a VOID settlement is still holding, and
 // finishes the void that left them held.
 //

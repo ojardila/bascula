@@ -67,12 +67,6 @@ export interface Owed {
   pendingIsEstimate: boolean;
 }
 
-export const NOTHING_KNOWN: Owed = {
-  balanceCents: null,
-  pendingCents: null,
-  pendingIsEstimate: false,
-};
-
 /**
  * The figure, with the provenance the farm deserves.
  *

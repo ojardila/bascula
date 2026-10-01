@@ -376,4 +376,3 @@ func TestSundayEveningBelongsToTheFarmsDay(t *testing.T) {
 
 var _ = store.NoRows
 var _ = isoDate
-var _ = describe

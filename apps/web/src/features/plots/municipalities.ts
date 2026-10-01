@@ -136,4 +136,3 @@ export function departmentMismatch(
   return `${municipality.trim()} queda en ${real}, no en ${department}. Revise el departamento.`;
 }
 
-export const DEPARTMENTS_WITH_TOWNS = Object.keys(TABLE);
