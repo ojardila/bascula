@@ -164,6 +164,11 @@ export const ERROR_MESSAGES: Record<string, string> = {
     "Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda " +
     "con dos cuentas y el saldo se parte en dos.",
   DUPLICATE_NAME: "Ya existe un registro con ese nombre en esta finca.",
+  // docs/use-cases/teams.md: while a person is in a team, the kilos, the
+  // advances and the payments go to the team. `details.teamId` names it.
+  WORKER_IN_TEAM:
+    "Esa persona está en un equipo. Los kilos y la plata van a la cuenta del equipo, no a la de ella. " +
+    "Si ya no trabaja con el equipo, sáquela del equipo primero.",
   // Voiding a settlement is not the same as releasing it: releasing repairs
   // one that is ALREADY void and stayed holding on to the work items.
   SETTLEMENT_NOT_VOID:

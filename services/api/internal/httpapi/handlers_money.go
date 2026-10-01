@@ -475,6 +475,10 @@ type ledgerRequest struct {
 	Method      *string `json:"method"`
 	Note        *string `json:"note"`
 	Date        string  `json:"date"`
+	// ReceivedBy is «¿Quién recibe la plata?»: on a payment or advance to a
+	// team, the member (a worker id) who took the cash. Printed on the
+	// receipt; the balance stays the team's.
+	ReceivedBy *string `json:"receivedBy"`
 	// AllowOverpayment resolves a straight contradiction between the two
 	// sources of truth. docs/api-architecture.md says a payment larger than
 	// the balance is 409 AMOUNT_EXCEEDS_BALANCE; golden case 07
@@ -531,6 +535,17 @@ func (s *Server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
 		"settlementId":         slip.SettlementID,
 		"settlementIds":        slip.SettlementIDs,
 		"reversed":             slip.Reversed,
+	}
+	out["receivedBy"] = slip.Entry.ReceivedBy
+	out["receivedByName"] = nil
+	if slip.Entry.ReceivedBy != nil {
+		if who, err := store.GetEmployee(r.Context(), tx, *slip.Entry.ReceivedBy); err == nil {
+			name := who.Name
+			if who.LastName != nil && *who.LastName != "" {
+				name += " " + *who.LastName
+			}
+			out["receivedByName"] = name
+		}
 	}
 	if slip.CurrentWeekFrom != nil {
 		out["currentWeekFrom"] = day(*slip.CurrentWeekFrom)
@@ -627,9 +642,18 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
 
+	if body.ReceivedBy != nil && *body.ReceivedBy == "" {
+		body.ReceivedBy = nil
+	}
+	if body.ReceivedBy != nil && kind != domain.KindPayment && kind != domain.KindAdvance {
+		writeError(w, r, domain.BadRequest("receivedBy is only for a payment or an advance"))
+		return
+	}
+
 	want := store.NewLedgerEntry{
 		ID: body.ID, EmployeeID: body.WorkerID, Kind: kind, AmountMinor: amount,
 		LocalDay: day, Method: body.Method, Note: body.Note, CreatedBy: p.UserID,
+		ReceivedBy: body.ReceivedBy,
 	}
 
 	// The idempotency check runs BEFORE the balance check, and the order is
@@ -660,9 +684,45 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	// Without this, a payment against a worker of another farm reads their
 	// balance as zero and refuses with AMOUNT_EXCEEDS_BALANCE — an answer that
 	// looks like a business rule and is really a tenant leak wearing a hat.
-	if _, err := store.GetEmployee(r.Context(), tx, body.WorkerID); err != nil {
+	worker, err := store.GetEmployee(r.Context(), tx, body.WorkerID)
+	if err != nil {
 		writeError(w, r, err)
 		return
+	}
+
+	// «Equipos»: the team is the account. A member of a team gets no personal
+	// advance or deduction while in it (it would open a second balance beside
+	// the team's), and «¿Quién recibe la plata?» must name a member of the
+	// team being paid.
+	entryDay := day
+	if entryDay == nil {
+		today, err := store.LocalToday(r.Context(), tx)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		entryDay = &today
+	}
+	if kind == domain.KindAdvance || kind == domain.KindDeduction {
+		if err := store.EnsureNotInTeam(r.Context(), tx, worker.ID, *entryDay, *entryDay); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	if body.ReceivedBy != nil {
+		if worker.Kind != store.KindEquipo {
+			writeError(w, r, domain.BadRequest("receivedBy is only for a payment or advance to a team"))
+			return
+		}
+		t, err := store.TeamOn(r.Context(), tx, *body.ReceivedBy, *entryDay, *entryDay)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if t == nil || t.ID != worker.ID {
+			writeError(w, r, domain.BadRequest("receivedBy must be a member of this team on that day"))
+			return
+		}
 	}
 
 	// Serialise every decision about this person's money, per person, for the

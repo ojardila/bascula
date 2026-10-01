@@ -6078,6 +6078,7 @@ components:
         - PAYABLE_ALREADY_CLAIMED
         - SETTLEMENT_ALREADY_VOID
         - ALREADY_REVERSED
+        - WORKER_IN_TEAM
         - SETTLEMENT_NOT_VOID
         - NOTHING_TO_RELEASE
         - NOTHING_TO_SETTLE
@@ -6531,12 +6532,26 @@ components:
       type: object
       description: |
         Two shapes behind one name. An owner or administrator receives every
-        field; the weigher receives `id`, `name`, `lastName` and `tag` only,
-        and the rest are absent rather than null.
+        field; the weigher receives `id`, `name`, `lastName`, `tag`, `kind`,
+        `members` and `team` only, and the rest are absent rather than null.
+
+        «Equipos» (migration 00040): `kind: equipo` is a team — one payee whose
+        weighings, settlements, balance and payments are the team's — and
+        `members` lists its current members. A person in a team carries
+        `team`; while in it they have no personal paid work (WORKER_IN_TEAM).
       required: [id, name]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
+        kind: { $ref: "#/components/schemas/WorkerKind" }
+        members:
+          type: array
+          description: A team's current members (not ended as of today). Always empty on a person.
+          items: { $ref: "#/components/schemas/TeamMember" }
+        team:
+          allOf: [{ $ref: "#/components/schemas/TeamRef" }]
+          nullable: true
+          description: The team this person currently belongs to. Null when none, and on a team.
         lastName: { type: string, nullable: true }
         tag:
           type: string
@@ -6557,12 +6572,54 @@ components:
           nullable: true
           description: Non-null means off the payroll. The row and its history stay.
 
+    WorkerKind:
+      type: string
+      enum: [persona, equipo]
+      description: A person, or a team (one payee with members).
+
+    TeamMember:
+      type: object
+      required: [id, name, lastName, tag, from, to]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        lastName: { type: string, nullable: true }
+        tag: { type: string, nullable: true }
+        from: { type: string, format: date, description: First day in the team. }
+        to: { type: string, format: date, nullable: true, description: Last day in the team; null = still a member. }
+
+    TeamRef:
+      type: object
+      required: [id, name, from, to, members]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        from: { type: string, format: date }
+        to: { type: string, format: date, nullable: true }
+        members: { type: integer, description: How many current members the team has. }
+
     WorkerInput:
       type: object
       required: [name]
       properties:
         id: { type: string, format: uuid }
         name: { type: string, minLength: 1 }
+        kind:
+          allOf: [{ $ref: "#/components/schemas/WorkerKind" }]
+          description: Default persona. On PATCH, equipo turns a person (not in a team) into a team keeping its id, weighings and balance.
+        memberIds:
+          type: array
+          description: |
+            Teams only. On create, the first members; on PATCH, the full member
+            list from `membersFrom` on (absent leaves members alone): anybody
+            not listed leaves the day before, anybody new joins that day.
+            Members must be active people who are in no other team (409
+            WORKER_IN_TEAM otherwise).
+          items: { type: string, format: uuid }
+        membersFrom:
+          type: string
+          format: date
+          description: The day `memberIds` takes effect. Defaults to today in the farm's zone.
         lastName: { type: string, nullable: true }
         documentType: { type: string, nullable: true }
         docId: { type: string, nullable: true }
@@ -7221,6 +7278,11 @@ components:
         note: { type: string, nullable: true }
         reversesId: { type: string, format: uuid, nullable: true }
         createdAt: { type: string, format: date-time }
+        receivedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: «¿Quién recibe la plata?» On a payment or advance to a team, the member who took the cash.
 
     PaymentReceipt:
       type: object
@@ -7283,6 +7345,8 @@ components:
         reversed:
           type: boolean
           description: The movement was cancelled by a reversal after it was written.
+        receivedBy: { type: string, format: uuid, nullable: true, description: On a team, the member who took the cash. }
+        receivedByName: { type: string, nullable: true }
 
     PaymentInput:
       type: object
@@ -7299,6 +7363,14 @@ components:
           nullable: true
         note: { type: string, nullable: true }
         date: { type: string, format: date, description: Defaults to today in the farm's zone. }
+        receivedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            «¿Quién recibe la plata?» Teams only: the member who took the cash,
+            printed on the receipt. The balance stays the team's. A member of a
+            team gets no personal advance (409 WORKER_IN_TEAM).
         allowOverpayment:
           type: boolean
           default: false
@@ -8417,10 +8489,19 @@ components:
 
     WorkerPerformanceReport:
       type: object
-      required: [scope, employeeId, today, thisWeek, lastRecordOn, summary, weeks, days, plots, unattributedKg, recordsNotInKg]
+      required: [scope, employeeId, today, thisWeek, lastRecordOn, summary, weeks, days, plots, unattributedKg, recordsNotInKg, kind, members, team]
       properties:
         scope: { $ref: "#/components/schemas/ReportScope" }
         employeeId: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/WorkerKind" }
+        members: { type: integer, description: For a team, its current members; 1 for a person. }
+        team:
+          allOf: [{ $ref: "#/components/schemas/TeamRef" }]
+          nullable: true
+          description: |
+            For a member of a team: the team. The kilos are then their share
+            («su parte»): the team's kilos over its members on the days they
+            belonged. For a team the kilos are the team's, whole.
         today: { type: string, format: date, description: Today in the farm's zone. }
         thisWeek: { type: string, format: date, description: Monday of the running week. }
         lastRecordOn:
@@ -8521,9 +8602,9 @@ components:
               allOf: [{ $ref: "#/components/schemas/ReportTotals" }]
               description: Last week, whole.
             today: { $ref: "#/components/schemas/ReportTotals" }
-            pickersToday: { type: integer, description: Distinct people with a harvest weighing today. }
-            pickersThisWeek: { type: integer, description: Distinct people with a harvest weighing this week. }
-            personDays: { type: integer, description: Distinct (person, day) pairs with kilos this week. }
+            pickersToday: { type: integer, description: Distinct people with a harvest weighing today. A team counts each of its members. }
+            pickersThisWeek: { type: integer, description: Distinct people with a harvest weighing this week. A team counts each of its members. }
+            personDays: { type: integer, description: Distinct (person, day) pairs with kilos this week. A team-day counts each member. }
             kgPerPersonDay:
               type: number
               nullable: true
@@ -8568,17 +8649,23 @@ components:
           description: This week's weighings that name no lote, or more than one.
         people:
           type: array
-          description: Everybody who picked this week, most kilos first.
+          description: |
+            Everybody who picked this week, most kilos per member first. A team
+            is one row: `kg` is the team's («juntos»), `kgEach` per member
+            («c/u»), and `kgPerDay` per person per day.
           items:
             allOf:
               - $ref: "#/components/schemas/ReportTotals"
               - type: object
-                required: [employeeId, name, daysWorked, kgPerDay, pickedToday, belowAverage]
+                required: [employeeId, name, kind, members, kgEach, daysWorked, kgPerDay, pickedToday, belowAverage]
                 properties:
                   employeeId: { type: string, format: uuid }
                   name: { type: string }
+                  kind: { $ref: "#/components/schemas/WorkerKind" }
+                  members: { type: integer, description: People behind the row (1 for a person). }
+                  kgEach: { type: number, nullable: true, description: Kilos per member. }
                   daysWorked: { type: integer, description: Distinct days with kilos this week. }
-                  kgPerDay: { type: number, nullable: true }
+                  kgPerDay: { type: number, nullable: true, description: Kilos per person per day worked. }
                   pickedToday: { type: boolean }
                   belowAverage:
                     type: boolean

@@ -14,6 +14,7 @@ import (
 
 var mcpWriteToolNames = map[string]bool{
 	"create_worker": true, "update_worker": true, "create_plot": true,
+	"create_team": true, "set_team_members": true,
 	"register_weighing": true, "register_harvest_week": true,
 	"correct_weighing": true, "void_weighing": true,
 	"set_kilo_price": true, "register_advance": true, "register_payment": true,

@@ -26,19 +26,27 @@ type Employee struct {
 	PhotoID      *string    `json:"photoId"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	DeletedAt    *time.Time `json:"deletedAt"`
+	// Kind is "persona" or "equipo" (a team: one payee, see teams.go).
+	Kind string `json:"kind"`
+	// Members are a team's current members (always [] on a person). Team is
+	// the team a person currently belongs to (nil when none). Both are filled
+	// by AttachTeams, never by the scan.
+	Members []TeamMember `json:"members"`
+	Team    *TeamRef     `json:"team"`
 }
 
 const employeeCols = `id::text, name, last_name, document_type, doc_id, tag, phone, address,
-	city, municipality, country, photo_id::text, created_at, deleted_at`
+	city, municipality, country, photo_id::text, created_at, deleted_at, kind`
 
 func scanEmployee(row pgx.Row) (*Employee, error) {
 	var e Employee
 	err := row.Scan(&e.ID, &e.Name, &e.LastName, &e.DocumentType, &e.DocID, &e.Tag,
 		&e.Phone, &e.Address, &e.City, &e.Municipality, &e.Country, &e.PhotoID,
-		&e.CreatedAt, &e.DeletedAt)
+		&e.CreatedAt, &e.DeletedAt, &e.Kind)
 	if err != nil {
 		return nil, err
 	}
+	e.Members = []TeamMember{}
 	return &e, nil
 }
 
@@ -149,11 +157,12 @@ func FindDeletedByDocument(ctx context.Context, tx pgx.Tx, documentType, docID *
 func CreateEmployee(ctx context.Context, tx pgx.Tx, farmID string, e Employee) (*Employee, error) {
 	return scanEmployee(tx.QueryRow(ctx, `
 		INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
-		                       phone, address, city, municipality, country, photo_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, coalesce($12, 'CO'), $13)
+		                       phone, address, city, municipality, country, photo_id, kind)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, coalesce($12, 'CO'), $13,
+		        coalesce(nullif($14, ''), 'persona'))
 		RETURNING `+employeeCols,
 		e.ID, farmID, e.Name, e.LastName, e.DocumentType, e.DocID, e.Tag,
-		e.Phone, e.Address, e.City, e.Municipality, e.Country, e.PhotoID))
+		e.Phone, e.Address, e.City, e.Municipality, e.Country, e.PhotoID, e.Kind))
 }
 
 // UpdateEmployee patches with COALESCE, so a field absent from the body keeps

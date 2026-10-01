@@ -3661,6 +3661,9 @@ export const handlers = [
     return HttpResponse.json({
       scope: "harvest",
       employeeId: id,
+      kind: "persona",
+      members: 0,
+      team: null,
       today: todayD,
       thisWeek,
       lastRecordOn: lastDay,
@@ -3759,7 +3762,8 @@ export const handlers = [
       const daysWorked = new Set(mine.filter((r) => kgOf(r) !== null).map(dayOfR)).size;
       const kgPerDay = tt.kg !== null && daysWorked > 0 ? tt.kg / daysWorked : null;
       return {
-        employeeId, name: nameOf(employeeId), ...tt, daysWorked, kgPerDay,
+        employeeId, name: nameOf(employeeId), kind: "persona" as const, members: 1, kgEach: tt.kg,
+        ...tt, daysWorked, kgPerDay,
         pickedToday: mine.some((r) => dayOfR(r) === todayD),
         belowAverage: compare && kgPerDay !== null && kgPerDay < (kgPerPersonDay as number) * 0.7,
       };

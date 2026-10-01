@@ -326,7 +326,25 @@ func attachWorkRecordLinks(ctx context.Context, tx pgx.Tx, records []WorkRecord,
 // CreateWorkRecord writes the record and its plot and crop links. local_day and
 // end_local_day are deliberately absent from the column list: the trigger
 // computes them in the farm's timezone, and Go never writes them.
+//
+// It refuses work for somebody who belongs to a team on any of its days
+// (WORKER_IN_TEAM): while in a team a person has no personal paid work, the
+// weighing goes to the team (migration 00040). Every door — the console, a
+// batch, the MCP, a handset's push — comes through here.
 func CreateWorkRecord(ctx context.Context, tx pgx.Tx, farmID string, l WorkRecord) (*WorkRecord, error) {
+	from, err := LocalDayFor(ctx, tx, l.StartedAt)
+	if err != nil {
+		return nil, err
+	}
+	to := from
+	if l.EndedAt != nil {
+		if to, err = LocalDayFor(ctx, tx, *l.EndedAt); err != nil {
+			return nil, err
+		}
+	}
+	if err := EnsureNotInTeam(ctx, tx, l.EmployeeID, from, to); err != nil {
+		return nil, err
+	}
 	out, err := scanWorkRecord(tx.QueryRow(ctx, `
 		WITH ins AS (
 			INSERT INTO work_records (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,

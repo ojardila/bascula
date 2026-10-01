@@ -523,7 +523,60 @@ var (
 	wMethod   = mcpParam{Name: "method", Type: "string", Enum: []string{"efectivo", "transferencia", "otro"}, Description: "Cómo se entregó el dinero."}
 	wNote     = mcpParam{Name: "note", Type: "string", Description: "Nota libre."}
 	wDate     = mcpParam{Name: "date", Type: "string", Format: "date", Description: "Fecha (YYYY-MM-DD). Por defecto, hoy en la zona de la finca."}
+	// wReceivedBy is «¿Quién recibe la plata?» on money handed to a team.
+	wReceivedBy = mcpParam{Name: "receivedBy", Type: "string", Format: "uuid", Description: "Solo para un equipo, opcional: el integrante (UUID, ver members en list_workers) que recibió la plata. Queda en el recibo; el saldo sigue siendo del equipo."}
 )
+
+// uuidList reads an array of strings argument.
+func (a mcpArgs) uuidList(k string) ([]string, error) {
+	raw, ok := a[k].([]any)
+	if !ok {
+		if a[k] == nil {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%q debe ser una lista de UUID", k)
+	}
+	out := make([]string, 0, len(raw))
+	for i, v := range raw {
+		s, ok := v.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			return nil, fmt.Errorf("%s[%d] debe ser un UUID", k, i)
+		}
+		out = append(out, strings.TrimSpace(s))
+	}
+	return out, nil
+}
+
+func jsonschemaInt(n int) *int { return &n }
+
+// memberNames lists a team's members («Yorman y Sergio») from a worker body.
+func memberNames(w map[string]any) string {
+	members, _ := w["members"].([]any)
+	names := make([]string, 0, len(members))
+	for _, raw := range members {
+		m, _ := raw.(map[string]any)
+		names = append(names, workerName(m))
+	}
+	switch len(names) {
+	case 0:
+		return "ningún integrante"
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " y " + names[len(names)-1]
+}
+
+// looksLikeTeamName says a worker's name reads like several people: «Yorman y
+// Sergio», «Ana / Luis», «Pedro & Juan», «Ana, Luis». A hint, never a refusal.
+func looksLikeTeamName(name string) bool {
+	n := " " + strings.ToLower(strings.TrimSpace(name)) + " "
+	for _, sep := range []string{" y ", " e ", "/", "&", " + ", ","} {
+		if strings.Contains(n, sep) {
+			return true
+		}
+	}
+	return false
+}
 
 var weighingItemSchema = &jsonschema.Schema{
 	Type: "object",
@@ -555,8 +608,11 @@ var cropItemSchema = &jsonschema.Schema{
 var mcpWriteTools = []mcpWriteTool{
 	{
 		Name: "create_worker", Title: "Crear trabajador",
-		Description: "Registra un trabajador (recolector) nuevo en la finca. Solo el nombre es obligatorio. " +
-			"Si ya existe uno desactivado con el mismo documento, la finca responde EMPLOYEE_EXISTS_DELETED: reactívelo con update_worker status=active en vez de crear otro.",
+		Description: "Registra UNA persona (recolector) nueva en la finca. Solo el nombre es obligatorio. " +
+			"Si ya existe uno desactivado con el mismo documento, la finca responde EMPLOYEE_EXISTS_DELETED: reactívelo con update_worker status=active en vez de crear otro. " +
+			"IMPORTANTE: si son dos o más personas que recogen juntas y cobran juntas (p. ej. «Yorman y Sergio», «Ana / Luis», «Pedro & Juan»), " +
+			"NO cree un solo trabajador con los dos nombres: cree cada persona con create_worker y después el equipo con create_team. " +
+			"El equipo es el que se pesa, se liquida y se paga; los promedios se dividen entre sus integrantes.",
 		Method: http.MethodPost, Pattern: "/v1/workers",
 		Params: []mcpParam{
 			{Name: "name", Type: "string", Required: true, Description: "Nombre(s)."},
@@ -579,13 +635,20 @@ var mcpWriteTools = []mcpWriteTool{
 			if status == http.StatusOK {
 				return "Ese id ya existía: no se creó otro trabajador (" + workerName(b) + ")."
 			}
-			return "Trabajador creado: " + workerName(b) + " (id " + strField(b, "id") + ")."
+			msg := "Trabajador creado: " + workerName(b) + " (id " + strField(b, "id") + ")."
+			if looksLikeTeamName(workerName(b)) {
+				msg += " Atención: el nombre parece de VARIAS personas. Si recogen y cobran juntas, " +
+					"conviértalo en equipo (update_worker kind=equipo) y agregue cada persona con create_worker y set_team_members."
+			}
+			return msg
 		},
 	},
 	{
-		Name: "update_worker", Title: "Actualizar o desactivar trabajador",
-		Description: "Cambia los datos de un trabajador, o lo desactiva (status=inactive) o reactiva (status=active). " +
-			"Desactivar no borra nada: su historia y su saldo se conservan. Solo se cambian los campos que envíe.",
+		Name: "update_worker", Title: "Actualizar o desactivar trabajador o equipo",
+		Description: "Cambia los datos de un trabajador o de un equipo, o lo desactiva (status=inactive) o reactiva (status=active). " +
+			"Desactivar no borra nada: su historia y su saldo se conservan. Solo se cambian los campos que envíe. " +
+			"kind=equipo convierte un registro que en realidad es de varias personas (p. ej. «Yorman y Sergio») en un equipo, " +
+			"conservando su id, sus pesadas y su saldo; luego cree cada persona y agréguelas con set_team_members.",
 		Method: http.MethodPatch, Pattern: "/v1/workers/{id}",
 		Params: []mcpParam{
 			{Name: "id", Type: "string", Format: "uuid", Required: true, Description: "El trabajador (UUID)."},
@@ -598,11 +661,12 @@ var mcpWriteTools = []mcpWriteTool{
 			{Name: "city", Type: "string", Description: "Ciudad."},
 			{Name: "municipality", Type: "string", Description: "Municipio."},
 			{Name: "status", Type: "string", Enum: []string{"active", "inactive"}, Description: "inactive lo saca de la nómina; active lo reactiva."},
+			{Name: "kind", Type: "string", Enum: []string{"persona", "equipo"}, Description: "persona o equipo. Un equipo con integrantes no puede volver a persona, ni una persona que está en un equipo volverse equipo."},
 		},
 		Destructive: true, Idempotent: true,
 		Build: func(a mcpArgs, _ string) (mcpCall, error) {
 			b := map[string]any{}
-			a.copyStr(b, "name", "lastName", "tag", "documentType", "docId", "phone", "city", "municipality", "status")
+			a.copyStr(b, "name", "lastName", "tag", "documentType", "docId", "phone", "city", "municipality", "status", "kind")
 			if len(b) == 0 {
 				return mcpCall{}, fmt.Errorf("no envió ningún cambio")
 			}
@@ -615,7 +679,74 @@ var mcpWriteTools = []mcpWriteTool{
 			case "active":
 				return "Trabajador activo: " + workerName(b) + "."
 			}
+			if a.str("kind") == "equipo" {
+				return "Ahora es un equipo: " + workerName(b) + ". Agregue sus integrantes con set_team_members."
+			}
 			return "Trabajador actualizado: " + workerName(b) + "."
+		},
+	},
+	{
+		Name: "create_team", Title: "Crear equipo",
+		Description: "Crea un EQUIPO: dos o más personas que recogen juntas (un solo bulto) y cobran juntas, p. ej. Yorman y Sergio. " +
+			"El equipo es una sola cuenta: se pesa al equipo (register_weighing / register_harvest_week con el id del equipo), " +
+			"se liquida y se paga al equipo, y su saldo es uno solo. Para los promedios y el ranking, sus kilos se dividen entre los integrantes. " +
+			"Cada integrante debe existir antes como persona (create_worker) y no puede estar en otro equipo. " +
+			"Mientras esté en el equipo, a un integrante no se le registran pesadas, anticipos ni descuentos propios (WORKER_IN_TEAM).",
+		Method: http.MethodPost, Pattern: "/v1/workers",
+		Params: []mcpParam{
+			{Name: "name", Type: "string", Required: true, Description: "Nombre del equipo, p. ej. «Yorman y Sergio»."},
+			{Name: "tag", Type: "string", Description: "Opcional: número(s) de canasto del equipo, p. ej. 46-63."},
+			{Name: "memberIds", Required: true, Schema: &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Type: "string", Format: "uuid"},
+				MinItems: jsonschemaInt(1), Description: "Los integrantes (UUID de personas, ver list_workers)."}},
+			{Name: "membersFrom", Type: "string", Format: "date", Description: "Desde qué día son equipo (YYYY-MM-DD). Por defecto, hoy."},
+			wID,
+		},
+		Idempotent: true,
+		Build: func(a mcpArgs, _ string) (mcpCall, error) {
+			ids, err := a.uuidList("memberIds")
+			if err != nil {
+				return mcpCall{}, err
+			}
+			if len(ids) == 0 {
+				return mcpCall{}, fmt.Errorf("memberIds necesita al menos un integrante")
+			}
+			b := map[string]any{"kind": "equipo", "memberIds": ids}
+			a.copyStr(b, "name", "tag", "membersFrom", "id")
+			return mcpCall{http.MethodPost, "/v1/workers", b}, nil
+		},
+		Done: func(status int, b map[string]any, _ mcpArgs) string {
+			if status == http.StatusOK {
+				return "Ese id ya existía: no se creó otro equipo (" + workerName(b) + ")."
+			}
+			return "Equipo creado: " + workerName(b) + " con " + memberNames(b) + " (id " + strField(b, "id") + ")."
+		},
+	},
+	{
+		Name: "set_team_members", Title: "Cambiar los integrantes de un equipo",
+		Description: "Deja como integrantes de un equipo exactamente las personas de memberIds, desde el día `from` (por defecto hoy): " +
+			"quien no esté en la lista sale del equipo el día anterior, y quien no estaba entra ese día. La historia anterior no cambia. " +
+			"Para convertir un registro combinado (p. ej. «Yorman y Sergio») primero use update_worker kind=equipo.",
+		Method: http.MethodPatch, Pattern: "/v1/workers/{id}",
+		Params: []mcpParam{
+			{Name: "teamId", Type: "string", Format: "uuid", Required: true, Description: "El equipo (UUID, ver list_workers: kind=equipo)."},
+			{Name: "memberIds", Required: true, Schema: &jsonschema.Schema{Type: "array", Items: &jsonschema.Schema{Type: "string", Format: "uuid"},
+				Description: "Todos los integrantes desde `from` (UUID de personas). Una lista vacía deja el equipo sin integrantes."}},
+			{Name: "from", Type: "string", Format: "date", Description: "Desde qué día (YYYY-MM-DD). Por defecto, hoy."},
+		},
+		Destructive: true, Idempotent: true,
+		Build: func(a mcpArgs, _ string) (mcpCall, error) {
+			ids, err := a.uuidList("memberIds")
+			if err != nil {
+				return mcpCall{}, err
+			}
+			b := map[string]any{"memberIds": ids}
+			if a.has("from") {
+				b["membersFrom"] = a["from"]
+			}
+			return mcpCall{http.MethodPatch, "/v1/workers/" + pathID(a.str("teamId")), b}, nil
+		},
+		Done: func(_ int, b map[string]any, _ mcpArgs) string {
+			return "Integrantes de " + workerName(b) + ": " + memberNames(b) + "."
 		},
 	},
 	{
@@ -670,8 +801,9 @@ var mcpWriteTools = []mcpWriteTool{
 	},
 	{
 		Name: "register_weighing", Title: "Registrar una pesada",
-		Description: "Registra UNA pesada: cuántos kilos recogió un trabajador un día. Se paga al precio de la semana cuando se liquide. " +
-			"Para una semana completa de varias personas use register_harvest_week.",
+		Description: "Registra UNA pesada: cuántos kilos recogió un trabajador o un EQUIPO un día. Se paga al precio de la semana cuando se liquide. " +
+			"Si la persona está en un equipo, pese al equipo (workerId del equipo, ver list_workers): a un integrante no se le registran pesadas propias (WORKER_IN_TEAM). " +
+			"Aunque ese día venga un solo integrante, se pesa al equipo. Para una semana completa de varias personas use register_harvest_week.",
 		Method: http.MethodPost, Pattern: "/v1/pickups",
 		Params: []mcpParam{
 			wWorkerID,
@@ -706,6 +838,7 @@ var mcpWriteTools = []mcpWriteTool{
 		Name: "register_harvest_week", Title: "Registrar la cosecha de una semana",
 		Description: "Registra de una sola vez todas las pesadas de una semana (varias personas, varios días). Es atómico: si una línea falla, " +
 			"no se guarda ninguna y el error dice cuál línea (details.line, desde 0). Todas las fechas deben caer en la semana del lunes indicado. " +
+			"Un equipo (kind=equipo en list_workers) es una sola fila: use el workerId del equipo, nunca el de sus integrantes (WORKER_IN_TEAM). " +
 			"Envíe un id (UUID) propio para poder reintentar sin duplicar.",
 		Method: http.MethodPost, Pattern: "/v1/work-records/batch",
 		Params: []mcpParam{
@@ -828,10 +961,11 @@ var mcpWriteTools = []mcpWriteTool{
 	},
 	{
 		Name: "register_advance", Title: "Registrar un anticipo",
-		Description: "Registra un anticipo: dinero entregado a un trabajador antes de liquidar su trabajo (puede dejarlo debiendo). " +
+		Description: "Registra un anticipo: dinero entregado a un trabajador o a un equipo antes de liquidar su trabajo (puede dejarlo debiendo). " +
+			"A un integrante de un equipo no se le dan anticipos propios: se le dan al equipo, y receivedBy dice qué integrante recibió la plata. " +
 			"Mueve dinero: la primera llamada devuelve un resumen y un confirmationToken; ejecútelo solo si el usuario confirma.",
 		Method: http.MethodPost, Pattern: "/v1/advances",
-		Params:     []mcpParam{wWorkerID, wAmount, wMethod, wNote, wDate},
+		Params:     []mcpParam{wWorkerID, wAmount, wMethod, wNote, wDate, wReceivedBy},
 		Idempotent: true, Money: true,
 		Build:   buildLedger("/v1/advances", false),
 		Preview: previewLedger("ANTICIPO"),
@@ -841,10 +975,12 @@ var mcpWriteTools = []mcpWriteTool{
 	},
 	{
 		Name: "register_payment", Title: "Registrar un pago",
-		Description: "Registra un pago a un trabajador contra su saldo. Si supera el saldo, la finca lo rechaza (AMOUNT_EXCEEDS_BALANCE) salvo allowOverpayment=true, " +
+		Description: "Registra un pago a un trabajador o a un equipo contra su saldo. El saldo de un equipo es uno solo: se le paga al equipo, " +
+			"y receivedBy (opcional) dice qué integrante recibió la plata («¿Quién recibe la plata?»; queda en el recibo). " +
+			"Si supera el saldo, la finca lo rechaza (AMOUNT_EXCEEDS_BALANCE) salvo allowOverpayment=true, " +
 			"y el exceso queda como anticipo. Mueve dinero: la primera llamada devuelve un resumen y un confirmationToken; ejecútelo solo si el usuario confirma.",
 		Method: http.MethodPost, Pattern: "/v1/payments",
-		Params: []mcpParam{wWorkerID, wAmount, wMethod, wNote, wDate,
+		Params: []mcpParam{wWorkerID, wAmount, wMethod, wNote, wDate, wReceivedBy,
 			{Name: "allowOverpayment", Type: "boolean", Description: "Pagar más que el saldo a propósito; el exceso queda como anticipo."}},
 		Idempotent: true, Money: true,
 		Build:   buildLedger("/v1/payments", true),
@@ -854,8 +990,9 @@ var mcpWriteTools = []mcpWriteTool{
 		},
 	},
 	{
-		Name: "create_settlement", Title: "Liquidar a un trabajador",
-		Description: "Crea una liquidación: toma el trabajo pendiente de un trabajador en un rango de fechas, lo valora al precio vigente y lo suma a su saldo (devengo). " +
+		Name: "create_settlement", Title: "Liquidar a un trabajador o equipo",
+		Description: "Crea una liquidación: toma el trabajo pendiente de un trabajador o de un EQUIPO en un rango de fechas, lo valora al precio vigente y lo suma a su saldo (devengo). " +
+			"Un equipo se liquida como una sola cuenta (workerId del equipo). " +
 			"Después se registra el pago con register_payment. Mueve dinero: la primera llamada devuelve el resumen (labores y bruto) y un confirmationToken; " +
 			"ejecútelo solo si el usuario confirma. Si algo cambió entre el resumen y la confirmación, no liquida y pide un resumen nuevo.",
 		Method: http.MethodPost, Pattern: "/v1/settlements",
@@ -900,7 +1037,7 @@ func buildLedger(path string, payment bool) func(a mcpArgs, key string) (mcpCall
 			return mcpCall{}, fmt.Errorf("amountCents debe ser positivo")
 		}
 		b := map[string]any{"workerId": a["workerId"], "amountCents": amount}
-		a.copyStr(b, "method", "note", "date")
+		a.copyStr(b, "method", "note", "date", "receivedBy")
 		if payment {
 			if v, ok := a["allowOverpayment"].(bool); ok {
 				b["allowOverpayment"] = v
@@ -935,8 +1072,23 @@ func previewLedger(kind string) func(c *mcpCaller, a mcpArgs) (*mcpPreview, erro
 		after := before - amount
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "%s de %s a %s", kind, pesos(amount), workerName(w))
+		if strField(w, "kind") == "equipo" {
+			fmt.Fprintf(&sb, " (equipo: %s)", memberNames(w))
+		}
 		if m := a.str("method"); m != "" {
 			fmt.Fprintf(&sb, " (%s)", m)
+		}
+		if rb := a.str("receivedBy"); rb != "" {
+			who := rb
+			if members, ok := w["members"].([]any); ok {
+				for _, raw := range members {
+					m, _ := raw.(map[string]any)
+					if strField(m, "id") == rb {
+						who = workerName(m)
+					}
+				}
+			}
+			fmt.Fprintf(&sb, ", recibe %s", who)
 		}
 		if d := a.str("date"); d != "" {
 			fmt.Fprintf(&sb, ", fecha %s", d)

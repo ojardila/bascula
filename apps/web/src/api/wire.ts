@@ -330,6 +330,31 @@ export interface WireEmployee {
   photoId: string | null;
   createdAt?: Instant;
   deletedAt?: Instant | null;
+  /** `equipo`: a pair or family paid as one account (docs/use-cases/teams.md). */
+  kind?: WireWorkerKind;
+  /** A team's members as of today. Only on an `equipo`. */
+  members?: WireTeamMember[];
+  /** The team a person belongs to today; absent when none. */
+  team?: WireTeamRef | null;
+}
+
+export type WireWorkerKind = "persona" | "equipo";
+
+export interface WireTeamMember {
+  id: Uuid;
+  name: string;
+  lastName: string | null;
+  tag: string | null;
+  from: DayISO;
+  to: DayISO | null;
+}
+
+export interface WireTeamRef {
+  id: Uuid;
+  name: string;
+  from: DayISO;
+  to: DayISO | null;
+  members: number;
 }
 
 /** The weigher's projection. Same route, fewer fields. */
@@ -680,6 +705,8 @@ export interface WireLedgerEntry {
   method: WirePayMethod | null;
   note: string | null;
   reversesId: Uuid | null;
+  /** For a team's pago/anticipo: the member who took the cash. */
+  receivedBy?: Uuid | null;
   createdAt: Instant;
 }
 
@@ -709,6 +736,9 @@ export interface WirePaymentReceipt {
   settlementIds?: Uuid[];
   /** Cancelled by a reversal after it was written. The figures do not move. */
   reversed?: boolean;
+  /** «¿Quién recibe la plata?» on a team's payment. */
+  receivedBy?: Uuid | null;
+  receivedByName?: string | null;
 }
 
 export interface WireLedgerRequest {
@@ -1270,6 +1300,11 @@ export interface WirePerformanceSummary {
 export interface WireWorkerPerformanceReport {
   scope: WireReportScope;
   employeeId: Uuid;
+  kind: WireWorkerKind;
+  /** A team's members today (0 for a person). */
+  members: number;
+  /** For a member: the team; the kilos are their share of it. */
+  team: WireTeamRef | null;
   today: DayISO;
   thisWeek: DayISO;
   /** Null: this person has never had a harvest record. */
@@ -1395,6 +1430,11 @@ export interface WireHarvestDashboardPlot extends WireReportTotals {
 export interface WireHarvestDashboardPerson extends WireReportTotals {
   employeeId: Uuid;
   name: string;
+  kind: WireWorkerKind;
+  /** People behind the row: 1 for a person, the team's average members. */
+  members: number;
+  /** Kilos per member («c/u»); equals kg for a person. */
+  kgEach: number | null;
   daysWorked: number;
   kgPerDay: number | null;
   pickedToday: boolean;

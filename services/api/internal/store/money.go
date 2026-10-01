@@ -205,7 +205,8 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 func Debts(ctx context.Context, tx pgx.Tx, employeeID string) ([]LedgerEntry, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT l.id::text, l.employee_id::text, l.kind, l.amount_minor, l.local_day,
-		       l.settlement_id::text, l.method::text, l.note, l.reverses_id::text, l.created_at
+		       l.settlement_id::text, l.method::text, l.note, l.reverses_id::text, l.created_at,
+		       l.received_by::text
 		  FROM ledger l
 		 WHERE l.employee_id = $1
 		   AND l.kind IN ('deduccion', 'anticipo')
@@ -220,7 +221,7 @@ func Debts(ctx context.Context, tx pgx.Tx, employeeID string) ([]LedgerEntry, er
 	for rows.Next() {
 		var e LedgerEntry
 		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.Kind, &e.AmountMinor, &e.LocalDay,
-			&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt); err != nil {
+			&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt, &e.ReceivedBy); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -1067,6 +1068,10 @@ type LedgerEntry struct {
 	Note         *string           `json:"note"`
 	ReversesID   *string           `json:"reversesId"`
 	CreatedAt    time.Time         `json:"createdAt"`
+	// ReceivedBy is, on a payment or advance to a team, the member who took
+	// the cash («¿Quién recibe la plata?»). Informational: the balance is the
+	// team's. Nil everywhere else.
+	ReceivedBy *string `json:"receivedBy"`
 }
 
 // dayOrToday takes the caller's business day when there is one, and otherwise
@@ -1096,15 +1101,17 @@ type NewLedgerEntry struct {
 	Method      *string
 	Note        *string
 	CreatedBy   string
+	// ReceivedBy: see LedgerEntry.ReceivedBy. Only on a pago or anticipo.
+	ReceivedBy *string
 }
 
 const ledgerCols = `id::text, employee_id::text, kind, amount_minor, local_day,
-	settlement_id::text, method::text, note, reverses_id::text, created_at`
+	settlement_id::text, method::text, note, reverses_id::text, created_at, received_by::text`
 
 func scanLedgerEntry(row pgx.Row) (*LedgerEntry, error) {
 	var e LedgerEntry
 	err := row.Scan(&e.ID, &e.EmployeeID, &e.Kind, &e.AmountMinor, &e.LocalDay,
-		&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt)
+		&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt, &e.ReceivedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1148,6 +1155,9 @@ func (e *LedgerEntry) Matches(n NewLedgerEntry, kind domain.LedgerKind) bool {
 	if n.Method != nil && (e.Method == nil || *e.Method != *n.Method) {
 		return false
 	}
+	if n.ReceivedBy != nil && (e.ReceivedBy == nil || *e.ReceivedBy != *n.ReceivedBy) {
+		return false
+	}
 	return true
 }
 
@@ -1183,11 +1193,11 @@ func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEn
 	day := &d
 	out, err := scanLedgerEntry(tx.QueryRow(ctx, `
 		INSERT INTO ledger (id, farm_id, employee_id, kind, amount_minor, local_day,
-		                    method, note, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::pay_method, $8, $9)
+		                    method, note, created_by, received_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::pay_method, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING `+ledgerCols,
-		e.ID, farmID, e.EmployeeID, e.Kind, e.AmountMinor, day, e.Method, e.Note, e.CreatedBy))
+		e.ID, farmID, e.EmployeeID, e.Kind, e.AmountMinor, day, e.Method, e.Note, e.CreatedBy, e.ReceivedBy))
 	if err == nil {
 		return out, true, nil
 	}
@@ -1307,7 +1317,8 @@ func ListLedger(ctx context.Context, tx pgx.Tx, employeeID string, limit int) ([
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, employee_id::text, kind, amount_minor, local_day,
-		       settlement_id::text, method::text, note, reverses_id::text, created_at
+		       settlement_id::text, method::text, note, reverses_id::text, created_at,
+		       received_by::text
 		  FROM ledger WHERE employee_id = $1
 		 ORDER BY local_day DESC, created_at DESC
 		 LIMIT $2`, employeeID, limit)
@@ -1320,7 +1331,7 @@ func ListLedger(ctx context.Context, tx pgx.Tx, employeeID string, limit int) ([
 	for rows.Next() {
 		var e LedgerEntry
 		if err := rows.Scan(&e.ID, &e.EmployeeID, &e.Kind, &e.AmountMinor, &e.LocalDay,
-			&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt); err != nil {
+			&e.SettlementID, &e.Method, &e.Note, &e.ReversesID, &e.CreatedAt, &e.ReceivedBy); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

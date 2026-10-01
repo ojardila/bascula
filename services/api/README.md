@@ -339,12 +339,13 @@ a «Try it» panel that posts to `/mcp` with the reader's token) and
 tool registry itself (`handlers_mcp_docs.go`), public and data-free. Guides:
 [`docs/mcp`](../../docs/mcp/README.md).
 
-Twenty-seven reads: `me`, `farm`, workers and their balances, ledgers and
+Twenty-nine reads: `me`, `farm`, workers and their balances, ledgers and
 payables, plots, activities, work records, pending, balances, settlements,
-week prices, the six reports, stock, products, sales, expenses and customers.
+week prices, the seven reports (including the harvest dashboard), stock, products, sales, expenses and customers.
 
-Twelve writes (`handlers_mcp_write.go`): `create_worker`, `update_worker`
-(including deactivate/reactivate), `create_plot` (with its crop),
+Fourteen writes (`handlers_mcp_write.go`): `create_worker`, `update_worker`
+(including deactivate/reactivate), `create_team` and `set_team_members`
+(teams, see `docs/use-cases/teams.md`), `create_plot` (with its crop),
 `register_weighing`, `register_harvest_week` (atomic, over
 `POST /v1/work-records/batch`), `correct_weighing`, `void_weighing`,
 `set_kilo_price` (base from a Monday on, or one week), `register_advance`,

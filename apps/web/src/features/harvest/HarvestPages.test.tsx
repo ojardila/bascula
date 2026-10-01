@@ -703,8 +703,8 @@ describe("«Modo cosecha» on the home screen", () => {
     ],
     unattributed: totals(),
     people: [
-      { ...priced(180, 3), employeeId: "e1", name: "Ana Restrepo", daysWorked: 2, kgPerDay: 90, pickedToday: true, belowAverage: false },
-      { ...priced(20, 1), employeeId: "e2", name: "Beto Marín", daysWorked: 1, kgPerDay: 20, pickedToday: false, belowAverage: true },
+      { ...priced(180, 3), employeeId: "e1", name: "Ana Restrepo", kind: "persona", members: 1, kgEach: 180, daysWorked: 2, kgPerDay: 90, pickedToday: true, belowAverage: false },
+      { ...priced(20, 1), employeeId: "e2", name: "Beto Marín", kind: "persona", members: 1, kgEach: 20, daysWorked: 1, kgPerDay: 20, pickedToday: false, belowAverage: true },
     ],
     notToday: [{ employeeId: "e2", name: "Beto Marín", lastRecordOn: weekOf(1) }],
   });
