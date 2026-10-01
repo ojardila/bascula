@@ -68,20 +68,44 @@ export function foldName(s: string): string {
 }
 
 /**
- * Whether a person answers to what was typed in «Buscar por nombre». Accents
- * and case don't matter, any part of the first or last names matches, and each
- * word typed must appear: «pedro ram» finds Pedro Ramírez. Blank matches all.
+ * Whether a person answers to what was typed in «Buscar por nombre o
+ * canasto». Accents and case don't matter, any part of the first or last
+ * names matches, and each word typed must appear: «pedro ram» finds Pedro
+ * Ramírez. The basket number counts too — the worker's own and, for a team,
+ * its members' — so «46» finds Yorman's team. Blank matches all.
  */
 export function matchesName(w: Worker, query: string): boolean {
   const words = foldName(query).split(" ").filter(Boolean);
   if (!words.length) return true;
-  const name = foldName(`${workerLabel(w)} ${teamSearchText(w)}`);
+  const name = foldName(`${workerLabel(w)} ${w.tag ?? ""} ${teamSearchText(w)}`);
   return words.every((word) => name.includes(word));
 }
 
-/** The people that answer to the search, in the order of the list. */
-export function filterWorkers(workers: Worker[], query: string): Worker[] {
-  return workers.filter((w) => matchesName(w, query));
+/**
+ * How well a worker's basket number answers a query: 0 exact («46» → 46),
+ * 1 one of the numbers of a team («46» → 46-63), 2 starts with it, 3 the rest.
+ */
+function basketRank(w: Worker, query: string): number {
+  const q = foldName(query);
+  const tag = foldName(w.tag ?? "");
+  if (!q || !tag) return 3;
+  if (tag === q) return 0;
+  if (tag.split(/[^a-z0-9]+/).includes(q)) return 1;
+  if (tag.startsWith(q)) return 2;
+  return 3;
+}
+
+/**
+ * The people that answer to the search. Typing a basket number puts its owner
+ * first («4» would also match 45 and 46); otherwise the list keeps its order.
+ */
+export function filterWorkers<T extends Worker>(workers: T[], query: string): T[] {
+  const hits = workers.filter((w) => matchesName(w, query));
+  if (!/\d/.test(query)) return hits;
+  return hits
+    .map((w, i) => ({ w, i, r: basketRank(w, query) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.w);
 }
 
 /**

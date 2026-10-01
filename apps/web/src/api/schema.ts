@@ -853,6 +853,12 @@ export interface paths {
          * @description Idempotent by (farm_id, id): posting the same client-generated id twice
          *     answers 200 with the existing row rather than 409, so a retry after a
          *     timeout is safe.
+         *
+         *     `tag` — the basket number («número de canasto») — is REQUIRED here, for
+         *     a person and for a team alike (400 with `details.fields.tag` when it is
+         *     missing or blank). It is trimmed, and unique among the farm's ACTIVE
+         *     workers and teams, compared ignoring case: 409 DUPLICATE_TAG names who
+         *     has it. A team has its own number; its members keep theirs.
          */
         post: operations["createWorker"];
         delete?: never;
@@ -892,6 +898,13 @@ export interface paths {
          *     off the payroll and back on for the next harvest: the row and its
          *     financial history stay put, which is the whole reason a delete here is
          *     logical.
+         *
+         *     `tag` (the basket number) can be changed but not removed from a worker
+         *     who has one (400). Workers registered before the number was required
+         *     may stay without one until somebody gives them one. A new number, or
+         *     coming back on the payroll with the old one, is refused with 409
+         *     DUPLICATE_TAG when another active worker carries it; send a new `tag`
+         *     together with `status: active` to come back under a different number.
          */
         patch: operations["updateWorker"];
         trace?: never;
@@ -3675,7 +3688,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "PLATFORM_ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "WORKER_IN_TEAM" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "PLATFORM_ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "WORKER_IN_TEAM" | "DUPLICATE_TAG" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -4102,7 +4115,12 @@ export interface components {
             /** @description The team this person currently belongs to. Null when none, and on a team. */
             team?: components["schemas"]["TeamRef"] | null;
             lastName?: string | null;
-            /** @description The number on the basket, unique within the farm. */
+            /**
+             * @description The basket number («número de canasto»): how the scale finds a person
+             *     or a team. Required on create, unique among the farm's ACTIVE
+             *     workers and teams. A team has its own; its members keep theirs.
+             *     Null only on workers registered before it was required.
+             */
             tag?: string | null;
             documentType?: string | null;
             docId?: string | null;
@@ -4176,6 +4194,7 @@ export interface components {
             lastName?: string | null;
             documentType?: string | null;
             docId?: string | null;
+            /** @description The basket number. Required on create; cannot be removed once set. */
             tag?: string | null;
             phone?: string | null;
             address?: string | null;
@@ -6188,6 +6207,8 @@ export interface components {
                 /** Format: uuid */
                 employeeId: string;
                 name: string;
+                /** @description The basket number («número de canasto»); null when none. */
+                tag: string | null;
                 kind: components["schemas"]["WorkerKind"];
                 /** @description People behind the row (1 for a person). */
                 members: number;
@@ -6213,6 +6234,8 @@ export interface components {
                 /** Format: uuid */
                 employeeId: string;
                 name: string;
+                /** @description The basket number; null when none. */
+                tag: string | null;
                 /** Format: date */
                 lastRecordOn: string;
             }[];
@@ -8307,6 +8330,10 @@ export interface operations {
              *     split in two, and nothing says so. Restore the existing one with
              *     PATCH /v1/workers/{id} {"status":"active"} instead. It is the one
              *     conflict in docs/archive/synchronization.md with no automatic repair.
+             *
+             *     DUPLICATE_TAG with `details.employeeId`, `details.name`,
+             *     `details.lastName` and `details.tag` — an active worker or team
+             *     already carries that basket number.
              */
             409: {
                 headers: {
@@ -8394,6 +8421,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description DUPLICATE_TAG — another active worker carries that basket number (see POST). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     workerProfile: {

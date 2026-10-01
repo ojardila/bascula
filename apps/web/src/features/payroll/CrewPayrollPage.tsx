@@ -35,6 +35,7 @@
  *     out of us, which here has two more ways to happen.
  */
 import { TeamChip } from "../teams/TeamProfile";
+import { BasketTile } from "../workers/Basket";
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -121,9 +122,15 @@ export function CrewPayrollPage() {
     [crew],
   );
 
-  const matches = (name: string) => fold(name).includes(fold(search.trim()));
-  const visibleSettle = allSettle.filter((a) => matches(a.name));
-  const visiblePay = allPay.filter((a) => matches(a.name));
+  /** The basket number of each account, to show and to search by. */
+  const tagOf = (workerId: string) => crew.find((m) => m.worker.id === workerId)?.worker.tag ?? null;
+  // By name or by basket number: «46» finds the account with canasto 46.
+  const matches = (a: { name: string; workerId: string }) => {
+    const q = fold(search.trim());
+    return fold(a.name).includes(q) || fold(tagOf(a.workerId) ?? "") === q;
+  };
+  const visibleSettle = allSettle.filter(matches);
+  const visiblePay = allPay.filter(matches);
   const pickedSettle = visibleSettle.filter((a) => !outOfSettle.has(a.workerId));
   const pickedPay = visiblePay.filter((a) => !outOfPay.has(a.workerId));
 
@@ -472,7 +479,7 @@ export function CrewPayrollPage() {
       )}
 
       <TextField
-        label="Buscar por empleado"
+        label="Buscar por nombre o canasto"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         size="small"
@@ -582,6 +589,9 @@ export function CrewPayrollPage() {
                         </IconButton>
                       </TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                        <BasketTile tag={member?.worker.tag} team={member?.worker.kind === "equipo"} size={38} />
+                        <Box>
                         {a.name}
                         {hasProvisional(a) && (
                           <Chip
@@ -593,6 +603,8 @@ export function CrewPayrollPage() {
                           />
                         )}
                         <TeamChip worker={member?.worker} />
+                        </Box>
+                        </Box>
                       </TableCell>
                       <TableCell align="right">{a.lines.length}</TableCell>
                       <TableCell align="right">
@@ -758,8 +770,13 @@ export function CrewPayrollPage() {
                       />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>
-                      {a.name}
-                      <TeamChip worker={member?.worker} />
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+                        <BasketTile tag={member?.worker.tag} team={member?.worker.kind === "equipo"} size={38} />
+                        <Box>
+                          {a.name}
+                          <TeamChip worker={member?.worker} />
+                        </Box>
+                      </Box>
                     </TableCell>
                     <TableCell>{a.documentNumber ?? "—"}</TableCell>
                     <TableCell>

@@ -18,7 +18,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Avatar, Box, Button, Card, CardContent, Chip, Divider, Grid, Stack,
+  Alert, Box, Button, Card, CardContent, Chip, Divider, Grid, Stack,
   Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -28,6 +28,7 @@ import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
 import GroupsIcon from "@mui/icons-material/Groups";
 import { TeamMembersCard, MemberBanner, looksLikeTwoPeople } from "../teams/TeamProfile";
 import { isTeam, memberCount, teamSize } from "../teams/team";
+import { BasketChip, BasketTile, basketOf } from "./Basket";
 import { Money } from "../../components/Money";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
@@ -90,15 +91,31 @@ export function WorkerProfilePage() {
         Empleados
       </Button>
 
+      {!basketOf(worker.tag) && worker.status !== "inactive" && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2, fontSize: "1rem" }}
+          action={
+            can("workers.write") ? (
+              <Button
+                color="inherit"
+                variant="outlined"
+                onClick={() => navigate(`/empleados/${worker.id}/${team ? "equipo" : "editar"}`)}
+              >
+                Poner número
+              </Button>
+            ) : undefined
+          }
+        >
+          {team ? "Este equipo" : "Esta persona"} no tiene número de canasto. Póngale uno para
+          encontrarl{team ? "o" : "a"} rápido en la báscula.
+        </Alert>
+      )}
+
       <Grid container spacing={3} sx={{ mb: 1 }}>
         <Grid size={{ xs: 12, md: 7 }}>
           <Stack direction="row" spacing={2.5} alignItems="flex-start">
-            <Avatar
-              src={worker.photoUrl ?? undefined}
-              sx={{ width: 88, height: 88, fontSize: 34, ...(team ? { bgcolor: "primary.main" } : {}) }}
-            >
-              {team ? <GroupsIcon sx={{ fontSize: 44 }} /> : worker.name[0]}
-            </Avatar>
+            <BasketTile tag={worker.tag} team={team} size={88} />
             <Box>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography variant="h1">
@@ -106,12 +123,10 @@ export function WorkerProfilePage() {
                 </Typography>
                 {worker.status === "inactive" && <Chip size="small" label="Inactivo" />}
               </Stack>
-              {team && (
-                <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Chip color="success" label={teamSize(memberCount(worker))} />
-                  {worker.tag && <Chip variant="outlined" label={`Canasto ${worker.tag}`} />}
-                </Stack>
-              )}
+              <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} flexWrap="wrap" useFlexGap>
+                <BasketChip tag={worker.tag} big />
+                {team && <Chip color="success" label={teamSize(memberCount(worker))} />}
+              </Stack>
               {!team && (
               <Typography color="text.secondary">
                 {worker.documentType} {worker.documentNumber}

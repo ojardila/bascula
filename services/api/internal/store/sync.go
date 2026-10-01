@@ -603,6 +603,13 @@ func RecordSyncOp(ctx context.Context, tx pgx.Tx, farmID, opID, deviceID, finger
 // The return says whether a row was created, which is what tells `applied` from
 // `duplicate`: zero rows out of the insert means it was already there (§4.1).
 func UpsertSyncWorker(ctx context.Context, tx pgx.Tx, farmID string, e Employee) (*Employee, bool, error) {
+	// The phone's basket number obeys the same rule as the web's: unique among
+	// the farm's active workers, refused naming who has it. Not required here
+	// — a handset from before the rule may push a person without one.
+	e.Tag = NormalizeTag(e.Tag)
+	if err := CheckTagFree(ctx, tx, e.Tag, e.ID); err != nil {
+		return nil, false, err
+	}
 	out, err := scanEmployee(tx.QueryRow(ctx, `
 		INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -624,7 +631,7 @@ func UpsertSyncWorker(ctx context.Context, tx pgx.Tx, farmID string, e Employee)
 				"another worker on this farm already carries that document")
 		}
 		if IsUniqueViolation(err, "ux_employees_tag") {
-			return nil, false, domain.Conflict(domain.CodeDuplicateName,
+			return nil, false, domain.Conflict(domain.CodeDuplicateTag,
 				"another worker on this farm already carries that tag")
 		}
 		return nil, false, err

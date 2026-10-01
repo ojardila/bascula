@@ -114,6 +114,8 @@ export async function loadDemoData(
         lastName,
         documentType: "CC",
         documentNumber: String(900_000_001 + i),
+        // Every person needs a basket number; the farm is empty, so 1..6 are free.
+        tag: String(i + 1),
         phone: "",
       }),
     );

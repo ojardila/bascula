@@ -38,6 +38,7 @@ import { count } from "../../lib/plural";
 import { EMPLOYEE, PLOT } from "../../lib/vocab";
 import { Kg, Value } from "./Figures";
 import { belowAverageText, lastSeenText, plotTrend } from "./dashboardText";
+import { BasketTile } from "../workers/Basket";
 
 /** How many people are listed before «Ver todas». */
 const TOP_PEOPLE = 10;
@@ -149,7 +150,7 @@ function Body({ d, canSeeMoney }: { d: WireHarvestDashboard; canSeeMoney: boolea
                 component={RouterLink}
                 to={`${EMPLOYEE.path}/${p.employeeId}`}
                 clickable
-                label={`${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
+                label={`${p.tag ? `${p.tag} · ` : ""}${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
                 sx={{ fontSize: "1rem", height: 40, borderRadius: 20 }}
               />
             ))}
@@ -233,14 +234,17 @@ function PersonRow({ p, rank }: { p: WireHarvestDashboardPerson; rank: number })
   const team = p.kind === "equipo";
   const n = Math.round(p.members);
   const main = team ? p.kgEach : p.kg;
-  const label = `${rank}. ${p.name}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
+  const label = `${rank}. ${p.name}${p.tag ? ` (canasto ${p.tag})` : ""}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
   return (
     <RowLink to={`${EMPLOYEE.path}/${p.employeeId}`} label={label} warn={p.belowAverage}>
-      <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
-        <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, mr: 1 }}>{rank}.</Box>
-          {p.name}
-        </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+        <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0 }}>
+          <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, fontSize: "1.05rem" }}>{rank}.</Box>
+          <BasketTile tag={p.tag} team={team} size={40} />
+          <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {p.name}
+          </Typography>
+        </Stack>
         <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, whiteSpace: "nowrap", ...moneyFont }}>
           {main === null ? "—" : kgText(main)}
           {team && <Box component="span" sx={{ fontSize: "0.95rem", fontWeight: 600, ml: 0.5 }}>c/u</Box>}

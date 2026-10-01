@@ -124,6 +124,26 @@ const conflict = (code: string, message: string, details?: Record<string, unknow
 
 const noContent = () => new HttpResponse(null, { status: 204 });
 
+/**
+ * «Número de canasto», as the server enforces it: required on create, trimmed,
+ * unique among the ACTIVE workers ignoring case, and a clash names the holder.
+ */
+const foldTag = (t: string | null | undefined) => (t ?? "").trim().toLowerCase();
+function tagHolder(workers: WireEmployee[], tag: string, exceptId: string): WireEmployee | undefined {
+  return workers.find((w) => w.deletedAt == null && w.id !== exceptId && w.tag && foldTag(w.tag) === foldTag(tag));
+}
+function duplicateTag(holder: WireEmployee, tag: string) {
+  return conflict("DUPLICATE_TAG", `basket number ${tag} is already carried by ${holder.name}`, {
+    employeeId: holder.id,
+    name: holder.name,
+    lastName: holder.lastName,
+    kind: holder.kind,
+    tag,
+  });
+}
+const tagRequired = () =>
+  badRequest("tag (the basket number) is required", { fields: { tag: "Escriba el número de canasto." } });
+
 /* -- tokens ---------------------------------------------------------- */
 
 const ACCESS_PREFIX = "mock-access.";
@@ -1579,8 +1599,12 @@ export const handlers = [
     const t = g.p.tenant;
 
     const id = body.id ?? crypto.randomUUID();
+    const tag = (body.tag ?? "").trim();
+    if (!tag) return tagRequired();
     const already = t.workers.find((w) => w.id === id);
     if (already) return HttpResponse.json(already);
+    const holder = tagHolder(t.workers, tag, id);
+    if (holder) return duplicateTag(holder, tag);
 
     // `ux_employees_doc`. The same cedula twice is one person with two
     // ledgers, which is how somebody gets paid twice.
@@ -1619,7 +1643,7 @@ export const handlers = [
       lastName: body.lastName ?? null,
       documentType: body.documentType ?? null,
       docId: body.docId ?? null,
-      tag: body.tag ?? null,
+      tag,
       phone: body.phone ?? null,
       address: body.address ?? null,
       city: body.city ?? null,
@@ -1653,8 +1677,27 @@ export const handlers = [
     if (bad) return bad;
     const worker = g.p.tenant.workers.find((w) => w.id === params.id);
     if (!worker) return notFound();
+    if (body.tag !== undefined) {
+      const next = (body.tag ?? "").trim();
+      if (!next) {
+        // Can be changed, not removed; a worker from before the rule stays without.
+        if (worker.tag) return tagRequired();
+        delete body.tag;
+      } else {
+        const holder = tagHolder(g.p.tenant.workers, next, worker.id);
+        if (holder) return duplicateTag(holder, next);
+        body.tag = next;
+      }
+    }
+    if (body.status === "active" && worker.deletedAt != null && body.tag === undefined && worker.tag) {
+      const holder = tagHolder(g.p.tenant.workers, worker.tag, worker.id);
+      if (holder) return duplicateTag(holder, worker.tag);
+    }
     if (body.status === "inactive" && worker.deletedAt == null) worker.deletedAt = nowInstant();
-    if (body.status === "active") worker.deletedAt = null;
+    if (body.status === "active") {
+      worker.deletedAt = null;
+      if (body.tag) worker.tag = body.tag;
+    }
     // `UpdateEmployee` skips deleted rows by design; a deactivation on its own
     // still answers with the row it changed.
     if (worker.deletedAt != null) return HttpResponse.json(worker);
@@ -3856,6 +3899,7 @@ export const handlers = [
       const w = t.workers.find((x) => x.id === id);
       return w ? `${w.name} ${w.lastName ?? ""}`.trim() : "";
     };
+    const tagOf = (id: string) => t.workers.find((x) => x.id === id)?.tag ?? null;
 
     const rows = t.workRecords.filter(
       (r) => r.deletedAt === null && r.payScheme === "unidad_trabajo" &&
@@ -3901,7 +3945,7 @@ export const handlers = [
       const daysWorked = new Set(mine.filter((r) => kgOf(r) !== null).map(dayOfR)).size;
       const kgPerDay = tt.kg !== null && daysWorked > 0 ? tt.kg / daysWorked : null;
       return {
-        employeeId, name: nameOf(employeeId), kind: "persona" as const, members: 1, kgEach: tt.kg,
+        employeeId, name: nameOf(employeeId), tag: tagOf(employeeId), kind: "persona" as const, members: 1, kgEach: tt.kg,
         ...tt, daysWorked, kgPerDay,
         pickedToday: mine.some((r) => dayOfR(r) === todayD),
         belowAverage: compare && kgPerDay !== null && kgPerDay < (kgPerPersonDay as number) * 0.7,
@@ -3914,6 +3958,7 @@ export const handlers = [
       .map((employeeId) => ({
         employeeId,
         name: nameOf(employeeId),
+        tag: tagOf(employeeId),
         lastRecordOn: rows.filter((r) => r.workerId === employeeId).map(dayOfR).sort().pop() as string,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));

@@ -51,7 +51,8 @@ function deactivateSomeone(): { id: string; docId: string; name: string } {
   return { id: w.id, docId: w.docId!, name: `${w.name} ${w.lastName ?? ""}`.trim() };
 }
 
-async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, docId: string) {
+async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, docId: string, tag = "88") {
+  if (tag) await user.type(screen.getByLabelText(/^Número de canasto/), tag);
   await user.type(screen.getByLabelText(/^Nombres/), "Otra");
   await user.type(screen.getByLabelText(/^Apellidos/), "Persona");
   await user.type(screen.getByLabelText(/^Número de identificación/), docId);
@@ -102,5 +103,35 @@ describe("an ID number that already belongs to somebody deactivated", () => {
     const withThatDoc = t.workers.filter((w) => w.docId === gone.docId);
     expect(withThatDoc).toHaveLength(1);
     expect(withThatDoc[0].deletedAt).toBeNull();
+  }, 20000);
+});
+
+describe("«Número de canasto»", () => {
+  it("is required, with a plain sentence under the box", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAndSubmit(user, "1234567890", "");
+    expect(await screen.findByText("Escriba el número de canasto.")).toBeInTheDocument();
+    expect(screen.queryByText("ficha del empleado")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("names who already has the number", async () => {
+    const t = db.tenantOf(db.FARM_ID)!;
+    const holder = t.workers.find((w) => w.deletedAt == null && w.tag)!;
+    const user = userEvent.setup();
+    renderForm();
+    await fillAndSubmit(user, "1234567890", ` ${holder.tag!} `);
+    const who = `${holder.name} ${holder.lastName ?? ""}`.trim();
+    expect(await screen.findByText(`Ese número ya lo tiene ${who}.`)).toBeInTheDocument();
+    expect(screen.queryByText("ficha del empleado")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("saves the person with their number", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAndSubmit(user, "1234567890", "77");
+    expect(await screen.findByText("ficha del empleado")).toBeInTheDocument();
+    const t = db.tenantOf(db.FARM_ID)!;
+    expect(t.workers.find((w) => w.docId === "1234567890")?.tag).toBe("77");
   }, 20000);
 });

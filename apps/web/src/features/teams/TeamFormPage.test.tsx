@@ -26,6 +26,21 @@ beforeEach(() => {
   });
 });
 
+function renderTeamForm() {
+  return render(
+    <ThemeProvider theme={theme}>
+      <MemoryRouter initialEntries={["/empleados/equipo/nuevo"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/empleados/equipo/nuevo" element={<TeamFormPage />} />
+            <Route path="/empleados/:id" element={<div>cuenta del equipo</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </ThemeProvider>,
+  );
+}
+
 describe("creating a team", () => {
   it("creates one account with its members, and the members point at it", async () => {
     const t = db.tenantOf(db.FARM_ID)!;
@@ -44,6 +59,7 @@ describe("creating a team", () => {
       </ThemeProvider>,
     );
     await user.type(screen.getByLabelText(/^Nombre del equipo/), "Los dos");
+    await user.type(screen.getByLabelText(/^Número de canasto/), "90-91");
     const nameA = `${a.name} ${a.lastName ?? ""}`.trim();
     const nameB = `${b.name} ${b.lastName ?? ""}`.trim();
     await user.click(await screen.findByRole("checkbox", { name: nameA }));
@@ -55,7 +71,26 @@ describe("creating a team", () => {
     expect(await screen.findByText("cuenta del equipo")).toBeInTheDocument();
     const team = t.workers.find((w) => w.name === "Los dos")!;
     expect(team.kind).toBe("equipo");
+    // The team has its own basket number; the members keep theirs.
+    expect(team.tag).toBe("90-91");
+    expect(t.workers.find((w) => w.id === a.id)!.tag).toBe(a.tag);
     expect(team.members?.map((m) => m.id).sort()).toEqual([a.id, b.id].sort());
     expect(t.workers.find((w) => w.id === a.id)!.team?.id).toBe(team.id);
+  }, 20000);
+
+  it("asks for the team's basket number, and says who has it if it is taken", async () => {
+    const t = db.tenantOf(db.FARM_ID)!;
+    const holder = t.workers.find((w) => w.deletedAt == null && w.tag)!;
+    const user = userEvent.setup();
+    renderTeamForm();
+    await user.type(screen.getByLabelText(/^Nombre del equipo/), "Los tres");
+    await user.click(screen.getByRole("button", { name: "Guardar equipo" }));
+    expect(await screen.findByText("Escriba el número de canasto.")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^Número de canasto/), holder.tag!);
+    await user.click(screen.getByRole("button", { name: "Guardar equipo" }));
+    const who = `${holder.name} ${holder.lastName ?? ""}`.trim();
+    expect(await screen.findByText(`Ese número ya lo tiene ${who}.`)).toBeInTheDocument();
+    expect(t.workers.find((w) => w.name === "Los tres")).toBeUndefined();
   }, 20000);
 });

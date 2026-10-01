@@ -92,12 +92,12 @@ func TestTeamsEndToEnd(t *testing.T) {
 
 	// One team per person; members get no personal weighing or advance.
 	if res := h.do(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": "Otro equipo", "kind": "equipo", "memberIds": []string{yorman},
+		"name": "Otro equipo", "kind": "equipo", "memberIds": []string{yorman}, "tag": "T-OTRO",
 	}); res.Status != http.StatusConflict || errCode(res) != "WORKER_IN_TEAM" {
 		t.Errorf("person in two teams: %d %s", res.Status, res.Raw)
 	}
 	if res := h.do(t, http.MethodPost, "/v1/workers", f.OwnerToken, map[string]any{
-		"name": "Pedro", "memberIds": []string{luis},
+		"name": "Pedro", "memberIds": []string{luis}, "tag": "P-1",
 	}); res.Status != http.StatusBadRequest {
 		t.Errorf("memberIds on a person: %d %s", res.Status, res.Raw)
 	}
@@ -255,7 +255,7 @@ func TestTeamsEndToEnd(t *testing.T) {
 	if ctr["kind"] != "equipo" || len(ctr["members"].([]any)) != 2 {
 		t.Errorf("create_team: %v", ctr)
 	}
-	hint := callTool(t, sess, "create_worker", map[string]any{"name": "Mauricio y Tatiana"})
+	hint := callTool(t, sess, "create_worker", map[string]any{"name": "Mauricio y Tatiana", "tag": "MT-1"})
 	if !strings.Contains(toolText(hint), "VARIAS personas") {
 		t.Errorf("create_worker should warn about a combined name: %s", toolText(hint))
 	}

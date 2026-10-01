@@ -343,7 +343,10 @@ Twenty-nine reads: `me`, `farm`, workers and their balances, ledgers and
 payables, plots, activities, work records, pending, balances, settlements,
 week prices, the seven reports (including the harvest dashboard), stock, products, sales, expenses and customers.
 
-Fourteen writes (`handlers_mcp_write.go`): `create_worker`, `update_worker`
+Fourteen writes (`handlers_mcp_write.go`): `create_worker` and `create_team`
+require `tag`, the basket number, unique among active workers (409
+`DUPLICATE_TAG` names the holder; see `docs/use-cases/basket-numbers.md`);
+`create_worker`, `update_worker`
 (including deactivate/reactivate), `create_team` and `set_team_members`
 (teams, see `docs/use-cases/teams.md`), `create_plot` (with its crop),
 `register_weighing`, `register_harvest_week` (atomic, over

@@ -440,7 +440,7 @@ describe("the paper says whether it was filtered", () => {
     renderPayroll();
     await screen.findByText("1 · Liquidar la semana");
 
-    await user.type(screen.getByLabelText("Buscar por empleado"), "María");
+    await user.type(screen.getByLabelText("Buscar por nombre o canasto"), "María");
     expect(await screen.findByText(/no de la finca entera/)).toBeInTheDocument();
 
     await waitFor(() =>
