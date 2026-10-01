@@ -210,6 +210,9 @@ func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Requ
 				onError(w, r, domain.Internal("could not open a transaction").WithCause(err))
 				return
 			}
+			if testTxWrap != nil {
+				tx = testTxWrap(ctx, tx)
+			}
 			committed := false
 			defer func() {
 				if !committed {
@@ -596,6 +599,14 @@ func RunAs(ctx context.Context, pool *pgxpool.Pool, p *auth.Principal, fn func(c
 	}
 	return tx.Commit(ctx)
 }
+
+// testTxWrap is nil in production. The apitest fault replay sets it to wrap
+// the request transaction in one that fails on its Nth call, to walk the
+// error branch after every database call of every handler.
+var testTxWrap func(context.Context, pgx.Tx) pgx.Tx
+
+// SetTestTxWrapper installs testTxWrap. Tests only.
+func SetTestTxWrapper(f func(context.Context, pgx.Tx) pgx.Tx) { testTxWrap = f }
 
 // WithTestTx puts a transaction and a farm on a context the way the tenant
 // middleware does. Tests only: the fault-injection sweep in httpapi hands every
