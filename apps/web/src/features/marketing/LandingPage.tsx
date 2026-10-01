@@ -45,6 +45,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { GREEN, GREEN_DARK } from "../../theme";
 import { useAuth } from "../../auth/AuthContext";
 import { DemoVideos } from "./DemoVideos";
+import { checkContactPhone, phoneProblem } from "../../lib/phone";
 
 const DISPLAY = '"Fraunces", Georgia, serif';
 const SANS = '"Outfit", "Roboto", sans-serif';
@@ -664,7 +665,8 @@ const LABELS: Record<Field, string> = {
 export function validateDemo(v: Values): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (!v.name.trim()) errors.name = "Escriba su nombre.";
-  if (v.phone.replace(/\D/g, "").length < 7) errors.phone = "Escriba un número de teléfono donde podamos contactarlo.";
+  const phone = checkContactPhone(v.phone);
+  if (!phone.ok) errors.phone = phoneProblem(phone.reason);
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())) errors.email = "Revise el correo electrónico. Ejemplo: nombre@correo.com.";
   if (!v.farm.trim()) errors.farm = "Escriba el nombre de su finca.";
   return errors;
@@ -688,7 +690,9 @@ function DemoForm() {
     setErrors(found);
     if (Object.keys(found).length > 0) return;
     setOutcome("sending");
-    const v = { name: values.name.trim(), phone: values.phone.trim(), email: values.email.trim(), farm: values.farm.trim() };
+    // The number goes out the same way however it was typed, ready to dial.
+    const phone = checkContactPhone(values.phone);
+    const v = { name: values.name.trim(), phone: phone.ok ? phone.display : values.phone.trim(), email: values.email.trim(), farm: values.farm.trim() };
     const subject = `Demo Báscula — ${v.farm}`;
     try {
       const res = await fetch(`https://formsubmit.co/ajax/${LEAD_EMAIL}`, {
@@ -746,6 +750,7 @@ function DemoForm() {
               required
               type={field === "email" ? "email" : field === "phone" ? "tel" : "text"}
               autoComplete={field === "name" ? "name" : field === "phone" ? "tel" : field === "email" ? "email" : "organization"}
+              inputProps={field === "phone" ? { inputMode: "tel" } : undefined}
               error={Boolean(errors[field])}
               helperText={errors[field]}
               sx={fieldSx}
