@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in the app or the API does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please do not paste real worker names, phone
+        numbers, money amounts or tokens; use made-up data instead.
+        **Security problems go to the Security tab, not here.**
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, including any error message on screen.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in as an administrator
+        2. Open Cosecha
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Role
+      options:
+        - Owner
+        - Administrator
+        - Weigher
+        - Not signed in
+        - API / MCP client
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you are running, if you know it (see Releases).
+      placeholder: v0.2.71
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: Android 15, Chrome / installed app (PWA)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, logs or anything else
