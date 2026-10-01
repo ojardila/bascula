@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField,
 } from "@mui/material";
@@ -8,6 +8,8 @@ import { parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { Money } from "../../components/Money";
 import { DateField } from "../../components/DateField";
+import { useAuth } from "../../auth/AuthContext";
+import { todayInFarm } from "../../lib/dates";
 
 /**
  * A debt the worker owes the farm: a `deduccion` in their ledger.
@@ -25,12 +27,19 @@ export function RegisterDebtDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // The farm's calendar day, not UTC: after 7 p.m. in Colombia UTC is tomorrow (#152).
+  const { user } = useAuth();
+  const farmToday = () => todayInFarm(user?.farm?.timezone ?? "America/Bogota");
   const [concept, setConcept] = useState("");
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(farmToday());
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const { busy, run: runOnce } = useWriteOnce();
+
+  useEffect(() => {
+    if (open) setDate(farmToday());
+  }, [open]);
 
   const cents = parseMoneyInput(amount);
 

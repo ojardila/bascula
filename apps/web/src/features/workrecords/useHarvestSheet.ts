@@ -7,6 +7,7 @@
  * there every filled box is a NEW pesada (see `bulk.ts`).
  */
 import { useEffect, useState } from "react";
+import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -55,6 +56,7 @@ export function useHarvestSheet({
   const [workers, setWorkers] = useState<Worker[] | null>(null);
   const [plots, setPlots] = useState<Plot[] | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
+  const { can } = useAuth();
   const [cells, setCells] = useState<Record<string, SheetCell>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -132,6 +134,14 @@ export function useHarvestSheet({
     const { writes, errors } = plannedWrites(workers, days, cells, today);
     if (errors.length) {
       setSaveError(errors[0]);
+      return false;
+    }
+    // Changing or clearing a saved weighing needs workRecords.correct (#150).
+    // Check before writing anything so the sheet never saves half of it.
+    if (!can("workRecords.correct") && writes.some((w) => w.kind !== "create")) {
+      setSaveError(
+        "Usted puede anotar pesadas nuevas, pero no cambiar ni borrar las que ya están guardadas. Pídale ese cambio al dueño o al administrador.",
+      );
       return false;
     }
     if (!writes.length) {

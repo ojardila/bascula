@@ -328,8 +328,8 @@ const MATRIX: Record<Action, Rule> = {
    * blank. An administrator therefore meets a real 403 here, exactly as they
    * would on a server that had the route.
    */
-  "users.read": { roles: owners },
-  "users.write": { roles: owners },
+  "users.read": { roles: admins },
+  "users.write": { roles: admins },
 
   "admin.farms.read": { roles: everyone, superadmin: true },
   "admin.farms.write": { roles: everyone, superadmin: true },
@@ -1201,11 +1201,15 @@ export const handlers = [
       (m) => m.farmId === g.p.farmId && m.userId === params.id,
     );
     if (!membership) return notFound();
-    const body = (await request.json()) as { role?: WireRole; status?: string };
+    const body = (await request.json()) as { role?: WireRole };
+    // Like the server's decoder (DisallowUnknownFields): PATCH takes `role`
+    // and nothing else, so drift between client and server fails in tests.
+    const unknown = Object.keys(body).filter((k) => k !== "role");
+    if (unknown.length > 0) return badRequest(`unknown field "${unknown[0]}"`);
 
     // The farm must keep an owner, and nobody demotes themselves out of the
     // only role that could put them back.
-    if (membership.role === "owner" && (body.role !== undefined || body.status === "revoked")) {
+    if (membership.role === "owner" && body.role !== undefined) {
       return conflict("CONFLICT", "the farm's owner cannot be changed here");
     }
     if (body.role !== undefined) {
@@ -1214,9 +1218,24 @@ export const handlers = [
       }
       membership.role = body.role;
     }
-    if (body.status === "revoked") revokedMemberships.add(`${g.p.farmId}:${membership.userId}`);
-    else if (body.status === "active") revokedMemberships.delete(`${g.p.farmId}:${membership.userId}`);
     return HttpResponse.json(projectFarmUser(membership));
+  }),
+
+  http.delete("*/v1/users/:id", ({ request, params }) => {
+    const g = guard(request, "users.write");
+    if (g.deny) return g.deny;
+    const membership = db.memberships.find(
+      (m) => m.farmId === g.p.farmId && m.userId === params.id,
+    );
+    if (!membership) return notFound();
+    if (membership.role === "owner") {
+      return conflict("CONFLICT", "the farm's owner cannot be removed here");
+    }
+    if (membership.userId === g.p.user.id) {
+      return conflict("CONFLICT", "you cannot remove your own access; another administrator does that");
+    }
+    revokedMemberships.add(`${g.p.farmId}:${membership.userId}`);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   /* ---- the farm, and the console outside it ---- */

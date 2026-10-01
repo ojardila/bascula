@@ -7,12 +7,10 @@
  * says "pendiente de detallar"; `docs/api-architecture.md` §329 answers it
  * with the minimum that unblocks — `GET|POST|PATCH /v1/users`, owner only.
  *
- * OWNER ONLY, AND NOT ADMINISTRATOR. `docs/diagrams/system.md` §3.3 puts
- * "gestión de usuarios de la finca" in the owner column and leaves the
- * administrator's blank, which is stricter than `use-cases.md` reads on its
- * own — the same tightening that took price-setting and deletion off the
- * administrator. `permissions.ts` has said so since Sprint 1: `config.users`
- * is in OWNER and in neither of the others.
+ * OWNERS AND ADMINISTRATORS (#151). The mayordomo has to be able to add a
+ * weigher while the owner is away, and the server always allowed it
+ * (`auth/perm.go`). An administrator still cannot invite another owner or act
+ * on one: the server refuses, and the owner invite is hidden for them.
  *
  * ── TWO SECTIONS: OWNERS, AND EVERYBODY ELSE ───────────────────────────
  *
@@ -157,7 +155,7 @@ export function FarmUsersPage() {
     const who = revoking.id;
     const outcome = await runOnce(`revocar|${who}`, async () => {
       setActionError(null);
-      return api.updateFarmUser(who, { status: "revoked" });
+      return api.removeFarmUser(who);
     }).catch((e: unknown) => {
       setActionError(messageFor(e));
       return { ran: false } as const;
@@ -287,6 +285,7 @@ export function FarmUsersPage() {
                   </Stack>
                 ))}
               </Stack>
+              {user?.role === "owner" && (
               <Button
                 fullWidth
                 variant="outlined"
@@ -296,6 +295,7 @@ export function FarmUsersPage() {
               >
                 Invitar a otro dueño
               </Button>
+              )}
             </CardContent>
           </Card>
 

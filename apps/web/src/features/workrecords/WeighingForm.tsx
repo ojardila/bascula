@@ -280,7 +280,13 @@ export function WeighingForm() {
                 severity="success"
                 icon={<CheckCircleIcon fontSize="inherit" />}
                 sx={{ ...big, alignItems: "center" }}
-                action={<Button color="inherit" onClick={() => void undo(last)}>Deshacer</Button>}
+                action={
+                  // A saved weighing can only be undone with workRecords.correct (#150);
+                  // one still waiting on this phone can always be dropped.
+                  lastStillLocal || can("workRecords.correct") ? (
+                    <Button color="inherit" onClick={() => void undo(last)}>Deshacer</Button>
+                  ) : undefined
+                }
               >
                 {lastStillLocal
                   ? `Guardado en este celular: ${last.who}, ${formatQuantity(last.kg)} kg. Se sube cuando vuelva la señal.`

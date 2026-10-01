@@ -99,7 +99,6 @@ import type {
   FarmSummary,
   FarmUser,
   FarmUserInput,
-  FarmUserStatus,
   LedgerEntry,
   LoginChoice,
   LoginRequest,
@@ -626,7 +625,7 @@ export const api = {
    * `docs/use-cases.md` §8 lists "Gestión de usuarios — listar y agregar
    * usuarios" and then says "pendiente de detallar", and
    * `docs/api-architecture.md` §329 answers it with the minimum that unblocks:
-   * `GET|POST|PATCH /v1/users`, owner only. That is the shape written against
+   * `GET|POST|PATCH|DELETE /v1/users`, owners and administrators. That is the shape written against
    * here, and it is written against the DOCUMENT rather than invented, which
    * is the difference between anticipating a route and making one up.
    *
@@ -686,25 +685,28 @@ export const api = {
   },
 
   /**
-   * Change somebody's role, or take their access away.
-   *
-   * There is no delete. A membership that is revoked keeps its row, because
-   * every work record and every settlement in the farm names the user that
-   * wrote it, and a user id that resolves to nothing turns an audit trail into
-   * a list of UUIDs. `status: "revoked"` is what closes the door.
+   * Change somebody's role. The server's PATCH takes only `role`.
    */
   updateFarmUser: async (
     id: Uuid,
-    body: { role?: Role; status?: FarmUserStatus },
+    body: { role: Role },
   ): Promise<FarmUser> => {
-    const out: Record<string, unknown> = {};
-    if (body.role !== undefined) out.role = roleToWire(body.role);
-    if (body.status !== undefined) out.status = body.status;
+    const out = { role: roleToWire(body.role) };
     const updated = await routeMayBeMissing(
       http.patch<WireFarmUser>(`/v1/users/${id}`, out),
       "usuarios",
     );
     return toFarmUser(updated);
+  },
+
+  /**
+   * Take somebody's access away: `DELETE /v1/users/{id}`. The server removes
+   * the membership and ends that person's sessions in the same transaction.
+   * The user row stays, so work records and settlements still name who wrote
+   * them.
+   */
+  removeFarmUser: async (id: Uuid): Promise<void> => {
+    await routeMayBeMissing(http.del<void>(`/v1/users/${id}`), "usuarios");
   },
 
   /* -- catalogues ---------------------------------------------------- */
@@ -1608,6 +1610,8 @@ export const api = {
       amountCents: Math.abs(body.amountCents),
       method: body.method,
       note: body.note ?? null,
+      // A team's advance must say which member took the cash (#153).
+      ...(body.receivedBy ? { receivedBy: body.receivedBy } : {}),
     });
     const after = await api.workerBalance(body.workerId);
     return {

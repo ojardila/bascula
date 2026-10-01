@@ -23,7 +23,9 @@ describe("the owner's tour, as approved", () => {
   it("the weigher's is two steps and starts on «Registrar una recolección»", () => {
     expect(WEIGHER_STEPS).toHaveLength(2);
     expect(WEIGHER_STEPS[0].title).toBe("Aquí anota cada pesada");
-    expect(WEIGHER_STEPS[0].target).toBe('[data-tour="record-one"]');
+    expect(WEIGHER_STEPS[0].target).toBe('[data-tour="module-create"]');
+    // Every weigher step stays on a page a weigher can open (#149).
+    expect(WEIGHER_STEPS.every((s) => s.route === "/labores")).toBe(true);
   });
 
   it("resumes steps that live inside a dialog or a form at the step that opens them", () => {

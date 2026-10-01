@@ -66,13 +66,12 @@ describe("who may hand out access", () => {
     expect(screen.getByRole("button", { name: /Invitar a alguien/ })).toBeEnabled();
   }, 20000);
 
-  it("the administrator may not, not even by typing the URL", async () => {
+  it("the administrator may too, but cannot invite another owner (#151)", async () => {
     signIn(ADMIN);
     renderUsers();
-    expect(
-      await screen.findByText("No tiene permiso para gestionar los usuarios"),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Invitar/ })).not.toBeInTheDocument();
+    expect(await screen.findByText("Gloria Betancur")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Invitar a alguien/ })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Invitar a otro dueño/ })).not.toBeInTheDocument();
   }, 20000);
 });
 
