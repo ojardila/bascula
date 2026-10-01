@@ -165,6 +165,11 @@ export function ReceiptView({ doc }: { doc: ReceiptDoc }) {
         {doc.balanceSentence && (
           <Typography sx={{ fontSize: 18, mt: 2 }}>{doc.balanceSentence}</Typography>
         )}
+        {doc.receivedBy && (
+          <Typography sx={{ fontSize: 18, mt: 1 }}>
+            Recibió la plata: <strong>{doc.receivedBy}</strong>
+          </Typography>
+        )}
         {doc.note && (
           <Typography sx={{ fontSize: 17, mt: 1 }} color="text.secondary">
             Nota: {doc.note}

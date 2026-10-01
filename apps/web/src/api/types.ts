@@ -450,6 +450,34 @@ export interface Worker {
   status: RecordStatus;
   /** Present only where a balance was joined in; never on a plain list. */
   balanceCents?: number;
+  /**
+   * `equipo`: a pair or family weighed and paid as one account
+   * (docs/use-cases/teams.md). Absent means `persona`.
+   */
+  kind?: WorkerKind;
+  /** A team's members as of today. Empty for a person. */
+  members?: TeamMember[];
+  /** The team this person is in today. While set, they are weighed and paid through it. */
+  team?: TeamRef | null;
+}
+
+export type WorkerKind = "persona" | "equipo";
+
+export interface TeamMember {
+  id: Uuid;
+  name: string;
+  lastName: string | null;
+  tag: string | null;
+  from: DayISO;
+  to: DayISO | null;
+}
+
+export interface TeamRef {
+  id: Uuid;
+  name: string;
+  from: DayISO;
+  to: DayISO | null;
+  members: number;
 }
 
 export interface WorkerInput {
@@ -467,6 +495,12 @@ export interface WorkerInput {
   photoDataUrl?: string | null;
   /** Accepted by the form and DROPPED: there is no such column. */
   startedAt?: DayISO;
+  /** Only on create, or to convert a combined record into a team. */
+  kind?: WorkerKind;
+  /** A team's members: the whole list, replacing the current one. */
+  memberIds?: Uuid[];
+  /** The day the member list starts to count. Default: today. */
+  membersFrom?: DayISO;
 }
 
 export interface Balance {
@@ -738,6 +772,8 @@ export interface PaymentInput {
   amountCents: number;
   method: PayMethod;
   note?: string;
+  /** A team's payment: the member who takes the cash («¿Quién recibe la plata?»). */
+  receivedBy?: Uuid | null;
   /**
    * Work records to settle before paying. Empty means "against the balance
    * alone". Settling is a separate write; see `api.createPayment`.
@@ -827,6 +863,8 @@ export interface Settlement extends SettlementSummary {
 
 export interface PaymentReceipt {
   id: Uuid;
+  /** A team's payment: the member who took the cash. */
+  receivedByName?: string | null;
   /** `pago`, `anticipo` or `deduccion`: the history opens all three. */
   kind: "pago" | "anticipo" | "deduccion";
   workerId: Uuid;

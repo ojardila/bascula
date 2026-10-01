@@ -16,7 +16,8 @@
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Avatar, Box, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Avatar, Box, Button, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import GroupsIcon from "@mui/icons-material/Groups";
 import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Money } from "../../components/Money";
@@ -28,6 +29,7 @@ import { OwedFigure } from "./OwedFigure";
 import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
 import { EMPLOYEE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
+import { isTeam, memberNames, memberCount, teamSize } from "../teams/team";
 
 export function WorkersPage() {
   const navigate = useNavigate();
@@ -80,14 +82,27 @@ export function WorkersPage() {
         header: EMPLOYEE.One,
         render: (w) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar src={w.photoUrl ?? undefined} sx={{ width: 36, height: 36 }}>
-              {w.name[0]}
+            <Avatar
+              src={w.photoUrl ?? undefined}
+              sx={{ width: 36, height: 36, ...(isTeam(w) ? { bgcolor: "primary.main" } : {}) }}
+            >
+              {isTeam(w) ? <GroupsIcon fontSize="small" /> : w.name[0]}
             </Avatar>
             <Box>
               <Typography sx={{ fontWeight: 600 }}>
                 {w.name} {w.lastName}
               </Typography>
-              {full && (
+              {isTeam(w) ? (
+                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Chip size="small" color="success" variant="outlined" label={teamSize(memberCount(w))} />
+                  <Typography variant="caption" color="text.secondary">{memberNames(w) || "Sin integrantes"}</Typography>
+                </Stack>
+              ) : w.team ? (
+                <Typography variant="caption" color="text.secondary">
+                  En el equipo {w.team.name}
+                </Typography>
+              ) : null}
+              {full && !isTeam(w) && (
                 <Typography variant="caption" color="text.secondary">
                   {w.documentType} {w.documentNumber}
                 </Typography>
@@ -154,10 +169,28 @@ export function WorkersPage() {
         onCreate={can("workers.write") ? () => navigate(`${EMPLOYEE.path}/nuevo`) : undefined}
         createLabel={`Nuevo ${EMPLOYEE.one}`}
         onRowClick={can("workers.profile") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}`) : undefined}
-        onEdit={can("workers.write") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}/editar`) : undefined}
+        onEdit={
+          can("workers.write")
+            ? (w) => navigate(`${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`)
+            : undefined
+        }
+        toolbarExtra={
+          can("workers.write") ? (
+            <Button
+              variant="outlined"
+              startIcon={<GroupsIcon />}
+              onClick={() => navigate(`${EMPLOYEE.path}/equipo/nuevo`)}
+            >
+              Nuevo equipo
+            </Button>
+          ) : undefined
+        }
         extraActions={
           can("money.pay")
-            ? (w) => [{ label: "Pagar", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
+            ? (w) =>
+                w.team
+                  ? [{ label: "Ver su equipo", onClick: () => navigate(`${EMPLOYEE.path}/${w.team!.id}`) }]
+                  : [{ label: "Pagar", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
             : undefined
         }
         onDeactivate={

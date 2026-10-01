@@ -184,7 +184,11 @@ export async function receiptPdfBytes(input: ReceiptDoc): Promise<ArrayBuffer> {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10.5);
   pdf.setTextColor(20, 20, 20);
-  for (const para of [doc.balanceSentence, doc.note].filter(Boolean) as string[]) {
+  for (const para of [
+    doc.balanceSentence,
+    doc.receivedBy ? pdfText(`Recibió la plata: ${doc.receivedBy}`) : null,
+    doc.note,
+  ].filter(Boolean) as string[]) {
     const t = pdf.splitTextToSize(para, W - 2 * M) as string[];
     need(t.length * 5 + 2);
     pdf.text(t, M, y);

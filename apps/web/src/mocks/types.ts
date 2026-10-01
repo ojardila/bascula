@@ -100,6 +100,9 @@ export interface WorkerRequestBody {
   municipality?: string | null;
   country?: string | null;
   photoId?: string | null;
+  kind?: "persona" | "equipo";
+  memberIds?: Uuid[];
+  membersFrom?: string;
 }
 
 /* -- plots ----------------------------------------------------------- */

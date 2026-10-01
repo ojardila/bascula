@@ -55,6 +55,7 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { useOffline } from "../../offline/OfflineContext";
 import { DAY_LETTERS, daysOfWeek, isIsoDay, pickHarvestActivity, workerLabel } from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
+import { isTeam, teamLine, weighable } from "../teams/team";
 import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, weekLocks, type BulkEntry } from "./bulk";
 import { CorregirPesadasDialog } from "./CorregirPesadasDialog";
 
@@ -157,7 +158,8 @@ export function RegistroMasivoPage() {
       api.listActivities({ status: "active" }),
     ])
       .then(([w, p, a]) => {
-        setWorkers(w);
+        // People in a team are weighed with it: one row, the team's.
+        setWorkers(weighable(w));
         setPlots(p);
         setActivity(pickHarvestActivity(a));
         if (!params.get("lote")) {
@@ -508,6 +510,9 @@ export function RegistroMasivoPage() {
                   <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
                     <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => focusKilos(w.id)}>
                       <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>{name}</Typography>
+                      {isTeam(w) && (
+                        <Typography sx={{ fontSize: "0.95rem", fontWeight: 600, color: "success.dark" }}>{teamLine(w)}</Typography>
+                      )}
                       <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>
                         {has ? (
                           <>

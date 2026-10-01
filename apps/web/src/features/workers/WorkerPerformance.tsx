@@ -59,6 +59,12 @@ export function WorkerPerformance({ workerId }: { workerId: string }) {
           Rendimiento
         </Typography>
         {error && <Alert severity="error">{error}</Alert>}
+        {data?.team && (
+          <Alert severity="info" variant="outlined" sx={{ fontSize: 17, mb: 2 }}>
+            <strong>Su parte</strong>: los kilos del equipo {data.team.name} divididos entre sus{" "}
+            {data.team.members} integrantes, cada día que estuvo en el equipo.
+          </Alert>
+        )}
         {!error && !data && <Loading />}
         {data && data.lastRecordOn === null && <Empty />}
         {data && data.lastRecordOn !== null && (
@@ -71,6 +77,8 @@ export function WorkerPerformance({ workerId }: { workerId: string }) {
             plots={data.plots}
             unattributedKg={data.unattributedKg}
             recordsNotInKg={data.recordsNotInKg}
+            share={!!data.team}
+            teamMembers={data.kind === "equipo" ? data.members : 0}
           />
         )}
       </CardContent>
@@ -118,8 +126,12 @@ function Body(props: {
   plots: WirePerformancePlot[];
   unattributedKg: number | null;
   recordsNotInKg: number;
+  /** A member's profile: every figure is their share of the team. */
+  share?: boolean;
+  /** A team's profile: how many people the kilos are between. */
+  teamMembers?: number;
 }) {
-  const { summary, weeks, days, plots, today } = props;
+  const { summary, weeks, days, plots, today, share = false, teamMembers = 0 } = props;
   const anyInWindow = weeks.some((w) => w.kg !== null);
   const change = weekChange(summary.thisWeekKg, summary.lastWeekToDateKg);
   const daysThisWeek = days.filter((d) => (d.kg ?? 0) > 0).length;
@@ -129,12 +141,14 @@ function Body(props: {
       <Grid container spacing={2}>
         <Grid size={{ xs: 6, sm: 4 }}>
           <BigNumber
-            label="Esta semana"
+            label={share ? "Su parte esta semana" : teamMembers > 1 ? "Esta semana, juntos" : "Esta semana"}
             value={kgText(summary.thisWeekKg ?? 0)}
             note={
               daysThisWeek === 0
                 ? "Todavía sin recolección."
-                : `${daysWorkedText(daysThisWeek)} hasta hoy.`
+                : teamMembers > 1
+                  ? `${kgText((summary.thisWeekKg ?? 0) / teamMembers)} c/u · ${daysWorkedText(daysThisWeek)} hasta hoy.`
+                  : `${daysWorkedText(daysThisWeek)} hasta hoy.`
             }
           />
         </Grid>

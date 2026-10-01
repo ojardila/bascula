@@ -522,7 +522,27 @@ function ensureCatalogItem(list: WireCatalogItem[], name: string, id?: string): 
 /** The weigher's four fields: enough to pick a person at the scale, no more. */
 function projectWorker(e: WireEmployee, full: boolean): WireEmployee | WireWorkerPublic {
   if (full) return e;
-  return { id: e.id, name: e.name, lastName: e.lastName, tag: e.tag };
+  return { id: e.id, name: e.name, lastName: e.lastName, tag: e.tag, kind: e.kind, members: e.members, team: e.team };
+}
+
+/**
+ * Teams in the mock: the member list is kept on the team row and mirrored as
+ * `team` on each person, which is what `GET /v1/workers` answers on the API.
+ * No history: the mock only needs today.
+ */
+function setMockMembers(workers: WireEmployee[], team: WireEmployee, ids: string[], from: string) {
+  for (const w of workers) {
+    if (w.team?.id === team.id && !ids.includes(w.id)) w.team = null;
+  }
+  team.members = ids.flatMap((id) => {
+    const p = workers.find((w) => w.id === id);
+    if (!p) return [];
+    return [{ id: p.id, name: p.name, lastName: p.lastName, tag: p.tag, from, to: null }];
+  });
+  for (const m of team.members) {
+    const p = workers.find((w) => w.id === m.id)!;
+    p.team = { id: team.id, name: team.name, from, to: null, members: ids.length };
+  }
 }
 
 /**
@@ -1558,8 +1578,14 @@ export const handlers = [
       photoId: body.photoId ?? null,
       createdAt: nowInstant(),
       deletedAt: null,
+      kind: body.kind ?? "persona",
+      members: [],
+      team: null,
     };
     t.workers.unshift(created);
+    if (created.kind === "equipo" && body.memberIds?.length) {
+      setMockMembers(t.workers, created, body.memberIds, body.membersFrom ?? nowInstant().slice(0, 10));
+    }
     return HttpResponse.json(created, { status: 201 });
   }),
 
@@ -1593,6 +1619,10 @@ export const handlers = [
     patchClearable(worker, body.municipality, "municipality");
     patchClearable(worker, body.country, "country");
     patchClearable(worker, body.photoId, "photoId");
+    if (body.kind) worker.kind = body.kind;
+    if (body.memberIds && worker.kind === "equipo") {
+      setMockMembers(g.p.tenant.workers, worker, body.memberIds, body.membersFrom ?? nowInstant().slice(0, 10));
+    }
     return HttpResponse.json(worker);
   }),
 

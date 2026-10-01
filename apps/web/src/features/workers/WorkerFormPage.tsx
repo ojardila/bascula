@@ -70,6 +70,10 @@ export function WorkerFormPage() {
     api
       .getWorker(id)
       .then((w) => {
+        if (w.kind === "equipo") {
+          navigate(`/empleados/${w.id}/equipo`, { replace: true });
+          return;
+        }
         setName(w.name);
         setLastName(w.lastName);
         setDocumentType(w.documentType);
@@ -82,7 +86,7 @@ export function WorkerFormPage() {
         setPhoto(w.photoUrl);
       })
       .catch((e) => setError(messageFor(e)));
-  }, [id]);
+  }, [id, navigate]);
 
   function validate(): boolean {
     const e: Record<string, string> = {};
