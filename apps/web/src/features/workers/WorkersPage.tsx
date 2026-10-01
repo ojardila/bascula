@@ -98,11 +98,11 @@ export function WorkersPage() {
                   <Typography variant="caption" color="text.secondary">{memberNames(w) || "Sin integrantes"}</Typography>
                 </Stack>
               ) : w.team ? (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="success.dark" sx={{ display: "block", fontWeight: 600 }}>
                   En el equipo {w.team.name}
                 </Typography>
               ) : null}
-              {full && !isTeam(w) && (
+              {full && !isTeam(w) && (w.documentNumber || !w.team) && (
                 <Typography variant="caption" color="text.secondary">
                   {w.documentType} {w.documentNumber}
                 </Typography>

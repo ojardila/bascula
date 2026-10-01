@@ -183,7 +183,7 @@ function Body(props: {
       ) : (
         <>
           <Section title="Kilos por semana" hint={`Las últimas ${WEEKS} semanas de liquidación, de lunes a domingo.`}>
-            <WeeklyChart weeks={weeks} today={today} />
+            <WeeklyChart weeks={weeks} today={today} teamMembers={teamMembers} />
           </Section>
 
           <Grid container spacing={3}>
@@ -263,7 +263,7 @@ function weekName(monday: string, today: string): string {
  * start, so the sentence below the chart is never empty; tapping a bar (a
  * phone) or pointing at it (a mouse) selects that week instead.
  */
-function WeeklyChart({ weeks, today }: { weeks: WirePerformanceWeek[]; today: string }) {
+function WeeklyChart({ weeks, today, teamMembers = 0 }: { weeks: WirePerformanceWeek[]; today: string; teamMembers?: number }) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [selected, setSelected] = useState(weeks.length - 1);
   const height = 240;
@@ -386,7 +386,7 @@ function WeeklyChart({ weeks, today }: { weeks: WirePerformanceWeek[]; today: st
             {!sel.finished && <Box component="span" sx={{ fontWeight: 400, color: INK_MUTED }}> · en curso</Box>}
           </Typography>
           <Typography sx={{ fontSize: 17 }}>
-            {sel.kg === null ? "No recogió en esta semana." : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}.`}
+            {sel.kg === null ? "No recogió en esta semana." : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${teamMembers > 1 ? `, juntos: ${kgText(sel.kg / teamMembers)} c/u` : ""}.`}
           </Typography>
           {sel.farmAvgKg !== null && (
             <Typography sx={{ fontSize: 16, color: INK_MUTED }}>
