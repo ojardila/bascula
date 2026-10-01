@@ -127,10 +127,11 @@ export function WorkerProfilePage() {
                 <BasketChip tag={worker.tag} big />
                 {team && <Chip color="success" label={teamSize(memberCount(worker))} />}
               </Stack>
-              {!team && (
+              {!team && (worker.documentNumber || worker.phone) && (
               <Typography color="text.secondary">
-                {worker.documentType} {worker.documentNumber}
-                {worker.phone ? ` · ${worker.phone}` : ""}
+                {worker.documentNumber ? `${worker.documentType} ${worker.documentNumber}` : ""}
+                {worker.documentNumber && worker.phone ? " · " : ""}
+                {worker.phone ?? ""}
               </Typography>
               )}
               <Typography color="text.secondary">

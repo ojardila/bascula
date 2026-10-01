@@ -241,7 +241,9 @@ function PersonRow({ p, rank }: { p: WireHarvestDashboardPerson; rank: number })
         <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0 }}>
           <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, fontSize: "1.05rem" }}>{rank}.</Box>
           <BasketTile tag={p.tag} team={team} size={40} />
-          <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {/* Wraps instead of «Yorman y …»: with the basket tile in front a
+              phone has little room, and half a name is no name. */}
+          <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, lineHeight: 1.2, overflowWrap: "anywhere" }}>
             {p.name}
           </Typography>
         </Stack>
