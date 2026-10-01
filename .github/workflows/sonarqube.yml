@@ -1,0 +1,219 @@
+# SonarQube analysis (https://sonarqube.int.engp.io, tailnet only; the server
+# is apps/sonarqube in the gitops repo). Advisory: nothing here fails a PR on
+# the quality gate, and ci.yml stays the gate that matters.
+#
+# Community Build analyses one branch per project, so:
+#   push to master -> project `bascula`, the dashboard everyone looks at.
+#   pull request   -> scratch project `bascula-pr`, compared with `bascula`
+#                     by scripts/sonar-report.py, posted as one PR comment
+#                     (updated in place) and as the job summary.
+#
+# The tests run here again, with coverage, instead of handing coverage over
+# from ci.yml: CI on master is called by CD and skips suites a PR already
+# ran, so there is no complete coverage to hand over. A failing test does not
+# stop the scan (ci.yml reports it); the coverage of that run is still sent.
+#
+# Order matters: the PR's code (tests) runs BEFORE the runner joins the
+# tailnet, and the token is only in the scan and report steps.
+
+name: SonarQube
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sonarqube:
+    name: sonarqube (advisory)
+    # Same rule as the image builds in ci.yml: forks and Dependabot get no
+    # Actions secrets, so they could neither join the tailnet nor scan.
+    if: >-
+      github.event_name != 'pull_request' || (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:17-3.6-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bascula
+          TZ: UTC
+          PGTZ: UTC
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bascula"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      PR_SCAN: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: secrets present
+        id: secrets
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ] || [ -z "$SONAR_HOST_URL" ] || [ -z "$TS_ID" ]; then
+            echo "SonarQube or Tailscale secrets are not available to this run; skipping." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Full history: SonarQube uses blame for new-code detection and authors.
+      - if: steps.secrets.outputs.ok == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - if: steps.secrets.outputs.ok == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      - if: steps.secrets.outputs.ok == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: api tests with coverage
+        if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        working-directory: services/api
+        env:
+          APP_ENV: development
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+          TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+        run: |
+          set -euo pipefail
+          go run ./cmd/api -migrate
+          go test -covermode=atomic -coverprofile=coverage.raw ./...
+          # The profile names files by import path; SonarQube wants paths
+          # relative to the repo root.
+          sed 's#^github.com/ojardila/bascula/##' coverage.raw > coverage.out
+
+      - name: web tests with coverage
+        if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          npm ci
+          # Same version as vitest, not saved: no lockfile churn for a report.
+          V=$(node -p "require('vitest/package.json').version")
+          npm install --no-save --workspace apps/web "@vitest/coverage-v8@${V}"
+          npx --workspace apps/web vitest run --coverage.enabled \
+            --coverage.provider=v8 --coverage.reporter=lcov --coverage.reportsDirectory=coverage
+
+      - name: shared tests with coverage
+        if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        working-directory: packages/shared
+        env:
+          TZ: America/Bogota
+        run: |
+          node --test --experimental-test-coverage --test-reporter=lcov \
+            --test-reporter-destination=lcov.info src/*.test.ts
+
+      # Only now, with the PR's code done running, join the tailnet.
+      - name: Join the tailnet
+        if: steps.secrets.outputs.ok == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: bascula-sonar-${{ github.run_id }}-${{ github.run_attempt }}
+          # No `args`: the action passes --accept-routes itself and Tailscale
+          # 1.94 rejects the flag given twice. No --accept-dns (see
+          # .github/actions/harbor): public Cloudflare resolves *.int.engp.io.
+          timeout: 5m
+
+      - name: Wait for SonarQube
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf --max-time 5 "${SONAR_HOST_URL}/api/system/status" | grep -q '"status":"UP"'; then
+              echo "SonarQube up after ${i} tries"; exit 0
+            fi
+            echo "waiting for SonarQube (${i})"; sleep 2
+          done
+          echo "SonarQube did not become reachable"; tailscale status || true; exit 1
+
+      - name: Analysis version
+        id: version
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # master: the release line (VERSION), so "new code" is since the last
+          # release. PR: the scratch project's history reads by PR number.
+          if [ "$PR_SCAN" = "true" ]; then v="pr-${PR}"; else v="$(cat VERSION)"; fi
+          echo "value=${v}" >> "$GITHUB_OUTPUT"
+
+      - name: Scan
+        if: steps.secrets.outputs.ok == 'true'
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >-
+            -Dsonar.projectKey=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+            -Dsonar.projectVersion=${{ steps.version.outputs.value }}
+
+      - name: Changed files
+        if: steps.secrets.outputs.ok == 'true' && env.PR_SCAN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" \
+            --jq '.[] | select(.status != "removed") | .filename' > changed-files.txt
+          wc -l < changed-files.txt
+
+      - name: Report
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_PROJECT: ${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+          SONAR_BASE_PROJECT: ${{ env.PR_SCAN == 'true' && 'bascula' || '' }}
+          CHANGED_FILES: ${{ env.PR_SCAN == 'true' && 'changed-files.txt' || '' }}
+          OUT: sonar-report.md
+        run: |
+          python3 scripts/sonar-report.py
+          cat sonar-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR
+        if: steps.secrets.outputs.ok == 'true' && env.PR_SCAN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- sonarqube-report -->"))) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@sonar-report.md >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@sonar-report.md >/dev/null
+          fi
