@@ -3558,7 +3558,7 @@ export interface components {
          *     so a code cannot exist in the server without appearing here.
          * @enum {string}
          */
-        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "PLATFORM_ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
+        ErrorCode: "BAD_REQUEST" | "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INTERNAL" | "TENANT_NOT_SET" | "INVALID_CREDENTIALS" | "EMAIL_NOT_VERIFIED" | "EMAIL_TAKEN" | "ROLE_CHANGED" | "PLATFORM_ROLE_CHANGED" | "TOKEN_EXPIRED" | "TOKEN_REUSED" | "RATE_LIMITED" | "FARM_LIMIT_REACHED" | "FARM_SUSPENDED" | "MEMBERSHIP_REVOKED" | "WORK_RECORD_SETTLED" | "PAYABLE_ALREADY_CLAIMED" | "SETTLEMENT_ALREADY_VOID" | "ALREADY_REVERSED" | "WORKER_IN_TEAM" | "SETTLEMENT_NOT_VOID" | "NOTHING_TO_RELEASE" | "NOTHING_TO_SETTLE" | "AMOUNT_EXCEEDS_BALANCE" | "INVALID_GEOMETRY" | "PLOT_HAS_ACTIVE_CROPS" | "NO_RATE_IN_FORCE" | "RANGE_NEEDS_FROZEN_RATE" | "DUPLICATE_DOCUMENT" | "DUPLICATE_NAME" | "LAST_OWNER" | "GROSS_CHANGED" | "EMPLOYEE_EXISTS_DELETED" | "CURSOR_TOO_OLD" | "SCHEMA_TOO_OLD" | "REPLAY_REQUIRED" | "IMPORT_MISMATCH" | "IDEMPOTENCY_KEY_REUSED" | "INSUFFICIENT_STOCK" | "SALE_ALREADY_VOID" | "EXPENSE_TARGET_INVALID" | "UPLOAD_TOO_LARGE" | "UPLOAD_NOT_READY" | "UNSUPPORTED_MEDIA_TYPE";
         Error: {
             error: {
                 code: components["schemas"]["ErrorCode"];
@@ -3926,13 +3926,23 @@ export interface components {
         };
         /**
          * @description Two shapes behind one name. An owner or administrator receives every
-         *     field; the weigher receives `id`, `name`, `lastName` and `tag` only,
-         *     and the rest are absent rather than null.
+         *     field; the weigher receives `id`, `name`, `lastName`, `tag`, `kind`,
+         *     `members` and `team` only, and the rest are absent rather than null.
+         *
+         *     «Equipos» (migration 00040): `kind: equipo` is a team — one payee whose
+         *     weighings, settlements, balance and payments are the team's — and
+         *     `members` lists its current members. A person in a team carries
+         *     `team`; while in it they have no personal paid work (WORKER_IN_TEAM).
          */
         Worker: {
             /** Format: uuid */
             id: string;
             name: string;
+            kind?: components["schemas"]["WorkerKind"];
+            /** @description A team's current members (not ended as of today). Always empty on a person. */
+            members?: components["schemas"]["TeamMember"][];
+            /** @description The team this person currently belongs to. Null when none, and on a team. */
+            team?: components["schemas"]["TeamRef"] | null;
             lastName?: string | null;
             /** @description The number on the basket, unique within the farm. */
             tag?: string | null;
@@ -3953,10 +3963,58 @@ export interface components {
              */
             deletedAt?: string | null;
         };
+        /**
+         * @description A person, or a team (one payee with members).
+         * @enum {string}
+         */
+        WorkerKind: "persona" | "equipo";
+        TeamMember: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            lastName: string | null;
+            tag: string | null;
+            /**
+             * Format: date
+             * @description First day in the team.
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description Last day in the team; null = still a member.
+             */
+            to: string | null;
+        };
+        TeamRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string | null;
+            /** @description How many current members the team has. */
+            members: number;
+        };
         WorkerInput: {
             /** Format: uuid */
             id?: string;
             name: string;
+            /** @description Default persona. On PATCH, equipo turns a person (not in a team) into a team keeping its id, weighings and balance. */
+            kind?: components["schemas"]["WorkerKind"];
+            /**
+             * @description Teams only. On create, the first members; on PATCH, the full member
+             *     list from `membersFrom` on (absent leaves members alone): anybody
+             *     not listed leaves the day before, anybody new joins that day.
+             *     Members must be active people who are in no other team (409
+             *     WORKER_IN_TEAM otherwise).
+             */
+            memberIds?: string[];
+            /**
+             * Format: date
+             * @description The day `memberIds` takes effect. Defaults to today in the farm's zone.
+             */
+            membersFrom?: string;
             lastName?: string | null;
             documentType?: string | null;
             docId?: string | null;
@@ -4638,6 +4696,11 @@ export interface components {
             reversesId?: string | null;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: uuid
+             * @description «¿Quién recibe la plata?» On a payment or advance to a team, the member who took the cash.
+             */
+            receivedBy?: string | null;
         };
         /**
          * @description Recibo de un `pago`: semana actual, saldo anterior, descuentos por
@@ -4692,6 +4755,12 @@ export interface components {
             settlementIds?: string[];
             /** @description The movement was cancelled by a reversal after it was written. */
             reversed?: boolean;
+            /**
+             * Format: uuid
+             * @description On a team
+             */
+            receivedBy?: string | null;
+            receivedByName?: string | null;
         };
         PaymentInput: {
             /** Format: uuid */
@@ -4710,6 +4779,13 @@ export interface components {
              * @description Defaults to today in the farm's zone.
              */
             date?: string;
+            /**
+             * Format: uuid
+             * @description «¿Quién recibe la plata?» Teams only: the member who took the cash,
+             *     printed on the receipt. The balance stays the team's. A member of a
+             *     team gets no personal advance (409 WORKER_IN_TEAM).
+             */
+            receivedBy?: string | null;
             /**
              * @description Pay more than the balance on purpose; the excess behaves as an
              *     advance. Ignored by /v1/advances, which never checks.
@@ -5796,6 +5872,15 @@ export interface components {
             scope: components["schemas"]["ReportScope"];
             /** Format: uuid */
             employeeId: string;
+            kind: components["schemas"]["WorkerKind"];
+            /** @description For a team */
+            members: number;
+            /**
+             * @description For a member of a team: the team. The kilos are then their share
+             *     («su parte»): the team's kilos over its members on the days they
+             *     belonged. For a team the kilos are the team's, whole.
+             */
+            team: components["schemas"]["TeamRef"] | null;
             /**
              * Format: date
              * @description Today in the farm's zone.
@@ -5900,9 +5985,9 @@ export interface components {
                 /** @description Last week, whole. */
                 lastWeek: components["schemas"]["ReportTotals"];
                 today: components["schemas"]["ReportTotals"];
-                /** @description Distinct people with a harvest weighing today. */
+                /** @description Distinct people with a harvest weighing today. A team counts each of its members. */
                 pickersToday: number;
-                /** @description Distinct people with a harvest weighing this week. */
+                /** @description Distinct people with a harvest weighing this week. A team counts each of its members. */
                 pickersThisWeek: number;
                 /** @description Distinct (person */
                 personDays: number;
@@ -5936,13 +6021,23 @@ export interface components {
             })[];
             /** @description This week's weighings that name no lote, or more than one. */
             unattributed: components["schemas"]["ReportTotals"];
-            /** @description Everybody who picked this week, most kilos first. */
+            /**
+             * @description Everybody who picked this week, most kilos per member first. A team
+             *     is one row: `kg` is the team's («juntos»), `kgEach` per member
+             *     («c/u»), and `kgPerDay` per person per day.
+             */
             people: (components["schemas"]["ReportTotals"] & {
                 /** Format: uuid */
                 employeeId: string;
                 name: string;
+                kind: components["schemas"]["WorkerKind"];
+                /** @description People behind the row (1 for a person). */
+                members: number;
+                /** @description Kilos per member. */
+                kgEach: number | null;
                 /** @description Distinct days with kilos this week. */
                 daysWorked: number;
+                /** @description Kilos per person per day worked. */
                 kgPerDay: number | null;
                 pickedToday: boolean;
                 /**
