@@ -54,6 +54,8 @@ const MUTED = "#43483f";
 const CREAM = "#f4f1ea";
 const LINE = "#dde5da";
 const LEAD_EMAIL = "oscar3425@gmail.com";
+// FormSubmit alias for LEAD_EMAIL, so the address is not the form endpoint.
+const FORMSUBMIT_ID = "4026c79fa0f6698f9c53cd14e3ee2905";
 
 const DEMO_CTA = "Solicitar una demostración";
 const DEMO_NOTE = "Demostración gratuita y sin compromiso.";
@@ -695,7 +697,7 @@ function DemoForm() {
     const v = { name: values.name.trim(), phone: phone.ok ? phone.display : values.phone.trim(), email: values.email.trim(), farm: values.farm.trim() };
     const subject = `Demo Báscula — ${v.farm}`;
     try {
-      const res = await fetch(`https://formsubmit.co/ajax/${LEAD_EMAIL}`, {
+      const res = await fetch(`https://formsubmit.co/ajax/${FORMSUBMIT_ID}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ ...v, _subject: subject }),
