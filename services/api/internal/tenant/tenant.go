@@ -596,3 +596,11 @@ func RunAs(ctx context.Context, pool *pgxpool.Pool, p *auth.Principal, fn func(c
 	}
 	return tx.Commit(ctx)
 }
+
+// WithTestTx puts a transaction and a farm on a context the way the tenant
+// middleware does. Tests only: the fault-injection sweep in httpapi hands every
+// handler a transaction that fails, to prove each one answers with an error
+// instead of a half-written response.
+func WithTestTx(ctx context.Context, tx pgx.Tx, farmID string) context.Context {
+	return withFarm(withTx(ctx, tx), farmID)
+}
