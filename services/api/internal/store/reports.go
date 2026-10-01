@@ -107,7 +107,11 @@ harvest AS (
                   fc.price_minor))::bigint
            END) AS value_minor,
          (sl.amount_minor IS NULL AND l.amount_minor IS NULL) AS value_is_estimate,
-         COALESCE(wp.price_minor, fpw.price_minor, fc.price_minor) AS week_price_minor
+         COALESCE(wp.price_minor, fpw.price_minor, fc.price_minor) AS week_price_minor,
+         -- The people behind the weighing that day, comma separated: the
+         -- employee, or a team's members (migration 00040). Reports count
+         -- pickers as heads, not accounts — see pickersCol.
+         (SELECT string_agg(p::text, ',') FROM picker_ids(l.employee_id, l.local_day) p) AS people
     FROM work_records l
     LEFT JOIN work_units u ON u.id = l.unit_id
     LEFT JOIN LATERAL (
@@ -127,6 +131,14 @@ harvest AS (
      AND ($1::date IS NULL OR l.local_day >= $1)
      AND ($2::date IS NULL OR l.local_day <= $2)
 )`
+
+// pickersCol counts the distinct PEOPLE behind the grouped weighings: a team's
+// weighing counts each of its members that day, so «recolectores» is heads,
+// not accounts (migration 00040). It aggregates harvest.people.
+const pickersCol = `(SELECT count(DISTINCT x) FROM unnest(string_to_array(string_agg(h.people, ','), ',')) x)::int`
+
+// headsExpr is how many people one harvest row stands for (1 for a person).
+const headsExpr = `coalesce(array_length(string_to_array(h.people, ','), 1), 1)`
 
 // cropLinkCTE resolves the ONE crop a weighing belongs to, or none.
 //
@@ -376,7 +388,7 @@ type ReportWeek struct {
 const reportWeeksSQL = `
 WITH ` + boundsCTE + `, ` + harvestCTE + `, ` + weekSeriesCTE + `
 SELECT s.week_start, ` + totalsColsOuter + `,
-       count(DISTINCT h.employee_id)::int AS pickers,
+       ` + pickersCol + ` AS pickers,
        count(DISTINCT h.local_day)::int   AS days,
        COALESCE(max(h.week_price_minor),
                 (SELECT wp.price_minor FROM week_prices wp
@@ -782,7 +794,7 @@ type CropWeek struct {
 const cropStatsSQL = `
 WITH ` + harvestCTE + `, ` + cropLinkCTE + `
 SELECT ` + totalsCols + `,
-       count(DISTINCT h.employee_id)::int AS pickers,
+       ` + pickersCol + ` AS pickers,
        count(DISTINCT h.local_day)::int   AS days,
        min(h.local_day), max(h.local_day),
        count(*) FILTER (WHERE cl.crops > 1)::int AS shared
@@ -816,7 +828,7 @@ series AS (
    WHERE span.lo IS NOT NULL AND span.hi IS NOT NULL
 )
 SELECT s.week_start, ` + totalsColsOuter + `,
-       count(DISTINCT h.employee_id)::int AS pickers,
+       ` + pickersCol + ` AS pickers,
        count(DISTINCT h.local_day)::int   AS days,
        (s.week_start < (SELECT this_week FROM bounds)) AS finished
   FROM series s
@@ -983,7 +995,8 @@ SELECT h.employee_id::text,
 const performanceIndexSQL = `
 WITH ` + harvestCTE + `,
 dw AS (
-  SELECT h.employee_id, c.plot_crop_id, h.local_day AS d, sum(h.kg) AS kg
+  -- Per head: a team is compared by its kilos per member (migration 00040).
+  SELECT h.employee_id, c.plot_crop_id, h.local_day AS d, sum(h.kg / ` + headsExpr + `) AS kg
     FROM harvest h
     JOIN work_record_plot_crops c ON c.work_record_id = h.id
    WHERE h.kg IS NOT NULL
@@ -1267,7 +1280,8 @@ SELECT ` + anomalyCols + `,
 const ruleOutlierSQL = `
 WITH ` + harvestCTE + `,
 dayplot AS (
-  SELECT h.id, h.employee_id, c.plot_crop_id, h.kg, h.local_day
+  -- Per head, so a team's shared sack is not "four times the crew".
+  SELECT h.id, h.employee_id, c.plot_crop_id, h.kg / ` + headsExpr + ` AS kg, h.local_day
     FROM harvest h
     JOIN work_record_plot_crops c ON c.work_record_id = h.id
    WHERE h.kg IS NOT NULL

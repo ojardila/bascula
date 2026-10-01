@@ -252,9 +252,23 @@ func composeWorker(ctx context.Context, tx pgx.Tx, id string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := AttachTeam(ctx, tx, e); err != nil {
+		return nil, err
+	}
+	// kind, members and team: the handset lists a team as one row and hides
+	// its members, offline too (migration 00040).
+	memberIDs := make([]string, 0, len(e.Members))
+	for _, m := range e.Members {
+		memberIDs = append(memberIDs, m.ID)
+	}
+	var teamID *string
+	if e.Team != nil {
+		teamID = &e.Team.ID
+	}
 	row := map[string]any{
 		"id": e.ID, "name": e.Name, "lastName": e.LastName, "tag": e.Tag,
 		"createdAt": e.CreatedAt, "deletedAt": e.DeletedAt,
+		"kind": e.Kind, "memberIds": memberIDs, "teamId": teamID,
 	}
 	if currentRoleIsMoney(ctx, tx) {
 		row["documentType"] = e.DocumentType
@@ -419,6 +433,7 @@ func composeLedgerEntry(ctx context.Context, tx pgx.Tx, id string) (any, error) 
 		"amountCents": e.AmountMinor, "date": e.LocalDay.Format("2006-01-02"),
 		"settlementId": e.SettlementID, "method": e.Method, "note": e.Note,
 		"reversesId": e.ReversesID, "createdAt": e.CreatedAt,
+		"receivedBy": e.ReceivedBy,
 	}, nil
 }
 

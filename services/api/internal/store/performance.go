@@ -113,6 +113,13 @@ type EmployeePerformance struct {
 	Weeks        []PerformanceWeek  `json:"weeks"` // oldest first, running week last
 	Days         []PerformanceDay   `json:"days"`  // Monday..Sunday of the running week
 	Plots        []PerformancePlot  `json:"plots"` // most kilos first
+	// Kind is "persona" or "equipo". For a team every figure is the team's
+	// («juntos») and Members is how many people it has today; for a member of
+	// a team the figures are their share («su parte»: the team's kilos over
+	// its members, on the days they belonged) and Team names the team.
+	Kind    string   `json:"kind"`
+	Members int      `json:"members"`
+	Team    *TeamRef `json:"team"`
 	// UnattributedKg is recent kilos that name no lote, or more than one.
 	UnattributedKg *float64 `json:"unattributedKg"`
 	// RecordsNotInKg counts harvest records across the whole window whose
@@ -132,6 +139,18 @@ h AS (
    WHERE l.deleted_at IS NULL
      AND l.pay_scheme = 'unidad_trabajo'
      AND l.local_day BETWEEN $2::date AND $3::date
+),
+-- m is the subject's own kilos: their records, plus — for a member of a team
+-- — their share («su parte») of the team's records on the days they belonged:
+-- the team's kilos over its heads that day (migration 00040). For a team it
+-- is the team's records, whole.
+m AS (
+  SELECT h.id, h.week_start, h.local_day, h.kg FROM h WHERE h.employee_id = $1
+  UNION ALL
+  SELECT h.id, h.week_start, h.local_day, h.kg / team_heads(h.employee_id, h.local_day)
+    FROM h
+    JOIN team_members tm ON tm.team_id = h.employee_id AND tm.employee_id = $1
+     AND tm.from_day <= h.local_day AND (tm.to_day IS NULL OR tm.to_day >= h.local_day)
 )`
 
 const perfWeeksSQL = `
@@ -146,13 +165,16 @@ mine AS (
          sum(kg)::float8 AS kg,
          count(*) FILTER (WHERE kg IS NULL)::int AS not_kg,
          count(DISTINCT local_day) FILTER (WHERE kg IS NOT NULL)::int AS days
-    FROM h WHERE employee_id = $1
+    FROM m
    GROUP BY week_start
 ),
+-- Per PERSON, not per account: a team's kilos are split among the people
+-- behind it that day, so the farm's average per picker divides by heads.
 per_picker AS (
-  SELECT week_start, employee_id, sum(kg) AS kg
-    FROM h WHERE kg IS NOT NULL
-   GROUP BY week_start, employee_id
+  SELECT h.week_start, p.person, sum(h.kg / team_heads(h.employee_id, h.local_day)) AS kg
+    FROM h CROSS JOIN LATERAL picker_ids(h.employee_id, h.local_day) AS p(person)
+   WHERE h.kg IS NOT NULL
+   GROUP BY h.week_start, p.person
 ),
 farm AS (
   SELECT week_start, avg(kg)::float8 AS avg_kg, count(*)::int AS pickers
@@ -172,13 +194,13 @@ SELECT s.week_start,
 const perfDaysSQL = `
 WITH ` + perfHarvestCTE + `
 SELECT local_day, count(*)::int, sum(kg)::float8
-  FROM h
- WHERE employee_id = $1 AND local_day >= $4::date
+  FROM m
+ WHERE local_day >= $4::date
  GROUP BY local_day`
 
 const perfPlotsSQL = `
 WITH ` + perfHarvestCTE + `,
-mine AS (SELECT id, kg FROM h WHERE employee_id = $1 AND local_day >= $4::date AND kg IS NOT NULL),
+mine AS (SELECT id, kg FROM m WHERE local_day >= $4::date AND kg IS NOT NULL),
 links AS (
   SELECT wp.work_record_id, wp.plot_id
     FROM work_record_plots wp WHERE wp.work_record_id IN (SELECT id FROM mine)
@@ -225,10 +247,26 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 
 	var last *time.Time
 	if err := tx.QueryRow(ctx, `
-		SELECT max(local_day) FROM work_records
-		 WHERE employee_id = $1 AND deleted_at IS NULL AND pay_scheme = 'unidad_trabajo'`,
+		SELECT max(l.local_day) FROM work_records l
+		 WHERE l.deleted_at IS NULL AND l.pay_scheme = 'unidad_trabajo'
+		   AND (l.employee_id = $1 OR EXISTS (
+		        SELECT 1 FROM team_members tm
+		         WHERE tm.team_id = l.employee_id AND tm.employee_id = $1
+		           AND tm.from_day <= l.local_day
+		           AND (tm.to_day IS NULL OR tm.to_day >= l.local_day)))`,
 		employeeID).Scan(&last); err != nil {
 		return nil, err
+	}
+	subject, err := GetEmployee(ctx, tx, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := AttachTeam(ctx, tx, subject); err != nil {
+		return nil, err
+	}
+	out.Kind, out.Members, out.Team = subject.Kind, 1, subject.Team
+	if subject.Kind == KindEquipo && len(subject.Members) > 0 {
+		out.Members = len(subject.Members)
 	}
 	out.LastRecordOn = asDay(last)
 

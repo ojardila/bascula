@@ -17,18 +17,43 @@ import (
 // publicWorker is what the weigher is allowed to see: enough to pick the right
 // person off a list at the scale, and nothing else. No document, no phone, no
 // address, no photo.
+//
+// Kind, members and team travel too: the scale screen lists a team as one
+// row («Yorman y Sergio · Equipo de 2») and hides its members, which it
+// cannot do without knowing who they are.
 type publicWorker struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	LastName *string `json:"lastName"`
-	Tag      *string `json:"tag"`
+	ID       string             `json:"id"`
+	Name     string             `json:"name"`
+	LastName *string            `json:"lastName"`
+	Tag      *string            `json:"tag"`
+	Kind     string             `json:"kind"`
+	Members  []store.TeamMember `json:"members"`
+	Team     *store.TeamRef     `json:"team"`
 }
 
 func projectWorker(e store.Employee, full bool) any {
 	if full {
 		return e
 	}
-	return publicWorker{ID: e.ID, Name: e.Name, LastName: e.LastName, Tag: e.Tag}
+	return publicWorker{ID: e.ID, Name: e.Name, LastName: e.LastName, Tag: e.Tag,
+		Kind: e.Kind, Members: e.Members, Team: e.Team}
+}
+
+// parseMembersFrom reads the day a membership change takes effect, defaulting
+// to the farm's today.
+func parseMembersFrom(r *http.Request, raw string) (time.Time, error) {
+	if raw == "" {
+		tx, err := tenant.Tx(r.Context())
+		if err != nil {
+			return time.Time{}, err
+		}
+		return store.LocalToday(r.Context(), tx)
+	}
+	d, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, domain.BadRequest("membersFrom must be YYYY-MM-DD")
+	}
+	return d, nil
 }
 
 func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +64,10 @@ func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := store.ListEmployees(r.Context(), tx, listFilter(r))
 	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := store.AttachTeams(r.Context(), tx, list); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -61,17 +90,42 @@ func (s *Server) handleGetWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectWorker(*e, callerSeesPrivateData(r)))
-}
-
-func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
-	var body store.Employee
-	if err := decode(r, &body); err != nil {
+	if err := store.AttachTeam(r.Context(), tx, e); err != nil {
 		writeError(w, r, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, projectWorker(*e, callerSeesPrivateData(r)))
+}
+
+// createWorkerRequest is a person, or a team with its first members.
+type createWorkerRequest struct {
+	store.Employee
+	// MemberIDs are a team's members (kind equipo only), from MembersFrom
+	// (YYYY-MM-DD, default today).
+	MemberIDs   []string `json:"memberIds"`
+	MembersFrom string   `json:"membersFrom"`
+}
+
+func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
+	var req createWorkerRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	body := req.Employee
 	if body.Name == "" {
 		writeError(w, r, domain.BadRequest("name is required"))
+		return
+	}
+	if body.Kind == "" {
+		body.Kind = store.KindPersona
+	}
+	if body.Kind != store.KindPersona && body.Kind != store.KindEquipo {
+		writeError(w, r, domain.BadRequest("kind must be persona or equipo"))
+		return
+	}
+	if len(req.MemberIDs) > 0 && body.Kind != store.KindEquipo {
+		writeError(w, r, domain.BadRequest("memberIds is only for a team (kind equipo)"))
 		return
 	}
 	if body.ID == "" {
@@ -91,6 +145,10 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 	// Every write accepts a client id and is idempotent by (farm_id, id):
 	// retrying after a timeout returns the existing resource, not a conflict.
 	if existing, err := store.GetEmployee(r.Context(), tx, body.ID); err == nil {
+		if err := store.AttachTeam(r.Context(), tx, existing); err != nil {
+			writeError(w, r, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, existing)
 		return
 	}
@@ -125,6 +183,23 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	if created.Kind == store.KindEquipo && len(req.MemberIDs) > 0 {
+		from, err := parseMembersFrom(r, req.MembersFrom)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		p, _ := auth.PrincipalFrom(r.Context())
+		if err := store.SetTeamMembers(r.Context(), tx, farmID, created.ID, req.MemberIDs, from,
+			principalUserID(p)); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	if err := store.AttachTeam(r.Context(), tx, created); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -135,6 +210,10 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 type updateWorkerRequest struct {
 	store.Employee
 	Status string `json:"status"`
+	// MemberIDs, when present, becomes the team's member list from
+	// MembersFrom (default today). Absent leaves the members alone.
+	MemberIDs   *[]string `json:"memberIds"`
+	MembersFrom string    `json:"membersFrom"`
 }
 
 func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
@@ -167,8 +246,19 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 			writeError(w, r, err)
 			return
 		}
+		if err := closeMembershipsToday(r, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
 	case "active":
 		if _, err := store.RestoreEmployee(r.Context(), tx, id); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+
+	if body.Kind != "" {
+		if err := store.SetEmployeeKind(r.Context(), tx, id, body.Kind); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -182,6 +272,10 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 			// change that did happen.
 			e, getErr := store.GetEmployee(r.Context(), tx, id)
 			if getErr == nil {
+				if err := store.AttachTeam(r.Context(), tx, e); err != nil {
+					writeError(w, r, err)
+					return
+				}
 				writeJSON(w, http.StatusOK, e)
 				return
 			}
@@ -189,7 +283,42 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	if body.MemberIDs != nil {
+		from, err := parseMembersFrom(r, body.MembersFrom)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		farmID, err := tenant.FarmID(r.Context())
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if err := store.SetTeamMembers(r.Context(), tx, farmID, id, *body.MemberIDs, from,
+			principalUserID(p)); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
+	if err := store.AttachTeam(r.Context(), tx, updated); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// closeMembershipsToday ends the memberships of somebody taken off the
+// payroll (a team, or a member) today.
+func closeMembershipsToday(r *http.Request, id string) error {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		return err
+	}
+	today, err := store.LocalToday(r.Context(), tx)
+	if err != nil {
+		return err
+	}
+	return store.CloseMemberships(r.Context(), tx, id, today)
 }
 
 // handleDeleteWorker is a logical delete. Nothing in this service issues a
@@ -203,6 +332,10 @@ func (s *Server) handleDeleteWorker(w http.ResponseWriter, r *http.Request) {
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
 	if err := store.SoftDeleteEmployee(r.Context(), tx, chi.URLParam(r, "id"), principalUserID(p)); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := closeMembershipsToday(r, chi.URLParam(r, "id")); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -231,6 +364,10 @@ func (s *Server) handleWorkerProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	worker, err := store.GetEmployee(r.Context(), tx, id)
 	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := store.AttachTeam(r.Context(), tx, worker); err != nil {
 		writeError(w, r, err)
 		return
 	}

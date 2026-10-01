@@ -156,7 +156,7 @@ user explicitly agrees.
 
 ## Tools
 
-40 tools today. This list is a snapshot; the live, always-current
+43 tools today. This list is a snapshot; the live, always-current
 reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/mcp/docs).
 
 ### Read tools
@@ -185,6 +185,7 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 | [`report_crop`](https://bascula.engp.io/mcp/docs#tool-report_crop) | read | `GET /v1/reports/crops/{plotCropId}` | owner, admin |
 | [`report_performance`](https://bascula.engp.io/mcp/docs#tool-report_performance) | read | `GET /v1/reports/performance` | owner, admin |
 | [`report_anomalies`](https://bascula.engp.io/mcp/docs#tool-report_anomalies) | read | `GET /v1/reports/anomalies` | owner, admin |
+| [`report_harvest_dashboard`](https://bascula.engp.io/mcp/docs#tool-report_harvest_dashboard) | read | `GET /v1/reports/harvest-dashboard` | owner, admin |
 | [`report_harvest_curve`](https://bascula.engp.io/mcp/docs#tool-report_harvest_curve) | read | `GET /v1/reports/harvest-curve` | owner, admin |
 | [`list_stock`](https://bascula.engp.io/mcp/docs#tool-list_stock) | read | `GET /v1/stock` | owner, admin |
 | [`list_products`](https://bascula.engp.io/mcp/docs#tool-list_products) | read | `GET /v1/products` | owner, admin |
@@ -198,6 +199,8 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 |---|---|---|---|
 | [`create_worker`](https://bascula.engp.io/mcp/docs#tool-create_worker) | write | `POST /v1/workers` | owner, admin |
 | [`update_worker`](https://bascula.engp.io/mcp/docs#tool-update_worker) | write | `PATCH /v1/workers/{id}` | owner, admin |
+| [`create_team`](https://bascula.engp.io/mcp/docs#tool-create_team) | write | `POST /v1/workers` | owner, admin |
+| [`set_team_members`](https://bascula.engp.io/mcp/docs#tool-set_team_members) | write | `PATCH /v1/workers/{id}` | owner, admin |
 | [`create_plot`](https://bascula.engp.io/mcp/docs#tool-create_plot) | write | `POST /v1/plots` | owner, admin |
 | [`register_weighing`](https://bascula.engp.io/mcp/docs#tool-register_weighing) | write | `POST /v1/pickups` | owner, admin, weigher |
 | [`register_harvest_week`](https://bascula.engp.io/mcp/docs#tool-register_harvest_week) | write | `POST /v1/work-records/batch` | owner, admin, weigher |
@@ -208,6 +211,33 @@ reference with parameters and examples is [`/mcp/docs`](https://bascula.engp.io/
 | [`register_payment`](https://bascula.engp.io/mcp/docs#tool-register_payment) | write · two-step | `POST /v1/payments` | owner, admin |
 | [`create_settlement`](https://bascula.engp.io/mcp/docs#tool-create_settlement) | write · two-step | `POST /v1/settlements` | owner, admin |
 | [`void_settlement`](https://bascula.engp.io/mcp/docs#tool-void_settlement) | write · two-step | `POST /v1/settlements/{id}/void` | owner, admin |
+
+## Teams («Equipos»)
+
+Some farms pay a pair or a family as one account: one tag, one weighing, one
+payment. Báscula models that as a worker of `kind: "equipo"` with members
+(real people, `kind: "persona"`). See
+[`docs/use-cases/teams.md`](../use-cases/teams.md). For the assistant:
+
+- `list_workers` / `get_worker` return `kind`, `members` (for a team) and
+  `team` (for a member). Weigh, settle and pay **the team**, never a member:
+  a weighing, advance or deduction for someone who is in a team that day is
+  refused with `409 WORKER_IN_TEAM` (details carry `teamId`).
+- `create_team` creates the team with its members (`memberIds`, from
+  `membersFrom`, default today). `set_team_members` replaces the member list
+  from a date; whoever leaves stops being a member the day before. A person is
+  in at most one team at a time.
+- `create_worker` and `update_worker` warn against a single person named like
+  "Yorman y Sergio": that is two people and should be a team.
+- `register_payment` / `register_advance` on a team take an optional
+  `receivedBy` (a member that day) — «¿Quién recibe la plata?». It is printed
+  on the receipt (`get_payment.receivedByName`) and does not change whose
+  account is paid.
+- Reports count people, not accounts: a team's day counts as N person-days,
+  averages and the 70% rule use kilos per member, and `report_harvest_dashboard`
+  rows carry `members` and `kgEach` (kilos each) beside `kg` (together).
+  `worker_performance` for a member returns their share (team kilos ÷ members
+  that day) and the team.
 
 ## The reference page (`/mcp/docs`)
 

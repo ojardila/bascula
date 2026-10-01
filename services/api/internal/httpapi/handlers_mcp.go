@@ -147,12 +147,14 @@ var mcpTools = []mcpTool{
 		Description: "La finca actual: nombre, zona horaria, moneda y el precio vigente del kilo (el pesador no lo ve)."},
 
 	{Name: "list_workers", Method: http.MethodGet, Path: "/v1/workers",
-		Description: "Lista los trabajadores (recolectores) de la finca. Sirve para encontrar el UUID de una persona por nombre.",
-		Params:      []mcpParam{pQ, pStatus}},
+		Description: "Lista los trabajadores (recolectores) y los EQUIPOS de la finca. Sirve para encontrar el UUID de una persona o equipo por nombre. " +
+			"Cada fila trae kind: persona o equipo. Un equipo trae members (sus integrantes actuales, con from/to) y es la cuenta a la que se pesa, liquida y paga; " +
+			"una persona que está en un equipo trae team (el equipo) y no se pesa ni se le paga por separado: use el id del equipo.",
+		Params: []mcpParam{pQ, pStatus}},
 	{Name: "get_worker", Method: http.MethodGet, Path: "/v1/workers/{id}",
-		Description: "Un trabajador por su UUID.", Params: []mcpParam{pID}},
+		Description: "Un trabajador o equipo por su UUID, con kind, members (si es equipo) y team (si la persona está en un equipo).", Params: []mcpParam{pID}},
 	{Name: "worker_balance", Method: http.MethodGet, Path: "/v1/workers/{id}/balance",
-		Description: "Cuánto se le debe (o cuánto debe) a un trabajador hoy: saldo, anticipos y pendiente por liquidar." + moneyNote,
+		Description: "Cuánto se le debe (o cuánto debe) a un trabajador o equipo hoy: saldo, anticipos y pendiente por liquidar. El saldo de un equipo es uno solo, del equipo." + moneyNote,
 		Params:      []mcpParam{pID}},
 	{Name: "worker_ledger", Method: http.MethodGet, Path: "/v1/workers/{id}/ledger",
 		Description: "Los movimientos de dinero de un trabajador, del más reciente al más antiguo: liquidaciones, pagos, anticipos, descuentos y ajustes." + moneyNote,
@@ -162,8 +164,9 @@ var mcpTools = []mcpTool{
 		Params:      []mcpParam{pID, pFrom, pTo}},
 
 	{Name: "worker_performance", Method: http.MethodGet, Path: "/v1/workers/{id}/performance",
-		Description: "Rendimiento de recolección de un trabajador: kilos por semana (con el promedio por persona de la finca al lado), kilos por día de esta semana, promedio por día trabajado y kilos por lote en las últimas 4 semanas.",
-		Params:      []mcpParam{pID, pWeeks}},
+		Description: "Rendimiento de recolección de un trabajador: kilos por semana (con el promedio por persona de la finca al lado), kilos por día de esta semana, promedio por día trabajado y kilos por lote en las últimas 4 semanas. " +
+			"Para un equipo, los kilos son del equipo (juntos) y members dice cuántos son; para un integrante de un equipo, los kilos son su parte (los del equipo divididos entre sus integrantes) y team nombra el equipo.",
+		Params: []mcpParam{pID, pWeeks}},
 
 	{Name: "list_plots", Method: http.MethodGet, Path: "/v1/plots",
 		Description: "Los lotes de la finca con sus cultivos (plotCrop). El UUID del cultivo es el que piden los reportes por cultivo.",
@@ -204,6 +207,11 @@ var mcpTools = []mcpTool{
 	{Name: "week_price", Method: http.MethodGet, Path: "/v1/prices/weeks/{monday}",
 		Description: "El precio del kilo para una semana." + moneyNote, Params: []mcpParam{pMonday}},
 
+	{Name: "report_harvest_dashboard", Method: http.MethodGet, Path: "/v1/reports/harvest-dashboard",
+		Description: "«Modo cosecha»: la semana en curso de un vistazo. Kilos de esta semana contra la anterior, hoy y cuántas personas, lotes, " +
+			"y el ranking de quién recoge más (people: más kilos por integrante primero). Cuenta PERSONAS, no cuentas: un equipo cuenta por cada integrante " +
+			"(pickersToday, personDays, kgPerPersonDay), y su fila trae kind=equipo, members, kg (juntos) y kgEach (c/u). " +
+			"belowAverage marca a quien recoge por persona y por día menos del 70% del promedio de la finca." + moneyNote},
 	{Name: "report_weeks", Method: http.MethodGet, Path: "/v1/reports/weeks",
 		Description: "Reporte por semanas: kilos recogidos y su valor, semana a semana." + moneyNote,
 		Params:      []mcpParam{pFrom, pTo, pLimit}},

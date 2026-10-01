@@ -113,6 +113,12 @@ const (
 	CodeSettlementAlreadyVoid Code = "SETTLEMENT_ALREADY_VOID"
 	CodeAlreadyReversed       Code = "ALREADY_REVERSED"
 
+	// WORKER_IN_TEAM refuses personal paid work (a weighing, an advance, a
+	// deduction) for somebody who belongs to a team that day, or a membership
+	// that would put a person in two teams at once. The team is the payee:
+	// details.teamId and details.teamName name it so the caller can redirect.
+	CodeWorkerInTeam Code = "WORKER_IN_TEAM"
+
 	// The two answers of POST /v1/settlements/{id}/release, which exists
 	// because a void settlement that still claims a weighing had no way out.
 	//
@@ -235,6 +241,7 @@ const (
 // undocumented one is a branch nobody wrote.
 func AllCodes() []Code {
 	return []Code{
+		CodeWorkerInTeam,
 		CodeBadRequest, CodeUnauthorized, CodeForbidden, CodeNotFound,
 		CodeConflict, CodeInternal, CodeTenantNotSet,
 

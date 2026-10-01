@@ -29,7 +29,11 @@ import (
 //     every kilo figure and counted, and kilos with nothing behind them are
 //     null, never zero;
 //   - a weighing belongs to a lote only when it resolves to exactly one
-//     (directly, or through the crop it names); the rest are reported apart.
+//     (directly, or through the crop it names); the rest are reported apart;
+//   - people are HEADS, not accounts: a team's weighing counts every member
+//     the team had that day (picker_ids, migration 00040), so «personas hoy»,
+//     the farm's kilos per person per day and the 70% flag divide by people.
+//     A team is one row of the ranking, ordered by its kilos per member.
 //
 // Everything is read from one pass over the weighings of last week and this
 // week, and folded here with Totals.add, so every row adds up to the summary
@@ -65,7 +69,8 @@ type HarvestDashboardSummary struct {
 	PickersThisWeek int `json:"pickersThisWeek"`
 	// PersonDays is the distinct (person, day) pairs with kilos this week, and
 	// KgPerPersonDay the week's kilos over it: the farm's kilos per person per
-	// day. Nil when nothing this week is in kilos.
+	// day. Nil when nothing this week is in kilos. A team-day is as many
+	// person-days as the team had members that day.
 	PersonDays     int      `json:"personDays"`
 	KgPerPersonDay *float64 `json:"kgPerPersonDay"`
 }
@@ -98,10 +103,18 @@ type HarvestDashboardPlot struct {
 type HarvestDashboardPerson struct {
 	EmployeeID string `json:"employeeId"`
 	Name       string `json:"name"`
-	// Totals are this person's weighings this week.
+	// Kind is "persona" or "equipo". Members is how many people the row
+	// stands for (1 for a person; a team's members on the days it picked,
+	// averaged and rounded).
+	Kind    string `json:"kind"`
+	Members int    `json:"members"`
+	// Totals are this row's weighings this week (a team's: «juntos»).
 	Totals
+	// KgEach is the kilos per member («c/u»): Kg for a person, a team's kilos
+	// over its members. The ranking is ordered by it.
+	KgEach *float64 `json:"kgEach"`
 	// DaysWorked is the distinct days with kilos this week; KgPerDay the
-	// kilos over them.
+	// kilos per person per day worked (a team's kilos over its person-days).
 	DaysWorked int      `json:"daysWorked"`
 	KgPerDay   *float64 `json:"kgPerDay"`
 	// PickedToday says there is at least one harvest weighing of theirs today.
@@ -155,7 +168,8 @@ one AS (
 SELECT h.employee_id::text, h.local_day, h.kg, h.value_minor,
        coalesce(h.value_is_estimate, false),
        coalesce(week_start(h.end_local_day) > h.week_start, false),
-       o.plot_id
+       o.plot_id,
+       ARRAY(SELECT p::text FROM picker_ids(h.employee_id, h.local_day) p)
   FROM harvest h
   LEFT JOIN one o ON o.work_record_id = h.id`
 
@@ -164,6 +178,9 @@ type dashRow struct {
 	day      time.Time
 	plot     *string
 	t        Totals
+	// people are the heads behind the weighing that day: the employee, or a
+	// team's members.
+	people []string
 }
 
 func dayKey(t time.Time) string { return t.Format("2006-01-02") }
@@ -191,7 +208,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		var kg *float64
 		var value *int64
 		var estimate, spans bool
-		if err := rows.Scan(&r.employee, &r.day, &kg, &value, &estimate, &spans, &r.plot); err != nil {
+		if err := rows.Scan(&r.employee, &r.day, &kg, &value, &estimate, &spans, &r.plot, &r.people); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -227,6 +244,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	type personAcc struct {
 		t        Totals
 		kgDays   map[string]bool
+		heads    map[string]bool // person|day with kilos, for a team's per-member figures
 		today    bool
 		lastSeen time.Time
 	}
@@ -241,7 +259,8 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	people := map[string]*personAcc{}
 	plots := map[string]*plotAcc{}
 	pickersToday := map[string]bool{}
-	pickersWeek := map[string]bool{}
+	pickersWeek := map[string]bool{}  // people (heads)
+	weekAccounts := map[string]bool{} // employee ids with a weighing this week
 	personDays := map[string]bool{}
 	for i := 0; i < 7; i++ {
 		d := thisWeek.AddDate(0, 0, i)
@@ -252,7 +271,7 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	for _, r := range all {
 		p := people[r.employee]
 		if p == nil {
-			p = &personAcc{kgDays: map[string]bool{}}
+			p = &personAcc{kgDays: map[string]bool{}, heads: map[string]bool{}}
 			people[r.employee] = p
 		}
 		if r.day.After(p.lastSeen) {
@@ -286,24 +305,36 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 		// This week.
 		k := dayKey(r.day)
 		out.Summary.ThisWeek.add(r.t)
-		pickersWeek[r.employee] = true
+		weekAccounts[r.employee] = true
 		p.t.add(r.t)
 		if r.t.Kg != nil {
 			p.kgDays[k] = true
-			personDays[r.employee+"|"+k] = true
+		}
+		for _, who := range r.people {
+			pickersWeek[who] = true
+			if r.t.Kg != nil {
+				personDays[who+"|"+k] = true
+				p.heads[who+"|"+k] = true
+			}
 		}
 		if d := days[k]; d != nil {
 			d.Totals.add(r.t)
-			dayPickers[k][r.employee] = true
+			for _, who := range r.people {
+				dayPickers[k][who] = true
+			}
 		}
 		if r.day.Equal(today) {
 			out.Summary.Today.add(r.t)
-			pickersToday[r.employee] = true
+			for _, who := range r.people {
+				pickersToday[who] = true
+			}
 			p.today = true
 		}
 		if pl != nil {
 			pl.t.add(r.t)
-			pl.pickers[r.employee] = true
+			for _, who := range r.people {
+				pl.pickers[who] = true
+			}
 		} else {
 			out.Unattributed.add(r.t)
 		}
@@ -325,6 +356,10 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 
 	// Names. Deleted people and lotes keep their name: their kilos are real.
 	names, active, err := employeeNames(ctx, tx, keys(people))
+	if err != nil {
+		return nil, err
+	}
+	kinds, err := employeeKinds(ctx, tx, keys(people))
 	if err != nil {
 		return nil, err
 	}
@@ -360,15 +395,26 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	avg := out.Summary.KgPerPersonDay
 	compare := avg != nil && out.Summary.PickersThisWeek >= HarvestMinPickersToCompare
 	for id, p := range people {
-		if pickersWeek[id] {
+		if weekAccounts[id] {
+			kind := kinds[id]
+			if kind == "" {
+				kind = KindPersona
+			}
 			row := HarvestDashboardPerson{
-				EmployeeID: id, Name: names[id], Totals: p.t,
+				EmployeeID: id, Name: names[id], Kind: kind, Members: 1, Totals: p.t,
 				DaysWorked: len(p.kgDays), PickedToday: p.today,
 			}
-			if p.t.Kg != nil && row.DaysWorked > 0 {
-				v := *p.t.Kg / float64(row.DaysWorked)
+			if p.t.Kg != nil && row.DaysWorked > 0 && len(p.heads) > 0 {
+				// Per person per day: the row's kilos over its person-days
+				// (for a person, its days).
+				v := *p.t.Kg / float64(len(p.heads))
 				row.KgPerDay = &v
 				row.BelowAverage = compare && v < *avg*HarvestBelowAverageRatio
+				// Average heads per day worked.
+				heads := float64(len(p.heads)) / float64(row.DaysWorked)
+				row.Members = int(heads + 0.5)
+				each := *p.t.Kg / heads
+				row.KgEach = &each
 			}
 			out.People = append(out.People, row)
 		}
@@ -380,6 +426,9 @@ func ReportHarvestDashboard(ctx context.Context, tx pgx.Tx) (*HarvestDashboard, 
 	}
 	sort.Slice(out.People, func(i, j int) bool {
 		a, b := out.People[i], out.People[j]
+		if ka, kb := kgOrZero(a.KgEach), kgOrZero(b.KgEach); ka != kb {
+			return ka > kb
+		}
 		if ka, kb := kgOrZero(a.Kg), kgOrZero(b.Kg); ka != kb {
 			return ka > kb
 		}
@@ -447,6 +496,27 @@ func plotNamesOf(ctx context.Context, tx pgx.Tx, ids []string) (map[string]strin
 			return nil, err
 		}
 		out[id] = name
+	}
+	return out, rows.Err()
+}
+
+// employeeKinds returns persona/equipo for the given ids.
+func employeeKinds(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, kind FROM employees WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, kind string
+		if err := rows.Scan(&id, &kind); err != nil {
+			return nil, err
+		}
+		out[id] = kind
 	}
 	return out, rows.Err()
 }
