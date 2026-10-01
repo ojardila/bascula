@@ -436,9 +436,9 @@ func (s *Server) mcpDispatch(ctx context.Context, req *mcp.CallToolRequest, meth
 	if err != nil {
 		return http.StatusInternalServerError, []byte(`{"error":{"code":"INTERNAL","message":"could not build the request"}}`)
 	}
-	inner.Header.Set("Accept", "application/json")
+	inner.Header.Set("Accept", contentTypeJSON)
 	if body != nil {
-		inner.Header.Set("Content-Type", "application/json")
+		inner.Header.Set("Content-Type", contentTypeJSON)
 	}
 	if req.Extra != nil && req.Extra.Header != nil {
 		if a := req.Extra.Header.Get("Authorization"); a != "" {
@@ -578,7 +578,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSONRPCError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"jsonrpc": "2.0", "id": nil,

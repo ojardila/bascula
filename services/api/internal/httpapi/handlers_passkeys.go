@@ -270,7 +270,7 @@ func (s *Server) handlePasskeyRegisterOptions(w http.ResponseWriter, r *http.Req
 	}
 	wa, err := rp.webauthn()
 	if err != nil {
-		writeError(w, r, domain.Internal("passkeys are misconfigured").WithCause(err))
+		writeError(w, r, domain.Internal(msgPasskeysMisconfigured).WithCause(err))
 		return
 	}
 	creation, sd, err := wa.BeginRegistration(passkeyUser{user: user},
@@ -354,7 +354,7 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	wa, err := rp.webauthn()
 	if err != nil {
-		writeError(w, r, domain.Internal("passkeys are misconfigured").WithCause(err))
+		writeError(w, r, domain.Internal(msgPasskeysMisconfigured).WithCause(err))
 		return
 	}
 	cred, err := wa.CreateCredential(pu, *sd, parsed)
@@ -436,7 +436,7 @@ func (s *Server) handlePasskeyLoginOptions(w http.ResponseWriter, r *http.Reques
 	}
 	wa, err := rp.webauthn()
 	if err != nil {
-		writeError(w, r, domain.Internal("passkeys are misconfigured").WithCause(err))
+		writeError(w, r, domain.Internal(msgPasskeysMisconfigured).WithCause(err))
 		return
 	}
 	assertion, sd, err := wa.BeginDiscoverableLogin(
@@ -551,7 +551,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	wa, err := rp.webauthn()
 	if err != nil {
-		writeError(w, r, domain.Internal("passkeys are misconfigured").WithCause(err))
+		writeError(w, r, domain.Internal(msgPasskeysMisconfigured).WithCause(err))
 		return
 	}
 	_, cred, err := wa.ValidatePasskeyLogin(lookup, *sd, parsed)

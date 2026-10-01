@@ -49,7 +49,7 @@ func parseMembersFrom(r *http.Request, raw string) (time.Time, error) {
 		}
 		return store.LocalToday(r.Context(), tx)
 	}
-	d, err := time.Parse("2006-01-02", raw)
+	d, err := time.Parse(time.DateOnly, raw)
 	if err != nil {
 		return time.Time{}, domain.BadRequest("membersFrom must be YYYY-MM-DD")
 	}
@@ -549,13 +549,13 @@ func (s *Server) handleWorkerPayables(w http.ResponseWriter, r *http.Request) {
 	// asks for: the owner pays what is owed, not what is owed this fortnight.
 	from, to := time.Unix(0, 0).UTC(), time.Now().UTC().AddDate(1, 0, 0)
 	if raw := r.URL.Query().Get("from"); raw != "" {
-		if from, err = time.Parse("2006-01-02", raw); err != nil {
+		if from, err = time.Parse(time.DateOnly, raw); err != nil {
 			writeError(w, r, domain.BadRequest("from must be YYYY-MM-DD"))
 			return
 		}
 	}
 	if raw := r.URL.Query().Get("to"); raw != "" {
-		if to, err = time.Parse("2006-01-02", raw); err != nil {
+		if to, err = time.Parse(time.DateOnly, raw); err != nil {
 			writeError(w, r, domain.BadRequest("to must be YYYY-MM-DD"))
 			return
 		}
@@ -654,7 +654,7 @@ func (s *Server) handleAddWorkerNote(w http.ResponseWriter, r *http.Request) {
 	}
 	var on *time.Time
 	if body.Date != "" {
-		d, err := time.Parse("2006-01-02", body.Date)
+		d, err := time.Parse(time.DateOnly, body.Date)
 		if err != nil {
 			writeError(w, r, domain.BadRequest("date must be YYYY-MM-DD"))
 			return

@@ -614,7 +614,7 @@ var mcpWriteTools = []mcpWriteTool{
 			"IMPORTANTE: si son dos o más personas que recogen juntas y cobran juntas (p. ej. «Yorman y Sergio», «Ana / Luis», «Pedro & Juan»), " +
 			"NO cree un solo trabajador con los dos nombres: cree cada persona con create_worker y después el equipo con create_team. " +
 			"El equipo es el que se pesa, se liquida y se paga; los promedios se dividen entre sus integrantes.",
-		Method: http.MethodPost, Pattern: "/v1/workers",
+		Method: http.MethodPost, Pattern: pathWorkers,
 		Params: []mcpParam{
 			{Name: "name", Type: "string", Required: true, Description: "Nombre(s)."},
 			{Name: "lastName", Type: "string", Description: "Apellidos."},
@@ -630,7 +630,7 @@ var mcpWriteTools = []mcpWriteTool{
 		Build: func(a mcpArgs, _ string) (mcpCall, error) {
 			b := map[string]any{}
 			a.copyStr(b, "name", "lastName", "tag", "documentType", "docId", "phone", "city", "municipality", "id")
-			return mcpCall{http.MethodPost, "/v1/workers", b}, nil
+			return mcpCall{http.MethodPost, pathWorkers, b}, nil
 		},
 		Done: func(status int, b map[string]any, _ mcpArgs) string {
 			if status == http.StatusOK {
@@ -673,7 +673,7 @@ var mcpWriteTools = []mcpWriteTool{
 			if len(b) == 0 {
 				return mcpCall{}, fmt.Errorf("no envió ningún cambio")
 			}
-			return mcpCall{http.MethodPatch, "/v1/workers/" + pathID(a.str("id")), b}, nil
+			return mcpCall{http.MethodPatch, pathWorkersSlash + pathID(a.str("id")), b}, nil
 		},
 		Done: func(_ int, b map[string]any, a mcpArgs) string {
 			switch a.str("status") {
@@ -697,7 +697,7 @@ var mcpWriteTools = []mcpWriteTool{
 			"El equipo necesita SU PROPIO número de canasto (tag, obligatorio; p. ej. 46-63 o el número del canasto que comparten), distinto del de cualquier otro activo; " +
 			"sus integrantes conservan el suyo. " +
 			"Mientras esté en el equipo, a un integrante no se le registran pesadas, anticipos ni descuentos propios (WORKER_IN_TEAM).",
-		Method: http.MethodPost, Pattern: "/v1/workers",
+		Method: http.MethodPost, Pattern: pathWorkers,
 		Params: []mcpParam{
 			{Name: "name", Type: "string", Required: true, Description: "Nombre del equipo, p. ej. «Yorman y Sergio»."},
 			{Name: "tag", Type: "string", Required: true, Description: "Número de canasto del equipo (obligatorio), p. ej. 46-63. Único entre los activos de la finca."},
@@ -717,7 +717,7 @@ var mcpWriteTools = []mcpWriteTool{
 			}
 			b := map[string]any{"kind": "equipo", "memberIds": ids}
 			a.copyStr(b, "name", "tag", "membersFrom", "id")
-			return mcpCall{http.MethodPost, "/v1/workers", b}, nil
+			return mcpCall{http.MethodPost, pathWorkers, b}, nil
 		},
 		Done: func(status int, b map[string]any, _ mcpArgs) string {
 			if status == http.StatusOK {
@@ -748,7 +748,7 @@ var mcpWriteTools = []mcpWriteTool{
 			if a.has("from") {
 				b["membersFrom"] = a["from"]
 			}
-			return mcpCall{http.MethodPatch, "/v1/workers/" + pathID(a.str("teamId")), b}, nil
+			return mcpCall{http.MethodPatch, pathWorkersSlash + pathID(a.str("teamId")), b}, nil
 		},
 		Done: func(_ int, b map[string]any, _ mcpArgs) string {
 			return "Integrantes de " + workerName(b) + ": " + memberNames(b) + "."
@@ -1002,7 +1002,7 @@ var mcpWriteTools = []mcpWriteTool{
 			"Un equipo se liquida como una sola cuenta (workerId del equipo). " +
 			"Después se registra el pago con register_payment. Mueve dinero: la primera llamada devuelve el resumen (labores y bruto) y un confirmationToken; " +
 			"ejecútelo solo si el usuario confirma. Si algo cambió entre el resumen y la confirmación, no liquida y pide un resumen nuevo.",
-		Method: http.MethodPost, Pattern: "/v1/settlements",
+		Method: http.MethodPost, Pattern: pathSettlements,
 		Params: []mcpParam{wWorkerID,
 			{Name: "from", Type: "string", Format: "date", Required: true, Description: "Desde (YYYY-MM-DD)."},
 			{Name: "to", Type: "string", Format: "date", Required: true, Description: "Hasta (YYYY-MM-DD)."},
@@ -1023,7 +1023,7 @@ var mcpWriteTools = []mcpWriteTool{
 		},
 		Destructive: true, Idempotent: true, Money: true,
 		Build: func(a mcpArgs, key string) (mcpCall, error) {
-			return mcpCall{http.MethodPost, "/v1/settlements/" + pathID(a.str("id")) + "/void", map[string]any{"id": key}}, nil
+			return mcpCall{http.MethodPost, pathSettlementsSlash + pathID(a.str("id")) + "/void", map[string]any{"id": key}}, nil
 		},
 		Preview: previewVoidSettlement,
 		Done: func(_ int, b map[string]any, _ mcpArgs) string {
@@ -1067,11 +1067,11 @@ func previewLedger(kind string) func(c *mcpCaller, a mcpArgs) (*mcpPreview, erro
 			return nil, fmt.Errorf("amountCents debe ser positivo")
 		}
 		id := pathID(a.str("workerId"))
-		w, err := c.get("/v1/workers/" + id)
+		w, err := c.get(pathWorkersSlash + id)
 		if err != nil {
 			return nil, err
 		}
-		bal, err := c.get("/v1/workers/" + id + "/balance")
+		bal, err := c.get(pathWorkersSlash + id + "/balance")
 		if err != nil {
 			return nil, err
 		}
@@ -1128,14 +1128,14 @@ func previewPrice(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
 		return nil, fmt.Errorf("priceCents debe ser positivo")
 	}
 	monday := a.str("monday")
-	d, err := time.Parse("2006-01-02", monday)
+	d, err := time.Parse(time.DateOnly, monday)
 	if err != nil || d.Weekday() != time.Monday {
 		return nil, fmt.Errorf("monday debe ser un lunes, YYYY-MM-DD")
 	}
 	facts := map[string]any{"scope": a.str("scope"), "monday": monday, "newPriceCents": price}
 	var sb strings.Builder
 	if a.str("scope") == "week" {
-		wk, err := c.get("/v1/prices/weeks/" + pathID(monday))
+		wk, err := c.get(pathPriceWeeksSlash + pathID(monday))
 		if err != nil {
 			return nil, err
 		}
@@ -1180,7 +1180,7 @@ func previewPrice(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
 func currentPriceAt(c *mcpCaller, a mcpArgs) (int64, error) {
 	monday := a.str("monday")
 	if a.str("scope") == "week" {
-		wk, err := c.get("/v1/prices/weeks/" + pathID(monday))
+		wk, err := c.get(pathPriceWeeksSlash + pathID(monday))
 		if err != nil {
 			return 0, err
 		}
@@ -1239,7 +1239,7 @@ func buildPrice(a mcpArgs, _ string) (mcpCall, error) {
 	}
 	path := "/v1/prices/base/" + pathID(a.str("monday"))
 	if a.str("scope") == "week" {
-		path = "/v1/prices/weeks/" + pathID(a.str("monday"))
+		path = pathPriceWeeksSlash + pathID(a.str("monday"))
 	}
 	return mcpCall{http.MethodPut, path, map[string]any{"priceCents": price}}, nil
 }
@@ -1281,7 +1281,7 @@ func settlementBind(pv map[string]any) (string, []string, int64) {
 }
 
 func previewSettlement(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
-	w, err := c.get("/v1/workers/" + pathID(a.str("workerId")))
+	w, err := c.get(pathWorkersSlash + pathID(a.str("workerId")))
 	if err != nil {
 		return nil, err
 	}
@@ -1308,7 +1308,7 @@ func previewSettlement(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
 }
 
 func executeSettlement(c *mcpCaller, a mcpArgs, key, bind string) *mcp.CallToolResult {
-	t := mcpWriteTool{Name: "create_settlement", Money: true, Method: http.MethodPost, Pattern: "/v1/settlements", Done: func(status int, b map[string]any, _ mcpArgs) string {
+	t := mcpWriteTool{Name: "create_settlement", Money: true, Method: http.MethodPost, Pattern: pathSettlements, Done: func(status int, b map[string]any, _ mcpArgs) string {
 		items, _ := b["items"].([]any)
 		return fmt.Sprintf("Liquidación creada por %s (%d labores, id %s). Ahora puede registrar el pago con register_payment.",
 			pesos(numField(b, "grossCents")), len(items), strField(b, "id"))
@@ -1316,7 +1316,7 @@ func executeSettlement(c *mcpCaller, a mcpArgs, key, bind string) *mcp.CallToolR
 	// A retry of a confirmation that already went through: the settlement
 	// exists under the id the token names. Answer it rather than re-preview,
 	// because by now its lines are claimed and the preview would say zero.
-	if status, raw := c.do(http.MethodGet, "/v1/settlements/"+key, nil); status == http.StatusOK {
+	if status, raw := c.do(http.MethodGet, pathSettlementsSlash+key, nil); status == http.StatusOK {
 		return t.result(http.StatusOK, raw, a)
 	}
 	pv, err := c.post("/v1/settlements/preview", settlementInput(a))
@@ -1333,12 +1333,12 @@ func executeSettlement(c *mcpCaller, a mcpArgs, key, bind string) *mcp.CallToolR
 	body["payableIds"] = ids
 	body["expectedGrossCents"] = gross
 	a.copyStr(body, "note")
-	status, raw := c.do(http.MethodPost, "/v1/settlements", body)
+	status, raw := c.do(http.MethodPost, pathSettlements, body)
 	return t.result(status, raw, a)
 }
 
 func previewVoidSettlement(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
-	st, err := c.get("/v1/settlements/" + pathID(a.str("id")))
+	st, err := c.get(pathSettlementsSlash + pathID(a.str("id")))
 	if err != nil {
 		return nil, err
 	}
@@ -1346,7 +1346,7 @@ func previewVoidSettlement(c *mcpCaller, a mcpArgs) (*mcpPreview, error) {
 		return nil, fmt.Errorf("Esa liquidación ya está anulada.")
 	}
 	name := "el trabajador"
-	if w, err := c.get("/v1/workers/" + pathID(strField(st, "workerId"))); err == nil {
+	if w, err := c.get(pathWorkersSlash + pathID(strField(st, "workerId"))); err == nil {
 		name = workerName(w)
 	}
 	items, _ := st["items"].([]any)

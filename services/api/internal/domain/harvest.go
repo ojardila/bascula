@@ -197,11 +197,11 @@ func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64)
 // A malformed date is not adjacent to anything, which is the safe answer — it
 // stops the run rather than extending it over something nobody can read.
 func isWeekBefore(older, newer string) bool {
-	a, err := time.Parse("2006-01-02", older)
+	a, err := time.Parse(time.DateOnly, older)
 	if err != nil {
 		return false
 	}
-	b, err := time.Parse("2006-01-02", newer)
+	b, err := time.Parse(time.DateOnly, newer)
 	if err != nil {
 		return false
 	}

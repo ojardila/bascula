@@ -422,6 +422,8 @@ func fromTrustedPeer(trustedIPPrefixes []string, xff func(http.Handler) http.Han
 	for i, p := range trustedIPPrefixes {
 		parsed, err := netip.ParsePrefix(p)
 		if err != nil {
+			// 10.1.2.3/32 below is an example in the message, not an address
+			// that is trusted. Reviewed as a false positive (Sonar hotspot, #158).
 			panic(fmt.Sprintf("httpapi: TrustedProxyCIDRs[%d] = %q is not a CIDR "+
 				"prefix (%v). It must be a network, not a bare address: use "+
 				"10.1.2.3/32 for a single proxy. See TRUSTED_PROXY_CIDRS.", i, p, err))

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -28,7 +29,7 @@ func specialPricesJSON(items []store.SpecialPrice) []map[string]any {
 		hist := make([]map[string]any, 0, len(it.History))
 		for _, h := range it.History {
 			hist = append(hist, map[string]any{
-				"validFrom":  h.ValidFrom.Format("2006-01-02"),
+				"validFrom":  h.ValidFrom.Format(time.DateOnly),
 				"priceCents": h.PriceMinor,
 				"createdAt":  h.CreatedAt,
 			})

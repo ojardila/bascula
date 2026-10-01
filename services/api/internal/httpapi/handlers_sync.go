@@ -804,7 +804,7 @@ func pushLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string,
 
 	var day *time.Time
 	if payload.Date != "" {
-		d, err := time.Parse("2006-01-02", payload.Date)
+		d, err := time.Parse(time.DateOnly, payload.Date)
 		if err != nil {
 			return rejected(op.OpID, domain.BadRequest("date must be YYYY-MM-DD"))
 		}

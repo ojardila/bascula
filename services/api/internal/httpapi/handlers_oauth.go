@@ -258,7 +258,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// and the size limits below are what keep a loop from filling the disk.
 	if !s.oauthRegs.allow(clientIP(r), time.Now()) || !s.oauthRegistrationBudgetLeft(r) {
 		w.Header().Set("Retry-After", "3600")
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", contentTypeJSON)
 		w.WriteHeader(http.StatusTooManyRequests)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error":             "invalid_client_metadata",
@@ -903,7 +903,7 @@ func oauthClientError(w http.ResponseWriter, basic bool, desc string) {
 	if basic {
 		w.Header().Set("WWW-Authenticate", `Basic realm="bascula"`)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":             "invalid_client",
@@ -1132,7 +1132,7 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 
 func oauthTokenError(w http.ResponseWriter, code, desc string) {
 	allowCORS(w)
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":             code,
@@ -1142,14 +1142,10 @@ func oauthTokenError(w http.ResponseWriter, code, desc string) {
 
 // oauthRegisterError is RFC 7591 §3.2.2: a 400 with error and
 // error_description, the shape registration clients parse and show.
+//
+// RFC 6749 §5.2 gives token errors the same shape, so it is the same writer.
 func oauthRegisterError(w http.ResponseWriter, code, desc string) {
-	allowCORS(w)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error":             code,
-		"error_description": desc,
-	})
+	oauthTokenError(w, code, desc)
 }
 
 func pkceS256(verifier string) string {

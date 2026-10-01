@@ -18,7 +18,7 @@ import (
 // working, but it is discarded rather than silently deciding the day.
 type Day struct{ time.Time }
 
-const dayLayout = "2006-01-02"
+const dayLayout = time.DateOnly
 
 func (d *Day) UnmarshalJSON(b []byte) error {
 	s := strings.Trim(string(b), `"`)

@@ -394,7 +394,7 @@ func GetLabelBatch(ctx context.Context, tx pgx.Tx, id string) (*LabelBatch, erro
 			Qty:         qty,
 			Warehouse:   move.Warehouse,
 			Plot:        move.Plot,
-			LocalDay:    move.LocalDay.Format("2006-01-02"),
+			LocalDay:    move.LocalDay.Format(time.DateOnly),
 		})
 	}
 	return &b, nil

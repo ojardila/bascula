@@ -16,7 +16,7 @@ import (
 func (s *Server) handlePending(w http.ResponseWriter, r *http.Request) {
 	workerID := r.URL.Query().Get("workerId")
 	if workerID == "" {
-		writeError(w, r, domain.BadRequest("workerId is required"))
+		writeError(w, r, domain.BadRequest(msgWorkerIDRequired))
 		return
 	}
 	from, to, err := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
@@ -141,7 +141,7 @@ func (s *Server) handleSettlementPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if body.WorkerID == "" {
-		writeError(w, r, domain.BadRequest("workerId is required"))
+		writeError(w, r, domain.BadRequest(msgWorkerIDRequired))
 		return
 	}
 	from, to, err := parseRange(body.From, body.To)
@@ -226,7 +226,7 @@ func (s *Server) handleCreateSettlement(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if body.WorkerID == "" {
-		writeError(w, r, domain.BadRequest("workerId is required"))
+		writeError(w, r, domain.BadRequest(msgWorkerIDRequired))
 		return
 	}
 	if body.ExpectedGrossCents == nil {
@@ -512,7 +512,7 @@ func (s *Server) handleGetPayment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	day := func(t time.Time) string { return t.Format("2006-01-02") }
+	day := func(t time.Time) string { return t.Format(time.DateOnly) }
 	deductions := make([]map[string]any, 0, len(slip.Deductions))
 	for _, d := range slip.Deductions {
 		deductions = append(deductions, map[string]any{
@@ -584,7 +584,7 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		return
 	}
 	if body.WorkerID == "" {
-		writeError(w, r, domain.BadRequest("workerId is required"))
+		writeError(w, r, domain.BadRequest(msgWorkerIDRequired))
 		return
 	}
 	if body.AmountCents == 0 {
@@ -622,7 +622,7 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 
 	var day *time.Time
 	if body.Date != "" {
-		d, err := time.Parse("2006-01-02", body.Date)
+		d, err := time.Parse(time.DateOnly, body.Date)
 		if err != nil {
 			writeError(w, r, domain.BadRequest("date must be YYYY-MM-DD"))
 			return
@@ -826,7 +826,7 @@ func (s *Server) handleGetWeekPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"weekStart": monday.Format("2006-01-02"), "priceCents": price,
+		"weekStart": monday.Format(time.DateOnly), "priceCents": price,
 	})
 }
 
@@ -862,14 +862,14 @@ func (s *Server) handleSetWeekPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"weekStart": monday.Format("2006-01-02"), "priceCents": body.PriceCents,
+		"weekStart": monday.Format(time.DateOnly), "priceCents": body.PriceCents,
 	})
 }
 
 // parseMonday insists the week is named by its Monday's ISO date. The phone's
 // old "2026-W33" comment is obsolete; WEEK_OF already produces the Monday.
 func parseMonday(raw string) (time.Time, error) {
-	d, err := time.Parse("2006-01-02", raw)
+	d, err := time.Parse(time.DateOnly, raw)
 	if err != nil {
 		return d, domain.BadRequest("the week is named by its Monday, YYYY-MM-DD")
 	}
@@ -883,11 +883,11 @@ func parseRange(fromRaw, toRaw string) (from, to time.Time, err error) {
 	if fromRaw == "" || toRaw == "" {
 		return from, to, domain.BadRequest("from and to are required, YYYY-MM-DD")
 	}
-	from, err = time.Parse("2006-01-02", fromRaw)
+	from, err = time.Parse(time.DateOnly, fromRaw)
 	if err != nil {
 		return from, to, domain.BadRequest("from must be YYYY-MM-DD")
 	}
-	to, err = time.Parse("2006-01-02", toRaw)
+	to, err = time.Parse(time.DateOnly, toRaw)
 	if err != nil {
 		return from, to, domain.BadRequest("to must be YYYY-MM-DD")
 	}

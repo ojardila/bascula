@@ -55,6 +55,10 @@ func run(migrateOnly, pruneOnly bool) error {
 	// ADMIN_DATABASE_URL owns the schema; DATABASE_URL is the application
 	// role, which must not have BYPASSRLS. Two URLs, on purpose: the process
 	// that serves requests cannot alter the tables whose policies protect it.
+	//
+	// The fallbacks are the local docker-compose database (make up), not a
+	// secret: bascula_api_dev is committed on purpose, and every deployment
+	// sets both variables. Reviewed as a false positive (Sonar hotspot, #158).
 	adminDSN := env("ADMIN_DATABASE_URL",
 		"postgres://postgres:postgres@localhost:5433/bascula?sslmode=disable")
 	appDSN := env("DATABASE_URL",

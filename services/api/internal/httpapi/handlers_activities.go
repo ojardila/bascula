@@ -24,7 +24,7 @@ func (s *Server) handleListActivities(w http.ResponseWriter, r *http.Request) {
 	}
 	on := time.Now().UTC()
 	if raw := r.URL.Query().Get("on"); raw != "" {
-		parsed, err := time.Parse("2006-01-02", raw)
+		parsed, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
 			writeError(w, r, domain.BadRequest("on must be a date, YYYY-MM-DD"))
 			return
@@ -73,7 +73,7 @@ func (rr rateRequest) toStore() (store.ActivityRate, error) {
 		out.ValidFrom = time.Now().UTC().Truncate(24 * time.Hour)
 		return out, nil
 	}
-	parsed, err := time.Parse("2006-01-02", rr.ValidFrom)
+	parsed, err := time.Parse(time.DateOnly, rr.ValidFrom)
 	if err != nil {
 		return out, domain.BadRequest("rate.validFrom must be a date, YYYY-MM-DD")
 	}

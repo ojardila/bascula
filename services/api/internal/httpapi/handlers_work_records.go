@@ -323,14 +323,14 @@ func parseWorkRecordDates(body workRecordRequest) (from, to time.Time, err error
 	if body.DateFrom == "" {
 		return from, to, domain.BadRequest("dateFrom is required, YYYY-MM-DD")
 	}
-	from, err = time.Parse("2006-01-02", body.DateFrom)
+	from, err = time.Parse(time.DateOnly, body.DateFrom)
 	if err != nil {
 		return from, to, domain.BadRequest("dateFrom must be YYYY-MM-DD")
 	}
 	if body.DateTo == "" {
 		return from, from, nil
 	}
-	to, err = time.Parse("2006-01-02", body.DateTo)
+	to, err = time.Parse(time.DateOnly, body.DateTo)
 	if err != nil {
 		return from, to, domain.BadRequest("dateTo must be YYYY-MM-DD")
 	}
@@ -408,14 +408,14 @@ func workRecordFilter(r *http.Request) (store.WorkRecordFilter, error) {
 		f.PayScheme = scheme
 	}
 	if raw := r.URL.Query().Get("from"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
+		d, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
 			return f, domain.BadRequest("from must be YYYY-MM-DD")
 		}
 		f.From = &d
 	}
 	if raw := r.URL.Query().Get("to"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
+		d, err := time.Parse(time.DateOnly, raw)
 		if err != nil {
 			return f, domain.BadRequest("to must be YYYY-MM-DD")
 		}
