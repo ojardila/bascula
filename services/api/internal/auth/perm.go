@@ -30,7 +30,13 @@ const (
 	ActionVerifyEmail     Action = "auth.verify_email"
 	ActionLogout          Action = "auth.logout"
 	ActionMeRead          Action = "me.read"
-	ActionToursWrite      Action = "me.tours.write"
+	// Passkeys: signing in with one is the fourth door into a session; the
+	// other two are a person managing their own, so they are open to every
+	// role and never reach anybody else's.
+	ActionPasskeyLogin  Action = "auth.passkey"
+	ActionPasskeysRead  Action = "me.passkeys.read"
+	ActionPasskeysWrite Action = "me.passkeys.write"
+	ActionToursWrite    Action = "me.tours.write"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -210,6 +216,9 @@ var Matrix = map[Action]Rule{
 	ActionLogout:           {Roles: everyone},
 	ActionMeRead:           {Roles: everyone},
 	ActionToursWrite:       {Roles: everyone},
+	ActionPasskeyLogin:     {Public: true, TenantOptional: true},
+	ActionPasskeysRead:     {Roles: everyone},
+	ActionPasskeysWrite:    {Roles: everyone},
 
 	// The weigher reads workers, but the handler hands him a reduced
 	// projection: id, name, lastName, tag. No document, no phone, no photo.

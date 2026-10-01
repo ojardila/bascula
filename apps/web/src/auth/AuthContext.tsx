@@ -15,6 +15,7 @@ import { authEvents, getTokens, setTokens } from "../api/client";
 import { ApiError } from "../api/errors";
 import { can, isReadOnly, landingPath, visibleModules, type Action, type Principal } from "./permissions";
 import type { LoginChoice, MeUser, Session } from "../api/types";
+import type { PasskeyAnswer, PasskeyLoginChoice } from "../api/endpoints";
 
 interface AuthState {
   status: "loading" | "anonymous" | "authenticated";
@@ -33,6 +34,11 @@ interface AuthContextValue extends AuthState {
    * token's claims — so choosing one means authenticating again, naming it.
    */
   login: (email: string, password: string, farmId?: string) => Promise<Session | LoginChoice>;
+  /**
+   * Sign in with a passkey. The second half of a multi-farm sign-in passes
+   * back the answer the choice carried, with the farm.
+   */
+  loginWithPasskey: (pending?: PasskeyAnswer, farmId?: string) => Promise<Session | PasskeyLoginChoice>;
   logout: () => Promise<void>;
 }
 
@@ -133,6 +139,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res;
   }, []);
 
+  const loginWithPasskey = useCallback(async (pending?: PasskeyAnswer, farmId?: string) => {
+    const res = await api.loginWithPasskey(pending, farmId);
+    if ("choose" in res) return res;
+    rememberUser(res.user);
+    setState({ status: "authenticated", user: res.user });
+    return res;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -160,9 +174,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       modules: state.user ? visibleModules(principal) : [],
       landing: landingPath(principal),
       login,
+      loginWithPasskey,
       logout,
     };
-  }, [state, login, logout]);
+  }, [state, login, loginWithPasskey, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

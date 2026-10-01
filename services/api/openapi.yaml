@@ -251,6 +251,82 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/auth/passkeys/login/options:
+    post:
+      tags: [auth]
+      operationId: passkeyLoginOptions
+      summary: Start a passkey sign-in
+      description: |
+        Optional alternative to the password. Returns WebAuthn request options
+        for a discoverable (usernameless) sign-in on the address in the
+        browser's `Origin`, plus `challenge`: the sealed ceremony state, to be
+        sent back unchanged with the answer. No email is asked for, so the
+        reply says nothing about whether an address has a passkey, and
+        nothing is written.
+      x-action: auth.passkey
+      x-roles: [public]
+      security: []
+      responses:
+        "200":
+          description: Options for `navigator.credentials.get`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /v1/auth/passkeys/login:
+    post:
+      tags: [auth]
+      operationId: passkeyLogin
+      summary: Open a session with a passkey
+      description: |
+        Same answers as `login`, with a passkey assertion in place of email
+        and password: 400 with `details.farms` when a farm has to be chosen
+        (send the same challenge and credential again with `farmId`), 403
+        EMAIL_NOT_VERIFIED / FARM_SUSPENDED, 401 INVALID_CREDENTIALS for an
+        assertion that does not verify, 429 RATE_LIMITED on the per-IP axis
+        of the login limiter.
+
+        A passkey never opens a farm guarded by its own owner password unless
+        it was added from a session on that farm, and then it opens only that
+        farm. Each challenge opens one session at most.
+      x-action: auth.passkey
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyLoginRequest" }
+      responses:
+        "200":
+          description: A token pair.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400":
+          description: |
+            Malformed, or a farm has to be chosen — then `details.farms`
+            lists them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: INVALID_CREDENTIALS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: EMAIL_NOT_VERIFIED, FARM_SUSPENDED, or the passkey opens no farm.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: RATE_LIMITED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/auth/refresh:
     post:
       tags: [auth]
@@ -372,6 +448,96 @@ paths:
               schema: { $ref: "#/components/schemas/Me" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me/passkeys:
+    get:
+      tags: [auth]
+      operationId: listPasskeys
+      summary: The caller's passkeys on this address
+      description: |
+        Only the caller's own, and only those made for the address in the
+        browser's `Origin` (a passkey belongs to one address).
+      x-action: me.passkeys.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: Oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Passkey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [auth]
+      operationId: createPasskey
+      summary: Finish adding a passkey to the caller's account
+      x-action: me.passkeys.write
+      x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyCreateRequest" }
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Passkey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: CONFLICT — that passkey is already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/me/passkeys/options:
+    post:
+      tags: [auth]
+      operationId: passkeyRegisterOptions
+      summary: Start adding a passkey to the caller's account
+      description: |
+        WebAuthn creation options for `navigator.credentials.create`, plus
+        the sealed `challenge` to send back with the result. Passkeys the
+        caller already has on this address are excluded.
+      x-action: me.passkeys.write
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: Options for `navigator.credentials.create`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me/passkeys/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      operationId: deletePasskey
+      summary: Remove one of the caller's passkeys
+      x-action: me.passkeys.write
+      x-roles: [owner, admin, weigher]
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/me/tours:
     get:
@@ -6252,6 +6418,54 @@ components:
             Not required when Host is `{slug}.bascula.engp.io` or
             `{slug}.int.dev.engp.io`.
         deviceId: { type: string }
+
+    PasskeyOptions:
+      type: object
+      required: [challenge, publicKey]
+      properties:
+        challenge:
+          type: string
+          description: Sealed ceremony state. Send it back unchanged; it expires in five minutes.
+        publicKey:
+          type: object
+          additionalProperties: true
+          description: |
+            WebAuthn options in their JSON form (binary members base64url),
+            as `PublicKeyCredential.parseCreationOptionsFromJSON` /
+            `parseRequestOptionsFromJSON` read them.
+
+    PasskeyCreateRequest:
+      type: object
+      required: [challenge, credential]
+      properties:
+        challenge: { type: string }
+        credential:
+          type: object
+          additionalProperties: true
+          description: The `PublicKeyCredential` from `navigator.credentials.create`, as `toJSON()` gives it.
+        name: { type: string, maxLength: 60, description: "A label for the person, e.g. the phone's name." }
+
+    PasskeyLoginRequest:
+      type: object
+      required: [challenge, credential]
+      properties:
+        challenge: { type: string }
+        credential:
+          type: object
+          additionalProperties: true
+          description: The `PublicKeyCredential` from `navigator.credentials.get`, as `toJSON()` gives it.
+        farmId: { type: string, format: uuid }
+        farmSlug: { $ref: "#/components/schemas/FarmSlug" }
+        deviceId: { type: string }
+
+    Passkey:
+      type: object
+      required: [id, name, createdAt, lastUsedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
 
     RefreshRequest:
       type: object

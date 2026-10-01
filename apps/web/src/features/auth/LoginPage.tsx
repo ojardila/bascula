@@ -5,12 +5,27 @@ import {
 } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import Fingerprint from "@mui/icons-material/Fingerprint";
 import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
-import { messageFor } from "../../api/errors";
+import { ApiError, messageFor } from "../../api/errors";
+import type { PasskeyAnswer } from "../../api/endpoints";
+import { passkeyCancelled, passkeysSupported } from "../../lib/passkeys";
 import { farmGreeting, farmSlugFromHost, offersSignup } from "../../lib/farmHost";
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 import type { Membership, Role } from "../../api/types";
+
+/** What to say when a passkey sign-in fails; a closed prompt says nothing. */
+function passkeyMessage(err: unknown): string | null {
+  if (passkeyCancelled(err)) return null;
+  if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
+    return "No reconocimos esa llave de acceso. Entre con su correo y contraseña.";
+  }
+  if (err instanceof ApiError && err.status === 403 && err.code === "FORBIDDEN") {
+    return "Esa llave de acceso no abre esta finca. Entre con su correo y contraseña.";
+  }
+  return messageFor(err);
+}
 
 const ROLE_LABEL: Record<Role, string> = {
   owner: "Dueño",
@@ -19,7 +34,7 @@ const ROLE_LABEL: Record<Role, string> = {
 };
 
 export function LoginPage() {
-  const { status, login, landing } = useAuth();
+  const { status, login, loginWithPasskey, landing } = useAuth();
   const navigate = useNavigate();
   const location = useLocation() as { state?: { from?: string } };
   const [email, setEmail] = useState("");
@@ -34,6 +49,13 @@ export function LoginPage() {
    * second login that names the farm, not a switch inside this session.
    */
   const [choices, setChoices] = useState<Membership[] | null>(null);
+  /**
+   * Set when the farm choice came from a passkey sign-in: the signed answer,
+   * which the second half sends again with the farm instead of asking the
+   * phone a second time.
+   */
+  const [pendingPasskey, setPendingPasskey] = useState<PasskeyAnswer | null>(null);
+  const canUsePasskey = passkeysSupported();
   /**
    * A pinned host is the farm. Login still sends email and password only —
    * the browser already puts the host on `/v1/auth/login`. If the API has not
@@ -63,6 +85,25 @@ export function LoginPage() {
     }
   }
 
+  async function attemptPasskey(pending?: PasskeyAnswer, farmId?: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await loginWithPasskey(pending, farmId);
+      if ("choose" in res) {
+        setPendingPasskey(res.passkey);
+        setChoices(res.memberships);
+        return;
+      }
+      const next = location.state?.from;
+      navigate(next && next !== "/" ? next : landing, { replace: true });
+    } catch (err) {
+      setError(passkeyMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     await attempt();
@@ -79,7 +120,9 @@ export function LoginPage() {
               variant="outlined"
               size="large"
               disabled={busy}
-              onClick={() => attempt(m.farmId)}
+              onClick={() =>
+                pendingPasskey ? attemptPasskey(pendingPasskey, m.farmId) : attempt(m.farmId)
+              }
               sx={{ justifyContent: "space-between" }}
             >
               {m.farmName}
@@ -88,7 +131,14 @@ export function LoginPage() {
               </Typography>
             </Button>
           ))}
-          <Button color="inherit" onClick={() => setChoices(null)} disabled={busy}>
+          <Button
+            color="inherit"
+            onClick={() => {
+              setChoices(null);
+              setPendingPasskey(null);
+            }}
+            disabled={busy}
+          >
             Volver
           </Button>
         </Stack>
@@ -149,6 +199,20 @@ export function LoginPage() {
           <Button type="submit" variant="contained" size="large" disabled={busy} fullWidth>
             {busy ? "Entrando…" : "Entrar"}
           </Button>
+          {/* Optional: only for people who added a passkey in Configuración.
+              Browsers without WebAuthn never see the button. */}
+          {canUsePasskey && (
+            <Button
+              variant="outlined"
+              size="large"
+              fullWidth
+              disabled={busy}
+              startIcon={<Fingerprint />}
+              onClick={() => attemptPasskey()}
+            >
+              Entrar con llave de acceso
+            </Button>
+          )}
           {/* Main domain only: a farm's login never offers another farm. */}
           {offersSignup() && (
             <>

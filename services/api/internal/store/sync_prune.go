@@ -97,15 +97,16 @@ const (
 
 // PruneReport is what one sweep did, in rows.
 type PruneReport struct {
-	SyncLogDeleted       int64
-	SyncOpsDeleted       int64
-	LoginFailuresDeleted int64
-	Took                 time.Duration
+	SyncLogDeleted           int64
+	SyncOpsDeleted           int64
+	LoginFailuresDeleted     int64
+	PasskeyChallengesDeleted int64
+	Took                     time.Duration
 }
 
 func (p PruneReport) String() string {
-	return fmt.Sprintf("sync_log -%d, sync_ops -%d, login_failures -%d, in %s",
-		p.SyncLogDeleted, p.SyncOpsDeleted, p.LoginFailuresDeleted,
+	return fmt.Sprintf("sync_log -%d, sync_ops -%d, login_failures -%d, passkey_used_challenges -%d, in %s",
+		p.SyncLogDeleted, p.SyncOpsDeleted, p.LoginFailuresDeleted, p.PasskeyChallengesDeleted,
 		p.Took.Round(time.Millisecond))
 }
 
@@ -182,6 +183,14 @@ func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays, login
 		return rep, err
 	}
 	rep.LoginFailuresDeleted = tag.RowsAffected()
+
+	// A used challenge only has to be remembered until it would have expired
+	// on its own; after that the seal refuses it without this table's help.
+	tag, err = tx.Exec(ctx, `DELETE FROM passkey_used_challenges WHERE expires_at < now()`)
+	if err != nil {
+		return rep, err
+	}
+	rep.PasskeyChallengesDeleted = tag.RowsAffected()
 
 	if err := tx.Commit(ctx); err != nil {
 		return rep, err
