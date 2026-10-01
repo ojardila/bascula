@@ -265,6 +265,12 @@ func (h *harness) doFromHost(t *testing.T, ip, host, method, path, token string,
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	if body != nil {
+		raw, _ := json.Marshal(body)
+		h.replayWithFaults(req, string(raw))
+	} else {
+		h.replayWithFaults(req, "")
+	}
 	rec := httptest.NewRecorder()
 	h.server.ServeHTTP(rec, req)
 

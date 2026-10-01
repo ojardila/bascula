@@ -101,7 +101,7 @@ describe("creating a plot", () => {
     expect(await screen.findByDisplayValue("Café")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: `Guardar ${PLOT.one}` }));
     expect(await screen.findByText("detalle del lote")).toBeInTheDocument();
-    expect(tenant().plots.length).toBe(before + 1);
+    expect(tenant().plots).toHaveLength(before + 1);
     const saved = tenant().plots.find((p) => p.name === "El Mirador Nuevo")!;
     expect(saved.department).toBe("Huila");
     expect(saved.areaHa).toBe(4.2);
