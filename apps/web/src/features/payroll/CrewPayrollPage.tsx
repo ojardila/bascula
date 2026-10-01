@@ -526,8 +526,7 @@ export function CrewPayrollPage() {
                 <Money cents={settleTotal} variant="big" />
               )}
               <Typography variant="body2" color="text.secondary">
-                {pickedSettle.length}{" "}
-                {pickedSettle.length === 1 ? "persona" : "personas"}
+                {payeesText(pickedSettle.map((a) => a.workerId), crew)}
                 {anyQty && unitLabel
                   ? ` · ${formatQuantity(settleQty)} ${unitLabel}`
                   : ""}
@@ -731,7 +730,7 @@ export function CrewPayrollPage() {
                 <Money cents={payTotal} variant="big" />
               )}
               <Typography variant="body2" color="text.secondary">
-                {pickedPay.length} {pickedPay.length === 1 ? "persona" : "personas"}
+                {payeesText(pickedPay.map((a) => a.workerId), crew)}
               </Typography>
             </Box>
           </Stack>
@@ -1311,4 +1310,19 @@ function PayDriftDialog({
       </DialogActions>
     </Dialog>
   );
+}
+
+/**
+ * «16 personas», or with teams «16 cuentas · 18 personas»: a team is one
+ * account and several people (docs/use-cases/teams.md).
+ */
+function payeesText(ids: string[], crew: { worker: { id: string; kind?: string; members?: unknown[] } }[]): string {
+  const byId = new Map(crew.map((m) => [m.worker.id, m.worker]));
+  let heads = 0;
+  for (const id of ids) {
+    const w = byId.get(id);
+    heads += w?.kind === "equipo" ? Math.max(1, w.members?.length ?? 0) : 1;
+  }
+  const people = `${heads} ${heads === 1 ? "persona" : "personas"}`;
+  return heads === ids.length ? people : `${ids.length} cuentas · ${people}`;
 }
