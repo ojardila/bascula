@@ -8,7 +8,7 @@ import { server } from "../mocks/node";
 
 // The same handlers the browser uses, so a test cannot pass against a mock the
 // app never sees.
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 afterEach(() => {
   cleanup();
   server.resetHandlers();
@@ -37,8 +37,14 @@ if (!globalThis.localStorage) {
     removeItem: (k) => void store.delete(k),
     setItem: (k, v) => void store.set(k, String(v)),
   };
-  Object.defineProperty(globalThis, "localStorage", { value: shim, configurable: true });
-  Object.defineProperty(window, "localStorage", { value: shim, configurable: true });
+  Object.defineProperty(globalThis, "localStorage", {
+    value: shim,
+    configurable: true,
+  });
+  Object.defineProperty(window, "localStorage", {
+    value: shim,
+    configurable: true,
+  });
 }
 
 // jsdom has no matchMedia at all; MUI asks for it on mount.
@@ -77,5 +83,6 @@ if (!globalThis.ResizeObserver) {
     unobserve() {}
     disconnect() {}
   }
-  globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver =
+    TestResizeObserver as unknown as typeof ResizeObserver;
 }
