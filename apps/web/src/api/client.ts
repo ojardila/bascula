@@ -18,6 +18,7 @@
  */
 import { ApiError } from "./errors";
 import { API_BASE_URL } from "./mode";
+import * as crossTab from "../lib/crossTab";
 import type { ApiErrorBody } from "./types";
 
 /**
@@ -183,6 +184,11 @@ export async function request<T>(
   }
 
   const text = await res.text();
+  // Every write — any method but GET — tells the other tabs of this browser
+  // that whatever they were showing is one step older than the server. The
+  // signal carries no data; each tab decides what to re-read. A failed write
+  // never reaches here, so a 400 never pushes other tabs into a wasted GET.
+  if (method !== "GET") crossTab.broadcastMutation();
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
