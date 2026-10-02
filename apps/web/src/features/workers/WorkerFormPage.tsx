@@ -1,7 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, AlertTitle, Box, Button, Card, CardContent, Grid, MenuItem, Stack, TextField,
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  MenuItem,
+  Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -67,7 +76,10 @@ export function WorkerFormPage() {
    * Leaving somebody stuck at a red box is how the duplicate gets created
    * anyway, under a document number with a dot moved.
    */
-  const [existingDeleted, setExistingDeleted] = useState<{ id: string; name: string } | null>(null);
+  const [existingDeleted, setExistingDeleted] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -102,7 +114,8 @@ export function WorkerFormPage() {
     if (!tag.trim() && (!editing || hadTag)) e.tag = BASKET_REQUIRED;
     if (!name.trim()) e.name = "Escriba el nombre.";
     if (!lastName.trim()) e.lastName = "Escriba los apellidos.";
-    if (!documentNumber.trim()) e.documentNumber = "Escriba el número de identificación.";
+    if (!documentNumber.trim())
+      e.documentNumber = "Escriba el número de identificación.";
     // Not a format rule: cédulas, cédulas de extranjería and PPTs do not share
     // one. Only that something is there and that it is not obviously a name.
     if (!phone.trim()) e.phone = "Escriba un teléfono de contacto.";
@@ -117,29 +130,36 @@ export function WorkerFormPage() {
     ev.preventDefault();
     setError(null);
     if (!validate()) return;
-    const outcome = await runOnce(`empleado|${workerId}|${documentNumber.trim()}`, async () => {
-      const body = {
-        id: workerId,
-        // Not sent when left empty on a worker who never had one: nothing to change.
-        ...(tag.trim() || hadTag || !editing ? { tag: tag.trim() } : {}),
-        name: name.trim(),
-        lastName: lastName.trim(),
-        documentType,
-        documentNumber: documentNumber.trim(),
-        phone: phone.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        country,
-        photoDataUrl: photo,
-        startedAt: startedAt || undefined,
-      };
-      return editing ? api.updateWorker(workerId, body) : api.createWorker(body);
-    }).catch(async (e: unknown) => {
+    const outcome = await runOnce(
+      `empleado|${workerId}|${documentNumber.trim()}`,
+      async () => {
+        const body = {
+          id: workerId,
+          // Not sent when left empty on a worker who never had one: nothing to change.
+          ...(tag.trim() || hadTag || !editing ? { tag: tag.trim() } : {}),
+          name: name.trim(),
+          lastName: lastName.trim(),
+          documentType,
+          documentNumber: documentNumber.trim(),
+          phone: phone.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          country,
+          photoDataUrl: photo,
+          startedAt: startedAt || undefined,
+        };
+        return editing
+          ? api.updateWorker(workerId, body)
+          : api.createWorker(body);
+      },
+    ).catch(async (e: unknown) => {
       if (e instanceof ApiError && e.code === "EMPLOYEE_EXISTS_DELETED") {
         const existingId = String(e.details.employeeId ?? "");
         // Fetch the name so the offer says WHO, not "the existing worker". A
         // person deciding whether to reactivate needs to recognise them.
-        const who = existingId ? await api.getWorker(existingId).catch(() => null) : null;
+        const who = existingId
+          ? await api.getWorker(existingId).catch(() => null)
+          : null;
         setExistingDeleted({
           id: existingId,
           name: who ? `${who.name} ${who.lastName}`.trim() : "",
@@ -148,7 +168,8 @@ export function WorkerFormPage() {
         // Under the box, naming who has it: «Ese número ya lo tiene Yorman.»
         setFields({ tag: duplicateTagField(e) });
       } else {
-        if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
+        if (e instanceof ApiError && Object.keys(e.fieldErrors).length)
+          setFields(e.fieldErrors);
         setError(messageFor(e));
       }
       return { ran: false } as const;
@@ -160,13 +181,13 @@ export function WorkerFormPage() {
   async function reactivate() {
     if (!existingDeleted?.id) return;
     const who = existingDeleted.id;
-    const outcome = await runOnce(`reactivar|${who}`, () => api.reactivateWorker(who)).catch(
-      (e: unknown) => {
-        setError(messageFor(e));
-        setExistingDeleted(null);
-        return { ran: false } as const;
-      },
-    );
+    const outcome = await runOnce(`reactivar|${who}`, () =>
+      api.reactivateWorker(who),
+    ).catch((e: unknown) => {
+      setError(messageFor(e));
+      setExistingDeleted(null);
+      return { ran: false } as const;
+    });
     if (!outcome.ran) return;
     navigate(`/empleados/${who}`, { replace: true });
   }
@@ -204,7 +225,12 @@ export function WorkerFormPage() {
               >
                 Ver la ficha
               </Button>
-              <Button variant="contained" size="small" disabled={busy} onClick={reactivate}>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={busy}
+                onClick={reactivate}
+              >
                 Reactivar
               </Button>
             </Stack>
@@ -214,8 +240,8 @@ export function WorkerFormPage() {
           {existingDeleted.name
             ? `${existingDeleted.name} tiene ese documento y está inactivo.`
             : "Un empleado con ese documento ya está registrado y está inactivo."}{" "}
-          Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona queda con dos
-          cuentas, el saldo se parte en dos y nada avisa de ello.
+          Reactívelo en vez de crear uno nuevo: si crea otro, la misma persona
+          queda con dos cuentas, el saldo se parte en dos y nada avisa de ello.
         </Alert>
       )}
 
@@ -238,7 +264,12 @@ export function WorkerFormPage() {
             slotProps={{ htmlInput: { autoCapitalize: "characters" } }}
             sx={{
               maxWidth: 360,
-              "& input": { fontSize: "2rem", fontWeight: 800, py: 1.5, letterSpacing: "0.02em" },
+              "& input": {
+                fontSize: "2rem",
+                fontWeight: 800,
+                py: 1.5,
+                letterSpacing: "0.02em",
+              },
               "& .MuiInputLabel-root": { fontSize: "1.1rem" },
               "& .MuiFormHelperText-root": { fontSize: "0.95rem" },
             }}
@@ -250,7 +281,12 @@ export function WorkerFormPage() {
         <Grid size={{ xs: 12, md: 7 }}>
           <Card>
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Datos del empleado
               </Typography>
               <Stack spacing={2.5} sx={{ mt: 2 }}>
@@ -289,7 +325,9 @@ export function WorkerFormPage() {
                       select
                       label="Tipo de identificación"
                       value={documentType}
-                      onChange={(e) => setDocumentType(e.target.value as DocumentType)}
+                      onChange={(e) =>
+                        setDocumentType(e.target.value as DocumentType)
+                      }
                       size="medium"
                       fullWidth
                       required
@@ -322,7 +360,12 @@ export function WorkerFormPage() {
         <Grid size={{ xs: 12, md: 5 }}>
           <Card>
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Datos de contacto
               </Typography>
               <Stack spacing={2.5} sx={{ mt: 2 }}>
@@ -364,7 +407,11 @@ export function WorkerFormPage() {
                     />
                   </Grid>
                 </Grid>
-                <DateField label="Trabaja desde" value={startedAt} onChange={setStartedAt} />
+                <DateField
+                  label="Trabaja desde"
+                  value={startedAt}
+                  onChange={setStartedAt}
+                />
               </Stack>
             </CardContent>
           </Card>
@@ -385,7 +432,14 @@ export function WorkerFormPage() {
         </Grid>
       </Grid>
 
-      <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          justifyContent: "flex-end",
+          mt: 3,
+        }}
+      >
         <Button color="inherit" onClick={() => navigate("/empleados")}>
           Cancelar
         </Button>

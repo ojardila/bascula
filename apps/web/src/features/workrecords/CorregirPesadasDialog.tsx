@@ -9,7 +9,16 @@
  */
 import { useState } from "react";
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
@@ -58,7 +67,8 @@ export function CorregirPesadasDialog({
     setError(null);
     try {
       for (const c of corrections) {
-        if (c.kind === "update") await api.updateWorkRecord(c.recordId, { quantity: c.quantity });
+        if (c.kind === "update")
+          await api.updateWorkRecord(c.recordId, { quantity: c.quantity });
         else await api.deactivateWorkRecord(c.recordId);
       }
       onSaved(corrections.length);
@@ -70,8 +80,15 @@ export function CorregirPesadasDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontSize: "1.4rem", pb: 0.5 }}>Corregir pesadas</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="xs"
+      fullWidth
+    >
+      <DialogTitle sx={{ fontSize: "1.4rem", pb: 0.5 }}>
+        Corregir pesadas
+      </DialogTitle>
       <DialogContent>
         <Typography sx={{ fontSize: "1.1rem", mb: 2 }}>
           <strong>{name}</strong> · {dayLabel}
@@ -85,9 +102,22 @@ export function CorregirPesadasDialog({
                   <strong>Pesada {i + 1}</strong>
                   {r.plotNames.length > 0 && <> · {r.plotNames.join(", ")}</>}
                 </Typography>
-                <Stack direction="row" alignItems="center" spacing={1.5}>
+                <Stack
+                  direction="row"
+                  spacing={1.5}
+                  sx={{
+                    alignItems: "center",
+                  }}
+                >
                   {out ? (
-                    <Typography sx={{ flex: 1, fontSize: "1.05rem", color: "error.main", py: 1.5 }}>
+                    <Typography
+                      sx={{
+                        flex: 1,
+                        fontSize: "1.05rem",
+                        color: "error.main",
+                        py: 1.5,
+                      }}
+                    >
                       Se quita · era {formatQuantity(r.quantity)} kg
                     </Typography>
                   ) : (
@@ -99,18 +129,50 @@ export function CorregirPesadasDialog({
                         setError(null);
                       }}
                       disabled={busy}
-                      inputProps={{ inputMode: "decimal", "aria-label": `Pesada ${i + 1}, kilos` }}
-                      InputProps={{ endAdornment: <Typography sx={{ ml: 0.5, color: "text.secondary" }}>kg</Typography> }}
-                      sx={{ flex: 1, "& input": { textAlign: "right", fontSize: 26, fontWeight: 600, py: 1.5 } }}
+                      sx={{
+                        flex: 1,
+                        "& input": {
+                          textAlign: "right",
+                          fontSize: 26,
+                          fontWeight: 600,
+                          py: 1.5,
+                        },
+                      }}
+                      slotProps={{
+                        input: {
+                          endAdornment: (
+                            <Typography
+                              sx={{ ml: 0.5, color: "text.secondary" }}
+                            >
+                              kg
+                            </Typography>
+                          ),
+                        },
+                        htmlInput: {
+                          inputMode: "decimal",
+                          "aria-label": `Pesada ${i + 1}, kilos`,
+                        },
+                      }}
                     />
                   )}
                   <Button
                     variant="outlined"
-                    onClick={() => setRemoved((prev) => ({ ...prev, [r.id]: !out }))}
+                    onClick={() =>
+                      setRemoved((prev) => ({ ...prev, [r.id]: !out }))
+                    }
                     disabled={busy}
                     color={out ? "primary" : "error"}
-                    aria-label={out ? `Dejar la pesada ${i + 1}` : `Quitar la pesada ${i + 1}`}
-                    sx={{ minWidth: 92, minHeight: 56, fontSize: "1.05rem", flexShrink: 0 }}
+                    aria-label={
+                      out
+                        ? `Dejar la pesada ${i + 1}`
+                        : `Quitar la pesada ${i + 1}`
+                    }
+                    sx={{
+                      minWidth: 92,
+                      minHeight: 56,
+                      fontSize: "1.05rem",
+                      flexShrink: 0,
+                    }}
                   >
                     {out ? "Dejar" : "Quitar"}
                   </Button>
@@ -126,7 +188,9 @@ export function CorregirPesadasDialog({
         )}
       </DialogContent>
       <DialogActions sx={{ p: 2, gap: 1 }}>
-        <Button onClick={onClose} size="large" disabled={busy}>Cancelar</Button>
+        <Button onClick={onClose} size="large" disabled={busy}>
+          Cancelar
+        </Button>
         <Button
           onClick={() => void save()}
           variant="contained"

@@ -8,7 +8,15 @@
  */
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { Alert, Button, Card, CardContent, Stack, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 
@@ -24,7 +32,8 @@ export function ChangePasswordCard() {
 
   // «Cambiar clave» in the account menu lands here with #clave.
   useEffect(() => {
-    if (hash === "#clave") ref.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    if (hash === "#clave")
+      ref.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }, [hash]);
 
   async function onSubmit(e: FormEvent) {
@@ -51,7 +60,8 @@ export function ChangePasswordCard() {
       setNext("");
       setRepeat("");
     } catch (err) {
-      if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") setError("La clave actual no es correcta.");
+      if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS")
+        setError("La clave actual no es correcta.");
       else setError(messageFor(err));
     } finally {
       setBusy(false);
@@ -64,11 +74,22 @@ export function ChangePasswordCard() {
         <Typography variant="h3" gutterBottom>
           Cambiar clave
         </Typography>
-        <Typography color="text.secondary" sx={{ mb: 2 }}>
-          Al cambiarla se cierran las sesiones abiertas en otros celulares y computadores. Este equipo sigue
-          adentro.
+        <Typography
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Al cambiarla se cierran las sesiones abiertas en otros celulares y
+          computadores. Este equipo sigue adentro.
         </Typography>
-        <Stack component="form" spacing={2} onSubmit={onSubmit} noValidate sx={{ maxWidth: 480 }}>
+        <Stack
+          component="form"
+          spacing={2}
+          onSubmit={onSubmit}
+          noValidate
+          sx={{ maxWidth: 480 }}
+        >
           {done && <Alert severity="success">Su clave cambió.</Alert>}
           {error && <Alert severity="error">{error}</Alert>}
           <TextField
@@ -96,7 +117,12 @@ export function ChangePasswordCard() {
             autoComplete="new-password"
             fullWidth
           />
-          <Button type="submit" variant="contained" disabled={busy} sx={{ alignSelf: "flex-start", minHeight: 48 }}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={busy}
+            sx={{ alignSelf: "flex-start", minHeight: 48 }}
+          >
             {busy ? "Guardando…" : "Cambiar clave"}
           </Button>
         </Stack>

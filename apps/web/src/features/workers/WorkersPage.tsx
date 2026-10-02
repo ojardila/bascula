@@ -16,9 +16,21 @@
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Box, Button, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import GroupsIcon from "@mui/icons-material/Groups";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Money } from "../../components/Money";
 import { useAsync } from "../../lib/useAsync";
@@ -82,10 +94,24 @@ export function WorkersPage() {
         key: "name",
         header: EMPLOYEE.One,
         render: (w) => (
-          <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              alignItems: "center",
+            }}
+          >
             <BasketTile tag={w.tag} team={isTeam(w)} />
             <Box>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                sx={{
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <Typography sx={{ fontWeight: 600, fontSize: "1.05rem" }}>
                   {w.name} {w.lastName}
                 </Typography>
@@ -93,24 +119,59 @@ export function WorkersPage() {
                   <NoBasketChip
                     onClick={
                       can("workers.write")
-                        ? () => navigate(`${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`)
+                        ? () =>
+                            navigate(
+                              `${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`,
+                            )
                         : undefined
                     }
                   />
                 )}
               </Stack>
               {isTeam(w) ? (
-                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Chip size="small" color="success" variant="outlined" label={teamSize(memberCount(w))} />
-                  <Typography variant="caption" color="text.secondary">{memberNames(w) || "Sin integrantes"}</Typography>
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  useFlexGap
+                  sx={{
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Chip
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                    label={teamSize(memberCount(w))}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    {memberNames(w) || "Sin integrantes"}
+                  </Typography>
                 </Stack>
               ) : w.team ? (
-                <Typography variant="caption" color="success.dark" sx={{ display: "block", fontWeight: 600 }}>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "success.dark",
+                    display: "block",
+                    fontWeight: 600,
+                  }}
+                >
                   En el equipo {w.team.name}
                 </Typography>
               ) : null}
               {full && !isTeam(w) && (w.documentNumber || !w.team) && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   {w.documentType} {w.documentNumber}
                 </Typography>
               )}
@@ -127,7 +188,12 @@ export function WorkersPage() {
         align: "right",
         render: (w) =>
           ledger === null ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               …
             </Typography>
           ) : (
@@ -154,7 +220,11 @@ export function WorkersPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -173,12 +243,23 @@ export function WorkersPage() {
         searchPlaceholder="Buscar por nombre, canasto o cédula"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workers.write") ? () => navigate(`${EMPLOYEE.path}/nuevo`) : undefined}
+        onCreate={
+          can("workers.write")
+            ? () => navigate(`${EMPLOYEE.path}/nuevo`)
+            : undefined
+        }
         createLabel={`Nuevo ${EMPLOYEE.one}`}
-        onRowClick={can("workers.profile") ? (w) => navigate(`${EMPLOYEE.path}/${w.id}`) : undefined}
+        onRowClick={
+          can("workers.profile")
+            ? (w) => navigate(`${EMPLOYEE.path}/${w.id}`)
+            : undefined
+        }
         onEdit={
           can("workers.write")
-            ? (w) => navigate(`${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`)
+            ? (w) =>
+                navigate(
+                  `${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`,
+                )
             : undefined
         }
         toolbarExtra={
@@ -196,8 +277,20 @@ export function WorkersPage() {
           can("money.pay")
             ? (w) =>
                 w.team
-                  ? [{ label: "Ver su equipo", onClick: () => navigate(`${EMPLOYEE.path}/${w.team!.id}`) }]
-                  : [{ label: "Pagar", onClick: () => navigate(`${EMPLOYEE.path}/${w.id}/pagar`) }]
+                  ? [
+                      {
+                        label: "Ver su equipo",
+                        onClick: () =>
+                          navigate(`${EMPLOYEE.path}/${w.team!.id}`),
+                      },
+                    ]
+                  : [
+                      {
+                        label: "Pagar",
+                        onClick: () =>
+                          navigate(`${EMPLOYEE.path}/${w.id}/pagar`),
+                      },
+                    ]
             : undefined
         }
         onDeactivate={
@@ -230,7 +323,14 @@ export function WorkersPage() {
         emptyBody="Registre a las personas que trabajan en la finca. Cada una lleva su propio saldo y su historial."
         footer={
           data && money ? (
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+            <Stack
+              direction="row"
+              spacing={2}
+              useFlexGap
+              sx={{
+                flexWrap: "wrap",
+              }}
+            >
               <span>
                 {data.length} {data.length === 1 ? "empleado" : "empleados"}
               </span>
@@ -240,7 +340,14 @@ export function WorkersPage() {
                   "…"
                 ) : farmOwes.cents === null ? (
                   <Tooltip title="No se pudo consultar ninguna cuenta. No es cero.">
-                    <Box component="span" sx={{ color: "text.disabled", fontWeight: 700, cursor: "help" }}>
+                    <Box
+                      component="span"
+                      sx={{
+                        color: "text.disabled",
+                        fontWeight: 700,
+                        cursor: "help",
+                      }}
+                    >
                       —
                     </Box>
                   </Tooltip>

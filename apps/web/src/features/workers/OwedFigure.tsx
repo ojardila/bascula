@@ -60,7 +60,12 @@ export function OwedFigure({
   }
 
   return (
-    <Stack alignItems={align} sx={{ minWidth: 0 }}>
+    <Stack
+      sx={{
+        alignItems: align,
+        minWidth: 0,
+      }}
+    >
       <Money cents={Math.abs(state.cents)} variant={variant} />
       {state.kind === "partial" && (
         <Tooltip title={state.reason}>
@@ -91,7 +96,10 @@ export function owedDirection(owed: Owed, who = "el empleado"): string | null {
   const state = owedState(owed);
   if (state.kind === "unknown") return null;
   if (state.cents === 0) return "está a paz y salvo";
-  return state.cents > 0 ? `a favor ${dePrefix(who)}` : `que ${who} le debe a la finca`;
+  return state.cents > 0
+    ? `a favor ${dePrefix(who)}`
+    : `que ${who} le debe a la finca`;
 }
 
-const dePrefix = (who: string) => (who.startsWith("el ") ? `del ${who.slice(3)}` : `de ${who}`);
+const dePrefix = (who: string) =>
+  who.startsWith("el ") ? `del ${who.slice(3)}` : `de ${who}`;

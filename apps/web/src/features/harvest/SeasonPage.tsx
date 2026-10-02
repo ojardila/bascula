@@ -14,8 +14,21 @@
 
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Stack, Table,
-  TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
@@ -25,7 +38,12 @@ import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
 import { reportHarvestCurve, reportWeek, reportWeeks } from "../../api/harvest";
 import { formatMoney, formatQuantity } from "../../lib/money";
-import { formatDayShort, formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
+import {
+  formatDayShort,
+  formatWeekRange,
+  mondayOf,
+  weekTag,
+} from "../../lib/dates";
 import { useHarvest } from "./HarvestLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { Kg, Stat, Value } from "./Figures";
@@ -54,14 +72,19 @@ export function SeasonPage() {
   if (error) {
     return (
       <Alert severity="error">
-        No se pudo consultar la cosecha: {error}. Ninguna cifra de esta pantalla se
-        pudo calcular — y ninguna de ellas es cero.
+        No se pudo consultar la cosecha: {error}. Ninguna cifra de esta pantalla
+        se pudo calcular — y ninguna de ellas es cero.
       </Alert>
     );
   }
   if (!data) {
     return (
-      <Stack alignItems="center" sx={{ py: 6 }}>
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 6,
+        }}
+      >
         <CircularProgress />
       </Stack>
     );
@@ -74,9 +97,9 @@ export function SeasonPage() {
   if (!weeks.length) {
     return (
       <Alert severity="info">
-        No hay recolección registrada en este periodo. Si la cosecha ya empezó, revise
-        que las labores se estén registrando con una actividad pagada a destajo al
-        precio de la semana — es lo que las hace parte de la cosecha.
+        No hay recolección registrada en este periodo. Si la cosecha ya empezó,
+        revise que las labores se estén registrando con una actividad pagada a
+        destajo al precio de la semana — es lo que las hace parte de la cosecha.
       </Alert>
     );
   }
@@ -115,223 +138,303 @@ export function SeasonPage() {
       <Stack spacing={3}>
         <Box>
           <Typography variant="h2">La cosecha</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             Todo el periodo. Pulse una semana para ver el detalle.
           </Typography>
         </Box>
-      <Verdict curve={curve} current={current} lastFinished={lastFinished} />
+        <Verdict curve={curve} current={current} lastFinished={lastFinished} />
 
-      {curve.weeksWithoutKilos > 0 && (
-        <Alert severity="info">
-          {curve.weeksWithoutKilos}{" "}
-          {curve.weeksWithoutKilos === 1
-            ? "semana quedó fuera de la lectura porque sus kilos no se pudieron establecer"
-            : "semanas quedaron fuera de la lectura porque sus kilos no se pudieron establecer"}
-          . Tratarlas como cero habría fabricado una caída que no ocurrió.
-        </Alert>
-      )}
-
-      <Box
-        sx={{
-          display: "grid",
-          gap: 1.5,
-          gridTemplateColumns: { xs: "1fr 1fr", md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)" },
-        }}
-      >
-        <Stat label="Recogido">
-          <Kg total={season} align="flex-start" bold scope="el periodo" />
-        </Stat>
-        {canSeeMoney && (
-          <Stat
-            label="Valor de la recolección"
-            hint="Lo que valió la recogida en el periodo. No es la nómina de la finca: un jornal no tiene kilos y no entra aquí."
-          >
-            <Value total={season} scope="el periodo" align="flex-start" />
-          </Stat>
+        {curve.weeksWithoutKilos > 0 && (
+          <Alert severity="info">
+            {curve.weeksWithoutKilos}{" "}
+            {curve.weeksWithoutKilos === 1
+              ? "semana quedó fuera de la lectura porque sus kilos no se pudieron establecer"
+              : "semanas quedaron fuera de la lectura porque sus kilos no se pudieron establecer"}
+            . Tratarlas como cero habría fabricado una caída que no ocurrió.
+          </Alert>
         )}
-        <Stat label={PICKER.Many} hint="El mayor número de personas que trabajó en una misma semana.">
-          {pickers}
-        </Stat>
-        <Stat label="Días con recolección">{days}</Stat>
-      </Box>
 
-      <Box
-        sx={{
-          display: "grid",
-          gap: 2,
-          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-        }}
-      >
-        <Card>
-          <CardContent>
-            <Typography variant="h3" gutterBottom>
-              Kilos por semana
-            </Typography>
-            <Curve
-              points={kgPoints}
-              format={(v) => formatQuantity(v)}
-              highlight={peakIndex >= 0 ? peakIndex : undefined}
-              highlightLabel="pico"
-              summary={`Curva de recolección: ${weeks.length} semanas, máximo ${formatQuantity(maxKg)} kg.`}
-              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Typography variant="h3" gutterBottom>
-              Kilos, semana a semana
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Pulse una barra para abrir esa semana.
-            </Typography>
-            <WeekBars
-              points={kgPoints}
-              format={(v) => formatQuantity(v)}
-              summary={`Kilos por semana en barras, ${weeks.length} semanas.`}
-              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Typography variant="h3" gutterBottom>
-              Gente por semana
-            </Typography>
-            <WeekBars
-              points={weeks.map((w) => ({
-                key: w.weekStart,
-                label: formatDayShort(w.weekStart),
-                value: w.pickers,
-                partial: !w.finished,
-              }))}
-              format={(v) => String(Math.round(v))}
-              summary={`Personas que recolectaron, ${weeks.length} semanas.`}
-              onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
-            />
-          </CardContent>
-        </Card>
-        {canSeeMoney && (
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1.5,
+            gridTemplateColumns: {
+              xs: "1fr 1fr",
+              md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)",
+            },
+          }}
+        >
+          <Stat label="Recogido">
+            <Kg total={season} align="flex-start" bold scope="el periodo" />
+          </Stat>
+          {canSeeMoney && (
+            <Stat
+              label="Valor de la recolección"
+              hint="Lo que valió la recogida en el periodo. No es la nómina de la finca: un jornal no tiene kilos y no entra aquí."
+            >
+              <Value total={season} scope="el periodo" align="flex-start" />
+            </Stat>
+          )}
+          <Stat
+            label={PICKER.Many}
+            hint="El mayor número de personas que trabajó en una misma semana."
+          >
+            {pickers}
+          </Stat>
+          <Stat label="Días con recolección">{days}</Stat>
+        </Box>
+
+        <Box
+          sx={{
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+          }}
+        >
           <Card>
             <CardContent>
               <Typography variant="h3" gutterBottom>
-                Valor por semana
+                Kilos por semana
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Una semana sin barra es una semana cuyo valor no se pudo calcular.
-              </Typography>
-              <WeekBars
-                points={valuePoints}
-                format={(v) => formatMoney(v)}
-                summary={`Valor de la recolección por semana, ${weeks.length} semanas.`}
+              <Curve
+                points={kgPoints}
+                format={(v) => formatQuantity(v)}
+                highlight={peakIndex >= 0 ? peakIndex : undefined}
+                highlightLabel="pico"
+                summary={`Curva de recolección: ${weeks.length} semanas, máximo ${formatQuantity(maxKg)} kg.`}
                 onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
               />
             </CardContent>
           </Card>
-        )}
-      </Box>
+          <Card>
+            <CardContent>
+              <Typography variant="h3" gutterBottom>
+                Kilos, semana a semana
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                  mb: 1,
+                }}
+              >
+                Pulse una barra para abrir esa semana.
+              </Typography>
+              <WeekBars
+                points={kgPoints}
+                format={(v) => formatQuantity(v)}
+                summary={`Kilos por semana en barras, ${weeks.length} semanas.`}
+                onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent>
+              <Typography variant="h3" gutterBottom>
+                Gente por semana
+              </Typography>
+              <WeekBars
+                points={weeks.map((w) => ({
+                  key: w.weekStart,
+                  label: formatDayShort(w.weekStart),
+                  value: w.pickers,
+                  partial: !w.finished,
+                }))}
+                format={(v) => String(Math.round(v))}
+                summary={`Personas que recolectaron, ${weeks.length} semanas.`}
+                onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+              />
+            </CardContent>
+          </Card>
+          {canSeeMoney && (
+            <Card>
+              <CardContent>
+                <Typography variant="h3" gutterBottom>
+                  Valor por semana
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                    mb: 1,
+                  }}
+                >
+                  Una semana sin barra es una semana cuyo valor no se pudo
+                  calcular.
+                </Typography>
+                <WeekBars
+                  points={valuePoints}
+                  format={(v) => formatMoney(v)}
+                  summary={`Valor de la recolección por semana, ${weeks.length} semanas.`}
+                  onSelect={(week) => navigate(`/cosecha/semana/${week}`)}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </Box>
 
-      <Card>
-        <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
-          <Box sx={{ p: 2, pb: 1 }}>
-            <Typography variant="h3">Semana a semana</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Pulse una semana para ver quién recogió, qué día y en qué lote.
-            </Typography>
-          </Box>
-          <Box sx={{ overflowX: "auto" }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Semana</TableCell>
-                  <TableCell sx={{ width: "20%" }}>Recolección</TableCell>
-                  <TableCell align="right">Kilos</TableCell>
-                  {canSeeMoney && <TableCell align="right">Valor</TableCell>}
-                  {canSeeMoney && <TableCell align="right">Precio</TableCell>}
-                  <TableCell align="right">Gente</TableCell>
-                  <TableCell align="right">Días</TableCell>
-                  <TableCell padding="none" />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {weeksRes.items.map((w) => {
-                  const tag = weekTag(w.weekStart, today);
-                  const isPeak = curve.shape.peak?.weekStart === w.weekStart;
-                  return (
-                    <TableRow
-                      key={w.weekStart}
-                      hover
-                      onClick={() => navigate(`/cosecha/semana/${w.weekStart}`)}
-                      sx={{ cursor: "pointer" }}
-                    >
-                      <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                          <Typography sx={{ fontWeight: 600 }}>
-                            {formatWeekRange(w.weekStart)}
-                          </Typography>
-                          {tag && <Chip size="small" variant="outlined" label={tag} />}
-                          {isPeak && <Chip size="small" color="success" label="pico" />}
-                          {!w.finished && (
-                            <Tooltip title="La semana no ha terminado, así que su total no es comparable con el de una semana cerrada.">
-                              <Chip size="small" color="warning" variant="outlined" label="en curso" sx={{ cursor: "help" }} />
-                            </Tooltip>
-                          )}
-                        </Stack>
-                      </TableCell>
-                      <TableCell>
-                        <RowBar fraction={kgForDrawing(w) / maxKg} />
-                      </TableCell>
-                      <TableCell align="right">
-                        <Kg total={w} scope="esa semana" showUnit={false} />
-                      </TableCell>
-                      {canSeeMoney && (
-                        <TableCell align="right">
-                          <Value total={w} scope="esa semana" />
+        <Card>
+          <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
+            <Box sx={{ p: 2, pb: 1 }}>
+              <Typography variant="h3">Semana a semana</Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Pulse una semana para ver quién recogió, qué día y en qué lote.
+              </Typography>
+            </Box>
+            <Box sx={{ overflowX: "auto" }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Semana</TableCell>
+                    <TableCell sx={{ width: "20%" }}>Recolección</TableCell>
+                    <TableCell align="right">Kilos</TableCell>
+                    {canSeeMoney && <TableCell align="right">Valor</TableCell>}
+                    {canSeeMoney && <TableCell align="right">Precio</TableCell>}
+                    <TableCell align="right">Gente</TableCell>
+                    <TableCell align="right">Días</TableCell>
+                    <TableCell padding="none" />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {weeksRes.items.map((w) => {
+                    const tag = weekTag(w.weekStart, today);
+                    const isPeak = curve.shape.peak?.weekStart === w.weekStart;
+                    return (
+                      <TableRow
+                        key={w.weekStart}
+                        hover
+                        onClick={() =>
+                          navigate(`/cosecha/semana/${w.weekStart}`)
+                        }
+                        sx={{ cursor: "pointer" }}
+                      >
+                        <TableCell>
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            sx={{
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <Typography sx={{ fontWeight: 600 }}>
+                              {formatWeekRange(w.weekStart)}
+                            </Typography>
+                            {tag && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={tag}
+                              />
+                            )}
+                            {isPeak && (
+                              <Chip size="small" color="success" label="pico" />
+                            )}
+                            {!w.finished && (
+                              <Tooltip title="La semana no ha terminado, así que su total no es comparable con el de una semana cerrada.">
+                                <Chip
+                                  size="small"
+                                  color="warning"
+                                  variant="outlined"
+                                  label="en curso"
+                                  sx={{ cursor: "help" }}
+                                />
+                              </Tooltip>
+                            )}
+                          </Stack>
                         </TableCell>
-                      )}
-                      {canSeeMoney && (
-                        <TableCell align="right">
-                          {w.priceCents === null ? (
-                            <Tooltip title="La finca no tiene precio base. Sin él no se puede saber qué vale un kilo de esa semana.">
-                              <Box component="span" sx={{ color: "text.disabled", cursor: "help" }}>—</Box>
-                            </Tooltip>
-                          ) : (
-                            formatMoney(w.priceCents)
-                          )}
+                        <TableCell>
+                          <RowBar fraction={kgForDrawing(w) / maxKg} />
                         </TableCell>
-                      )}
-                      <TableCell align="right">{w.pickers}</TableCell>
-                      <TableCell align="right">{w.days}</TableCell>
-                      <TableCell padding="none">
-                        <ChevronRightIcon fontSize="small" sx={{ color: "text.disabled" }} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Box>
-        </CardContent>
-      </Card>
+                        <TableCell align="right">
+                          <Kg total={w} scope="esa semana" showUnit={false} />
+                        </TableCell>
+                        {canSeeMoney && (
+                          <TableCell align="right">
+                            <Value total={w} scope="esa semana" />
+                          </TableCell>
+                        )}
+                        {canSeeMoney && (
+                          <TableCell align="right">
+                            {w.priceCents === null ? (
+                              <Tooltip title="La finca no tiene precio base. Sin él no se puede saber qué vale un kilo de esa semana.">
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    color: "text.disabled",
+                                    cursor: "help",
+                                  }}
+                                >
+                                  —
+                                </Box>
+                              </Tooltip>
+                            ) : (
+                              formatMoney(w.priceCents)
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell align="right">{w.pickers}</TableCell>
+                        <TableCell align="right">{w.days}</TableCell>
+                        <TableCell padding="none">
+                          <ChevronRightIcon
+                            fontSize="small"
+                            sx={{ color: "text.disabled" }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </Box>
+          </CardContent>
+        </Card>
       </Stack>
 
       <Stack spacing={3}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          justifyContent="space-between"
-          alignItems={{ xs: "stretch", sm: "flex-end" }}
           spacing={1}
+          sx={{
+            justifyContent: "space-between",
+            alignItems: { xs: "stretch", sm: "flex-end" },
+          }}
         >
           <Box>
             <Typography variant="h2">Esta semana</Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {formatWeekRange(thisMonday)}
               {!thisWeek.finished ? " · en curso" : ""}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              flexWrap: "wrap",
+            }}
+          >
             {can("workRecords.write") && (
-              <Button component={RouterLink} to="/cosecha/recoleccion" variant="contained">
+              <Button
+                component={RouterLink}
+                to="/cosecha/recoleccion"
+                variant="contained"
+              >
                 Registrar
               </Button>
             )}
@@ -347,7 +450,8 @@ export function SeasonPage() {
 
         {thisWeek.total.records === 0 ? (
           <Alert severity="info">
-            Nadie ha registrado recolección esta semana. Si ya pesaron, use Registrar.
+            Nadie ha registrado recolección esta semana. Si ya pesaron, use
+            Registrar.
           </Alert>
         ) : (
           <>
@@ -355,19 +459,36 @@ export function SeasonPage() {
               sx={{
                 display: "grid",
                 gap: 1.5,
-                gridTemplateColumns: { xs: "1fr 1fr", md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)" },
+                gridTemplateColumns: {
+                  xs: "1fr 1fr",
+                  md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)",
+                },
               }}
             >
               <Stat label="Recogido esta semana">
-                <Kg total={thisWeek.total} align="flex-start" bold scope="la semana" />
+                <Kg
+                  total={thisWeek.total}
+                  align="flex-start"
+                  bold
+                  scope="la semana"
+                />
               </Stat>
               {canSeeMoney && (
                 <Stat label="Valor de la semana">
-                  <Value total={thisWeek.total} scope="la semana" align="flex-start" />
+                  <Value
+                    total={thisWeek.total}
+                    scope="la semana"
+                    align="flex-start"
+                  />
                 </Stat>
               )}
               <Stat label={PICKER.Many}>{thisWeek.byDay.rows.length}</Stat>
-              <Stat label="Días con kilo">{thisWeek.byDay.columns.filter((c) => (c.total.kg ?? 0) > 0).length}</Stat>
+              <Stat label="Días con kilo">
+                {
+                  thisWeek.byDay.columns.filter((c) => (c.total.kg ?? 0) > 0)
+                    .length
+                }
+              </Stat>
             </Box>
             <Card>
               <CardContent>
@@ -423,9 +544,9 @@ function Verdict({
     return (
       <Alert severity="warning" icon={<TrendingDownIcon />}>
         <strong>La cosecha va de salida.</strong> Lleva {shape.fallingWeeks}{" "}
-        {shape.fallingWeeks === 1 ? "semana cayendo" : "semanas cayendo"} fuerte y ya
-        pasó su pico ({formatWeekRange(shape.peak.weekStart)}). Es el momento de pensar
-        en mover gente a otro lote o a otra labor.
+        {shape.fallingWeeks === 1 ? "semana cayendo" : "semanas cayendo"} fuerte
+        y ya pasó su pico ({formatWeekRange(shape.peak.weekStart)}). Es el
+        momento de pensar en mover gente a otro lote o a otra labor.
       </Alert>
     );
   }
@@ -443,14 +564,16 @@ function Verdict({
     <Alert severity="success" icon={up ? <TrendingUpIcon /> : <TimelineIcon />}>
       <strong>
         El pico hasta ahora fue {formatWeekRange(shape.peak.weekStart)}
-        {shape.peak.kg !== null ? ` (${formatQuantity(shape.peak.kg)} kg)` : ""}.
+        {shape.peak.kg !== null ? ` (${formatQuantity(shape.peak.kg)} kg)` : ""}
+        .
       </strong>{" "}
       {change !== null ? (
         <>
-          La semana en curso va {up ? "por encima" : down ? "por debajo" : "parecida a"} de
-          la anterior ({change > 0 ? "+" : "−"}
-          {Math.round(Math.abs(change) * 100)} %). Todavía no ha terminado, así que la
-          comparación es parcial.
+          La semana en curso va{" "}
+          {up ? "por encima" : down ? "por debajo" : "parecida a"} de la
+          anterior ({change > 0 ? "+" : "−"}
+          {Math.round(Math.abs(change) * 100)} %). Todavía no ha terminado, así
+          que la comparación es parcial.
         </>
       ) : (
         <>Aún no hay con qué comparar la semana en curso.</>

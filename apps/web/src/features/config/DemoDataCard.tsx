@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Alert, Button, Card, CardContent, LinearProgress, Typography } from "@mui/material";
+import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  LinearProgress,
+  Typography,
+} from "@mui/material";
 import ScienceIcon from "@mui/icons-material/Science";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
@@ -21,8 +28,13 @@ export function DemoDataCard() {
     setError(null);
     setProgress({ done: 0, total: 1 });
     try {
-      const r = await loadDemoData(todayInFarm(user?.farm?.timezone ?? "America/Bogota"), setProgress);
-      setDone(`Listo: ${r.workers} empleados y ${r.weighings} pesadas de las últimas cuatro semanas.`);
+      const r = await loadDemoData(
+        todayInFarm(user?.farm?.timezone ?? "America/Bogota"),
+        setProgress,
+      );
+      setDone(
+        `Listo: ${r.workers} empleados y ${r.weighings} pesadas de las últimas cuatro semanas.`,
+      );
       reload();
     } catch (e) {
       setError(messageFor(e));
@@ -40,22 +52,47 @@ export function DemoDataCard() {
         <Typography variant="h3" gutterBottom>
           Datos de demostración
         </Typography>
-        <Typography color="text.secondary" sx={{ mb: 2 }}>
-          Para probar Báscula antes de empezar: seis empleados, dos lotes y cuatro semanas de pesadas.
-          Solo se puede en una finca vacía.
+        <Typography
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Para probar Báscula antes de empezar: seis empleados, dos lotes y
+          cuatro semanas de pesadas. Solo se puede en una finca vacía.
         </Typography>
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-        {done && <Alert severity="success" sx={{ mb: 2 }}>{done}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {done && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {done}
+          </Alert>
+        )}
         {progress ? (
           <>
-            <LinearProgress variant="determinate" value={(100 * progress.done) / Math.max(progress.total, 1)} sx={{ height: 10, borderRadius: 5, mb: 1 }} />
-            <Typography color="text.secondary">
+            <LinearProgress
+              variant="determinate"
+              value={(100 * progress.done) / Math.max(progress.total, 1)}
+              sx={{ height: 10, borderRadius: 5, mb: 1 }}
+            />
+            <Typography
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               Cargando… {progress.done} de {progress.total}
             </Typography>
           </>
         ) : (
           !done && (
-            <Button variant="outlined" startIcon={<ScienceIcon />} onClick={() => setAsking(true)}>
+            <Button
+              variant="outlined"
+              startIcon={<ScienceIcon />}
+              onClick={() => setAsking(true)}
+            >
               Cargar datos de demostración
             </Button>
           )

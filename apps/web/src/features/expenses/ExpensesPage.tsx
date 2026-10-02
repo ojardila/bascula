@@ -16,7 +16,11 @@ import { useCallback, useMemo, useState } from "react";
 import { Alert, Box, Chip, Stack, Typography } from "@mui/material";
 import AgricultureIcon from "@mui/icons-material/Agriculture";
 import TerrainIcon from "@mui/icons-material/Terrain";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { ExpenseFormDialog } from "./ExpenseFormDialog";
 import { Money } from "../../components/Money";
@@ -43,12 +47,23 @@ export function ExpensesPage() {
     () => api.listExpenses({ status, q: search || undefined }),
     [status, search, reloadTick],
   );
-  const { data: activities } = useAsync(() => api.listActivities({ status: "active" }), []);
-  const { data: plots } = useAsync(() => api.listPlots({ status: "active" }), []);
+  const { data: activities } = useAsync(
+    () => api.listActivities({ status: "active" }),
+    [],
+  );
+  const { data: plots } = useAsync(
+    () => api.listPlots({ status: "active" }),
+    [],
+  );
 
   const columns: Column<Expense>[] = useMemo(
     () => [
-      { key: "date", header: "Fecha", render: (e) => formatDate(e.date), width: 120 },
+      {
+        key: "date",
+        header: "Fecha",
+        render: (e) => formatDate(e.date),
+        width: 120,
+      },
       {
         key: "concept",
         header: "Concepto",
@@ -56,7 +71,12 @@ export function ExpensesPage() {
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{e.concept}</Typography>
             {e.note && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {e.note}
               </Typography>
             )}
@@ -98,7 +118,11 @@ export function ExpensesPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -179,19 +203,20 @@ export function ExpensesPage() {
                 </>
               ) : status === "all" ? (
                 <>
-                  De esos, {count(data.count, "sigue activo", "siguen activos")} y{" "}
-                  {data.count === 1 ? "suma" : "suman"}{" "}
-                  <strong>{formatMoney(data.totalCents)}</strong>: un gasto dado de baja no
-                  es plata que la finca gastó, así que no entra en el total.
+                  De esos, {count(data.count, "sigue activo", "siguen activos")}{" "}
+                  y {data.count === 1 ? "suma" : "suman"}{" "}
+                  <strong>{formatMoney(data.totalCents)}</strong>: un gasto dado
+                  de baja no es plata que la finca gastó, así que no entra en el
+                  total.
                 </>
               ) : (
                 <>
-                  Están todos dados de baja, así que no hay total: un gasto de baja no es
-                  plata que la finca gastó.
+                  Están todos dados de baja, así que no hay total: un gasto de
+                  baja no es plata que la finca gastó.
                 </>
               )}{" "}
-              Cada uno está cargado a una actividad o a un lote, así que lo que sí suma se
-              puede desglosar por completo.
+              Cada uno está cargado a una actividad o a un lote, así que lo que
+              sí suma se puede desglosar por completo.
             </>
           ) : null
         }

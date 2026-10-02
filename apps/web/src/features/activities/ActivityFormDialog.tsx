@@ -12,8 +12,21 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  Link, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Link,
+  MenuItem,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
@@ -21,7 +34,12 @@ import { moneyInputValue, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { SEED_ACTIVITY_CATEGORIES } from "../../api/types";
 import { PAY_MODE_CHOICE, TIME_UNIT_LABEL } from "../../lib/vocab";
-import type { Activity, ActivityCategory, PayMode, TimeUnit } from "../../api/types";
+import type {
+  Activity,
+  ActivityCategory,
+  PayMode,
+  TimeUnit,
+} from "../../api/types";
 import { DateField } from "../../components/DateField";
 import { useAuth } from "../../auth/AuthContext";
 import { todayInFarm } from "../../lib/dates";
@@ -32,7 +50,12 @@ const TIME_UNITS: Array<{ value: TimeUnit; label: string }> = (
 ).map((value) => ({ value, label: TIME_UNIT_LABEL[value] }));
 
 export function ActivityFormDialog({
-  open, activity, canSetRate, knownCategories = [], onClose, onSaved,
+  open,
+  activity,
+  canSetRate,
+  knownCategories = [],
+  onClose,
+  onSaved,
 }: {
   open: boolean;
   activity: Activity | null;
@@ -89,7 +112,9 @@ export function ActivityFormDialog({
     }
   }, [open, activity]);
 
-  const categoryOptions = [...new Set([...SEED_ACTIVITY_CATEGORIES, ...knownCategories])];
+  const categoryOptions = [
+    ...new Set([...SEED_ACTIVITY_CATEGORIES, ...knownCategories]),
+  ];
   const rateCents = parseMoneyInput(rate);
   // Only work_unit can take its price from the week; a jornal has no week.
   const canBeWeekly = payMode === "work_unit";
@@ -109,7 +134,8 @@ export function ActivityFormDialog({
     if (!category.trim()) e.category = "Elija o escriba una categoría.";
     if (!weekly || !canBeWeekly) {
       if (rateCents === null) e.rate = "Escriba el precio.";
-      else if (rateCents <= 0) e.rate = "El precio tiene que ser mayor que cero.";
+      else if (rateCents <= 0)
+        e.rate = "El precio tiene que ser mayor que cero.";
     }
     setFields(e);
     if (Object.keys(e).length) return;
@@ -117,8 +143,15 @@ export function ActivityFormDialog({
     // A new activity used to mint its id inside the call, so a double click
     // created the same activity twice — and every labor priced afterwards had
     // two rows to choose from. See `lib/writeOnce.ts`.
-    const intent = ["actividad", activity?.id ?? "nueva", name.trim(), category.trim(),
-                    payMode, rateCents, validFrom].join("|");
+    const intent = [
+      "actividad",
+      activity?.id ?? "nueva",
+      name.trim(),
+      category.trim(),
+      payMode,
+      rateCents,
+      validFrom,
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       const useWeekly = weekly && canBeWeekly;
@@ -148,8 +181,12 @@ export function ActivityFormDialog({
          * effective period and leaves earlier work items on the price of
          * their own date. That is the call that was missing.
          */
-        const changed = !useWeekly && rateCents !== null && rateCents !== activity.defaultRateCents;
-        if (changed && canSetRate) await api.setActivityRate(activity.id, rateCents, validFrom);
+        const changed =
+          !useWeekly &&
+          rateCents !== null &&
+          rateCents !== activity.defaultRateCents;
+        if (changed && canSetRate)
+          await api.setActivityRate(activity.id, rateCents, validFrom);
       } else {
         await api.createActivity(body);
       }
@@ -162,8 +199,15 @@ export function ActivityFormDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{activity ? "Modificar actividad" : "Nueva actividad"}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle>
+        {activity ? "Modificar actividad" : "Nueva actividad"}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2.5} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -195,7 +239,13 @@ export function ActivityFormDialog({
           />
 
           <div>
-            <Typography variant="overline" color="text.secondary" component="div">
+            <Typography
+              variant="overline"
+              component="div"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               Cómo se paga este trabajo
             </Typography>
             {/* The two buttons that decide HOW PEOPLE GET PAID used to be
@@ -210,9 +260,15 @@ export function ActivityFormDialog({
               disabled={locked}
               sx={{ mt: 0.5, flexWrap: "wrap" }}
             >
-              <ToggleButton value="work_unit">{PAY_MODE_CHOICE.work_unit}</ToggleButton>
-              <ToggleButton value="time_unit">{PAY_MODE_CHOICE.time_unit}</ToggleButton>
-              <ToggleButton value="contract">{PAY_MODE_CHOICE.contract}</ToggleButton>
+              <ToggleButton value="work_unit">
+                {PAY_MODE_CHOICE.work_unit}
+              </ToggleButton>
+              <ToggleButton value="time_unit">
+                {PAY_MODE_CHOICE.time_unit}
+              </ToggleButton>
+              <ToggleButton value="contract">
+                {PAY_MODE_CHOICE.contract}
+              </ToggleButton>
             </ToggleButtonGroup>
           </div>
 
@@ -252,7 +308,13 @@ export function ActivityFormDialog({
 
           {canBeWeekly && (
             <div>
-              <Typography variant="overline" color="text.secondary" component="div">
+              <Typography
+                variant="overline"
+                component="div"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 De dónde sale el precio
               </Typography>
               <ToggleButtonGroup
@@ -263,8 +325,12 @@ export function ActivityFormDialog({
                 disabled={locked}
                 sx={{ mt: 0.5, flexWrap: "wrap" }}
               >
-                <ToggleButton value="weekly">Lo pone el precio de la semana</ToggleButton>
-                <ToggleButton value="fixed">Precio fijo de esta actividad</ToggleButton>
+                <ToggleButton value="weekly">
+                  Lo pone el precio de la semana
+                </ToggleButton>
+                <ToggleButton value="fixed">
+                  Precio fijo de esta actividad
+                </ToggleButton>
               </ToggleButtonGroup>
             </div>
           )}
@@ -288,10 +354,11 @@ export function ActivityFormDialog({
               per kilo actually lives. */}
           {locked && (
             <Alert severity="info" variant="outlined">
-              La forma de pago y el origen del precio <strong>no se cambian</strong> en una
-              actividad que ya existe: las labores ya registradas quedaron pagadas con
-              esas reglas y reescribirlas cambiaría plata del pasado. Si esta actividad
-              debe pagarse de otra forma, cree una actividad nueva y dé de baja ésta.
+              La forma de pago y el origen del precio{" "}
+              <strong>no se cambian</strong> en una actividad que ya existe: las
+              labores ya registradas quedaron pagadas con esas reglas y
+              reescribirlas cambiaría plata del pasado. Si esta actividad debe
+              pagarse de otra forma, cree una actividad nueva y dé de baja ésta.
             </Alert>
           )}
 
@@ -301,12 +368,16 @@ export function ActivityFormDialog({
               weekly price. Say it before saving, not after. */}
           {!locked && canBeWeekly && !weekly && (
             <Alert severity="warning">
-              <strong>Este precio no es el del kilo de la semana.</strong> Con precio fijo,
-              esta actividad se paga siempre a lo que usted escriba abajo y{" "}
-              <strong>deja de seguir el precio semanal</strong> del kilo. Para
-              la recolección de café eso casi nunca es lo que se quiere: el kilo de la
-              semana se pone en{" "}
-              <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+              <strong>Este precio no es el del kilo de la semana.</strong> Con
+              precio fijo, esta actividad se paga siempre a lo que usted escriba
+              abajo y <strong>deja de seguir el precio semanal</strong> del
+              kilo. Para la recolección de café eso casi nunca es lo que se
+              quiere: el kilo de la semana se pone en{" "}
+              <Link
+                component={RouterLink}
+                to="/precio-semana"
+                sx={{ fontWeight: 700 }}
+              >
                 Precio del kilo
               </Link>
               .
@@ -319,9 +390,13 @@ export function ActivityFormDialog({
               liquidar, no al registrar la labor, y por eso una labor de esta
               actividad tiene que ser de <strong>un solo día</strong>.
               <Box sx={{ mt: 1 }}>
-                <strong>Aquí no se cambia el precio del kilo.</strong> Ese se pone semana
-                por semana en{" "}
-                <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+                <strong>Aquí no se cambia el precio del kilo.</strong> Ese se
+                pone semana por semana en{" "}
+                <Link
+                  component={RouterLink}
+                  to="/precio-semana"
+                  sx={{ fontWeight: 700 }}
+                >
                   Precio del kilo
                 </Link>
                 .

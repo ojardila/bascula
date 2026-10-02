@@ -32,9 +32,21 @@
  */
 import { useState } from "react";
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  FormControl, FormControlLabel, FormLabel, MenuItem, Radio, RadioGroup,
-  Stack, TextField, Typography,
+  Alert,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
+  MenuItem,
+  Radio,
+  RadioGroup,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
@@ -42,7 +54,13 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { moneyInputValue, parseMoneyInput } from "../../lib/money";
 import { todayInFarm } from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
-import type { Activity, Expense, ExpenseInput, ExpenseTarget, Plot } from "../../api/types";
+import type {
+  Activity,
+  Expense,
+  ExpenseInput,
+  ExpenseTarget,
+  Plot,
+} from "../../api/types";
 import { DateField } from "../../components/DateField";
 
 export interface ExpenseFormDialogProps {
@@ -56,7 +74,12 @@ export interface ExpenseFormDialogProps {
 }
 
 export function ExpenseFormDialog({
-  open, expense, activities, plots, onClose, onSaved,
+  open,
+  expense,
+  activities,
+  plots,
+  onClose,
+  onSaved,
 }: ExpenseFormDialogProps) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
@@ -65,9 +88,13 @@ export function ExpenseFormDialog({
   // `moneyInputValue`, not `Math.round(.../100)`: opening a $125,50 expense
   // to change its note and saving pushed the amount up to $126 without anybody
   // touching the box. See the note in `lib/money.ts`.
-  const [amount, setAmount] = useState(expense ? moneyInputValue(expense.amountCents) : "");
+  const [amount, setAmount] = useState(
+    expense ? moneyInputValue(expense.amountCents) : "",
+  );
   const [date, setDate] = useState(expense?.date ?? today);
-  const [target, setTarget] = useState<ExpenseTarget>(expense?.target ?? "activity");
+  const [target, setTarget] = useState<ExpenseTarget>(
+    expense?.target ?? "activity",
+  );
   const [activityId, setActivityId] = useState(expense?.activityId ?? "");
   const [plotId, setPlotId] = useState(expense?.plotId ?? "");
   const [plotCropId, setPlotCropId] = useState(expense?.plotCropId ?? "");
@@ -83,7 +110,8 @@ export function ExpenseFormDialog({
     const e: Record<string, string> = {};
     if (!concept.trim()) e.concept = "Escriba en qué se gastó.";
     if (!amount.trim()) e.amount = "Escriba el valor.";
-    else if (amountCents === null) e.amount = "Escriba un número, por ejemplo 250.000.";
+    else if (amountCents === null)
+      e.amount = "Escriba un número, por ejemplo 250.000.";
     else if (amountCents <= 0) e.amount = "Tiene que ser mayor que cero.";
     // One of the two, and which one depends on the radio. There is no state of
     // this form in which both are asked for.
@@ -103,17 +131,39 @@ export function ExpenseFormDialog({
     // the call, so a double click wrote the same cost twice and neither the
     // server's idempotency nor `disabled={busy}` could tell. See
     // `lib/writeOnce.ts`.
-    const intent = ["gasto", expense?.id ?? "nuevo", target, concept.trim(),
-                    amountCents, date, activityId, plotId, plotCropId].join("|");
+    const intent = [
+      "gasto",
+      expense?.id ?? "nuevo",
+      target,
+      concept.trim(),
+      amountCents,
+      date,
+      activityId,
+      plotId,
+      plotCropId,
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       const id = expense?.id ?? mint();
-      const common = { id, concept: concept.trim(), amountCents, date, note: note.trim() || null };
+      const common = {
+        id,
+        concept: concept.trim(),
+        amountCents,
+        date,
+        note: note.trim() || null,
+      };
       const body: ExpenseInput =
         target === "activity"
           ? { ...common, target: "activity", activityId }
-          : { ...common, target: "plot", plotId, plotCropId: plotCropId || null };
-      return expense ? api.updateExpense(expense.id, body) : api.createExpense(body);
+          : {
+              ...common,
+              target: "plot",
+              plotId,
+              plotCropId: plotCropId || null,
+            };
+      return expense
+        ? api.updateExpense(expense.id, body)
+        : api.createExpense(body);
     }).catch((e: unknown) => {
       setError(messageFor(e));
       return { ran: false } as const;
@@ -123,8 +173,15 @@ export function ExpenseFormDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{expense ? "Modificar gasto" : "Registrar gasto"}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle>
+        {expense ? "Modificar gasto" : "Registrar gasto"}
+      </DialogTitle>
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -137,7 +194,10 @@ export function ExpenseFormDialog({
             value={concept}
             onChange={(e) => setConcept(e.target.value)}
             error={!!fields.concept}
-            helperText={fields.concept ?? "Fungicida, transporte, arriendo de la despulpadora…"}
+            helperText={
+              fields.concept ??
+              "Fungicida, transporte, arriendo de la despulpadora…"
+            }
             fullWidth
             required
             autoFocus
@@ -165,12 +225,26 @@ export function ExpenseFormDialog({
               value={target}
               onChange={(e) => setTarget(e.target.value as ExpenseTarget)}
             >
-              <FormControlLabel value="activity" control={<Radio />} label="Actividad" />
-              <FormControlLabel value="plot" control={<Radio />} label="Lote / cultivo" />
+              <FormControlLabel
+                value="activity"
+                control={<Radio />}
+                label="Actividad"
+              />
+              <FormControlLabel
+                value="plot"
+                control={<Radio />}
+                label="Lote / cultivo"
+              />
             </RadioGroup>
-            <Typography variant="caption" color="text.secondary">
-              Un gasto se carga a una actividad o a un lote, nunca a las dos cosas ni a
-              ninguna: si no, el total no cuadra con la suma de las partes.
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Un gasto se carga a una actividad o a un lote, nunca a las dos
+              cosas ni a ninguna: si no, el total no cuadra con la suma de las
+              partes.
             </Typography>
           </FormControl>
 
@@ -242,9 +316,15 @@ export function ExpenseFormDialog({
             fullWidth
           />
 
-          <Typography variant="caption" color="text.secondary">
-            Esto es un gasto de la finca. Si lo que quiere es descontarle algo a un
-            empleado, eso se registra como deuda en su perfil y sí toca su saldo.
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            Esto es un gasto de la finca. Si lo que quiere es descontarle algo a
+            un empleado, eso se registra como deuda en su perfil y sí toca su
+            saldo.
           </Typography>
         </Stack>
       </DialogContent>

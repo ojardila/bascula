@@ -16,12 +16,24 @@
  */
 import { useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions,
-  DialogContent, DialogTitle, IconButton, Stack, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { api } from "../../api/endpoints";
 import type { WorkUnit } from "../../api/types";
 import { useAsync } from "../../lib/useAsync";
@@ -50,7 +62,8 @@ export function WorkUnitsPage() {
   // and a work unit IS part of the activity catalogue there -- same handler
   // file. So this is the same gate under the name the web already has, not a
   // looser one.
-  if (!can("activities.read")) return <PermissionDenied moduleName="ver las unidades" />;
+  if (!can("activities.read"))
+    return <PermissionDenied moduleName="ver las unidades" />;
   const mayWrite = can("activities.write");
 
   async function remove(u: WorkUnit) {
@@ -62,7 +75,7 @@ export function WorkUnitsPage() {
       setSaid(
         r.archived
           ? `«${u.label}» se guardó en el historial. Ya no aparece al registrar, ` +
-            `y todo lo que se pesó en esa unidad se sigue viendo igual.`
+              `y todo lo que se pesó en esa unidad se sigue viendo igual.`
           : `«${u.label}» se borró. Nadie la había usado todavía.`,
       );
       setRemoving(null);
@@ -77,14 +90,31 @@ export function WorkUnitsPage() {
       <Typography variant="h2" gutterBottom>
         Unidades de recolección
       </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Cómo cuenta la finca lo que se recoge. El kilo es una, pero no la única: hay
-        fincas que cuentan por arroba, por canasta o por bulto.
+      <Typography
+        sx={{
+          color: "text.secondary",
+          mb: 3,
+        }}
+      >
+        Cómo cuenta la finca lo que se recoge. El kilo es una, pero no la única:
+        hay fincas que cuentan por arroba, por canasta o por bulto.
       </Typography>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {failed && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFailed(null)}>{failed}</Alert>}
-      {said && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaid(null)}>{said}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {failed && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFailed(null)}>
+          {failed}
+        </Alert>
+      )}
+      {said && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaid(null)}>
+          {said}
+        </Alert>
+      )}
 
       {mayWrite && (
         <Button
@@ -102,23 +132,55 @@ export function WorkUnitsPage() {
         {(units ?? []).map((u) => (
           <Card key={u.id}>
             <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+              <Stack
+                direction="row"
+                spacing={2}
+                sx={{
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
                 <Box sx={{ minWidth: 0 }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{
+                      alignItems: "center",
+                      mb: 0.5,
+                    }}
+                  >
                     <Typography variant="h3">{u.label}</Typography>
                     <Chip size="small" label={u.code} />
-                    {u.inUse && <Chip size="small" color="primary" variant="outlined" label="En uso" />}
+                    {u.inUse && (
+                      <Chip
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        label="En uso"
+                      />
+                    )}
                   </Stack>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     {factorText(u)}
                   </Typography>
                 </Box>
                 {mayWrite && (
                   <Stack direction="row" spacing={0.5}>
-                    <IconButton aria-label={`Editar ${u.label}`} onClick={() => setEditing(u)}>
+                    <IconButton
+                      aria-label={`Editar ${u.label}`}
+                      onClick={() => setEditing(u)}
+                    >
                       <EditIcon />
                     </IconButton>
-                    <IconButton aria-label={`Quitar ${u.label}`} onClick={() => setRemoving(u)}>
+                    <IconButton
+                      aria-label={`Quitar ${u.label}`}
+                      onClick={() => setRemoving(u)}
+                    >
                       <DeleteOutlineIcon />
                     </IconButton>
                   </Stack>
@@ -128,7 +190,11 @@ export function WorkUnitsPage() {
           </Card>
         ))}
         {units && units.length === 0 && (
-          <Typography color="text.secondary">
+          <Typography
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             Esta finca todavía no tiene ninguna unidad.
           </Typography>
         )}
@@ -153,17 +219,20 @@ export function WorkUnitsPage() {
               words, before the person commits to it. */}
           {removing?.inUse ? (
             <Typography>
-              Esta unidad ya se usó para pesar. No se puede borrar, porque los registros
-              que la usaron quedarían sin sentido y esos registros decidieron pagos.
+              Esta unidad ya se usó para pesar. No se puede borrar, porque los
+              registros que la usaron quedarían sin sentido y esos registros
+              decidieron pagos.
               <br />
               <br />
-              Lo que va a pasar: <strong>se guarda en el historial</strong>. Deja de
-              aparecer al registrar trabajo, y todo lo ya pesado se sigue viendo igual.
+              Lo que va a pasar: <strong>se guarda en el historial</strong>.
+              Deja de aparecer al registrar trabajo, y todo lo ya pesado se
+              sigue viendo igual.
             </Typography>
           ) : (
             <Typography>
-              Nadie ha usado esta unidad todavía, así que <strong>se borra</strong> y no
-              queda rastro. Si después la necesita, la vuelve a crear.
+              Nadie ha usado esta unidad todavía, así que{" "}
+              <strong>se borra</strong> y no queda rastro. Si después la
+              necesita, la vuelve a crear.
             </Typography>
           )}
         </DialogContent>
@@ -202,7 +271,8 @@ function UnitDialog({
   const [failed, setFailed] = useState<string | null>(null);
 
   const parsed = factor.trim() === "" ? null : Number(factor.replace(",", "."));
-  const factorIsBad = parsed !== null && (!Number.isFinite(parsed) || parsed <= 0);
+  const factorIsBad =
+    parsed !== null && (!Number.isFinite(parsed) || parsed <= 0);
 
   async function save() {
     setFailed(null);

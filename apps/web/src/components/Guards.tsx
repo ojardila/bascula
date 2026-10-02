@@ -9,7 +9,15 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Box, Button, CircularProgress, Container, Paper, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Container,
+  Paper,
+  Stack,
+  Typography,
+} from "@mui/material";
 import LockPersonIcon from "@mui/icons-material/LockPerson";
 import { useAuth } from "../auth/AuthContext";
 import type { Action } from "../auth/permissions";
@@ -17,9 +25,20 @@ import type { Action } from "../auth/permissions";
 export function Splash() {
   return (
     <Box sx={{ display: "grid", placeItems: "center", minHeight: "100dvh" }}>
-      <Stack alignItems="center" spacing={2}>
+      <Stack
+        spacing={2}
+        sx={{
+          alignItems: "center",
+        }}
+      >
         <CircularProgress />
-        <Typography color="text.secondary">Cargando…</Typography>
+        <Typography
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          Cargando…
+        </Typography>
       </Stack>
     </Box>
   );
@@ -31,7 +50,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (status === "loading") return <Splash />;
   if (status === "anonymous") {
     // Remember where they were going, so the login lands them there.
-    return <Navigate to="/entrar" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate to="/entrar" replace state={{ from: location.pathname }} />
+    );
   }
   return <>{children}</>;
 }
@@ -71,11 +92,19 @@ export function PermissionDenied({ moduleName }: { moduleName: string }) {
         <Typography variant="h2" gutterBottom>
           No tiene permiso para {moduleName}
         </Typography>
-        <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Su usuario no tiene el privilegio necesario para esta parte del sistema.
-          Si lo necesita para trabajar, pídaselo al dueño de la finca.
+        <Typography
+          sx={{
+            color: "text.secondary",
+            mb: 3,
+          }}
+        >
+          Su usuario no tiene el privilegio necesario para esta parte del
+          sistema. Si lo necesita para trabajar, pídaselo al dueño de la finca.
         </Typography>
-        <Button variant="contained" onClick={() => navigate(landing, { replace: true })}>
+        <Button
+          variant="contained"
+          onClick={() => navigate(landing, { replace: true })}
+        >
           Salir del módulo {seconds > 0 ? `(${seconds})` : ""}
         </Button>
       </Paper>

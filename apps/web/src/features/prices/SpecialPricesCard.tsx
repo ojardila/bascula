@@ -14,16 +14,36 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  InputAdornment, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
-  useMediaQuery, useTheme,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
+  MenuItem,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { addDays, parseDay } from "../../lib/dates";
 import { formatMoney, parseMoneyInput } from "../../lib/money";
-import type { WireSpecialPrice, WireSpecialPriceImpact, WireSpecialPriceKind } from "../../api/wire";
+import type {
+  WireSpecialPrice,
+  WireSpecialPriceImpact,
+  WireSpecialPriceKind,
+} from "../../api/wire";
 import { formatMondayLong } from "./BasePriceCard";
 
 function groupPesos(digits: string): string {
@@ -31,7 +51,10 @@ function groupPesos(digits: string): string {
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
-const KIND_WORD: Record<WireSpecialPriceKind, string> = { lote: "Lote", persona: "Persona" };
+const KIND_WORD: Record<WireSpecialPriceKind, string> = {
+  lote: "Lote",
+  persona: "Persona",
+};
 
 interface Editing {
   kind: WireSpecialPriceKind;
@@ -48,28 +71,62 @@ export function SpecialPricesCard({ canEdit }: { canEdit: boolean }) {
   const items = data ?? [];
 
   return (
-    <Card data-tour="price-exceptions" variant="outlined" sx={{ mb: 3, borderRadius: 4 }}>
+    <Card
+      data-tour="price-exceptions"
+      variant="outlined"
+      sx={{ mb: 3, borderRadius: 4 }}
+    >
       <CardContent sx={{ p: { xs: 2.25, sm: 3 } }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" sx={{ mb: 1 }}>
-          <Typography variant="h3" component="h2" sx={{ fontSize: 21, fontWeight: 800 }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap",
+            mb: 1,
+          }}
+        >
+          <Typography
+            variant="h3"
+            component="h2"
+            sx={{ fontSize: 21, fontWeight: 800 }}
+          >
             Precios especiales
           </Typography>
-          {items.length === 0 && <Chip label="Puede hacerlo después" variant="outlined" sx={{ fontSize: 14 }} />}
+          {items.length === 0 && (
+            <Chip
+              label="Puede hacerlo después"
+              variant="outlined"
+              sx={{ fontSize: 14 }}
+            />
+          )}
         </Stack>
         <Typography sx={{ fontSize: 17 }}>
-          Si un lote o una persona se paga distinto, póngale un precio fijo por kilo desde un lunes.
+          Si un lote o una persona se paga distinto, póngale un precio fijo por
+          kilo desde un lunes.
         </Typography>
         <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, bgcolor: "#f6f8f5" }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 700, mb: 0.5 }}>¿Qué precio se paga?</Typography>
+          <Typography sx={{ fontSize: 16, fontWeight: 700, mb: 0.5 }}>
+            ¿Qué precio se paga?
+          </Typography>
           <Typography sx={{ fontSize: 16 }}>
-            Primero el de la <strong>persona</strong>, si tiene. Si no, el del <strong>lote</strong>. Si no, el de
-            la <strong>semana</strong>. Si no, el de la <strong>finca</strong>.
+            Primero el de la <strong>persona</strong>, si tiene. Si no, el del{" "}
+            <strong>lote</strong>. Si no, el de la <strong>semana</strong>. Si
+            no, el de la <strong>finca</strong>.
           </Typography>
         </Box>
 
-        {error && <Alert severity="error" sx={{ mt: 2 }}>No se pudieron leer los precios especiales: {error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            No se pudieron leer los precios especiales: {error}
+          </Alert>
+        )}
         {savedMsg && (
-          <Alert severity="success" sx={{ mt: 2, fontSize: 16 }} onClose={() => setSavedMsg(null)}>
+          <Alert
+            severity="success"
+            sx={{ mt: 2, fontSize: 16 }}
+            onClose={() => setSavedMsg(null)}
+          >
             {savedMsg}
           </Alert>
         )}
@@ -81,26 +138,58 @@ export function SpecialPricesCard({ canEdit }: { canEdit: boolean }) {
                 key={`${it.kind}-${it.targetId}`}
                 item={it}
                 canEdit={canEdit}
-                onChange={() => setEditing({ kind: it.kind, targetId: it.targetId, ending: false })}
-                onEnd={() => setEditing({ kind: it.kind, targetId: it.targetId, ending: true })}
+                onChange={() =>
+                  setEditing({
+                    kind: it.kind,
+                    targetId: it.targetId,
+                    ending: false,
+                  })
+                }
+                onEnd={() =>
+                  setEditing({
+                    kind: it.kind,
+                    targetId: it.targetId,
+                    ending: true,
+                  })
+                }
               />
             ))}
           </Stack>
         )}
 
         {canEdit && (
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 2.5 }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.5}
+            sx={{ mt: 2.5 }}
+          >
             <Button
               variant="outlined"
-              onClick={() => setEditing({ kind: "lote", targetId: null, ending: false })}
-              sx={{ borderRadius: 999, minHeight: 52, px: 3, fontSize: 17, fontWeight: 700 }}
+              onClick={() =>
+                setEditing({ kind: "lote", targetId: null, ending: false })
+              }
+              sx={{
+                borderRadius: 999,
+                minHeight: 52,
+                px: 3,
+                fontSize: 17,
+                fontWeight: 700,
+              }}
             >
               Precio especial para un lote
             </Button>
             <Button
               variant="outlined"
-              onClick={() => setEditing({ kind: "persona", targetId: null, ending: false })}
-              sx={{ borderRadius: 999, minHeight: 52, px: 3, fontSize: 17, fontWeight: 700 }}
+              onClick={() =>
+                setEditing({ kind: "persona", targetId: null, ending: false })
+              }
+              sx={{
+                borderRadius: 999,
+                minHeight: 52,
+                px: 3,
+                fontSize: 17,
+                fontWeight: 700,
+              }}
             >
               Precio especial para una persona
             </Button>
@@ -128,21 +217,51 @@ export function SpecialPricesCard({ canEdit }: { canEdit: boolean }) {
 }
 
 function SpecialRow({
-  item, canEdit, onChange, onEnd,
-}: { item: WireSpecialPrice; canEdit: boolean; onChange: () => void; onEnd: () => void }) {
+  item,
+  canEdit,
+  onChange,
+  onEnd,
+}: {
+  item: WireSpecialPrice;
+  canEdit: boolean;
+  onChange: () => void;
+  onEnd: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const latest = item.history[0];
   return (
     <Box sx={{ p: 1.5, borderRadius: 3, border: 1, borderColor: "divider" }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1}
+        sx={{
+          alignItems: { sm: "center" },
+        }}
+      >
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Chip size="small" label={KIND_WORD[item.kind]} sx={{ fontWeight: 700 }} />
-            <Typography sx={{ fontSize: 18, fontWeight: 800 }}>{item.targetName}</Typography>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <Chip
+              size="small"
+              label={KIND_WORD[item.kind]}
+              sx={{ fontWeight: 700 }}
+            />
+            <Typography sx={{ fontSize: 18, fontWeight: 800 }}>
+              {item.targetName}
+            </Typography>
           </Stack>
           <Typography sx={{ fontSize: 17, mt: 0.5 }}>
             {item.currentCents !== null ? (
-              <><strong>{formatMoney(item.currentCents)} por kilo</strong> esta semana</>
+              <>
+                <strong>{formatMoney(item.currentCents)} por kilo</strong> esta
+                semana
+              </>
             ) : (
               <>Sin precio especial esta semana</>
             )}
@@ -157,16 +276,33 @@ function SpecialRow({
         </Box>
         {canEdit && (
           <Stack direction="row" spacing={1}>
-            <Button onClick={onChange} sx={{ fontSize: 16, fontWeight: 700, minHeight: 44 }}>Cambiar</Button>
+            <Button
+              onClick={onChange}
+              sx={{ fontSize: 16, fontWeight: 700, minHeight: 44 }}
+            >
+              Cambiar
+            </Button>
             {item.currentCents !== null && (
-              <Button color="inherit" onClick={onEnd} sx={{ fontSize: 16, minHeight: 44 }}>Quitar</Button>
+              <Button
+                color="inherit"
+                onClick={onEnd}
+                sx={{ fontSize: 16, minHeight: 44 }}
+              >
+                Quitar
+              </Button>
             )}
           </Stack>
         )}
       </Stack>
       {item.history.length > 0 && (
-        <Button size="small" onClick={() => setOpen((o) => !o)} sx={{ mt: 0.5, fontSize: 15, px: 0 }}>
-          {open ? "Ocultar historial" : `Ver historial (${item.history.length})`}
+        <Button
+          size="small"
+          onClick={() => setOpen((o) => !o)}
+          sx={{ mt: 0.5, fontSize: 15, px: 0 }}
+        >
+          {open
+            ? "Ocultar historial"
+            : `Ver historial (${item.history.length})`}
         </Button>
       )}
       {open && (
@@ -174,7 +310,11 @@ function SpecialRow({
           {item.history.map((h) => (
             <Typography key={h.validFrom} sx={{ fontSize: 15 }}>
               Desde el {formatMondayLong(h.validFrom)}:{" "}
-              <strong>{h.priceCents !== null ? `${formatMoney(h.priceCents)} por kilo` : "sin precio especial"}</strong>
+              <strong>
+                {h.priceCents !== null
+                  ? `${formatMoney(h.priceCents)} por kilo`
+                  : "sin precio especial"}
+              </strong>
             </Typography>
           ))}
         </Stack>
@@ -191,7 +331,10 @@ function todayMonday(): string {
 }
 
 function SpecialPriceDialog({
-  editing, existing, onClose, onSaved,
+  editing,
+  existing,
+  onClose,
+  onSaved,
 }: {
   editing: Editing;
   existing: WireSpecialPrice[];
@@ -210,13 +353,22 @@ function SpecialPriceDialog({
   const [busy, setBusy] = useState(false);
   const ending = editing.ending;
 
-  const { data: plots } = useAsync(() => (kind === "lote" ? api.listPlots() : Promise.resolve([])), [kind]);
-  const { data: workers } = useAsync(() => (kind === "persona" ? api.listWorkers() : Promise.resolve([])), [kind]);
+  const { data: plots } = useAsync(
+    () => (kind === "lote" ? api.listPlots() : Promise.resolve([])),
+    [kind],
+  );
+  const { data: workers } = useAsync(
+    () => (kind === "persona" ? api.listWorkers() : Promise.resolve([])),
+    [kind],
+  );
   const options = useMemo(
     () =>
       kind === "lote"
         ? (plots ?? []).map((p) => ({ id: p.id, name: p.name }))
-        : (workers ?? []).map((w) => ({ id: w.id, name: `${w.name} ${w.lastName ?? ""}`.trim() })),
+        : (workers ?? []).map((w) => ({
+            id: w.id,
+            name: `${w.name} ${w.lastName ?? ""}`.trim(),
+          })),
     [kind, plots, workers],
   );
   const targetName =
@@ -227,7 +379,12 @@ function SpecialPriceDialog({
   const mondays = useMemo(() => {
     const base = parseDay(todayMonday());
     const out: string[] = [];
-    for (let i = 4; i >= -8; i--) out.push(addDays(base, 7 * i).toISOString().slice(0, 10));
+    for (let i = 4; i >= -8; i--)
+      out.push(
+        addDays(base, 7 * i)
+          .toISOString()
+          .slice(0, 10),
+      );
     return out;
   }, []);
 
@@ -248,7 +405,9 @@ function SpecialPriceDialog({
 
   const cents = parseMoneyInput(text);
   const impactText = impact
-    ? impact.unsettledRecords === 0 && impact.settledRecords === 0 && impact.overriddenByPerson === 0
+    ? impact.unsettledRecords === 0 &&
+      impact.settledRecords === 0 &&
+      impact.overriddenByPerson === 0
       ? "Todavía no hay pesadas desde ese lunes: cuenta con las próximas."
       : `Desde ese lunes, ${impact.unsettledRecords} ${impact.unsettledRecords === 1 ? "pesada sin liquidar cambia" : "pesadas sin liquidar cambian"}. ` +
         (impact.settledRecords > 0
@@ -271,7 +430,9 @@ function SpecialPriceDialog({
         return;
       }
       if (cents < 10000) {
-        setFieldError(`¿Seguro? ${formatMoney(cents)} por kilo es muy poco. Escriba el precio en pesos, por ejemplo 1.000.`);
+        setFieldError(
+          `¿Seguro? ${formatMoney(cents)} por kilo es muy poco. Escriba el precio en pesos, por ejemplo 1.000.`,
+        );
         return;
       }
     }
@@ -314,8 +475,15 @@ function SpecialPriceDialog({
                 }
               }}
             >
-              <ToggleButton value="lote" sx={{ fontSize: 17, minHeight: 52 }}>Un lote</ToggleButton>
-              <ToggleButton value="persona" sx={{ fontSize: 17, minHeight: 52 }}>Una persona</ToggleButton>
+              <ToggleButton value="lote" sx={{ fontSize: 17, minHeight: 52 }}>
+                Un lote
+              </ToggleButton>
+              <ToggleButton
+                value="persona"
+                sx={{ fontSize: 17, minHeight: 52 }}
+              >
+                Una persona
+              </ToggleButton>
             </ToggleButtonGroup>
           )}
           {!editing.targetId && (
@@ -328,7 +496,13 @@ function SpecialPriceDialog({
               fullWidth
             >
               {options.map((o) => (
-                <MenuItem key={o.id} value={o.id} sx={{ fontSize: 18, minHeight: 48 }}>{o.name}</MenuItem>
+                <MenuItem
+                  key={o.id}
+                  value={o.id}
+                  sx={{ fontSize: 18, minHeight: 48 }}
+                >
+                  {o.name}
+                </MenuItem>
               ))}
             </TextField>
           )}
@@ -342,10 +516,27 @@ function SpecialPriceDialog({
               }}
               helperText="En pesos, sin centavos. Ejemplo: 1.000"
               slotProps={{
-                htmlInput: { inputMode: "numeric", "aria-label": "Precio especial por kilo en pesos", style: { fontSize: 32, fontWeight: 800, paddingTop: 12, paddingBottom: 12 } },
+                htmlInput: {
+                  inputMode: "numeric",
+                  "aria-label": "Precio especial por kilo en pesos",
+                  style: {
+                    fontSize: 32,
+                    fontWeight: 800,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                  },
+                },
                 input: {
-                  startAdornment: <InputAdornment position="start"><Typography sx={{ fontSize: 26 }}>$</Typography></InputAdornment>,
-                  endAdornment: <InputAdornment position="end"><Typography sx={{ fontSize: 17 }}>por kilo</Typography></InputAdornment>,
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Typography sx={{ fontSize: 26 }}>$</Typography>
+                    </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Typography sx={{ fontSize: 17 }}>por kilo</Typography>
+                    </InputAdornment>
+                  ),
                 },
                 formHelperText: { sx: { fontSize: 15 } },
               }}
@@ -357,29 +548,59 @@ function SpecialPriceDialog({
             label="Desde"
             value={monday}
             onChange={(e) => setMonday(e.target.value)}
-            helperText={ending ? "Desde este lunes se vuelve a pagar el precio normal." : "Las pesadas desde este lunes se pagan a este precio."}
-            slotProps={{ select: { sx: { fontSize: 19, py: 1.75 } }, formHelperText: { sx: { fontSize: 15 } } }}
+            helperText={
+              ending
+                ? "Desde este lunes se vuelve a pagar el precio normal."
+                : "Las pesadas desde este lunes se pagan a este precio."
+            }
+            slotProps={{
+              select: { sx: { fontSize: 19, py: 1.75 } },
+              formHelperText: { sx: { fontSize: 15 } },
+            }}
             fullWidth
           >
             {mondays.map((m) => (
               <MenuItem key={m} value={m} sx={{ fontSize: 18, minHeight: 48 }}>
-                {formatMondayLong(m)}{m === todayMonday() ? " (esta semana)" : ""}
+                {formatMondayLong(m)}
+                {m === todayMonday() ? " (esta semana)" : ""}
               </MenuItem>
             ))}
           </TextField>
-          {fieldError && <Alert severity="warning" sx={{ fontSize: 16 }}>{fieldError}</Alert>}
-          {impactText && <Alert severity="info" variant="outlined" sx={{ fontSize: 16 }}>{impactText}</Alert>}
+          {fieldError && (
+            <Alert severity="warning" sx={{ fontSize: 16 }}>
+              {fieldError}
+            </Alert>
+          )}
+          {impactText && (
+            <Alert severity="info" variant="outlined" sx={{ fontSize: 16 }}>
+              {impactText}
+            </Alert>
+          )}
           {saveError && <Alert severity="error">{saveError}</Alert>}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ p: 2, gap: 1, flexDirection: phone ? "column-reverse" : "row" }}>
-        <Button onClick={onClose} fullWidth={phone} sx={{ fontSize: 17, minHeight: 48 }}>Cancelar</Button>
+      <DialogActions
+        sx={{ p: 2, gap: 1, flexDirection: phone ? "column-reverse" : "row" }}
+      >
+        <Button
+          onClick={onClose}
+          fullWidth={phone}
+          sx={{ fontSize: 17, minHeight: 48 }}
+        >
+          Cancelar
+        </Button>
         <Button
           variant="contained"
           onClick={() => void save()}
           disabled={busy}
           fullWidth={phone}
-          sx={{ borderRadius: 999, minHeight: 52, px: 4, fontSize: 18, fontWeight: 700 }}
+          sx={{
+            borderRadius: 999,
+            minHeight: 52,
+            px: 4,
+            fontSize: 18,
+            fontWeight: 700,
+          }}
         >
           {ending ? "Sí, quitar el precio" : "Guardar precio especial"}
         </Button>

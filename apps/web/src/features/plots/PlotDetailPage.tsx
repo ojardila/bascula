@@ -1,7 +1,19 @@
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Grid, Stack,
-  Table, TableBody, TableCell, TableHead, TableRow, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
@@ -23,7 +35,10 @@ export function PlotDetailPage() {
   const { can } = useAuth();
   const showMoney = can("money.read");
   const { data: plot, error, denied } = useAsync(() => api.getPlot(id), [id]);
-  const { data: records } = useAsync(() => api.listWorkRecords({ plotId: id }), [id]);
+  const { data: records } = useAsync(
+    () => api.listWorkRecords({ plotId: id }),
+    [id],
+  );
   // The other lots, only so the map has context to draw behind this one.
 
   if (denied) return <PermissionDenied moduleName="ver este lote" />;
@@ -45,17 +60,31 @@ export function PlotDetailPage() {
 
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "center" }}
         spacing={2}
-        sx={{ mb: 3 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { sm: "center" },
+          mb: 3,
+        }}
       >
         <Box>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+            }}
+          >
             <Typography variant="h1">{plot.name}</Typography>
-            {plot.status === "inactive" && <Chip size="small" label="Inactiva" />}
+            {plot.status === "inactive" && (
+              <Chip size="small" label="Inactiva" />
+            )}
           </Stack>
-          <Typography color="text.secondary">
+          <Typography
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             {plot.department} · {plot.municipality}
           </Typography>
         </Box>
@@ -74,7 +103,12 @@ export function PlotDetailPage() {
         <Grid size={{ xs: 12, md: 7 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Superficie
               </Typography>
               <Box sx={{ mt: 1 }}>
@@ -112,7 +146,9 @@ export function PlotDetailPage() {
                       <TableCell align="right">
                         {c.areaHa === null ? "—" : `${formatArea(c.areaHa)} ha`}
                       </TableCell>
-                      <TableCell>{c.plantedAt ? formatDate(c.plantedAt) : "—"}</TableCell>
+                      <TableCell>
+                        {c.plantedAt ? formatDate(c.plantedAt) : "—"}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {plot.crops.length === 0 && (
@@ -133,9 +169,11 @@ export function PlotDetailPage() {
             <CardContent>
               <Stack
                 direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                sx={{ mb: 1.5 }}
+                sx={{
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  mb: 1.5,
+                }}
               >
                 <Typography variant="h3">Dónde queda</Typography>
                 {can("plots.write") && (
@@ -149,7 +187,12 @@ export function PlotDetailPage() {
                 )}
               </Stack>
               {location ? (
-                <Stack spacing={1} alignItems="flex-start">
+                <Stack
+                  spacing={1}
+                  sx={{
+                    alignItems: "flex-start",
+                  }}
+                >
                   <Typography variant="body2">
                     Punto guardado: <strong>{formatPoint(location)}</strong>
                   </Typography>
@@ -164,9 +207,14 @@ export function PlotDetailPage() {
                   </Button>
                 </Stack>
               ) : (
-                <Typography color="text.secondary" variant="body2">
-                  Nadie ha marcado dónde queda este lote. Estando parado en él, ábralo
-                  desde el celular y toque «Marcar el punto».
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Nadie ha marcado dónde queda este lote. Estando parado en él,
+                  ábralo desde el celular y toque «Marcar el punto».
                 </Typography>
               )}
             </CardContent>
@@ -181,14 +229,23 @@ export function PlotDetailPage() {
                 <Stack
                   key={r.id}
                   direction="row"
-                  justifyContent="space-between"
-                  sx={{ py: 1, borderBottom: 1, borderColor: "divider" }}
+                  sx={{
+                    justifyContent: "space-between",
+                    py: 1,
+                    borderBottom: 1,
+                    borderColor: "divider",
+                  }}
                 >
                   <Box>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {r.activityName}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.secondary",
+                      }}
+                    >
                       {r.workerName} · {formatDateRange(r.dateFrom, r.dateTo)}
                     </Typography>
                   </Box>
@@ -201,11 +258,18 @@ export function PlotDetailPage() {
                       quantity on the same line is a division: $32.000 over
                       40 kg is $800 a kilo, and the whole projection comes
                       apart. So the amount goes where the price goes. */}
-                  {showMoney && <Value total={totalsOfRecords([r])} variant="small" />}
+                  {showMoney && (
+                    <Value total={totalsOfRecords([r])} variant="small" />
+                  )}
                 </Stack>
               ))}
               {records !== null && records.length === 0 && (
-                <Typography color="text.secondary" variant="body2">
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   Todavía no hay labores registradas sobre este lote.
                 </Typography>
               )}

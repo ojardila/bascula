@@ -1,7 +1,21 @@
 import { useState, type FormEvent } from "react";
-import { Link as RouterLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Divider, IconButton, InputAdornment, Link, Stack, TextField, Typography,
+  Link as RouterLink,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import {
+  Alert,
+  Box,
+  Button,
+  Divider,
+  IconButton,
+  InputAdornment,
+  Link,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
@@ -11,7 +25,11 @@ import { useAuth } from "../../auth/AuthContext";
 import { ApiError, messageFor } from "../../api/errors";
 import type { PasskeyAnswer } from "../../api/endpoints";
 import { passkeyCancelled, passkeysSupported } from "../../lib/passkeys";
-import { farmGreeting, farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import {
+  farmGreeting,
+  farmSlugFromHost,
+  offersSignup,
+} from "../../lib/farmHost";
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 import type { Membership, Role } from "../../api/types";
 
@@ -21,7 +39,11 @@ function passkeyMessage(err: unknown): string | null {
   if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
     return "No reconocimos esa llave de acceso. Entre con su correo y contraseña.";
   }
-  if (err instanceof ApiError && err.status === 403 && err.code === "FORBIDDEN") {
+  if (
+    err instanceof ApiError &&
+    err.status === 403 &&
+    err.code === "FORBIDDEN"
+  ) {
     return "Esa llave de acceso no abre esta finca. Entre con su correo y contraseña.";
   }
   return messageFor(err);
@@ -54,7 +76,9 @@ export function LoginPage() {
    * which the second half sends again with the farm instead of asking the
    * phone a second time.
    */
-  const [pendingPasskey, setPendingPasskey] = useState<PasskeyAnswer | null>(null);
+  const [pendingPasskey, setPendingPasskey] = useState<PasskeyAnswer | null>(
+    null,
+  );
   const canUsePasskey = passkeysSupported();
   /**
    * A pinned host is the farm. Login still sends email and password only —
@@ -111,7 +135,10 @@ export function LoginPage() {
 
   if (choices) {
     return (
-      <AuthLayout title="¿A cuál finca entra?" subtitle="Su correo trabaja en varias.">
+      <AuthLayout
+        title="¿A cuál finca entra?"
+        subtitle="Su correo trabaja en varias."
+      >
         <Stack spacing={1.5}>
           {error && <Alert severity="error">{error}</Alert>}
           {choices.map((m) => (
@@ -121,12 +148,19 @@ export function LoginPage() {
               size="large"
               disabled={busy}
               onClick={() =>
-                pendingPasskey ? attemptPasskey(pendingPasskey, m.farmId) : attempt(m.farmId)
+                pendingPasskey
+                  ? attemptPasskey(pendingPasskey, m.farmId)
+                  : attempt(m.farmId)
               }
               sx={{ justifyContent: "space-between" }}
             >
               {m.farmName}
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {ROLE_LABEL[m.role]}
               </Typography>
             </Button>
@@ -185,7 +219,9 @@ export function LoginPage() {
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
-                      aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                      aria-label={
+                        showPassword ? "Ocultar contraseña" : "Ver contraseña"
+                      }
                       onClick={() => setShowPassword((v) => !v)}
                       edge="end"
                     >
@@ -196,7 +232,13 @@ export function LoginPage() {
               },
             }}
           />
-          <Button type="submit" variant="contained" size="large" disabled={busy} fullWidth>
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            disabled={busy}
+            fullWidth
+          >
             {busy ? "Entrando…" : "Entrar"}
           </Button>
           {/* Optional: only for people who added a passkey in Configuración.
@@ -217,7 +259,13 @@ export function LoginPage() {
           {offersSignup() && (
             <>
               <Divider>o</Divider>
-              <Button component={RouterLink} to="/empezar" variant="outlined" fullWidth size="large">
+              <Button
+                component={RouterLink}
+                to="/empezar"
+                variant="outlined"
+                fullWidth
+                size="large"
+              >
                 Registrar mi finca
               </Button>
             </>
@@ -227,7 +275,13 @@ export function LoginPage() {
 
       {import.meta.env.VITE_USE_MOCKS === "true" && (
         <Box sx={{ mt: 3, p: 1.5, bgcolor: "#f2f5f0", borderRadius: 2 }}>
-          <Typography variant="caption" color="text.secondary" component="div">
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             <strong>Datos de prueba</strong> (finca simulada, sin API):
           </Typography>
           {[
@@ -235,7 +289,14 @@ export function LoginPage() {
             ["admin@laesperanza.co", "administrador"],
             ["pesador@laesperanza.co", "pesador"],
           ].map(([mail, role]) => (
-            <Typography key={mail} variant="caption" component="div" color="text.secondary">
+            <Typography
+              key={mail}
+              variant="caption"
+              component="div"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               <Link
                 component="button"
                 type="button"
@@ -249,7 +310,13 @@ export function LoginPage() {
               · {role} · clave <code>esperanza</code>
             </Typography>
           ))}
-          <Typography variant="caption" component="div" color="text.secondary">
+          <Typography
+            variant="caption"
+            component="div"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             <Link
               component="button"
               type="button"

@@ -12,8 +12,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, Autocomplete, Box, Button, Card, CardContent, Chip, Grid, MenuItem,
-  Stack, TextField, Typography,
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
@@ -26,15 +36,26 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { formatMonday, mondayOf, todayInFarm } from "../../lib/dates";
 import { parseMoneyInput } from "../../lib/money";
 import {
-  emptyDraft, estimateCents, forcesSingleDay, needsQuantity, needsRateField,
-  parseQuantity, quantityLabel, validateWorkRecord,
-  type FieldErrors, type WorkRecordDraft,
+  emptyDraft,
+  estimateCents,
+  forcesSingleDay,
+  needsQuantity,
+  needsRateField,
+  parseQuantity,
+  quantityLabel,
+  validateWorkRecord,
+  type FieldErrors,
+  type WorkRecordDraft,
 } from "./validation";
 import { PAY_MODE_LABEL } from "../../lib/vocab";
 import type { Activity, Plot, Worker } from "../../api/types";
 import { DateField } from "../../components/DateField";
 import {
-  ensureWeek, kiloPriceFor, recentMondays, syncPriceBook, type KiloPriceBook,
+  ensureWeek,
+  kiloPriceFor,
+  recentMondays,
+  syncPriceBook,
+  type KiloPriceBook,
 } from "../../offline/priceBook";
 import { getCache } from "../../offline/store";
 
@@ -85,10 +106,12 @@ export function WorkRecordFormPage() {
         }
         // No signal: the lists the weighing screen keeps on this device are
         // the same three, so the form (and its estimate) still opens.
-        const noSignal = e instanceof ApiError && (e.status === 0 || e.status >= 502);
-        const cached = noSignal && farmId
-          ? await getCache<CachedRefs>(`refs:${farmId}`).catch(() => null)
-          : null;
+        const noSignal =
+          e instanceof ApiError && (e.status === 0 || e.status >= 502);
+        const cached =
+          noSignal && farmId
+            ? await getCache<CachedRefs>(`refs:${farmId}`).catch(() => null)
+            : null;
         if (cached) {
           setActivities(cached.value.activities);
           setWorkers(cached.value.workers);
@@ -189,10 +212,17 @@ export function WorkRecordFormPage() {
      * ids, was right to accept both. `useWriteOnce` mints it once per version
      * of this form and lets a retry be a retry. See `lib/writeOnce.ts`.
      */
-    const intent = ["labor", draft.workerId, draft.activityId, draft.quantity,
-                    draft.dateFrom, draft.dateTo, draft.rateCents,
-                    [...draft.plotIds].sort().join("+"),
-                    [...draft.plotCropIds].sort().join("+")].join("|");
+    const intent = [
+      "labor",
+      draft.workerId,
+      draft.activityId,
+      draft.quantity,
+      draft.dateFrom,
+      draft.dateTo,
+      draft.rateCents,
+      [...draft.plotIds].sort().join("+"),
+      [...draft.plotCropIds].sort().join("+"),
+    ].join("|");
 
     const outcome = await runOnce(intent, async (mint) => {
       const result = validateWorkRecord(draft, activity, mint());
@@ -238,13 +268,30 @@ export function WorkRecordFormPage() {
         Registrar labor
       </Typography>
 
-      {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {saved && <Alert severity="success" sx={{ mb: 2 }}>{saved}</Alert>}
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {saved && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {saved}
+        </Alert>
+      )}
 
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="overline" color="text.secondary">
+          <Typography
+            variant="overline"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             1 · Actividad
           </Typography>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
@@ -273,7 +320,9 @@ export function WorkRecordFormPage() {
                 select
                 label="Actividad"
                 value={draft.activityId}
-                onChange={(e) => setDraft((v) => ({ ...v, activityId: e.target.value }))}
+                onChange={(e) =>
+                  setDraft((v) => ({ ...v, activityId: e.target.value }))
+                }
                 error={!!errors.activityId}
                 helperText={errors.activityId}
                 size="medium"
@@ -291,8 +340,18 @@ export function WorkRecordFormPage() {
 
           {activity && (
             <Box sx={{ mt: 2, p: 2, bgcolor: "#f2f5f0", borderRadius: 2 }}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Typography sx={{ fontWeight: 700 }}>{activity.name}</Typography>
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                sx={{
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Typography sx={{ fontWeight: 700 }}>
+                  {activity.name}
+                </Typography>
                 <Chip
                   size="small"
                   /* This used to read "pago por unidad de trabajo", which is
@@ -309,7 +368,8 @@ export function WorkRecordFormPage() {
               {activity.rateSource === "weekly_price" ? (
                 <>
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    Precio del kilo, semana del {formatMonday(mondayOf(draft.dateFrom || today))}:{" "}
+                    Precio del kilo, semana del{" "}
+                    {formatMonday(mondayOf(draft.dateFrom || today))}:{" "}
                     {kiloPriceCents === null ? (
                       "—"
                     ) : (
@@ -317,16 +377,35 @@ export function WorkRecordFormPage() {
                     )}{" "}
                     / {activity.workUnit}
                   </Typography>
-                  <Stack direction="row" spacing={1} sx={{ mt: 1 }} alignItems="flex-start">
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{
+                      alignItems: "flex-start",
+                      mt: 1,
+                    }}
+                  >
                     <InfoOutlinedIcon fontSize="small" color="warning" />
-                    <Typography variant="body2" color="text.secondary">
-                      Esta actividad usa <strong>precio semanal</strong>: se registra por
-                      día y el valor se congela al liquidar, no ahora.
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: "text.secondary",
+                      }}
+                    >
+                      Esta actividad usa <strong>precio semanal</strong>: se
+                      registra por día y el valor se congela al liquidar, no
+                      ahora.
                     </Typography>
                   </Stack>
                 </>
               ) : (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                    mt: 1,
+                  }}
+                >
                   El precio queda congelado en la labor al guardarla.
                 </Typography>
               )}
@@ -337,7 +416,12 @@ export function WorkRecordFormPage() {
 
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="overline" color="text.secondary">
+          <Typography
+            variant="overline"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             2 · Quién y dónde
           </Typography>
           <Stack spacing={2.5} sx={{ mt: 1.5 }}>
@@ -347,7 +431,9 @@ export function WorkRecordFormPage() {
                 `${w.name} ${w.lastName}${w.documentNumber ? ` · ${w.documentType} ${w.documentNumber}` : ""}`
               }
               value={workers.find((w) => w.id === draft.workerId) ?? null}
-              onChange={(_, v) => setDraft((d) => ({ ...d, workerId: v?.id ?? "" }))}
+              onChange={(_, v) =>
+                setDraft((d) => ({ ...d, workerId: v?.id ?? "" }))
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -373,7 +459,9 @@ export function WorkRecordFormPage() {
                     plotIds: ids,
                     // Dropping a plot has to drop its crops, or the record
                     // ends up pointing at a crop of a plot it does not touch.
-                    plotCropIds: d.plotCropIds.filter((c) => stillValid.includes(c)),
+                    plotCropIds: d.plotCropIds.filter((c) =>
+                      stillValid.includes(c),
+                    ),
                   };
                 })
               }
@@ -394,7 +482,9 @@ export function WorkRecordFormPage() {
               options={availableCrops}
               getOptionLabel={(c) => c.label}
               isOptionEqualToValue={(a, b) => a.id === b.id}
-              value={availableCrops.filter((c) => draft.plotCropIds.includes(c.id))}
+              value={availableCrops.filter((c) =>
+                draft.plotCropIds.includes(c.id),
+              )}
               onChange={(_, v) =>
                 setDraft((d) => ({ ...d, plotCropIds: v.map((c) => c.id) }))
               }
@@ -407,7 +497,9 @@ export function WorkRecordFormPage() {
                   error={!!errors.plotCropIds}
                   helperText={
                     errors.plotCropIds ??
-                    (selectedPlots.length === 0 ? "Elija primero los lotes." : undefined)
+                    (selectedPlots.length === 0
+                      ? "Elija primero los lotes."
+                      : undefined)
                   }
                 />
               )}
@@ -418,7 +510,12 @@ export function WorkRecordFormPage() {
 
       <Card>
         <CardContent>
-          <Typography variant="overline" color="text.secondary">
+          <Typography
+            variant="overline"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             3 · Cuánto y cuándo
           </Typography>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
@@ -427,7 +524,9 @@ export function WorkRecordFormPage() {
                 <TextField
                   label={`Cantidad (${quantityLabel(activity)})`}
                   value={draft.quantity}
-                  onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, quantity: e.target.value }))
+                  }
                   error={!!errors.quantity}
                   helperText={errors.quantity}
                   size="medium"
@@ -440,11 +539,18 @@ export function WorkRecordFormPage() {
             {activity && needsRateField(activity) && (
               <Grid size={{ xs: 12, sm: 3 }}>
                 <TextField
-                  label={activity.payMode === "contract" ? "Valor del contrato" : "Precio"}
+                  label={
+                    activity.payMode === "contract"
+                      ? "Valor del contrato"
+                      : "Precio"
+                  }
                   value={rateText}
                   onChange={(e) => {
                     setRateText(e.target.value);
-                    setDraft((d) => ({ ...d, rateCents: parseMoneyInput(e.target.value) }));
+                    setDraft((d) => ({
+                      ...d,
+                      rateCents: parseMoneyInput(e.target.value),
+                    }));
                   }}
                   error={!!errors.rateCents}
                   helperText={
@@ -484,7 +590,11 @@ export function WorkRecordFormPage() {
             <Grid size={{ xs: 12, sm: 3 }}>
               <DateField
                 label="Hasta"
-                value={activity && forcesSingleDay(activity) ? draft.dateFrom : draft.dateTo}
+                value={
+                  activity && forcesSingleDay(activity)
+                    ? draft.dateFrom
+                    : draft.dateTo
+                }
                 onChange={(iso) => setDraft((d) => ({ ...d, dateTo: iso }))}
                 disabled={!activity || forcesSingleDay(activity)}
                 error={!!errors.dateTo}
@@ -501,7 +611,9 @@ export function WorkRecordFormPage() {
               <TextField
                 label="Nota"
                 value={draft.note}
-                onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, note: e.target.value }))
+                }
                 size="medium"
                 fullWidth
               />
@@ -509,15 +621,34 @@ export function WorkRecordFormPage() {
           </Grid>
 
           {can("money.read") && estimate !== null && (
-            <Box sx={{ mt: 2.5, p: 2, borderRadius: 2, border: 1, borderColor: "divider" }}>
-              <Typography variant="body2" color="text.secondary">
+            <Box
+              sx={{
+                mt: 2.5,
+                p: 2,
+                borderRadius: 2,
+                border: 1,
+                borderColor: "divider",
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Valor provisional
               </Typography>
               <Money cents={estimate} variant="big" />
               {activity && !needsRateField(activity) && (
-                <Typography variant="caption" color="text.secondary" component="div">
-                  Todavía no está liquidado: se escribe en el libro al liquidar, con el
-                  precio de esa semana.
+                <Typography
+                  variant="caption"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Todavía no está liquidado: se escribe en el libro al liquidar,
+                  con el precio de esa semana.
                 </Typography>
               )}
             </Box>
@@ -525,14 +656,25 @@ export function WorkRecordFormPage() {
         </CardContent>
       </Card>
 
-      <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          justifyContent: "flex-end",
+          mt: 3,
+        }}
+      >
         <Button color="inherit" onClick={() => navigate("/labores")}>
           Cancelar
         </Button>
         <Button variant="outlined" disabled={busy} onClick={() => submit(true)}>
           Guardar y registrar otra
         </Button>
-        <Button variant="contained" disabled={busy} onClick={() => submit(false)}>
+        <Button
+          variant="contained"
+          disabled={busy}
+          onClick={() => submit(false)}
+        >
           {busy ? "Guardando…" : "Guardar"}
         </Button>
       </Stack>

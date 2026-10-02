@@ -1,6 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import {
-  Box, Button, Card, CardContent, Grid, Skeleton, Stack, Typography,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  Skeleton,
+  Stack,
+  Typography,
 } from "@mui/material";
 import TerrainIcon from "@mui/icons-material/Terrain";
 import GroupsIcon from "@mui/icons-material/Groups";
@@ -39,7 +46,10 @@ import { PLOT, PROVISIONAL_INCLUDES } from "../../lib/vocab";
  */
 function Unknown() {
   return (
-    <Typography variant="h1" sx={{ fontSize: "1.9rem", color: "text.disabled" }}>
+    <Typography
+      variant="h1"
+      sx={{ fontSize: "1.9rem", color: "text.disabled" }}
+    >
       —
     </Typography>
   );
@@ -55,9 +65,7 @@ function Unknown() {
  * and we still can. Three states, three drawings.
  */
 function Loading() {
-  return (
-    <Skeleton variant="text" width="60%" sx={{ fontSize: "1.9rem" }} />
-  );
+  return <Skeleton variant="text" width="60%" sx={{ fontSize: "1.9rem" }} />;
 }
 
 export function DashboardPage() {
@@ -68,22 +76,25 @@ export function DashboardPage() {
 
   // The error was not even captured before, which is why the tile could not
   // have told the truth however carefully it was written.
-  const { data: plots, error: plotsError, loading: plotsLoading } = useAsync(
-    () => api.listPlots({ status: "active" }),
-    [],
-  );
-  const { data: records, error: recordsError, loading: recordsLoading } = useAsync(
-    () => api.listWorkRecords({ status: "active" }),
-    [],
-  );
+  const {
+    data: plots,
+    error: plotsError,
+    loading: plotsLoading,
+  } = useAsync(() => api.listPlots({ status: "active" }), []);
+  const {
+    data: records,
+    error: recordsError,
+    loading: recordsLoading,
+  } = useAsync(() => api.listWorkRecords({ status: "active" }), []);
   // The farm's position comes from /v1/balances, which derives it from the
   // ledger. Adding up a `balanceCents` on the worker list is what this used to
   // do, and that endpoint has never sent one — so the tile read $0 for a farm
   // that was owing a week of picking, with no sign anything was missing.
-  const { data: balances, error: balancesError, loading: balancesLoading } = useAsync(
-    () => api.listBalances(),
-    [],
-  );
+  const {
+    data: balances,
+    error: balancesError,
+    loading: balancesLoading,
+  } = useAsync(() => api.listBalances(), []);
 
   /**
    * ── THE FIGURE THAT HAS TO AGREE WITH THE OTHER THREE ────────────────
@@ -99,7 +110,9 @@ export function DashboardPage() {
    */
   const accounts = owedByWorker(balances, records);
   const farmOwes = sumOwedToFarmWorkers([...accounts.values()]);
-  const shownOwedCents = balancesError ? null : (farmOwes.cents ?? farmOwes.floorCents);
+  const shownOwedCents = balancesError
+    ? null
+    : (farmOwes.cents ?? farmOwes.floorCents);
   const pending = (records ?? []).filter((r) => !r.settled);
   /**
    * Folded rather than summed, so the tile keeps `amountIsEstimate`. On the
@@ -125,22 +138,23 @@ export function DashboardPage() {
        * to it. A dash there would hide a figure we do know; a clean total
        * would lie. We print the floor and say that is what it is.
        */
-      value: balancesLoading || recordsLoading ? (
-        <Loading />
-      ) : shownOwedCents === null ? (
-        <Unknown />
-      ) : (
-        <Money cents={shownOwedCents} variant="big" />
-      ),
+      value:
+        balancesLoading || recordsLoading ? (
+          <Loading />
+        ) : shownOwedCents === null ? (
+          <Unknown />
+        ) : (
+          <Money cents={shownOwedCents} variant="big" />
+        ),
       hint:
         balancesLoading || recordsLoading
           ? "consultando…"
           : shownOwedCents === null
-          ? "no se pudo consultar"
-          : farmOwes.cents === null
-            ? "al menos: sólo lo ya liquidado, lo pendiente no se pudo consultar"
-            : "lo ya liquidado más lo que falta liquidar" +
-              (farmOwes.isEstimate ? ` · ${PROVISIONAL_INCLUDES}` : ""),
+            ? "no se pudo consultar"
+            : farmOwes.cents === null
+              ? "al menos: sólo lo ya liquidado, lo pendiente no se pudo consultar"
+              : "lo ya liquidado más lo que falta liquidar" +
+                (farmOwes.isEstimate ? ` · ${PROVISIONAL_INCLUDES}` : ""),
       to: "/empleados",
     },
     {
@@ -196,9 +210,9 @@ export function DashboardPage() {
       hint: plotsLoading
         ? "consultando…"
         : plotsError
-        ? "no se pudo consultar"
-        : `${formatArea(totalHa)} ha declaradas` +
-          (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
+          ? "no se pudo consultar"
+          : `${formatArea(totalHa)} ha declaradas` +
+            (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
       to: PLOT.path,
     },
   ];
@@ -208,7 +222,12 @@ export function DashboardPage() {
       <Typography variant="h1" gutterBottom>
         {user?.farm?.name}
       </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>
+      <Typography
+        sx={{
+          color: "text.secondary",
+          mb: 3,
+        }}
+      >
         Buenos días, {user?.name?.split(" ")[0]}.
       </Typography>
 
@@ -217,14 +236,32 @@ export function DashboardPage() {
           <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={t.label}>
             <Card
               onClick={() => navigate(t.to)}
-              sx={{ cursor: "pointer", height: "100%", "&:hover": { borderColor: "primary.main" } }}
+              sx={{
+                cursor: "pointer",
+                height: "100%",
+                "&:hover": { borderColor: "primary.main" },
+              }}
             >
               <CardContent>
-                <Typography variant="overline" color="text.secondary" sx={{ display: "block", minHeight: 32 }}>
+                <Typography
+                  variant="overline"
+                  sx={{
+                    color: "text.secondary",
+                    display: "block",
+                    minHeight: 32,
+                  }}
+                >
                   {t.label}
                 </Typography>
                 {t.value}
-                <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                <Typography
+                  variant="caption"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                    mt: 0.5,
+                  }}
+                >
                   {t.hint}
                 </Typography>
               </CardContent>
@@ -238,24 +275,52 @@ export function DashboardPage() {
           <Typography variant="h3" gutterBottom>
             Qué hacer ahora
           </Typography>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            useFlexGap
+            sx={{
+              flexWrap: "wrap",
+              mt: 2,
+            }}
+          >
             {can("config.prices") && (
-              <Button variant="contained" startIcon={<PriceChangeIcon />} onClick={() => navigate("/precio-semana")}>
+              <Button
+                variant="contained"
+                startIcon={<PriceChangeIcon />}
+                onClick={() => navigate("/precio-semana")}
+              >
                 Fijar precio del kilo
               </Button>
             )}
             {can("money.pay") && (
-              <Button variant="contained" startIcon={<PaymentsIcon />} onClick={() => navigate("/nomina")}>
+              <Button
+                variant="contained"
+                startIcon={<PaymentsIcon />}
+                onClick={() => navigate("/nomina")}
+              >
                 Pagar nómina
               </Button>
             )}
-            <Button variant="outlined" startIcon={<FactCheckIcon />} onClick={() => navigate("/labores/nueva")}>
+            <Button
+              variant="outlined"
+              startIcon={<FactCheckIcon />}
+              onClick={() => navigate("/labores/nueva")}
+            >
               Registrar labor
             </Button>
-            <Button variant="outlined" startIcon={<GroupsIcon />} onClick={() => navigate("/empleados/nuevo")}>
+            <Button
+              variant="outlined"
+              startIcon={<GroupsIcon />}
+              onClick={() => navigate("/empleados/nuevo")}
+            >
               Nuevo empleado
             </Button>
-            <Button variant="outlined" startIcon={<TerrainIcon />} onClick={() => navigate(`${PLOT.path}/nuevo`)}>
+            <Button
+              variant="outlined"
+              startIcon={<TerrainIcon />}
+              onClick={() => navigate(`${PLOT.path}/nuevo`)}
+            >
               Nuevo {PLOT.one}
             </Button>
           </Stack>

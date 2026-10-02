@@ -12,7 +12,15 @@
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, IconButton, InputAdornment, Link, Stack, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  IconButton,
+  InputAdornment,
+  Link,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
@@ -21,10 +29,16 @@ import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { farmSlugProblem } from "../../lib/farmHost";
 import {
-  FarmUrlField, slugErrorFromApi, useFarmUrl, useSlugCheck,
+  FarmUrlField,
+  slugErrorFromApi,
+  useFarmUrl,
+  useSlugCheck,
 } from "../../components/FarmUrlField";
 
-const BIG = { "& .MuiInputBase-input": { fontSize: "1.2rem" }, "& .MuiInputLabel-root": { fontSize: "1.1rem" } };
+const BIG = {
+  "& .MuiInputBase-input": { fontSize: "1.2rem" },
+  "& .MuiInputLabel-root": { fontSize: "1.1rem" },
+};
 
 export function SignupPage() {
   const navigate = useNavigate();
@@ -45,7 +59,8 @@ export function SignupPage() {
     if (!farmName.trim()) e["farm.name"] = "Escriba el nombre de la finca.";
     const slugProblem = farmSlugProblem(url.slug);
     if (slugProblem) e["farm.slug"] = slugProblem;
-    else if (check === "taken") e["farm.slug"] = "Esa dirección ya la tiene otra finca. Escriba otra.";
+    else if (check === "taken")
+      e["farm.slug"] = "Esa dirección ya la tiene otra finca. Escriba otra.";
     if (!ownerName.trim()) e["owner.name"] = "Escriba su nombre.";
     if (!email.trim()) e["owner.email"] = "Escriba su correo.";
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
@@ -53,7 +68,8 @@ export function SignupPage() {
     }
     // Ten, because that is what the server enforces. Length, not a
     // character-class rule: a long phrase beats a symbol written on paper.
-    if (password.length < 10) e["owner.password"] = "La clave debe tener al menos 10 letras o números.";
+    if (password.length < 10)
+      e["owner.password"] = "La clave debe tener al menos 10 letras o números.";
     return e;
   }
 
@@ -72,7 +88,12 @@ export function SignupPage() {
       // account gets its new farm like anybody else; there is nothing to
       // branch on in the answer.
       await api.signup({
-        farm: { name: farmName.trim(), slug: url.slug, timezone: "America/Bogota", currency: "COP" },
+        farm: {
+          name: farmName.trim(),
+          slug: url.slug,
+          timezone: "America/Bogota",
+          currency: "COP",
+        },
         owner: { email: email.trim(), name: ownerName.trim(), password },
       });
       navigate(`/preparando/${url.slug}`);
@@ -99,7 +120,11 @@ export function SignupPage() {
     >
       <Box component="form" onSubmit={onSubmit} noValidate>
         <Stack spacing={3}>
-          {error && <Alert severity="error" sx={{ fontSize: "1.05rem" }}>{error}</Alert>}
+          {error && (
+            <Alert severity="error" sx={{ fontSize: "1.05rem" }}>
+              {error}
+            </Alert>
+          )}
 
           <TextField
             label="Nombre de la finca"
@@ -142,7 +167,9 @@ export function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             error={!!fields["owner.email"]}
-            helperText={fields["owner.email"] ?? "Con este correo va a entrar a su finca."}
+            helperText={
+              fields["owner.email"] ?? "Con este correo va a entrar a su finca."
+            }
             autoComplete="email"
             fullWidth
             required
@@ -154,7 +181,10 @@ export function SignupPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             error={!!fields["owner.password"]}
-            helperText={fields["owner.password"] ?? "Mínimo 10 letras o números. Una frase corta sirve."}
+            helperText={
+              fields["owner.password"] ??
+              "Mínimo 10 letras o números. Una frase corta sirve."
+            }
             autoComplete="new-password"
             fullWidth
             required
@@ -187,8 +217,17 @@ export function SignupPage() {
           >
             {busy ? "Creando su finca…" : "Crear mi finca"}
           </Button>
-          <Typography sx={{ fontSize: "1.05rem" }} color="text.secondary" textAlign="center">
-            ¿Ya tiene cuenta? <Link component={RouterLink} to="/entrar">Entrar</Link>
+          <Typography
+            sx={{
+              color: "text.secondary",
+              textAlign: "center",
+              fontSize: "1.05rem",
+            }}
+          >
+            ¿Ya tiene cuenta?{" "}
+            <Link component={RouterLink} to="/entrar">
+              Entrar
+            </Link>
           </Typography>
         </Stack>
       </Box>

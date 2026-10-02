@@ -8,7 +8,14 @@
  * dialogs and forms (callout steps), so both look the same.
  */
 import { useState } from "react";
-import { Box, Button, IconButton, LinearProgress, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  IconButton,
+  LinearProgress,
+  Stack,
+  Typography,
+} from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTour } from "./TourContext";
 import { TOTALS, type TourName, type TourStepDef } from "./steps";
@@ -33,7 +40,11 @@ export function TourCard({
     if (busy) return;
     setBusy(true);
     try {
-      const ok = onPrimary ? await onPrimary() : def.action ? await t.runAction(def.action) : true;
+      const ok = onPrimary
+        ? await onPrimary()
+        : def.action
+          ? await t.runAction(def.action)
+          : true;
       if (!ok) return;
       if (def.next === "stay") return;
       if (def.next === "finish") t.finish();
@@ -98,17 +109,39 @@ export function TourCard({
       >
         {def.section}
       </Typography>
-      <Typography component="h2" sx={{ fontSize: { xs: 22, sm: 24 }, fontWeight: 800, lineHeight: 1.25, mb: 1 }}>
+      <Typography
+        component="h2"
+        sx={{
+          fontSize: { xs: 22, sm: 24 },
+          fontWeight: 800,
+          lineHeight: 1.25,
+          mb: 1,
+        }}
+      >
         {def.title}
       </Typography>
-      <Typography component="div" sx={{ fontSize: { xs: 17, sm: 18 }, lineHeight: 1.5 }}>
+      <Typography
+        component="div"
+        sx={{ fontSize: { xs: 17, sm: 18 }, lineHeight: 1.5 }}
+      >
         {def.body}
       </Typography>
       {def.alt && (
         <Button
           variant="text"
-          onClick={() => (def.alt!.next === "finish" ? t.finish() : t.goTo(def.alt!.next as number))}
-          sx={{ mt: 1, px: 0, fontSize: 16, fontWeight: 600, textDecoration: "underline", minHeight: 40 }}
+          onClick={() =>
+            def.alt!.next === "finish"
+              ? t.finish()
+              : t.goTo(def.alt!.next as number)
+          }
+          sx={{
+            mt: 1,
+            px: 0,
+            fontSize: 16,
+            fontWeight: 600,
+            textDecoration: "underline",
+            minHeight: 40,
+          }}
         >
           {def.alt.label}
         </Button>
@@ -124,7 +157,11 @@ export function TourCard({
       </Typography>
       {def.choice && (
         // The two answers to the step's question, equal in size and weight.
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ mt: 2.25 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.25}
+          sx={{ mt: 2.25 }}
+        >
           {primaryButton(bigAnswer)}
           <Button
             variant="outlined"
@@ -136,13 +173,28 @@ export function TourCard({
           </Button>
         </Stack>
       )}
-      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mt: 2 }}>
+      <Stack
+        direction="row"
+        spacing={1.25}
+        sx={{
+          alignItems: "center",
+          mt: 2,
+        }}
+      >
         {def.secondary ? (
           <Button
             variant="text"
             color="inherit"
             onClick={() => t.goTo(def.secondary!.next)}
-            sx={{ fontSize: 16, fontWeight: 700, textDecoration: "underline", minHeight: 48, px: 0.5, lineHeight: 1.2, textAlign: "left" }}
+            sx={{
+              fontSize: 16,
+              fontWeight: 700,
+              textDecoration: "underline",
+              minHeight: 48,
+              px: 0.5,
+              lineHeight: 1.2,
+              textAlign: "left",
+            }}
           >
             {def.secondary.label}
           </Button>
@@ -151,7 +203,13 @@ export function TourCard({
             variant="text"
             color="inherit"
             onClick={t.later}
-            sx={{ fontSize: 17, fontWeight: 700, textDecoration: "underline", minHeight: 48, px: 0.5 }}
+            sx={{
+              fontSize: 17,
+              fontWeight: 700,
+              textDecoration: "underline",
+              minHeight: 48,
+              px: 0.5,
+            }}
           >
             Saltar
           </Button>
@@ -160,14 +218,30 @@ export function TourCard({
         {showBack && (
           <Button
             variant="outlined"
-            onClick={() => t.goTo(def.n - 1 === 6 || def.n - 1 === 5 ? 4 : def.n - 1)}
-            sx={{ borderRadius: 999, minHeight: 48, px: 2.5, fontSize: 17, fontWeight: 700, borderWidth: 2 }}
+            onClick={() =>
+              t.goTo(def.n - 1 === 6 || def.n - 1 === 5 ? 4 : def.n - 1)
+            }
+            sx={{
+              borderRadius: 999,
+              minHeight: 48,
+              px: 2.5,
+              fontSize: 17,
+              fontWeight: 700,
+              borderWidth: 2,
+            }}
           >
             Atrás
           </Button>
         )}
         {!def.choice &&
-          primaryButton({ borderRadius: 999, minHeight: 48, px: 3, fontSize: 17, fontWeight: 700, lineHeight: 1.2 })}
+          primaryButton({
+            borderRadius: 999,
+            minHeight: 48,
+            px: 3,
+            fontSize: 17,
+            fontWeight: 700,
+            lineHeight: 1.2,
+          })}
       </Stack>
     </Box>
   );

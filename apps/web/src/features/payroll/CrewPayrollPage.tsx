@@ -39,10 +39,33 @@ import { BasketTile } from "../workers/Basket";
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, AlertTitle, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
-  Collapse, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
-  Divider, IconButton, LinearProgress, MenuItem, Stack, Table, TableBody,
-  TableCell, TableHead, TableRow, TextField, Typography,
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  CircularProgress,
+  Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Divider,
+  IconButton,
+  LinearProgress,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
@@ -56,25 +79,57 @@ import { useAuth } from "../../auth/AuthContext";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { messageFor } from "../../api/errors";
 import { sentenceFor } from "../../api/grossChange";
-import { formatDate, formatDateRange, formatDayLong, todayInFarm } from "../../lib/dates";
+import {
+  formatDate,
+  formatDateRange,
+  formatDayLong,
+  todayInFarm,
+} from "../../lib/dates";
 import { formatMoney, formatQuantity } from "../../lib/money";
 import { CORRECTION_GLOSS } from "../../lib/vocab";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { PayMethod, Uuid } from "../../api/types";
 import {
-  checkPayRun, checkPassed, checkSettleRun, hasProvisional, isComplete, loadCrew,
-  payApprovalOf, payCheckPassed, payrollRowsOf, payrollScopeOf, payrollTitleOf,
-  runIsPartial, RunIncomplete, runPayments, runSettlements, settleApprovalOf, undoHandleOf,
-  undoIsEmpty, undoRun, balanceCentsOf,
-  type CrewCheck, type CrewMember, type PayApproval, type PayCheck, type PayrollRun,
-  type RunRow, type RunScope, type SettleApproval, type UndoResult,
+  checkPayRun,
+  checkPassed,
+  checkSettleRun,
+  hasProvisional,
+  isComplete,
+  loadCrew,
+  payApprovalOf,
+  payCheckPassed,
+  payrollRowsOf,
+  payrollScopeOf,
+  payrollTitleOf,
+  runIsPartial,
+  RunIncomplete,
+  runPayments,
+  runSettlements,
+  settleApprovalOf,
+  undoHandleOf,
+  undoIsEmpty,
+  undoRun,
+  balanceCentsOf,
+  type CrewCheck,
+  type CrewMember,
+  type PayApproval,
+  type PayCheck,
+  type PayrollRun,
+  type RunRow,
+  type RunScope,
+  type SettleApproval,
+  type UndoResult,
 } from "./crew";
 
 /** How the difference explanation writes its figures and dates. */
 const FMT = { money: formatMoney, week: formatDayLong };
 
-const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 
 type Step = "settle" | "pay";
 
@@ -114,7 +169,8 @@ export function CrewPayrollPage() {
 
   /** THE WHOLE CREW, before filtering and before unticking. */
   const allSettle = useMemo(
-    () => crew.map(settleApprovalOf).filter((a): a is SettleApproval => a !== null),
+    () =>
+      crew.map(settleApprovalOf).filter((a): a is SettleApproval => a !== null),
     [crew],
   );
   const allPay = useMemo(
@@ -123,7 +179,8 @@ export function CrewPayrollPage() {
   );
 
   /** The basket number of each account, to show and to search by. */
-  const tagOf = (workerId: string) => crew.find((m) => m.worker.id === workerId)?.worker.tag ?? null;
+  const tagOf = (workerId: string) =>
+    crew.find((m) => m.worker.id === workerId)?.worker.tag ?? null;
   // By name or by basket number: «46» finds the account with canasto 46.
   const matches = (a: { name: string; workerId: string }) => {
     const q = fold(search.trim());
@@ -131,7 +188,9 @@ export function CrewPayrollPage() {
   };
   const visibleSettle = allSettle.filter(matches);
   const visiblePay = allPay.filter(matches);
-  const pickedSettle = visibleSettle.filter((a) => !outOfSettle.has(a.workerId));
+  const pickedSettle = visibleSettle.filter(
+    (a) => !outOfSettle.has(a.workerId),
+  );
   const pickedPay = visiblePay.filter((a) => !outOfPay.has(a.workerId));
 
   const settleTotal = pickedSettle.reduce((s, a) => s + a.grossCents, 0);
@@ -147,14 +206,16 @@ export function CrewPayrollPage() {
   const undoHandle = undoHandleOf(runs);
   const canUndo = !undoIsEmpty(undoHandle);
 
-  if (!can("money.pay")) return <PermissionDenied moduleName="correr la nómina" />;
+  if (!can("money.pay"))
+    return <PermissionDenied moduleName="correr la nómina" />;
   if (denied) return <PermissionDenied moduleName="correr la nómina" />;
   if (error) return <Alert severity="error">{error}</Alert>;
 
   /** The scope frozen with the approval: what the paper will own up to. */
   function scopeOf(step: Step): RunScope {
     const filters: string[] = [];
-    if (search.trim() !== "") filters.push(`empleado contiene «${search.trim()}»`);
+    if (search.trim() !== "")
+      filters.push(`empleado contiene «${search.trim()}»`);
     const cents: number[] =
       step === "settle"
         ? allSettle.map((a) => a.grossCents)
@@ -182,7 +243,10 @@ export function CrewPayrollPage() {
      */
     const intent = [
       "payroll-settle",
-      approvals.map((a) => `${a.workerId}:${a.grossCents}`).sort().join("+"),
+      approvals
+        .map((a) => `${a.workerId}:${a.grossCents}`)
+        .sort()
+        .join("+"),
     ].join("|");
 
     setRunError(null);
@@ -271,7 +335,10 @@ export function CrewPayrollPage() {
     const intent = [
       "payroll-pay",
       method,
-      approvals.map((a) => `${a.workerId}:${a.amountCents}`).sort().join("+"),
+      approvals
+        .map((a) => `${a.workerId}:${a.amountCents}`)
+        .sort()
+        .join("+"),
     ].join("|");
 
     setRunError(null);
@@ -288,7 +355,12 @@ export function CrewPayrollPage() {
       }
 
       setPhase("pay");
-      const rows = await runPayments(approvals, method, mint, "Nómina de cuadrilla");
+      const rows = await runPayments(
+        approvals,
+        method,
+        mint,
+        "Nómina de cuadrilla",
+      );
       const run: PayrollRun = {
         step: "pay",
         rows,
@@ -409,21 +481,32 @@ export function CrewPayrollPage() {
     <Box>
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "flex-start" }}
         spacing={2}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { sm: "flex-start" },
+          mb: 2,
+        }}
       >
         <Box>
           <Typography variant="h1">Nómina de cuadrilla</Typography>
-          <Typography color="text.secondary" sx={{ maxWidth: 760 }}>
+          <Typography
+            sx={{
+              color: "text.secondary",
+              maxWidth: 760,
+            }}
+          >
             Liquidar congela la semana; pagar entrega el efectivo.
           </Typography>
         </Box>
       </Stack>
 
       {runError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setRunError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setRunError(null)}
+        >
           {runError}
         </Alert>
       )}
@@ -445,9 +528,11 @@ export function CrewPayrollPage() {
           {undone.failures.length > 0 && (
             <>
               {" "}
-              <strong>{undone.failures.length} no se pudieron deshacer:</strong>{" "}
-              {undone.failures.join("; ")}. Quedan en el libro y hay que corregirlas a
-              mano desde la ficha del empleado.
+              <strong>
+                {undone.failures.length} no se pudieron deshacer:
+              </strong>{" "}
+              {undone.failures.join("; ")}. Quedan en el libro y hay que
+              corregirlas a mano desde la ficha del empleado.
             </>
           )}
         </Alert>
@@ -457,10 +542,11 @@ export function CrewPayrollPage() {
         <Alert severity="warning" sx={{ mb: 2 }}>
           No se pudo leer lo pendiente de{" "}
           <strong>
-            {unreadable.length} {unreadable.length === 1 ? "empleado" : "empleados"}
+            {unreadable.length}{" "}
+            {unreadable.length === 1 ? "empleado" : "empleados"}
           </strong>{" "}
-          ({unreadable.map((m) => m.name).join(", ")}). No entran en esta nómina: no se
-          aprueba una cifra que no se pudo ver.{" "}
+          ({unreadable.map((m) => m.name).join(", ")}). No entran en esta
+          nómina: no se aprueba una cifra que no se pudo ver.{" "}
           <Button size="small" color="inherit" onClick={reload}>
             Volver a intentar
           </Button>
@@ -470,11 +556,10 @@ export function CrewPayrollPage() {
       {arrivals.length > 0 && (
         <Alert severity="info" sx={{ mb: 2 }} onClose={() => setArrivals([])}>
           Llegó trabajo nuevo mientras revisaba:{" "}
-          {arrivals
-            .map((a) => `${a.name} (${a.lines.length})`)
-            .join(", ")}
-          . <strong>No entra en esta corrida</strong> — la liquidación toma exactamente
-          las labores que usted aprobó — y queda pendiente para la próxima.
+          {arrivals.map((a) => `${a.name} (${a.lines.length})`).join(", ")}.{" "}
+          <strong>No entra en esta corrida</strong> — la liquidación toma
+          exactamente las labores que usted aprobó — y queda pendiente para la
+          próxima.
         </Alert>
       )}
 
@@ -498,9 +583,10 @@ export function CrewPayrollPage() {
         >
           Está viendo <strong>{visibleSettle.length}</strong> de{" "}
           <strong>{allSettle.length}</strong> por liquidar y{" "}
-          <strong>{visiblePay.length}</strong> de <strong>{allPay.length}</strong> por
-          pagar. Lo que corra ahora es de esa parte de la cuadrilla, no de la finca
-          entera — y la planilla lo dirá impreso.
+          <strong>{visiblePay.length}</strong> de{" "}
+          <strong>{allPay.length}</strong> por pagar. Lo que corra ahora es de
+          esa parte de la cuadrilla, no de la finca entera — y la planilla lo
+          dirá impreso.
         </Alert>
       )}
 
@@ -511,29 +597,56 @@ export function CrewPayrollPage() {
         <CardContent>
           <Stack
             direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            alignItems={{ md: "center" }}
             spacing={2}
-            sx={{ mb: 2 }}
+            sx={{
+              justifyContent: "space-between",
+              alignItems: { md: "center" },
+              mb: 2,
+            }}
           >
             <Box>
               <Typography variant="h3">1 · Liquidar la semana</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Congela lo pendiente al precio que tiene hoy y escribe en el libro lo
-                que ganó cada persona. Todavía no sale plata.
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Congela lo pendiente al precio que tiene hoy y escribe en el
+                libro lo que ganó cada persona. Todavía no sale plata.
               </Typography>
             </Box>
             <Box sx={{ textAlign: { md: "right" }, flexShrink: 0 }}>
-              <Typography variant="overline" component="div" color="text.secondary">
+              <Typography
+                variant="overline"
+                component="div"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Bruto a liquidar
               </Typography>
               {loading ? (
-                <Typography color="text.secondary">Cargando…</Typography>
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Cargando…
+                </Typography>
               ) : (
                 <Money cents={settleTotal} variant="big" />
               )}
-              <Typography variant="body2" color="text.secondary">
-                {payeesText(pickedSettle.map((a) => a.workerId), crew)}
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                {payeesText(
+                  pickedSettle.map((a) => a.workerId),
+                  crew,
+                )}
                 {anyQty && unitLabel
                   ? ` · ${formatQuantity(settleQty)} ${unitLabel}`
                   : ""}
@@ -543,10 +656,10 @@ export function CrewPayrollPage() {
 
           {anyProvisional && (
             <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-              Hay labores marcadas <strong>provisional</strong>: se pagan al precio de
-              la semana, que se fija al cerrar la semana. Liquidar es lo que las fija.
-              Si ese precio cambia antes de que usted firme, esta pantalla se lo dirá y
-              no registrará nada.
+              Hay labores marcadas <strong>provisional</strong>: se pagan al
+              precio de la semana, que se fija al cerrar la semana. Liquidar es
+              lo que las fija. Si ese precio cambia antes de que usted firme,
+              esta pantalla se lo dirá y no registrará nada.
             </Alert>
           )}
 
@@ -576,7 +689,9 @@ export function CrewPayrollPage() {
                           onChange={() =>
                             toggle(outOfSettle, a.workerId, setOutOfSettle)
                           }
-                          inputProps={{ "aria-label": `Incluir a ${a.name}` }}
+                          slotProps={{
+                            input: { "aria-label": `Incluir a ${a.name}` },
+                          }}
                         />
                       </TableCell>
                       <TableCell padding="checkbox">
@@ -585,25 +700,39 @@ export function CrewPayrollPage() {
                           aria-label={`Ver el detalle de ${a.name}`}
                           onClick={() => toggle(open, a.workerId, setOpen)}
                         >
-                          {isOpen ? <KeyboardArrowDownIcon /> : <KeyboardArrowRightIcon />}
+                          {isOpen ? (
+                            <KeyboardArrowDownIcon />
+                          ) : (
+                            <KeyboardArrowRightIcon />
+                          )}
                         </IconButton>
                       </TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                        <BasketTile tag={member?.worker.tag} team={member?.worker.kind === "equipo"} size={38} />
-                        <Box>
-                        {a.name}
-                        {hasProvisional(a) && (
-                          <Chip
-                            size="small"
-                            color="warning"
-                            variant="outlined"
-                            label="provisional"
-                            sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1.25,
+                          }}
+                        >
+                          <BasketTile
+                            tag={member?.worker.tag}
+                            team={member?.worker.kind === "equipo"}
+                            size={38}
                           />
-                        )}
-                        <TeamChip worker={member?.worker} />
-                        </Box>
+                          <Box>
+                            {a.name}
+                            {hasProvisional(a) && (
+                              <Chip
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                label="provisional"
+                                sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
+                              />
+                            )}
+                            <TeamChip worker={member?.worker} />
+                          </Box>
                         </Box>
                       </TableCell>
                       <TableCell align="right">{a.lines.length}</TableCell>
@@ -615,11 +744,21 @@ export function CrewPayrollPage() {
                       <TableCell align="right">
                         {/* Null is null. A "$0" here would say "owed nothing". */}
                         {balance === null ? (
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: "text.secondary",
+                            }}
+                          >
                             no se pudo leer
                           </Typography>
                         ) : (
-                          <Money cents={balance} variant="small" signed colored />
+                          <Money
+                            cents={balance}
+                            variant="small"
+                            signed
+                            colored
+                          />
                         )}
                       </TableCell>
                       <TableCell align="right">
@@ -651,7 +790,11 @@ export function CrewPayrollPage() {
                                           color="warning"
                                           variant="outlined"
                                           label="provisional"
-                                          sx={{ ml: 1, height: 18, fontSize: "0.62rem" }}
+                                          sx={{
+                                            ml: 1,
+                                            height: 18,
+                                            fontSize: "0.62rem",
+                                          }}
                                         />
                                       )}
                                     </TableCell>
@@ -669,7 +812,10 @@ export function CrewPayrollPage() {
                                       }`}
                                     </TableCell>
                                     <TableCell align="right">
-                                      <Money cents={l.amountCents} variant="small" />
+                                      <Money
+                                        cents={l.amountCents}
+                                        variant="small"
+                                      />
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -678,7 +824,9 @@ export function CrewPayrollPage() {
                             <Button
                               size="small"
                               sx={{ mt: 1 }}
-                              onClick={() => navigate(`/empleados/${a.workerId}/pagar`)}
+                              onClick={() =>
+                                navigate(`/empleados/${a.workerId}/pagar`)
+                              }
                             >
                               Pagarle aparte
                             </Button>
@@ -701,7 +849,13 @@ export function CrewPayrollPage() {
             </TableBody>
           </Table>
 
-          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
+          <Stack
+            direction="row"
+            sx={{
+              justifyContent: "flex-end",
+              mt: 2,
+            }}
+          >
             <Button
               variant="contained"
               size="large"
@@ -719,30 +873,57 @@ export function CrewPayrollPage() {
         <CardContent>
           <Stack
             direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            alignItems={{ md: "center" }}
             spacing={2}
-            sx={{ mb: 2 }}
+            sx={{
+              justifyContent: "space-between",
+              alignItems: { md: "center" },
+              mb: 2,
+            }}
           >
             <Box>
               <Typography variant="h3">2 · Pagar la nómina</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Todo el que tiene saldo a favor, venga de esta semana o de una anterior.
-                Esta lista se lee del servidor: si cierra el navegador entre los dos
-                pasos, sigue aquí.
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Todo el que tiene saldo a favor, venga de esta semana o de una
+                anterior. Esta lista se lee del servidor: si cierra el navegador
+                entre los dos pasos, sigue aquí.
               </Typography>
             </Box>
             <Box sx={{ textAlign: { md: "right" }, flexShrink: 0 }}>
-              <Typography variant="overline" component="div" color="text.secondary">
+              <Typography
+                variant="overline"
+                component="div"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 A entregar
               </Typography>
               {loading ? (
-                <Typography color="text.secondary">Cargando…</Typography>
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Cargando…
+                </Typography>
               ) : (
                 <Money cents={payTotal} variant="big" />
               )}
-              <Typography variant="body2" color="text.secondary">
-                {payeesText(pickedPay.map((a) => a.workerId), crew)}
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                {payeesText(
+                  pickedPay.map((a) => a.workerId),
+                  crew,
+                )}
               </Typography>
             </Box>
           </Stack>
@@ -765,13 +946,27 @@ export function CrewPayrollPage() {
                     <TableCell padding="checkbox">
                       <Checkbox
                         checked={!outOfPay.has(a.workerId)}
-                        onChange={() => toggle(outOfPay, a.workerId, setOutOfPay)}
-                        inputProps={{ "aria-label": `Pagar a ${a.name}` }}
+                        onChange={() =>
+                          toggle(outOfPay, a.workerId, setOutOfPay)
+                        }
+                        slotProps={{
+                          input: { "aria-label": `Pagar a ${a.name}` },
+                        }}
                       />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
-                        <BasketTile tag={member?.worker.tag} team={member?.worker.kind === "equipo"} size={38} />
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.25,
+                        }}
+                      >
+                        <BasketTile
+                          tag={member?.worker.tag}
+                          team={member?.worker.kind === "equipo"}
+                          size={38}
+                        />
                         <Box>
                           {a.name}
                           <TeamChip worker={member?.worker} />
@@ -804,10 +999,12 @@ export function CrewPayrollPage() {
 
           <Stack
             direction={{ xs: "column", sm: "row" }}
-            justifyContent="flex-end"
-            alignItems={{ sm: "center" }}
             spacing={2}
-            sx={{ mt: 2 }}
+            sx={{
+              justifyContent: "flex-end",
+              alignItems: { sm: "center" },
+              mt: 2,
+            }}
           >
             <TextField
               select
@@ -849,16 +1046,23 @@ export function CrewPayrollPage() {
           <CardContent>
             <Stack
               direction={{ xs: "column", sm: "row" }}
-              justifyContent="space-between"
-              alignItems={{ sm: "center" }}
               spacing={2}
+              sx={{
+                justifyContent: "space-between",
+                alignItems: { sm: "center" },
+              }}
             >
               <Box>
                 <Typography variant="h3">Deshacer la nómina</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Mientras esta pantalla siga abierta. Después, cada documento se
-                  deshace por separado desde Liquidaciones y desde la ficha del
-                  empleado.
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Mientras esta pantalla siga abierta. Después, cada documento
+                  se deshace por separado desde Liquidaciones y desde la ficha
+                  del empleado.
                 </Typography>
               </Box>
               <Button
@@ -891,9 +1095,9 @@ export function CrewPayrollPage() {
           <DialogContentText component="div" sx={{ mb: 2 }}>
             {confirm === "settle" ? (
               <>
-                Esto escribe una liquidación por persona y deja anotado en el libro lo
-                que ganó.{" "}
-                <strong>No entrega plata todavía</strong>: eso es el paso 2.
+                Esto escribe una liquidación por persona y deja anotado en el
+                libro lo que ganó. <strong>No entrega plata todavía</strong>:
+                eso es el paso 2.
               </>
             ) : (
               <>
@@ -908,7 +1112,9 @@ export function CrewPayrollPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Empleado</TableCell>
-                {confirm === "settle" && <TableCell align="right">Cantidad</TableCell>}
+                {confirm === "settle" && (
+                  <TableCell align="right">Cantidad</TableCell>
+                )}
                 <TableCell align="right">
                   {confirm === "settle" ? "Bruto" : "A entregar"}
                 </TableCell>
@@ -934,21 +1140,30 @@ export function CrewPayrollPage() {
           </Table>
 
           <Divider sx={{ my: 2 }} />
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+          <Stack
+            direction="row"
+            sx={{
+              justifyContent: "space-between",
+              alignItems: "baseline",
+            }}
+          >
             <Typography variant="h3">Total</Typography>
-            <Money cents={confirm === "settle" ? settleTotal : payTotal} variant="big" />
+            <Money
+              cents={confirm === "settle" ? settleTotal : payTotal}
+              variant="big"
+            />
           </Stack>
 
           {confirm === "settle" && anyProvisional && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              Parte de este bruto está al precio de la semana. Liquidar es lo que lo
-              fija: a partir de aquí deja de ser provisional.
+              Parte de este bruto está al precio de la semana. Liquidar es lo
+              que lo fija: a partir de aquí deja de ser provisional.
             </Alert>
           )}
           {search.trim() !== "" && (
             <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-              Hay un filtro puesto («{search.trim()}»). Esto no es la cuadrilla entera, y
-              la planilla saldrá marcada como parcial.
+              Hay un filtro puesto («{search.trim()}»). Esto no es la cuadrilla
+              entera, y la planilla saldrá marcada como parcial.
             </Alert>
           )}
         </DialogContent>
@@ -959,7 +1174,9 @@ export function CrewPayrollPage() {
           <Button
             variant="contained"
             disabled={busy}
-            startIcon={phase === "checking" ? <CircularProgress size={16} /> : undefined}
+            startIcon={
+              phase === "checking" ? <CircularProgress size={16} /> : undefined
+            }
             onClick={confirm === "settle" ? doSettle : doPay}
           >
             {phase === "checking"
@@ -1004,22 +1221,30 @@ export function CrewPayrollPage() {
       />
 
       {/* ── UNDO: SAY WHAT IT WILL UNDO BEFORE DOING IT ────────────── */}
-      <Dialog open={askUndo} onClose={() => setAskUndo(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={askUndo}
+        onClose={() => setAskUndo(false)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Deshacer la nómina</DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
             Se van a corregir <strong>{undoHandle.payments.length}</strong>{" "}
             {undoHandle.payments.length === 1 ? "pago" : "pagos"} y a anular{" "}
             <strong>{undoHandle.settlements.length}</strong>{" "}
-            {undoHandle.settlements.length === 1 ? "liquidación" : "liquidaciones"}.
+            {undoHandle.settlements.length === 1
+              ? "liquidación"
+              : "liquidaciones"}
+            .
             <Box sx={{ mt: 2 }}>
-              Primero los pagos y después las liquidaciones: anular escribe su propia
-              corrección de lo ganado, y al revés quedaría un pago en pie contra algo
-              que ya no está.
+              Primero los pagos y después las liquidaciones: anular escribe su
+              propia corrección de lo ganado, y al revés quedaría un pago en pie
+              contra algo que ya no está.
             </Box>
             <Box sx={{ mt: 2 }}>
-              Nada se borra. Quedan la liquidación anulada y la corrección del pago, que
-              es como el libro cuenta lo que pasó.
+              Nada se borra. Quedan la liquidación anulada y la corrección del
+              pago, que es como el libro cuenta lo que pasó.
             </Box>
           </DialogContentText>
         </DialogContent>
@@ -1027,7 +1252,12 @@ export function CrewPayrollPage() {
           <Button color="inherit" onClick={() => setAskUndo(false)}>
             Ahora no
           </Button>
-          <Button variant="contained" color="warning" disabled={busy} onClick={doUndo}>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={busy}
+            onClick={doUndo}
+          >
             Deshacer
           </Button>
         </DialogActions>
@@ -1059,7 +1289,8 @@ function RunReport({
 }) {
   const done = run.rows.filter((r) => r.status === "done");
   const total = done.reduce(
-    (s, r) => s + (run.step === "settle" ? (r.grossCents ?? 0) : (r.paidCents ?? 0)),
+    (s, r) =>
+      s + (run.step === "settle" ? (r.grossCents ?? 0) : (r.paidCents ?? 0)),
     0,
   );
   const partial = runIsPartial(run);
@@ -1069,16 +1300,25 @@ function RunReport({
       <CardContent>
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          justifyContent="space-between"
-          alignItems={{ sm: "center" }}
           spacing={2}
-          sx={{ mb: 2 }}
+          sx={{
+            justifyContent: "space-between",
+            alignItems: { sm: "center" },
+            mb: 2,
+          }}
         >
           <Box>
             <Typography variant="h3">
-              {run.step === "settle" ? "Liquidación de cuadrilla" : "Nómina pagada"}
+              {run.step === "settle"
+                ? "Liquidación de cuadrilla"
+                : "Nómina pagada"}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {done.length} de {run.rows.length}{" "}
               {run.rows.length === 1 ? "persona" : "personas"} ·{" "}
               {formatMoney(total)}
@@ -1091,7 +1331,11 @@ function RunReport({
                 Reintentar
               </Button>
             )}
-            <Button variant="contained" startIcon={<PrintIcon />} onClick={onPrint}>
+            <Button
+              variant="contained"
+              startIcon={<PrintIcon />}
+              onClick={onPrint}
+            >
               {partial ? "Planilla (parcial)" : "Planilla"}
             </Button>
           </Stack>
@@ -1100,10 +1344,11 @@ function RunReport({
         {!run.complete && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             <AlertTitle>La corrida se detuvo</AlertTitle>
-            Se paró en el primer rechazo, a propósito: si el mundo se movió a mitad de
-            la nómina, seguir sería firmar cifras que ya nadie ha mirado. Lo que sí
-            entró está escrito y se puede deshacer. <strong>Reintentar</strong> reenvía
-            los mismos identificadores, así que lo ya escrito no se escribe dos veces.
+            Se paró en el primer rechazo, a propósito: si el mundo se movió a
+            mitad de la nómina, seguir sería firmar cifras que ya nadie ha
+            mirado. Lo que sí entró está escrito y se puede deshacer.{" "}
+            <strong>Reintentar</strong> reenvía los mismos identificadores, así
+            que lo ya escrito no se escribe dos veces.
           </Alert>
         )}
 
@@ -1121,7 +1366,9 @@ function RunReport({
               <TableCell align="right">
                 {run.step === "settle" ? "Bruto" : "Entregado"}
               </TableCell>
-              {run.step === "pay" && <TableCell align="right">Saldo después</TableCell>}
+              {run.step === "pay" && (
+                <TableCell align="right">Saldo después</TableCell>
+              )}
               <TableCell>Estado</TableCell>
             </TableRow>
           </TableHead>
@@ -1133,7 +1380,9 @@ function RunReport({
                 </TableCell>
                 <TableCell align="right">
                   <Money
-                    cents={(run.step === "settle" ? r.grossCents : r.paidCents) ?? 0}
+                    cents={
+                      (run.step === "settle" ? r.grossCents : r.paidCents) ?? 0
+                    }
                     variant="small"
                   />
                 </TableCell>
@@ -1163,7 +1412,13 @@ function RunReport({
                     label={STATUS_LABEL[r.status]}
                   />
                   {r.reason && (
-                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.secondary",
+                        ml: 1,
+                      }}
+                    >
                       {r.reason}
                     </Typography>
                   )}
@@ -1199,16 +1454,14 @@ function SettleDriftDialog({
 }) {
   const n = (check?.drifts.length ?? 0) + (check?.unreadable.length ?? 0);
   return (
-    <Dialog open={check !== null} disableEscapeKeyDown maxWidth="md" fullWidth>
+    <Dialog open={check !== null} maxWidth="md" fullWidth>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <ChangeCircleIcon color="warning" />
         Cambió algo mientras revisaba
       </DialogTitle>
       <DialogContent dividers>
         <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
-          <AlertTitle>
-            No se liquidó a nadie, y no se pagó a nadie.
-          </AlertTitle>
+          <AlertTitle>No se liquidó a nadie, y no se pagó a nadie.</AlertTitle>
           {n === 1
             ? "A una persona de la corrida le cambió la cifra entre que usted la miró y ahora. La nómina entera se detuvo antes de escribir nada."
             : `A ${n} personas de la corrida les cambió la cifra entre que usted las miró y ahora. La nómina entera se detuvo antes de escribir nada.`}
@@ -1224,19 +1477,37 @@ function SettleDriftDialog({
               divider={<Divider orientation="vertical" flexItem />}
             >
               <Box>
-                <Typography variant="overline" component="div" color="text.secondary">
+                <Typography
+                  variant="overline"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   Aprobado
                 </Typography>
                 <Money cents={d.beforeCents} variant="small" />
               </Box>
               <Box>
-                <Typography variant="overline" component="div" color="text.secondary">
+                <Typography
+                  variant="overline"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   Ahora
                 </Typography>
                 <Money cents={d.afterCents} variant="small" />
               </Box>
               <Box>
-                <Typography variant="overline" component="div" color="text.secondary">
+                <Typography
+                  variant="overline"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   Diferencia
                 </Typography>
                 <Money cents={d.deltaCents} signed colored variant="small" />
@@ -1250,8 +1521,8 @@ function SettleDriftDialog({
             <AlertTitle>No se pudo volver a leer</AlertTitle>
             {check.unreadable.map((u) => `${u.name}: ${u.reason}`).join(" · ")}
             <Box sx={{ mt: 1 }}>
-              Sin poder confirmar la cifra no se firma. Es la misma regla que arriba,
-              aplicada a no saber en vez de a saber que cambió.
+              Sin poder confirmar la cifra no se firma. Es la misma regla que
+              arriba, aplicada a no saber en vez de a saber que cambió.
             </Box>
           </Alert>
         )}
@@ -1273,7 +1544,7 @@ function PayDriftDialog({
   onReview: () => void;
 }) {
   return (
-    <Dialog open={check !== null} disableEscapeKeyDown maxWidth="sm" fullWidth>
+    <Dialog open={check !== null} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <ChangeCircleIcon color="warning" />
         El saldo cambió mientras revisaba
@@ -1281,9 +1552,10 @@ function PayDriftDialog({
       <DialogContent dividers>
         <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
           <AlertTitle>No se pagó a nadie.</AlertTitle>
-          Alguien de la corrida ya no tiene el saldo que usted aprobó — un anticipo
-          entregado en el lote, un descuento, un pago hecho desde otra pantalla. Entregar
-          la cifra vieja sería pagar de más o dejar la cuenta abierta sin decirlo.
+          Alguien de la corrida ya no tiene el saldo que usted aprobó — un
+          anticipo entregado en el lote, un descuento, un pago hecho desde otra
+          pantalla. Entregar la cifra vieja sería pagar de más o dejar la cuenta
+          abierta sin decirlo.
         </Alert>
         {check && check.drifts.length > 0 && (
           <Table size="small">
@@ -1306,7 +1578,12 @@ function PayDriftDialog({
                     <Money cents={d.afterCents} variant="small" />
                   </TableCell>
                   <TableCell align="right">
-                    <Money cents={d.deltaCents} signed colored variant="small" />
+                    <Money
+                      cents={d.deltaCents}
+                      signed
+                      colored
+                      variant="small"
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -1333,7 +1610,10 @@ function PayDriftDialog({
  * «16 personas», or with teams «16 cuentas · 18 personas»: a team is one
  * account and several people (docs/use-cases/teams.md).
  */
-function payeesText(ids: string[], crew: { worker: { id: string; kind?: string; members?: unknown[] } }[]): string {
+function payeesText(
+  ids: string[],
+  crew: { worker: { id: string; kind?: string; members?: unknown[] } }[],
+): string {
   const byId = new Map(crew.map((m) => [m.worker.id, m.worker]));
   let heads = 0;
   for (const id of ids) {

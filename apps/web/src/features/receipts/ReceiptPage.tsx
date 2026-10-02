@@ -69,7 +69,8 @@ export function ReceiptPage() {
     setPdfError(null);
     const outcome = await downloadReceiptPdf(data);
     setBusy(false);
-    if (outcome === "failed") setPdfError("No se pudo crear el PDF. Intente otra vez.");
+    if (outcome === "failed")
+      setPdfError("No se pudo crear el PDF. Intente otra vez.");
   }
 
   return (
@@ -77,10 +78,12 @@ export function ReceiptPage() {
       {back}
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", sm: "center" }}
         spacing={1.5}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "center" },
+          mb: 2,
+        }}
       >
         <Typography variant="h1" sx={{ fontSize: { xs: 26, sm: 32 } }}>
           {data.title}

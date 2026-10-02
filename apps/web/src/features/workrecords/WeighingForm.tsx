@@ -28,9 +28,26 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert, Autocomplete, Box, Button, Card, CardContent, Dialog, DialogActions, DialogContent,
-  DialogTitle, InputAdornment, List, ListItem, ListItemText, MenuItem, Stack, TextField,
-  ToggleButton, ToggleButtonGroup, Typography,
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  MenuItem,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { DateField } from "../../components/DateField";
@@ -114,7 +131,8 @@ export function WeighingForm() {
   const refsKey = `refs:${farmId}`;
   const lastLoteKey = `bascula.pesada.lote:${farmId}`;
 
-  const day = dayChoice === "hoy" ? today : dayChoice === "ayer" ? yesterday : otherDay;
+  const day =
+    dayChoice === "hoy" ? today : dayChoice === "ayer" ? yesterday : otherDay;
 
   useEffect(() => {
     let cancelled = false;
@@ -142,7 +160,9 @@ export function WeighingForm() {
         // so the value of a weighing can be estimated later without signal.
         // Only for roles that see money: a weigher's phone never holds a price.
         if (can("money.read") && farmId) {
-          void syncPriceBook(farmId, recentMondays(today)).catch(() => undefined);
+          void syncPriceBook(farmId, recentMondays(today)).catch(
+            () => undefined,
+          );
         }
       })
       .catch(async (e: unknown) => {
@@ -186,7 +206,9 @@ export function WeighingForm() {
       return null;
     }
     if (!activity) {
-      setError("La finca no tiene una actividad de recolección. Pídale al administrador que la cree.");
+      setError(
+        "La finca no tiene una actividad de recolección. Pídale al administrador que la cree.",
+      );
       return null;
     }
     return qty;
@@ -196,7 +218,11 @@ export function WeighingForm() {
     const qty = check();
     if (qty === null) return;
     // A team fills one sack between several people: the doubt is per person.
-    if (qty > MAX_PLAUSIBLE_KG * Math.max(1, worker && isTeam(worker) ? memberCount(worker) : 1)) {
+    if (
+      qty >
+      MAX_PLAUSIBLE_KG *
+        Math.max(1, worker && isTeam(worker) ? memberCount(worker) : 1)
+    ) {
       setDoubt(qty);
       return;
     }
@@ -208,37 +234,54 @@ export function WeighingForm() {
     if (!worker || !activity) return;
     const plot = plots?.find((p) => p.id === plotId);
     const who = workerLabel(worker);
-    const outcome = await run(`uno|${worker.id}|${plotId}|${day}|${qty}`, async (mint) => {
-      const id = mint();
-      const input = {
-        id,
-        activityId: activity.id,
-        workerId: worker.id,
-        quantity: qty,
-        dateFrom: day,
-        dateTo: day,
-        plotIds: [plotId],
-        plotCropIds: plot?.crops.map((c) => c.id) ?? [],
-      };
-      const keep = async () => {
-        await offline.enqueue({ id, input, who, plot: plot?.name ?? "", kg: qty, day });
-        return { id, local: true };
-      };
-      if (!offline.online && offline.canQueue) return keep();
-      try {
-        await api.createWorkRecord(input);
-        return { id, local: false };
-      } catch (e) {
-        if (noSignal(e) && offline.canQueue) return keep();
-        throw e;
-      }
-    }).catch((e: unknown) => {
+    const outcome = await run(
+      `uno|${worker.id}|${plotId}|${day}|${qty}`,
+      async (mint) => {
+        const id = mint();
+        const input = {
+          id,
+          activityId: activity.id,
+          workerId: worker.id,
+          quantity: qty,
+          dateFrom: day,
+          dateTo: day,
+          plotIds: [plotId],
+          plotCropIds: plot?.crops.map((c) => c.id) ?? [],
+        };
+        const keep = async () => {
+          await offline.enqueue({
+            id,
+            input,
+            who,
+            plot: plot?.name ?? "",
+            kg: qty,
+            day,
+          });
+          return { id, local: true };
+        };
+        if (!offline.online && offline.canQueue) return keep();
+        try {
+          await api.createWorkRecord(input);
+          return { id, local: false };
+        } catch (e) {
+          if (noSignal(e) && offline.canQueue) return keep();
+          throw e;
+        }
+      },
+    ).catch((e: unknown) => {
       setError(messageFor(e));
       return { ran: false } as const;
     });
     if (!outcome.ran) return;
     setSaved((prev) => [
-      { id: outcome.value.id, who, plot: plot?.name ?? "", day, kg: qty, local: outcome.value.local },
+      {
+        id: outcome.value.id,
+        who,
+        plot: plot?.name ?? "",
+        day,
+        kg: qty,
+        local: outcome.value.local,
+      },
       ...prev,
     ]);
     localStorage.setItem(lastLoteKey, plotId);
@@ -250,7 +293,8 @@ export function WeighingForm() {
   async function undo(w: SavedWeighing) {
     setError(null);
     try {
-      if (offline.pending.some((p) => p.id === w.id)) await offline.remove(w.id);
+      if (offline.pending.some((p) => p.id === w.id))
+        await offline.remove(w.id);
       else await api.deactivateWorkRecord(w.id);
       setSaved((prev) => prev.filter((s) => s.id !== w.id));
       setUndone(`Se borró la pesada de ${w.who}: ${formatQuantity(w.kg)} kg.`);
@@ -260,21 +304,36 @@ export function WeighingForm() {
   }
 
   const last = saved[0];
-  const lastStillLocal = !!last && offline.pending.some((p) => p.id === last.id);
-  const fewLotes = (plots?.length ?? 0) > 0 && (plots?.length ?? 0) <= LOTE_BUTTONS;
+  const lastStillLocal =
+    !!last && offline.pending.some((p) => p.id === last.id);
+  const fewLotes =
+    (plots?.length ?? 0) > 0 && (plots?.length ?? 0) <= LOTE_BUTTONS;
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: { xs: "100%", sm: 560 } }}>
       <Card>
         <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack spacing={3}>
-            {error && <Alert severity="error" onClose={() => setError(null)} sx={big}>{error}</Alert>}
-            {fromCache && (
-              <Alert severity="warning" onClose={() => setFromCache(null)} sx={big}>
-                Sin señal: usando la lista de personas y lotes guardada en este celular ({fromCache}).
+            {error && (
+              <Alert severity="error" onClose={() => setError(null)} sx={big}>
+                {error}
               </Alert>
             )}
-            {undone && <Alert severity="info" onClose={() => setUndone(null)} sx={big}>{undone}</Alert>}
+            {fromCache && (
+              <Alert
+                severity="warning"
+                onClose={() => setFromCache(null)}
+                sx={big}
+              >
+                Sin señal: usando la lista de personas y lotes guardada en este
+                celular ({fromCache}).
+              </Alert>
+            )}
+            {undone && (
+              <Alert severity="info" onClose={() => setUndone(null)} sx={big}>
+                {undone}
+              </Alert>
+            )}
             {last && !error && !undone && (
               <Alert
                 severity="success"
@@ -284,7 +343,9 @@ export function WeighingForm() {
                   // A saved weighing can only be undone with workRecords.correct (#150);
                   // one still waiting on this phone can always be dropped.
                   lastStillLocal || can("workRecords.correct") ? (
-                    <Button color="inherit" onClick={() => void undo(last)}>Deshacer</Button>
+                    <Button color="inherit" onClick={() => void undo(last)}>
+                      Deshacer
+                    </Button>
                   ) : undefined
                 }
               >
@@ -299,21 +360,59 @@ export function WeighingForm() {
               getOptionLabel={(w) => workerLabel(w)}
               value={worker}
               // A member of a team is weighed WITH the team: picking them picks it.
-              onChange={(_, v) => setWorker(v?.team ? workers?.find((t) => t.id === v.team!.id) ?? v : v)}
-              filterOptions={(opts, s) => filterWorkers(opts, s.inputValue).slice(0, 50)}
+              onChange={(_, v) =>
+                setWorker(
+                  v?.team
+                    ? (workers?.find((t) => t.id === v.team!.id) ?? v)
+                    : v,
+                )
+              }
+              filterOptions={(opts, s) =>
+                filterWorkers(opts, s.inputValue).slice(0, 50)
+              }
               renderOption={(props, w) => {
-                const { key, ...rest } = props as typeof props & { key: string };
+                const { key, ...rest } = props as typeof props & {
+                  key: string;
+                };
                 return (
                   <li key={key} {...rest} style={{ gap: 12 }}>
                     <BasketTile tag={w.tag} team={isTeam(w)} size={46} />
                     <Box>
-                      <Typography sx={{ fontSize: "1.15rem", fontWeight: isTeam(w) ? 700 : 500 }}>{workerLabel(w)}</Typography>
+                      <Typography
+                        sx={{
+                          fontSize: "1.15rem",
+                          fontWeight: isTeam(w) ? 700 : 500,
+                        }}
+                      >
+                        {workerLabel(w)}
+                      </Typography>
                       {isTeam(w) ? (
-                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">{teamLine(w)}</Typography>
+                        <Typography
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: "0.95rem",
+                          }}
+                        >
+                          {teamLine(w)}
+                        </Typography>
                       ) : w.team ? (
-                        <Typography sx={{ fontSize: "0.95rem" }} color="text.secondary">Pesa con el equipo {w.team.name}</Typography>
+                        <Typography
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: "0.95rem",
+                          }}
+                        >
+                          Pesa con el equipo {w.team.name}
+                        </Typography>
                       ) : !w.tag ? (
-                        <Typography sx={{ fontSize: "0.95rem" }} color="warning.dark">Sin canasto</Typography>
+                        <Typography
+                          sx={{
+                            color: "warning.dark",
+                            fontSize: "0.95rem",
+                          }}
+                        >
+                          Sin canasto
+                        </Typography>
                       ) : null}
                     </Box>
                   </li>
@@ -321,7 +420,6 @@ export function WeighingForm() {
               }}
               loading={!workers}
               noOptionsText="No hay nadie con ese nombre o canasto"
-              ListboxProps={{ style: { fontSize: "1.15rem" } }}
               renderInput={(p) => (
                 <TextField
                   {...p}
@@ -331,13 +429,34 @@ export function WeighingForm() {
                   sx={{ "& input": big }}
                 />
               )}
+              slotProps={{
+                listbox: { style: { fontSize: "1.15rem" } },
+              }}
             />
             {worker && (
-              <Stack direction="row" spacing={1.5} alignItems="center" aria-live="polite">
+              <Stack
+                direction="row"
+                spacing={1.5}
+                aria-live="polite"
+                sx={{
+                  alignItems: "center",
+                }}
+              >
                 <BasketTile tag={worker.tag} team={isTeam(worker)} size={64} />
                 <Box>
-                  <Typography sx={{ fontSize: "1.3rem", fontWeight: 800, lineHeight: 1.2 }}>{workerLabel(worker)}</Typography>
-                  <Typography sx={{ fontSize: "1rem" }} color={worker.tag ? "text.secondary" : "warning.dark"}>
+                  <Typography
+                    sx={{
+                      fontSize: "1.3rem",
+                      fontWeight: 800,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {workerLabel(worker)}
+                  </Typography>
+                  <Typography
+                    sx={{ fontSize: "1rem" }}
+                    color={worker.tag ? "text.secondary" : "warning.dark"}
+                  >
                     {basketText(worker.tag)}
                     {isTeam(worker) ? ` · ${teamLine(worker)}` : ""}
                   </Typography>
@@ -347,32 +466,65 @@ export function WeighingForm() {
 
             {fewLotes ? (
               <Box>
-                <Typography id="lote-label" sx={{ fontWeight: 700, mb: 1 }}>{PLOT.One}</Typography>
+                <Typography id="lote-label" sx={{ fontWeight: 700, mb: 1 }}>
+                  {PLOT.One}
+                </Typography>
                 <ToggleButtonGroup
                   exclusive
                   value={plotId}
                   onChange={(_, v: string | null) => v && setPlotId(v)}
                   aria-labelledby="lote-label"
-                  sx={{ ...chosen, flexWrap: "wrap", gap: 1, "& .MuiToggleButton-root": { border: "1px solid", borderRadius: "12px !important", ml: "0 !important" } }}
+                  sx={{
+                    ...chosen,
+                    flexWrap: "wrap",
+                    gap: 1,
+                    "& .MuiToggleButton-root": {
+                      border: "1px solid",
+                      borderRadius: "12px !important",
+                      ml: "0 !important",
+                    },
+                  }}
                 >
                   {(plots ?? []).map((p) => (
-                    <ToggleButton key={p.id} value={p.id} sx={{ ...big, minHeight: 56, px: 2.5, textTransform: "none" }}>
+                    <ToggleButton
+                      key={p.id}
+                      value={p.id}
+                      sx={{
+                        ...big,
+                        minHeight: 56,
+                        px: 2.5,
+                        textTransform: "none",
+                      }}
+                    >
                       {p.name}
                     </ToggleButton>
                   ))}
                 </ToggleButtonGroup>
               </Box>
             ) : (
-              <TextField select label={PLOT.One} value={plotId} onChange={(e) => setPlotId(e.target.value)} required sx={{ "& .MuiSelect-select": big }}>
-                <MenuItem value="" disabled>Elija un lote</MenuItem>
+              <TextField
+                select
+                label={PLOT.One}
+                value={plotId}
+                onChange={(e) => setPlotId(e.target.value)}
+                required
+                sx={{ "& .MuiSelect-select": big }}
+              >
+                <MenuItem value="" disabled>
+                  Elija un lote
+                </MenuItem>
                 {(plots ?? []).map((p) => (
-                  <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                  <MenuItem key={p.id} value={p.id}>
+                    {p.name}
+                  </MenuItem>
                 ))}
               </TextField>
             )}
 
             <Box>
-              <Typography id="dia-label" sx={{ fontWeight: 700, mb: 1 }}>Día</Typography>
+              <Typography id="dia-label" sx={{ fontWeight: 700, mb: 1 }}>
+                Día
+              </Typography>
               <ToggleButtonGroup
                 exclusive
                 fullWidth
@@ -381,13 +533,33 @@ export function WeighingForm() {
                 aria-labelledby="dia-label"
                 sx={chosen}
               >
-                <ToggleButton value="hoy" sx={{ ...big, minHeight: 56, textTransform: "none" }}>Hoy</ToggleButton>
-                <ToggleButton value="ayer" sx={{ ...big, minHeight: 56, textTransform: "none" }}>Ayer</ToggleButton>
-                <ToggleButton value="otro" sx={{ ...big, minHeight: 56, textTransform: "none" }}>Otro día</ToggleButton>
+                <ToggleButton
+                  value="hoy"
+                  sx={{ ...big, minHeight: 56, textTransform: "none" }}
+                >
+                  Hoy
+                </ToggleButton>
+                <ToggleButton
+                  value="ayer"
+                  sx={{ ...big, minHeight: 56, textTransform: "none" }}
+                >
+                  Ayer
+                </ToggleButton>
+                <ToggleButton
+                  value="otro"
+                  sx={{ ...big, minHeight: 56, textTransform: "none" }}
+                >
+                  Otro día
+                </ToggleButton>
               </ToggleButtonGroup>
               {dayChoice === "otro" && (
                 <Box sx={{ mt: 2 }}>
-                  <DateField label="Fecha" value={otherDay} onChange={setOtherDay} max={today} />
+                  <DateField
+                    label="Fecha"
+                    value={otherDay}
+                    onChange={setOtherDay}
+                    max={today}
+                  />
                 </Box>
               )}
             </Box>
@@ -399,10 +571,22 @@ export function WeighingForm() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") onSave();
               }}
-              inputProps={{ inputMode: "decimal", "aria-label": "Kilos", enterKeyHint: "done" }}
-              InputProps={{ endAdornment: <InputAdornment position="end"><Typography sx={{ fontSize: 24 }}>kg</Typography></InputAdornment> }}
               sx={{ "& input": { fontSize: 40, fontWeight: 700, py: 1.5 } }}
               required
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Typography sx={{ fontSize: 24 }}>kg</Typography>
+                    </InputAdornment>
+                  ),
+                },
+                htmlInput: {
+                  inputMode: "decimal",
+                  "aria-label": "Kilos",
+                  enterKeyHint: "done",
+                },
+              }}
             />
 
             {worker && isTeam(worker) && (
@@ -410,10 +594,22 @@ export function WeighingForm() {
                 {(() => {
                   const n = memberCount(worker);
                   const qty = parseQuantity(kg);
-                  if (qty === null || qty <= 0) return `${teamLine(worker)}. Se pesa todo junto, a nombre del equipo.`;
-                  return n > 1
-                    ? <>Se anotan <strong>{formatQuantity(qty)} kg al equipo</strong>. Eso es <strong>{formatQuantity(qty / n)} kg por persona</strong> para los promedios.</>
-                    : <>Se anotan <strong>{formatQuantity(qty)} kg al equipo</strong>.</>;
+                  if (qty === null || qty <= 0)
+                    return `${teamLine(worker)}. Se pesa todo junto, a nombre del equipo.`;
+                  return n > 1 ? (
+                    <>
+                      Se anotan{" "}
+                      <strong>{formatQuantity(qty)} kg al equipo</strong>. Eso
+                      es{" "}
+                      <strong>{formatQuantity(qty / n)} kg por persona</strong>{" "}
+                      para los promedios.
+                    </>
+                  ) : (
+                    <>
+                      Se anotan{" "}
+                      <strong>{formatQuantity(qty)} kg al equipo</strong>.
+                    </>
+                  );
                 })()}
               </Alert>
             )}
@@ -434,15 +630,34 @@ export function WeighingForm() {
       {offline.pending.length > 0 && (
         <Card sx={{ borderLeft: 6, borderColor: "info.main" }}>
           <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
-              <Typography variant="h3">Pesadas por subir ({offline.pending.length})</Typography>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1,
+              }}
+            >
+              <Typography variant="h3">
+                Pesadas por subir ({offline.pending.length})
+              </Typography>
               {offline.online && (
-                <Button variant="outlined" disabled={offline.syncing} onClick={() => void offline.flush()}>
+                <Button
+                  variant="outlined"
+                  disabled={offline.syncing}
+                  onClick={() => void offline.flush()}
+                >
                   {offline.syncing ? "Subiendo…" : "Subir ahora"}
                 </Button>
               )}
             </Stack>
-            <Typography color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                mb: 1,
+              }}
+            >
               Están guardadas en este celular. Se suben solas cuando hay señal.
             </Typography>
             <List dense disablePadding>
@@ -453,15 +668,26 @@ export function WeighingForm() {
                   divider
                   secondaryAction={
                     p.error ? (
-                      <Button color="error" onClick={() => void offline.remove(p.id)}>Borrar</Button>
+                      <Button
+                        color="error"
+                        onClick={() => void offline.remove(p.id)}
+                      >
+                        Borrar
+                      </Button>
                     ) : undefined
                   }
                 >
                   <ListItemText
                     primary={`${p.who} · ${formatQuantity(p.kg)} kg`}
-                    secondary={p.error ? `No se pudo subir: ${p.error}` : `${p.plot} · ${p.day === today ? "hoy" : formatDate(p.day)}`}
-                    primaryTypographyProps={{ fontSize: "1.1rem", fontWeight: 600 }}
-                    secondaryTypographyProps={p.error ? { color: "error" } : undefined}
+                    secondary={
+                      p.error
+                        ? `No se pudo subir: ${p.error}`
+                        : `${p.plot} · ${p.day === today ? "hoy" : formatDate(p.day)}`
+                    }
+                    slotProps={{
+                      primary: { sx: { fontSize: "1.1rem", fontWeight: 600 } },
+                      secondary: p.error ? { color: "error" } : undefined,
+                    }}
                   />
                 </ListItem>
               ))}
@@ -482,7 +708,9 @@ export function WeighingForm() {
                   <ListItemText
                     primary={`${s.who} · ${formatQuantity(s.kg)} kg`}
                     secondary={`${s.plot} · ${s.day === today ? "hoy" : formatDate(s.day)}`}
-                    primaryTypographyProps={{ fontSize: "1.1rem", fontWeight: 600 }}
+                    slotProps={{
+                      primary: { sx: { fontSize: "1.1rem", fontWeight: 600 } },
+                    }}
                   />
                 </ListItem>
               ))}
@@ -491,8 +719,15 @@ export function WeighingForm() {
         </Card>
       )}
 
-      <Dialog open={doubt !== null} onClose={() => setDoubt(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>¿{doubt !== null ? formatQuantity(doubt) : ""} kg en una sola pesada?</DialogTitle>
+      <Dialog
+        open={doubt !== null}
+        onClose={() => setDoubt(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          ¿{doubt !== null ? formatQuantity(doubt) : ""} kg en una sola pesada?
+        </DialogTitle>
         <DialogContent>
           <Typography sx={big}>
             {worker && isTeam(worker) && memberCount(worker) > 1
@@ -501,8 +736,20 @@ export function WeighingForm() {
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDoubt(null)} variant="contained" size="large">Corregir</Button>
-          <Button onClick={() => doubt !== null && void save(doubt)} color="inherit" size="large">Sí, guardar</Button>
+          <Button
+            onClick={() => setDoubt(null)}
+            variant="contained"
+            size="large"
+          >
+            Corregir
+          </Button>
+          <Button
+            onClick={() => doubt !== null && void save(doubt)}
+            color="inherit"
+            size="large"
+          >
+            Sí, guardar
+          </Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -12,7 +12,13 @@
  * nothing here cares about the no-external-hosts policy either.
  */
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Typography,
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import { formatQuantity } from "../../lib/money";
@@ -20,7 +26,8 @@ import { formatDate } from "../../lib/dates";
 import type { LabelBatch } from "../../api/types";
 
 export function LabelSheetDialog({
-  batch, onClose,
+  batch,
+  onClose,
 }: {
   batch: LabelBatch | null;
   onClose: () => void;
@@ -31,9 +38,16 @@ export function LabelSheetDialog({
         Stickers de esa entrada ({batch?.count ?? 0})
       </DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" className="no-print" sx={{ mb: 2 }}>
-          La cantidad se reparte entre los stickers; el sobrante va en el último, así que
-          la suma de lo impreso es exactamente lo que entró.
+        <Typography
+          variant="body2"
+          className="no-print"
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          La cantidad se reparte entre los stickers; el sobrante va en el
+          último, así que la suma de lo impreso es exactamente lo que entró.
         </Typography>
         {/* The print rules live with the thing they print. A stylesheet in
             index.html would be a rule about a component nobody reading the
@@ -58,23 +72,43 @@ export function LabelSheetDialog({
             <Box
               key={l.code}
               sx={{
-                border: "1px dashed", borderColor: "text.disabled", borderRadius: 1,
-                p: 1.5, breakInside: "avoid",
+                border: "1px dashed",
+                borderColor: "text.disabled",
+                borderRadius: 1,
+                p: 1.5,
+                breakInside: "avoid",
               }}
             >
-              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>{l.productName}</Typography>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
+                {l.productName}
+              </Typography>
               <Typography sx={{ fontSize: 22, fontWeight: 700 }}>
                 {formatQuantity(l.qty)} {l.storageUnit}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {l.warehouseName}
                 {l.plotName ? ` · ${l.plotName}` : ""}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {formatDate(l.date)}
               </Typography>
               <Typography
-                sx={{ fontFamily: "monospace", fontSize: 13, mt: 0.5, letterSpacing: 1 }}
+                sx={{
+                  fontFamily: "monospace",
+                  fontSize: 13,
+                  mt: 0.5,
+                  letterSpacing: 1,
+                }}
               >
                 {l.code}
               </Typography>
@@ -86,7 +120,11 @@ export function LabelSheetDialog({
         <Button color="inherit" onClick={onClose}>
           Cerrar
         </Button>
-        <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>
+        <Button
+          variant="contained"
+          startIcon={<PrintIcon />}
+          onClick={() => window.print()}
+        >
           Imprimir
         </Button>
       </DialogActions>

@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Box, Button, Chip, Stack, Typography } from "@mui/material";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
@@ -35,7 +39,12 @@ export function WorkRecordsPage() {
         render: (r) => (
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{r.activityName}</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {r.workerName}
             </Typography>
           </Stack>
@@ -53,7 +62,12 @@ export function WorkRecordsPage() {
         render: (r) => (
           <Stack>
             <span>{r.plotNames.join(", ")}</span>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {r.plotCropNames.join(", ")}
             </Typography>
           </Stack>
@@ -91,7 +105,12 @@ export function WorkRecordsPage() {
         r.settled ? (
           <Chip size="small" label="liquidada" />
         ) : (
-          <Chip size="small" color="warning" variant="outlined" label="pendiente" />
+          <Chip
+            size="small"
+            color="warning"
+            variant="outlined"
+            label="pendiente"
+          />
         ),
     });
     return cols;
@@ -108,7 +127,11 @@ export function WorkRecordsPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -127,11 +150,18 @@ export function WorkRecordsPage() {
         searchPlaceholder="Buscar por actividad, empleado o lote"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("workRecords.write") ? () => navigate("/cosecha/recoleccion") : undefined}
+        onCreate={
+          can("workRecords.write")
+            ? () => navigate("/cosecha/recoleccion")
+            : undefined
+        }
         createLabel="Registrar recolección"
         toolbarExtra={
           can("workRecords.write") ? (
-            <Button variant="outlined" onClick={() => navigate("/labores/nueva")}>
+            <Button
+              variant="outlined"
+              onClick={() => navigate("/labores/nueva")}
+            >
               Una labor
             </Button>
           ) : null
@@ -155,7 +185,13 @@ export function WorkRecordsPage() {
         emptyBody="Una labor es el registro de que alguien ejecutó una actividad sobre un lote, en una fecha, por una cantidad."
         footer={
           showMoney && data ? (
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: "center",
+              }}
+            >
               <span>{pending.length} pendientes de liquidar ·</span>
               <Value total={pendingTotals} variant="small" align="flex-start" />
             </Stack>

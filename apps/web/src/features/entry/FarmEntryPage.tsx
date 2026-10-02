@@ -6,9 +6,21 @@
  * People already signed in never see it (HomeRoute sends them to /tablero).
  */
 import { Link as RouterLink } from "react-router-dom";
-import { Box, Button, Container, Link, Paper, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Container,
+  Link,
+  Paper,
+  Stack,
+  Typography,
+} from "@mui/material";
 import { GREEN, GREEN_DARK } from "../../theme";
-import { farmGreeting, farmSlugFromHost, offersSignup } from "../../lib/farmHost";
+import {
+  farmGreeting,
+  farmSlugFromHost,
+  offersSignup,
+} from "../../lib/farmHost";
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 
 export function FarmEntryPage({ hostname }: { hostname?: string }) {
@@ -18,7 +30,13 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
   // the name cannot be had, and nothing shows until the answer is in, so the
   // label does not flash from one to the other.
   const { name, settled } = useFarmDisplayName(slug);
-  const label = slug ? (name ? farmGreeting(name) : settled ? farmGreeting(slug) : null) : null;
+  const label = slug
+    ? name
+      ? farmGreeting(name)
+      : settled
+        ? farmGreeting(slug)
+        : null
+    : null;
   return (
     <Box
       sx={{
@@ -30,8 +48,20 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
       }}
     >
       <Container maxWidth="xs" disableGutters>
-        <Stack alignItems="center" sx={{ mb: 2.5 }}>
-          <Typography sx={{ color: "#fff", fontWeight: 800, fontSize: 34, letterSpacing: "-0.02em" }}>
+        <Stack
+          sx={{
+            alignItems: "center",
+            mb: 2.5,
+          }}
+        >
+          <Typography
+            sx={{
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 34,
+              letterSpacing: "-0.02em",
+            }}
+          >
             BÁSCULA
           </Typography>
           <Typography sx={{ color: "rgba(255,255,255,.9)", fontSize: 16 }}>
@@ -39,17 +69,31 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
           </Typography>
         </Stack>
         <Paper sx={{ p: { xs: 3, sm: 4 } }} elevation={3}>
-          <Stack spacing={3} alignItems="stretch" textAlign="center" data-testid="farm-entry">
+          <Stack
+            spacing={3}
+            data-testid="farm-entry"
+            sx={{
+              alignItems: "stretch",
+              textAlign: "center",
+            }}
+          >
             <Box>
-              <Typography component="h1" sx={{ fontSize: "2rem", fontWeight: 800 }}>
+              <Typography
+                component="h1"
+                sx={{ fontSize: "2rem", fontWeight: 800 }}
+              >
                 Bienvenido
               </Typography>
               {slug && (
                 <Typography
                   data-testid="farm-entry-name"
                   sx={{
-                    fontSize: "1.3rem", mt: 1, color: "primary.main", fontWeight: 700,
-                    overflowWrap: "anywhere", visibility: label ? "visible" : "hidden",
+                    fontSize: "1.3rem",
+                    mt: 1,
+                    color: "primary.main",
+                    fontWeight: 700,
+                    overflowWrap: "anywhere",
+                    visibility: label ? "visible" : "hidden",
                   }}
                 >
                   {label ?? "\u00a0"}
@@ -76,7 +120,11 @@ export function FarmEntryPage({ hostname }: { hostname?: string }) {
                 Registrar
               </Button>
             )}
-            <Link component={RouterLink} to="/olvide-mi-clave" sx={{ fontSize: "1.1rem" }}>
+            <Link
+              component={RouterLink}
+              to="/olvide-mi-clave"
+              sx={{ fontSize: "1.1rem" }}
+            >
               ¿Olvidó su clave o su usuario?
             </Link>
           </Stack>

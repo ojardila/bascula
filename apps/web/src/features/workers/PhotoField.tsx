@@ -62,8 +62,17 @@ export function PhotoField({ value, onChange, fallback }: Props) {
   }
 
   return (
-    <Stack direction="row" spacing={2} alignItems="center">
-      <Avatar src={value ?? undefined} sx={{ width: 84, height: 84, fontSize: 30 }}>
+    <Stack
+      direction="row"
+      spacing={2}
+      sx={{
+        alignItems: "center",
+      }}
+    >
+      <Avatar
+        src={value ?? undefined}
+        sx={{ width: 84, height: 84, fontSize: 30 }}
+      >
         {fallback}
       </Avatar>
       <Box>
@@ -85,7 +94,14 @@ export function PhotoField({ value, onChange, fallback }: Props) {
           data-testid="photo-camera-input"
           onChange={(e) => pick(e.target.files?.[0])}
         />
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{
+            flexWrap: "wrap",
+          }}
+        >
           <Button
             variant="contained"
             size="small"
@@ -108,7 +124,12 @@ export function PhotoField({ value, onChange, fallback }: Props) {
             </Button>
           )}
         </Stack>
-        <Typography variant="caption" color={error ? "error" : "text.secondary"} component="div" sx={{ mt: 0.5 }}>
+        <Typography
+          variant="caption"
+          color={error ? "error" : "text.secondary"}
+          component="div"
+          sx={{ mt: 0.5 }}
+        >
           {error ?? "Opcional. Hasta 5 MB; se recorta cuadrada."}
         </Typography>
       </Box>

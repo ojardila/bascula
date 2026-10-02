@@ -79,7 +79,12 @@ export default defineConfig(({ mode }) => {
           icons: [
             { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
             { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-            { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+            {
+              src: "/icons/maskable-512.png",
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "maskable",
+            },
             { src: "/icons/icon.svg", sizes: "any", type: "image/svg+xml" },
           ],
         },
@@ -98,7 +103,10 @@ export default defineConfig(({ mode }) => {
               handler: "CacheFirst",
               options: {
                 cacheName: "google-fonts",
-                expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
                 cacheableResponse: { statuses: [0, 200] },
               },
             },
@@ -124,9 +132,17 @@ export default defineConfig(({ mode }) => {
           // MUI is most of the weight and it changes far less often than the
           // app does. Splitting it means a deploy does not re-download 500 kB
           // over a farm's connection.
-          manualChunks: {
-            react: ["react", "react-dom", "react-router-dom"],
-            mui: ["@mui/material", "@mui/icons-material"],
+          // Vite 8 bundles with Rolldown, which takes only the function form.
+          manualChunks(id: string) {
+            if (
+              /node_modules\/(react|react-dom|react-router-dom|react-router|scheduler)\//.test(
+                id,
+              )
+            )
+              return "react";
+            if (/node_modules\/@mui\/(material|icons-material)\//.test(id))
+              return "mui";
+            return undefined;
           },
         },
       },

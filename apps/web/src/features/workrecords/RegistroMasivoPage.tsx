@@ -33,9 +33,24 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogTitle, IconButton, MenuItem, Paper, Stack, TextField,
-  ToggleButton, ToggleButtonGroup, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  MenuItem,
+  Paper,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
@@ -48,20 +63,60 @@ import { ApiError, messageFor } from "../../api/errors";
 import type { Activity, Plot, Worker, WorkRecord } from "../../api/types";
 import { PermissionDenied } from "../../components/Guards";
 import { useAuth } from "../../auth/AuthContext";
-import { addDays, formatWeekRange, mondayOf, parseDay, todayInFarm } from "../../lib/dates";
+import {
+  addDays,
+  formatWeekRange,
+  mondayOf,
+  parseDay,
+  todayInFarm,
+} from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { PLOT } from "../../lib/vocab";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { useOffline } from "../../offline/OfflineContext";
-import { DAY_LETTERS, daysOfWeek, isIsoDay, pickHarvestActivity, workerLabel } from "./planilla";
+import {
+  DAY_LETTERS,
+  daysOfWeek,
+  isIsoDay,
+  pickHarvestActivity,
+  workerLabel,
+} from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
 import { isTeam, teamLine, weighable } from "../teams/team";
 import { BasketTile } from "../workers/Basket";
-import { bulkEntries, filterWorkers, registeredByWorker, soFarLabel, weekLocks, type BulkEntry } from "./bulk";
+import {
+  bulkEntries,
+  filterWorkers,
+  registeredByWorker,
+  soFarLabel,
+  weekLocks,
+  type BulkEntry,
+} from "./bulk";
 import { CorregirPesadasDialog } from "./CorregirPesadasDialog";
 
-const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
-const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"] as const;
+const DAY_NAMES = [
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+  "Domingo",
+] as const;
+const MONTHS = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+] as const;
 
 /** Remembered per device, so the next time opens on the same lote. */
 const LAST_LOTE = "bascula.registroMasivo.lote";
@@ -74,10 +129,10 @@ export function dayTitle(day: string, today: string): string {
   const name = DAY_NAMES[(d.getUTCDay() + 6) % 7];
   const rest = `${d.getUTCDate()} de ${MONTHS[d.getUTCMonth()]}`;
   if (day === today) return `Hoy, ${name.toLowerCase()} ${rest}`;
-  if (day === iso(addDays(parseDay(today), -1))) return `Ayer, ${name.toLowerCase()} ${rest}`;
+  if (day === iso(addDays(parseDay(today), -1)))
+    return `Ayer, ${name.toLowerCase()} ${rest}`;
   return `${name} ${rest}`;
 }
-
 
 /** What the last save added, to say it plainly afterwards. */
 interface Added {
@@ -95,7 +150,11 @@ export function RegistroMasivoPage() {
   // `?dia=` names the day; an old `?lunes=` link opens that week on its Monday.
   const diaParam = params.get("dia") ?? "";
   const lunesParam = params.get("lunes") ?? "";
-  const asked = isIsoDay(diaParam) ? diaParam : isIsoDay(lunesParam) ? lunesParam : today;
+  const asked = isIsoDay(diaParam)
+    ? diaParam
+    : isIsoDay(lunesParam)
+      ? lunesParam
+      : today;
   const day = asked > today ? today : asked;
   const plotId = params.get("lote") ?? "";
   const week = daysOfWeek(mondayOf(day));
@@ -105,7 +164,10 @@ export function RegistroMasivoPage() {
   const [activity, setActivity] = useState<Activity | null>(null);
   // Every harvest pesada of the week around the day: the day's own are shown,
   // and the week's say whether it is already settled.
-  const [weekRecords, setWeekRecords] = useState<{ monday: string; records: WorkRecord[] } | null>(null);
+  const [weekRecords, setWeekRecords] = useState<{
+    monday: string;
+    records: WorkRecord[];
+  } | null>(null);
   const [correcting, setCorrecting] = useState<string | null>(null);
   const [corrected, setCorrected] = useState<string | null>(null);
   const [texts, setTexts] = useState<Record<string, string>>({});
@@ -130,12 +192,15 @@ export function RegistroMasivoPage() {
   };
 
   function patch(next: Record<string, string>) {
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.delete("lunes");
-      for (const [k, v] of Object.entries(next)) p.set(k, v);
-      return p;
-    }, { replace: true });
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete("lunes");
+        for (const [k, v] of Object.entries(next)) p.set(k, v);
+        return p;
+      },
+      { replace: true },
+    );
   }
 
   const setDay = (d: string) => {
@@ -143,7 +208,12 @@ export function RegistroMasivoPage() {
     if (next === day) return;
     // Kilos typed for one day must never be saved on another.
     if (Object.values(texts).some((t) => t.trim() !== "")) {
-      if (!window.confirm("Hay kilos escritos sin guardar. Si cambia de día se borran. ¿Cambiar de día?")) return;
+      if (
+        !window.confirm(
+          "Hay kilos escritos sin guardar. Si cambia de día se borran. ¿Cambiar de día?",
+        )
+      )
+        return;
       setTexts({});
     }
     setAdded(null);
@@ -165,7 +235,8 @@ export function RegistroMasivoPage() {
         setActivity(pickHarvestActivity(a));
         if (!params.get("lote")) {
           const last = localStorage.getItem(LAST_LOTE);
-          const pick = p.find((x) => x.id === last) ?? (p.length === 1 ? p[0] : null);
+          const pick =
+            p.find((x) => x.id === last) ?? (p.length === 1 ? p[0] : null);
           if (pick) patch({ lote: pick.id });
         }
       })
@@ -201,27 +272,53 @@ export function RegistroMasivoPage() {
   const header = (
     <>
       {can("harvest.read") && (
-        <Button component={RouterLink} to="/cosecha" startIcon={<ArrowBackIcon />} sx={{ mb: 1, fontSize: "1rem" }}>
+        <Button
+          component={RouterLink}
+          to="/cosecha"
+          startIcon={<ArrowBackIcon />}
+          sx={{ mb: 1, fontSize: "1rem" }}
+        >
           Volver a la cosecha
         </Button>
       )}
       <Typography variant="h1" gutterBottom>
         Registro de recolección masivo
       </Typography>
-      <Typography sx={{ mb: 2, fontSize: "1.1rem" }} color="text.secondary">
-        Las pesadas de todos los empleados en un día. Elija el día y el lote, y escriba los
-        kilos de cada persona. Cada número es una pesada nueva. Si no pesó, déjelo en blanco.
-        {can("workRecords.correct") && " Para cambiar una pesada ya registrada, toque «Corregir»."}
+      <Typography
+        sx={{
+          color: "text.secondary",
+          mb: 2,
+          fontSize: "1.1rem",
+        }}
+      >
+        Las pesadas de todos los empleados en un día. Elija el día y el lote, y
+        escriba los kilos de cada persona. Cada número es una pesada nueva. Si
+        no pesó, déjelo en blanco.
+        {can("workRecords.correct") &&
+          " Para cambiar una pesada ya registrada, toque «Corregir»."}
       </Typography>
     </>
   );
 
-  if (loadError) return <Box>{header}<Alert severity="error">{loadError}</Alert></Box>;
+  if (loadError)
+    return (
+      <Box>
+        {header}
+        <Alert severity="error">{loadError}</Alert>
+      </Box>
+    );
   if (!workers || !plots) {
     return (
       <Box>
         {header}
-        <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress /></Stack>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 6,
+          }}
+        >
+          <CircularProgress />
+        </Stack>
       </Box>
     );
   }
@@ -230,29 +327,39 @@ export function RegistroMasivoPage() {
       <Box>
         {header}
         <Alert severity="error">
-          Esta finca no tiene una actividad de recolección pagada al precio de la semana.
-          Sin ella no se sabe qué registrar.
+          Esta finca no tiene una actividad de recolección pagada al precio de
+          la semana. Sin ella no se sabe qué registrar.
         </Alert>
       </Box>
     );
   }
 
   const plot = plots.find((p) => p.id === plotId) ?? null;
-  const loadedWeek = weekRecords && weekRecords.monday === monday ? weekRecords.records : null;
+  const loadedWeek =
+    weekRecords && weekRecords.monday === monday ? weekRecords.records : null;
   const dayRecords = loadedWeek ? recordsOn(loadedWeek, day) : null;
   const { settledWorkers, weekSettled } = weekLocks(loadedWeek ?? []);
-  const locked = (workerId: string) => weekSettled || settledWorkers.has(workerId);
+  const locked = (workerId: string) =>
+    weekSettled || settledWorkers.has(workerId);
   const canCorrect = can("workRecords.correct");
   const soFar = registeredByWorker(dayRecords ?? []);
-  const { entries, errors } = bulkEntries(workers.filter((w) => !locked(w.id)), texts);
+  const { entries, errors } = bulkEntries(
+    workers.filter((w) => !locked(w.id)),
+    texts,
+  );
   const shown = filterWorkers(workers, search);
   const newKilos = entries.reduce((s, e) => s + e.quantity, 0);
-  const dirty = Object.entries(texts).some(([id, t]) => t.trim() !== "" && !locked(id));
+  const dirty = Object.entries(texts).some(
+    ([id, t]) => t.trim() !== "" && !locked(id),
+  );
   const dayKilos = (dayRecords ?? []).reduce((s, r) => s + r.quantity, 0);
   const prevMonday = iso(addDays(parseDay(week[0]), -7));
   const nextMonday = iso(addDays(parseDay(week[0]), 7));
-  const correctingWorker = correcting ? workers.find((w) => w.id === correcting) ?? null : null;
-  const pesadas = (n: number) => (n === 1 ? "1 pesada nueva" : `${n} pesadas nuevas`);
+  const correctingWorker = correcting
+    ? (workers.find((w) => w.id === correcting) ?? null)
+    : null;
+  const pesadas = (n: number) =>
+    n === 1 ? "1 pesada nueva" : `${n} pesadas nuevas`;
 
   function askToSave() {
     setAdded(null);
@@ -275,7 +382,12 @@ export function RegistroMasivoPage() {
     if (!activity || !plot || !entries.length) return;
     const cropIds = plot.crops.map((c) => c.id);
     const batch = entries;
-    const intent = ["masivo", day, plot.id, batch.map((e) => `${e.workerId}:${e.quantity}`).join(";")].join("|");
+    const intent = [
+      "masivo",
+      day,
+      plot.id,
+      batch.map((e) => `${e.workerId}:${e.quantity}`).join(";"),
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       for (const e of batch) {
         await api.createWorkRecord({
@@ -314,14 +426,40 @@ export function RegistroMasivoPage() {
       {header}
 
       {/* 1. The day — first and biggest. */}
-      <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, mb: 2, borderRadius: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-          <Typography sx={{ fontSize: "1rem", fontWeight: 600, color: "text.secondary" }}>Día</Typography>
+      <Paper
+        variant="outlined"
+        sx={{ p: { xs: 1.5, sm: 2 }, mb: 2, borderRadius: 3 }}
+      >
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{
+            alignItems: "center",
+            mb: 1,
+          }}
+        >
+          <Typography
+            sx={{ fontSize: "1rem", fontWeight: 600, color: "text.secondary" }}
+          >
+            Día
+          </Typography>
           <Box sx={{ flex: 1 }} />
-          <IconButton aria-label="Semana anterior" onClick={() => setDay(prevMonday)} size="small" disabled={busy}>
+          <IconButton
+            aria-label="Semana anterior"
+            onClick={() => setDay(prevMonday)}
+            size="small"
+            disabled={busy}
+          >
             <ChevronLeftIcon />
           </IconButton>
-          <Typography sx={{ fontSize: "0.95rem", color: "text.secondary", minWidth: 96, textAlign: "center" }}>
+          <Typography
+            sx={{
+              fontSize: "0.95rem",
+              color: "text.secondary",
+              minWidth: 96,
+              textAlign: "center",
+            }}
+          >
             {formatWeekRange(week[0])}
           </Typography>
           <IconButton
@@ -339,7 +477,11 @@ export function RegistroMasivoPage() {
           onChange={(_, v: string | null) => v && setDay(v)}
           aria-label="Día"
           disabled={busy}
-          sx={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", width: "100%" }}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            width: "100%",
+          }}
         >
           {week.map((d, i) => (
             <ToggleButton
@@ -348,27 +490,61 @@ export function RegistroMasivoPage() {
               disabled={busy || d > today}
               aria-label={dayTitle(d, today)}
               sx={{
-                flexDirection: "column", py: 1, px: 0, lineHeight: 1.2,
-                "&.Mui-selected": { bgcolor: "primary.main", color: "#fff", "&:hover": { bgcolor: "primary.dark" } },
+                flexDirection: "column",
+                py: 1,
+                px: 0,
+                lineHeight: 1.2,
+                "&.Mui-selected": {
+                  bgcolor: "primary.main",
+                  color: "#fff",
+                  "&:hover": { bgcolor: "primary.dark" },
+                },
               }}
             >
-              <Box component="span" sx={{ fontWeight: 700, fontSize: "1rem" }}>{DAY_LETTERS[i]}</Box>
-              <Box component="span" sx={{ fontSize: "1.1rem" }}>{parseDay(d).getUTCDate()}</Box>
+              <Box component="span" sx={{ fontWeight: 700, fontSize: "1rem" }}>
+                {DAY_LETTERS[i]}
+              </Box>
+              <Box component="span" sx={{ fontSize: "1.1rem" }}>
+                {parseDay(d).getUTCDate()}
+              </Box>
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mt: 1.5, flexWrap: "wrap" }} useFlexGap>
-          <Typography variant="h2" component="p" sx={{ flex: 1, minWidth: 200 }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          useFlexGap
+          sx={{
+            alignItems: "center",
+            mt: 1.5,
+            flexWrap: "wrap",
+          }}
+        >
+          <Typography
+            variant="h2"
+            component="p"
+            sx={{ flex: 1, minWidth: 200 }}
+          >
             {dayTitle(day, today)}
           </Typography>
           {day !== today && (
-            <Button variant="outlined" onClick={() => setDay(today)} disabled={busy}>Ir a hoy</Button>
+            <Button
+              variant="outlined"
+              onClick={() => setDay(today)}
+              disabled={busy}
+            >
+              Ir a hoy
+            </Button>
           )}
         </Stack>
       </Paper>
 
       {/* 2. The lote of the new pesadas, and next to it the search by name. */}
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={{ xs: 1.5, sm: 2 }} sx={{ mb: 2 }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={{ xs: 1.5, sm: 2 }}
+        sx={{ mb: 2 }}
+      >
         <TextField
           select
           fullWidth
@@ -379,11 +555,18 @@ export function RegistroMasivoPage() {
             localStorage.setItem(LAST_LOTE, e.target.value);
             patch({ lote: e.target.value });
           }}
-          sx={{ flex: 1, "& .MuiSelect-select": { fontSize: "1.15rem", py: 1.75 } }}
+          sx={{
+            flex: 1,
+            "& .MuiSelect-select": { fontSize: "1.15rem", py: 1.75 },
+          }}
         >
-          <MenuItem value="" disabled>Elija un lote</MenuItem>
+          <MenuItem value="" disabled>
+            Elija un lote
+          </MenuItem>
           {plots.map((p) => (
-            <MenuItem key={p.id} value={p.id} sx={{ fontSize: "1.1rem" }}>{p.name}</MenuItem>
+            <MenuItem key={p.id} value={p.id} sx={{ fontSize: "1.1rem" }}>
+              {p.name}
+            </MenuItem>
           ))}
         </TextField>
         <TextField
@@ -409,30 +592,47 @@ export function RegistroMasivoPage() {
             }
           }}
           inputRef={searchRef}
-          inputProps={{
-            "aria-label": "Buscar por nombre",
-            autoComplete: "off",
-            autoCorrect: "off",
-            autoCapitalize: "none",
-            spellCheck: false,
-            enterKeyHint: "search",
+          sx={{
+            flex: 1,
+            scrollMarginTop: 72,
+            "& input": { fontSize: "1.15rem", py: 1.75 },
           }}
-          InputProps={{
-            startAdornment: <SearchIcon sx={{ mr: 1, color: "text.secondary", fontSize: 28 }} />,
-            endAdornment: search ? (
-              <IconButton aria-label="Borrar la búsqueda" onClick={clearSearch} edge="end" sx={{ width: 48, height: 48 }}>
-                <ClearIcon sx={{ fontSize: 28 }} />
-              </IconButton>
-            ) : null,
+          slotProps={{
+            input: {
+              startAdornment: (
+                <SearchIcon
+                  sx={{ mr: 1, color: "text.secondary", fontSize: 28 }}
+                />
+              ),
+              endAdornment: search ? (
+                <IconButton
+                  aria-label="Borrar la búsqueda"
+                  onClick={clearSearch}
+                  edge="end"
+                  sx={{ width: 48, height: 48 }}
+                >
+                  <ClearIcon sx={{ fontSize: 28 }} />
+                </IconButton>
+              ) : null,
+            },
+
+            htmlInput: {
+              "aria-label": "Buscar por nombre",
+              autoComplete: "off",
+              autoCorrect: "off",
+              autoCapitalize: "none",
+              spellCheck: false,
+              enterKeyHint: "search",
+            },
           }}
-          sx={{ flex: 1, scrollMarginTop: 72, "& input": { fontSize: "1.15rem", py: 1.75 } }}
         />
       </Stack>
 
       {loadedWeek && weekSettled && (
         <Alert severity="warning" sx={{ mb: 2, fontSize: "1.15rem" }}>
-          <strong>Esta semana ya se liquidó, no se puede cambiar.</strong> Los kilos de una semana
-          liquidada quedan como se pagaron. Puede ver lo registrado, pero no agregar ni corregir.
+          <strong>Esta semana ya se liquidó, no se puede cambiar.</strong> Los
+          kilos de una semana liquidada quedan como se pagaron. Puede ver lo
+          registrado, pero no agregar ni corregir.
         </Alert>
       )}
       {loadedWeek && !weekSettled && settledWorkers.size > 0 && (
@@ -443,26 +643,40 @@ export function RegistroMasivoPage() {
         </Alert>
       )}
       {corrected && (
-        <Alert severity="success" sx={{ mb: 2, fontSize: "1.1rem" }} onClose={() => setCorrected(null)}>
+        <Alert
+          severity="success"
+          sx={{ mb: 2, fontSize: "1.1rem" }}
+          onClose={() => setCorrected(null)}
+        >
           <strong>Listo.</strong> {corrected}
         </Alert>
       )}
       {!offline.online && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Sin conexión. Para guardar el registro masivo se necesita señal. Para registrar sin
-          señal use «Registrar una recolección».
+          Sin conexión. Para guardar el registro masivo se necesita señal. Para
+          registrar sin señal use «Registrar una recolección».
         </Alert>
       )}
       {saveError && (
-        <Alert severity="error" sx={{ mb: 2, fontSize: "1.05rem" }} onClose={() => setSaveError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2, fontSize: "1.05rem" }}
+          onClose={() => setSaveError(null)}
+        >
           {saveError}
         </Alert>
       )}
       {added && (
-        <Alert severity="success" sx={{ mb: 2, fontSize: "1.1rem" }} onClose={() => setAdded(null)}>
+        <Alert
+          severity="success"
+          sx={{ mb: 2, fontSize: "1.1rem" }}
+          onClose={() => setAdded(null)}
+        >
           <strong>Listo.</strong>{" "}
-          {added.entries.length === 1 ? "Se agregó 1 pesada nueva" : `Se agregaron ${added.entries.length} pesadas nuevas`}
-          {" "}· {dayTitle(added.day, today)} · {added.plotName}:
+          {added.entries.length === 1
+            ? "Se agregó 1 pesada nueva"
+            : `Se agregaron ${added.entries.length} pesadas nuevas`}{" "}
+          · {dayTitle(added.day, today)} · {added.plotName}:
           <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 3 }}>
             {added.entries.map((e) => (
               <li key={e.workerId}>
@@ -477,26 +691,55 @@ export function RegistroMasivoPage() {
       {!plotId ? (
         <Alert severity="info">Elija el lote.</Alert>
       ) : !dayRecords ? (
-        <Stack alignItems="center" sx={{ py: 6 }}><CircularProgress /></Stack>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 6,
+          }}
+        >
+          <CircularProgress />
+        </Stack>
       ) : workers.length === 0 ? (
-        <Alert severity="info">No hay empleados activos. Regístrelos primero en Empleados.</Alert>
+        <Alert severity="info">
+          No hay empleados activos. Regístrelos primero en Empleados.
+        </Alert>
       ) : (
         // While searching on a phone, keep room below so the search can stay
         // at the top of the screen with the matches right under it.
         <Box sx={{ minHeight: searching ? { xs: "80vh", sm: 0 } : undefined }}>
           {searching && shown.length > 0 && (
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-              <Typography sx={{ flex: 1, fontSize: "1.05rem" }} color="text.secondary">
-                {shown.length === 1 ? "1 persona" : `${shown.length} personas`} de {workers.length}
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: "center",
+                mb: 1,
+              }}
+            >
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                  flex: 1,
+                  fontSize: "1.05rem",
+                }}
+              >
+                {shown.length === 1 ? "1 persona" : `${shown.length} personas`}{" "}
+                de {workers.length}
               </Typography>
-              <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>Ver a todos</Button>
+              <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>
+                Ver a todos
+              </Button>
             </Stack>
           )}
           {searching && shown.length === 0 && (
             <Alert
               severity="info"
               sx={{ fontSize: "1.1rem", alignItems: "center" }}
-              action={<Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>Ver a todos</Button>}
+              action={
+                <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>
+                  Ver a todos
+                </Button>
+              }
             >
               No hay nadie con ese nombre o canasto
             </Alert>
@@ -508,19 +751,53 @@ export function RegistroMasivoPage() {
               const isLocked = locked(w.id);
               return (
                 <Card key={w.id} variant="outlined">
-                  <CardContent sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
+                  <CardContent
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      py: 1.25,
+                      "&:last-child": { pb: 1.25 },
+                    }}
+                  >
                     <BasketTile tag={w.tag} team={isTeam(w)} size={48} />
-                    <Box sx={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => focusKilos(w.id)}>
-                      <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>{name}</Typography>
+                    <Box
+                      sx={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                      onClick={() => focusKilos(w.id)}
+                    >
+                      <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>
+                        {name}
+                      </Typography>
                       {isTeam(w) && (
-                        <Typography sx={{ fontSize: "0.95rem", fontWeight: 600, color: "success.dark" }}>{teamLine(w)}</Typography>
+                        <Typography
+                          sx={{
+                            fontSize: "0.95rem",
+                            fontWeight: 600,
+                            color: "success.dark",
+                          }}
+                        >
+                          {teamLine(w)}
+                        </Typography>
                       )}
-                      <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>
+                      <Typography
+                        sx={{ fontSize: "0.95rem", color: "text.secondary" }}
+                      >
                         {has ? (
                           <>
-                            Ya tiene: <strong>{soFarLabel(has, formatQuantity)}</strong>
-                            <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
-                              {" "}({has.records.map((r) => `${formatQuantity(r.quantity)} kg ${r.plotNames.join(", ")}`.trim()).join(" · ")})
+                            Ya tiene:{" "}
+                            <strong>{soFarLabel(has, formatQuantity)}</strong>
+                            <Box
+                              component="span"
+                              sx={{ display: { xs: "none", sm: "inline" } }}
+                            >
+                              {" "}
+                              (
+                              {has.records
+                                .map((r) =>
+                                  `${formatQuantity(r.quantity)} kg ${r.plotNames.join(", ")}`.trim(),
+                                )
+                                .join(" · ")}
+                              )
                             </Box>
                           </>
                         ) : (
@@ -528,7 +805,13 @@ export function RegistroMasivoPage() {
                         )}
                       </Typography>
                       {isLocked && !weekSettled && (
-                        <Typography sx={{ fontSize: "0.95rem", fontWeight: 600, color: "warning.dark" }}>
+                        <Typography
+                          sx={{
+                            fontSize: "0.95rem",
+                            fontWeight: 600,
+                            color: "warning.dark",
+                          }}
+                        >
                           Semana liquidada: no se puede cambiar
                         </Typography>
                       )}
@@ -562,7 +845,10 @@ export function RegistroMasivoPage() {
                       }}
                       onKeyDown={(e) => {
                         // Enter with kilos written asks to save: type, Enter, «Sí, guardar».
-                        if (e.key === "Enter" && (texts[w.id] ?? "").trim() !== "") {
+                        if (
+                          e.key === "Enter" &&
+                          (texts[w.id] ?? "").trim() !== ""
+                        ) {
                           e.preventDefault();
                           askToSave();
                         }
@@ -571,9 +857,32 @@ export function RegistroMasivoPage() {
                       inputRef={(el: HTMLInputElement | null) => {
                         kilosRefs.current[w.id] = el;
                       }}
-                      inputProps={{ inputMode: "decimal", enterKeyHint: "done", "aria-label": `${name}, kilos` }}
-                      InputProps={{ endAdornment: <Typography sx={{ ml: 0.5, color: "text.secondary" }}>kg</Typography> }}
-                      sx={{ width: { xs: 128, sm: 150 }, flexShrink: 0, "& input": { textAlign: "right", fontSize: 26, fontWeight: 600, py: 1.5 } }}
+                      sx={{
+                        width: { xs: 128, sm: 150 },
+                        flexShrink: 0,
+                        "& input": {
+                          textAlign: "right",
+                          fontSize: 26,
+                          fontWeight: 600,
+                          py: 1.5,
+                        },
+                      }}
+                      slotProps={{
+                        input: {
+                          endAdornment: (
+                            <Typography
+                              sx={{ ml: 0.5, color: "text.secondary" }}
+                            >
+                              kg
+                            </Typography>
+                          ),
+                        },
+                        htmlInput: {
+                          inputMode: "decimal",
+                          enterKeyHint: "done",
+                          "aria-label": `${name}, kilos`,
+                        },
+                      }}
                     />
                   </CardContent>
                 </Card>
@@ -582,7 +891,12 @@ export function RegistroMasivoPage() {
           </Stack>
           <Typography sx={{ mt: 2, fontSize: "1.15rem" }}>
             Registrado este día: <strong>{formatQuantity(dayKilos)} kg</strong>
-            {entries.length > 0 && <> · por agregar: <strong>{formatQuantity(newKilos)} kg</strong></>}
+            {entries.length > 0 && (
+              <>
+                {" "}
+                · por agregar: <strong>{formatQuantity(newKilos)} kg</strong>
+              </>
+            )}
           </Typography>
         </Box>
       )}
@@ -594,12 +908,24 @@ export function RegistroMasivoPage() {
           variant={dirty ? "elevation" : "outlined"}
           sx={{
             position: dirty ? "sticky" : "static",
-            bottom: 12, mt: 3, p: 1.5, borderRadius: 3,
-            display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", zIndex: 2,
+            bottom: 12,
+            mt: 3,
+            p: 1.5,
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
+            zIndex: 2,
           }}
         >
-          <Typography sx={{ flex: 1, minWidth: 160, fontSize: "1.05rem" }} color={dirty ? "text.primary" : "text.secondary"}>
-            {dirty ? `${pesadas(entries.length)} sin guardar` : "Escriba los kilos para agregar pesadas"}
+          <Typography
+            sx={{ flex: 1, minWidth: 160, fontSize: "1.05rem" }}
+            color={dirty ? "text.primary" : "text.secondary"}
+          >
+            {dirty
+              ? `${pesadas(entries.length)} sin guardar`
+              : "Escriba los kilos para agregar pesadas"}
           </Typography>
           <Button
             variant="contained"
@@ -607,7 +933,13 @@ export function RegistroMasivoPage() {
             startIcon={<SaveIcon />}
             onClick={askToSave}
             disabled={busy || !dirty}
-            sx={{ minHeight: 56, px: 4, fontSize: "1.15rem", borderRadius: 3, flexGrow: { xs: 1, sm: 0 } }}
+            sx={{
+              minHeight: 56,
+              px: 4,
+              fontSize: "1.15rem",
+              borderRadius: 3,
+              flexGrow: { xs: 1, sm: 0 },
+            }}
           >
             Guardar
           </Button>
@@ -623,15 +955,28 @@ export function RegistroMasivoPage() {
         // save, back on the kilos after «Revisar».
         disableRestoreFocus={searching}
       >
-        <DialogTitle sx={{ fontSize: "1.4rem" }}>¿Guardar el registro del día?</DialogTitle>
+        <DialogTitle sx={{ fontSize: "1.4rem" }}>
+          ¿Guardar el registro del día?
+        </DialogTitle>
         <DialogContent>
           <Typography sx={{ fontSize: "1.1rem" }}>
             {dayTitle(day, today)} · {plot?.name ?? "el lote"}
           </Typography>
           <Typography sx={{ fontSize: "1.1rem", mt: 1 }}>
-            {pesadas(entries.length)} · <strong>{formatQuantity(newKilos)} kg</strong>
+            {pesadas(entries.length)} ·{" "}
+            <strong>{formatQuantity(newKilos)} kg</strong>
           </Typography>
-          <Box component="ul" sx={{ m: 0, mt: 1, pl: 3, maxHeight: 220, overflowY: "auto", fontSize: "1.05rem" }}>
+          <Box
+            component="ul"
+            sx={{
+              m: 0,
+              mt: 1,
+              pl: 3,
+              maxHeight: 220,
+              overflowY: "auto",
+              fontSize: "1.05rem",
+            }}
+          >
             {entries.map((e) => (
               <li key={e.workerId}>
                 {e.name}: {formatQuantity(e.quantity)} kg
@@ -641,17 +986,31 @@ export function RegistroMasivoPage() {
           </Box>
           {entries.some((e) => e.quantity > MAX_PLAUSIBLE_KG) && (
             <Alert severity="warning" sx={{ mt: 1, fontSize: "1rem" }}>
-              ⚠ Es más de lo que carga una persona ({MAX_PLAUSIBLE_KG} kg) en una pesada. Revise
-              que no sobre un cero.
+              ⚠ Es más de lo que carga una persona ({MAX_PLAUSIBLE_KG} kg) en
+              una pesada. Revise que no sobre un cero.
             </Alert>
           )}
-          <Typography sx={{ fontSize: "1rem", mt: 1 }} color="text.secondary">
+          <Typography
+            sx={{
+              color: "text.secondary",
+              fontSize: "1rem",
+              mt: 1,
+            }}
+          >
             Se suman a lo ya registrado; no se cambia nada de antes.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button onClick={closeConfirm} size="large">Revisar</Button>
-          <Button onClick={() => void confirmSave()} variant="contained" size="large" autoFocus sx={{ minHeight: 48, px: 3 }}>
+          <Button onClick={closeConfirm} size="large">
+            Revisar
+          </Button>
+          <Button
+            onClick={() => void confirmSave()}
+            variant="contained"
+            size="large"
+            autoFocus
+            sx={{ minHeight: 48, px: 3 }}
+          >
             Sí, guardar
           </Button>
         </DialogActions>
@@ -681,13 +1040,24 @@ export function RegistroMasivoPage() {
 }
 
 /** Every harvest pesada of the week that starts on `monday`, on any lote. */
-async function loadWeek(activityId: string, monday: string): Promise<WorkRecord[]> {
+async function loadWeek(
+  activityId: string,
+  monday: string,
+): Promise<WorkRecord[]> {
   const sunday = iso(addDays(parseDay(monday), 6));
-  const records = await api.listWorkRecords({ activityId, from: monday, to: sunday, status: "active" });
+  const records = await api.listWorkRecords({
+    activityId,
+    from: monday,
+    to: sunday,
+    status: "active",
+  });
   return records.filter((r) => r.dateFrom <= sunday && r.dateTo >= monday);
 }
 
 /** The pesadas of one day, oldest first so «Pesada 1» is the first weighing. */
 function recordsOn(records: WorkRecord[], day: string): WorkRecord[] {
-  return records.filter((r) => r.dateFrom <= day && r.dateTo >= day).slice().reverse();
+  return records
+    .filter((r) => r.dateFrom <= day && r.dateTo >= day)
+    .slice()
+    .reverse();
 }

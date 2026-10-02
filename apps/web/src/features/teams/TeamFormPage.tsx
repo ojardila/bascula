@@ -10,8 +10,23 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogTitle, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, Stack, TextField,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -91,7 +106,8 @@ export function TeamFormPage() {
   }, [people, search]);
 
   const changed =
-    selected.size !== initial.size || [...selected].some((x) => !initial.has(x));
+    selected.size !== initial.size ||
+    [...selected].some((x) => !initial.has(x));
   const n = selected.size;
 
   function toggle(pid: string) {
@@ -112,30 +128,34 @@ export function TeamFormPage() {
     setTagError(missingTag ? BASKET_REQUIRED : null);
     if (missingName || missingTag) return;
     const memberIds = [...selected];
-    const outcome = await run(`equipo|${teamId}|${memberIds.join(",")}|${from}`, async () => {
-      if (!editing) {
-        return api.createWorker({
-          id: teamId,
+    const outcome = await run(
+      `equipo|${teamId}|${memberIds.join(",")}|${from}`,
+      async () => {
+        if (!editing) {
+          return api.createWorker({
+            id: teamId,
+            name: name.trim(),
+            lastName: "",
+            documentType: "CC",
+            documentNumber: "",
+            phone: "",
+            tag: tag.trim() || null,
+            kind: "equipo",
+            memberIds,
+            membersFrom: from,
+          });
+        }
+        if (wasPerson) await api.updateWorker(teamId, { kind: "equipo" });
+        return api.updateWorker(teamId, {
           name: name.trim(),
           lastName: "",
-          documentType: "CC",
-          documentNumber: "",
-          phone: "",
-          tag: tag.trim() || null,
-          kind: "equipo",
-          memberIds,
-          membersFrom: from,
+          ...(tag.trim() || hadTag ? { tag: tag.trim() } : {}),
+          ...(changed || wasPerson ? { memberIds, membersFrom: from } : {}),
         });
-      }
-      if (wasPerson) await api.updateWorker(teamId, { kind: "equipo" });
-      return api.updateWorker(teamId, {
-        name: name.trim(),
-        lastName: "",
-        ...(tag.trim() || hadTag ? { tag: tag.trim() } : {}),
-        ...(changed || wasPerson ? { memberIds, membersFrom: from } : {}),
-      });
-    }).catch((e: unknown) => {
-      if (e instanceof ApiError && e.code === "DUPLICATE_TAG") setTagError(duplicateTagField(e));
+      },
+    ).catch((e: unknown) => {
+      if (e instanceof ApiError && e.code === "DUPLICATE_TAG")
+        setTagError(duplicateTagField(e));
       else setError(messageFor(e));
       return { ran: false } as const;
     });
@@ -143,24 +163,47 @@ export function TeamFormPage() {
     navigate(`/empleados/${outcome.value.id}`, { replace: true });
   }
 
-  const title = !editing ? "Nuevo equipo" : wasPerson ? "Convertir en equipo" : "Cambiar integrantes";
+  const title = !editing
+    ? "Nuevo equipo"
+    : wasPerson
+      ? "Convertir en equipo"
+      : "Cambiar integrantes";
 
   return (
     <Box component="form" onSubmit={onSubmit} noValidate sx={{ maxWidth: 640 }}>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(editing ? `/empleados/${teamId}` : "/empleados")} color="inherit" sx={{ mb: 1 }}>
+      <Button
+        startIcon={<ArrowBackIcon />}
+        onClick={() =>
+          navigate(editing ? `/empleados/${teamId}` : "/empleados")
+        }
+        color="inherit"
+        sx={{ mb: 1 }}
+      >
         {editing ? "Volver" : "Empleados"}
       </Button>
-      <Typography variant="h1" gutterBottom>{title}</Typography>
-      <Typography sx={{ ...big, mb: 2 }} color="text.secondary">
+      <Typography variant="h1" gutterBottom>
+        {title}
+      </Typography>
+      <Typography
+        sx={{
+          color: "text.secondary",
+          ...big,
+          mb: 2,
+        }}
+      >
         Para quienes recogen juntos y cobran juntos.
       </Typography>
       {wasPerson && (
         <Alert severity="info" sx={{ mb: 2, ...big }}>
-          Se queda con sus pesadas, su número de canasto y su cuenta. Marque quiénes son las
-          personas y desde qué día trabajan juntas.
+          Se queda con sus pesadas, su número de canasto y su cuenta. Marque
+          quiénes son las personas y desde qué día trabajan juntas.
         </Alert>
       )}
-      {error && <Alert severity="error" sx={{ mb: 2, ...big }}>{error}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2, ...big }}>
+          {error}
+        </Alert>
+      )}
 
       <Stack spacing={2.5}>
         <TextField
@@ -194,8 +237,17 @@ export function TeamFormPage() {
         />
 
         <Box>
-          <Typography variant="h2" sx={{ fontSize: "1.4rem", fontWeight: 700 }}>¿Quiénes son?</Typography>
-          <Typography sx={big} color="text.secondary">
+          <Typography variant="h2" sx={{ fontSize: "1.4rem", fontWeight: 700 }}>
+            ¿Quiénes son?
+          </Typography>
+          <Typography
+            sx={[
+              {
+                color: "text.secondary",
+              },
+              ...(Array.isArray(big) ? big : [big]),
+            ]}
+          >
             Marque las personas del equipo. Cada una sigue siendo un trabajador.
           </Typography>
         </Box>
@@ -206,11 +258,26 @@ export function TeamFormPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               fullWidth
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
               sx={{ mb: 1, "& input": big }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon />
+                    </InputAdornment>
+                  ),
+                },
+              }}
             />
             {people === null ? (
-              <Typography sx={{ p: 2 }} color="text.secondary">Cargando…</Typography>
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                  p: 2,
+                }}
+              >
+                Cargando…
+              </Typography>
             ) : (
               <List disablePadding sx={{ maxHeight: 420, overflowY: "auto" }}>
                 {shown.map((p) => {
@@ -229,26 +296,50 @@ export function TeamFormPage() {
                           edge="start"
                           checked={selected.has(p.id)}
                           tabIndex={-1}
-                          inputProps={{ "aria-label": label }}
                           sx={{ "& .MuiSvgIcon-root": { fontSize: 30 } }}
+                          slotProps={{
+                            input: { "aria-label": label },
+                          }}
                         />
                       </ListItemIcon>
                       <BasketTile tag={p.tag} size={44} sx={{ mr: 1.5 }} />
                       <ListItemText
                         primary={label}
-                        secondary={other ? `Ya está en el equipo ${other.name}` : p.tag ? `Canasto ${p.tag}` : "Sin canasto"}
-                        primaryTypographyProps={{ fontWeight: 700, fontSize: "1.1rem" }}
-                        secondaryTypographyProps={{ fontSize: "0.95rem" }}
+                        secondary={
+                          other
+                            ? `Ya está en el equipo ${other.name}`
+                            : p.tag
+                              ? `Canasto ${p.tag}`
+                              : "Sin canasto"
+                        }
+                        slotProps={{
+                          primary: {
+                            sx: { fontWeight: 700, fontSize: "1.1rem" },
+                          },
+                          secondary: { sx: { fontSize: "0.95rem" } },
+                        }}
                       />
                     </ListItemButton>
                   );
                 })}
                 {shown.length === 0 && (
-                  <Typography sx={{ p: 2, ...big }} color="text.secondary">No hay nadie con ese nombre.</Typography>
+                  <Typography
+                    sx={{
+                      color: "text.secondary",
+                      p: 2,
+                      ...big,
+                    }}
+                  >
+                    No hay nadie con ese nombre.
+                  </Typography>
                 )}
               </List>
             )}
-            <Button startIcon={<AddIcon />} onClick={() => setAdding(true)} sx={{ mt: 1, fontSize: "1.05rem" }}>
+            <Button
+              startIcon={<AddIcon />}
+              onClick={() => setAdding(true)}
+              sx={{ mt: 1, fontSize: "1.05rem" }}
+            >
               Agregar una persona nueva
             </Button>
           </CardContent>
@@ -256,23 +347,43 @@ export function TeamFormPage() {
 
         {(!editing || changed || wasPerson) && (
           <DateField
-            label={editing ? "¿Desde qué día cuenta este cambio?" : "¿Desde qué día trabajan juntos?"}
+            label={
+              editing
+                ? "¿Desde qué día cuenta este cambio?"
+                : "¿Desde qué día trabajan juntos?"
+            }
             value={from}
             onChange={setFrom}
           />
         )}
 
         <Alert icon={<GroupsIcon />} severity="success" sx={big}>
-          <strong>{n === 1 ? "1 persona." : `${n} personas.`}</strong> Las pesadas, la liquidación y
-          los pagos van a <strong>nombre del equipo</strong>.
+          <strong>{n === 1 ? "1 persona." : `${n} personas.`}</strong> Las
+          pesadas, la liquidación y los pagos van a{" "}
+          <strong>nombre del equipo</strong>.
           {n > 1 && ` Para los promedios, los kilos se dividen entre ${n}.`}
-          {editing && changed && from && ` El cambio cuenta desde el ${formatDate(from)}.`}
+          {editing &&
+            changed &&
+            from &&
+            ` El cambio cuenta desde el ${formatDate(from)}.`}
         </Alert>
 
-        <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ minHeight: 56, fontSize: "1.2rem" }}>
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          disabled={busy}
+          sx={{ minHeight: 56, fontSize: "1.2rem" }}
+        >
           {busy ? "Guardando…" : "Guardar equipo"}
         </Button>
-        <Button color="inherit" onClick={() => navigate(editing ? `/empleados/${teamId}` : "/empleados")} sx={big}>
+        <Button
+          color="inherit"
+          onClick={() =>
+            navigate(editing ? `/empleados/${teamId}` : "/empleados")
+          }
+          sx={big}
+        >
           Cancelar
         </Button>
       </Stack>
@@ -292,7 +403,13 @@ export function TeamFormPage() {
 }
 
 /** The quickest way to put a member on the list: a name and their basket number. */
-function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Worker) => void }) {
+function NewPersonDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (w: Worker) => void;
+}) {
   const [workerId] = useState(() => uuidv7());
   const [name, setName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -322,7 +439,8 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         tag: tag.trim(),
       }),
     ).catch((e: unknown) => {
-      if (e instanceof ApiError && e.code === "DUPLICATE_TAG") setTagError(duplicateTagField(e));
+      if (e instanceof ApiError && e.code === "DUPLICATE_TAG")
+        setTagError(duplicateTagField(e));
       else setError(messageFor(e));
       return { ran: false } as const;
     });
@@ -335,8 +453,20 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
-          <TextField label="Nombres" value={name} onChange={(e) => setName(e.target.value)} autoFocus required sx={{ "& input": big }} />
-          <TextField label="Apellidos (opcional)" value={lastName} onChange={(e) => setLastName(e.target.value)} sx={{ "& input": big }} />
+          <TextField
+            label="Nombres"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            required
+            sx={{ "& input": big }}
+          />
+          <TextField
+            label="Apellidos (opcional)"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            sx={{ "& input": big }}
+          />
           <TextField
             label={BASKET_LABEL}
             value={tag}
@@ -346,12 +476,22 @@ function NewPersonDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             required
             sx={{ "& input": { fontSize: "1.6rem", fontWeight: 800 } }}
           />
-          <Typography color="text.secondary">La cédula y el teléfono se pueden completar después en su ficha.</Typography>
+          <Typography
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            La cédula y el teléfono se pueden completar después en su ficha.
+          </Typography>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button color="inherit" onClick={onClose}>Cancelar</Button>
-        <Button variant="contained" onClick={() => void save()} disabled={busy}>Agregar</Button>
+        <Button color="inherit" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button variant="contained" onClick={() => void save()} disabled={busy}>
+          Agregar
+        </Button>
       </DialogActions>
     </Dialog>
   );
