@@ -237,9 +237,29 @@ func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
+type passkeyRegisterOptionsRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+}
+
 // handlePasskeyRegisterOptions starts adding a passkey to the caller's account.
+//
+// It asks for the current password first. A passkey outlives the session that
+// made it and survives a password change, so without this a stolen access
+// token (a phone left open, a token copied out of a browser) could register
+// its own passkey and keep the account after the owner changed the password.
+// The check is the same as «Cambiar clave»: a wrong password is a counted,
+// rate-limited failed sign-in.
 func (s *Server) handlePasskeyRegisterOptions(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
+	var req passkeyRegisterOptionsRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if req.CurrentPassword == "" {
+		writeError(w, r, domain.BadRequest("currentPassword is required"))
+		return
+	}
 	rp, err := s.passkeyRPFor(r)
 	if err != nil {
 		writeError(w, r, err)
@@ -253,6 +273,9 @@ func (s *Server) handlePasskeyRegisterOptions(w http.ResponseWriter, r *http.Req
 	user, err := store.FindUserByID(r.Context(), tx, p.UserID)
 	if err != nil {
 		writeError(w, r, err)
+		return
+	}
+	if _, ok := s.checkCurrentPassword(w, r, tx, p, user, req.CurrentPassword); !ok {
 		return
 	}
 	existing, err := store.ListPasskeys(r.Context(), tx, p.UserID, rp.ID)
@@ -394,6 +417,7 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pk.CreatedAt = time.Now()
+	s.mailLater(r, passkeyAddedMessage(user.Email, user.Name, name))
 	writeJSON(w, http.StatusCreated, passkeyViewOf(pk))
 }
 
@@ -419,6 +443,9 @@ func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeError(w, r, domain.NotFound("passkey not found"))
 		return
+	}
+	if user, err := store.FindUserByID(r.Context(), tx, p.UserID); err == nil {
+		s.mailLater(r, passkeyRemovedMessage(user.Email, user.Name))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

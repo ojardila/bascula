@@ -611,8 +611,22 @@ paths:
         WebAuthn creation options for `navigator.credentials.create`, plus
         the sealed `challenge` to send back with the result. Passkeys the
         caller already has on this address are excluded.
+
+        The current password is required: a passkey outlives the session and
+        survives a password change, so a stolen session must not be able to
+        add one. A wrong password counts as a failed sign-in and shares
+        login's limit, as on `changePassword`.
       x-action: me.passkeys.write
       x-roles: [owner, admin, weigher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword]
+              properties:
+                currentPassword: { type: string, maxLength: 128 }
       responses:
         "200":
           description: Options for `navigator.credentials.create`.
@@ -621,7 +635,18 @@ paths:
               schema: { $ref: "#/components/schemas/PasskeyOptions" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: |
+            FORBIDDEN for a role without the action, or INVALID_CREDENTIALS
+            when the current password is wrong.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: RATE_LIMITED, shared with login.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /v1/me/passkeys/{id}:
     parameters:

@@ -345,6 +345,11 @@ export interface paths {
          * @description WebAuthn creation options for `navigator.credentials.create`, plus
          *     the sealed `challenge` to send back with the result. Passkeys the
          *     caller already has on this address are excluded.
+         *
+         *     The current password is required: a passkey outlives the session and
+         *     survives a password change, so a stolen session must not be able to
+         *     add one. A wrong password counts as a failed sign-in and shares
+         *     login's limit, as on `changePassword`.
          */
         post: operations["passkeyRegisterOptions"];
         delete?: never;
@@ -7614,7 +7619,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    currentPassword: string;
+                };
+            };
+        };
         responses: {
             /** @description Options for `navigator.credentials.create`. */
             200: {
@@ -7627,7 +7638,27 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /**
+             * @description FORBIDDEN for a role without the action, or INVALID_CREDENTIALS
+             *     when the current password is wrong.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description RATE_LIMITED, shared with login. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     deletePasskey: {

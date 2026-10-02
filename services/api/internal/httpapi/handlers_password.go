@@ -95,41 +95,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	email := strings.ToLower(user.Email)
-	ip := clientIP(r)
-	byPair, byIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if byPair >= s.cfg.LoginFailuresPerEmailPerIP || byIP >= s.cfg.LoginFailuresPerIP {
-		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
-			"too many failed attempts; try again later"))
-		return
-	}
-
-	farmHash, farmOwn, err := store.FarmOwnerCredentialHash(r.Context(), tx, p.FarmID, p.UserID)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	current := user.PasswordHash
-	if farmOwn {
-		current = farmHash
-	}
-	if ok, err := auth.VerifyPassword(req.CurrentPassword, current); err != nil || !ok {
-		// The failure is kept although the answer is an error; nothing else
-		// has been written yet. See refuse in handleLogin.
-		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
-			writeError(w, r, domain.Internal("could not record the failed attempt").WithCause(err))
-			return
-		}
-		tenant.KeepChanges(r.Context())
-		// 403, not 401: the session is fine, the password typed is not. A
-		// 401 means "this token is no good" to every client, which then
-		// refreshes, asks again (a second counted failure) and signs out.
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeInvalidCredentials,
-			"the current password is not correct"))
+	farmOwn, ok := s.checkCurrentPassword(w, r, tx, p, user, req.CurrentPassword)
+	if !ok {
 		return
 	}
 
@@ -367,4 +334,55 @@ func newResetSecret() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// checkCurrentPassword asks the caller to prove they know the password that
+// opens THIS farm (the farm's own owner password where it has one, otherwise
+// the account's) before something worth more than the session. A wrong
+// password counts as a failed sign-in and is limited like one. It writes the
+// error itself and answers ok=false when the request must stop; farmOwn says
+// which of the two passwords it was.
+func (s *Server) checkCurrentPassword(w http.ResponseWriter, r *http.Request, tx pgx.Tx, p *auth.Principal, user *store.User, password string) (farmOwn, ok bool) {
+	if len(password) > auth.MaxPasswordLength {
+		writeError(w, r, domain.BadRequest("password is too long"))
+		return false, false
+	}
+	email := strings.ToLower(user.Email)
+	ip := clientIP(r)
+	byPair, byIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
+	if err != nil {
+		writeError(w, r, err)
+		return false, false
+	}
+	if byPair >= s.cfg.LoginFailuresPerEmailPerIP || byIP >= s.cfg.LoginFailuresPerIP {
+		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many failed attempts; try again later"))
+		return false, false
+	}
+
+	farmHash, farmOwn, err := store.FarmOwnerCredentialHash(r.Context(), tx, p.FarmID, p.UserID)
+	if err != nil {
+		writeError(w, r, err)
+		return false, false
+	}
+	current := user.PasswordHash
+	if farmOwn {
+		current = farmHash
+	}
+	if ok, err := auth.VerifyPassword(password, current); err != nil || !ok {
+		// The failure is kept although the answer is an error; nothing else
+		// has been written yet. See refuse in handleLogin.
+		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
+			writeError(w, r, domain.Internal("could not record the failed attempt").WithCause(err))
+			return false, false
+		}
+		tenant.KeepChanges(r.Context())
+		// 403, not 401: the session is fine, the password typed is not. A
+		// 401 means "this token is no good" to every client, which then
+		// refreshes, asks again (a second counted failure) and signs out.
+		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeInvalidCredentials,
+			"the current password is not correct"))
+		return false, false
+	}
+	return farmOwn, true
 }

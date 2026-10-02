@@ -4,6 +4,10 @@ import {
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   IconButton,
   Stack,
@@ -13,7 +17,7 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import Fingerprint from "@mui/icons-material/Fingerprint";
 import { api, type PasskeyItem } from "../../api/endpoints";
-import { messageFor } from "../../api/errors";
+import { ApiError, messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAsync } from "../../lib/useAsync";
@@ -59,18 +63,38 @@ export function PasskeysCard() {
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
   const [removing, setRemoving] = useState<PasskeyItem | null>(null);
+  // A passkey opens the account without the password and survives a password
+  // change, so adding one asks for the password first.
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const supported = passkeysSupported();
 
-  async function add() {
+  function startAdding() {
     setError(null);
     setAdded(false);
+    setPassword("");
+    setPasswordError(null);
+    setAsking(true);
+  }
+
+  async function add() {
+    setPasswordError(null);
     setBusy(true);
     try {
-      await api.addPasskey(name.trim() || DEFAULT_PASSKEY_NAME);
+      await api.addPasskey(name.trim() || DEFAULT_PASSKEY_NAME, password);
+      setAsking(false);
+      setPassword("");
       setName("");
       setAdded(true);
       reload();
     } catch (e) {
+      if (e instanceof ApiError && e.code === "INVALID_CREDENTIALS") {
+        setPasswordError("La clave no es correcta.");
+        return;
+      }
+      setAsking(false);
+      setPassword("");
       if (passkeyCancelled(e)) return;
       setError(
         passkeyAlreadyHere(e)
@@ -193,7 +217,7 @@ export function PasskeysCard() {
               variant="contained"
               size="large"
               startIcon={<Fingerprint />}
-              onClick={() => void add()}
+              onClick={startAdding}
               disabled={busy}
               sx={{ whiteSpace: "nowrap" }}
             >
@@ -206,6 +230,51 @@ export function PasskeysCard() {
           </Alert>
         )}
       </CardContent>
+
+      <Dialog
+        open={asking}
+        onClose={() => !busy && setAsking(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void add();
+          }}
+        >
+          <DialogTitle>Confirme que es usted</DialogTitle>
+          <DialogContent>
+            <Typography sx={{ mb: 2 }}>
+              Escriba su clave para agregar la llave de acceso.
+            </Typography>
+            <TextField
+              label="Su clave"
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              fullWidth
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={passwordError !== null}
+              helperText={passwordError ?? " "}
+              slotProps={{ htmlInput: { maxLength: 128 } }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAsking(false)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={busy || password === ""}
+            >
+              {busy ? "Esperando…" : "Continuar"}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
 
       <ConfirmDialog
         open={removing !== null}
