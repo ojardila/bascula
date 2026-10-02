@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/store"
@@ -48,7 +49,7 @@ const (
 )
 
 func (s *Server) handleReportWeeks(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -126,7 +127,7 @@ func (s *Server) handleReportWeek(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -140,7 +141,7 @@ func (s *Server) handleReportWeek(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReportCrop(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -171,7 +172,7 @@ func (s *Server) handleReportCrop(w http.ResponseWriter, r *http.Request) {
 // Anybody with too little evidence comes back with a null index and a reason,
 // never a low one.
 func (s *Server) handleReportPerformance(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -191,7 +192,7 @@ func (s *Server) handleReportPerformance(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleReportAnomalies(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -225,7 +226,7 @@ func (s *Server) handleReportAnomalies(w http.ResponseWriter, r *http.Request) {
 // people to another plot. The reading itself is domain.ReadHarvest, the twin
 // of packages/shared/src/harvest.ts, tested against the same cases.
 func (s *Server) handleReportHarvestCurve(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -281,7 +282,7 @@ const (
 // adds anything up: another farm's worker is the ordinary 404, never a chart of
 // zeros that reads as "this person picked nothing".
 func (s *Server) handleWorkerPerformance(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -305,7 +306,7 @@ func (s *Server) handleWorkerPerformance(w http.ResponseWriter, r *http.Request)
 // lotes, the people and the days, in one request. Kilos, and the estimated
 // value of the week's harvest (Money: administrator only, like every report).
 func (s *Server) handleReportHarvestDashboard(w http.ResponseWriter, r *http.Request) {
-	tx, err := tenant.Tx(r.Context())
+	tx, err := reportTx(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -316,4 +317,25 @@ func (s *Server) handleReportHarvestDashboard(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// reportTx is the request's tenant transaction with JIT compilation turned
+// off for the rest of it.
+//
+// A season of weighings puts these queries over jit_above_cost, so Postgres
+// compiles each one with LLVM before running it. The compile is the expensive
+// part: on a small x86 runner it took longer than the query it was meant to
+// speed up (the anomalies report ran five of them and spent over two seconds),
+// and with JIT forced on even a fast machine went from 0.2s to many seconds.
+// Queries over one farm's data are never long enough to earn the compile back.
+// SET LOCAL ends with the transaction, so nothing else in the pool inherits it.
+func reportTx(r *http.Request) (pgx.Tx, error) {
+	tx, err := tenant.Tx(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(r.Context(), "SET LOCAL jit = off"); err != nil {
+		return nil, err
+	}
+	return tx, nil
 }
