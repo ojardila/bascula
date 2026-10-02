@@ -14,11 +14,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Box, Button, CircularProgress, LinearProgress, Link, Stack, Typography,
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  LinearProgress,
+  Link,
+  Stack,
+  Typography,
 } from "@mui/material";
 import CheckCircle from "@mui/icons-material/CheckCircle";
 import HourglassTop from "@mui/icons-material/HourglassTop";
-import MailOutline from "@mui/icons-material/MailOutline";
+import MailOutline from "@mui/icons-material/MailOutlineOutlined";
 import { api } from "../../api/endpoints";
 import { ApiError } from "../../api/errors";
 import type { ProvisionStatus } from "../../api/types";
@@ -32,9 +39,21 @@ const STEPS: Array<{ key: StepKey; title: string; body: string }> = [
     title: "Base de datos",
     body: "Creamos una base de datos exclusiva para su finca. Sus datos quedan guardados de forma segura y separados de los de cualquier otra finca.",
   },
-  { key: "app", title: "Aplicación", body: "Ponemos a funcionar su finca con su usuario y su clave." },
-  { key: "certificate", title: "Conexión segura", body: "Preparamos el candado de su dirección para que nadie más pueda ver sus datos." },
-  { key: "web", title: "Dirección web", body: "Abrimos su dirección en internet." },
+  {
+    key: "app",
+    title: "Aplicación",
+    body: "Ponemos a funcionar su finca con su usuario y su clave.",
+  },
+  {
+    key: "certificate",
+    title: "Conexión segura",
+    body: "Preparamos el candado de su dirección para que nadie más pueda ver sus datos.",
+  },
+  {
+    key: "web",
+    title: "Dirección web",
+    body: "Abrimos su dirección en internet.",
+  },
 ];
 
 export const POLL_MS = 5000;
@@ -47,7 +66,10 @@ export const goTo = {
 };
 
 export function ProvisionProgress({
-  slug, pollMs = POLL_MS, compact = false, redirectWhenReady = false,
+  slug,
+  pollMs = POLL_MS,
+  compact = false,
+  redirectWhenReady = false,
 }: {
   slug: string;
   pollMs?: number;
@@ -99,8 +121,10 @@ export function ProvisionProgress({
   // so "no quiere esperar" goes to the shared app, where the farm already works.
   const addressOpens = Boolean(
     status &&
-      status.steps.every((s) => (s.key === "certificate" || s.key === "web" ? s.done : true)) &&
-      status.steps.some((s) => s.key === "web"),
+    status.steps.every((s) =>
+      s.key === "certificate" || s.key === "web" ? s.done : true,
+    ) &&
+    status.steps.some((s) => s.key === "web"),
   );
 
   useEffect(() => {
@@ -110,37 +134,73 @@ export function ProvisionProgress({
   }, [redirectWhenReady, ready, appUrl]);
   const doneCount = status ? status.steps.filter((s) => s.done).length : 0;
   // The certificate step exists only where the platform issues one per farm.
-  const steps = STEPS.filter((st) => st.key !== "certificate" || status?.steps.some((x) => x.key === "certificate"));
+  const steps = STEPS.filter(
+    (st) =>
+      st.key !== "certificate" ||
+      status?.steps.some((x) => x.key === "certificate"),
+  );
   // Real progress (stages read from the cluster, GitHub, Cloudflare and the
   // address). An older API without stages gets the four coarse steps.
   const stages = status?.stages?.length ? status.stages : null;
-  const percent = Math.max(0, Math.min(100, Math.round(
-    status?.percent ?? (status ? (doneCount / Math.max(1, status.steps.length)) * 100 : 0),
-  )));
-  const current = status?.current
-    ?? (status ? STEPS.find((st) => !status.steps.find((x) => x.key === st.key)?.done)?.body : undefined)
-    ?? "Estamos empezando.";
+  const percent = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        status?.percent ??
+          (status ? (doneCount / Math.max(1, status.steps.length)) * 100 : 0),
+      ),
+    ),
+  );
+  const current =
+    status?.current ??
+    (status
+      ? STEPS.find((st) => !status.steps.find((x) => x.key === st.key)?.done)
+          ?.body
+      : undefined) ??
+    "Estamos empezando.";
 
   if (missing) {
     return (
       <Alert severity="warning" sx={{ fontSize: "1.1rem" }}>
-        No podemos mostrar el avance de <strong>{host}</strong> en este navegador. Si la acaba
-        de crear aquí, espere un momento. Si la creó en otro navegador o ya pasaron unos días,{" "}
-        <Link component={RouterLink} to="/entrar">entre con su correo</Link>.
+        No podemos mostrar el avance de <strong>{host}</strong> en este
+        navegador. Si la acaba de crear aquí, espere un momento. Si la creó en
+        otro navegador o ya pasaron unos días,{" "}
+        <Link component={RouterLink} to="/entrar">
+          entre con su correo
+        </Link>
+        .
       </Alert>
     );
   }
 
   if (status?.ready) {
     return (
-      <Stack spacing={3} alignItems="center" textAlign="center" data-testid="provision-ready">
+      <Stack
+        spacing={3}
+        data-testid="provision-ready"
+        sx={{
+          alignItems: "center",
+          textAlign: "center",
+        }}
+      >
         <CheckCircle color="success" sx={{ fontSize: compact ? 56 : 80 }} />
-        <Typography component="h2" sx={{ fontSize: compact ? "1.5rem" : "2rem", fontWeight: 700 }}>
+        <Typography
+          component="h2"
+          sx={{ fontSize: compact ? "1.5rem" : "2rem", fontWeight: 700 }}
+        >
           ¡Su finca está lista!
         </Typography>
-        <Typography sx={{ fontSize: "1.15rem" }}>Esta es su dirección. Guárdela:</Typography>
+        <Typography sx={{ fontSize: "1.15rem" }}>
+          Esta es su dirección. Guárdela:
+        </Typography>
         <Typography
-          sx={{ fontSize: { xs: "1.5rem", sm: compact ? "1.7rem" : "2.2rem" }, fontWeight: 800, wordBreak: "break-all", color: "primary.main" }}
+          sx={{
+            fontSize: { xs: "1.5rem", sm: compact ? "1.7rem" : "2.2rem" },
+            fontWeight: 800,
+            wordBreak: "break-all",
+            color: "primary.main",
+          }}
         >
           {host}
         </Typography>
@@ -148,11 +208,22 @@ export function ProvisionProgress({
           href={appUrl}
           variant="contained"
           size="large"
-          sx={{ minHeight: 64, px: 5, fontSize: "1.25rem", borderRadius: 999, width: { xs: "100%", sm: "auto" } }}
+          sx={{
+            minHeight: 64,
+            px: 5,
+            fontSize: "1.25rem",
+            borderRadius: 999,
+            width: { xs: "100%", sm: "auto" },
+          }}
         >
           Entrar a mi finca
         </Button>
-        <Typography color="text.secondary" sx={{ fontSize: "1rem" }}>
+        <Typography
+          sx={{
+            color: "text.secondary",
+            fontSize: "1rem",
+          }}
+        >
           Entre con el mismo correo y la misma clave.
         </Typography>
       </Stack>
@@ -161,23 +232,50 @@ export function ProvisionProgress({
 
   return (
     <Stack spacing={3} data-testid="provision-progress">
-      <Box textAlign="center">
-        <Typography component="h2" sx={{ fontSize: compact ? "1.5rem" : "2rem", fontWeight: 700 }}>
+      <Box
+        sx={{
+          textAlign: "center",
+        }}
+      >
+        <Typography
+          component="h2"
+          sx={{ fontSize: compact ? "1.5rem" : "2rem", fontWeight: 700 }}
+        >
           Preparando su finca…
         </Typography>
         <Typography sx={{ fontSize: "1.15rem", mt: 1 }}>
           Estamos preparando el espacio propio de su finca en{" "}
-          <Box component="strong" sx={{ wordBreak: "break-all" }}>{host}</Box>.
-          Puede tardar unos minutos. No cierre esta página.
+          <Box component="strong" sx={{ wordBreak: "break-all" }}>
+            {host}
+          </Box>
+          . Puede tardar unos minutos. No cierre esta página.
         </Typography>
       </Box>
 
       <Box data-testid="provision-bar">
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
-          <Typography sx={{ fontSize: "1.2rem", fontWeight: 700 }} data-testid="provision-current">
+        <Stack
+          direction="row"
+          sx={{
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            mb: 1,
+          }}
+        >
+          <Typography
+            sx={{ fontSize: "1.2rem", fontWeight: 700 }}
+            data-testid="provision-current"
+          >
             {current}
           </Typography>
-          <Typography sx={{ fontSize: "1.6rem", fontWeight: 800, color: "primary.main", ml: 2 }} data-testid="provision-percent">
+          <Typography
+            sx={{
+              fontSize: "1.6rem",
+              fontWeight: 800,
+              color: "primary.main",
+              ml: 2,
+            }}
+            data-testid="provision-percent"
+          >
             {percent}&nbsp;%
           </Typography>
         </Stack>
@@ -190,13 +288,21 @@ export function ProvisionProgress({
       </Box>
 
       {status?.note && (
-        <Alert severity="info" sx={{ fontSize: "1.05rem" }} data-testid="provision-note">
+        <Alert
+          severity="info"
+          sx={{ fontSize: "1.05rem" }}
+          data-testid="provision-note"
+        >
           {status.note}
         </Alert>
       )}
 
       {stages ? (
-        <Stack spacing={1.5} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
+        <Stack
+          spacing={1.5}
+          component="ol"
+          sx={{ listStyle: "none", p: 0, m: 0 }}
+        >
           {stages.map((stage) => {
             const done = stage.state === "done";
             const active = stage.state === "active";
@@ -206,23 +312,49 @@ export function ProvisionProgress({
                 component="li"
                 direction="row"
                 spacing={2}
-                alignItems="center"
                 data-testid={`stage-${stage.key}`}
                 data-state={stage.state}
                 aria-current={active ? "step" : undefined}
                 sx={{
-                  px: 2, py: 1.5, borderRadius: 2, border: 1,
-                  borderColor: done ? "success.light" : active ? "primary.main" : "divider",
-                  bgcolor: done ? "rgba(46,125,50,.06)" : active ? "rgba(25,118,210,.06)" : "transparent",
+                  alignItems: "center",
+                  px: 2,
+                  py: 1.5,
+                  borderRadius: 2,
+                  border: 1,
+                  borderColor: done
+                    ? "success.light"
+                    : active
+                      ? "primary.main"
+                      : "divider",
+                  bgcolor: done
+                    ? "rgba(46,125,50,.06)"
+                    : active
+                      ? "rgba(25,118,210,.06)"
+                      : "transparent",
                 }}
               >
-                <Box sx={{ width: 36, display: "flex", justifyContent: "center", flexShrink: 0 }}>
+                <Box
+                  sx={{
+                    width: 36,
+                    display: "flex",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
                   {done ? (
                     <CheckCircle color="success" sx={{ fontSize: 32 }} />
                   ) : active ? (
                     <HourglassTop color="primary" sx={{ fontSize: 30 }} />
                   ) : (
-                    <Box sx={{ width: 14, height: 14, borderRadius: "50%", border: 2, borderColor: "text.disabled" }} />
+                    <Box
+                      sx={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        border: 2,
+                        borderColor: "text.disabled",
+                      }}
+                    />
                   )}
                 </Box>
                 <Typography
@@ -232,16 +364,22 @@ export function ProvisionProgress({
                     color: done || active ? "text.primary" : "text.secondary",
                   }}
                 >
-                  {stage.label}{done ? " — listo" : active ? " — en curso" : ""}
+                  {stage.label}
+                  {done ? " — listo" : active ? " — en curso" : ""}
                 </Typography>
               </Stack>
             );
           })}
         </Stack>
       ) : (
-        <Stack spacing={2} component="ol" sx={{ listStyle: "none", p: 0, m: 0 }}>
+        <Stack
+          spacing={2}
+          component="ol"
+          sx={{ listStyle: "none", p: 0, m: 0 }}
+        >
           {steps.map((step, i) => {
-            const done = status?.steps.find((s) => s.key === step.key)?.done ?? false;
+            const done =
+              status?.steps.find((s) => s.key === step.key)?.done ?? false;
             const current = !done && i === doneCount;
             return (
               <Stack
@@ -249,29 +387,50 @@ export function ProvisionProgress({
                 component="li"
                 direction="row"
                 spacing={2}
-                alignItems="center"
                 data-testid={`step-${step.key}`}
                 data-done={done ? "true" : "false"}
                 sx={{
-                  p: 2, borderRadius: 2, border: 1,
-                  borderColor: done ? "success.light" : current ? "primary.light" : "divider",
+                  alignItems: "center",
+                  p: 2,
+                  borderRadius: 2,
+                  border: 1,
+                  borderColor: done
+                    ? "success.light"
+                    : current
+                      ? "primary.light"
+                      : "divider",
                   bgcolor: done ? "rgba(46,125,50,.06)" : "transparent",
                 }}
               >
-                <Box sx={{ width: 40, display: "flex", justifyContent: "center" }}>
+                <Box
+                  sx={{ width: 40, display: "flex", justifyContent: "center" }}
+                >
                   {done ? (
                     <CheckCircle color="success" sx={{ fontSize: 36 }} />
                   ) : current ? (
                     <CircularProgress size={30} />
                   ) : (
-                    <Typography sx={{ fontSize: "1.3rem", color: "text.disabled", fontWeight: 700 }}>{i + 1}</Typography>
+                    <Typography
+                      sx={{
+                        fontSize: "1.3rem",
+                        color: "text.disabled",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {i + 1}
+                    </Typography>
                   )}
                 </Box>
                 <Box>
                   <Typography sx={{ fontSize: "1.2rem", fontWeight: 700 }}>
-                    {step.title}{done ? " — lista" : ""}
+                    {step.title}
+                    {done ? " — lista" : ""}
                   </Typography>
-                  <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>{step.body}</Typography>
+                  <Typography
+                    sx={{ fontSize: "1rem", color: "text.secondary" }}
+                  >
+                    {step.body}
+                  </Typography>
                 </Box>
               </Stack>
             );
@@ -301,22 +460,36 @@ export function ProvisionProgress({
 
       {status?.slow ? (
         <Alert severity="info" sx={{ fontSize: "1.05rem" }}>
-          Su dirección propia está tardando más de lo normal. Su finca ya funciona:
-          puede entrar ahora mismo con su correo y su clave. Cuando{" "}
+          Su dirección propia está tardando más de lo normal. Su finca ya
+          funciona: puede entrar ahora mismo con su correo y su clave. Cuando{" "}
           <strong>{host}</strong> esté lista, también podrá usarla.
           <Box sx={{ mt: 2 }}>
-            <Button component={RouterLink} to="/entrar" variant="contained" size="large" sx={{ minHeight: 56 }}>
+            <Button
+              component={RouterLink}
+              to="/entrar"
+              variant="contained"
+              size="large"
+              sx={{ minHeight: 56 }}
+            >
               Entrar ahora
             </Button>
           </Box>
         </Alert>
       ) : (
-        <Typography textAlign="center" color="text.secondary" sx={{ fontSize: "1rem" }}>
+        <Typography
+          sx={{
+            textAlign: "center",
+            color: "text.secondary",
+            fontSize: "1rem",
+          }}
+        >
           ¿No quiere esperar? Su finca ya funciona:{" "}
           {addressOpens ? (
             <Link href={loginUrl}>entre aquí con su correo</Link>
           ) : (
-            <Link component={RouterLink} to="/entrar">entre aquí con su correo</Link>
+            <Link component={RouterLink} to="/entrar">
+              entre aquí con su correo
+            </Link>
           )}
           .
         </Typography>
@@ -331,7 +504,10 @@ export function ProvisionProgress({
  * owner registered with, so nothing is typed here.
  */
 function ReadyEmail({
-  requested, busy, failed, onAsk,
+  requested,
+  busy,
+  failed,
+  onAsk,
 }: {
   requested: boolean;
   busy: boolean;
@@ -340,25 +516,49 @@ function ReadyEmail({
 }) {
   if (requested) {
     return (
-      <Alert severity="success" icon={<MailOutline />} sx={{ fontSize: "1.1rem" }} data-testid="ready-email-done">
-        Listo. Le enviaremos un correo cuando su finca esté lista. Ya puede cerrar esta página.
+      <Alert
+        severity="success"
+        icon={<MailOutline />}
+        sx={{ fontSize: "1.1rem" }}
+        data-testid="ready-email-done"
+      >
+        Listo. Le enviaremos un correo cuando su finca esté lista. Ya puede
+        cerrar esta página.
       </Alert>
     );
   }
   return (
-    <Stack spacing={1} alignItems="center" textAlign="center" data-testid="ready-email">
+    <Stack
+      spacing={1}
+      data-testid="ready-email"
+      sx={{
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
       <Button
         onClick={onAsk}
         disabled={busy}
         variant="outlined"
         size="large"
         startIcon={<MailOutline />}
-        sx={{ minHeight: 56, fontSize: "1.1rem", borderRadius: 999, width: { xs: "100%", sm: "auto" } }}
+        sx={{
+          minHeight: 56,
+          fontSize: "1.1rem",
+          borderRadius: 999,
+          width: { xs: "100%", sm: "auto" },
+        }}
       >
         Avísenme por correo cuando esté lista
       </Button>
-      <Typography color="text.secondary" sx={{ fontSize: "1rem" }}>
-        Le escribimos al correo con el que se registró. Así no tiene que esperar aquí.
+      <Typography
+        sx={{
+          color: "text.secondary",
+          fontSize: "1rem",
+        }}
+      >
+        Le escribimos al correo con el que se registró. Así no tiene que esperar
+        aquí.
       </Typography>
       {failed && (
         <Alert severity="error" sx={{ fontSize: "1rem" }}>

@@ -42,9 +42,29 @@
 import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Checkbox, Chip, Dialog, DialogActions,
-  DialogContent, DialogContentText, DialogTitle, Divider, Grid, MenuItem, Stack,
-  Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Divider,
+  Grid,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
@@ -73,7 +93,12 @@ import { paymentReceiptHtml, paymentReceiptText } from "../documents/documents";
 import { shareByWhatsApp } from "../../lib/share";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { printDocument } from "../documents/print";
-import type { PayableLine, PayMethod, Payment, PaymentReceipt } from "../../api/types";
+import type {
+  PayableLine,
+  PayMethod,
+  Payment,
+  PaymentReceipt,
+} from "../../api/types";
 
 export function PayWorkerPage() {
   const { id = "" } = useParams();
@@ -81,7 +106,12 @@ export function PayWorkerPage() {
   const { user } = useAuth();
 
   const { data, error, denied, reload } = useAsync(
-    () => Promise.all([api.getWorker(id), api.workerPayables(id), api.workerBalance(id)]),
+    () =>
+      Promise.all([
+        api.getWorker(id),
+        api.workerPayables(id),
+        api.workerBalance(id),
+      ]),
     [id],
   );
 
@@ -102,7 +132,10 @@ export function PayWorkerPage() {
     lines: PayableLine[];
     slip: PaymentReceipt | null;
   } | null>(null);
-  const [excess, setExcess] = useState<{ amount: number; balance: number } | null>(null);
+  const [excess, setExcess] = useState<{
+    amount: number;
+    balance: number;
+  } | null>(null);
   /**
    * The figure moved under the person's hands. Non-null means the screen is
    * BLOCKED: no payment can be made from this state, and the only control
@@ -123,16 +156,20 @@ export function PayWorkerPage() {
    * deliberately not in red: red in this console is for conflicts, and paying
    * somebody is not a mistake.
    */
-  const [confirming, setConfirming] = useState<{ amountCents: number; alsoAdvance: number } | null>(
-    null,
-  );
+  const [confirming, setConfirming] = useState<{
+    amountCents: number;
+    alsoAdvance: number;
+  } | null>(null);
   /**
    * The last thing confirmed, so the dialog does not sign off saying
    * "Entregar $0". MUI keeps it mounted through the closing animation, and
    * `confirming?.amountCents ?? 0` painted a zero on the way out — exactly
    * the kind of ghost figure this sprint is removing.
    */
-  const lastConfirm = useRef<{ amountCents: number; alsoAdvance: number } | null>(null);
+  const lastConfirm = useRef<{
+    amountCents: number;
+    alsoAdvance: number;
+  } | null>(null);
   if (confirming) lastConfirm.current = confirming;
   const shownConfirm = confirming ?? lastConfirm.current;
 
@@ -304,7 +341,10 @@ export function PayWorkerPage() {
         : undefined,
     });
     const outcome = await shareByWhatsApp(text, worker.phone);
-    if (outcome === "failed") setPayError("No se pudo abrir WhatsApp. Revise que el navegador permita ventanas nuevas.");
+    if (outcome === "failed")
+      setPayError(
+        "No se pudo abrir WhatsApp. Revise que el navegador permita ventanas nuevas.",
+      );
   }
 
   const partialCents = parseMoneyInput(partial);
@@ -321,26 +361,37 @@ export function PayWorkerPage() {
         Perfil de {worker.name}
       </Button>
       <Typography variant="h1" gutterBottom>
-        {worker.kind === "equipo" ? "Pagar al equipo " : "Pagar a "}{worker.name} {worker.lastName}
+        {worker.kind === "equipo" ? "Pagar al equipo " : "Pagar a "}
+        {worker.name} {worker.lastName}
       </Typography>
       {worker.kind === "equipo" && (
-        <Alert severity="success" icon={false} sx={{ mb: 2, fontSize: "1.1rem" }}>
+        <Alert
+          severity="success"
+          icon={false}
+          sx={{ mb: 2, fontSize: "1.1rem" }}
+        >
           <strong>Cuenta del equipo</strong>
           {(worker.members?.length ?? 0) > 0
             ? ` · ${(worker.members ?? []).map((m) => m.name).join(" y ")}. `
             : ". "}
-          Se liquida y se paga una sola vez, al equipo. Cómo se reparten la plata es cosa de ellos.
+          Se liquida y se paga una sola vez, al equipo. Cómo se reparten la
+          plata es cosa de ellos.
         </Alert>
       )}
       {worker.team && (
         <Alert severity="info" sx={{ mb: 2, fontSize: "1.1rem" }}>
-          {worker.name} está en el equipo <strong>{worker.team.name}</strong>: sus kilos se pagan en la
-          cuenta del equipo. Aquí solo queda lo que tenía antes de entrar.
+          {worker.name} está en el equipo <strong>{worker.team.name}</strong>:
+          sus kilos se pagan en la cuenta del equipo. Aquí solo queda lo que
+          tenía antes de entrar.
         </Alert>
       )}
 
       {payError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setPayError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setPayError(null)}
+        >
           {payError}
         </Alert>
       )}
@@ -374,11 +425,20 @@ export function PayWorkerPage() {
                 </TableHead>
                 <TableBody>
                   {payables.workRecords.map((w) => (
-                    <TableRow key={w.id} hover onClick={() => toggle(w.id)} sx={{ cursor: "pointer" }}>
+                    <TableRow
+                      key={w.id}
+                      hover
+                      onClick={() => toggle(w.id)}
+                      sx={{ cursor: "pointer" }}
+                    >
                       <TableCell padding="checkbox">
                         <Checkbox
                           checked={checked.has(w.id)}
-                          inputProps={{ "aria-label": `Incluir ${w.activityName}` }}
+                          slotProps={{
+                            input: {
+                              "aria-label": `Incluir ${w.activityName}`,
+                            },
+                          }}
                         />
                       </TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>
@@ -398,10 +458,14 @@ export function PayWorkerPage() {
                           />
                         )}
                       </TableCell>
-                      <TableCell>{formatDateRange(w.dateFrom, w.dateTo)}</TableCell>
+                      <TableCell>
+                        {formatDateRange(w.dateFrom, w.dateTo)}
+                      </TableCell>
                       <TableCell>{w.plotNames.join(", ")}</TableCell>
                       <TableCell align="right">
-                        {w.unitLabel ? `${formatQuantity(w.quantity)} ${w.unitLabel}` : "contrato"}
+                        {w.unitLabel
+                          ? `${formatQuantity(w.quantity)} ${w.unitLabel}`
+                          : "contrato"}
                       </TableCell>
                       <TableCell align="right">
                         <Money cents={w.amountCents} variant="small" />
@@ -417,12 +481,14 @@ export function PayWorkerPage() {
                   )}
                 </TableBody>
               </Table>
-              {payables.workRecords.some((w) => w.rateSource === "weekly_price") && (
+              {payables.workRecords.some(
+                (w) => w.rateSource === "weekly_price",
+              ) && (
                 <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-                  Las labores marcadas <strong>provisional</strong> se pagan al precio de
-                  la semana, que se fija al cerrar la semana. Si ese precio cambia antes
-                  de que usted liquide, el total cambia — y esta pantalla se lo dirá
-                  antes de registrar nada.
+                  Las labores marcadas <strong>provisional</strong> se pagan al
+                  precio de la semana, que se fija al cerrar la semana. Si ese
+                  precio cambia antes de que usted liquide, el total cambia — y
+                  esta pantalla se lo dirá antes de registrar nada.
                 </Alert>
               )}
             </CardContent>
@@ -443,10 +509,19 @@ export function PayWorkerPage() {
                      went on looking the same after everything was paid off
                      and the balance was $0 — read as a debt the payment had
                      not cleared. The heading and the footer say so now. */}
-              <Typography variant="h3">Anticipos y deudas ya descontados</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                Plata que {worker.name} ya recibió, o que le debe a la finca. No se suma
-                aquí: <strong>ya está restada del saldo</strong> de la derecha.
+              <Typography variant="h3">
+                Anticipos y deudas ya descontados
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                  mb: 1.5,
+                }}
+              >
+                Plata que {worker.name} ya recibió, o que le debe a la finca. No
+                se suma aquí: <strong>ya está restada del saldo</strong> de la
+                derecha.
               </Typography>
               <Table size="small">
                 <TableHead>
@@ -482,19 +557,44 @@ export function PayWorkerPage() {
         <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ position: { md: "sticky" }, top: 88 }}>
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Total a pagar
               </Typography>
               <Money cents={toPayCents} variant="big" />
               <Stack spacing={0.5} sx={{ mt: 1.5 }}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Saldo actual
                   </Typography>
                   <Money cents={balance.balanceCents} variant="small" />
                 </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Labores seleccionadas
                   </Typography>
                   <Money cents={selectedCents} variant="small" />
@@ -517,25 +617,26 @@ export function PayWorkerPage() {
                 <MenuItem value="otro">Otro</MenuItem>
               </TextField>
 
-              {worker.kind === "equipo" && (worker.members?.length ?? 0) > 0 && (
-                <TextField
-                  select
-                  label="¿Quién recibe la plata? (opcional)"
-                  value={receivedBy}
-                  onChange={(e) => setReceivedBy(e.target.value)}
-                  fullWidth
-                  size="medium"
-                  sx={{ mb: 2 }}
-                  helperText="Sale en el recibo. El pago es para todo el equipo."
-                >
-                  <MenuItem value="">No decir</MenuItem>
-                  {(worker.members ?? []).map((m) => (
-                    <MenuItem key={m.id} value={m.id}>
-                      {`${m.name} ${m.lastName ?? ""}`.trim()}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
+              {worker.kind === "equipo" &&
+                (worker.members?.length ?? 0) > 0 && (
+                  <TextField
+                    select
+                    label="¿Quién recibe la plata? (opcional)"
+                    value={receivedBy}
+                    onChange={(e) => setReceivedBy(e.target.value)}
+                    fullWidth
+                    size="medium"
+                    sx={{ mb: 2 }}
+                    helperText="Sale en el recibo. El pago es para todo el equipo."
+                  >
+                    <MenuItem value="">No decir</MenuItem>
+                    {(worker.members ?? []).map((m) => (
+                      <MenuItem key={m.id} value={m.id}>
+                        {`${m.name} ${m.lastName ?? ""}`.trim()}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
 
               {/* "Revisar y…", as in payroll: the button writes nothing, it
                   opens the list of what is about to be signed. */}
@@ -544,13 +645,20 @@ export function PayWorkerPage() {
                 fullWidth
                 size="large"
                 disabled={busy || !!changed || toPayCents <= 0}
-                onClick={() => setConfirming({ amountCents: toPayCents, alsoAdvance: 0 })}
+                onClick={() =>
+                  setConfirming({ amountCents: toPayCents, alsoAdvance: 0 })
+                }
                 sx={{ mb: 2 }}
               >
                 Revisar y pagar · {formatMoney(toPayCents)}
               </Button>
 
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Pago parcial
               </Typography>
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
@@ -562,16 +670,26 @@ export function PayWorkerPage() {
                   fullWidth
                   inputMode="numeric"
                   helperText={
-                    partialCents !== null && partialCents > toPayCents && toPayCents > 0
+                    partialCents !== null &&
+                    partialCents > toPayCents &&
+                    toPayCents > 0
                       ? "Es más que el total. Se le preguntará qué hacer con el excedente."
                       : " "
                   }
                 />
                 <Button
                   variant="outlined"
-                  disabled={busy || !!changed || partialCents === null || partialCents <= 0}
+                  disabled={
+                    busy ||
+                    !!changed ||
+                    partialCents === null ||
+                    partialCents <= 0
+                  }
                   onClick={() =>
-                    setConfirming({ amountCents: partialCents as number, alsoAdvance: 0 })
+                    setConfirming({
+                      amountCents: partialCents as number,
+                      alsoAdvance: 0,
+                    })
                   }
                   sx={{ height: 56 }}
                 >
@@ -580,8 +698,8 @@ export function PayWorkerPage() {
               </Stack>
 
               <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-                El pago se registra en el libro y no se edita. Si queda mal, se corrige
-                con {CORRECTION_GLOSS}
+                El pago se registra en el libro y no se edita. Si queda mal, se
+                corrige con {CORRECTION_GLOSS}
               </Alert>
             </CardContent>
           </Card>
@@ -600,20 +718,24 @@ export function PayWorkerPage() {
         fullWidth
       >
         <DialogTitle>
-          Entregar {formatMoney(shownConfirm?.amountCents ?? 0)} a {worker.name} {worker.lastName}
+          Entregar {formatMoney(shownConfirm?.amountCents ?? 0)} a {worker.name}{" "}
+          {worker.lastName}
         </DialogTitle>
         <DialogContent dividers>
           <DialogContentText component="div" sx={{ mb: 2 }}>
             {payables.workRecords.length > 0 && checked.size > 0 ? (
               <>
-                Esto liquida las labores de abajo —les fija el precio— y escribe el pago
-                en el libro.
+                Esto liquida las labores de abajo —les fija el precio— y escribe
+                el pago en el libro.
               </>
             ) : (
-              <>Esto escribe el pago en el libro, contra el saldo que ya está escrito.</>
+              <>
+                Esto escribe el pago en el libro, contra el saldo que ya está
+                escrito.
+              </>
             )}{" "}
-            <strong>Un pago no se edita ni se borra</strong>: si queda mal, se corrige con
-            {" "}{CORRECTION_GLOSS}
+            <strong>Un pago no se edita ni se borra</strong>: si queda mal, se
+            corrige con {CORRECTION_GLOSS}
           </DialogContentText>
 
           {checked.size > 0 && (
@@ -632,9 +754,13 @@ export function PayWorkerPage() {
                   .map((w) => (
                     <TableRow key={w.id}>
                       <TableCell>{w.activityName}</TableCell>
-                      <TableCell>{formatDateRange(w.dateFrom, w.dateTo)}</TableCell>
+                      <TableCell>
+                        {formatDateRange(w.dateFrom, w.dateTo)}
+                      </TableCell>
                       <TableCell align="right">
-                        {w.unitLabel ? `${formatQuantity(w.quantity)} ${w.unitLabel}` : "contrato"}
+                        {w.unitLabel
+                          ? `${formatQuantity(w.quantity)} ${w.unitLabel}`
+                          : "contrato"}
                       </TableCell>
                       <TableCell align="right">
                         <Money cents={w.amountCents} variant="small" />
@@ -647,19 +773,45 @@ export function PayWorkerPage() {
 
           <Divider sx={{ my: 2 }} />
           <Stack spacing={0.5}>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2" color="text.secondary">
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Saldo ya escrito en el libro
               </Typography>
               <Money cents={balance.balanceCents} variant="small" />
             </Stack>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2" color="text.secondary">
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Labores que se liquidan ahora
               </Typography>
               <Money cents={selectedCents} variant="small" />
             </Stack>
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
               <Typography variant="h3">Se entrega</Typography>
               <Money cents={shownConfirm?.amountCents ?? 0} variant="big" />
             </Stack>
@@ -667,11 +819,17 @@ export function PayWorkerPage() {
               <Typography sx={{ fontSize: "1.05rem" }}>
                 Recibe:{" "}
                 <strong>
-                  {(worker.members ?? []).find((m) => m.id === receivedBy)?.name ?? ""}
+                  {(worker.members ?? []).find((m) => m.id === receivedBy)
+                    ?.name ?? ""}
                 </strong>
               </Typography>
             )}
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               En {method}.
             </Typography>
           </Stack>
@@ -681,15 +839,19 @@ export function PayWorkerPage() {
           {shownConfirm !== null && shownConfirm.amountCents < toPayCents && (
             <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
               Es un pago parcial. Después de esto quedan{" "}
-              <strong>{formatMoney(toPayCents - shownConfirm.amountCents)}</strong> a favor de{" "}
-              {worker.name}.
+              <strong>
+                {formatMoney(toPayCents - shownConfirm.amountCents)}
+              </strong>{" "}
+              a favor de {worker.name}.
             </Alert>
           )}
 
-          {payables.workRecords.some((w) => checked.has(w.id) && w.rateSource === "weekly_price") && (
+          {payables.workRecords.some(
+            (w) => checked.has(w.id) && w.rateSource === "weekly_price",
+          ) && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              Parte de esto está al precio de la semana. Liquidar es lo que lo fija: a
-              partir de aquí deja de ser provisional.
+              Parte de esto está al precio de la semana. Liquidar es lo que lo
+              fija: a partir de aquí deja de ser provisional.
             </Alert>
           )}
         </DialogContent>
@@ -700,9 +862,13 @@ export function PayWorkerPage() {
           <Button
             variant="contained"
             disabled={busy}
-            onClick={() => confirming && pay(confirming.amountCents, confirming.alsoAdvance)}
+            onClick={() =>
+              confirming && pay(confirming.amountCents, confirming.alsoAdvance)
+            }
           >
-            {busy ? "Registrando…" : `Pagar ${formatMoney(shownConfirm?.amountCents ?? 0)}`}
+            {busy
+              ? "Registrando…"
+              : `Pagar ${formatMoney(shownConfirm?.amountCents ?? 0)}`}
           </Button>
         </DialogActions>
       </Dialog>
@@ -716,7 +882,7 @@ export function PayWorkerPage() {
           every way out of this dialog goes through `reviewAgain`, which throws
           the stale approval away and reloads. There is no path from here to a
           write. */}
-      <Dialog open={!!changed} disableEscapeKeyDown maxWidth="sm" fullWidth>
+      <Dialog open={!!changed} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ChangeCircleIcon color="warning" />
           El total cambió mientras revisaba
@@ -735,19 +901,34 @@ export function PayWorkerPage() {
                 divider={<Divider orientation="vertical" flexItem />}
               >
                 <Box>
-                  <Typography variant="overline" color="text.secondary">
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Lo que usted aprobó
                   </Typography>
                   <Money cents={changed.beforeCents} />
                 </Box>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Lo que se registraría ahora
                   </Typography>
                   <Money cents={changed.afterCents} variant="big" />
                 </Box>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Diferencia
                   </Typography>
                   <Money cents={changed.deltaCents} signed colored />
@@ -772,7 +953,9 @@ export function PayWorkerPage() {
                           <Chip size="small" color="warning" label="Entró" />
                         </TableCell>
                         <TableCell>{l.activityName}</TableCell>
-                        <TableCell>{formatDateRange(l.dateFrom, l.dateTo)}</TableCell>
+                        <TableCell>
+                          {formatDateRange(l.dateFrom, l.dateTo)}
+                        </TableCell>
                         <TableCell align="right">
                           <Money cents={l.amountCents} variant="small" />
                         </TableCell>
@@ -784,9 +967,15 @@ export function PayWorkerPage() {
                           <Chip size="small" variant="outlined" label="Salió" />
                         </TableCell>
                         <TableCell>{l.activityName}</TableCell>
-                        <TableCell>{formatDateRange(l.dateFrom, l.dateTo)}</TableCell>
+                        <TableCell>
+                          {formatDateRange(l.dateFrom, l.dateTo)}
+                        </TableCell>
                         <TableCell align="right">
-                          <Money cents={-l.amountCents} signed variant="small" />
+                          <Money
+                            cents={-l.amountCents}
+                            signed
+                            variant="small"
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -800,14 +989,20 @@ export function PayWorkerPage() {
                     ? "Una labor"
                     : `${changed.repriced.length} labores`}{" "}
                   se pagan al precio de la semana, y ese precio cambió: de{" "}
-                  <strong>{formatMoney(changed.repriced[0].fromRateCents)}</strong> a{" "}
-                  <strong>{formatMoney(changed.repriced[0].toRateCents)}</strong> por unidad.
+                  <strong>
+                    {formatMoney(changed.repriced[0].fromRateCents)}
+                  </strong>{" "}
+                  a{" "}
+                  <strong>
+                    {formatMoney(changed.repriced[0].toRateCents)}
+                  </strong>{" "}
+                  por unidad.
                 </Alert>
               )}
 
               <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-                No se registró ningún pago ni ninguna liquidación. Vuelva a mirar el
-                detalle y apruebe la cifra nueva.
+                No se registró ningún pago ni ninguna liquidación. Vuelva a
+                mirar el detalle y apruebe la cifra nueva.
               </Alert>
             </>
           )}
@@ -821,15 +1016,24 @@ export function PayWorkerPage() {
 
       {/* Paying more than the balance: RSP-008 forbids it, the ledger allows
           it, so the person decides — and the excess is named correctly. */}
-      <Dialog open={!!excess} onClose={() => setExcess(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={!!excess}
+        onClose={() => setExcess(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>El valor supera el saldo</DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
-            Está pagando <strong>{formatMoney(excess?.amount ?? 0)}</strong> y el saldo
-            pendiente es <strong>{formatMoney(excess?.balance ?? 0)}</strong>.
+            Está pagando <strong>{formatMoney(excess?.amount ?? 0)}</strong> y
+            el saldo pendiente es{" "}
+            <strong>{formatMoney(excess?.balance ?? 0)}</strong>.
             <Box sx={{ mt: 2 }}>
-              Puede corregir el valor, o pagar de más y registrar la diferencia de{" "}
-              <strong>{formatMoney((excess?.amount ?? 0) - (excess?.balance ?? 0))}</strong>{" "}
+              Puede corregir el valor, o pagar de más y registrar la diferencia
+              de{" "}
+              <strong>
+                {formatMoney((excess?.amount ?? 0) - (excess?.balance ?? 0))}
+              </strong>{" "}
               como <strong>anticipo</strong>, que es lo que realmente es: plata
               entregada a cuenta de trabajo futuro.
             </Box>
@@ -852,7 +1056,12 @@ export function PayWorkerPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!receipt} onClose={() => setReceipt(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={!!receipt}
+        onClose={() => setReceipt(null)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Pago registrado</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 1 }}>
@@ -863,28 +1072,98 @@ export function PayWorkerPage() {
               sx={{ alignSelf: "flex-start", fontWeight: 700 }}
             />
             {receipt?.slip && receipt.slip.currentWeekCents !== 0 && (
-              <Stack direction="row" justifyContent="space-between">
-                <Typography color="text.secondary">Semana actual</Typography>
+              <Stack
+                direction="row"
+                sx={{
+                  justifyContent: "space-between",
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Semana actual
+                </Typography>
                 <Money cents={receipt.slip.currentWeekCents} variant="small" />
               </Stack>
             )}
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Saldo anterior</Typography>
-              <Money cents={receipt?.slip?.previousBalanceCents ?? receipt?.payment.balanceBeforeCents ?? 0} variant="small" />
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Saldo anterior
+              </Typography>
+              <Money
+                cents={
+                  receipt?.slip?.previousBalanceCents ??
+                  receipt?.payment.balanceBeforeCents ??
+                  0
+                }
+                variant="small"
+              />
             </Stack>
             {receipt?.slip?.deductions.map((d) => (
-              <Stack key={d.concept + d.date} direction="row" justifyContent="space-between">
-                <Typography color="text.secondary">Descuento · {d.concept}</Typography>
+              <Stack
+                key={d.concept + d.date}
+                direction="row"
+                sx={{
+                  justifyContent: "space-between",
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Descuento · {d.concept}
+                </Typography>
                 <Money cents={d.amountCents} variant="small" />
               </Stack>
             ))}
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Pagado</Typography>
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Pagado
+              </Typography>
               <Money cents={receipt?.payment.amountCents ?? 0} />
             </Stack>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography color="text.secondary">Saldo después</Typography>
-              <Money cents={receipt?.slip?.remainingCents ?? receipt?.payment.balanceAfterCents ?? 0} variant="small" />
+            <Stack
+              direction="row"
+              sx={{
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Saldo después
+              </Typography>
+              <Money
+                cents={
+                  receipt?.slip?.remainingCents ??
+                  receipt?.payment.balanceAfterCents ??
+                  0
+                }
+                variant="small"
+              />
             </Stack>
           </Stack>
         </DialogContent>
@@ -892,7 +1171,13 @@ export function PayWorkerPage() {
             stack full width, primary (print) on top. */}
         <DialogActions
           data-testid="receipt-actions"
-          sx={{ px: 3, pb: 2, flexDirection: "column-reverse", alignItems: "stretch", "& > *": { width: "100%" } }}
+          sx={{
+            px: 3,
+            pb: 2,
+            flexDirection: "column-reverse",
+            alignItems: "stretch",
+            "& > *": { width: "100%" },
+          }}
         >
           <Button onClick={() => setReceipt(null)} color="inherit">
             Seguir aquí
@@ -906,7 +1191,11 @@ export function PayWorkerPage() {
             <Button
               variant="outlined"
               startIcon={<ReceiptLongIcon />}
-              onClick={() => navigate(`/empleados/${id}/historial/pago/${receipt.payment.id}`)}
+              onClick={() =>
+                navigate(
+                  `/empleados/${id}/historial/pago/${receipt.payment.id}`,
+                )
+              }
             >
               Ver recibo
             </Button>
@@ -914,10 +1203,18 @@ export function PayWorkerPage() {
           {/* RSP-008: "el sistema genera el recibo de pago". It is the primary
               action, because a payment the worker has no paper for is a
               payment they cannot check. */}
-          <Button variant="outlined" startIcon={<WhatsAppIcon />} onClick={() => void sendReceipt()}>
+          <Button
+            variant="outlined"
+            startIcon={<WhatsAppIcon />}
+            onClick={() => void sendReceipt()}
+          >
             Enviar por WhatsApp
           </Button>
-          <Button variant="contained" startIcon={<PrintIcon />} onClick={printReceipt}>
+          <Button
+            variant="contained"
+            startIcon={<PrintIcon />}
+            onClick={printReceipt}
+          >
             Imprimir recibo
           </Button>
         </DialogActions>

@@ -24,7 +24,11 @@ import { Box, Stack, Tooltip, Typography } from "@mui/material";
 import { Money } from "../../components/Money";
 import { formatQuantity } from "../../lib/money";
 import { moneyFont } from "../../theme";
-import { PROVISIONAL, PROVISIONAL_NOTE, PROVISIONAL_WHY } from "../../lib/vocab";
+import {
+  PROVISIONAL,
+  PROVISIONAL_NOTE,
+  PROVISIONAL_WHY,
+} from "../../lib/vocab";
 import { kgState, valueState, type Totals } from "./totals";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -52,7 +56,10 @@ export function Unknown({ reason }: { reason: string }) {
 /** The small note that rides beside a provisional or partial figure. */
 function Note({ children, title }: { children: ReactNode; title?: string }) {
   const text = (
-    <Typography variant="caption" sx={{ color: "warning.dark", lineHeight: 1.2 }}>
+    <Typography
+      variant="caption"
+      sx={{ color: "warning.dark", lineHeight: 1.2 }}
+    >
       {children}
     </Typography>
   );
@@ -104,9 +111,16 @@ export function Value({
   }
 
   return (
-    <Stack alignItems={align} sx={{ minWidth: 0 }}>
+    <Stack
+      sx={{
+        alignItems: align,
+        minWidth: 0,
+      }}
+    >
       <Money cents={state.cents} variant={variant} />
-      {state.kind === "estimate" && <Note title={PROVISIONAL_WHY}>{PROVISIONAL_NOTE}</Note>}
+      {state.kind === "estimate" && (
+        <Note title={PROVISIONAL_WHY}>{PROVISIONAL_NOTE}</Note>
+      )}
       {state.kind === "partial" && (
         <Note
           title={
@@ -156,11 +170,26 @@ export function Kg({
   }
 
   return (
-    <Stack alignItems={align} sx={{ minWidth: 0 }}>
-      <Box component="span" sx={{ ...moneyFont, fontWeight: bold ? 700 : 500, whiteSpace: "nowrap" }}>
+    <Stack
+      sx={{
+        alignItems: align,
+        minWidth: 0,
+      }}
+    >
+      <Box
+        component="span"
+        sx={{
+          ...moneyFont,
+          fontWeight: bold ? 700 : 500,
+          whiteSpace: "nowrap",
+        }}
+      >
         {formatQuantity(state.kg)}
         {showUnit && (
-          <Box component="span" sx={{ color: "text.secondary", fontWeight: 500 }}>
+          <Box
+            component="span"
+            sx={{ color: "text.secondary", fontWeight: 500 }}
+          >
             {" "}
             kg
           </Box>
@@ -196,7 +225,10 @@ export function Figure({
 }) {
   if (value === null) return <Unknown reason={reason} />;
   return (
-    <Box component="span" sx={{ ...moneyFont, fontWeight: bold ? 700 : 500, whiteSpace: "nowrap" }}>
+    <Box
+      component="span"
+      sx={{ ...moneyFont, fontWeight: bold ? 700 : 500, whiteSpace: "nowrap" }}
+    >
       {format(value)}
       {suffix ? (
         <Box component="span" sx={{ color: "text.secondary", fontWeight: 500 }}>
@@ -233,11 +265,20 @@ export function Stat({
     >
       <Typography
         variant="overline"
-        sx={{ color: "text.secondary", fontSize: 10, display: "block", lineHeight: 1.6 }}
+        sx={{
+          color: "text.secondary",
+          fontSize: 10,
+          display: "block",
+          lineHeight: 1.6,
+        }}
       >
         {label}
       </Typography>
-      <Box sx={{ fontSize: "1.35rem", fontWeight: 700, ...moneyFont, mt: 0.25 }}>{children}</Box>
+      <Box
+        sx={{ fontSize: "1.35rem", fontWeight: 700, ...moneyFont, mt: 0.25 }}
+      >
+        {children}
+      </Box>
     </Box>
   );
   return hint ? <Tooltip title={hint}>{body}</Tooltip> : body;

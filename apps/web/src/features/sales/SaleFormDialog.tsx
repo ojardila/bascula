@@ -25,18 +25,42 @@
  */
 import { useMemo, useState } from "react";
 import {
-  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
-  FormControlLabel, MenuItem, Stack, TextField, Typography,
+  Alert,
+  Button,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
-import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
+import {
+  CatalogPicker,
+  type CatalogValue,
+} from "../../components/CatalogPicker";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
-import { formatMoney, formatQuantity, parseMoneyInput, parseQuantityInput } from "../../lib/money";
+import {
+  formatMoney,
+  formatQuantity,
+  parseMoneyInput,
+  parseQuantityInput,
+} from "../../lib/money";
 import { todayInFarm } from "../../lib/dates";
 import { exceedsStock } from "../../lib/stock";
 import { useAuth } from "../../auth/AuthContext";
-import type { CatalogItem, Customer, Product, Sale, StockLevel } from "../../api/types";
+import type {
+  CatalogItem,
+  Customer,
+  Product,
+  Sale,
+  StockLevel,
+} from "../../api/types";
 import { DateField } from "../../components/DateField";
 
 export interface SaleFormDialogProps {
@@ -63,7 +87,13 @@ export interface SaleFormDialogProps {
 }
 
 export function SaleFormDialog({
-  open, products, customers, warehouses, levels, onClose, onSaved,
+  open,
+  products,
+  customers,
+  warehouses,
+  levels,
+  onClose,
+  onSaved,
 }: SaleFormDialogProps) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
@@ -80,7 +110,9 @@ export function SaleFormDialog({
    * one is visibly unanswered.
    */
   const [warehouse, setWarehouse] = useState<CatalogValue | null>(
-    warehouses.length === 1 ? { id: warehouses[0].id, name: warehouses[0].name } : null,
+    warehouses.length === 1
+      ? { id: warehouses[0].id, name: warehouses[0].name }
+      : null,
   );
   const [customer, setCustomer] = useState<CatalogValue | null>(null);
   const [qty, setQty] = useState("");
@@ -108,11 +140,16 @@ export function SaleFormDialog({
   }, [productId, warehouse, levels]);
 
   const short =
-    available !== null && quantity !== null && quantity > 0 && exceedsStock(available, quantity);
+    available !== null &&
+    quantity !== null &&
+    quantity > 0 &&
+    exceedsStock(available, quantity);
 
   /** What a unit works out at, so a misplaced zero is visible before saving. */
   const unitPrice =
-    quantity && quantity > 0 && amountCents !== null ? Math.round(amountCents / quantity) : null;
+    quantity && quantity > 0 && amountCents !== null
+      ? Math.round(amountCents / quantity)
+      : null;
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -122,27 +159,38 @@ export function SaleFormDialog({
     else if (quantity === null) e.qty = "Escriba un número, por ejemplo 12,5.";
     else if (quantity <= 0) e.qty = "Tiene que ser mayor que cero.";
     if (!amount.trim()) e.amount = "Escriba el valor de la venta.";
-    else if (amountCents === null) e.amount = "Escriba un número, por ejemplo 1.250.000.";
+    else if (amountCents === null)
+      e.amount = "Escriba un número, por ejemplo 1.250.000.";
     else if (amountCents <= 0) e.amount = "Tiene que ser mayor que cero.";
     if (short && !anyway) {
-      e.qty = "No hay tanto en esa bodega. Corrija la cantidad o marque la casilla de abajo.";
+      e.qty =
+        "No hay tanto en esa bodega. Corrija la cantidad o marque la casilla de abajo.";
     }
     setFields(e);
     return Object.keys(e).length === 0;
   }
 
   async function save() {
-    if (!validate() || quantity === null || amountCents === null || !warehouse) return;
+    if (!validate() || quantity === null || amountCents === null || !warehouse)
+      return;
     // One sale per filled-in form. A double click used to write two, and the
     // id being minted inside the call meant the server's idempotency could
     // never recognise the second one as a retry. See `lib/writeOnce.ts`.
-    const intent = ["venta", productId, warehouse.id ?? warehouse.name, quantity,
-                    amountCents, date, customer?.id ?? customer?.name ?? ""].join("|");
+    const intent = [
+      "venta",
+      productId,
+      warehouse.id ?? warehouse.name,
+      quantity,
+      amountCents,
+      date,
+      customer?.id ?? customer?.name ?? "",
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       // Same as the movement dialog: the warehouse id is required on the
       // sale, so a name typed into the picker becomes a row first.
-      const warehouseId = warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
+      const warehouseId =
+        warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
       return api.createSale({
         id: mint(),
         productId,
@@ -162,7 +210,9 @@ export function SaleFormDialog({
         const have = e.details.onHand;
         setError(
           `${e.spanishMessage}${
-            typeof have === "number" ? ` En bodega hay ${formatQuantity(have)}.` : ""
+            typeof have === "number"
+              ? ` En bodega hay ${formatQuantity(have)}.`
+              : ""
           }`,
         );
       } else {
@@ -175,7 +225,12 @@ export function SaleFormDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>Registrar venta</DialogTitle>
       <DialogContent>
         {error && (
@@ -254,7 +309,10 @@ export function SaleFormDialog({
               <FormControlLabel
                 sx={{ display: "block", mt: 1 }}
                 control={
-                  <Checkbox checked={anyway} onChange={(e) => setAnyway(e.target.checked)} />
+                  <Checkbox
+                    checked={anyway}
+                    onChange={(e) => setAnyway(e.target.checked)}
+                  />
                 }
                 label="Regístrela de todos modos: la venta ocurrió y la bodega está desactualizada."
               />
@@ -267,8 +325,8 @@ export function SaleFormDialog({
           {levels === null && productId !== "" && (
             <Alert severity="info" variant="outlined">
               No se pudieron consultar las existencias, así que esta pantalla no
-              sabe cuánto hay en bodega. La venta se registra igual y el servidor
-              hace su propia comprobación.
+              sabe cuánto hay en bodega. La venta se registra igual y el
+              servidor hace su propia comprobación.
             </Alert>
           )}
 
@@ -291,14 +349,26 @@ export function SaleFormDialog({
             />
           </Stack>
 
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             Al guardar, el producto sale de la bodega en el mismo acto. La
-            cantidad no se podrá modificar después: si queda mal, se anula la venta —lo
-            que devuelve el producto a la bodega— y se registra de nuevo.
+            cantidad no se podrá modificar después: si queda mal, se anula la
+            venta —lo que devuelve el producto a la bodega— y se registra de
+            nuevo.
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            La foto del comprobante todavía no se puede adjuntar: el servidor aún no tiene
-            dónde guardarla. Preferimos decirlo a poner una casilla que se traga el archivo.
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            La foto del comprobante todavía no se puede adjuntar: el servidor
+            aún no tiene dónde guardarla. Preferimos decirlo a poner una casilla
+            que se traga el archivo.
           </Typography>
         </Stack>
       </DialogContent>

@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Box, Chip, Stack, Tooltip, Typography } from "@mui/material";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
@@ -31,7 +35,12 @@ export function PlotsPage() {
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{p.name}</Typography>
             {p.status === "inactive" && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 inactivo
               </Typography>
             )}
@@ -49,12 +58,23 @@ export function PlotsPage() {
         header: "Área",
         align: "right",
         render: (p) => (
-          <Stack alignItems="flex-end">
-            <span>{p.areaHa === null ? "—" : `${formatArea(p.areaHa)} ha`}</span>
+          <Stack
+            sx={{
+              alignItems: "flex-end",
+            }}
+          >
+            <span>
+              {p.areaHa === null ? "—" : `${formatArea(p.areaHa)} ha`}
+            </span>
             {/* Declared and computed always disagree. Showing only one is
                 deciding for the owner which of them lies, so both are here. */}
             {p.computedAreaHa === null ? (
-              <Typography variant="caption" color="text.disabled">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.disabled",
+                }}
+              >
                 sin polígono
               </Typography>
             ) : (
@@ -66,7 +86,12 @@ export function PlotsPage() {
                     one thing and a hillside traced with a mouse says another.
                     A yellow triangle on every row with a polygon teaches
                     people to ignore yellow triangles. */}
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   calculada {formatArea(p.computedAreaHa)} ha
                 </Typography>
               </Tooltip>
@@ -78,9 +103,20 @@ export function PlotsPage() {
         key: "crops",
         header: "Cultivos",
         render: (p) => (
-          <Stack direction="row" gap={0.5} flexWrap="wrap">
+          <Stack
+            direction="row"
+            sx={{
+              gap: 0.5,
+              flexWrap: "wrap",
+            }}
+          >
             {p.crops.length === 0 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 sin cultivos
               </Typography>
             )}
@@ -89,7 +125,9 @@ export function PlotsPage() {
                 key={c.id}
                 size="small"
                 variant="outlined"
-                label={[c.cropTypeName, c.varietyName].filter(Boolean).join(" ")}
+                label={[c.cropTypeName, c.varietyName]
+                  .filter(Boolean)
+                  .join(" ")}
               />
             ))}
           </Stack>
@@ -114,7 +152,11 @@ export function PlotsPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -133,10 +175,16 @@ export function PlotsPage() {
         searchPlaceholder="Buscar por nombre o municipio"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("plots.write") ? () => navigate(`${PLOT.path}/nuevo`) : undefined}
+        onCreate={
+          can("plots.write") ? () => navigate(`${PLOT.path}/nuevo`) : undefined
+        }
         createLabel={`Nuevo ${PLOT.one}`}
         onRowClick={(p) => navigate(`${PLOT.path}/${p.id}`)}
-        onEdit={can("plots.write") ? (p) => navigate(`${PLOT.path}/${p.id}/editar`) : undefined}
+        onEdit={
+          can("plots.write")
+            ? (p) => navigate(`${PLOT.path}/${p.id}/editar`)
+            : undefined
+        }
         onDeactivate={
           can("plots.delete")
             ? async (p) => {

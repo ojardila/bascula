@@ -1,22 +1,38 @@
 import { useState } from "react";
 import {
-  Alert, Button, Card, CardContent, Divider, IconButton, Stack, TextField, Typography,
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  Divider,
+  IconButton,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import Fingerprint from "@mui/icons-material/Fingerprint";
 import { api, type PasskeyItem } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAsync } from "../../lib/useAsync";
-import { passkeyAlreadyHere, passkeyCancelled, passkeysSupported } from "../../lib/passkeys";
+import {
+  passkeyAlreadyHere,
+  passkeyCancelled,
+  passkeysSupported,
+} from "../../lib/passkeys";
 
 /** What the passkey is called when the person leaves the name empty. */
 export const DEFAULT_PASSKEY_NAME = "Llave de acceso";
 
 function formatWhen(iso: string, timeZone: string): string {
   try {
-    return new Date(iso).toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short", timeZone });
+    return new Date(iso).toLocaleString("es-CO", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone,
+    });
   } catch {
     return new Date(iso).toLocaleString("es-CO");
   }
@@ -33,7 +49,11 @@ function formatWhen(iso: string, timeZone: string): string {
 export function PasskeysCard() {
   const { user } = useAuth();
   const tz = user?.farm?.timezone ?? "America/Bogota";
-  const { data, error: loadError, reload } = useAsync(() => api.listPasskeys(), []);
+  const {
+    data,
+    error: loadError,
+    reload,
+  } = useAsync(() => api.listPasskeys(), []);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,23 +103,55 @@ export function PasskeysCard() {
         <Typography variant="h3" gutterBottom>
           Llaves de acceso
         </Typography>
-        <Typography color="text.secondary" sx={{ mb: 2 }}>
-          Entre con la huella o la cara de su celular en lugar de escribir la contraseña. Es
-          opcional: su contraseña sigue sirviendo igual.
+        <Typography
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Entre con la huella o la cara de su celular en lugar de escribir la
+          contraseña. Es opcional: su contraseña sigue sirviendo igual.
         </Typography>
 
-        {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        {added && <Alert severity="success" sx={{ mb: 2 }}>Llave de acceso guardada.</Alert>}
+        {loadError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {loadError}
+          </Alert>
+        )}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {added && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            Llave de acceso guardada.
+          </Alert>
+        )}
 
         {data && data.length > 0 && (
           <Stack divider={<Divider flexItem />} sx={{ mb: 2 }}>
             {data.map((p) => (
-              <Stack key={p.id} direction="row" alignItems="center" spacing={1.5} sx={{ py: 1 }}>
+              <Stack
+                key={p.id}
+                direction="row"
+                spacing={1.5}
+                sx={{
+                  alignItems: "center",
+                  py: 1,
+                }}
+              >
                 <Fingerprint color="action" />
                 <Stack sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 600 }} noWrap>{p.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography sx={{ fontWeight: 600 }} noWrap>
+                    {p.name}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     {p.lastUsedAt
                       ? `Último uso: ${formatWhen(p.lastUsedAt, tz)}`
                       : `Creada: ${formatWhen(p.createdAt, tz)}`}
@@ -117,7 +169,12 @@ export function PasskeysCard() {
           </Stack>
         )}
         {data && data.length === 0 && (
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
+          <Typography
+            sx={{
+              color: "text.secondary",
+              mb: 2,
+            }}
+          >
             Todavía no tiene llaves de acceso.
           </Typography>
         )}
@@ -144,7 +201,9 @@ export function PasskeysCard() {
             </Button>
           </Stack>
         ) : (
-          <Alert severity="info">Este navegador no permite llaves de acceso.</Alert>
+          <Alert severity="info">
+            Este navegador no permite llaves de acceso.
+          </Alert>
         )}
       </CardContent>
 

@@ -39,9 +39,29 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, AlertTitle, Box, Button, Card, CardContent, Checkbox, Chip, Dialog, DialogActions,
-  DialogContent, DialogTitle, FormControlLabel, MenuItem, Radio, Stack, Table, TableBody, TableCell,
-  TableHead, TableRow, TextField, Typography,
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  MenuItem,
+  Radio,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
@@ -132,7 +152,8 @@ export function FarmUsersPage() {
     return true;
   });
 
-  if (!can("config.users")) return <PermissionDenied moduleName="gestionar los usuarios" />;
+  if (!can("config.users"))
+    return <PermissionDenied moduleName="gestionar los usuarios" />;
   if (denied) return <PermissionDenied moduleName="gestionar los usuarios" />;
 
   const unsupported = error !== null && data === null;
@@ -172,11 +193,22 @@ export function FarmUsersPage() {
        in while he was reading the screen. A date is a date, `null` is
        genuinely never, absent is "—". */
     u.lastLoginAt === undefined ? (
-      <Typography variant="body2" color="text.secondary" title="El servidor no informa la última entrada.">
+      <Typography
+        variant="body2"
+        title="El servidor no informa la última entrada."
+        sx={{
+          color: "text.secondary",
+        }}
+      >
         —
       </Typography>
     ) : u.lastLoginAt === null ? (
-      <Typography variant="body2" color="text.secondary">
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+        }}
+      >
         Nunca ha entrado
       </Typography>
     ) : (
@@ -196,14 +228,21 @@ export function FarmUsersPage() {
 
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "center" }}
         spacing={2}
-        sx={{ mb: 3 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { sm: "center" },
+          mb: 3,
+        }}
       >
         <Box>
           <Typography variant="h1">Usuarios de la finca</Typography>
-          <Typography color="text.secondary" sx={{ fontSize: 17 }}>
+          <Typography
+            sx={{
+              color: "text.secondary",
+              fontSize: 17,
+            }}
+          >
             Quién puede entrar a {user?.farm.name} y con qué permisos.
           </Typography>
         </Box>
@@ -221,7 +260,11 @@ export function FarmUsersPage() {
       </Stack>
 
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -233,14 +276,15 @@ export function FarmUsersPage() {
           <AlertTitle>Esta parte todavía no está en el servidor</AlertTitle>
           {error}
           <Box sx={{ mt: 1.5 }}>
-            La consola ya sabe pedirla: <code>GET /v1/users</code> para listarlos,{" "}
-            <code>POST /v1/users</code> para invitar y <code>PATCH /v1/users/{"{id}"}</code>{" "}
-            para cambiar el rol o quitar el acceso. En cuanto el servidor las responda,
-            esta pantalla funciona sin tocar nada.
+            La consola ya sabe pedirla: <code>GET /v1/users</code> para
+            listarlos, <code>POST /v1/users</code> para invitar y{" "}
+            <code>PATCH /v1/users/{"{id}"}</code> para cambiar el rol o quitar
+            el acceso. En cuanto el servidor las responda, esta pantalla
+            funciona sin tocar nada.
           </Box>
           <Box sx={{ mt: 1.5 }}>
-            Mientras tanto, la única forma de crear un usuario sigue siendo registrar una
-            finca nueva.
+            Mientras tanto, la única forma de crear un usuario sigue siendo
+            registrar una finca nueva.
           </Box>
         </Alert>
       )}
@@ -250,29 +294,73 @@ export function FarmUsersPage() {
       {!unsupported && !error && (
         <>
           {/* ── Dueños de la finca ── */}
-          <Card data-tour="owners" sx={{ mb: 3, borderRadius: 4, border: 2, borderColor: "#d5e8d0" }}>
+          <Card
+            data-tour="owners"
+            sx={{ mb: 3, borderRadius: 4, border: 2, borderColor: "#d5e8d0" }}
+          >
             <CardContent sx={{ p: { xs: 2.25, sm: 3 } }}>
-              <Stack direction="row" spacing={1.25} alignItems="center">
+              <Stack
+                direction="row"
+                spacing={1.25}
+                sx={{
+                  alignItems: "center",
+                }}
+              >
                 <KeyIcon sx={{ color: "#c9a227", fontSize: 30 }} />
-                <Typography variant="h3" component="h2" sx={{ fontSize: 22, fontWeight: 800 }}>
+                <Typography
+                  variant="h3"
+                  component="h2"
+                  sx={{ fontSize: 22, fontWeight: 800 }}
+                >
                   Dueños de la finca
                 </Typography>
               </Stack>
-              <Typography sx={{ fontSize: 16, color: "text.secondary", mt: 0.5, mb: 1.5 }}>
+              <Typography
+                sx={{ fontSize: 16, color: "text.secondary", mt: 0.5, mb: 1.5 }}
+              >
                 Ven y cambian todo: precios, pagos y usuarios.
               </Typography>
-              <Stack divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}>
-                {data === null && <Typography color="text.secondary">Cargando…</Typography>}
+              <Stack
+                divider={<Box sx={{ borderTop: 1, borderColor: "divider" }} />}
+              >
+                {data === null && (
+                  <Typography
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    Cargando…
+                  </Typography>
+                )}
                 {owners.map((u) => (
-                  <Stack key={u.id} direction="row" alignItems="center" spacing={1.5} sx={{ py: 1.25 }}>
+                  <Stack
+                    key={u.id}
+                    direction="row"
+                    spacing={1.5}
+                    sx={{
+                      alignItems: "center",
+                      py: 1.25,
+                    }}
+                  >
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography sx={{ fontWeight: 700, fontSize: 17 }}>
                         {u.name || "—"}
                         {u.id === user?.id && (
-                          <Chip size="small" variant="outlined" label="usted" sx={{ ml: 1, height: 22 }} />
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label="usted"
+                            sx={{ ml: 1, height: 22 }}
+                          />
                         )}
                       </Typography>
-                      <Typography sx={{ fontSize: 15, color: "text.secondary", wordBreak: "break-all" }}>
+                      <Typography
+                        sx={{
+                          fontSize: 15,
+                          color: "text.secondary",
+                          wordBreak: "break-all",
+                        }}
+                      >
                         {u.email}
                       </Typography>
                     </Box>
@@ -286,15 +374,23 @@ export function FarmUsersPage() {
                 ))}
               </Stack>
               {user?.role === "owner" && (
-              <Button
-                fullWidth
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={() => setInvitingOwner(true)}
-                sx={{ mt: 2, minHeight: 52, borderRadius: 999, fontSize: 17, fontWeight: 700, borderWidth: 2, "&:hover": { borderWidth: 2 } }}
-              >
-                Invitar a otro dueño
-              </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  startIcon={<AddIcon />}
+                  onClick={() => setInvitingOwner(true)}
+                  sx={{
+                    mt: 2,
+                    minHeight: 52,
+                    borderRadius: 999,
+                    fontSize: 17,
+                    fontWeight: 700,
+                    borderWidth: 2,
+                    "&:hover": { borderWidth: 2 },
+                  }}
+                >
+                  Invitar a otro dueño
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -302,11 +398,18 @@ export function FarmUsersPage() {
           {/* ── Administradores y pesadores ── */}
           <Card data-tour="users-list" sx={{ borderRadius: 4 }}>
             <CardContent sx={{ p: { xs: 2.25, sm: 3 }, pb: 0 }}>
-              <Typography variant="h3" component="h2" sx={{ fontSize: 22, fontWeight: 800 }}>
+              <Typography
+                variant="h3"
+                component="h2"
+                sx={{ fontSize: 22, fontWeight: 800 }}
+              >
                 Administradores y pesadores
               </Typography>
-              <Typography sx={{ fontSize: 16, color: "text.secondary", mt: 0.5 }}>
-                Cada uno entra con su propio correo y ve solo lo que su rol le deja.
+              <Typography
+                sx={{ fontSize: 16, color: "text.secondary", mt: 0.5 }}
+              >
+                Cada uno entra con su propio correo y ve solo lo que su rol le
+                deja.
               </Typography>
             </CardContent>
             <Box sx={{ overflowX: "auto" }}>
@@ -331,14 +434,28 @@ export function FarmUsersPage() {
                   {others.map((u) => {
                     const isMe = u.id === user?.id;
                     return (
-                      <TableRow key={u.id} sx={{ opacity: u.status === "revoked" ? 0.55 : 1 }}>
+                      <TableRow
+                        key={u.id}
+                        sx={{ opacity: u.status === "revoked" ? 0.55 : 1 }}
+                      >
                         <TableCell>
                           <Stack>
                             <Typography sx={{ fontWeight: 600 }}>
                               {u.name || "—"}
-                              {isMe && <Chip size="small" label="usted" sx={{ ml: 1, height: 20 }} />}
+                              {isMe && (
+                                <Chip
+                                  size="small"
+                                  label="usted"
+                                  sx={{ ml: 1, height: 20 }}
+                                />
+                              )}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: "text.secondary",
+                              }}
+                            >
                               {u.email}
                             </Typography>
                           </Stack>
@@ -355,7 +472,9 @@ export function FarmUsersPage() {
                               size="small"
                               value={u.role}
                               disabled={busy || u.status === "revoked"}
-                              onChange={(e) => changeRole(u, e.target.value as Role)}
+                              onChange={(e) =>
+                                changeRole(u, e.target.value as Role)
+                              }
                               sx={{ minWidth: 160 }}
                             >
                               {ROLES.map((r) => (
@@ -377,7 +496,12 @@ export function FarmUsersPage() {
                         <TableCell>{lastLogin(u)}</TableCell>
                         <TableCell align="right">
                           {!isMe && u.status !== "revoked" && (
-                            <Button size="small" color="error" disabled={busy} onClick={() => setRevoking(u)}>
+                            <Button
+                              size="small"
+                              color="error"
+                              disabled={busy}
+                              onClick={() => setRevoking(u)}
+                            >
                               Quitar acceso
                             </Button>
                           )}
@@ -387,8 +511,12 @@ export function FarmUsersPage() {
                   })}
                   {data !== null && others.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} sx={{ color: "text.secondary", fontSize: 16 }}>
-                        Todavía no ha invitado a nadie. Toque «Invitar a alguien».
+                      <TableCell
+                        colSpan={5}
+                        sx={{ color: "text.secondary", fontSize: 16 }}
+                      >
+                        Todavía no ha invitado a nadie. Toque «Invitar a
+                        alguien».
                       </TableCell>
                     </TableRow>
                   )}
@@ -407,23 +535,33 @@ export function FarmUsersPage() {
           <Stack spacing={1.5} sx={{ mt: 1 }}>
             <Box>
               <Typography sx={{ fontWeight: 600 }}>Dueño</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Todo, incluidos los precios, los pagos, dar de baja y la cuenta de cada
-                persona. Se invita aparte, en «Dueños de la finca».
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Todo, incluidos los precios, los pagos, dar de baja y la cuenta
+                de cada persona. Se invita aparte, en «Dueños de la finca».
               </Typography>
             </Box>
             {ROLES.map((r) => (
               <Box key={r.value}>
                 <Typography sx={{ fontWeight: 600 }}>{r.label}</Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   {r.blurb}
                 </Typography>
               </Box>
             ))}
           </Stack>
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-            Esconder un botón no es un permiso. El rol se aplica también en el servidor,
-            porque un teléfono se presta y una sesión se comparte.
+            Esconder un botón no es un permiso. El rol se aplica también en el
+            servidor, porque un teléfono se presta y una sesión se comparte.
           </Alert>
         </CardContent>
       </Card>
@@ -448,7 +586,8 @@ export function FarmUsersPage() {
         onClose={() => {
           setInvitingOwner(false);
           // Tour step 3 waits for this dialog, whatever happened in it.
-          if (tour.current?.tour === "owner" && tour.current.n === 3) tour.goTo(4);
+          if (tour.current?.tour === "owner" && tour.current.n === 3)
+            tour.goTo(4);
         }}
         onDone={reload}
       />
@@ -523,7 +662,8 @@ function InviteDialog({
   };
 
   const chosenRole: Role = owner ? "owner" : role;
-  const ready = email.trim() !== "" && name.trim() !== "" && (!owner || confirmed);
+  const ready =
+    email.trim() !== "" && name.trim() !== "" && (!owner || confirmed);
 
   async function submit(): Promise<boolean> {
     setFields({});
@@ -538,7 +678,12 @@ function InviteDialog({
     // One membership per filled-in form. The id used to be minted inside the
     // call, so a double click sent two different ids for the same person.
     // See `lib/writeOnce.ts`.
-    const intent = ["invitar", email.trim().toLowerCase(), name.trim(), chosenRole].join("|");
+    const intent = [
+      "invitar",
+      email.trim().toLowerCase(),
+      name.trim(),
+      chosenRole,
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       return api.inviteFarmUser({ id: mint(), email, name, role: chosenRole });
@@ -552,7 +697,9 @@ function InviteDialog({
     // on the credential, because closing it would destroy the password.
     onDone();
     setInvited(outcome.value);
-    tour.note((s) => (owner ? { owners: s.owners + 1 } : { people: s.people + 1 }));
+    tour.note((s) =>
+      owner ? { owners: s.owners + 1 } : { people: s.people + 1 },
+    );
     if (tour.isAt("owner", 5)) tour.goTo(6);
     return true;
   }
@@ -579,17 +726,35 @@ function InviteDialog({
                 <Alert severity="warning">
                   <AlertTitle>Apunte esta contraseña ahora</AlertTitle>
                   Es la única vez que se puede ver. El servidor solo guarda una
-                  versión cifrada, así que ni nosotros podemos volver a leerla. Si
-                  se pierde, hay que crear la contraseña de nuevo.
+                  versión cifrada, así que ni nosotros podemos volver a leerla.
+                  Si se pierde, hay que crear la contraseña de nuevo.
                 </Alert>
                 <Box data-tour="invite-credential">
-                  <Typography variant="overline" color="text.secondary">
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Correo
                   </Typography>
-                  <Typography sx={{ fontFamily: "monospace", fontSize: "1.05rem", wordBreak: "break-all" }}>
+                  <Typography
+                    sx={{
+                      fontFamily: "monospace",
+                      fontSize: "1.05rem",
+                      wordBreak: "break-all",
+                    }}
+                  >
                     {invited.email}
                   </Typography>
-                  <Typography variant="overline" color="text.secondary" component="div" sx={{ mt: 1 }}>
+                  <Typography
+                    variant="overline"
+                    component="div"
+                    sx={{
+                      color: "text.secondary",
+                      mt: 1,
+                    }}
+                  >
                     Contraseña temporal
                   </Typography>
                   <Typography
@@ -606,10 +771,15 @@ function InviteDialog({
                     {invited.temporaryPassword}
                   </Typography>
                 </Box>
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   Entréguesela en persona o por donde usted ya se comunica con
-                  {first ? ` ${first}` : " ella"}. No se envía ningún correo: esta aplicación no manda
-                  correos.
+                  {first ? ` ${first}` : " ella"}. No se envía ningún correo:
+                  esta aplicación no manda correos.
                 </Typography>
               </>
             ) : (
@@ -635,7 +805,11 @@ function InviteDialog({
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button variant="contained" onClick={finish} sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}>
+          <Button
+            variant="contained"
+            onClick={finish}
+            sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}
+          >
             Ya la apunté
           </Button>
         </DialogActions>
@@ -644,7 +818,12 @@ function InviteDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle sx={{ fontSize: 22, fontWeight: 800 }}>
         {owner ? "Invitar a otro dueño" : "Invitar a alguien a la finca"}
       </DialogTitle>
@@ -655,9 +834,12 @@ function InviteDialog({
           {!owner && <TourCallout tour="owner" n={5} onPrimary={submit} />}
           {owner && (
             <Alert severity="warning" icon={false} sx={{ fontSize: 16 }}>
-              <AlertTitle sx={{ fontWeight: 800 }}>Un dueño puede todo</AlertTitle>
-              Ve y cambia precios y pagos, invita o quita personas y puede borrar registros.
-              Solo usted u otro dueño le pueden quitar el acceso.
+              <AlertTitle sx={{ fontWeight: 800 }}>
+                Un dueño puede todo
+              </AlertTitle>
+              Ve y cambia precios y pagos, invita o quita personas y puede
+              borrar registros. Solo usted u otro dueño le pueden quitar el
+              acceso.
             </Alert>
           )}
           {error && <Alert severity="error">{error}</Alert>}
@@ -686,22 +868,33 @@ function InviteDialog({
           {owner ? (
             <FormControlLabel
               sx={{
-                m: 0, p: 1.25, pr: 2, borderRadius: 3, border: 2,
+                m: 0,
+                p: 1.25,
+                pr: 2,
+                borderRadius: 3,
+                border: 2,
                 borderColor: confirmed ? "primary.main" : "divider",
                 bgcolor: confirmed ? "#f1f8ef" : "transparent",
                 alignItems: "flex-start",
               }}
-              control={<Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />}
+              control={
+                <Checkbox
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                />
+              }
               label={
                 <Typography sx={{ fontSize: 17, pt: 1 }}>
-                  Confirmo que <strong>{name.trim() || "esta persona"}</strong> es dueño o socio de
-                  la finca.
+                  Confirmo que <strong>{name.trim() || "esta persona"}</strong>{" "}
+                  es dueño o socio de la finca.
                 </Typography>
               }
             />
           ) : (
             <Box data-tour="invite-role" role="radiogroup" aria-label="Rol">
-              <Typography sx={{ fontSize: 15, color: "text.secondary", mb: 1 }}>Rol</Typography>
+              <Typography sx={{ fontSize: 15, color: "text.secondary", mb: 1 }}>
+                Rol
+              </Typography>
               <Stack spacing={1.25}>
                 {ROLES.map((r) => {
                   const on = role === r.value;
@@ -710,8 +903,13 @@ function InviteDialog({
                       key={r.value}
                       onClick={() => setRole(r.value)}
                       sx={{
-                        display: "flex", gap: 1, alignItems: "flex-start", cursor: "pointer",
-                        p: 1.25, borderRadius: 3, border: 2,
+                        display: "flex",
+                        gap: 1,
+                        alignItems: "flex-start",
+                        cursor: "pointer",
+                        p: 1.25,
+                        borderRadius: 3,
+                        border: 2,
                         borderColor: on ? "primary.main" : "divider",
                         bgcolor: on ? "#f1f8ef" : "transparent",
                       }}
@@ -723,8 +921,14 @@ function InviteDialog({
                         slotProps={{ input: { "aria-label": r.label } }}
                       />
                       <Box sx={{ pt: 0.75 }}>
-                        <Typography sx={{ fontSize: 18, fontWeight: 800 }}>{r.label}</Typography>
-                        <Typography sx={{ fontSize: 15, color: "text.secondary" }}>{r.blurb}</Typography>
+                        <Typography sx={{ fontSize: 18, fontWeight: 800 }}>
+                          {r.label}
+                        </Typography>
+                        <Typography
+                          sx={{ fontSize: 15, color: "text.secondary" }}
+                        >
+                          {r.blurb}
+                        </Typography>
                       </Box>
                     </Box>
                   );
@@ -735,7 +939,12 @@ function InviteDialog({
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} disabled={busy} color="inherit" sx={{ minHeight: 48, fontSize: 17 }}>
+        <Button
+          onClick={onClose}
+          disabled={busy}
+          color="inherit"
+          sx={{ minHeight: 48, fontSize: 17 }}
+        >
           Cancelar
         </Button>
         <Button
@@ -744,7 +953,11 @@ function InviteDialog({
           disabled={busy || !ready}
           sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}
         >
-          {busy ? "Invitando…" : owner ? "Invitar como dueño" : "Enviar la invitación"}
+          {busy
+            ? "Invitando…"
+            : owner
+              ? "Invitar como dueño"
+              : "Enviar la invitación"}
         </Button>
       </DialogActions>
     </Dialog>

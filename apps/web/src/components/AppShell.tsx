@@ -14,8 +14,23 @@
 import { useState, type ReactNode } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  AppBar, Avatar, Box, Chip, Divider, Drawer, IconButton, List, ListItemButton,
-  ListItemIcon, ListItemText, Menu, MenuItem, Stack, Toolbar, Tooltip, Typography,
+  AppBar,
+  Avatar,
+  Box,
+  Chip,
+  Divider,
+  Drawer,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  Toolbar,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import DashboardIcon from "@mui/icons-material/SpaceDashboard";
@@ -31,7 +46,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import HarvestIcon from "@mui/icons-material/Grass";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import LockIcon from "@mui/icons-material/Lock";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import LinkIcon from "@mui/icons-material/Link";
 import { useTour } from "../features/onboarding/TourContext";
 import { useAuth } from "../auth/AuthContext";
@@ -56,7 +71,13 @@ const ICONS: Record<string, ReactNode> = {
   price: <PriceChangeIcon fontSize="medium" />,
   inventory: <InventoryIcon fontSize="medium" />,
   settings: <SettingsIcon fontSize="medium" />,
-  link: <LinkIcon fontSize="medium" />,
+  link: (
+    <LinkIcon
+      sx={{
+        fontSize: "medium",
+      }}
+    />
+  ),
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -99,7 +120,7 @@ function NavItem({
       <ListItemText
         primary={m.label}
         slotProps={{
-          primary: { fontWeight: selected ? 700 : 600, fontSize: 17 },
+          primary: { sx: { fontWeight: selected ? 700 : 600, fontSize: 17 } },
         }}
       />
       {/* "S4" means nothing outside this team. What a person needs to know
@@ -178,7 +199,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </>
       )}
       {tour.available && (
-        <List disablePadding sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+        <List
+          disablePadding
+          sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: "divider" }}
+        >
           <ListItemButton
             data-tour="help-menu"
             onClick={startTour}
@@ -189,7 +213,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </ListItemIcon>
             <ListItemText
               primary="Ayuda y recorrido"
-              slotProps={{ primary: { fontWeight: 600, fontSize: 17 } }}
+              slotProps={{ primary: { sx: { fontWeight: 600, fontSize: 17 } } }}
             />
           </ListItemButton>
         </List>
@@ -198,12 +222,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100dvh", bgcolor: "background.default" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100dvh",
+        bgcolor: "background.default",
+      }}
+    >
       <AppBar
         position="fixed"
         color="inherit"
         elevation={0}
-        sx={{ zIndex: (t) => t.zIndex.drawer + 1, borderBottom: 1, borderColor: "divider" }}
+        sx={{
+          zIndex: (t) => t.zIndex.drawer + 1,
+          borderBottom: 1,
+          borderColor: "divider",
+        }}
       >
         <Toolbar sx={{ gap: 2, minHeight: { xs: 64, sm: 68 } }}>
           <IconButton
@@ -229,7 +263,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             BÁSCULA
           </Typography>
 
-          <Divider orientation="vertical" flexItem sx={{ my: 1.5, display: { xs: "none", sm: "block" } }} />
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ my: 1.5, display: { xs: "none", sm: "block" } }}
+          />
 
           <Typography
             sx={{
@@ -242,26 +280,50 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Typography>
 
           {readOnly && (
-            <Chip size="small" color="error" label="Suspendida · solo lectura" />
+            <Chip
+              size="small"
+              color="error"
+              label="Suspendida · solo lectura"
+            />
           )}
 
           <Box sx={{ flex: 1 }} />
 
-          <Stack direction="row" alignItems="center" spacing={1}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+            }}
+          >
             <Chip
               size="medium"
               variant="outlined"
               label={ROLE_LABEL[principal.role]}
               sx={{ display: { xs: "none", sm: "inline-flex" }, fontSize: 14 }}
             />
-            <IconButton onClick={(e) => setUserMenu(e.currentTarget)} aria-label="Cuenta">
-              <Avatar sx={{ width: 40, height: 40, bgcolor: GREEN_DARK, fontSize: 16 }}>
+            <IconButton
+              onClick={(e) => setUserMenu(e.currentTarget)}
+              aria-label="Cuenta"
+            >
+              <Avatar
+                sx={{
+                  width: 40,
+                  height: 40,
+                  bgcolor: GREEN_DARK,
+                  fontSize: 16,
+                }}
+              >
                 {user?.name?.[0] ?? "?"}
               </Avatar>
             </IconButton>
           </Stack>
 
-          <Menu anchorEl={userMenu} open={!!userMenu} onClose={() => setUserMenu(null)}>
+          <Menu
+            anchorEl={userMenu}
+            open={!!userMenu}
+            onClose={() => setUserMenu(null)}
+          >
             <MenuItem disabled sx={{ fontSize: 16 }}>
               {user?.email}
             </MenuItem>
@@ -282,13 +344,20 @@ export function AppShell({ children }: { children: ReactNode }) {
               sx={{ fontSize: 17, minHeight: 48 }}
               onClick={() => {
                 setUserMenu(null);
-                navigate(can("config.farm") ? "/configuracion#clave" : "/conexiones#clave");
+                navigate(
+                  can("config.farm")
+                    ? "/configuracion#clave"
+                    : "/conexiones#clave",
+                );
               }}
             >
               Cambiar clave
             </MenuItem>
             {tour.available && (
-              <MenuItem sx={{ fontSize: 17, minHeight: 48 }} onClick={startTour}>
+              <MenuItem
+                sx={{ fontSize: 17, minHeight: 48 }}
+                onClick={startTour}
+              >
                 Ayuda y recorrido
               </MenuItem>
             )}
@@ -343,7 +412,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Box component="main" sx={{ flexGrow: 1, width: 0 }}>
         <Toolbar sx={{ minHeight: { xs: 64, sm: 68 } }} />
         <ApiModeBanner />
-        <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1280, mx: "auto" }}>{children}</Box>
+        <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1280, mx: "auto" }}>
+          {children}
+        </Box>
       </Box>
     </Box>
   );

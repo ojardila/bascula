@@ -11,10 +11,20 @@
  */
 import { useState } from "react";
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack,
-  TextField, Typography,
+  Alert,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
-import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
+import {
+  CatalogPicker,
+  type CatalogValue,
+} from "../../components/CatalogPicker";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useWriteOnce } from "../../lib/writeOnce";
@@ -31,11 +41,18 @@ export interface ProductFormDialogProps {
 }
 
 export function ProductFormDialog({
-  open, product, categories, storageUnits, onClose, onSaved,
+  open,
+  product,
+  categories,
+  storageUnits,
+  onClose,
+  onSaved,
 }: ProductFormDialogProps) {
   const [name, setName] = useState(product?.name ?? "");
   const [category, setCategory] = useState<CatalogValue | null>(
-    product?.categoryId ? { id: product.categoryId, name: product.categoryName ?? "" } : null,
+    product?.categoryId
+      ? { id: product.categoryId, name: product.categoryName ?? "" }
+      : null,
   );
   const [unit, setUnit] = useState<CatalogValue | null>(
     product ? { id: product.storageUnitId, name: product.storageUnit } : null,
@@ -57,8 +74,13 @@ export function ProductFormDialog({
     if (!validate() || !unit) return;
     // A new product used to mint its id inside the call, so a double click
     // created two rows with the same name. See `lib/writeOnce.ts`.
-    const intent = ["producto", product?.id ?? "nuevo", name.trim(),
-                    category?.id ?? category?.name ?? "", unit.id ?? unit.name].join("|");
+    const intent = [
+      "producto",
+      product?.id ?? "nuevo",
+      name.trim(),
+      category?.id ?? category?.name ?? "",
+      unit.id ?? unit.name,
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       const body = {
@@ -72,7 +94,9 @@ export function ProductFormDialog({
         storageUnit: unit.id ? undefined : unit.name,
         note: note.trim() || null,
       };
-      return product ? api.updateProduct(product.id, body) : api.createProduct(body);
+      return product
+        ? api.updateProduct(product.id, body)
+        : api.createProduct(body);
     }).catch((e: unknown) => {
       setError(messageFor(e));
       return { ran: false } as const;
@@ -82,8 +106,15 @@ export function ProductFormDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{product ? "Modificar producto" : "Nuevo producto"}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle>
+        {product ? "Modificar producto" : "Nuevo producto"}
+      </DialogTitle>
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -128,11 +159,16 @@ export function ProductFormDialog({
             minRows={2}
           />
           {!product && (
-            <Typography variant="body2" color="text.secondary">
-              No se pide cantidad inicial a propósito: las existencias salen de lo que
-              entra y lo que sale. Al guardar, registre una <strong>cosecha</strong> o
-              una{" "}
-              <strong>compra</strong> y quedará dicho de dónde vino lo que hay en bodega.
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              No se pide cantidad inicial a propósito: las existencias salen de
+              lo que entra y lo que sale. Al guardar, registre una{" "}
+              <strong>cosecha</strong> o una <strong>compra</strong> y quedará
+              dicho de dónde vino lo que hay en bodega.
             </Typography>
           )}
         </Stack>

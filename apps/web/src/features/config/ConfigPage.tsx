@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { APP_BUILD, fetchServerVersion } from "../../lib/appVersion";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Grid, Stack, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  Stack,
+  Typography,
 } from "@mui/material";
 import PeopleIcon from "@mui/icons-material/People";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
@@ -48,12 +56,16 @@ export function ConfigPage() {
    * `GET /v1/farm` has the real column, `suspendedAt`. Until it answers there
    * is no state to show, and "—" says that rather than guessing.
    */
-  const { data: farmDetail, error: farmError } = useAsync(() => api.getFarm(), []);
+  const { data: farmDetail, error: farmError } = useAsync(
+    () => api.getFarm(),
+    [],
+  );
   const harvestMode = useHarvestMode();
 
   // The permission check comes after the hooks, not before: an early return
   // above a `useAsync` changes the hook order between renders.
-  if (!can("config.farm")) return <PermissionDenied moduleName="ver la configuración" />;
+  if (!can("config.farm"))
+    return <PermissionDenied moduleName="ver la configuración" />;
 
   const farm = farmDetail ?? user?.farm;
   const status = farmDetail?.status ?? null;
@@ -73,9 +85,15 @@ export function ConfigPage() {
               <Typography variant="h3" gutterBottom>
                 Modo cosecha
               </Typography>
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Encendido, la pantalla de inicio muestra la semana de cosecha: kilos de hoy y de
-                la semana, lotes, personas y lo que se va pagando. Apagado, el inicio queda como siempre.
+              <Typography
+                sx={{
+                  color: "text.secondary",
+                  mb: 2,
+                }}
+              >
+                Encendido, la pantalla de inicio muestra la semana de cosecha:
+                kilos de hoy y de la semana, lotes, personas y lo que se va
+                pagando. Apagado, el inicio queda como siempre.
               </Typography>
               <HarvestModeSwitch mode={harvestMode} />
             </CardContent>
@@ -108,13 +126,36 @@ export function ConfigPage() {
                   ["Zona horaria", farm?.timezone],
                   ["Moneda", farm?.currency],
                 ].map(([k, v]) => (
-                  <Stack key={k} direction="row" justifyContent="space-between">
-                    <Typography color="text.secondary">{k}</Typography>
+                  <Stack
+                    key={k}
+                    direction="row"
+                    sx={{
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        color: "text.secondary",
+                      }}
+                    >
+                      {k}
+                    </Typography>
                     <Typography sx={{ fontWeight: 600 }}>{v}</Typography>
                   </Stack>
                 ))}
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography color="text.secondary">Estado</Typography>
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    Estado
+                  </Typography>
                   {status === null ? (
                     <Typography
                       sx={{ color: "text.disabled", fontWeight: 600 }}
@@ -137,9 +178,9 @@ export function ConfigPage() {
                 </Stack>
               </Stack>
               <Alert severity="info" sx={{ mt: 2 }}>
-                La zona horaria de la finca decide a qué día pertenece cada labor y a qué
-                semana cada precio. Cambiarla mueve cifras ya registradas, así que se
-                edita con la API real, no aquí.
+                La zona horaria de la finca decide a qué día pertenece cada
+                labor y a qué semana cada precio. Cambiarla mueve cifras ya
+                registradas, así que se edita con la API real, no aquí.
               </Alert>
             </CardContent>
           </Card>
@@ -155,10 +196,15 @@ export function ConfigPage() {
                 <Typography variant="h3" gutterBottom>
                   Usuarios de la finca
                 </Typography>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  Invite a un administrador o a un pesador y decida qué puede ver cada
-                  uno. Hasta ahora, la única forma de crear un usuario era registrar una
-                  finca nueva.
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                    mb: 2,
+                  }}
+                >
+                  Invite a un administrador o a un pesador y decida qué puede
+                  ver cada uno. Hasta ahora, la única forma de crear un usuario
+                  era registrar una finca nueva.
                 </Typography>
                 <Button
                   component={RouterLink}
@@ -184,10 +230,15 @@ export function ConfigPage() {
                 <Typography variant="h3" gutterBottom>
                   Precio del kilo
                 </Typography>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  Lo que la finca paga por kilo recogido, semana por semana. Es el precio
-                  con el que se calcula cada pesada y el que se le fija a la recolección
-                  cuando usted liquida.
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                    mb: 2,
+                  }}
+                >
+                  Lo que la finca paga por kilo recogido, semana por semana. Es
+                  el precio con el que se calcula cada pesada y el que se le
+                  fija a la recolección cuando usted liquida.
                 </Typography>
                 <Button
                   component={RouterLink}
@@ -209,9 +260,15 @@ export function ConfigPage() {
                 <Typography variant="h3" gutterBottom>
                   Unidades de recolección
                 </Typography>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  Cómo cuenta la finca lo que se recoge. El kilo es una, pero no la
-                  única: hay fincas que cuentan por arroba, por canasta o por bulto.
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                    mb: 2,
+                  }}
+                >
+                  Cómo cuenta la finca lo que se recoge. El kilo es una, pero no
+                  la única: hay fincas que cuentan por arroba, por canasta o por
+                  bulto.
                 </Typography>
                 <Button
                   component={RouterLink}
@@ -226,11 +283,13 @@ export function ConfigPage() {
           </Grid>
         )}
 
-        {can("workers.write") && can("workRecords.write") && can("config.prices") && (
-          <Grid size={{ xs: 12, md: 6 }}>
-            <DemoDataCard />
-          </Grid>
-        )}
+        {can("workers.write") &&
+          can("workRecords.write") &&
+          can("config.prices") && (
+            <Grid size={{ xs: 12, md: 6 }}>
+              <DemoDataCard />
+            </Grid>
+          )}
 
         {(can("money.read") || can("workRecords.readAll")) && (
           <Grid size={{ xs: 12, md: 6 }}>
@@ -254,8 +313,21 @@ export function ConfigPage() {
                   ["Dispositivos y sesiones", "más adelante"],
                   ["Bitácora de auditoría", "más adelante"],
                 ].map(([k, v]) => (
-                  <Stack key={k} direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography color="text.secondary">{k}</Typography>
+                  <Stack
+                    key={k}
+                    direction="row"
+                    sx={{
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        color: "text.secondary",
+                      }}
+                    >
+                      {k}
+                    </Typography>
                     <Chip size="small" label={v} />
                   </Stack>
                 ))}
@@ -264,7 +336,10 @@ export function ConfigPage() {
           </Card>
         </Grid>
       </Grid>
-      <Typography variant="body2" sx={{ color: "text.secondary", mt: 3, textAlign: "center" }}>
+      <Typography
+        variant="body2"
+        sx={{ color: "text.secondary", mt: 3, textAlign: "center" }}
+      >
         Báscula versión <ReleaseLabel />
       </Typography>
     </Box>
@@ -279,8 +354,12 @@ function ReleaseLabel() {
   const [release, setRelease] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    void fetchServerVersion().then((v) => { if (live && v) setRelease(v.version); });
-    return () => { live = false; };
+    void fetchServerVersion().then((v) => {
+      if (live && v) setRelease(v.version);
+    });
+    return () => {
+      live = false;
+    };
   }, []);
   return <>{release ?? APP_BUILD}</>;
 }

@@ -25,17 +25,37 @@
 import { useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Stack, Table,
-  TableBody, TableCell, TableFooter, TableHead, TableRow, ToggleButton,
-  ToggleButtonGroup, Tooltip, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
 import { reportWeek } from "../../api/harvest";
-import { formatDayShort, formatWeekRange, mondayOf, weekTag } from "../../lib/dates";
+import {
+  formatDayShort,
+  formatWeekRange,
+  mondayOf,
+  weekTag,
+} from "../../lib/dates";
 import { useAuth } from "../../auth/AuthContext";
 import { useHarvest } from "./HarvestLayout";
 import { Kg, Stat, Value } from "./Figures";
@@ -69,7 +89,8 @@ export function WeekPage() {
   const { can } = useAuth();
   const [axis, setAxis] = useState<"day" | "crop">("day");
 
-  const valid = /^\d{4}-\d{2}-\d{2}$/.test(monday) && mondayOf(monday) === monday;
+  const valid =
+    /^\d{4}-\d{2}-\d{2}$/.test(monday) && mondayOf(monday) === monday;
 
   const { data, error, denied } = useAsync(
     async () => (valid ? reportWeek(monday) : null),
@@ -77,7 +98,14 @@ export function WeekPage() {
   );
 
   const back = (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+    <Stack
+      direction="row"
+      spacing={1}
+      useFlexGap
+      sx={{
+        flexWrap: "wrap",
+      }}
+    >
       <Button
         component={RouterLink}
         to={`/cosecha/detalles?rango=${rangeKey}`}
@@ -103,7 +131,12 @@ export function WeekPage() {
 
   if (!valid) {
     return (
-      <Stack spacing={2} alignItems="flex-start">
+      <Stack
+        spacing={2}
+        sx={{
+          alignItems: "flex-start",
+        }}
+      >
         {back}
         <Alert severity="error">
           «{monday}» no nombra una semana. Una semana se nombra por su lunes, en
@@ -115,11 +148,16 @@ export function WeekPage() {
 
   if (error) {
     return (
-      <Stack spacing={2} alignItems="flex-start">
+      <Stack
+        spacing={2}
+        sx={{
+          alignItems: "flex-start",
+        }}
+      >
         {back}
         <Alert severity="error">
-          No se pudo consultar la semana: {error}. Ninguna cifra se pudo calcular — y
-          ninguna de ellas es cero.
+          No se pudo consultar la semana: {error}. Ninguna cifra se pudo
+          calcular — y ninguna de ellas es cero.
         </Alert>
       </Stack>
     );
@@ -127,7 +165,12 @@ export function WeekPage() {
 
   if (!data) {
     return (
-      <Stack alignItems="center" sx={{ py: 6 }}>
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 6,
+        }}
+      >
         <CircularProgress />
       </Stack>
     );
@@ -139,12 +182,24 @@ export function WeekPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         {back}
         <Typography variant="h2">{formatWeekRange(monday)}</Typography>
         {tag && <Chip size="small" variant="outlined" label={tag} />}
         {!data.finished && (
-          <Chip size="small" color="warning" variant="outlined" label="semana en curso" />
+          <Chip
+            size="small"
+            color="warning"
+            variant="outlined"
+            label="semana en curso"
+          />
         )}
       </Stack>
 
@@ -153,15 +208,15 @@ export function WeekPage() {
           empty in one tab and full in the other. */}
       {data.total.records === 0 ? (
         <Alert severity="info">
-          Nadie recogió en la semana del {formatWeekRange(monday)}. Es una respuesta,
-          no un error.
+          Nadie recogió en la semana del {formatWeekRange(monday)}. Es una
+          respuesta, no un error.
         </Alert>
       ) : (
         <>
           {!balances && (
             <Alert severity="error" icon={<WarningAmberIcon />}>
-              Los totales de esta tabla no cuadran por filas y columnas. No la use para
-              liquidar: avísele a quien mantiene el sistema.
+              Los totales de esta tabla no cuadran por filas y columnas. No la
+              use para liquidar: avísele a quien mantiene el sistema.
             </Alert>
           )}
 
@@ -169,15 +224,27 @@ export function WeekPage() {
             sx={{
               display: "grid",
               gap: 1.5,
-              gridTemplateColumns: { xs: "1fr 1fr", md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)" },
+              gridTemplateColumns: {
+                xs: "1fr 1fr",
+                md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)",
+              },
             }}
           >
             <Stat label="Recogido">
-              <Kg total={data.total} align="flex-start" bold scope="la semana" />
+              <Kg
+                total={data.total}
+                align="flex-start"
+                bold
+                scope="la semana"
+              />
             </Stat>
             {canSeeMoney && (
               <Stat label="Valor de la semana">
-                <Value total={data.total} scope="la semana" align="flex-start" />
+                <Value
+                  total={data.total}
+                  scope="la semana"
+                  align="flex-start"
+                />
               </Stat>
             )}
             <Stat label={PICKER.Many}>{grid.rows.length}</Stat>
@@ -207,14 +274,21 @@ export function WeekPage() {
             <CardContent>
               <Stack
                 direction={{ xs: "column", sm: "row" }}
-                justifyContent="space-between"
-                alignItems={{ xs: "stretch", sm: "center" }}
                 spacing={2}
-                sx={{ mb: 2 }}
+                sx={{
+                  justifyContent: "space-between",
+                  alignItems: { xs: "stretch", sm: "center" },
+                  mb: 2,
+                }}
               >
                 <Box>
                   <Typography variant="h3">Quién recogió, y dónde</Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     {axis === "day"
                       ? "Kilos por recolector y día. Una celda vacía es un día que no trabajó."
                       : "Kilos por recolector y cultivo. Una celda vacía es un cultivo donde no estuvo."}
@@ -232,7 +306,11 @@ export function WeekPage() {
               </Stack>
 
               {axis === "crop" && grid.unattributed && (
-                <Alert severity="info" icon={<HelpOutlineIcon />} sx={{ mb: 2 }}>
+                <Alert
+                  severity="info"
+                  icon={<HelpOutlineIcon />}
+                  sx={{ mb: 2 }}
+                >
                   <strong>Sin cultivo asignado.</strong>{" "}
                   {unattributedReason(
                     grid.unattributed.noCropLink,
@@ -246,7 +324,13 @@ export function WeekPage() {
                   <TableHead>
                     <TableRow>
                       <TableCell
-                        sx={{ position: "sticky", left: 0, bgcolor: "#f2f5f0", zIndex: 1, minWidth: 150 }}
+                        sx={{
+                          position: "sticky",
+                          left: 0,
+                          bgcolor: "#f2f5f0",
+                          zIndex: 1,
+                          minWidth: 150,
+                        }}
                       >
                         {PICKER.One}
                       </TableCell>
@@ -282,9 +366,16 @@ export function WeekPage() {
                       return (
                         <TableRow key={r.workerId} hover>
                           <TableCell
-                            sx={{ position: "sticky", left: 0, bgcolor: "background.paper", zIndex: 1 }}
+                            sx={{
+                              position: "sticky",
+                              left: 0,
+                              bgcolor: "background.paper",
+                              zIndex: 1,
+                            }}
                           >
-                            <Typography sx={{ fontWeight: 600, fontSize: 14 }}>{r.name}</Typography>
+                            <Typography sx={{ fontWeight: 600, fontSize: 14 }}>
+                              {r.name}
+                            </Typography>
                           </TableCell>
                           {grid.columns.map((c) => {
                             const key = c.key ?? "__unattributed";
@@ -306,7 +397,10 @@ export function WeekPage() {
                                           ? `${r.name} no registró recolección ese día`
                                           : `${r.name} no recogió en ${c.label} esa semana`
                                       }
-                                      sx={{ color: "text.disabled", cursor: "help" }}
+                                      sx={{
+                                        color: "text.disabled",
+                                        cursor: "help",
+                                      }}
                                     >
                                       ·
                                     </Box>
@@ -328,8 +422,13 @@ export function WeekPage() {
                     <TableRow>
                       <TableCell
                         sx={{
-                          position: "sticky", left: 0, bgcolor: "#f2f5f0", zIndex: 1,
-                          fontWeight: 700, color: "text.primary", fontSize: 13,
+                          position: "sticky",
+                          left: 0,
+                          bgcolor: "#f2f5f0",
+                          zIndex: 1,
+                          fontWeight: 700,
+                          color: "text.primary",
+                          fontSize: 13,
                         }}
                       >
                         Total
@@ -338,12 +437,23 @@ export function WeekPage() {
                         <TableCell
                           key={c.key ?? "__unattributed"}
                           align="right"
-                          sx={{ fontWeight: 700, color: "text.primary", fontSize: 13 }}
+                          sx={{
+                            fontWeight: 700,
+                            color: "text.primary",
+                            fontSize: 13,
+                          }}
                         >
                           <Kg total={c.total} showUnit={false} bold />
                         </TableCell>
                       ))}
-                      <TableCell align="right" sx={{ fontWeight: 700, color: "text.primary", fontSize: 13 }}>
+                      <TableCell
+                        align="right"
+                        sx={{
+                          fontWeight: 700,
+                          color: "text.primary",
+                          fontSize: 13,
+                        }}
+                      >
                         <Kg total={grid.total} bold />
                       </TableCell>
                     </TableRow>
@@ -351,8 +461,16 @@ export function WeekPage() {
                 </Table>
               </Box>
 
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: "block" }}>
-                Los días sin recolección no aparecen: la finca no trabajó, no recogió cero.
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                  mt: 1.5,
+                  display: "block",
+                }}
+              >
+                Los días sin recolección no aparecen: la finca no trabajó, no
+                recogió cero.
               </Typography>
             </CardContent>
           </Card>
@@ -366,7 +484,9 @@ export function WeekPage() {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>{axis === "day" ? "Día" : "Cultivo"}</TableCell>
+                      <TableCell>
+                        {axis === "day" ? "Día" : "Cultivo"}
+                      </TableCell>
                       <TableCell align="right">Kilos</TableCell>
                       <TableCell align="right">Valor</TableCell>
                       <TableCell align="right">Pesadas</TableCell>
@@ -375,7 +495,9 @@ export function WeekPage() {
                   <TableBody>
                     {grid.columns.map((c) => (
                       <TableRow key={c.key ?? "__unattributed"}>
-                        <TableCell>{c.key === null ? "Sin asignar" : c.label}</TableCell>
+                        <TableCell>
+                          {c.key === null ? "Sin asignar" : c.label}
+                        </TableCell>
                         <TableCell align="right">
                           <Kg total={c.total} showUnit={false} />
                         </TableCell>

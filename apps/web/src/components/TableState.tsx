@@ -21,7 +21,7 @@
  */
 import type { ReactNode } from "react";
 import { Box, Stack, TableCell, TableRow, Typography } from "@mui/material";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutlineOutlined";
 import LockPersonIcon from "@mui/icons-material/LockPerson";
 
 interface Props {
@@ -51,11 +51,17 @@ export function TableState({
     return (
       <TableRow>
         <TableCell colSpan={colSpan} sx={{ py: 4, color: "text.secondary" }}>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+            }}
+          >
             <LockPersonIcon fontSize="small" color="warning" />
             <span>
-              Su usuario no tiene permiso para ver {subject}. Si lo necesita para
-              trabajar, pídaselo al dueño de la finca.
+              Su usuario no tiene permiso para ver {subject}. Si lo necesita
+              para trabajar, pídaselo al dueño de la finca.
             </span>
           </Stack>
         </TableCell>
@@ -67,19 +73,36 @@ export function TableState({
     return (
       <TableRow>
         <TableCell colSpan={colSpan} sx={{ py: 4 }}>
-          <Stack direction="row" spacing={1} alignItems="flex-start">
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "flex-start",
+            }}
+          >
             <ErrorOutlineIcon fontSize="small" color="error" />
             <Box>
               <Typography sx={{ fontWeight: 600 }}>
                 No se pudieron consultar {subject}.
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {error}
               </Typography>
               {/* The sentence that has to be said out loud, because an empty
                   table says the opposite all by itself. */}
-              <Typography variant="body2" color="warning.dark">
-                Esta tabla está vacía porque falló la consulta, no porque no haya nada.
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "warning.dark",
+                }}
+              >
+                Esta tabla está vacía porque falló la consulta, no porque no
+                haya nada.
               </Typography>
             </Box>
           </Stack>

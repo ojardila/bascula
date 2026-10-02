@@ -111,11 +111,14 @@ export function Curve({
 
   const plotW = Math.max(0, width - PAD.left - PAD.right);
   const plotH = height - PAD.top - PAD.bottom;
-  const known = points.filter((p) => p.value !== null).map((p) => p.value as number);
+  const known = points
+    .filter((p) => p.value !== null)
+    .map((p) => p.value as number);
   const top = ceilNice(Math.max(...known, 0));
 
   const x = (i: number) =>
-    PAD.left + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+    PAD.left +
+    (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
   const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
 
   // Segments rather than one path: a run of known points is a line, and a
@@ -133,7 +136,8 @@ export function Curve({
   if (run.length) segments.push({ pts: run, partial: false });
 
   // The last hop into a still-running week is drawn separately, dashed.
-  const lastIsPartial = points.length > 1 && points[points.length - 1].partial === true;
+  const lastIsPartial =
+    points.length > 1 && points[points.length - 1].partial === true;
 
   const line = (pts: { i: number; v: number }[]) =>
     pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
@@ -147,15 +151,25 @@ export function Curve({
           component="svg"
           role="img"
           aria-label={summary}
-          width={width}
-          height={height}
-          sx={{ display: "block", overflow: "visible" }}
           onMouseLeave={() => setHover(null)}
+          sx={{
+            width: width,
+            height: height,
+            display: "block",
+            overflow: "visible",
+          }}
         >
           {/* Grid: solid hairlines, one shade off the surface. */}
           {gridValues.map((v) => (
             <g key={v}>
-              <line x1={PAD.left} x2={PAD.left + plotW} y1={y(v)} y2={y(v)} stroke={AXIS} strokeWidth={1} />
+              <line
+                x1={PAD.left}
+                x2={PAD.left + plotW}
+                y1={y(v)}
+                y2={y(v)}
+                stroke={AXIS}
+                strokeWidth={1}
+              />
               <text
                 x={PAD.left - 8}
                 y={y(v) + 4}
@@ -171,29 +185,40 @@ export function Curve({
 
           {/* The area under the finished part, faint. */}
           {segments.map((s, si) => {
-            const pts = lastIsPartial ? s.pts.filter((p) => p.i !== points.length - 1) : s.pts;
+            const pts = lastIsPartial
+              ? s.pts.filter((p) => p.i !== points.length - 1)
+              : s.pts;
             if (pts.length < 2) return null;
-            const d =
-              `${line(pts)} L${x(pts[pts.length - 1].i)},${y(0)} L${x(pts[0].i)},${y(0)} Z`;
+            const d = `${line(pts)} L${x(pts[pts.length - 1].i)},${y(0)} L${x(pts[0].i)},${y(0)} Z`;
             return <path key={`a${si}`} d={d} fill={color} opacity={0.1} />;
           })}
 
           {segments.map((s, si) => {
-            const solid = lastIsPartial ? s.pts.filter((p) => p.i !== points.length - 1) : s.pts;
+            const solid = lastIsPartial
+              ? s.pts.filter((p) => p.i !== points.length - 1)
+              : s.pts;
             return (
               <g key={`l${si}`}>
                 {solid.length > 1 && (
-                  <path d={line(solid)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-                )}
-                {lastIsPartial && s.pts.length > 1 && s.pts[s.pts.length - 1].i === points.length - 1 && (
                   <path
-                    d={line(s.pts.slice(-2))}
+                    d={line(solid)}
                     fill="none"
                     stroke={color}
                     strokeWidth={2}
-                    strokeDasharray="4 3"
+                    strokeLinejoin="round"
                   />
                 )}
+                {lastIsPartial &&
+                  s.pts.length > 1 &&
+                  s.pts[s.pts.length - 1].i === points.length - 1 && (
+                    <path
+                      d={line(s.pts.slice(-2))}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeDasharray="4 3"
+                    />
+                  )}
               </g>
             );
           })}
@@ -231,7 +256,9 @@ export function Curve({
 
           {/* X labels, thinned so they never collide. */}
           {points.map((p, i) => {
-            const every = Math.ceil(points.length / Math.max(2, Math.floor(plotW / 58)));
+            const every = Math.ceil(
+              points.length / Math.max(2, Math.floor(plotW / 58)),
+            );
             if (i % every !== 0 && i !== points.length - 1) return null;
             return (
               <text
@@ -251,7 +278,7 @@ export function Curve({
           {points.map((p, i) => (
             <rect
               key={`h${p.key}`}
-              x={x(i) - (plotW / Math.max(1, points.length - 1)) / 2}
+              x={x(i) - plotW / Math.max(1, points.length - 1) / 2}
               y={PAD.top}
               width={Math.max(18, plotW / Math.max(1, points.length - 1))}
               height={plotH}
@@ -279,9 +306,21 @@ export function Curve({
       {hover !== null && (
         <Paper
           variant="outlined"
-          sx={{ px: 1.5, py: 0.75, mt: 0.5, display: "inline-block", bgcolor: "#fbfcfa" }}
+          sx={{
+            px: 1.5,
+            py: 0.75,
+            mt: 0.5,
+            display: "inline-block",
+            bgcolor: "#fbfcfa",
+          }}
         >
-          <Stack direction="row" spacing={1.5} alignItems="baseline">
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              alignItems: "baseline",
+            }}
+          >
             <Typography variant="caption" sx={{ fontWeight: 700 }}>
               {points[hover].label}
             </Typography>
@@ -291,7 +330,12 @@ export function Curve({
                 : format(points[hover].value as number)}
             </Typography>
             {points[hover].partial && (
-              <Typography variant="caption" color="warning.dark">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "warning.dark",
+                }}
+              >
                 semana en curso
               </Typography>
             )}
@@ -324,7 +368,12 @@ export function Sparkline({
   if (known.length < 2) {
     return (
       <Box sx={{ width, height, display: "grid", placeItems: "center" }}>
-        <Typography variant="caption" color="text.disabled">
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.disabled",
+          }}
+        >
           {known.length === 0 ? "sin kilos" : "una semana"}
         </Typography>
       </Box>
@@ -354,7 +403,16 @@ export function Sparkline({
   const lastPoint = last[last.length - 1];
 
   return (
-    <Box component="svg" role="img" aria-label={label} width={width} height={height} sx={{ display: "block" }}>
+    <Box
+      component="svg"
+      role="img"
+      aria-label={label}
+      sx={{
+        width: width,
+        height: height,
+        display: "block",
+      }}
+    >
       {runs.map((pts, k) =>
         pts.length > 1 ? (
           <path
@@ -367,7 +425,14 @@ export function Sparkline({
       )}
       {runs.map((pts, k) =>
         pts.length > 1 ? (
-          <path key={`l${k}`} d={path(pts)} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+          <path
+            key={`l${k}`}
+            d={path(pts)}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
         ) : null,
       )}
       <circle cx={x(lastPoint.i)} cy={y(lastPoint.v)} r={2.5} fill={color} />
@@ -396,7 +461,9 @@ export function WeekBars({
   const [hover, setHover] = useState<number | null>(null);
   const plotW = Math.max(0, width - PAD.left - PAD.right);
   const plotH = height - PAD.top - PAD.bottom;
-  const known = points.filter((p) => p.value !== null).map((p) => p.value as number);
+  const known = points
+    .filter((p) => p.value !== null)
+    .map((p) => p.value as number);
   const top = ceilNice(Math.max(...known, 0));
   const n = Math.max(1, points.length);
   const gap = 4;
@@ -412,14 +479,30 @@ export function WeekBars({
           component="svg"
           role="img"
           aria-label={summary}
-          width={width}
-          height={height}
-          sx={{ display: "block" }}
+          sx={{
+            width: width,
+            height: height,
+            display: "block",
+          }}
         >
           {gridValues.map((v) => (
             <g key={v}>
-              <line x1={PAD.left} x2={PAD.left + plotW} y1={y(v)} y2={y(v)} stroke={AXIS} strokeWidth={1} />
-              <text x={PAD.left - 8} y={y(v) + 4} textAnchor="end" fontSize={10} fill={INK_MUTED} style={moneyFont}>
+              <line
+                x1={PAD.left}
+                x2={PAD.left + plotW}
+                y1={y(v)}
+                y2={y(v)}
+                stroke={AXIS}
+                strokeWidth={1}
+              />
+              <text
+                x={PAD.left - 8}
+                y={y(v) + 4}
+                textAnchor="end"
+                fontSize={10}
+                fill={INK_MUTED}
+                style={moneyFont}
+              >
                 {format(v)}
               </text>
             </g>
@@ -447,10 +530,19 @@ export function WeekBars({
             );
           })}
           {points.map((p, i) => {
-            const every = Math.ceil(points.length / Math.max(2, Math.floor(plotW / 58)));
+            const every = Math.ceil(
+              points.length / Math.max(2, Math.floor(plotW / 58)),
+            );
             if (i % every !== 0 && i !== points.length - 1) return null;
             return (
-              <text key={`x${p.key}`} x={x(i) + barW / 2} y={height - 6} textAnchor="middle" fontSize={10} fill={INK_MUTED}>
+              <text
+                key={`x${p.key}`}
+                x={x(i) + barW / 2}
+                y={height - 6}
+                textAnchor="middle"
+                fontSize={10}
+                fill={INK_MUTED}
+              >
                 {p.label}
               </text>
             );
@@ -458,14 +550,40 @@ export function WeekBars({
         </Box>
       )}
       {hover !== null && (
-        <Paper variant="outlined" sx={{ px: 1.5, py: 0.75, mt: 0.5, display: "inline-block", bgcolor: "#fbfcfa" }}>
-          <Stack direction="row" spacing={1.5} alignItems="baseline">
-            <Typography variant="caption" sx={{ fontWeight: 700 }}>{points[hover].label}</Typography>
+        <Paper
+          variant="outlined"
+          sx={{
+            px: 1.5,
+            py: 0.75,
+            mt: 0.5,
+            display: "inline-block",
+            bgcolor: "#fbfcfa",
+          }}
+        >
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              alignItems: "baseline",
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+              {points[hover].label}
+            </Typography>
             <Typography variant="caption" sx={moneyFont}>
-              {points[hover].value === null ? "sin dato" : format(points[hover].value as number)}
+              {points[hover].value === null
+                ? "sin dato"
+                : format(points[hover].value as number)}
             </Typography>
             {points[hover].partial && (
-              <Typography variant="caption" color="warning.dark">semana en curso</Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "warning.dark",
+                }}
+              >
+                semana en curso
+              </Typography>
             )}
           </Stack>
         </Paper>
@@ -474,11 +592,32 @@ export function WeekBars({
   );
 }
 
-export function RowBar({ fraction, color = GREEN }: { fraction: number; color?: string }) {
-  const pct = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0)) * 100;
+export function RowBar({
+  fraction,
+  color = GREEN,
+}: {
+  fraction: number;
+  color?: string;
+}) {
+  const pct =
+    Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0)) * 100;
   return (
-    <Box sx={{ height: 8, borderRadius: 4, bgcolor: "rgba(46,125,50,.12)", overflow: "hidden" }}>
-      <Box sx={{ width: `${pct}%`, height: "100%", borderRadius: 4, bgcolor: color }} />
+    <Box
+      sx={{
+        height: 8,
+        borderRadius: 4,
+        bgcolor: "rgba(46,125,50,.12)",
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          width: `${pct}%`,
+          height: "100%",
+          borderRadius: 4,
+          bgcolor: color,
+        }}
+      />
     </Box>
   );
 }

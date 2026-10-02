@@ -23,8 +23,21 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Divider, Grid, Stack, Table, TableBody,
-  TableCell, TableHead, TableRow, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  Grid,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
@@ -36,7 +49,13 @@ import { useAsync } from "../../lib/useAsync";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
-import { formatDate, formatDateRange, formatPeriod, formatWeekRange, todayInFarm } from "../../lib/dates";
+import {
+  formatDate,
+  formatDateRange,
+  formatPeriod,
+  formatWeekRange,
+  todayInFarm,
+} from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { settlementHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
@@ -48,7 +67,10 @@ export function SettlementDetailPage() {
   const navigate = useNavigate();
   const { user, can } = useAuth();
 
-  const { data, error, denied, reload } = useAsync(() => api.getSettlement(id), [id]);
+  const { data, error, denied, reload } = useAsync(
+    () => api.getSettlement(id),
+    [id],
+  );
   const [confirming, setConfirming] = useState(false);
   const { busy, run: runOnce } = useWriteOnce();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -59,7 +81,10 @@ export function SettlementDetailPage() {
 
   const isVoid = data.status === "void";
   const provisional = data.lines.filter((l) => l.rateSource === "weekly_price");
-  const weighed = data.lines.reduce((a, l) => a + (l.unitLabel ? l.quantity : 0), 0);
+  const weighed = data.lines.reduce(
+    (a, l) => a + (l.unitLabel ? l.quantity : 0),
+    0,
+  );
   const unit = data.lines.find((l) => l.unitLabel)?.unitLabel ?? null;
 
   async function voidIt() {
@@ -101,14 +126,20 @@ export function SettlementDetailPage() {
 
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "flex-start" }}
         spacing={2}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { sm: "flex-start" },
+          mb: 2,
+        }}
       >
         <Box>
           <Typography variant="h1">Liquidación de {data.workerName}</Typography>
-          <Typography color="text.secondary">
+          <Typography
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             {formatPeriod(data.periodStart, data.periodEnd)} · registrada el{" "}
             {formatDate(data.createdAt.slice(0, 10))}
           </Typography>
@@ -119,7 +150,11 @@ export function SettlementDetailPage() {
       </Stack>
 
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -127,9 +162,10 @@ export function SettlementDetailPage() {
       {isVoid && (
         <Alert severity="error" variant="outlined" sx={{ mb: 3 }}>
           <strong>Liquidación anulada</strong>
-          {data.voidedAt ? ` el ${formatDate(data.voidedAt.slice(0, 10))}` : ""}. Las labores
-          volvieron a quedar pendientes y lo que se había ganado se canceló con una
-          corrección en el libro. El documento se conserva: no es un comprobante de pago.
+          {data.voidedAt ? ` el ${formatDate(data.voidedAt.slice(0, 10))}` : ""}
+          . Las labores volvieron a quedar pendientes y lo que se había ganado
+          se canceló con una corrección en el libro. El documento se conserva:
+          no es un comprobante de pago.
         </Alert>
       )}
 
@@ -137,7 +173,12 @@ export function SettlementDetailPage() {
         <Grid size={{ xs: 12, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Bruto liquidado
               </Typography>
               <Money cents={data.grossCents} variant="big" />
@@ -147,7 +188,12 @@ export function SettlementDetailPage() {
         <Grid size={{ xs: 6, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Líneas congeladas
               </Typography>
               <Typography variant="h2">{data.lines.length}</Typography>
@@ -157,13 +203,20 @@ export function SettlementDetailPage() {
         <Grid size={{ xs: 6, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {unit ?? "Cantidad"}
               </Typography>
               {/* No unit means nothing here is weighed — a contract or a day
                   wage. "—" says that; a "0 kg" would say the picker weighed
                   nothing, which is a different claim. */}
-              <Typography variant="h2">{unit ? formatQuantity(weighed) : "—"}</Typography>
+              <Typography variant="h2">
+                {unit ? formatQuantity(weighed) : "—"}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -174,7 +227,13 @@ export function SettlementDetailPage() {
           <Typography variant="h3" gutterBottom>
             Qué se liquidó
           </Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mb: 1 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+              mb: 1,
+            }}
+          >
             Cada línea guarda el precio al que se liquidó, no el precio de hoy.
           </Typography>
           <Table size="small">
@@ -194,7 +253,9 @@ export function SettlementDetailPage() {
                   key={l.id}
                   sx={{
                     opacity: data.voidedLineIds.includes(l.id) ? 0.5 : 1,
-                    textDecoration: data.voidedLineIds.includes(l.id) ? "line-through" : "none",
+                    textDecoration: data.voidedLineIds.includes(l.id)
+                      ? "line-through"
+                      : "none",
                   }}
                 >
                   <TableCell>{formatDateRange(l.dateFrom, l.dateTo)}</TableCell>
@@ -212,7 +273,9 @@ export function SettlementDetailPage() {
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    {l.unitLabel ? `${formatQuantity(l.quantity)} ${l.unitLabel}` : "contrato"}
+                    {l.unitLabel
+                      ? `${formatQuantity(l.quantity)} ${l.unitLabel}`
+                      : "contrato"}
                   </TableCell>
                   <TableCell align="right">
                     <Money cents={l.rateCents} variant="small" />
@@ -234,16 +297,23 @@ export function SettlementDetailPage() {
 
           {provisional.length > 0 && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              {provisional.length === 1 ? "Una línea se pagó" : `${provisional.length} líneas se pagaron`}{" "}
-              al precio de la semana. Ese precio quedó congelado aquí al liquidar: si
-              después cambió, esta liquidación no cambia.
+              {provisional.length === 1
+                ? "Una línea se pagó"
+                : `${provisional.length} líneas se pagaron`}{" "}
+              al precio de la semana. Ese precio quedó congelado aquí al
+              liquidar: si después cambió, esta liquidación no cambia.
             </Alert>
           )}
 
           {data.note && (
             <>
               <Divider sx={{ my: 2 }} />
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Nota
               </Typography>
               <Typography>{data.note}</Typography>
@@ -253,7 +323,10 @@ export function SettlementDetailPage() {
       </Card>
 
       <Stack direction="row" spacing={2}>
-        <Button variant="outlined" onClick={() => navigate(`/empleados/${data.workerId}`)}>
+        <Button
+          variant="outlined"
+          onClick={() => navigate(`/empleados/${data.workerId}`)}
+        >
           Ver el perfil de {data.workerName}
         </Button>
       </Stack>
@@ -267,11 +340,16 @@ export function SettlementDetailPage() {
             <Typography variant="h3" gutterBottom>
               Anular esta liquidación
             </Typography>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Anular suelta las labores para que puedan volver a liquidarse y cancela lo
-              que se había ganado con {CORRECTION_GLOSS} No borra nada y{" "}
-              <strong>no se puede deshacer</strong>: una liquidación anulada no vuelve a
-              quedar vigente.
+            <Typography
+              sx={{
+                color: "text.secondary",
+                mb: 2,
+              }}
+            >
+              Anular suelta las labores para que puedan volver a liquidarse y
+              cancela lo que se había ganado con {CORRECTION_GLOSS} No borra
+              nada y <strong>no se puede deshacer</strong>: una liquidación
+              anulada no vuelve a quedar vigente.
             </Typography>
             <Button
               color="error"

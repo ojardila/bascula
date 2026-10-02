@@ -17,8 +17,24 @@
  * and a link to a particular reading is a link somebody can send.
  */
 import { createContext, useContext } from "react";
-import { Link as RouterLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Box, Button, Chip, MenuItem, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
+import {
+  Link as RouterLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import {
+  Box,
+  Button,
+  Chip,
+  MenuItem,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useAuth } from "../../auth/AuthContext";
@@ -70,14 +86,16 @@ export function HarvestLayout() {
   const navigate = useNavigate();
 
   const today = todayInFarm(user?.farm?.timezone || "America/Bogota");
-  const rangeKey = new URLSearchParams(location.search).get("rango") ?? DEFAULT_RANGE;
+  const rangeKey =
+    new URLSearchParams(location.search).get("rango") ?? DEFAULT_RANGE;
   const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[1];
 
   // The week detail hangs off a week and has no tab of its own.
   const onWeek = location.pathname.startsWith("/cosecha/semana/");
   const activeTab = onWeek
     ? false
-    : (TABS.find((t) => location.pathname.startsWith(t.path))?.path ?? "/cosecha/detalles");
+    : (TABS.find((t) => location.pathname.startsWith(t.path))?.path ??
+      "/cosecha/detalles");
 
   const ctx: HarvestContext = {
     today,
@@ -98,15 +116,22 @@ export function HarvestLayout() {
 
   return (
     <Box>
-      <Button component={RouterLink} to="/cosecha" startIcon={<ArrowBackIcon />} sx={{ mb: 1, fontSize: "1rem" }}>
+      <Button
+        component={RouterLink}
+        to="/cosecha"
+        startIcon={<ArrowBackIcon />}
+        sx={{ mb: 1, fontSize: "1rem" }}
+      >
         Volver a la cosecha
       </Button>
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", sm: "flex-end" }}
         spacing={2}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "flex-end" },
+          mb: 2,
+        }}
       >
         <Typography variant="h1">Más detalles de la cosecha</Typography>
         <TextField
@@ -114,7 +139,9 @@ export function HarvestLayout() {
           size="small"
           label="Periodo"
           value={range.key}
-          onChange={(e) => navigate(`${location.pathname}?rango=${e.target.value}`)}
+          onChange={(e) =>
+            navigate(`${location.pathname}?rango=${e.target.value}`)
+          }
           sx={{ minWidth: 210 }}
         >
           {RANGES.map((r) => (
@@ -146,7 +173,15 @@ export function HarvestLayout() {
         <Outlet />
       </Ctx.Provider>
 
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 4, flexWrap: "wrap" }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          alignItems: "center",
+          mt: 4,
+          flexWrap: "wrap",
+        }}
+      >
         <Tooltip
           title={
             "Estas cifras cubren el trabajo pagado a destajo — la recolección. " +
@@ -163,9 +198,14 @@ export function HarvestLayout() {
           />
         </Tooltip>
         {ctx.canSeeMoney && (
-          <Typography variant="caption" color="text.secondary">
-            Un valor marcado <strong>{PROVISIONAL}</strong> todavía depende del precio de
-            la semana y puede moverse hasta que se liquide.
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            Un valor marcado <strong>{PROVISIONAL}</strong> todavía depende del
+            precio de la semana y puede moverse hasta que se liquide.
           </Typography>
         )}
       </Stack>

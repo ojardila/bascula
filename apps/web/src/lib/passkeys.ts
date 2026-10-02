@@ -22,7 +22,10 @@ export function passkeysSupported(): boolean {
 
 /** The person closed the prompt or it timed out: not an error worth showing. */
 export function passkeyCancelled(e: unknown): boolean {
-  return e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError");
+  return (
+    e instanceof DOMException &&
+    (e.name === "NotAllowedError" || e.name === "AbortError")
+  );
 }
 
 /** A passkey this device already holds for the account (excludeCredentials). */
@@ -31,7 +34,10 @@ export function passkeyAlreadyHere(e: unknown): boolean {
 }
 
 function fromB64url(s: string): ArrayBuffer {
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=");
+  const b64 = s
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(s.length / 4) * 4, "=");
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -46,19 +52,30 @@ function toB64url(buf: ArrayBuffer | null | undefined): string | undefined {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function descriptors(list: unknown): PublicKeyCredentialDescriptor[] | undefined {
+function descriptors(
+  list: unknown,
+): PublicKeyCredentialDescriptor[] | undefined {
   if (!Array.isArray(list)) return undefined;
-  return list.map((d: Json) => ({ ...d, id: fromB64url(d.id as string) }) as PublicKeyCredentialDescriptor);
+  return list.map(
+    (d: Json) =>
+      ({
+        ...d,
+        id: fromB64url(d.id as string),
+      }) as PublicKeyCredentialDescriptor,
+  );
 }
 
 type PKC = typeof PublicKeyCredential & {
-  parseCreationOptionsFromJSON?: (o: Json) => PublicKeyCredentialCreationOptions;
+  parseCreationOptionsFromJSON?: (
+    o: Json,
+  ) => PublicKeyCredentialCreationOptions;
   parseRequestOptionsFromJSON?: (o: Json) => PublicKeyCredentialRequestOptions;
 };
 
 function creationOptions(json: Json): PublicKeyCredentialCreationOptions {
   const pkc = window.PublicKeyCredential as PKC;
-  if (pkc.parseCreationOptionsFromJSON) return pkc.parseCreationOptionsFromJSON(json);
+  if (pkc.parseCreationOptionsFromJSON)
+    return pkc.parseCreationOptionsFromJSON(json);
   const user = json.user as Json;
   return {
     ...(json as object),
@@ -70,7 +87,8 @@ function creationOptions(json: Json): PublicKeyCredentialCreationOptions {
 
 function requestOptions(json: Json): PublicKeyCredentialRequestOptions {
   const pkc = window.PublicKeyCredential as PKC;
-  if (pkc.parseRequestOptionsFromJSON) return pkc.parseRequestOptionsFromJSON(json);
+  if (pkc.parseRequestOptionsFromJSON)
+    return pkc.parseRequestOptionsFromJSON(json);
   return {
     ...(json as object),
     challenge: fromB64url(json.challenge as string),
@@ -81,11 +99,13 @@ function requestOptions(json: Json): PublicKeyCredentialRequestOptions {
 function credentialJSON(cred: PublicKeyCredential): Json {
   const withJSON = cred as PublicKeyCredential & { toJSON?: () => Json };
   if (typeof withJSON.toJSON === "function") return withJSON.toJSON();
-  const r = cred.response as AuthenticatorAttestationResponse & AuthenticatorAssertionResponse;
+  const r = cred.response as AuthenticatorAttestationResponse &
+    AuthenticatorAssertionResponse;
   const response: Json = { clientDataJSON: toB64url(r.clientDataJSON) };
   if ("attestationObject" in r && r.attestationObject) {
     response.attestationObject = toB64url(r.attestationObject);
-    if (typeof r.getTransports === "function") response.transports = r.getTransports();
+    if (typeof r.getTransports === "function")
+      response.transports = r.getTransports();
   }
   if ("authenticatorData" in r && r.authenticatorData) {
     response.authenticatorData = toB64url(r.authenticatorData);

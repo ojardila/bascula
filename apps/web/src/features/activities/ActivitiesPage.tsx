@@ -1,7 +1,19 @@
 import { useMemo, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Alert, Box, Chip, Link, Stack, Tooltip, Typography } from "@mui/material";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  Alert,
+  Box,
+  Chip,
+  Link,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
 import { Money } from "../../components/Money";
 import { useAsync } from "../../lib/useAsync";
@@ -13,13 +25,16 @@ import { PAY_MODE_LABEL, PROVISIONAL, PROVISIONAL_WHY } from "../../lib/vocab";
 import type { Activity } from "../../api/types";
 
 /** Categories come from the farm's catalogue, so they are only capitalised. */
-const titleCase = (s: string) => (s ? s[0].toLocaleUpperCase("es") + s.slice(1) : s);
+const titleCase = (s: string) =>
+  s ? s[0].toLocaleUpperCase("es") + s.slice(1) : s;
 
 export function ActivitiesPage() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
-  const [editing, setEditing] = useState<Activity | null | undefined>(undefined);
+  const [editing, setEditing] = useState<Activity | null | undefined>(
+    undefined,
+  );
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, error, denied, reload } = useAsync(
@@ -37,7 +52,12 @@ export function ActivitiesPage() {
         render: (a) => (
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{a.name}</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {titleCase(a.category)}
             </Typography>
           </Stack>
@@ -47,8 +67,20 @@ export function ActivitiesPage() {
         key: "payMode",
         header: "Forma de pago",
         render: (a) => (
-          <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Chip size="small" variant="outlined" label={PAY_MODE_LABEL[a.payMode]} />
+          <Stack
+            direction="row"
+            spacing={0.5}
+            useFlexGap
+            sx={{
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <Chip
+              size="small"
+              variant="outlined"
+              label={PAY_MODE_LABEL[a.payMode]}
+            />
             {a.workUnit && <Chip size="small" label={a.workUnit} />}
             {a.timeUnit && <Chip size="small" label={a.timeUnit} />}
           </Stack>
@@ -72,7 +104,9 @@ export function ActivitiesPage() {
                already in print wins. The week's price still exists — it is
                what the owner sets on Mondays — but that is the name of the
                PRICE, not of the state. */
-            <Tooltip title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}>
+            <Tooltip
+              title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}
+            >
               <Chip
                 size="small"
                 color="warning"
@@ -84,10 +118,19 @@ export function ActivitiesPage() {
           ) : a.defaultRateCents === undefined ? (
             "—"
           ) : (
-            <Stack alignItems="flex-end">
+            <Stack
+              sx={{
+                alignItems: "flex-end",
+              }}
+            >
               <Money cents={a.defaultRateCents} />
               {a.rates && a.rates.length > 1 && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   {a.rates.length} precios con vigencia
                 </Typography>
               )}
@@ -103,7 +146,11 @@ export function ActivitiesPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -150,16 +197,21 @@ export function ActivitiesPage() {
         onRowClick={can("activities.write") ? (a) => setEditing(a) : undefined}
         footer={
           <>
-            El precio de una actividad tiene <strong>historial por fechas</strong>: al
-            cambiarlo se agrega una vigencia nueva y las labores anteriores conservan el
-            precio que estaba vigente en su fecha.
+            El precio de una actividad tiene{" "}
+            <strong>historial por fechas</strong>: al cambiarlo se agrega una
+            vigencia nueva y las labores anteriores conservan el precio que
+            estaba vigente en su fecha.
             {/* The sign that was missing: this is where people came looking
                 for the week's price per kilo, and left having changed
                 something else. */}
             <Box sx={{ mt: 0.5 }}>
-              El <strong>precio del kilo de la semana</strong> no se pone aquí: se pone
-              semana por semana en{" "}
-              <Link component={RouterLink} to="/precio-semana" sx={{ fontWeight: 700 }}>
+              El <strong>precio del kilo de la semana</strong> no se pone aquí:
+              se pone semana por semana en{" "}
+              <Link
+                component={RouterLink}
+                to="/precio-semana"
+                sx={{ fontWeight: 700 }}
+              >
                 Precio del kilo
               </Link>
               .

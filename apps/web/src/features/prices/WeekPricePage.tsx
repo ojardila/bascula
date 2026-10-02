@@ -33,9 +33,27 @@
 import { useMemo, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent,
-  DialogContentText, Divider, DialogTitle, MenuItem, Stack, Table, TableBody, TableCell,
-  TableHead, TableRow, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  Divider,
+  DialogTitle,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from "@mui/material";
 import PriceChangeIcon from "@mui/icons-material/PriceChange";
 import { Money } from "../../components/Money";
@@ -45,8 +63,20 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
-import { addDays, formatWeekRange, mondayOf, parseDay, todayInFarm, weekTag } from "../../lib/dates";
-import { amountCents, formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
+import {
+  addDays,
+  formatWeekRange,
+  mondayOf,
+  parseDay,
+  todayInFarm,
+  weekTag,
+} from "../../lib/dates";
+import {
+  amountCents,
+  formatMoney,
+  formatQuantity,
+  parseMoneyInput,
+} from "../../lib/money";
 import type { WorkRecord } from "../../api/types";
 import { BasePriceCard } from "./BasePriceCard";
 import { SpecialPricesCard } from "./SpecialPricesCard";
@@ -54,7 +84,8 @@ import { SpecialPricesCard } from "./SpecialPricesCard";
 /** How many Mondays back we offer. A harvest is corrected, not rewritten. */
 const WEEKS_BACK = 8;
 
-const sundayOf = (monday: string) => addDays(parseDay(monday), 6).toISOString().slice(0, 10);
+const sundayOf = (monday: string) =>
+  addDays(parseDay(monday), 6).toISOString().slice(0, 10);
 
 export function WeekPricePage() {
   const { user, can, principal, readOnly } = useAuth();
@@ -65,7 +96,11 @@ export function WeekPricePage() {
   const mondays = useMemo(() => {
     const out: string[] = [];
     for (let i = 0; i < WEEKS_BACK; i++) {
-      out.push(addDays(parseDay(thisMonday), -7 * i).toISOString().slice(0, 10));
+      out.push(
+        addDays(parseDay(thisMonday), -7 * i)
+          .toISOString()
+          .slice(0, 10),
+      );
     }
     return out;
   }, [thisMonday]);
@@ -75,7 +110,9 @@ export function WeekPricePage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [saved, setSaved] = useState<{ monday: string; cents: number } | null>(null);
+  const [saved, setSaved] = useState<{ monday: string; cents: number } | null>(
+    null,
+  );
   const { busy, run: runOnce } = useWriteOnce();
   const [tick, setTick] = useState(0);
 
@@ -89,7 +126,11 @@ export function WeekPricePage() {
       api.weekPrice(monday),
       api.getFarm().catch(() => null),
       api
-        .listWorkRecords({ status: "active", from: monday, to: sundayOf(monday) })
+        .listWorkRecords({
+          status: "active",
+          from: monday,
+          to: sundayOf(monday),
+        })
         .catch(() => null),
     ]);
     return { price, farm, records };
@@ -101,14 +142,19 @@ export function WeekPricePage() {
       Promise.all(
         mondays.map(async (m) => ({
           monday: m,
-          cents: await api.weekPrice(m).then((p) => p.costPerUnitCents).catch(() => null),
+          cents: await api
+            .weekPrice(m)
+            .then((p) => p.costPerUnitCents)
+            .catch(() => null),
         })),
       ),
     [mondays, tick],
   );
 
-  if (denied) return <PermissionDenied moduleName="ver el precio de la semana" />;
-  if (!can("config.prices")) return <PermissionDenied moduleName="fijar el precio de la semana" />;
+  if (denied)
+    return <PermissionDenied moduleName="ver el precio de la semana" />;
+  if (!can("config.prices"))
+    return <PermissionDenied moduleName="fijar el precio de la semana" />;
 
   const currentCents = data?.price.costPerUnitCents ?? null;
   const basePriceCents = data?.farm?.priceCents ?? null;
@@ -118,7 +164,10 @@ export function WeekPricePage() {
    * Which one it is cannot be asserted, so the screen only points out that
    * they match, which is a fact, instead of inventing the origin.
    */
-  const sameAsBase = currentCents !== null && basePriceCents !== null && currentCents === basePriceCents;
+  const sameAsBase =
+    currentCents !== null &&
+    basePriceCents !== null &&
+    currentCents === basePriceCents;
 
   const newCents = parseMoneyInput(draft);
 
@@ -143,7 +192,9 @@ export function WeekPricePage() {
   const frozen = (data?.records ?? []).filter((r) => r.settled).length;
   const beforeCents = movable.reduce((a, r) => a + r.estimatedAmountCents, 0);
   const afterCents =
-    newCents === null ? 0 : movable.reduce((a, r) => a + amountCents(r.quantity, newCents), 0);
+    newCents === null
+      ? 0
+      : movable.reduce((a, r) => a + amountCents(r.quantity, newCents), 0);
   const movableKg = movable
     .filter((r) => r.unitLabel === "kg")
     .reduce((a, r) => a + r.quantity, 0);
@@ -182,28 +233,40 @@ export function WeekPricePage() {
       <Typography variant="h1" gutterBottom>
         Precio del kilo
       </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 720 }}>
-        Lo que la finca paga por kilo recogido en una semana. Es el precio con el que se
-        calcula cada pesada, y el que se le fija a la recolección cuando usted liquida.
+      <Typography
+        sx={{
+          color: "text.secondary",
+          mb: 3,
+          maxWidth: 720,
+        }}
+      >
+        Lo que la finca paga por kilo recogido en una semana. Es el precio con
+        el que se calcula cada pesada, y el que se le fija a la recolección
+        cuando usted liquida.
       </Typography>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          No se pudo consultar el precio de la semana: {error}. Ninguna cifra de esta
-          pantalla se pudo leer — y ninguna de ellas es cero.
+          No se pudo consultar el precio de la semana: {error}. Ninguna cifra de
+          esta pantalla se pudo leer — y ninguna de ellas es cero.
         </Alert>
       )}
 
       {saved && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(null)}>
-          El kilo de la semana del <strong>{formatWeekRange(saved.monday)}</strong> queda
-          en <strong>{formatMoney(saved.cents)}</strong>. La recolección de esa semana que
-          todavía no se ha liquidado ya vale a este precio.
+          El kilo de la semana del{" "}
+          <strong>{formatWeekRange(saved.monday)}</strong> queda en{" "}
+          <strong>{formatMoney(saved.cents)}</strong>. La recolección de esa
+          semana que todavía no se ha liquidado ya vale a este precio.
         </Alert>
       )}
 
       {saveError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setSaveError(null)}
+        >
           {saveError}
         </Alert>
       )}
@@ -214,8 +277,16 @@ export function WeekPricePage() {
       <Typography variant="h2" sx={{ fontSize: 22, fontWeight: 800, mt: 1 }}>
         Precio de una semana
       </Typography>
-      <Typography color="text.secondary" sx={{ mb: 2, fontSize: 16, maxWidth: 720 }}>
-        Solo si una semana se paga distinto al precio de la finca, por ejemplo en cosecha alta.
+      <Typography
+        sx={{
+          color: "text.secondary",
+          mb: 2,
+          fontSize: 16,
+          maxWidth: 720,
+        }}
+      >
+        Solo si una semana se paga distinto al precio de la finca, por ejemplo
+        en cosecha alta.
       </Typography>
 
       <Card sx={{ mb: 3 }}>
@@ -223,8 +294,10 @@ export function WeekPricePage() {
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={2}
-            alignItems={{ sm: "center" }}
-            sx={{ mb: 2 }}
+            sx={{
+              alignItems: { sm: "center" },
+              mb: 2,
+            }}
           >
             <TextField
               select
@@ -242,45 +315,92 @@ export function WeekPricePage() {
               {mondays.map((m) => (
                 <MenuItem key={m} value={m}>
                   {formatWeekRange(m)}
-                  {weekTag(m, today) ? ` · ${weekTag(m, today)!.toLowerCase()}` : ""}
+                  {weekTag(m, today)
+                    ? ` · ${weekTag(m, today)!.toLowerCase()}`
+                    : ""}
                 </MenuItem>
               ))}
             </TextField>
             {weekTag(monday, today) && (
-              <Chip size="small" color="primary" variant="outlined" label={weekTag(monday, today)} />
+              <Chip
+                size="small"
+                color="primary"
+                variant="outlined"
+                label={weekTag(monday, today)}
+              />
             )}
           </Stack>
 
           <Stack
             direction={{ xs: "column", md: "row" }}
             spacing={4}
-            alignItems={{ md: "flex-end" }}
+            sx={{
+              alignItems: { md: "flex-end" },
+            }}
           >
             <Box>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Se está pagando
               </Typography>
               {data === null ? (
-                <Typography color="text.secondary">Cargando…</Typography>
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Cargando…
+                </Typography>
               ) : currentCents === null ? (
-                <Typography variant="h1" sx={{ fontSize: "1.9rem", color: "text.disabled" }}>
+                <Typography
+                  variant="h1"
+                  sx={{ fontSize: "1.9rem", color: "text.disabled" }}
+                >
                   —
                 </Typography>
               ) : (
-                <Stack direction="row" alignItems="baseline" spacing={0.75}>
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  sx={{
+                    alignItems: "baseline",
+                  }}
+                >
                   <Money cents={currentCents} variant="big" />
-                  <Typography color="text.secondary">por kilo</Typography>
+                  <Typography
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
+                    por kilo
+                  </Typography>
                 </Stack>
               )}
               {sameAsBase && (
-                <Typography variant="caption" color="text.secondary" component="div">
-                  Igual al precio base de la finca. Si no ha fijado el de esta semana, es
-                  éste el que se está usando.
+                <Typography
+                  variant="caption"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Igual al precio base de la finca. Si no ha fijado el de esta
+                  semana, es éste el que se está usando.
                 </Typography>
               )}
             </Box>
 
-            <Stack direction="row" spacing={1} alignItems="flex-start">
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                alignItems: "flex-start",
+              }}
+            >
               <TextField
                 label="Precio nuevo por kilo"
                 value={draft}
@@ -316,23 +436,37 @@ export function WeekPricePage() {
             Qué se movería en la semana del {formatWeekRange(monday)}
           </Typography>
           {data === null ? (
-            <Typography color="text.secondary">Cargando…</Typography>
+            <Typography
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Cargando…
+            </Typography>
           ) : data.records === null ? (
             <Alert severity="warning" variant="outlined">
-              No se pudieron consultar las labores de esta semana, así que no se puede
-              decir cuánta recolección movería el cambio. <strong>No es ninguna.</strong>{" "}
-              Puede fijar el precio igual: el servidor reprecia lo que corresponda.
+              No se pudieron consultar las labores de esta semana, así que no se
+              puede decir cuánta recolección movería el cambio.{" "}
+              <strong>No es ninguna.</strong> Puede fijar el precio igual: el
+              servidor reprecia lo que corresponda.
             </Alert>
           ) : (
             <Stack spacing={1}>
               <Typography>
                 <strong>{movable.length}</strong>{" "}
-                {movable.length === 1 ? "labor de recolección" : "labores de recolección"} sin
-                liquidar
-                {movableKg > 0 ? ` · ${formatQuantity(movableKg)} kg` : ""} — hoy valen{" "}
-                <Money cents={beforeCents} variant="small" />.
+                {movable.length === 1
+                  ? "labor de recolección"
+                  : "labores de recolección"}{" "}
+                sin liquidar
+                {movableKg > 0 ? ` · ${formatQuantity(movableKg)} kg` : ""} —
+                hoy valen <Money cents={beforeCents} variant="small" />.
               </Typography>
-              <Typography color="text.secondary" variant="body2">
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {frozen === 0
                   ? "Nada de esa semana está liquidado todavía."
                   : frozen === 1
@@ -391,7 +525,10 @@ export function WeekPricePage() {
                     {/* A dash, not a zero: "$0 por kilo" is a week in which
                         the farm paid nothing, which does not exist. */}
                     {h.cents === null ? (
-                      <Box component="span" sx={{ color: "text.disabled", fontWeight: 600 }}>
+                      <Box
+                        component="span"
+                        sx={{ color: "text.disabled", fontWeight: 600 }}
+                      >
                         —
                       </Box>
                     ) : (
@@ -404,9 +541,14 @@ export function WeekPricePage() {
           </Table>
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
             Este precio no es el de una actividad. Una actividad con{" "}
-            <strong>precio fijo</strong> —una guadañada por jornal, una siembra por
-            contrato— lleva el suyo y se cambia en{" "}
-            <Button component={RouterLink} to="/actividades" size="small" sx={{ p: 0, minWidth: 0 }}>
+            <strong>precio fijo</strong> —una guadañada por jornal, una siembra
+            por contrato— lleva el suyo y se cambia en{" "}
+            <Button
+              component={RouterLink}
+              to="/actividades"
+              size="small"
+              sx={{ p: 0, minWidth: 0 }}
+            >
               Actividades
             </Button>
             . El de aquí es el del kilo recogido, semana por semana.
@@ -417,7 +559,12 @@ export function WeekPricePage() {
       {/* ── LOOK BEFORE YOU SIGN ─────────────────────────────────────────
           The payroll's pattern again: the confirmation shows the old figure,
           the new one, the difference, and how much picking it re-values. */}
-      <Dialog open={confirming} onClose={() => setConfirming(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>
           Fijar el kilo de la semana del {formatWeekRange(monday)} en{" "}
           {formatMoney(newCents ?? 0)}
@@ -425,8 +572,8 @@ export function WeekPricePage() {
         <DialogContent dividers>
           <DialogContentText component="div">
             Esto cambia lo que vale la recolección de esa semana que todavía{" "}
-            <strong>no se ha liquidado</strong>. Lo que ya se liquidó conserva el precio
-            que congeló: esa es la razón de liquidar.
+            <strong>no se ha liquidado</strong>. Lo que ya se liquidó conserva
+            el precio que congeló: esa es la razón de liquidar.
           </DialogContentText>
 
           <Stack
@@ -436,13 +583,27 @@ export function WeekPricePage() {
             divider={<Divider orientation="vertical" flexItem />}
           >
             <Box>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Estaba en
               </Typography>
-              {currentCents === null ? <Typography>—</Typography> : <Money cents={currentCents} />}
+              {currentCents === null ? (
+                <Typography>—</Typography>
+              ) : (
+                <Money cents={currentCents} />
+              )}
             </Box>
             <Box>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 Queda en
               </Typography>
               <Money cents={newCents ?? 0} variant="big" />
@@ -453,20 +614,49 @@ export function WeekPricePage() {
             <>
               <Divider sx={{ my: 2 }} />
               <Stack spacing={0.5}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     {movable.length}{" "}
-                    {movable.length === 1 ? "labor sin liquidar" : "labores sin liquidar"}, hoy
+                    {movable.length === 1
+                      ? "labor sin liquidar"
+                      : "labores sin liquidar"}
+                    , hoy
                   </Typography>
                   <Money cents={beforeCents} variant="small" />
                 </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography variant="body2" color="text.secondary">
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.secondary",
+                    }}
+                  >
                     Con el precio nuevo
                   </Typography>
                   <Money cents={afterCents} variant="small" />
                 </Stack>
-                <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                <Stack
+                  direction="row"
+                  sx={{
+                    justifyContent: "space-between",
+                    alignItems: "baseline",
+                  }}
+                >
                   <Typography variant="h3">Diferencia</Typography>
                   <Money cents={afterCents - beforeCents} signed colored />
                 </Stack>
@@ -476,15 +666,16 @@ export function WeekPricePage() {
 
           {data?.records !== null && movable.length === 0 && (
             <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-              No hay recolección sin liquidar en esa semana, así que hoy no cambia ninguna
-              cifra. El precio queda puesto para lo que se registre después.
+              No hay recolección sin liquidar en esa semana, así que hoy no
+              cambia ninguna cifra. El precio queda puesto para lo que se
+              registre después.
             </Alert>
           )}
 
           {monday !== thisMonday && (
             <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              Es una semana pasada. Fijar su precio ahora mueve lo que quedó sin liquidar
-              de esa semana, no lo de esta.
+              Es una semana pasada. Fijar su precio ahora mueve lo que quedó sin
+              liquidar de esa semana, no lo de esta.
             </Alert>
           )}
         </DialogContent>

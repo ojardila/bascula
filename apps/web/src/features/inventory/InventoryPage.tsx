@@ -15,14 +15,33 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, IconButton, Stack, Tab, Table,
-  TableBody, TableCell, TableHead, TableRow, Tabs, Tooltip, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  IconButton,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tabs,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import UndoIcon from "@mui/icons-material/Undo";
 import LabelIcon from "@mui/icons-material/Label";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { TableState } from "../../components/TableState";
 import { PermissionDenied } from "../../components/Guards";
 import { ProductFormDialog } from "./ProductFormDialog";
@@ -38,7 +57,10 @@ import { formatDate } from "../../lib/dates";
 import { formatSignedQty } from "../../lib/stock";
 import { STOCK_MOVE } from "../../lib/vocab";
 import {
-  STOCK_REASON_LABEL, type LabelBatch, type Product, type StockMove,
+  STOCK_REASON_LABEL,
+  type LabelBatch,
+  type Product,
+  type StockMove,
 } from "../../api/types";
 
 export function InventoryPage() {
@@ -50,10 +72,16 @@ export function InventoryPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<Product | null | undefined>(undefined);
-  const [movingFor, setMovingFor] = useState<Product | null | undefined>(undefined);
+  const [movingFor, setMovingFor] = useState<Product | null | undefined>(
+    undefined,
+  );
   const [batch, setBatch] = useState<LabelBatch | null>(null);
 
-  const { data: products, error, denied } = useAsync(
+  const {
+    data: products,
+    error,
+    denied,
+  } = useAsync(
     () => api.listProducts({ status, q: search || undefined }),
     [status, search, reloadTick],
   );
@@ -64,18 +92,26 @@ export function InventoryPage() {
    * headers with nothing under them — which reads as an empty warehouse. See
    * `components/TableState.tsx`.
    */
-  const { data: levels, error: levelsError, denied: levelsDenied } = useAsync(
-    () => api.stockLevels(),
-    [reloadTick],
-  );
-  const { data: moves, error: movesError, denied: movesDenied } = useAsync(
+  const {
+    data: levels,
+    error: levelsError,
+    denied: levelsDenied,
+  } = useAsync(() => api.stockLevels(), [reloadTick]);
+  const {
+    data: moves,
+    error: movesError,
+    denied: movesDenied,
+  } = useAsync(
     () => api.listStockMoves({ limit: STOCK_MOVES_PAGE }),
     [reloadTick],
   );
   const { data: categories } = useAsync(() => api.productCategories(), []);
   const { data: units } = useAsync(() => api.storageUnits(), []);
   const { data: warehouses } = useAsync(() => api.warehouses(), [reloadTick]);
-  const { data: plots } = useAsync(() => api.listPlots({ status: "active" }), []);
+  const { data: plots } = useAsync(
+    () => api.listPlots({ status: "active" }),
+    [],
+  );
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -100,7 +136,12 @@ export function InventoryPage() {
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{p.name}</Typography>
             {p.note && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {p.note}
               </Typography>
             )}
@@ -113,20 +154,34 @@ export function InventoryPage() {
         render: (p) => p.categoryName ?? "—",
         secondary: true,
       },
-      { key: "unit", header: "Unidad", render: (p) => p.storageUnit, secondary: true },
+      {
+        key: "unit",
+        header: "Unidad",
+        render: (p) => p.storageUnit,
+        secondary: true,
+      },
       {
         key: "stock",
         header: "Existencias",
         align: "right",
         render: (p) => (
           <Tooltip title="Suma de las entradas y salidas registradas. No se escribe a mano.">
-            <Stack alignItems="flex-end">
+            <Stack
+              sx={{
+                alignItems: "flex-end",
+              }}
+            >
               <Typography sx={{ fontWeight: 600 }}>
                 {/* "16 Bulto" was the catalogue value as-is, capitalised and
                     singular. See `lib/plural.ts`. */}
                 {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 de las entradas y salidas
               </Typography>
             </Stack>
@@ -165,7 +220,11 @@ export function InventoryPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -201,7 +260,10 @@ export function InventoryPage() {
           extraActions={
             writable
               ? (p) => [
-                  { label: `Registrar ${STOCK_MOVE.one}`, onClick: () => setMovingFor(p) },
+                  {
+                    label: `Registrar ${STOCK_MOVE.one}`,
+                    onClick: () => setMovingFor(p),
+                  },
                 ]
               : undefined
           }
@@ -247,10 +309,10 @@ export function InventoryPage() {
           emptyBody="Registre el primero: café pergamino, abono, fungicida… Después registre de dónde salió lo que hay en bodega."
           footer={
             <>
-              Las existencias no son un dato que se escriba: son la suma de lo que ha
-              entrado y salido de cada producto. Para cambiarlas, registre lo que pasó
-              —una cosecha, una compra, un consumo, una merma o un ajuste con su
-              explicación.
+              Las existencias no son un dato que se escriba: son la suma de lo
+              que ha entrado y salido de cada producto. Para cambiarlas,
+              registre lo que pasó —una cosecha, una compra, un consumo, una
+              merma o un ajuste con su explicación.
             </>
           }
         />
@@ -262,8 +324,15 @@ export function InventoryPage() {
             <Typography variant="h3" gutterBottom>
               Existencias por bodega
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Cada línea es una suma de entradas y salidas, calculada al momento de consultar.
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 2,
+              }}
+            >
+              Cada línea es una suma de entradas y salidas, calculada al momento
+              de consultar.
             </Typography>
             <Table size="small">
               <TableHead>
@@ -284,7 +353,8 @@ export function InventoryPage() {
                         sx={{ fontWeight: 600 }}
                         color={l.qty < 0 ? "error.main" : undefined}
                       >
-                        {formatQuantity(l.qty)} {unitLabel(l.qty, l.storageUnit)}
+                        {formatQuantity(l.qty)}{" "}
+                        {unitLabel(l.qty, l.storageUnit)}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -305,8 +375,16 @@ export function InventoryPage() {
                 they were all of them. `/cosecha` already says this properly;
                 this is the same thing, here. */}
             {(moves ?? []).length >= STOCK_MOVES_PAGE && (
-              <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
-                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
+              <Typography
+                variant="caption"
+                component="div"
+                sx={{
+                  color: "warning.dark",
+                  mt: 1,
+                }}
+              >
+                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber
+                más atrás.
               </Typography>
             )}
           </CardContent>
@@ -319,10 +397,16 @@ export function InventoryPage() {
             <Typography variant="h3" gutterBottom>
               {STOCK_MOVE.Many}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Lo que entró o salió no se modifica ni se borra: es un hecho. Si quedó mal,
-              se registra una corrección, que es una salida igual a la entrada (o al
-              revés) y la cancela exactamente.
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 2,
+              }}
+            >
+              Lo que entró o salió no se modifica ni se borra: es un hecho. Si
+              quedó mal, se registra una corrección, que es una salida igual a
+              la entrada (o al revés) y la cancela exactamente.
             </Typography>
             <Table size="small">
               <TableHead>
@@ -337,23 +421,48 @@ export function InventoryPage() {
               </TableHead>
               <TableBody>
                 {(moves ?? []).map((m) => (
-                  <TableRow key={m.id} sx={{ opacity: m.reversedById ? 0.5 : 1 }}>
+                  <TableRow
+                    key={m.id}
+                    sx={{ opacity: m.reversedById ? 0.5 : 1 }}
+                  >
                     <TableCell>{formatDate(m.date)}</TableCell>
                     <TableCell>
                       <Stack>
                         {m.productName}
                         {m.plotName && (
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: "text.secondary",
+                            }}
+                          >
                             {m.plotName}
                           </Typography>
                         )}
                       </Stack>
                     </TableCell>
                     <TableCell>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <Chip size="small" label={STOCK_REASON_LABEL[m.reason]} />
-                        {m.reversesId && <Chip size="small" label="corrección" color="warning" />}
-                        {m.reversedById && <Chip size="small" label="corregido" />}
+                      <Stack
+                        direction="row"
+                        spacing={0.5}
+                        sx={{
+                          alignItems: "center",
+                        }}
+                      >
+                        <Chip
+                          size="small"
+                          label={STOCK_REASON_LABEL[m.reason]}
+                        />
+                        {m.reversesId && (
+                          <Chip
+                            size="small"
+                            label="corrección"
+                            color="warning"
+                          />
+                        )}
+                        {m.reversedById && (
+                          <Chip size="small" label="corregido" />
+                        )}
                         {m.saleId && <Chip size="small" label="de una venta" />}
                       </Stack>
                     </TableCell>
@@ -378,7 +487,9 @@ export function InventoryPage() {
                                 // The batch that already exists, not a new one:
                                 // reprinting must not change the codes on the
                                 // sacks.
-                                setBatch(await api.getLabelBatch(m.labelBatchId!));
+                                setBatch(
+                                  await api.getLabelBatch(m.labelBatchId!),
+                                );
                               } catch (e) {
                                 setActionError(messageFor(e));
                               }
@@ -388,17 +499,20 @@ export function InventoryPage() {
                           </IconButton>
                         </Tooltip>
                       )}
-                      {writable && !m.reversedById && !m.reversesId && !m.saleId && (
-                        <Tooltip title="Corregir esto con una entrada o salida contraria">
-                          <IconButton
-                            size="small"
-                            aria-label={`Corregir la entrada o salida de ${m.productName}`}
-                            onClick={() => reverseMove(m)}
-                          >
-                            <UndoIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      {writable &&
+                        !m.reversedById &&
+                        !m.reversesId &&
+                        !m.saleId && (
+                          <Tooltip title="Corregir esto con una entrada o salida contraria">
+                            <IconButton
+                              size="small"
+                              aria-label={`Corregir la entrada o salida de ${m.productName}`}
+                              onClick={() => reverseMove(m)}
+                            >
+                              <UndoIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -429,8 +543,16 @@ export function InventoryPage() {
                 they were all of them. `/cosecha` already says this properly;
                 this is the same thing, here. */}
             {(moves ?? []).length >= STOCK_MOVES_PAGE && (
-              <Typography variant="caption" color="warning.dark" component="div" sx={{ mt: 1 }}>
-                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
+              <Typography
+                variant="caption"
+                component="div"
+                sx={{
+                  color: "warning.dark",
+                  mt: 1,
+                }}
+              >
+                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber
+                más atrás.
               </Typography>
             )}
           </CardContent>

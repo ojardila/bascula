@@ -13,7 +13,11 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Box, Chip, Stack, Typography } from "@mui/material";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PermissionDenied } from "../../components/Guards";
 import { SaleFormDialog } from "./SaleFormDialog";
@@ -40,12 +44,19 @@ export function SalesPage() {
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
 
-  const { data: sales, error, denied } = useAsync(
+  const {
+    data: sales,
+    error,
+    denied,
+  } = useAsync(
     () => api.listSales({ q: search || undefined, status }),
     [search, status, reloadTick],
   );
   const rows = sales?.items ?? null;
-  const { data: products } = useAsync(() => api.listProducts({ status: "active" }), [reloadTick]);
+  const { data: products } = useAsync(
+    () => api.listProducts({ status: "active" }),
+    [reloadTick],
+  );
   const { data: customers } = useAsync(() => api.listCustomers(), [reloadTick]);
   const { data: warehouses } = useAsync(() => api.warehouses(), []);
   const { data: levels } = useAsync(() => api.stockLevels(), [reloadTick]);
@@ -88,7 +99,12 @@ export function SalesPage() {
         render: (s) => (
           <Stack>
             <Typography sx={{ fontWeight: 600 }}>{s.productName}</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {formatQuantity(s.quantity)} {s.storageUnit} · {s.warehouseName}
             </Typography>
           </Stack>
@@ -105,7 +121,11 @@ export function SalesPage() {
         header: "Valor",
         align: "right",
         render: (s) => (
-          <Stack alignItems="flex-end">
+          <Stack
+            sx={{
+              alignItems: "flex-end",
+            }}
+          >
             <Money cents={s.amountCents} />
             {s.voided && <Chip size="small" label="anulada" sx={{ mt: 0.5 }} />}
           </Stack>
@@ -139,7 +159,11 @@ export function SalesPage() {
   return (
     <Box>
       {actionError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setActionError(null)}
+        >
           {actionError}
         </Alert>
       )}
@@ -164,7 +188,9 @@ export function SalesPage() {
         extraActions={
           can("sales.write")
             ? (s) =>
-                s.voided ? [] : [{ label: "Anular la venta", onClick: () => setVoiding(s) }]
+                s.voided
+                  ? []
+                  : [{ label: "Anular la venta", onClick: () => setVoiding(s) }]
             : undefined
         }
         emptyTitle="Todavía no hay ventas"
@@ -182,12 +208,16 @@ export function SalesPage() {
         footer={
           sales ? (
             <>
-              {count(liveSales.length, "venta sin anular", "ventas sin anular")}, por un total
-              de <strong>{formatMoney(total)}</strong>
+              {count(liveSales.length, "venta sin anular", "ventas sin anular")}
+              , por un total de <strong>{formatMoney(total)}</strong>
               {totalQty > 0 && oneUnit && (
-                <> ({formatQuantity(totalQty)} {unitLabel(totalQty, oneUnit)})</>
-              )}. Cada venta descuenta
-              el producto de su bodega; anularla lo devuelve con una entrada de corrección.
+                <>
+                  {" "}
+                  ({formatQuantity(totalQty)} {unitLabel(totalQty, oneUnit)})
+                </>
+              )}
+              . Cada venta descuenta el producto de su bodega; anularla lo
+              devuelve con una entrada de corrección.
             </>
           ) : null
         }

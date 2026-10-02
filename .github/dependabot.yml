@@ -14,6 +14,11 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1 only; lift this once
+      # it supports 7.
+      - dependency-name: typescript
+        versions: [">=7"]
   - package-ecosystem: gomod
     directory: /services/api
     schedule: {interval: weekly}

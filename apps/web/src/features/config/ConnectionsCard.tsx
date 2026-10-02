@@ -1,13 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Collapse, Divider,
-  Link, Stack, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Collapse,
+  Divider,
+  Link,
+  Stack,
+  Typography,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import ShareIcon from "@mui/icons-material/Share";
-import { api, type McpConnection, type McpConnections } from "../../api/endpoints";
+import {
+  api,
+  type McpConnection,
+  type McpConnections,
+} from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -46,7 +59,9 @@ export function farmMcpUrl(origin: string = window.location.origin): string {
  * (see pwa/navigateFallbackDenylist.ts), and the link is a plain <a>, never a
  * router link, so the browser really loads it.
  */
-export function farmMcpDocsUrl(origin: string = window.location.origin): string {
+export function farmMcpDocsUrl(
+  origin: string = window.location.origin,
+): string {
   return `${farmMcpUrl(origin)}/docs`;
 }
 
@@ -65,8 +80,13 @@ export function isPhone(): boolean {
   if (/iPad|Android/i.test(ua)) return true;
   if (/Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return true;
   // The installed app on any touch device, or a small touch-only screen.
-  const mq = (q: string) => typeof window !== "undefined" && window.matchMedia?.(q).matches === true;
-  if (mq("(pointer: coarse)") && (mq("(display-mode: standalone)") || mq("(max-width: 900px)"))) return true;
+  const mq = (q: string) =>
+    typeof window !== "undefined" && window.matchMedia?.(q).matches === true;
+  if (
+    mq("(pointer: coarse)") &&
+    (mq("(display-mode: standalone)") || mq("(max-width: 900px)"))
+  )
+    return true;
   return false;
 }
 
@@ -85,13 +105,23 @@ function CopyField({ value, label }: { value: string; label: string }) {
     <Stack
       direction={{ xs: "column", sm: "row" }}
       spacing={1}
-      alignItems={{ xs: "stretch", sm: "center" }}
-      sx={{ bgcolor: "action.hover", borderRadius: 2, p: 1.5 }}
+      sx={{
+        alignItems: { xs: "stretch", sm: "center" },
+        bgcolor: "action.hover",
+        borderRadius: 2,
+        p: 1.5,
+      }}
     >
       <Typography
         component="code"
         aria-label={label}
-        sx={{ flex: 1, fontFamily: "monospace", fontSize: "1.1rem", wordBreak: "break-all", userSelect: "all" }}
+        sx={{
+          flex: 1,
+          fontFamily: "monospace",
+          fontSize: "1.1rem",
+          wordBreak: "break-all",
+          userSelect: "all",
+        }}
       >
         {value}
       </Typography>
@@ -120,20 +150,30 @@ export function guideText(mcpUrl: string): string {
 }
 
 function ShareGuide({ mcpUrl }: { mcpUrl: string }) {
-  const nav = navigator as Navigator & { share?: (d: { title?: string; text: string }) => Promise<void> };
+  const nav = navigator as Navigator & {
+    share?: (d: { title?: string; text: string }) => Promise<void>;
+  };
   const [done, setDone] = useState(false);
   const shareFn = nav.share;
   if (typeof shareFn !== "function") return null;
   async function share() {
     try {
-      await shareFn.call(navigator, { title: "Conectar Báscula con ChatGPT", text: guideText(mcpUrl) });
+      await shareFn.call(navigator, {
+        title: "Conectar Báscula con ChatGPT",
+        text: guideText(mcpUrl),
+      });
       setDone(true);
     } catch {
       /* cancelled: nothing to say */
     }
   }
   return (
-    <Button variant="contained" size="large" startIcon={<ShareIcon />} onClick={() => void share()}>
+    <Button
+      variant="contained"
+      size="large"
+      startIcon={<ShareIcon />}
+      onClick={() => void share()}
+    >
       {done ? "Enviado" : "Enviarme estos pasos"}
     </Button>
   );
@@ -141,7 +181,11 @@ function ShareGuide({ mcpUrl }: { mcpUrl: string }) {
 
 function formatWhen(iso: string, timeZone: string): string {
   try {
-    return new Date(iso).toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short", timeZone });
+    return new Date(iso).toLocaleString("es-CO", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone,
+    });
   } catch {
     return new Date(iso).toLocaleString("es-CO");
   }
@@ -173,10 +217,16 @@ export function ConnectionsCard() {
     if (retryTimer.current) window.clearTimeout(retryTimer.current);
     const attempt = (n: number) => {
       api.listMcpConnections().then(
-        (d) => { setData(d); setCheckFailed(false); },
+        (d) => {
+          setData(d);
+          setCheckFailed(false);
+        },
         () => {
           if (n < CHECK_RETRY_MS.length) {
-            retryTimer.current = window.setTimeout(() => attempt(n + 1), CHECK_RETRY_MS[n]);
+            retryTimer.current = window.setTimeout(
+              () => attempt(n + 1),
+              CHECK_RETRY_MS[n],
+            );
           } else {
             setCheckFailed(true);
           }
@@ -189,7 +239,9 @@ export function ConnectionsCard() {
     reload();
     // Coming back to the app (from ChatGPT, or from the background on a
     // phone) or back online: ask again.
-    const onBack = () => { if (document.visibilityState !== "hidden") reload(); };
+    const onBack = () => {
+      if (document.visibilityState !== "hidden") reload();
+    };
     document.addEventListener("visibilitychange", onBack);
     window.addEventListener("online", onBack);
     return () => {
@@ -238,7 +290,11 @@ export function ConnectionsCard() {
     setGuide(true);
     // On a phone the button does not leave Báscula: it brings the data into
     // view. (scrollIntoView is missing in some test DOMs.)
-    if (phone || isPhone()) guideRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    if (phone || isPhone())
+      guideRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "start",
+      });
   }
 
   async function revoke() {
@@ -257,7 +313,12 @@ export function ConnectionsCard() {
     }
   }
 
-  const bigButton = { minHeight: 64, fontSize: "1.3rem", px: 4, borderRadius: 3 } as const;
+  const bigButton = {
+    minHeight: 64,
+    fontSize: "1.3rem",
+    px: 4,
+    borderRadius: 3,
+  } as const;
 
   return (
     <Card>
@@ -267,23 +328,43 @@ export function ConnectionsCard() {
         </Typography>
 
         {actionError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            onClose={() => setActionError(null)}
+          >
             {actionError}
           </Alert>
         )}
         {revoked && !connected && (
-          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setRevoked(false)}>
+          <Alert
+            severity="success"
+            sx={{ mb: 2 }}
+            onClose={() => setRevoked(false)}
+          >
             Conexión revocada. ChatGPT ya no puede entrar a esta finca.
           </Alert>
         )}
 
         {connected ? (
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{
+              alignItems: { xs: "stretch", sm: "center" },
+            }}
+          >
             <Box
               role="status"
               sx={{
-                ...bigButton, display: "flex", alignItems: "center", justifyContent: "center", gap: 1,
-                bgcolor: "success.main", color: "success.contrastText", fontWeight: 700,
+                ...bigButton,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                bgcolor: "success.main",
+                color: "success.contrastText",
+                fontWeight: 700,
               }}
             >
               <CheckCircleIcon /> Conectado ✓
@@ -292,7 +373,11 @@ export function ConnectionsCard() {
               component="button"
               type="button"
               onClick={() => setManage((m) => !m)}
-              sx={{ fontSize: "1.2rem", fontWeight: 600, alignSelf: { xs: "center", sm: "center" } }}
+              sx={{
+                fontSize: "1.2rem",
+                fontWeight: 600,
+                alignSelf: { xs: "center", sm: "center" },
+              }}
               aria-expanded={manage}
             >
               Administrar
@@ -325,13 +410,25 @@ export function ConnectionsCard() {
           </Button>
         )}
 
-        <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5, fontSize: "1rem" }}>
-          Crea una conexión segura solo para esta finca. Puedes revocarla cuando quieras.
+        <Typography
+          variant="body2"
+          sx={{ color: "text.secondary", mt: 1.5, fontSize: "1rem" }}
+        >
+          Crea una conexión segura solo para esta finca. Puedes revocarla cuando
+          quieras.
           {checkFailed && !connected && (
             <>
               {" "}
-              <span>Todavía no pudimos confirmar si ya está conectada; puede conectar igual.</span>{" "}
-              <Link component="button" type="button" onClick={reload} sx={{ fontSize: "1rem" }}>
+              <span>
+                Todavía no pudimos confirmar si ya está conectada; puede
+                conectar igual.
+              </span>{" "}
+              <Link
+                component="button"
+                type="button"
+                onClick={reload}
+                sx={{ fontSize: "1rem" }}
+              >
                 Revisar otra vez
               </Link>
             </>
@@ -339,7 +436,12 @@ export function ConnectionsCard() {
           {!connected && items.length > 0 && (
             <>
               {" "}
-              <Link component="button" type="button" onClick={() => setManage((m) => !m)} sx={{ fontSize: "1rem" }}>
+              <Link
+                component="button"
+                type="button"
+                onClick={() => setManage((m) => !m)}
+                sx={{ fontSize: "1rem" }}
+              >
                 Administrar
               </Link>
             </>
@@ -350,9 +452,16 @@ export function ConnectionsCard() {
           href={farmMcpDocsUrl()}
           target="_blank"
           rel="noopener"
-          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, mt: 1, fontSize: "1rem" }}
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.5,
+            mt: 1,
+            fontSize: "1rem",
+          }}
         >
-          Ver herramientas disponibles <OpenInNewIcon sx={{ fontSize: "1rem" }} />
+          Ver herramientas disponibles{" "}
+          <OpenInNewIcon sx={{ fontSize: "1rem" }} />
         </Link>
 
         {/* The data for ChatGPT is always on screen while not connected: it
@@ -363,49 +472,81 @@ export function ConnectionsCard() {
             component="section"
             aria-label="Datos para ChatGPT"
             sx={{
-              mt: 3, p: { xs: 2, sm: 2.5 }, border: 1, borderRadius: 3, scrollMarginTop: 80,
+              mt: 3,
+              p: { xs: 2, sm: 2.5 },
+              border: 1,
+              borderRadius: 3,
+              scrollMarginTop: 80,
               borderColor: guide ? "primary.main" : "divider",
             }}
           >
-            <Typography sx={{ fontWeight: 700, color: "text.secondary", mb: 0.5 }}>
+            <Typography
+              sx={{ fontWeight: 700, color: "text.secondary", mb: 0.5 }}
+            >
               Datos para ChatGPT
             </Typography>
             {phone ? (
               <>
-                <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1 }}>
+                <Typography
+                  variant="h4"
+                  sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1 }}
+                >
                   Hágalo desde un computador
                 </Typography>
                 <Alert severity="info" sx={{ mb: 2, fontSize: "1.05rem" }}>
-                  La aplicación de ChatGPT del celular todavía no deja agregar conectores. Este paso se hace
-                  una sola vez en <b>chatgpt.com</b> desde un computador. Después, Báscula funciona también
-                  en ChatGPT del celular.
+                  La aplicación de ChatGPT del celular todavía no deja agregar
+                  conectores. Este paso se hace una sola vez en{" "}
+                  <b>chatgpt.com</b> desde un computador. Después, Báscula
+                  funciona también en ChatGPT del celular.
                 </Alert>
               </>
             ) : (
-              <Typography variant="h4" sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1.5 }}>
+              <Typography
+                variant="h4"
+                sx={{ fontSize: "1.3rem", fontWeight: 700, mb: 1.5 }}
+              >
                 {guide ? "Termine en ChatGPT" : "Cómo conectar"}
               </Typography>
             )}
-            <Stack component="ol" spacing={1.5} sx={{ pl: 3, m: 0, fontSize: "1.1rem" }}>
+            <Stack
+              component="ol"
+              spacing={1.5}
+              sx={{ pl: 3, m: 0, fontSize: "1.1rem" }}
+            >
               <li>
-                En chatgpt.com, abra <b>Configuración → Seguridad e inicio de sesión</b> y active
-                el <b>Modo desarrollador</b> (Developer mode). Se necesita un plan Plus, Pro, Business
-                o Enterprise.
+                En chatgpt.com, abra{" "}
+                <b>Configuración → Seguridad e inicio de sesión</b> y active el{" "}
+                <b>Modo desarrollador</b> (Developer mode). Se necesita un plan
+                Plus, Pro, Business o Enterprise.
               </li>
               <li>
-                Vaya a <b>Plugins</b> ({CHATGPT_PLUGINS_URL.replace("https://", "")}) y toque el botón <b>+</b>.
+                Vaya a <b>Plugins</b> (
+                {CHATGPT_PLUGINS_URL.replace("https://", "")}) y toque el botón{" "}
+                <b>+</b>.
               </li>
               <li>
-                Nombre: <b>Báscula</b>. En la <b>URL del servidor MCP</b> pegue esta dirección:
+                Nombre: <b>Báscula</b>. En la <b>URL del servidor MCP</b> pegue
+                esta dirección:
                 <Box sx={{ mt: 1 }}>
-                  <CopyField value={mcpUrl} label="Dirección de la finca para ChatGPT" />
+                  <CopyField
+                    value={mcpUrl}
+                    label="Dirección de la finca para ChatGPT"
+                  />
                 </Box>
               </li>
               <li>
-                En autenticación elija <b>OAuth</b>, cree la conexión y entre con su correo y clave de Báscula.
+                En autenticación elija <b>OAuth</b>, cree la conexión y entre
+                con su correo y clave de Báscula.
               </li>
             </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }} alignItems={{ sm: "center" }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              sx={{
+                alignItems: { sm: "center" },
+                mt: 2,
+              }}
+            >
               {phone ? (
                 <ShareGuide mcpUrl={mcpUrl} />
               ) : (
@@ -436,16 +577,35 @@ export function ConnectionsCard() {
             <CopyField value={mcpUrl} label="Dirección MCP de la finca" />
             <Stack spacing={2} sx={{ mt: 2 }}>
               {items.map((c) => (
-                <Box key={c.id} sx={{ border: 1, borderColor: "divider", borderRadius: 3, p: 2 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem" }}>{c.clientName}</Typography>
+                <Box
+                  key={c.id}
+                  sx={{
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 3,
+                    p: 2,
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    sx={{
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      mb: 1,
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 700, fontSize: "1.15rem" }}>
+                      {c.clientName}
+                    </Typography>
                     <Chip
                       label={c.status === "active" ? "Activa" : "Vencida"}
                       color={c.status === "active" ? "success" : "default"}
                       variant="outlined"
                     />
                   </Stack>
-                  <Typography sx={{ color: "text.secondary", fontSize: "1.05rem" }}>
+                  <Typography
+                    sx={{ color: "text.secondary", fontSize: "1.05rem" }}
+                  >
                     Creada el {formatWhen(c.createdAt, tz)}
                   </Typography>
                   <Typography sx={{ fontSize: "1.05rem", mt: 0.5 }}>
@@ -454,14 +614,14 @@ export function ConnectionsCard() {
                       : "Consulta y, si usted lo confirma, registra."}
                   </Typography>
                   <Button
-                      variant="contained"
-                      color="error"
-                      size="large"
-                      onClick={() => setRevoking(c)}
-                      sx={{ mt: 2, width: { xs: "100%", sm: "auto" } }}
-                    >
-                      Revocar conexión
-                    </Button>
+                    variant="contained"
+                    color="error"
+                    size="large"
+                    onClick={() => setRevoking(c)}
+                    sx={{ mt: 2, width: { xs: "100%", sm: "auto" } }}
+                  >
+                    Revocar conexión
+                  </Button>
                 </Box>
               ))}
             </Stack>

@@ -20,7 +20,7 @@ import { useState } from "react";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import MyLocationIcon from "@mui/icons-material/MyLocation";
 import MapIcon from "@mui/icons-material/Map";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 
 /** A GeoJSON Point, longitude first, exactly as it goes on the wire. */
 export type PlotPoint = { type: "Point"; coordinates: number[] };
@@ -131,9 +131,14 @@ export function PlotLocationField({ value, onChange }: Props) {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="body2" color="text.secondary">
-        Opcional. Estando parado en el lote, toque el botón y el sistema guarda el
-        punto. Después podrá abrirlo en el mapa del celular para volver.
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        Opcional. Estando parado en el lote, toque el botón y el sistema guarda
+        el punto. Después podrá abrirlo en el mapa del celular para volver.
       </Typography>
 
       <Button
@@ -153,9 +158,14 @@ export function PlotLocationField({ value, onChange }: Props) {
       </Button>
 
       {busy && (
-        <Typography variant="body2" color="text.secondary">
-          Puede tardar hasta medio minuto. Es normal: el celular está buscando los
-          satélites.
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          Puede tardar hasta medio minuto. Es normal: el celular está buscando
+          los satélites.
         </Typography>
       )}
 

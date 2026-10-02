@@ -25,9 +25,19 @@ export function AuthLayout({
       }}
     >
       <Container maxWidth={wide ? "sm" : "xs"} disableGutters>
-        <Stack alignItems="center" sx={{ mb: 2.5 }}>
+        <Stack
+          sx={{
+            alignItems: "center",
+            mb: 2.5,
+          }}
+        >
           <Typography
-            sx={{ color: "#fff", fontWeight: 800, fontSize: 30, letterSpacing: "-0.02em" }}
+            sx={{
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 30,
+              letterSpacing: "-0.02em",
+            }}
           >
             BÁSCULA
           </Typography>
@@ -40,7 +50,12 @@ export function AuthLayout({
             {title}
           </Typography>
           {subtitle && (
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                mb: 3,
+              }}
+            >
               {subtitle}
             </Typography>
           )}

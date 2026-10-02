@@ -13,7 +13,14 @@
  */
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Alert, Button, CircularProgress, Stack, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Button,
+  CircularProgress,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
@@ -38,13 +45,18 @@ function BackButton() {
 function NoEmailHelp() {
   return (
     <Stack spacing={2.5}>
-      <Typography sx={TEXT}>Su usuario es el correo con el que entra a la finca.</Typography>
       <Typography sx={TEXT}>
-        Si no recuerda la clave, pídale al <strong>dueño</strong> o al <strong>administrador</strong> de la finca que lo quite en{" "}
-        <strong>Configuración → Usuarios</strong> y lo vuelva a agregar con una clave nueva.
+        Su usuario es el correo con el que entra a la finca.
       </Typography>
       <Typography sx={TEXT}>
-        Si recuerda la clave y solo quiere cambiarla, entre y use <strong>Cambiar clave</strong>.
+        Si no recuerda la clave, pídale al <strong>dueño</strong> o al{" "}
+        <strong>administrador</strong> de la finca que lo quite en{" "}
+        <strong>Configuración → Usuarios</strong> y lo vuelva a agregar con una
+        clave nueva.
+      </Typography>
+      <Typography sx={TEXT}>
+        Si recuerda la clave y solo quiere cambiarla, entre y use{" "}
+        <strong>Cambiar clave</strong>.
       </Typography>
       <BackButton />
     </Stack>
@@ -52,7 +64,10 @@ function NoEmailHelp() {
 }
 
 export function ForgotPasswordPage() {
-  const { data: available, loading } = useAsync(() => api.passwordResetAvailable().catch(() => false), []);
+  const { data: available, loading } = useAsync(
+    () => api.passwordResetAvailable().catch(() => false),
+    [],
+  );
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -79,7 +94,12 @@ export function ForgotPasswordPage() {
   return (
     <AuthLayout title="¿Olvidó su clave?">
       {loading ? (
-        <Stack alignItems="center" sx={{ py: 4 }}>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 4,
+          }}
+        >
           <CircularProgress aria-label="Cargando" />
         </Stack>
       ) : !available ? (
@@ -87,17 +107,20 @@ export function ForgotPasswordPage() {
       ) : sent ? (
         <Stack spacing={2.5}>
           <Alert severity="success" sx={{ fontSize: "1.1rem" }}>
-            Si ese correo está registrado, le enviamos un enlace para poner una clave nueva.
+            Si ese correo está registrado, le enviamos un enlace para poner una
+            clave nueva.
           </Alert>
           <Typography sx={TEXT}>
-            Ábralo en los próximos 30 minutos. Si no le llega, revise la carpeta de correo no deseado.
+            Ábralo en los próximos 30 minutos. Si no le llega, revise la carpeta
+            de correo no deseado.
           </Typography>
           <BackButton />
         </Stack>
       ) : (
         <Stack component="form" spacing={2.5} onSubmit={onSubmit} noValidate>
           <Typography sx={TEXT}>
-            Escriba el correo con el que entra a la finca. Le enviaremos un enlace para poner una clave nueva.
+            Escriba el correo con el que entra a la finca. Le enviaremos un
+            enlace para poner una clave nueva.
           </Typography>
           {error && <Alert severity="error">{error}</Alert>}
           <TextField

@@ -7,18 +7,44 @@
 import { useMemo } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, CircularProgress, MenuItem, Stack,
-  Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CircularProgress,
+  MenuItem,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tabs,
+  TextField,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { PermissionDenied } from "../../components/Guards";
 import { DateField } from "../../components/DateField";
 import { useAuth } from "../../auth/AuthContext";
-import { formatDate, formatWeekRange, mondayOf, parseDay, todayInFarm } from "../../lib/dates";
+import {
+  formatDate,
+  formatWeekRange,
+  mondayOf,
+  parseDay,
+  todayInFarm,
+} from "../../lib/dates";
 import { PLOT } from "../../lib/vocab";
 import {
-  DAY_LETTERS, cellKey, daysOfWeek, emptyCell, isIsoDay, planillaMode, workerLabel,
+  DAY_LETTERS,
+  cellKey,
+  daysOfWeek,
+  emptyCell,
+  isIsoDay,
+  planillaMode,
+  workerLabel,
 } from "./planilla";
 import { useHarvestSheet } from "./useHarvestSheet";
 
@@ -42,17 +68,23 @@ export function PlanillaPage({
 
   const mondayParam = params.get("lunes") ?? "";
   const diaParam = params.get("dia") ?? "";
-  const mode = lockedMode ?? planillaMode({
-    modo: params.get("modo"),
-    lunes: mondayParam,
-    dia: diaParam,
-  });
-  const monday = isIsoDay(mondayParam) && mondayOf(mondayParam) === mondayParam
-    ? mondayParam
-    : mondayOf(isIsoDay(diaParam) ? diaParam : today);
-  const day = isIsoDay(diaParam) && diaParam <= today
-    ? diaParam
-    : (mode === "dia" ? today : monday);
+  const mode =
+    lockedMode ??
+    planillaMode({
+      modo: params.get("modo"),
+      lunes: mondayParam,
+      dia: diaParam,
+    });
+  const monday =
+    isIsoDay(mondayParam) && mondayOf(mondayParam) === mondayParam
+      ? mondayParam
+      : mondayOf(isIsoDay(diaParam) ? diaParam : today);
+  const day =
+    isIsoDay(diaParam) && diaParam <= today
+      ? diaParam
+      : mode === "dia"
+        ? today
+        : monday;
   const plotId = params.get("lote") ?? "";
 
   const days = useMemo(
@@ -61,8 +93,21 @@ export function PlanillaPage({
   );
 
   const {
-    workers, plots, activity, cells, setCell, dirty, loadingSheet, loadError,
-    saveError, setSaveError, saved, setSaved, denied, busy, save,
+    workers,
+    plots,
+    activity,
+    cells,
+    setCell,
+    dirty,
+    loadingSheet,
+    loadError,
+    saveError,
+    setSaveError,
+    saved,
+    setSaved,
+    denied,
+    busy,
+    save,
   } = useHarvestSheet({
     days,
     plotId,
@@ -70,13 +115,16 @@ export function PlanillaPage({
     intentTag: mode,
     onCatalogues: (p) => {
       if (!params.get("lote") && p.length === 1) {
-        setParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("lote", p[0].id);
-          if (mode === "semana") next.set("lunes", monday);
-          else next.set("dia", day);
-          return next;
-        }, { replace: true });
+        setParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("lote", p[0].id);
+            if (mode === "semana") next.set("lunes", monday);
+            else next.set("dia", day);
+            return next;
+          },
+          { replace: true },
+        );
       }
     },
   });
@@ -95,7 +143,11 @@ export function PlanillaPage({
 
   function setMode(next: "dia" | "semana") {
     if (next === "semana") {
-      patchParams({ modo: "semana", lunes: mondayOf(isIsoDay(diaParam) ? diaParam : today), dia: null });
+      patchParams({
+        modo: "semana",
+        lunes: mondayOf(isIsoDay(diaParam) ? diaParam : today),
+        dia: null,
+      });
     } else {
       patchParams({ modo: "dia", dia: today, lunes: null });
     }
@@ -116,7 +168,9 @@ export function PlanillaPage({
   }
 
   if (denied || !can("workRecords.write")) {
-    return <PermissionDenied moduleName="registrar la planilla de recolección" />;
+    return (
+      <PermissionDenied moduleName="registrar la planilla de recolección" />
+    );
   }
 
   if (loadError) {
@@ -125,7 +179,12 @@ export function PlanillaPage({
 
   if (!workers || !plots) {
     return (
-      <Stack alignItems="center" sx={{ py: 6 }}>
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 6,
+        }}
+      >
         <CircularProgress />
       </Stack>
     );
@@ -144,24 +203,30 @@ export function PlanillaPage({
     <Box>
       {!hideChrome && (
         <>
-      <Button
-        component={RouterLink}
-        to="/cosecha"
-        startIcon={<ArrowBackIcon />}
-        size="small"
-        sx={{ mb: 2 }}
-      >
-        Volver a la cosecha
-      </Button>
+          <Button
+            component={RouterLink}
+            to="/cosecha"
+            startIcon={<ArrowBackIcon />}
+            size="small"
+            sx={{ mb: 2 }}
+          >
+            Volver a la cosecha
+          </Button>
 
-      <Typography variant="h1" gutterBottom>
-        {mode === "dia" ? "Planilla del día" : "Planilla de la semana"}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {mode === "dia"
-          ? "Un lote, un día, los kilos de cada persona. En blanco es que no trabajó ahí."
-          : "La planilla de la semana: personas abajo, días al lado. Lo ya liquidado no se cambia."}
-      </Typography>
+          <Typography variant="h1" gutterBottom>
+            {mode === "dia" ? "Planilla del día" : "Planilla de la semana"}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+              mb: 2,
+            }}
+          >
+            {mode === "dia"
+              ? "Un lote, un día, los kilos de cada persona. En blanco es que no trabajó ahí."
+              : "La planilla de la semana: personas abajo, días al lado. Lo ya liquidado no se cambia."}
+          </Typography>
         </>
       )}
 
@@ -179,16 +244,13 @@ export function PlanillaPage({
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={2}
-        sx={{ mb: 2 }}
-        alignItems={{ xs: "stretch", sm: "flex-end" }}
+        sx={{
+          alignItems: { xs: "stretch", sm: "flex-end" },
+          mb: 2,
+        }}
       >
         {mode === "dia" ? (
-          <DateField
-            label="Día"
-            value={day}
-            onChange={setDay}
-            max={today}
-          />
+          <DateField label="Día" value={day} onChange={setDay} max={today} />
         ) : (
           <DateField
             label="Semana"
@@ -224,7 +286,11 @@ export function PlanillaPage({
       </Stack>
 
       {saveError && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          onClose={() => setSaveError(null)}
+        >
           {saveError}
         </Alert>
       )}
@@ -237,7 +303,12 @@ export function PlanillaPage({
       {!plotId ? (
         <Alert severity="info">Elija el lote de esta planilla.</Alert>
       ) : loadingSheet ? (
-        <Stack alignItems="center" sx={{ py: 6 }}>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 6,
+          }}
+        >
           <CircularProgress />
         </Stack>
       ) : (
@@ -253,24 +324,39 @@ export function PlanillaPage({
                       key={w.id}
                       direction="row"
                       spacing={2}
-                      alignItems="center"
+                      sx={{
+                        alignItems: "center",
+                      }}
                     >
-                      <Typography sx={{ flex: 1, fontWeight: 600, minWidth: 0 }}>
+                      <Typography
+                        sx={{ flex: 1, fontWeight: 600, minWidth: 0 }}
+                      >
                         {workerLabel(w)}
                       </Typography>
                       <TextField
                         value={cell.text}
                         onChange={(e) => setCell(w.id, day, e.target.value)}
-                        disabled={busy || cell.settled || (cell.records ?? 0) > 1 || future}
+                        disabled={
+                          busy ||
+                          cell.settled ||
+                          (cell.records ?? 0) > 1 ||
+                          future
+                        }
                         placeholder="kg"
-                        inputProps={{
-                          inputMode: "decimal",
-                          "aria-label": `${workerLabel(w)}, kilos`,
-                        }}
                         size="medium"
                         sx={{
                           width: 120,
-                          "& input": { textAlign: "right", fontSize: 20, py: 1.25 },
+                          "& input": {
+                            textAlign: "right",
+                            fontSize: 20,
+                            py: 1.25,
+                          },
+                        }}
+                        slotProps={{
+                          htmlInput: {
+                            inputMode: "decimal",
+                            "aria-label": `${workerLabel(w)}, kilos`,
+                          },
                         }}
                       />
                     </Stack>
@@ -278,57 +364,76 @@ export function PlanillaPage({
                 })}
               </Stack>
             ) : (
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 700, minWidth: 160 }}>
-                    Empleado
-                  </TableCell>
-                  {days.map((d, i) => (
-                    <TableCell key={d} align="right" sx={{ fontWeight: 700, minWidth: 88 }}>
-                      <div>{dayHeader(d, i)}</div>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatDate(d).slice(0, 5)}
-                      </Typography>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, minWidth: 160 }}>
+                      Empleado
                     </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {workers.map((w) => (
-                  <TableRow key={w.id} hover>
-                    <TableCell sx={{ fontWeight: 600 }}>{workerLabel(w)}</TableCell>
-                    {days.map((d) => {
-                      const cell = cells[cellKey(w.id, d)] ?? emptyCell();
-                      const future = d > today;
-                      return (
-                        <TableCell key={d} align="right" sx={{ p: 0.5 }}>
-                          <TextField
-                            value={cell.text}
-                            onChange={(e) => setCell(w.id, d, e.target.value)}
-                            disabled={busy || cell.settled || (cell.records ?? 0) > 1 || future}
-                            placeholder={future ? "—" : ""}
-                            inputProps={{
-                              inputMode: "decimal",
-                              "aria-label": `${workerLabel(w)}, ${dayHeader(d, days.indexOf(d))}`,
-                            }}
-                            size="small"
-                            sx={{
-                              width: 84,
-                              "& input": { textAlign: "right", py: 0.75 },
-                            }}
-                          />
-                        </TableCell>
-                      );
-                    })}
+                    {days.map((d, i) => (
+                      <TableCell
+                        key={d}
+                        align="right"
+                        sx={{ fontWeight: 700, minWidth: 88 }}
+                      >
+                        <div>{dayHeader(d, i)}</div>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                          }}
+                        >
+                          {formatDate(d).slice(0, 5)}
+                        </Typography>
+                      </TableCell>
+                    ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHead>
+                <TableBody>
+                  {workers.map((w) => (
+                    <TableRow key={w.id} hover>
+                      <TableCell sx={{ fontWeight: 600 }}>
+                        {workerLabel(w)}
+                      </TableCell>
+                      {days.map((d) => {
+                        const cell = cells[cellKey(w.id, d)] ?? emptyCell();
+                        const future = d > today;
+                        return (
+                          <TableCell key={d} align="right" sx={{ p: 0.5 }}>
+                            <TextField
+                              value={cell.text}
+                              onChange={(e) => setCell(w.id, d, e.target.value)}
+                              disabled={
+                                busy ||
+                                cell.settled ||
+                                (cell.records ?? 0) > 1 ||
+                                future
+                              }
+                              placeholder={future ? "—" : ""}
+                              size="small"
+                              sx={{
+                                width: 84,
+                                "& input": { textAlign: "right", py: 0.75 },
+                              }}
+                              slotProps={{
+                                htmlInput: {
+                                  inputMode: "decimal",
+                                  "aria-label": `${workerLabel(w)}, ${dayHeader(d, days.indexOf(d))}`,
+                                },
+                              }}
+                            />
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
             {workers.length === 0 && (
               <Alert severity="info" sx={{ mt: 2 }}>
-                No hay empleados activos. Regístrelos primero para llenar la planilla.
+                No hay empleados activos. Regístrelos primero para llenar la
+                planilla.
               </Alert>
             )}
           </CardContent>

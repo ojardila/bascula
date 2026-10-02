@@ -13,7 +13,17 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, InputAdornment, MenuItem, Stack, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  InputAdornment,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAsync } from "../../lib/useAsync";
@@ -24,7 +34,20 @@ import { formatMoney, parseMoneyInput } from "../../lib/money";
 import type { WireBasePriceImpact, WireBasePriceState } from "../../api/wire";
 import { useTour, useTourAction } from "../onboarding/TourContext";
 
-const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const MONTHS = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+];
 const SINCE_ALWAYS = "2000-01-03";
 
 /** "lunes 21 sep 2026". */
@@ -59,15 +82,23 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
 
   const thisWeek = data?.thisWeek ?? null;
   const monday = validFrom ?? thisWeek;
-  const text = draft ?? (data ? groupPesos(String(Math.round(data.currentCents / 100))) : "");
+  const text =
+    draft ??
+    (data ? groupPesos(String(Math.round(data.currentCents / 100))) : "");
   const newCents = parseMoneyInput(text);
   const before = data && monday ? priceOn(data, monday) : null;
-  const changed = !!data && newCents !== null && (newCents !== before || !data.confirmed);
+  const changed =
+    !!data && newCents !== null && (newCents !== before || !data.confirmed);
 
   const mondays = useMemo(() => {
     if (!thisWeek) return [];
     const out: string[] = [];
-    for (let i = 4; i >= -8; i--) out.push(addDays(parseDay(thisWeek), 7 * i).toISOString().slice(0, 10));
+    for (let i = 4; i >= -8; i--)
+      out.push(
+        addDays(parseDay(thisWeek), 7 * i)
+          .toISOString()
+          .slice(0, 10),
+      );
     return out;
   }, [thisWeek]);
 
@@ -90,7 +121,9 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
       return false;
     }
     if (newCents < 10000) {
-      setFieldError(`¿Seguro? ${formatMoney(newCents)} por kilo es muy poco. Escriba el precio en pesos, por ejemplo 1.000.`);
+      setFieldError(
+        `¿Seguro? ${formatMoney(newCents)} por kilo es muy poco. Escriba el precio en pesos, por ejemplo 1.000.`,
+      );
       return false;
     }
     setFieldError(null);
@@ -148,32 +181,62 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
   return (
     <Card sx={{ mb: 3, borderRadius: 4 }}>
       <CardContent sx={{ p: { xs: 2.25, sm: 3 } }}>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }} flexWrap="wrap">
-          <Typography variant="h3" component="h2" sx={{ fontSize: 22, fontWeight: 800 }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap",
+            mb: 0.5,
+          }}
+        >
+          <Typography
+            variant="h3"
+            component="h2"
+            sx={{ fontSize: 22, fontWeight: 800 }}
+          >
             Precio de la finca
           </Typography>
           {data && !data.confirmed && (
-            <Chip color="warning" label="Sin confirmar" sx={{ fontWeight: 700, fontSize: 14 }} />
+            <Chip
+              color="warning"
+              label="Sin confirmar"
+              sx={{ fontWeight: 700, fontSize: 14 }}
+            />
           )}
         </Stack>
         <Typography sx={{ fontSize: 17, color: "text.secondary", mb: 2.5 }}>
-          Lo que la finca paga por cada kilo recogido, desde el lunes que usted diga.
+          Lo que la finca paga por cada kilo recogido, desde el lunes que usted
+          diga.
         </Typography>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>No se pudo leer el precio de la finca: {error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            No se pudo leer el precio de la finca: {error}
+          </Alert>
+        )}
         {data && !data.confirmed && (
           <Alert severity="warning" sx={{ mb: 2, fontSize: 16 }}>
-            Este precio lo puso la aplicación al crear la finca ({formatMoney(data.currentCents)}). Confírmelo o
-            cámbielo por el que usted paga.
+            Este precio lo puso la aplicación al crear la finca (
+            {formatMoney(data.currentCents)}). Confírmelo o cámbielo por el que
+            usted paga.
           </Alert>
         )}
         {savedMsg && (
-          <Alert severity="success" sx={{ mb: 2, fontSize: 16 }} onClose={() => setSavedMsg(null)}>
+          <Alert
+            severity="success"
+            sx={{ mb: 2, fontSize: 16 }}
+            onClose={() => setSavedMsg(null)}
+          >
             {savedMsg}
           </Alert>
         )}
         {saveError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            onClose={() => setSaveError(null)}
+          >
             {saveError}
           </Alert>
         )}
@@ -181,7 +244,14 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
         {/* The tour points at the two fields, not the whole card: the card is
             taller than a phone once the history grows, and the globe then has
             nowhere to go but off the screen. */}
-        <Box data-tour="base-price" sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+        <Box
+          data-tour="base-price"
+          sx={{
+            display: "grid",
+            gap: 2.5,
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+          }}
+        >
           <TextField
             label="Precio por kilo"
             value={text}
@@ -193,10 +263,27 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
             error={!!fieldError}
             helperText={fieldError ?? "En pesos, sin centavos. Ejemplo: 1.000"}
             slotProps={{
-              htmlInput: { inputMode: "numeric", "aria-label": "Precio por kilo en pesos", style: { fontSize: 36, fontWeight: 800, paddingTop: 14, paddingBottom: 14 } },
+              htmlInput: {
+                inputMode: "numeric",
+                "aria-label": "Precio por kilo en pesos",
+                style: {
+                  fontSize: 36,
+                  fontWeight: 800,
+                  paddingTop: 14,
+                  paddingBottom: 14,
+                },
+              },
               input: {
-                startAdornment: <InputAdornment position="start"><Typography sx={{ fontSize: 28 }}>$</Typography></InputAdornment>,
-                endAdornment: <InputAdornment position="end"><Typography sx={{ fontSize: 18 }}>por kilo</Typography></InputAdornment>,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Typography sx={{ fontSize: 28 }}>$</Typography>
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Typography sx={{ fontSize: 18 }}>por kilo</Typography>
+                  </InputAdornment>
+                ),
               },
               formHelperText: { sx: { fontSize: 15 } },
             }}
@@ -227,54 +314,92 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
 
         {newCents !== null && newCents > 0 && (
           <Typography sx={{ fontSize: 16, color: "text.secondary", mt: 2 }}>
-            Así se calcula: 20 kg × {formatMoney(newCents)} = <strong>{formatMoney(20 * newCents)}</strong>
+            Así se calcula: 20 kg × {formatMoney(newCents)} ={" "}
+            <strong>{formatMoney(20 * newCents)}</strong>
           </Typography>
         )}
         {changed && impactText && (
-          <Alert severity="info" variant="outlined" sx={{ mt: 2, fontSize: 16 }}>
+          <Alert
+            severity="info"
+            variant="outlined"
+            sx={{ mt: 2, fontSize: 16 }}
+          >
             {impactText}
           </Alert>
         )}
 
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 2.5 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          sx={{ mt: 2.5 }}
+        >
           <Button
             variant="contained"
             disabled={!data || busy}
             onClick={() => {
               if (!validate()) return;
               if (!changed) {
-                setSavedMsg(`Ese ya es el precio desde el ${monday ? formatMondayLong(monday) : "lunes"}.`);
+                setSavedMsg(
+                  `Ese ya es el precio desde el ${monday ? formatMondayLong(monday) : "lunes"}.`,
+                );
                 return;
               }
               setConfirming(true);
             }}
-            sx={{ borderRadius: 999, minHeight: 52, px: 4, fontSize: 18, fontWeight: 700 }}
+            sx={{
+              borderRadius: 999,
+              minHeight: 52,
+              px: 4,
+              fontSize: 18,
+              fontWeight: 700,
+            }}
           >
-            {data && !data.confirmed && !changed ? "Confirmar precio" : "Guardar precio"}
+            {data && !data.confirmed && !changed
+              ? "Confirmar precio"
+              : "Guardar precio"}
           </Button>
         </Stack>
 
         {data && data.history.length > 0 && (
           <Box sx={{ mt: 3 }}>
-            <Typography sx={{ fontSize: 17, fontWeight: 700, mb: 1 }}>Historial del precio</Typography>
+            <Typography sx={{ fontSize: 17, fontWeight: 700, mb: 1 }}>
+              Historial del precio
+            </Typography>
             <Stack spacing={1}>
               {data.history.map((p) => {
-                const inForce = thisWeek !== null && priceOn(data, thisWeek) === p.priceCents &&
-                  data.history.find((h) => h.validFrom <= thisWeek)?.validFrom === p.validFrom;
+                const inForce =
+                  thisWeek !== null &&
+                  priceOn(data, thisWeek) === p.priceCents &&
+                  data.history.find((h) => h.validFrom <= thisWeek)
+                    ?.validFrom === p.validFrom;
                 const future = thisWeek !== null && p.validFrom > thisWeek;
                 return (
                   <Stack
                     key={p.validFrom}
                     direction="row"
-                    alignItems="center"
                     spacing={1.5}
-                    sx={{ p: 1.25, borderRadius: 2, bgcolor: inForce ? "#eef6ec" : "transparent", border: 1, borderColor: "divider" }}
+                    sx={{
+                      alignItems: "center",
+                      p: 1.25,
+                      borderRadius: 2,
+                      bgcolor: inForce ? "#eef6ec" : "transparent",
+                      border: 1,
+                      borderColor: "divider",
+                    }}
                   >
-                    <Typography sx={{ fontSize: 17, fontWeight: 700, minWidth: 90 }}>{formatMoney(p.priceCents)}</Typography>
-                    <Typography sx={{ fontSize: 16, flex: 1 }}>
-                      {p.validFrom === SINCE_ALWAYS ? "Desde el principio" : `${future ? "Empieza el" : "Desde el"} ${formatMondayLong(p.validFrom)}`}
+                    <Typography
+                      sx={{ fontSize: 17, fontWeight: 700, minWidth: 90 }}
+                    >
+                      {formatMoney(p.priceCents)}
                     </Typography>
-                    {inForce && <Chip size="small" color="primary" label="Se paga hoy" />}
+                    <Typography sx={{ fontSize: 16, flex: 1 }}>
+                      {p.validFrom === SINCE_ALWAYS
+                        ? "Desde el principio"
+                        : `${future ? "Empieza el" : "Desde el"} ${formatMondayLong(p.validFrom)}`}
+                    </Typography>
+                    {inForce && (
+                      <Chip size="small" color="primary" label="Se paga hoy" />
+                    )}
                   </Stack>
                 );
               })}

@@ -24,7 +24,15 @@
  * The switch is also in Configuración.
  */
 import { Link as RouterLink } from "react-router-dom";
-import { Alert, Box, ButtonBase, CircularProgress, Link, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  ButtonBase,
+  CircularProgress,
+  Link,
+  Stack,
+  Typography,
+} from "@mui/material";
 import CalendarViewWeekIcon from "@mui/icons-material/CalendarViewWeek";
 import ScaleIcon from "@mui/icons-material/Scale";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -43,13 +51,23 @@ import { HarvestDashboard } from "./HarvestDashboard";
 import { HarvestModeSwitch } from "./HarvestModeSwitch";
 import { useHarvestMode } from "./harvestMode";
 
-const DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const;
+const DAY_NAMES = [
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+  "Domingo",
+] as const;
 
 export function CosechaHome() {
   const { today, canSeeMoney } = useHarvest();
   const { can } = useAuth();
   const thisMonday = mondayOf(today);
-  const lastMonday = addDays(parseDay(thisMonday), -7).toISOString().slice(0, 10);
+  const lastMonday = addDays(parseDay(thisMonday), -7)
+    .toISOString()
+    .slice(0, 10);
 
   const mode = useHarvestMode();
   const harvestOn = mode.on === true;
@@ -61,7 +79,12 @@ export function CosechaHome() {
     <Stack spacing={3}>
       <Box>
         <Typography variant="h1">Cosecha</Typography>
-        <Typography sx={{ fontSize: "1.1rem" }} color="text.secondary">
+        <Typography
+          sx={{
+            color: "text.secondary",
+            fontSize: "1.1rem",
+          }}
+        >
           Esta semana · {formatWeekRange(thisMonday)}
         </Typography>
       </Box>
@@ -71,7 +94,13 @@ export function CosechaHome() {
       <ResumeCard />
 
       {canWrite && (
-        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+        <Box
+          sx={{
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+          }}
+        >
           <BigAction
             to="/cosecha/registro-masivo"
             icon={<CalendarViewWeekIcon sx={{ fontSize: 40 }} />}
@@ -89,15 +118,26 @@ export function CosechaHome() {
       )}
 
       <Box data-tour="week-summary">
-      {mode.on === null ? (
-        // Not known yet (first visit on this device): wait rather than show
-        // one screen and swap it for the other a second later.
-        <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress /></Stack>
-      ) : harvestOn ? (
-        <HarvestDashboard canSeeMoney={canSeeMoney} />
-      ) : (
-        <WeekSummaryLoader thisMonday={thisMonday} lastMonday={lastMonday} canSeeMoney={canSeeMoney} />
-      )}
+        {mode.on === null ? (
+          // Not known yet (first visit on this device): wait rather than show
+          // one screen and swap it for the other a second later.
+          <Stack
+            sx={{
+              alignItems: "center",
+              py: 4,
+            }}
+          >
+            <CircularProgress />
+          </Stack>
+        ) : harvestOn ? (
+          <HarvestDashboard canSeeMoney={canSeeMoney} />
+        ) : (
+          <WeekSummaryLoader
+            thisMonday={thisMonday}
+            lastMonday={lastMonday}
+            canSeeMoney={canSeeMoney}
+          />
+        )}
       </Box>
 
       <Box sx={{ pt: 1 }}>
@@ -105,12 +145,23 @@ export function CosechaHome() {
           component={RouterLink}
           to="/cosecha/detalles"
           underline="hover"
-          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: "1.05rem", fontWeight: 600 }}
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.5,
+            fontSize: "1.05rem",
+            fontWeight: 600,
+          }}
         >
           Ver más detalles
           <ChevronRightIcon fontSize="small" />
         </Link>
-        <Typography variant="body2" color="text.secondary">
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
           Temporada, por cultivo, rendimiento y revisión de pesadas.
         </Typography>
       </Box>
@@ -129,7 +180,8 @@ function WeekSummaryLoader({
   canSeeMoney: boolean;
 }) {
   const { data, error, denied } = useAsync(
-    async () => Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
+    async () =>
+      Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
     [thisMonday],
   );
   return (
@@ -138,14 +190,24 @@ function WeekSummaryLoader({
         <PermissionDenied moduleName="ver la cosecha" />
       ) : error ? (
         <Alert severity="error">
-          No se pudo consultar la cosecha: {error}. Las cifras no se pudieron calcular — no son cero.
+          No se pudo consultar la cosecha: {error}. Las cifras no se pudieron
+          calcular — no son cero.
         </Alert>
       ) : !data ? (
-        <Stack alignItems="center" sx={{ py: 4 }}><CircularProgress /></Stack>
+        <Stack
+          sx={{
+            alignItems: "center",
+            py: 4,
+          }}
+        >
+          <CircularProgress />
+        </Stack>
       ) : (
         <WeekSummary
           week={data[0]}
-          lastWeek={data[1].items.find((w) => w.weekStart === lastMonday) ?? null}
+          lastWeek={
+            data[1].items.find((w) => w.weekStart === lastMonday) ?? null
+          }
           canSeeMoney={canSeeMoney}
         />
       )}
@@ -153,7 +215,19 @@ function WeekSummaryLoader({
   );
 }
 
-function BigAction({ to, icon, title, hint, tour }: { to: string; icon: ReactNode; title: string; hint: string; tour?: string }) {
+function BigAction({
+  to,
+  icon,
+  title,
+  hint,
+  tour,
+}: {
+  to: string;
+  icon: ReactNode;
+  title: string;
+  hint: string;
+  tour?: string;
+}) {
   return (
     <ButtonBase
       component={RouterLink}
@@ -171,15 +245,30 @@ function BigAction({ to, icon, title, hint, tour }: { to: string; icon: ReactNod
         color: "#fff",
         boxShadow: 2,
         "&:hover": { bgcolor: "primary.dark" },
-        "&.Mui-focusVisible": { outline: "3px solid", outlineColor: "warning.main", outlineOffset: 2 },
+        "&.Mui-focusVisible": {
+          outline: "3px solid",
+          outlineColor: "warning.main",
+          outlineOffset: 2,
+        },
       }}
     >
       <Box sx={{ display: "flex", flexShrink: 0 }}>{icon}</Box>
       <Box sx={{ minWidth: 0 }}>
-        <Typography component="span" sx={{ display: "block", fontSize: { xs: "1.3rem", sm: "1.4rem" }, fontWeight: 700, lineHeight: 1.25 }}>
+        <Typography
+          component="span"
+          sx={{
+            display: "block",
+            fontSize: { xs: "1.3rem", sm: "1.4rem" },
+            fontWeight: 700,
+            lineHeight: 1.25,
+          }}
+        >
           {title}
         </Typography>
-        <Typography component="span" sx={{ display: "block", fontSize: "1rem", opacity: 0.9 }}>
+        <Typography
+          component="span"
+          sx={{ display: "block", fontSize: "1rem", opacity: 0.9 }}
+        >
           {hint}
         </Typography>
       </Box>
@@ -187,11 +276,42 @@ function BigAction({ to, icon, title, hint, tour }: { to: string; icon: ReactNod
   );
 }
 
-function BigFigure({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
+function BigFigure({
+  label,
+  children,
+  wide,
+}: {
+  label: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
   return (
-    <Box sx={{ gridColumn: wide ? { xs: "1 / -1", md: "auto" } : undefined, p: 2, borderRadius: 3, border: 1, borderColor: "divider", bgcolor: "background.paper", minWidth: 0 }}>
-      <Typography sx={{ fontSize: "1rem", color: "text.secondary", fontWeight: 600 }}>{label}</Typography>
-      <Box sx={{ fontSize: { xs: "1.7rem", sm: "2rem" }, fontWeight: 700, lineHeight: 1.2, mt: 0.5 }}>{children}</Box>
+    <Box
+      sx={{
+        gridColumn: wide ? { xs: "1 / -1", md: "auto" } : undefined,
+        p: 2,
+        borderRadius: 3,
+        border: 1,
+        borderColor: "divider",
+        bgcolor: "background.paper",
+        minWidth: 0,
+      }}
+    >
+      <Typography
+        sx={{ fontSize: "1rem", color: "text.secondary", fontWeight: 600 }}
+      >
+        {label}
+      </Typography>
+      <Box
+        sx={{
+          fontSize: { xs: "1.7rem", sm: "2rem" },
+          fontWeight: 700,
+          lineHeight: 1.2,
+          mt: 0.5,
+        }}
+      >
+        {children}
+      </Box>
     </Box>
   );
 }
@@ -211,7 +331,16 @@ function WeekSummary({
 
   return (
     <Stack spacing={2.5}>
-      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr 1fr", md: canSeeMoney ? "repeat(3,1fr)" : "repeat(2,1fr)" } }}>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 1.5,
+          gridTemplateColumns: {
+            xs: "1fr 1fr",
+            md: canSeeMoney ? "repeat(3,1fr)" : "repeat(2,1fr)",
+          },
+        }}
+      >
         <BigFigure label="Kilos esta semana" wide={canSeeMoney}>
           <Kg total={week.total} align="flex-start" bold scope="la semana" />
         </BigFigure>
@@ -225,7 +354,8 @@ function WeekSummary({
 
       {lastWeek?.kg != null && (
         <Typography sx={{ fontSize: "1.1rem" }}>
-          La semana pasada se recogieron <strong>{formatQuantity(lastWeek.kg)} kg</strong>.
+          La semana pasada se recogieron{" "}
+          <strong>{formatQuantity(lastWeek.kg)} kg</strong>.
         </Typography>
       )}
 
@@ -234,21 +364,67 @@ function WeekSummary({
           Todavía no hay kilos registrados esta semana.
         </Alert>
       ) : (
-        <Box sx={{ p: 2, borderRadius: 3, border: 1, borderColor: "divider", bgcolor: "background.paper" }}>
-          <Typography variant="h3" sx={{ mb: 1.5 }}>Kilos por día</Typography>
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: 1,
+            borderColor: "divider",
+            bgcolor: "background.paper",
+          }}
+        >
+          <Typography variant="h3" sx={{ mb: 1.5 }}>
+            Kilos por día
+          </Typography>
           <Stack spacing={1}>
             {dayCols.map((c) => {
               const i = (parseDay(c.key!).getUTCDay() + 6) % 7;
               const kg = kgForDrawing(c.total);
               return (
-                <Stack key={c.key} direction="row" alignItems="center" spacing={1.5}>
-                  <Typography sx={{ width: { xs: 124, sm: 130 }, flexShrink: 0, fontSize: "1.05rem" }}>
+                <Stack
+                  key={c.key}
+                  direction="row"
+                  spacing={1.5}
+                  sx={{
+                    alignItems: "center",
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      width: { xs: 124, sm: 130 },
+                      flexShrink: 0,
+                      fontSize: "1.05rem",
+                    }}
+                  >
                     {DAY_NAMES[i]} {parseDay(c.key!).getUTCDate()}
                   </Typography>
-                  <Box sx={{ flex: 1, height: 14, borderRadius: 7, bgcolor: "#eef1ec", overflow: "hidden" }}>
-                    <Box sx={{ width: `${(kg / maxKg) * 100}%`, height: "100%", bgcolor: "primary.main", borderRadius: 7 }} />
+                  <Box
+                    sx={{
+                      flex: 1,
+                      height: 14,
+                      borderRadius: 7,
+                      bgcolor: "#eef1ec",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: `${(kg / maxKg) * 100}%`,
+                        height: "100%",
+                        bgcolor: "primary.main",
+                        borderRadius: 7,
+                      }}
+                    />
                   </Box>
-                  <Box sx={{ width: 96, flexShrink: 0, textAlign: "right", fontSize: "1.05rem", fontWeight: 600 }}>
+                  <Box
+                    sx={{
+                      width: 96,
+                      flexShrink: 0,
+                      textAlign: "right",
+                      fontSize: "1.05rem",
+                      fontWeight: 600,
+                    }}
+                  >
                     <Kg total={c.total} scope="ese día" />
                   </Box>
                 </Stack>

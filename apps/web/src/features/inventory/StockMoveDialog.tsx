@@ -29,11 +29,27 @@
  */
 import { useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogTitle, FormControlLabel, MenuItem, Stack, Switch, TextField,
-  ToggleButton, ToggleButtonGroup, Typography,
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  MenuItem,
+  Stack,
+  Switch,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
-import { CatalogPicker, type CatalogValue } from "../../components/CatalogPicker";
+import {
+  CatalogPicker,
+  type CatalogValue,
+} from "../../components/CatalogPicker";
 import { DateField } from "../../components/DateField";
 import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
@@ -45,21 +61,37 @@ import { todayInFarm } from "../../lib/dates";
 import { STOCK_MOVE } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
 import {
-  STOCK_REASON_LABEL, type CatalogItem, type LabelBatch, type Plot, type Product,
-  type StockMove, type StockReason,
+  STOCK_REASON_LABEL,
+  type CatalogItem,
+  type LabelBatch,
+  type Plot,
+  type Product,
+  type StockMove,
+  type StockReason,
 } from "../../api/types";
 
 /** Every reason except `venta`, which belongs to a sale and not to this form. */
-const REASONS: StockReason[] = ["cosecha", "compra", "consumo", "merma", "traslado", "ajuste"];
+const REASONS: StockReason[] = [
+  "cosecha",
+  "compra",
+  "consumo",
+  "merma",
+  "traslado",
+  "ajuste",
+];
 
 const REASON_HELP: Record<StockReason, string> = {
   cosecha: "Entró producto recogido en la finca.",
   compra: "Entró producto comprado a un tercero.",
-  venta: "Las ventas se registran en el módulo de Ventas, que además guarda a quién y por cuánto.",
-  consumo: "Salió producto usado en la finca (abono aplicado, semilla sembrada…).",
+  venta:
+    "Las ventas se registran en el módulo de Ventas, que además guarda a quién y por cuánto.",
+  consumo:
+    "Salió producto usado en la finca (abono aplicado, semilla sembrada…).",
   merma: "Se perdió producto: se dañó, se derramó, se lo comió una plaga.",
-  traslado: "El producto cambió de bodega. Registre la salida de una y la entrada en la otra.",
-  ajuste: "El conteo físico no cuadra con el sistema. Diga cuánto sobra o falta y por qué.",
+  traslado:
+    "El producto cambió de bodega. Registre la salida de una y la entrada en la otra.",
+  ajuste:
+    "El conteo físico no cuadra con el sistema. Diga cuánto sobra o falta y por qué.",
 };
 
 export interface StockMoveDialogProps {
@@ -76,7 +108,14 @@ export interface StockMoveDialogProps {
 }
 
 export function StockMoveDialog({
-  open, products, warehouses, plots, product, stockOf, onClose, onSaved,
+  open,
+  products,
+  warehouses,
+  plots,
+  product,
+  stockOf,
+  onClose,
+  onSaved,
 }: StockMoveDialogProps) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
@@ -93,7 +132,9 @@ export function StockMoveDialog({
    * one is visibly unanswered.
    */
   const [warehouse, setWarehouse] = useState<CatalogValue | null>(
-    warehouses.length === 1 ? { id: warehouses[0].id, name: warehouses[0].name } : null,
+    warehouses.length === 1
+      ? { id: warehouses[0].id, name: warehouses[0].name }
+      : null,
   );
   const [reason, setReason] = useState<StockReason>("cosecha");
   const [direction, setDirection] = useState<"in" | "out">("in");
@@ -111,13 +152,18 @@ export function StockMoveDialog({
   const chosen = products.find((p) => p.id === productId) ?? null;
   const chosenPlot = plots.find((p) => p.id === plotId) ?? null;
   const magnitude = parseQuantityInput(qty);
-  const signed = magnitude === null ? null : signedQty(magnitude, reason, direction);
+  const signed =
+    magnitude === null ? null : signedQty(magnitude, reason, direction);
   const available = useMemo(
-    () => (productId && warehouse?.id ? stockOf(productId, warehouse.id) : null),
+    () =>
+      productId && warehouse?.id ? stockOf(productId, warehouse.id) : null,
     [productId, warehouse, stockOf],
   );
   const goesNegative =
-    available !== null && signed !== null && signed < 0 && stockAfter(available, signed) < 0;
+    available !== null &&
+    signed !== null &&
+    signed < 0 &&
+    stockAfter(available, signed) < 0;
 
   function validate(): boolean {
     const e: Record<string, string> = {};
@@ -132,14 +178,16 @@ export function StockMoveDialog({
     // in, so a crop with no lot is a row the database will not take.
     if (plotCropId && !plotId) e.plot = "Elija primero el lote de ese cultivo.";
     if (reason === "ajuste" && !note.trim()) {
-      e.note = "Un ajuste sin explicación es un número que nadie podrá justificar después.";
+      e.note =
+        "Un ajuste sin explicación es un número que nadie podrá justificar después.";
     }
     // The server guards EVERY outgoing movement, not just a sale: a consumo
     // for more than there is comes back 409 INSUFFICIENT_STOCK. Asking here
     // means the person fixes the number, or records the missing entry, or says
     // they know — rather than filling the form in and being refused at the end.
     if (goesNegative && !anyway) {
-      e.qty = "En esa bodega no hay tanto. Corrija la cantidad, registre la entrada que falta, o marque la casilla de abajo.";
+      e.qty =
+        "En esa bodega no hay tanto. Corrija la cantidad, registre la entrada que falta, o marque la casilla de abajo.";
     }
     setFields(e);
     return Object.keys(e).length === 0;
@@ -150,8 +198,16 @@ export function StockMoveDialog({
     // One movement per filled-in form: a double click used to move the stock
     // twice, and with the id minted inside the call the second request was a
     // new movement rather than a retry. See `lib/writeOnce.ts`.
-    const intent = ["entrada-salida", productId, warehouse.id ?? warehouse.name, signed,
-                    reason, date, plotId, plotCropId].join("|");
+    const intent = [
+      "entrada-salida",
+      productId,
+      warehouse.id ?? warehouse.name,
+      signed,
+      reason,
+      date,
+      plotId,
+      plotCropId,
+    ].join("|");
     const outcome = await runOnce(intent, async (mint) => {
       setError(null);
       // The warehouse is created FIRST, as its own call, because
@@ -160,7 +216,8 @@ export function StockMoveDialog({
       // right: a typo must not be able to invent a shed in the middle of a
       // movement, and `POST /v1/warehouses` is idempotent by lower(name) so
       // choosing an existing one by typing its name is safe.
-      const warehouseId = warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
+      const warehouseId =
+        warehouse.id ?? (await api.createWarehouse(warehouse.name)).id;
       return api.createStockMove({
         id: mint(),
         productId,
@@ -188,12 +245,23 @@ export function StockMoveDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>Registrar una entrada o una salida</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Las existencias no se escriben: salen de sumar lo que entra y lo que sale. Diga qué pasó y
-          el sistema calcula cuánto queda.
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Las existencias no se escriben: salen de sumar lo que entra y lo que
+          sale. Diga qué pasó y el sistema calcula cuánto queda.
         </Typography>
 
         {error && (
@@ -221,7 +289,14 @@ export function StockMoveDialog({
 
           {reasonNeedsDirection(reason) && (
             <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: "text.secondary",
+                  display: "block",
+                  mb: 0.5,
+                }}
+              >
                 ¿Entra o sale?
               </Typography>
               <ToggleButtonGroup
@@ -269,7 +344,9 @@ export function StockMoveDialog({
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             error={!!fields.qty}
-            helperText={fields.qty ?? "En positivo. El motivo decide si entra o sale."}
+            helperText={
+              fields.qty ?? "En positivo. El motivo decide si entra o sale."
+            }
             inputMode="decimal"
             fullWidth
             required
@@ -280,10 +357,10 @@ export function StockMoveDialog({
             <Alert severity="info" icon={false}>
               Hoy hay{" "}
               <strong>
-                {formatQuantity(available)} {unitLabel(available, chosen.storageUnit)}
+                {formatQuantity(available)}{" "}
+                {unitLabel(available, chosen.storageUnit)}
               </strong>{" "}
-              en{" "}
-              {warehouse?.name}. Después de esto quedan{" "}
+              en {warehouse?.name}. Después de esto quedan{" "}
               <strong>
                 {formatQuantity(stockAfter(available, signed))}{" "}
                 {unitLabel(stockAfter(available, signed), chosen.storageUnit)}
@@ -298,7 +375,10 @@ export function StockMoveDialog({
               <FormControlLabel
                 sx={{ display: "block", mt: 1 }}
                 control={
-                  <Checkbox checked={anyway} onChange={(e) => setAnyway(e.target.checked)} />
+                  <Checkbox
+                    checked={anyway}
+                    onChange={(e) => setAnyway(e.target.checked)}
+                  />
                 }
                 label="Regístrelo de todos modos: pasó, y la bodega está desactualizada."
               />
@@ -346,7 +426,9 @@ export function StockMoveDialog({
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <DateField label="Fecha" value={date} onChange={setDate} />
             <TextField
-              label={reason === "ajuste" ? "Por qué se ajusta" : "Nota (opcional)"}
+              label={
+                reason === "ajuste" ? "Por qué se ajusta" : "Nota (opcional)"
+              }
               value={note}
               onChange={(e) => setNote(e.target.value)}
               error={!!fields.note}
@@ -358,7 +440,12 @@ export function StockMoveDialog({
 
           {signed !== null && signed > 0 && (
             <FormControlLabel
-              control={<Switch checked={labels} onChange={(e) => setLabels(e.target.checked)} />}
+              control={
+                <Switch
+                  checked={labels}
+                  onChange={(e) => setLabels(e.target.checked)}
+                />
+              }
               label="Imprimir stickers de identificación"
             />
           )}

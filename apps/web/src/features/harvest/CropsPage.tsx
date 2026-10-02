@@ -20,8 +20,21 @@
  *   kgPerHa  null when the area was never declared OR the kilos are unknown.
  */
 import {
-  Alert, Box, Card, CardContent, Chip, CircularProgress, Divider, Stack, Table,
-  TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Divider,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Tooltip,
+  Typography,
 } from "@mui/material";
 import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
@@ -42,9 +55,13 @@ export function CropsPage() {
     const ids = plots.flatMap((p) => p.crops.map((c) => c.id));
     // One failing crop must not blank the whole screen: a farm with six crops
     // and one broken row is better served by five rows and a notice.
-    const settled = await Promise.allSettled(ids.map((id) => reportCrop(id, weeks)));
+    const settled = await Promise.allSettled(
+      ids.map((id) => reportCrop(id, weeks)),
+    );
     return {
-      crops: settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : [])),
+      crops: settled.flatMap((r) =>
+        r.status === "fulfilled" ? [r.value] : [],
+      ),
       failed: settled.filter((r) => r.status === "rejected").length,
     };
   }, [weeks]);
@@ -53,21 +70,28 @@ export function CropsPage() {
   if (error) {
     return (
       <Alert severity="error">
-        No se pudieron consultar los cultivos: {error}. Ninguna cifra se pudo calcular
-        — y ninguna de ellas es cero.
+        No se pudieron consultar los cultivos: {error}. Ninguna cifra se pudo
+        calcular — y ninguna de ellas es cero.
       </Alert>
     );
   }
   if (!data) {
     return (
-      <Stack alignItems="center" sx={{ py: 6 }}>
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 6,
+        }}
+      >
         <CircularProgress />
       </Stack>
     );
   }
 
   // Heaviest first. A crop with unknown kilos sorts last rather than as a zero.
-  const crops = [...data.crops].sort((a, b) => kgForDrawing(b) - kgForDrawing(a));
+  const crops = [...data.crops].sort(
+    (a, b) => kgForDrawing(b) - kgForDrawing(a),
+  );
   const withHarvest = crops.filter((c) => c.records > 0);
   const max = Math.max(...crops.map(kgForDrawing), 1);
 
@@ -82,15 +106,22 @@ export function CropsPage() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="body2" color="text.secondary">
-        Cada cultivo de cada lote, del que más produjo al que menos. La curva de la
-        derecha es su evolución semanal dentro del periodo elegido.
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        Cada cultivo de cada lote, del que más produjo al que menos. La curva de
+        la derecha es su evolución semanal dentro del periodo elegido.
       </Typography>
 
       {data.failed > 0 && (
         <Alert severity="warning">
           {data.failed}{" "}
-          {data.failed === 1 ? "cultivo no se pudo consultar" : "cultivos no se pudieron consultar"}{" "}
+          {data.failed === 1
+            ? "cultivo no se pudo consultar"
+            : "cultivos no se pudieron consultar"}{" "}
           y no aparecen abajo. Los totales de esta pantalla no los incluyen.
         </Alert>
       )}
@@ -101,16 +132,27 @@ export function CropsPage() {
             <Stack
               direction={{ xs: "column", md: "row" }}
               spacing={2}
-              alignItems={{ md: "center" }}
-              justifyContent="space-between"
+              sx={{
+                alignItems: { md: "center" },
+                justifyContent: "space-between",
+              }}
             >
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Stack direction="row" spacing={1} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{
+                    alignItems: "baseline",
+                    flexWrap: "wrap",
+                  }}
+                >
                   <Typography variant="h3">{c.label}</Typography>
                   {c.sharedRecords > 0 && (
                     <Tooltip
                       title={`${c.sharedRecords} ${
-                        c.sharedRecords === 1 ? "pesada nombra" : "pesadas nombran"
+                        c.sharedRecords === 1
+                          ? "pesada nombra"
+                          : "pesadas nombran"
                       } este cultivo y otro más. Sus kilos se cuentan enteros aquí y también allá, así que sumar los cultivos entre sí da de más.`}
                     >
                       <Chip
@@ -123,7 +165,12 @@ export function CropsPage() {
                     </Tooltip>
                   )}
                 </Stack>
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
                   {c.firstOn && c.lastOn
                     ? `Recogido entre el ${formatDate(c.firstOn)} y el ${formatDate(c.lastOn)}`
                     : "Sin fechas de recolección"}
@@ -133,7 +180,15 @@ export function CropsPage() {
                 </Box>
               </Box>
 
-              <Stack direction="row" spacing={3} alignItems="center" sx={{ flexWrap: "wrap", rowGap: 1.5 }}>
+              <Stack
+                direction="row"
+                spacing={3}
+                sx={{
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  rowGap: 1.5,
+                }}
+              >
                 <Cell label="Kilos">
                   <Kg total={c} align="flex-start" bold scope={c.label} />
                 </Cell>
@@ -151,7 +206,14 @@ export function CropsPage() {
                           : "Los kilos de este cultivo no se pudieron establecer, así que no hay rendimiento por hectárea."
                       }
                     >
-                      <Box component="span" sx={{ color: "text.disabled", cursor: "help", fontWeight: 600 }}>
+                      <Box
+                        component="span"
+                        sx={{
+                          color: "text.disabled",
+                          cursor: "help",
+                          fontWeight: 600,
+                        }}
+                      >
                         —
                       </Box>
                     </Tooltip>
@@ -162,7 +224,10 @@ export function CropsPage() {
                 <Cell label="Personas">{c.pickers}</Cell>
                 <Cell label="Días">{c.days}</Cell>
                 <Box>
-                  <Typography variant="overline" sx={{ fontSize: 10, color: "text.secondary" }}>
+                  <Typography
+                    variant="overline"
+                    sx={{ fontSize: 10, color: "text.secondary" }}
+                  >
                     Por semana
                   </Typography>
                   <Sparkline
@@ -182,7 +247,9 @@ export function CropsPage() {
                       <TableRow>
                         <TableCell>Semana</TableCell>
                         <TableCell align="right">Kilos</TableCell>
-                        {canSeeMoney && <TableCell align="right">Valor</TableCell>}
+                        {canSeeMoney && (
+                          <TableCell align="right">Valor</TableCell>
+                        )}
                         <TableCell align="right">Personas</TableCell>
                         <TableCell align="right">Días</TableCell>
                       </TableRow>
@@ -191,10 +258,20 @@ export function CropsPage() {
                       {c.byWeek.map((w) => (
                         <TableRow key={w.weekStart}>
                           <TableCell>
-                            <Stack direction="row" spacing={1} alignItems="center">
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              sx={{
+                                alignItems: "center",
+                              }}
+                            >
                               {formatWeekRange(w.weekStart)}
                               {!w.finished && (
-                                <Chip size="small" variant="outlined" label="en curso" />
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label="en curso"
+                                />
                               )}
                             </Stack>
                           </TableCell>
@@ -222,10 +299,19 @@ export function CropsPage() {
   );
 }
 
-function Cell({ label, children }: { label: string; children: React.ReactNode }) {
+function Cell({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <Box sx={{ minWidth: 74 }}>
-      <Typography variant="overline" sx={{ fontSize: 10, color: "text.secondary", display: "block" }}>
+      <Typography
+        variant="overline"
+        sx={{ fontSize: 10, color: "text.secondary", display: "block" }}
+      >
         {label}
       </Typography>
       <Box sx={{ fontWeight: 700, fontSize: "1.05rem" }}>{children}</Box>

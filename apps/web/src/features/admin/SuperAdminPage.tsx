@@ -12,10 +12,27 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, AppBar, Avatar, Box, Button, Chip, Container, Dialog, DialogActions,
-  DialogContent, DialogTitle, Stack, TextField, Toolbar, Typography,
+  Alert,
+  AppBar,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Toolbar,
+  Typography,
 } from "@mui/material";
-import { ModuleList, type Column, type StatusFilter } from "../../components/ModuleList";
+import {
+  ModuleList,
+  type Column,
+  type StatusFilter,
+} from "../../components/ModuleList";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
@@ -24,7 +41,10 @@ import { messageFor } from "../../api/errors";
 import { formatDate } from "../../lib/dates";
 import { farmSlugProblem } from "../../lib/farmHost";
 import {
-  FarmUrlField, slugErrorFromApi, useFarmUrl, useSlugCheck,
+  FarmUrlField,
+  slugErrorFromApi,
+  useFarmUrl,
+  useSlugCheck,
 } from "../../components/FarmUrlField";
 import { ProvisionProgress } from "../provision/ProvisionProgress";
 import { parseMoneyInput } from "../../lib/money";
@@ -48,15 +68,17 @@ export function SuperAdminPage() {
   const [created, setCreated] = useState<AdminFarmCreated | null>(null);
   const [error, setActionError] = useState<string | null>(null);
 
-  const { data, error: loadError, reload } = useAsync(
-    () => api.adminListFarms({ q: search || undefined }),
-    [search],
-  );
+  const {
+    data,
+    error: loadError,
+    reload,
+  } = useAsync(() => api.adminListFarms({ q: search || undefined }), [search]);
 
   const rows = useMemo(() => {
     if (!data) return null;
     if (status === "all") return data;
-    if (status === "inactive") return data.filter((f) => f.status === "suspended");
+    if (status === "inactive")
+      return data.filter((f) => f.status === "suspended");
     return data.filter((f) => f.status !== "suspended");
   }, [data, status]);
 
@@ -73,11 +95,21 @@ export function SuperAdminPage() {
         <Stack>
           <Typography sx={{ fontWeight: 600 }}>{f.name}</Typography>
           {f.slug && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               {f.slug}.bascula.engp.io
             </Typography>
           )}
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             {[f.city, f.country].filter(Boolean).join(", ") || "—"}
           </Typography>
         </Stack>
@@ -108,15 +140,29 @@ export function SuperAdminPage() {
 
   return (
     <Box sx={{ minHeight: "100dvh", bgcolor: "background.default" }}>
-      <AppBar position="static" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
+      <AppBar
+        position="static"
+        color="inherit"
+        elevation={0}
+        sx={{ borderBottom: 1, borderColor: "divider" }}
+      >
         <Toolbar sx={{ gap: 2 }}>
-          <Typography sx={{ fontWeight: 800, color: GREEN_DARK, fontSize: 20 }}>BÁSCULA</Typography>
+          <Typography sx={{ fontWeight: 800, color: GREEN_DARK, fontSize: 20 }}>
+            BÁSCULA
+          </Typography>
           <Chip size="small" label="Consola de soporte" />
           <Box sx={{ flex: 1 }} />
-          <Typography variant="body2" color="text.secondary">
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
             {user?.email}
           </Typography>
-          <Avatar sx={{ width: 30, height: 30, bgcolor: GREEN_DARK, fontSize: 13 }}>
+          <Avatar
+            sx={{ width: 30, height: 30, bgcolor: GREEN_DARK, fontSize: 13 }}
+          >
             {user?.name?.[0]}
           </Avatar>
           {user?.farm && (
@@ -137,9 +183,15 @@ export function SuperAdminPage() {
       </AppBar>
 
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Cree una finca con su dueño, o suspéndala. Esta consola <strong>no lee</strong>{" "}
-          empleados, labores ni dinero de ninguna de ellas.
+        <Typography
+          sx={{
+            color: "text.secondary",
+            mb: 3,
+          }}
+        >
+          Cree una finca con su dueño, o suspéndala. Esta consola{" "}
+          <strong>no lee</strong> empleados, labores ni dinero de ninguna de
+          ellas.
         </Typography>
 
         <ModuleList<AdminFarm>
@@ -214,7 +266,12 @@ export function SuperAdminPage() {
         }}
       />
 
-      <Dialog open={!!created} onClose={() => setCreated(null)} fullWidth maxWidth="sm">
+      <Dialog
+        open={!!created}
+        onClose={() => setCreated(null)}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Finca creada</DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 1 }}>
@@ -223,18 +280,34 @@ export function SuperAdminPage() {
           </Typography>
           {created?.temporaryPassword ? (
             <Alert severity="warning">
-              Esta clave se muestra una sola vez. Entréguesela ahora: no se puede volver a leer.
-              <Typography sx={{ fontFamily: "ui-monospace, monospace", mt: 1, fontWeight: 700 }}>
+              Esta clave se muestra una sola vez. Entréguesela ahora: no se
+              puede volver a leer.
+              <Typography
+                sx={{
+                  fontFamily: "ui-monospace, monospace",
+                  mt: 1,
+                  fontWeight: 700,
+                }}
+              >
                 {created.temporaryPassword}
               </Typography>
             </Alert>
           ) : created?.ownerCreated ? (
-            <Typography color="text.secondary">
+            <Typography
+              sx={{
+                color: "text.secondary",
+              }}
+            >
               El dueño entra con la clave que usted escribió.
             </Typography>
           ) : (
-            <Typography color="text.secondary">
-              Esa cuenta ya existía: se le agregó esta finca como dueño, sin cambiarle la clave.
+            <Typography
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Esa cuenta ya existía: se le agregó esta finca como dueño, sin
+              cambiarle la clave.
             </Typography>
           )}
           {created?.slug && (
@@ -254,7 +327,9 @@ export function SuperAdminPage() {
 }
 
 function CreateFarmDialog({
-  open, onClose, onCreated,
+  open,
+  onClose,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
@@ -281,7 +356,9 @@ function CreateFarmDialog({
     }
     const slugProblem =
       farmSlugProblem(slugValue) ??
-      (check === "taken" ? "Esa dirección ya la tiene otra finca. Escriba otra." : null);
+      (check === "taken"
+        ? "Esa dirección ya la tiene otra finca. Escriba otra."
+        : null);
     if (slugProblem) {
       setSlugError(slugProblem);
       return;
@@ -298,7 +375,9 @@ function CreateFarmDialog({
       setError("La clave del dueño debe tener al menos 10 caracteres.");
       return;
     }
-    const intent = ["admin-farm", name.trim(), email.trim().toLowerCase()].join("|");
+    const intent = ["admin-farm", name.trim(), email.trim().toLowerCase()].join(
+      "|",
+    );
     const outcome = await runOnce(intent, async () =>
       api.adminCreateFarm({
         name: name.trim(),
@@ -327,7 +406,12 @@ function CreateFarmDialog({
   }
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+    >
       <DialogTitle>Nueva finca</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -382,8 +466,14 @@ function CreateFarmDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>Cancelar</Button>
-        <Button variant="contained" onClick={() => void submit()} disabled={busy}>
+        <Button onClick={onClose} disabled={busy}>
+          Cancelar
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => void submit()}
+          disabled={busy}
+        >
           Crear finca
         </Button>
       </DialogActions>

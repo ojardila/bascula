@@ -37,14 +37,28 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Box, Button, IconButton, InputAdornment, Popover, Stack, TextField, Typography,
+  Box,
+  Button,
+  IconButton,
+  InputAdornment,
+  Popover,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import {
-  MONTH_NAMES, WEEKDAY_INITIALS, formatDayFull, isValidDay, monthGrid, parseDay,
-  parseTypedDay, todayInFarm, toTypedDay,
+  MONTH_NAMES,
+  WEEKDAY_INITIALS,
+  formatDayFull,
+  isValidDay,
+  monthGrid,
+  parseDay,
+  parseTypedDay,
+  todayInFarm,
+  toTypedDay,
 } from "../lib/dates";
 import { useAuth } from "../auth/AuthContext";
 
@@ -68,8 +82,18 @@ export interface DateFieldProps {
 }
 
 export function DateField({
-  label, value, onChange, helperText, error, required, disabled,
-  fullWidth = true, size = "medium", min, max, name,
+  label,
+  value,
+  onChange,
+  helperText,
+  error,
+  required,
+  disabled,
+  fullWidth = true,
+  size = "medium",
+  min,
+  max,
+  name,
 }: DateFieldProps) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
@@ -99,7 +123,8 @@ export function DateField({
   const empty = text.trim() === "";
   const invalid = !empty && typed === null;
   const outOfRange =
-    typed !== null && ((min !== undefined && typed < min) || (max !== undefined && typed > max));
+    typed !== null &&
+    ((min !== undefined && typed < min) || (max !== undefined && typed > max));
 
   function commit(next: string) {
     setText(next);
@@ -196,7 +221,13 @@ export function DateField({
 /* ------------------------------------------------------------------ */
 
 function Calendar({
-  anchorEl, selected, today, min, max, onPick, onClose,
+  anchorEl,
+  selected,
+  today,
+  min,
+  max,
+  onPick,
+  onClose,
 }: {
   anchorEl: HTMLElement | null;
   selected: string | null;
@@ -231,26 +262,53 @@ function Calendar({
       slotProps={{ paper: { sx: { p: 1.5 } } }}
     >
       <Box role="application" aria-label="Calendario">
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-          <IconButton size="small" aria-label="Mes anterior" onClick={() => shift(-1)}>
+        <Stack
+          direction="row"
+          sx={{
+            alignItems: "center",
+            justifyContent: "space-between",
+            mb: 1,
+          }}
+        >
+          <IconButton
+            size="small"
+            aria-label="Mes anterior"
+            onClick={() => shift(-1)}
+          >
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
           {/* The month spelled out, not "08". The whole point of this screen
               is that nobody has to translate a number into a month. */}
-          <Typography sx={{ fontWeight: 700, minWidth: 168, textAlign: "center" }}>
+          <Typography
+            sx={{ fontWeight: 700, minWidth: 168, textAlign: "center" }}
+          >
             {MONTH_NAMES[cursor.month]} de {cursor.year}
           </Typography>
-          <IconButton size="small" aria-label="Mes siguiente" onClick={() => shift(1)}>
+          <IconButton
+            size="small"
+            aria-label="Mes siguiente"
+            onClick={() => shift(1)}
+          >
             <ChevronRightIcon fontSize="small" />
           </IconButton>
         </Stack>
 
-        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(7, 36px)", gap: 0.25 }}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 36px)",
+            gap: 0.25,
+          }}
+        >
           {WEEKDAY_INITIALS.map((d, i) => (
             <Typography
               key={i}
               variant="caption"
-              sx={{ textAlign: "center", color: "text.secondary", fontWeight: 700 }}
+              sx={{
+                textAlign: "center",
+                color: "text.secondary",
+                fontWeight: 700,
+              }}
             >
               {d}
             </Typography>
@@ -275,11 +333,17 @@ function Calendar({
                   // Days outside the month still show, but dimmed: the grid
                   // always keeps six weeks, so the button somebody is about
                   // to press does not move when the month changes.
-                  color: isSelected ? "primary.contrastText" : inMonth ? "text.primary" : "text.disabled",
+                  color: isSelected
+                    ? "primary.contrastText"
+                    : inMonth
+                      ? "text.primary"
+                      : "text.disabled",
                   bgcolor: isSelected ? "primary.main" : "transparent",
                   border: !isSelected && isToday ? 1 : 0,
                   borderColor: "primary.main",
-                  "&:hover": { bgcolor: isSelected ? "primary.dark" : "action.hover" },
+                  "&:hover": {
+                    bgcolor: isSelected ? "primary.dark" : "action.hover",
+                  },
                 }}
               >
                 {parseDay(iso).getUTCDate()}
@@ -288,8 +352,18 @@ function Calendar({
           })}
         </Box>
 
-        <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}>
-          <Button size="small" onClick={() => onPick(today)} disabled={blocked(today)}>
+        <Stack
+          direction="row"
+          sx={{
+            justifyContent: "space-between",
+            mt: 1,
+          }}
+        >
+          <Button
+            size="small"
+            onClick={() => onPick(today)}
+            disabled={blocked(today)}
+          >
             Hoy
           </Button>
           <Button size="small" color="inherit" onClick={onClose}>

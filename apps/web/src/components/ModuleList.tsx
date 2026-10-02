@@ -21,10 +21,29 @@
  */
 import { useState, type ReactNode } from "react";
 import {
-  Alert, Box, Button, Card, Chip, CircularProgress, IconButton, InputAdornment,
-  Menu, MenuItem, Paper, Skeleton, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, ToggleButton,
-  ToggleButtonGroup, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  Chip,
+  CircularProgress,
+  IconButton,
+  InputAdornment,
+  Menu,
+  MenuItem,
+  Paper,
+  Skeleton,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
@@ -81,14 +100,40 @@ export interface ModuleListProps<T> {
 
 export function ModuleList<T>(props: ModuleListProps<T>) {
   const {
-    title, singular, plural, rows, error, columns, getId, getName, isInactive,
-    search, onSearchChange, searchPlaceholder, statusFilter, onStatusFilterChange,
-    onCreate, createLabel, onRowClick, onEdit, onDeactivate, onReactivate,
-    extraActions, footer, emptyTitle, emptyBody, toolbarExtra,
+    title,
+    singular,
+    plural,
+    rows,
+    error,
+    columns,
+    getId,
+    getName,
+    isInactive,
+    search,
+    onSearchChange,
+    searchPlaceholder,
+    statusFilter,
+    onStatusFilterChange,
+    onCreate,
+    createLabel,
+    onRowClick,
+    onEdit,
+    onDeactivate,
+    onReactivate,
+    extraActions,
+    footer,
+    emptyTitle,
+    emptyBody,
+    toolbarExtra,
   } = props;
 
-  const [menuFor, setMenuFor] = useState<{ el: HTMLElement; row: T } | null>(null);
-  const [confirming, setConfirming] = useState<{ row: T; kind: "off" | "on" } | null>(null);
+  const [menuFor, setMenuFor] = useState<{ el: HTMLElement; row: T } | null>(
+    null,
+  );
+  const [confirming, setConfirming] = useState<{
+    row: T;
+    kind: "off" | "on";
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const loading = rows === null && !error;
@@ -111,14 +156,23 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
     <Box>
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ xs: "stretch", sm: "center" }}
         spacing={2}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", sm: "center" },
+          mb: 2,
+        }}
       >
-        <Typography variant="h1" data-tour="module-title">{title}</Typography>
+        <Typography variant="h1" data-tour="module-title">
+          {title}
+        </Typography>
         {onCreate && (
-          <Button data-tour="module-create" variant="contained" startIcon={<AddIcon />} onClick={onCreate}>
+          <Button
+            data-tour="module-create"
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={onCreate}
+          >
             {createLabel ?? `Nueva ${singular}`}
           </Button>
         )}
@@ -128,8 +182,12 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         <Stack
           direction={{ xs: "column", md: "row" }}
           spacing={2}
-          alignItems={{ xs: "stretch", md: "center" }}
-          sx={{ p: 2, borderBottom: 1, borderColor: "divider" }}
+          sx={{
+            alignItems: { xs: "stretch", md: "center" },
+            p: 2,
+            borderBottom: 1,
+            borderColor: "divider",
+          }}
         >
           <TextField
             value={search}
@@ -145,8 +203,9 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                   </InputAdornment>
                 ),
               },
+
+              htmlInput: { "aria-label": searchPlaceholder },
             }}
-            inputProps={{ "aria-label": searchPlaceholder }}
           />
           <ToggleButtonGroup
             size="small"
@@ -179,7 +238,9 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                     align={c.align}
                     sx={{
                       width: c.width,
-                      ...(c.secondary ? { display: { xs: "none", md: "table-cell" } } : {}),
+                      ...(c.secondary
+                        ? { display: { xs: "none", md: "table-cell" } }
+                        : {}),
                     }}
                   >
                     {c.header}
@@ -218,16 +279,25 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                         <TableCell
                           key={c.key}
                           align={c.align}
-                          sx={c.secondary ? { display: { xs: "none", md: "table-cell" } } : undefined}
+                          sx={
+                            c.secondary
+                              ? { display: { xs: "none", md: "table-cell" } }
+                              : undefined
+                          }
                         >
                           {c.render(row)}
                         </TableCell>
                       ))}
-                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      <TableCell
+                        align="right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <IconButton
                           size="small"
                           aria-label={`Acciones de ${getName(row)}`}
-                          onClick={(e) => setMenuFor({ el: e.currentTarget, row })}
+                          onClick={(e) =>
+                            setMenuFor({ el: e.currentTarget, row })
+                          }
                         >
                           <MoreVertIcon fontSize="small" />
                         </IconButton>
@@ -238,19 +308,38 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
 
               {empty && (
                 <TableRow>
-                  <TableCell colSpan={columns.length + 1} sx={{ py: 8, textAlign: "center" }}>
-                    <Typography variant="h3" color="text.secondary" gutterBottom>
+                  <TableCell
+                    colSpan={columns.length + 1}
+                    sx={{ py: 8, textAlign: "center" }}
+                  >
+                    <Typography
+                      variant="h3"
+                      gutterBottom
+                      sx={{
+                        color: "text.secondary",
+                      }}
+                    >
                       {searching
                         ? "Ningún resultado para esa búsqueda"
                         : (emptyTitle ?? `Todavía no hay ${plural}`)}
                     </Typography>
-                    <Typography color="text.secondary" sx={{ mb: 2 }}>
+                    <Typography
+                      sx={{
+                        color: "text.secondary",
+                        mb: 2,
+                      }}
+                    >
                       {searching
                         ? "Pruebe con otro nombre, o cambie el filtro de estado."
-                        : (emptyBody ?? "Use el botón de arriba para crear el primero.")}
+                        : (emptyBody ??
+                          "Use el botón de arriba para crear el primero.")}
                     </Typography>
                     {!searching && onCreate && (
-                      <Button variant="outlined" startIcon={<AddIcon />} onClick={onCreate}>
+                      <Button
+                        variant="outlined"
+                        startIcon={<AddIcon />}
+                        onClick={onCreate}
+                      >
                         {createLabel ?? `Nueva ${singular}`}
                       </Button>
                     )}
@@ -264,8 +353,12 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
         {footer && (
           <Box
             sx={{
-              px: 2, py: 1.5, borderTop: 1, borderColor: "divider",
-              color: "text.secondary", fontSize: 14,
+              px: 2,
+              py: 1.5,
+              borderTop: 1,
+              borderColor: "divider",
+              color: "text.secondary",
+              fontSize: 14,
             }}
           >
             {footer}
@@ -373,7 +466,15 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
       />
 
       {busy && (
-        <Box sx={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            display: "grid",
+            placeItems: "center",
+            pointerEvents: "none",
+          }}
+        >
           <Chip icon={<CircularProgress size={14} />} label="Guardando…" />
         </Box>
       )}

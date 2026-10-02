@@ -23,14 +23,27 @@
  */
 import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Alert, Box, Button, ButtonBase, Chip, CircularProgress, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  ButtonBase,
+  Chip,
+  CircularProgress,
+  Stack,
+  Typography,
+} from "@mui/material";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import type { ReactNode } from "react";
 import { useAsync } from "../../lib/useAsync";
 import { PermissionDenied } from "../../components/Guards";
 import { reportHarvestDashboard } from "../../api/harvest";
-import type { WireHarvestDashboard, WireHarvestDashboardPerson, WireHarvestDashboardPlot } from "../../api/wire";
+import type {
+  WireHarvestDashboard,
+  WireHarvestDashboardPerson,
+  WireHarvestDashboardPlot,
+} from "../../api/wire";
 import { GREEN, moneyFont } from "../../theme";
 import { DaysChart } from "../workers/WorkerPerformance";
 import { comparisonSpan, kgText, weekChange } from "../workers/performance";
@@ -51,13 +64,19 @@ export function HarvestDashboard({ canSeeMoney }: { canSeeMoney: boolean }) {
   if (error) {
     return (
       <Alert severity="error" sx={{ fontSize: "1.05rem" }}>
-        No se pudo consultar la semana de cosecha: {error}. Las cifras no se pudieron calcular — no son cero.
+        No se pudo consultar la semana de cosecha: {error}. Las cifras no se
+        pudieron calcular — no son cero.
       </Alert>
     );
   }
   if (!data) {
     return (
-      <Stack alignItems="center" sx={{ py: 4 }}>
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 4,
+        }}
+      >
         <CircularProgress />
       </Stack>
     );
@@ -65,13 +84,20 @@ export function HarvestDashboard({ canSeeMoney }: { canSeeMoney: boolean }) {
   return <Body d={data} canSeeMoney={canSeeMoney} />;
 }
 
-function Body({ d, canSeeMoney }: { d: WireHarvestDashboard; canSeeMoney: boolean }) {
+function Body({
+  d,
+  canSeeMoney,
+}: {
+  d: WireHarvestDashboard;
+  canSeeMoney: boolean;
+}) {
   const s = d.summary;
   if (s.thisWeek.records === 0 && s.lastWeek.records === 0) {
     return (
       <Alert severity="info" sx={{ fontSize: "1.1rem" }}>
-        Todavía no hay kilos registrados esta semana ni la semana pasada. Cuando se registren
-        recolecciones, aquí verá los lotes, las personas y los kilos de cada día.
+        Todavía no hay kilos registrados esta semana ni la semana pasada. Cuando
+        se registren recolecciones, aquí verá los lotes, las personas y los
+        kilos de cada día.
       </Alert>
     );
   }
@@ -80,42 +106,78 @@ function Body({ d, canSeeMoney }: { d: WireHarvestDashboard; canSeeMoney: boolea
   return (
     <Stack spacing={3} data-testid="harvest-dashboard">
       {/* 1. The week in big figures. */}
-      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)" } }}>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 1.5,
+          gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)" },
+        }}
+      >
         <BigFigure label="Kilos esta semana" wide>
           <Kg total={s.thisWeek} align="flex-start" bold scope="la semana" />
-          <Typography sx={{ fontSize: "1.05rem", fontWeight: 600, mt: 0.5, color: change.direction === "down" ? "warning.dark" : change.direction === "up" ? "primary.main" : "text.secondary" }}>
+          <Typography
+            sx={{
+              fontSize: "1.05rem",
+              fontWeight: 600,
+              mt: 0.5,
+              color:
+                change.direction === "down"
+                  ? "warning.dark"
+                  : change.direction === "up"
+                    ? "primary.main"
+                    : "text.secondary",
+            }}
+          >
             {change.arrow} {change.sentence}
           </Typography>
-          <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>{comparisonSpan(d.today)}</Typography>
+          <Typography sx={{ fontSize: "0.95rem", color: "text.secondary" }}>
+            {comparisonSpan(d.today)}
+          </Typography>
         </BigFigure>
         <BigFigure label="Kilos hoy">
           <Kg total={s.today} align="flex-start" bold scope="hoy" />
         </BigFigure>
-        <BigFigure label="Personas hoy" hint={`De ${count(s.pickersThisWeek, "persona", "personas")} esta semana`}>
+        <BigFigure
+          label="Personas hoy"
+          hint={`De ${count(s.pickersThisWeek, "persona", "personas")} esta semana`}
+        >
           {s.pickersToday}
         </BigFigure>
-        <BigFigure label="Promedio por persona" hint="Kilos al día, esta semana">
+        <BigFigure
+          label="Promedio por persona"
+          hint="Kilos al día, esta semana"
+        >
           {s.kgPerPersonDay === null ? "—" : kgText(s.kgPerPersonDay)}
         </BigFigure>
         {canSeeMoney && (
-          <BigFigure label="Pago de la semana" hint="Lo que valen los kilos recogidos hasta hoy">
+          <BigFigure
+            label="Pago de la semana"
+            hint="Lo que valen los kilos recogidos hasta hoy"
+          >
             <Value total={s.thisWeek} scope="la semana" align="flex-start" />
           </BigFigure>
         )}
       </Box>
       {s.lastWeek.kg !== null && (
         <Typography sx={{ fontSize: "1.1rem", mt: -1.5 }}>
-          La semana pasada completa se recogieron <strong>{kgText(s.lastWeek.kg)}</strong>.
+          La semana pasada completa se recogieron{" "}
+          <strong>{kgText(s.lastWeek.kg)}</strong>.
         </Typography>
       )}
 
       {/* 2. Kilos per day. */}
       <Section title="Kilos por día">
-        <DaysChart days={d.days} caption="Kilos de toda la finca cada día, de lunes a domingo." />
+        <DaysChart
+          days={d.days}
+          caption="Kilos de toda la finca cada día, de lunes a domingo."
+        />
       </Section>
 
       {/* 3. Lotes. */}
-      <Section title="Lotes" hint="Los que más kilos dan esta semana, primero. Toque un lote para ver su detalle.">
+      <Section
+        title="Lotes"
+        hint="Los que más kilos dan esta semana, primero. Toque un lote para ver su detalle."
+      >
         {d.plots.length === 0 ? (
           <Typography sx={{ fontSize: "1.05rem", color: "text.secondary" }}>
             Ninguna recolección de estas dos semanas tiene un lote asignado.
@@ -128,8 +190,11 @@ function Body({ d, canSeeMoney }: { d: WireHarvestDashboard; canSeeMoney: boolea
           </Stack>
         )}
         {d.unattributed.kg !== null && (
-          <Typography sx={{ fontSize: "1rem", color: "text.secondary", mt: 1.5 }}>
-            {kgText(d.unattributed.kg)} de esta semana no tienen un lote asignado.
+          <Typography
+            sx={{ fontSize: "1rem", color: "text.secondary", mt: 1.5 }}
+          >
+            {kgText(d.unattributed.kg)} de esta semana no tienen un lote
+            asignado.
           </Typography>
         )}
       </Section>
@@ -168,7 +233,9 @@ function People({ d }: { d: WireHarvestDashboard }) {
   const avg = d.summary.kgPerPersonDay;
   // Named up front, because the list below stops at TOP_PEOPLE and the people
   // most worth a look are, by construction, at the bottom of it.
-  const flagged = belowAverageText(people.filter((p) => p.belowAverage).map((p) => p.name));
+  const flagged = belowAverageText(
+    people.filter((p) => p.belowAverage).map((p) => p.name),
+  );
   return (
     <Section
       title="Personas"
@@ -179,20 +246,37 @@ function People({ d }: { d: WireHarvestDashboard }) {
       }
     >
       {flagged && (
-        <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mb: 1.5, color: "warning.dark" }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{
+            alignItems: "flex-start",
+            mb: 1.5,
+            color: "warning.dark",
+          }}
+        >
           <WarningAmberIcon sx={{ mt: 0.25 }} />
-          <Typography sx={{ fontSize: "1.05rem", fontWeight: 600 }}>{flagged}</Typography>
+          <Typography sx={{ fontSize: "1.05rem", fontWeight: 600 }}>
+            {flagged}
+          </Typography>
         </Stack>
       )}
       {people.length === 0 ? (
-        <Typography sx={{ fontSize: "1.05rem", color: "text.secondary" }}>Nadie ha recogido esta semana todavía.</Typography>
+        <Typography sx={{ fontSize: "1.05rem", color: "text.secondary" }}>
+          Nadie ha recogido esta semana todavía.
+        </Typography>
       ) : (
         <Stack spacing={1}>
           {shown.map((p, i) => (
             <PersonRow key={p.employeeId} p={p} rank={i + 1} />
           ))}
           {people.length > TOP_PEOPLE && (
-            <Button variant="outlined" size="large" onClick={() => setAll((v) => !v)} sx={{ alignSelf: "flex-start", fontSize: "1rem" }}>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => setAll((v) => !v)}
+              sx={{ alignSelf: "flex-start", fontSize: "1rem" }}
+            >
               {all ? "Ver menos" : `Ver las ${people.length} personas`}
             </Button>
           )}
@@ -204,17 +288,57 @@ function People({ d }: { d: WireHarvestDashboard }) {
 
 function PlotRow({ p }: { p: WireHarvestDashboardPlot }) {
   return (
-    <RowLink to={`${PLOT.path}/${p.plotId}`} label={`${p.name}: ${p.kg === null ? "sin kilos" : kgText(p.kg)} esta semana`}>
-      <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
-        <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+    <RowLink
+      to={`${PLOT.path}/${p.plotId}`}
+      label={`${p.name}: ${p.kg === null ? "sin kilos" : kgText(p.kg)} esta semana`}
+    >
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: "baseline",
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: "1.15rem",
+            fontWeight: 700,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {p.name}
         </Typography>
-        <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, whiteSpace: "nowrap", ...moneyFont }}>
+        <Typography
+          sx={{
+            fontSize: "1.15rem",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            ...moneyFont,
+          }}
+        >
           {p.kg === null ? "—" : kgText(p.kg)}
         </Typography>
       </Stack>
-      <Box sx={{ height: 12, borderRadius: 6, bgcolor: TRACK, overflow: "hidden", my: 0.75 }}>
-        <Box sx={{ width: `${Math.round((p.share ?? 0) * 100)}%`, height: "100%", borderRadius: 6, bgcolor: GREEN }} />
+      <Box
+        sx={{
+          height: 12,
+          borderRadius: 6,
+          bgcolor: TRACK,
+          overflow: "hidden",
+          my: 0.75,
+        }}
+      >
+        <Box
+          sx={{
+            width: `${Math.round((p.share ?? 0) * 100)}%`,
+            height: "100%",
+            borderRadius: 6,
+            bgcolor: GREEN,
+          }}
+        />
       </Box>
       <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>
         {[
@@ -229,49 +353,128 @@ function PlotRow({ p }: { p: WireHarvestDashboardPlot }) {
   );
 }
 
-function PersonRow({ p, rank }: { p: WireHarvestDashboardPerson; rank: number }) {
+function PersonRow({
+  p,
+  rank,
+}: {
+  p: WireHarvestDashboardPerson;
+  rank: number;
+}) {
   // A team is one row, ranked by kilos EACH: «392 kg c/u · 785 kg juntos».
   const team = p.kind === "equipo";
   const n = Math.round(p.members);
   const main = team ? p.kgEach : p.kg;
   const label = `${rank}. ${p.name}${p.tag ? ` (canasto ${p.tag})` : ""}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
   return (
-    <RowLink to={`${EMPLOYEE.path}/${p.employeeId}`} label={label} warn={p.belowAverage}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-        <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0 }}>
-          <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, fontSize: "1.05rem" }}>{rank}.</Box>
+    <RowLink
+      to={`${EMPLOYEE.path}/${p.employeeId}`}
+      label={label}
+      warn={p.belowAverage}
+    >
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <Stack
+          direction="row"
+          spacing={1.25}
+          sx={{
+            alignItems: "center",
+            minWidth: 0,
+          }}
+        >
+          <Box
+            component="span"
+            sx={{
+              color: "text.secondary",
+              fontWeight: 600,
+              fontSize: "1.05rem",
+            }}
+          >
+            {rank}.
+          </Box>
           <BasketTile tag={p.tag} team={team} size={40} />
           {/* Wraps instead of «Yorman y …»: with the basket tile in front a
               phone has little room, and half a name is no name. */}
-          <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, lineHeight: 1.2, overflowWrap: "anywhere" }}>
+          <Typography
+            sx={{
+              fontSize: "1.15rem",
+              fontWeight: 700,
+              lineHeight: 1.2,
+              overflowWrap: "anywhere",
+            }}
+          >
             {p.name}
           </Typography>
         </Stack>
-        <Typography sx={{ fontSize: "1.15rem", fontWeight: 700, whiteSpace: "nowrap", ...moneyFont }}>
+        <Typography
+          sx={{
+            fontSize: "1.15rem",
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            ...moneyFont,
+          }}
+        >
           {main === null ? "—" : kgText(main)}
-          {team && <Box component="span" sx={{ fontSize: "0.95rem", fontWeight: 600, ml: 0.5 }}>c/u</Box>}
+          {team && (
+            <Box
+              component="span"
+              sx={{ fontSize: "0.95rem", fontWeight: 600, ml: 0.5 }}
+            >
+              c/u
+            </Box>
+          )}
         </Typography>
       </Stack>
       {team && (
-        <Typography sx={{ fontSize: "1rem", fontWeight: 600, color: "success.dark" }}>
-          Equipo de {n}{p.kg !== null ? ` · ${kgText(p.kg)} juntos` : ""}
+        <Typography
+          sx={{ fontSize: "1rem", fontWeight: 600, color: "success.dark" }}
+        >
+          Equipo de {n}
+          {p.kg !== null ? ` · ${kgText(p.kg)} juntos` : ""}
         </Typography>
       )}
       <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>
         {count(p.daysWorked, "día", "días")}
-        {p.kgPerDay !== null ? ` · ${kgText(p.kgPerDay)} al día${team ? " c/u" : ""}` : ""}
+        {p.kgPerDay !== null
+          ? ` · ${kgText(p.kgPerDay)} al día${team ? " c/u" : ""}`
+          : ""}
       </Typography>
       {p.belowAverage && (
-        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, color: "warning.dark" }}>
+        <Stack
+          direction="row"
+          spacing={0.75}
+          sx={{
+            alignItems: "center",
+            mt: 0.5,
+            color: "warning.dark",
+          }}
+        >
           <WarningAmberIcon fontSize="small" />
-          <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>Muy por debajo del promedio</Typography>
+          <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+            Muy por debajo del promedio
+          </Typography>
         </Stack>
       )}
     </RowLink>
   );
 }
 
-function RowLink({ to, label, warn, children }: { to: string; label: string; warn?: boolean; children: ReactNode }) {
+function RowLink({
+  to,
+  label,
+  warn,
+  children,
+}: {
+  to: string;
+  label: string;
+  warn?: boolean;
+  children: ReactNode;
+}) {
   return (
     <ButtonBase
       component={RouterLink}
@@ -290,7 +493,11 @@ function RowLink({ to, label, warn, children }: { to: string; label: string; war
         borderColor: warn ? "warning.main" : "divider",
         bgcolor: warn ? "rgba(237,108,2,.05)" : "background.paper",
         "&:hover": { borderColor: "primary.main" },
-        "&.Mui-focusVisible": { outline: "3px solid", outlineColor: "warning.main", outlineOffset: 2 },
+        "&.Mui-focusVisible": {
+          outline: "3px solid",
+          outlineColor: "warning.main",
+          outlineOffset: 2,
+        },
       }}
     >
       <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
@@ -299,7 +506,17 @@ function RowLink({ to, label, warn, children }: { to: string; label: string; war
   );
 }
 
-function BigFigure({ label, hint, wide, children }: { label: string; hint?: string; wide?: boolean; children: ReactNode }) {
+function BigFigure({
+  label,
+  hint,
+  wide,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
     <Box
       sx={{
@@ -312,18 +529,60 @@ function BigFigure({ label, hint, wide, children }: { label: string; hint?: stri
         minWidth: 0,
       }}
     >
-      <Typography sx={{ fontSize: "1rem", color: "text.secondary", fontWeight: 600 }}>{label}</Typography>
-      <Box sx={{ fontSize: { xs: "1.7rem", sm: "2rem" }, fontWeight: 700, lineHeight: 1.2, mt: 0.5, ...moneyFont }}>{children}</Box>
-      {hint && <Typography sx={{ fontSize: "0.95rem", color: "text.secondary", mt: 0.5 }}>{hint}</Typography>}
+      <Typography
+        sx={{ fontSize: "1rem", color: "text.secondary", fontWeight: 600 }}
+      >
+        {label}
+      </Typography>
+      <Box
+        sx={{
+          fontSize: { xs: "1.7rem", sm: "2rem" },
+          fontWeight: 700,
+          lineHeight: 1.2,
+          mt: 0.5,
+          ...moneyFont,
+        }}
+      >
+        {children}
+      </Box>
+      {hint && (
+        <Typography
+          sx={{ fontSize: "0.95rem", color: "text.secondary", mt: 0.5 }}
+        >
+          {hint}
+        </Typography>
+      )}
     </Box>
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
-    <Box sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 3, border: 1, borderColor: "divider", bgcolor: "background.paper" }}>
-      <Typography variant="h3" sx={{ mb: hint ? 0.5 : 1.5 }}>{title}</Typography>
-      {hint && <Typography sx={{ fontSize: "1rem", color: "text.secondary", mb: 1.5 }}>{hint}</Typography>}
+    <Box
+      sx={{
+        p: { xs: 1.5, sm: 2 },
+        borderRadius: 3,
+        border: 1,
+        borderColor: "divider",
+        bgcolor: "background.paper",
+      }}
+    >
+      <Typography variant="h3" sx={{ mb: hint ? 0.5 : 1.5 }}>
+        {title}
+      </Typography>
+      {hint && (
+        <Typography sx={{ fontSize: "1rem", color: "text.secondary", mb: 1.5 }}>
+          {hint}
+        </Typography>
+      )}
       {children}
     </Box>
   );

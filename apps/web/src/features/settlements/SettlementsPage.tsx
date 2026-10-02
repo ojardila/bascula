@@ -38,8 +38,22 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Grid, MenuItem, Stack, Table, TableBody,
-  TableCell, TableHead, TableRow, TextField, Typography,
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Grid,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import { Money } from "../../components/Money";
@@ -52,11 +66,18 @@ import { formatMoney } from "../../lib/money";
 import { payrollHtml } from "../documents/documents";
 import { printDocument } from "../documents/print";
 import type { SettlementSummary } from "../../api/types";
-import { GROSS_SETTLED_LIVE, GROSS_SETTLED_LIVE_FILTERED } from "../../lib/vocab";
+import {
+  GROSS_SETTLED_LIVE,
+  GROSS_SETTLED_LIVE_FILTERED,
+} from "../../lib/vocab";
 
 type StatusFilter = "all" | "open" | "void";
 
-const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 
 export function SettlementsPage() {
   const navigate = useNavigate();
@@ -64,7 +85,11 @@ export function SettlementsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
 
-  const { data: list, error, denied } = useAsync(() => api.listSettlements(), []);
+  const {
+    data: list,
+    error,
+    denied,
+  } = useAsync(() => api.listSettlements(), []);
   const data = list?.items ?? null;
   /**
    * ── "THERE ARE NONE" IS NOT "I COULDN'T ASK" ─────────────────────────
@@ -80,7 +105,8 @@ export function SettlementsPage() {
    * marked incomplete, and the print button goes dark: paper that gets
    * signed does not come out of a read we know is broken.
    */
-  const holes = (list?.unreadableLedgers ?? 0) + (list?.unreadableSettlements ?? 0);
+  const holes =
+    (list?.unreadableLedgers ?? 0) + (list?.unreadableSettlements ?? 0);
   const incomplete = holes > 0;
 
   const rows = useMemo(() => {
@@ -93,7 +119,8 @@ export function SettlementsPage() {
     );
   }, [data, search, status]);
 
-  if (!can("money.read")) return <PermissionDenied moduleName="ver las liquidaciones" />;
+  if (!can("money.read"))
+    return <PermissionDenied moduleName="ver las liquidaciones" />;
   if (denied) return <PermissionDenied moduleName="ver las liquidaciones" />;
   if (error) return <Alert severity="error">{error}</Alert>;
 
@@ -121,7 +148,8 @@ export function SettlementsPage() {
    * sheet that does not would be the same bug with an extra step.
    */
   const activeFilters: string[] = [];
-  if (search.trim() !== "") activeFilters.push(`empleado contiene «${search.trim()}»`);
+  if (search.trim() !== "")
+    activeFilters.push(`empleado contiene «${search.trim()}»`);
   if (status === "open") activeFilters.push("solo las vigentes");
   if (status === "void") activeFilters.push("solo las anuladas");
   const filtered = activeFilters.length > 0;
@@ -135,7 +163,9 @@ export function SettlementsPage() {
     printDocument(
       payrollHtml({
         farmName: user?.farm.name ?? "Finca",
-        title: filtered ? "Planilla de liquidaciones (parcial)" : "Planilla de liquidaciones",
+        title: filtered
+          ? "Planilla de liquidaciones (parcial)"
+          : "Planilla de liquidaciones",
         date: todayInFarm(user?.farm.timezone ?? "America/Bogota"),
         unit: null,
         // The sheet declares its own scope. Without this the paper is a search
@@ -164,17 +194,23 @@ export function SettlementsPage() {
     <Box>
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "center" }}
         spacing={2}
-        sx={{ mb: 2 }}
+        sx={{
+          justifyContent: "space-between",
+          alignItems: { sm: "center" },
+          mb: 2,
+        }}
       >
         <Box>
           <Typography variant="h1">Liquidaciones</Typography>
-          <Typography color="text.secondary">
-            Cada liquidación congela unas labores a su precio y escribe en el libro lo
-            que la persona ganó. Anularla no la borra: la deja anulada y suelta las
-            labores.
+          <Typography
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            Cada liquidación congela unas labores a su precio y escribe en el
+            libro lo que la persona ganó. Anularla no la borra: la deja anulada
+            y suelta las labores.
           </Typography>
         </Box>
         <Button
@@ -202,9 +238,9 @@ export function SettlementsPage() {
                 ? "liquidación no se pudo consultar"
                 : "liquidaciones no se pudieron consultar"
             }. `}
-          Las cifras de abajo son de lo que sí se pudo leer, y la planilla no se puede
-          imprimir hasta que la lista esté entera: un papel que se firma no sale de una
-          lectura rota.
+          Las cifras de abajo son de lo que sí se pudo leer, y la planilla no se
+          puede imprimir hasta que la lista esté entera: un papel que se firma
+          no sale de una lectura rota.
         </Alert>
       )}
 
@@ -227,9 +263,9 @@ export function SettlementsPage() {
         >
           Está viendo <strong>{rows.length}</strong> de{" "}
           <strong>{data?.length ?? rows.length}</strong> liquidaciones (
-          {activeFilters.join("; ")}). Las cifras de abajo y la planilla son de esas{" "}
-          {rows.length}, no de la finca entera: sin el filtro el bruto vigente es{" "}
-          <strong>{formatMoney(allTotalCents)}</strong>.
+          {activeFilters.join("; ")}). Las cifras de abajo y la planilla son de
+          esas {rows.length}, no de la finca entera: sin el filtro el bruto
+          vigente es <strong>{formatMoney(allTotalCents)}</strong>.
         </Alert>
       )}
 
@@ -237,7 +273,12 @@ export function SettlementsPage() {
         <Grid size={{ xs: 12, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {/* This said "(vigentes)", which is a database row status.
                     What it means is that voided ones do not count, and that
                     can just be said. `lib/vocab.ts`. */}
@@ -247,7 +288,13 @@ export function SettlementsPage() {
                   fan-out is in flight is a claim that the farm has settled
                   nothing, and somebody will read it. */}
               {rows === null ? (
-                <Typography color="text.secondary">Cargando…</Typography>
+                <Typography
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Cargando…
+                </Typography>
               ) : (
                 <Money cents={totalCents} variant="big" />
               )}
@@ -257,20 +304,34 @@ export function SettlementsPage() {
         <Grid size={{ xs: 6, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {filtered ? "Vigentes (filtrado)" : "Vigentes"}
               </Typography>
-              <Typography variant="h2">{rows === null ? "—" : live.length}</Typography>
+              <Typography variant="h2">
+                {rows === null ? "—" : live.length}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid size={{ xs: 6, sm: 4 }}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="overline" color="text.secondary">
+              <Typography
+                variant="overline"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
                 {filtered ? "Anuladas (filtrado)" : "Anuladas"}
               </Typography>
-              <Typography variant="h2">{rows === null ? "—" : voided}</Typography>
+              <Typography variant="h2">
+                {rows === null ? "—" : voided}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -333,7 +394,11 @@ export function SettlementsPage() {
               </TableRow>
             )}
             {rows?.map((s) => (
-              <SettlementRow key={s.id} s={s} onOpen={() => navigate(`/liquidaciones/${s.id}`)} />
+              <SettlementRow
+                key={s.id}
+                s={s}
+                onOpen={() => navigate(`/liquidaciones/${s.id}`)}
+              />
             ))}
           </TableBody>
         </Table>
@@ -342,11 +407,26 @@ export function SettlementsPage() {
   );
 }
 
-function SettlementRow({ s, onOpen }: { s: SettlementSummary; onOpen: () => void }) {
+function SettlementRow({
+  s,
+  onOpen,
+}: {
+  s: SettlementSummary;
+  onOpen: () => void;
+}) {
   const isVoid = s.status === "void";
   return (
-    <TableRow hover onClick={onOpen} sx={{ cursor: "pointer", opacity: isVoid ? 0.6 : 1 }}>
-      <TableCell sx={{ fontWeight: 600, textDecoration: isVoid ? "line-through" : "none" }}>
+    <TableRow
+      hover
+      onClick={onOpen}
+      sx={{ cursor: "pointer", opacity: isVoid ? 0.6 : 1 }}
+    >
+      <TableCell
+        sx={{
+          fontWeight: 600,
+          textDecoration: isVoid ? "line-through" : "none",
+        }}
+      >
         {s.workerName}
       </TableCell>
       <TableCell>
@@ -373,7 +453,12 @@ function SettlementRow({ s, onOpen }: { s: SettlementSummary; onOpen: () => void
             label={`Anulada ${s.voidedAt ? formatDate(s.voidedAt.slice(0, 10)) : ""}`.trim()}
           />
         ) : (
-          <Chip size="small" color="success" variant="outlined" label="Vigente" />
+          <Chip
+            size="small"
+            color="success"
+            variant="outlined"
+            label="Vigente"
+          />
         )}
       </TableCell>
     </TableRow>

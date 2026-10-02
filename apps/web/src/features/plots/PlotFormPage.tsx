@@ -19,13 +19,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Autocomplete, Box, Button, Card, CardContent, Grid, IconButton,
-  MenuItem, Stack, Step, StepLabel, Stepper, TextField, Typography, createFilterOptions,
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Grid,
+  IconButton,
+  MenuItem,
+  Stack,
+  Step,
+  StepLabel,
+  Stepper,
+  TextField,
+  Typography,
+  createFilterOptions,
 } from "@mui/material";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { PlotLocationField, pointOf, type PlotPoint } from "./PlotLocationField";
+import {
+  PlotLocationField,
+  pointOf,
+  type PlotPoint,
+} from "./PlotLocationField";
 import { useTour, useTourAction } from "../onboarding/TourContext";
 import { TourCallout } from "../onboarding/TourCallout";
 import { OWNER_DONE } from "../onboarding/steps";
@@ -39,9 +57,22 @@ import type { CatalogItem, PlotInput } from "../../api/types";
 import { DateField } from "../../components/DateField";
 
 const DEPARTMENTS = [
-  "Caldas", "Quindío", "Risaralda", "Antioquia", "Huila", "Tolima",
-  "Nariño", "Cauca", "Santander", "Norte de Santander", "Cundinamarca",
-  "Valle del Cauca", "Cesar", "Magdalena", "Boyacá", "Otro",
+  "Caldas",
+  "Quindío",
+  "Risaralda",
+  "Antioquia",
+  "Huila",
+  "Tolima",
+  "Nariño",
+  "Cauca",
+  "Santander",
+  "Norte de Santander",
+  "Cundinamarca",
+  "Valle del Cauca",
+  "Cesar",
+  "Magdalena",
+  "Boyacá",
+  "Otro",
 ];
 
 interface CropRow {
@@ -56,7 +87,10 @@ interface CropRow {
 const filter = createFilterOptions<CatalogItem>();
 
 /** Option shown when what was typed is not in the catalogue yet. */
-function withCreateOption(options: CatalogItem[], input: string): CatalogItem[] {
+function withCreateOption(
+  options: CatalogItem[],
+  input: string,
+): CatalogItem[] {
   const typed = input.trim();
   if (!typed) return options;
   const exists = options.some(
@@ -102,9 +136,12 @@ export function PlotFormPage() {
    * `undefined` means untouched, which is not the same as `null`. Untouched
    * sends nothing and the stored point stays; null is sent and erases it.
    */
-  const [location, setLocation] = useState<PlotPoint | null | undefined>(undefined);
+  const [location, setLocation] = useState<PlotPoint | null | undefined>(
+    undefined,
+  );
   const tour = useTour();
-  const tourN = tour.current?.tour === "owner" && !tour.paused ? tour.current.n : null;
+  const tourN =
+    tour.current?.tour === "owner" && !tour.paused ? tour.current.n : null;
 
   // The owner's tour, steps 9–11, follows the form and the form follows it.
   useEffect(() => {
@@ -156,7 +193,9 @@ export function PlotFormPage() {
             key: c.id,
             id: c.id,
             cropType: { id: c.cropTypeId, name: c.cropTypeName },
-            variety: c.varietyId ? { id: c.varietyId, name: c.varietyName ?? "" } : null,
+            variety: c.varietyId
+              ? { id: c.varietyId, name: c.varietyName ?? "" }
+              : null,
             areaHa: c.areaHa === null ? "" : String(c.areaHa).replace(".", ","),
             plantedAt: c.plantedAt ?? "",
           })),
@@ -180,8 +219,10 @@ export function PlotFormPage() {
     if (!name.trim()) e.name = "Escriba el nombre del lote.";
     else if (name.trim().length > 80) e.name = "Máximo 80 caracteres.";
     if (!areaHa.trim()) e.areaHa = "Escriba la superficie en hectáreas.";
-    else if (Number.isNaN(parsedArea)) e.areaHa = "Escriba un número, por ejemplo 4,20.";
-    else if (parsedArea <= 0) e.areaHa = "La superficie tiene que ser mayor que cero.";
+    else if (Number.isNaN(parsedArea))
+      e.areaHa = "Escriba un número, por ejemplo 4,20.";
+    else if (parsedArea <= 0)
+      e.areaHa = "La superficie tiene que ser mayor que cero.";
     if (!department.trim()) e.department = "Elija el departamento.";
     if (!municipality.trim()) e.municipality = "Escriba el municipio.";
     setFields(e);
@@ -192,7 +233,8 @@ export function PlotFormPage() {
     const e: Record<string, string> = {};
     const usable = rows.filter((r) => r.cropType);
     if (usable.length === 0) {
-      e.crops = "Agregue al menos un cultivo con su tipo. Sin cultivo no se pueden registrar labores sobre este lote.";
+      e.crops =
+        "Agregue al menos un cultivo con su tipo. Sin cultivo no se pueden registrar labores sobre este lote.";
     }
     setFields(e);
     return Object.keys(e).length === 0;
@@ -202,14 +244,21 @@ export function PlotFormPage() {
   async function resolveCropType(item: CatalogItem): Promise<CatalogItem> {
     if (item.id !== "__new__") return item;
     const created = await api.createCropType(item.name);
-    setCropTypes((c) => (c.some((x) => x.id === created.id) ? c : [...c, created]));
+    setCropTypes((c) =>
+      c.some((x) => x.id === created.id) ? c : [...c, created],
+    );
     return created;
   }
 
-  async function resolveVariety(cropTypeId: string, item: CatalogItem): Promise<CatalogItem> {
+  async function resolveVariety(
+    cropTypeId: string,
+    item: CatalogItem,
+  ): Promise<CatalogItem> {
     if (item.id !== "__new__") return item;
     const created = await api.createVariety(cropTypeId, item.name);
-    setVarieties((v) => (v.some((x) => x.id === created.id) ? v : [...v, created]));
+    setVarieties((v) =>
+      v.some((x) => x.id === created.id) ? v : [...v, created],
+    );
     return created;
   }
 
@@ -218,39 +267,45 @@ export function PlotFormPage() {
     // `plotId` is already stable across clicks — `useState(() => id ?? uuidv7())`
     // — so the server's idempotency covers the data. This is the other half:
     // the second request that never leaves. See `lib/writeOnce.ts`.
-    const outcome = await runOnce(`lote|${plotId}|${name.trim()}|${parsedArea}`, async () => {
-      setError(null);
-      const crops: PlotInput["crops"] = [];
-      for (const r of rows) {
-        if (!r.cropType) continue;
-        const type = await resolveCropType(r.cropType);
-        const variety = r.variety ? await resolveVariety(type.id, r.variety) : null;
-        const area = r.areaHa.trim()
-          ? Number(r.areaHa.replace(/\./g, "").replace(",", "."))
-          : null;
-        crops.push({
-          id: r.id,
-          cropTypeId: type.id,
-          varietyId: variety?.id ?? null,
-          areaHa: Number.isFinite(area as number) ? (area as number) : null,
-          plantedAt: r.plantedAt || null,
-        });
-      }
-      const body: PlotInput = {
-        id: plotId,
-        name: name.trim(),
-        department,
-        municipality: municipality.trim(),
-        areaHa: parsedArea,
-        // Absent when the field was never touched, so the stored point stays.
-        // A null IS sent when the owner removed it, because on this route the
-        // two are deliberately different.
-        ...(location === undefined ? {} : { location }),
-        crops,
-      };
-      return editing ? api.updatePlot(plotId, body) : api.createPlot(body);
-    }).catch((e: unknown) => {
-      if (e instanceof ApiError && Object.keys(e.fieldErrors).length) setFields(e.fieldErrors);
+    const outcome = await runOnce(
+      `lote|${plotId}|${name.trim()}|${parsedArea}`,
+      async () => {
+        setError(null);
+        const crops: PlotInput["crops"] = [];
+        for (const r of rows) {
+          if (!r.cropType) continue;
+          const type = await resolveCropType(r.cropType);
+          const variety = r.variety
+            ? await resolveVariety(type.id, r.variety)
+            : null;
+          const area = r.areaHa.trim()
+            ? Number(r.areaHa.replace(/\./g, "").replace(",", "."))
+            : null;
+          crops.push({
+            id: r.id,
+            cropTypeId: type.id,
+            varietyId: variety?.id ?? null,
+            areaHa: Number.isFinite(area as number) ? (area as number) : null,
+            plantedAt: r.plantedAt || null,
+          });
+        }
+        const body: PlotInput = {
+          id: plotId,
+          name: name.trim(),
+          department,
+          municipality: municipality.trim(),
+          areaHa: parsedArea,
+          // Absent when the field was never touched, so the stored point stays.
+          // A null IS sent when the owner removed it, because on this route the
+          // two are deliberately different.
+          ...(location === undefined ? {} : { location }),
+          crops,
+        };
+        return editing ? api.updatePlot(plotId, body) : api.createPlot(body);
+      },
+    ).catch((e: unknown) => {
+      if (e instanceof ApiError && Object.keys(e.fieldErrors).length)
+        setFields(e.fieldErrors);
       setError(messageFor(e));
       return { ran: false } as const;
     });
@@ -321,7 +376,9 @@ export function PlotFormPage() {
                     value={areaHa}
                     onChange={(e) => setAreaHa(e.target.value)}
                     error={!!fields.areaHa}
-                    helperText={fields.areaHa ?? "Lo que usted declara. Ejemplo: 4,20"}
+                    helperText={
+                      fields.areaHa ?? "Lo que usted declara. Ejemplo: 4,20"
+                    }
                     size="medium"
                     fullWidth
                     required
@@ -366,7 +423,11 @@ export function PlotFormPage() {
                         helperText={fields.municipality ?? mismatch ?? " "}
                         slotProps={
                           mismatch && !fields.municipality
-                            ? { formHelperText: { sx: { color: "warning.dark" } } }
+                            ? {
+                                formHelperText: {
+                                  sx: { color: "warning.dark" },
+                                },
+                              }
                             : undefined
                         }
                         size="medium"
@@ -402,9 +463,15 @@ export function PlotFormPage() {
             <Typography variant="h3" gutterBottom>
               Cultivos del lote
             </Typography>
-            <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-              Si el tipo o la variedad no están en la lista, escríbalos y se agregan
-              al catálogo de la finca.
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                mb: 2,
+              }}
+            >
+              Si el tipo o la variedad no están en la lista, escríbalos y se
+              agregan al catálogo de la finca.
             </Typography>
 
             {fields.crops && (
@@ -415,7 +482,14 @@ export function PlotFormPage() {
 
             <Stack spacing={2}>
               {rows.map((row, i) => (
-                <Grid container spacing={2} key={row.key} alignItems="flex-start">
+                <Grid
+                  container
+                  spacing={2}
+                  key={row.key}
+                  sx={{
+                    alignItems: "flex-start",
+                  }}
+                >
                   <Grid size={{ xs: 12, sm: 4 }}>
                     <Autocomplete
                       value={row.cropType}
@@ -423,11 +497,16 @@ export function PlotFormPage() {
                       getOptionLabel={(o) => o.name}
                       isOptionEqualToValue={(a, b) => a.id === b.id}
                       filterOptions={(options, state) =>
-                        withCreateOption(filter(options, state), state.inputValue)
+                        withCreateOption(
+                          filter(options, state),
+                          state.inputValue,
+                        )
                       }
                       renderOption={(props, option) => (
                         <li {...props} key={option.id + option.name}>
-                          {option.id === "__new__" ? `Agregar «${option.name}»` : option.name}
+                          {option.id === "__new__"
+                            ? `Agregar «${option.name}»`
+                            : option.name}
                         </li>
                       )}
                       onChange={(_, v) =>
@@ -438,7 +517,12 @@ export function PlotFormPage() {
                         )
                       }
                       renderInput={(params) => (
-                        <TextField {...params} label="Tipo de cultivo" size="medium" required />
+                        <TextField
+                          {...params}
+                          label="Tipo de cultivo"
+                          size="medium"
+                          required
+                        />
                       )}
                     />
                   </Grid>
@@ -447,20 +531,30 @@ export function PlotFormPage() {
                       value={row.variety}
                       disabled={!row.cropType}
                       options={varieties.filter(
-                        (v) => !row.cropType || v.cropTypeId === row.cropType.id,
+                        (v) =>
+                          !row.cropType || v.cropTypeId === row.cropType.id,
                       )}
                       getOptionLabel={(o) => o.name}
                       isOptionEqualToValue={(a, b) => a.id === b.id}
                       filterOptions={(options, state) =>
-                        withCreateOption(filter(options, state), state.inputValue)
+                        withCreateOption(
+                          filter(options, state),
+                          state.inputValue,
+                        )
                       }
                       renderOption={(props, option) => (
                         <li {...props} key={option.id + option.name}>
-                          {option.id === "__new__" ? `Agregar «${option.name}»` : option.name}
+                          {option.id === "__new__"
+                            ? `Agregar «${option.name}»`
+                            : option.name}
                         </li>
                       )}
                       onChange={(_, v) =>
-                        setRows((rs) => rs.map((r, j) => (j === i ? { ...r, variety: v } : r)))
+                        setRows((rs) =>
+                          rs.map((r, j) =>
+                            j === i ? { ...r, variety: v } : r,
+                          ),
+                        )
                       }
                       renderInput={(params) => (
                         <TextField {...params} label="Variedad" size="medium" />
@@ -473,7 +567,9 @@ export function PlotFormPage() {
                       value={row.areaHa}
                       onChange={(e) =>
                         setRows((rs) =>
-                          rs.map((r, j) => (j === i ? { ...r, areaHa: e.target.value } : r)),
+                          rs.map((r, j) =>
+                            j === i ? { ...r, areaHa: e.target.value } : r,
+                          ),
                         )
                       }
                       size="medium"
@@ -487,7 +583,9 @@ export function PlotFormPage() {
                       value={row.plantedAt}
                       onChange={(iso) =>
                         setRows((rs) =>
-                          rs.map((r, j) => (j === i ? { ...r, plantedAt: iso } : r)),
+                          rs.map((r, j) =>
+                            j === i ? { ...r, plantedAt: iso } : r,
+                          ),
                         )
                       }
                     />
@@ -495,7 +593,9 @@ export function PlotFormPage() {
                   <Grid size={{ xs: 1, sm: 0.5 }}>
                     <IconButton
                       aria-label={`Quitar cultivo ${i + 1}`}
-                      onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                      onClick={() =>
+                        setRows((rs) => rs.filter((_, j) => j !== i))
+                      }
                       sx={{ mt: 1 }}
                     >
                       <DeleteOutlineIcon />
@@ -511,7 +611,14 @@ export function PlotFormPage() {
               onClick={() =>
                 setRows((rs) => [
                   ...rs,
-                  { key: uuidv7(), id: uuidv7(), cropType: null, variety: null, areaHa: "", plantedAt: "" },
+                  {
+                    key: uuidv7(),
+                    id: uuidv7(),
+                    cropType: null,
+                    variety: null,
+                    areaHa: "",
+                    plantedAt: "",
+                  },
                 ])
               }
             >
@@ -522,7 +629,14 @@ export function PlotFormPage() {
       )}
 
       {step === 1 && !editing && <TourCallout tour="owner" n={11} />}
-      <Stack direction="row" spacing={2} sx={{ mt: 3 }} justifyContent="flex-end">
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          justifyContent: "flex-end",
+          mt: 3,
+        }}
+      >
         {step === 1 && (
           <Button color="inherit" onClick={() => setStep(0)}>
             Atrás
@@ -539,7 +653,12 @@ export function PlotFormPage() {
           </Button>
         )}
         {step === 1 && (
-          <Button data-tour="plot-save" variant="contained" onClick={() => void save()} disabled={busy}>
+          <Button
+            data-tour="plot-save"
+            variant="contained"
+            onClick={() => void save()}
+            disabled={busy}
+          >
             {busy ? "Guardando…" : `Guardar ${PLOT.one}`}
           </Button>
         )}
