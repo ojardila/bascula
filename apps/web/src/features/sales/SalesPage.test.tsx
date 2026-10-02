@@ -41,9 +41,15 @@ async function fillSale(
   { qty, amount }: { qty: string; amount: string },
 ) {
   await user.click(within(dialog).getByRole("combobox", { name: /^Producto/ }));
-  await user.click(await screen.findByRole("option", { name: /Café pergamino seco/ }));
-  await user.click(within(dialog).getByRole("combobox", { name: /Bodega de la que sale/ }));
-  await user.click(await screen.findByRole("option", { name: "Bodega principal" }));
+  await user.click(
+    await screen.findByRole("option", { name: /Café pergamino seco/ }),
+  );
+  await user.click(
+    within(dialog).getByRole("combobox", { name: /Bodega de la que sale/ }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Bodega principal" }),
+  );
   await user.type(within(dialog).getByLabelText(/^Cantidad/), qty);
   await user.type(within(dialog).getByLabelText(/^Valor total/), amount);
 }
@@ -65,12 +71,18 @@ describe("a sale is product leaving a warehouse", () => {
 
     renderSales();
     await screen.findByRole("heading", { name: "Ventas" });
-    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Registrar venta" }),
+    );
     const dialog = await screen.findByRole("dialog");
     await fillSale(user, dialog, { qty: "4", amount: "4800000" });
-    await user.click(within(dialog).getByRole("button", { name: "Registrar venta" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Registrar venta" }),
+    );
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
     const after = (await api.listProducts()).find((p) => p.id === PERGAMINO)!;
     expect(after.stock).toBe(24);
   }, 30000);
@@ -79,32 +91,50 @@ describe("a sale is product leaving a warehouse", () => {
     const user = userEvent.setup();
     renderSales();
     await screen.findByRole("heading", { name: "Ventas" });
-    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Registrar venta" }),
+    );
     const dialog = await screen.findByRole("dialog");
     await fillSale(user, dialog, { qty: "4", amount: "4800000" });
-    expect(within(dialog).getByText("$1.200.000 por bulto")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("$1.200.000 por bulto"),
+    ).toBeInTheDocument();
   }, 30000);
 
   it("warns before the server has to, and takes the override", async () => {
     const user = userEvent.setup();
     renderSales();
     await screen.findByRole("heading", { name: "Ventas" });
-    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Registrar venta" }),
+    );
     const dialog = await screen.findByRole("dialog");
     await fillSale(user, dialog, { qty: "999", amount: "100000" });
 
-    expect(await within(dialog).findByText(/La bodega dice que solo hay/)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/La bodega dice que solo hay/),
+    ).toBeInTheDocument();
 
     // Refused while the box is unticked...
-    await user.click(within(dialog).getByRole("button", { name: "Registrar venta" }));
-    expect(await within(dialog).findByText(/No hay tanto en esa bodega/)).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Registrar venta" }),
+    );
+    expect(
+      await within(dialog).findByText(/No hay tanto en esa bodega/),
+    ).toBeInTheDocument();
 
     // ...and recorded once somebody has said they know.
     await user.click(
-      within(dialog).getByRole("checkbox", { name: /Regístrela de todos modos/ }),
+      within(dialog).getByRole("checkbox", {
+        name: /Regístrela de todos modos/,
+      }),
     );
-    await user.click(within(dialog).getByRole("button", { name: "Registrar venta" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await user.click(
+      within(dialog).getByRole("button", { name: "Registrar venta" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   }, 30000);
 });
 
@@ -135,12 +165,17 @@ describe("when the stock levels cannot be read", () => {
     const user = userEvent.setup();
     server.use(
       http.get("*/v1/stock", () =>
-        HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+        HttpResponse.json(
+          { error: { code: "INTERNAL", message: "boom" } },
+          { status: 500 },
+        ),
       ),
     );
     renderSales();
     await screen.findByRole("heading", { name: "Ventas" });
-    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Registrar venta" }),
+    );
     const dialog = await screen.findByRole("dialog");
     // 999 of anything is more than the farm has. With the levels loaded this
     // is the case that DOES warn — see the test above — so if a warning shows
@@ -148,7 +183,9 @@ describe("when the stock levels cannot be read", () => {
     await fillSale(user, dialog, { qty: "999", amount: "100000" });
 
     // No invented shortage, and no checkbox inviting the guard to be turned off.
-    expect(within(dialog).queryByText(/La bodega dice que solo hay/)).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(/La bodega dice que solo hay/),
+    ).not.toBeInTheDocument();
     expect(
       within(dialog).queryByLabelText(/Regístrela de todos modos/),
     ).not.toBeInTheDocument();
@@ -177,19 +214,35 @@ describe("the quantity total", () => {
           items: [
             {
               id: "0192f3a0-0011-7000-8000-0000000000a1",
-              productId: "p1", product: "Pergamino", storageUnit: "bulto",
-              customerId: null, customer: null,
-              warehouseId: "w1", warehouse: "Bodega",
-              qty: 12, amountCents: 100_000_00, note: null,
-              date: "2026-08-20T00:00:00Z", stockMoveId: null, voidedAt: null,
+              productId: "p1",
+              product: "Pergamino",
+              storageUnit: "bulto",
+              customerId: null,
+              customer: null,
+              warehouseId: "w1",
+              warehouse: "Bodega",
+              qty: 12,
+              amountCents: 100_000_00,
+              note: null,
+              date: "2026-08-20T00:00:00Z",
+              stockMoveId: null,
+              voidedAt: null,
             },
             {
               id: "0192f3a0-0011-7000-8000-0000000000a2",
-              productId: "p2", product: "Cereza", storageUnit: "kg",
-              customerId: null, customer: null,
-              warehouseId: "w1", warehouse: "Bodega",
-              qty: 400, amountCents: 100_000_00, note: null,
-              date: "2026-08-21T00:00:00Z", stockMoveId: null, voidedAt: null,
+              productId: "p2",
+              product: "Cereza",
+              storageUnit: "kg",
+              customerId: null,
+              customer: null,
+              warehouseId: "w1",
+              warehouse: "Bodega",
+              qty: 400,
+              amountCents: 100_000_00,
+              note: null,
+              date: "2026-08-21T00:00:00Z",
+              stockMoveId: null,
+              voidedAt: null,
             },
           ],
         }),
@@ -219,7 +272,10 @@ describe("when the server does not answer", () => {
   it("does not put a $0 total underneath the error", async () => {
     server.use(
       http.get("*/v1/sales", () =>
-        HttpResponse.json({ error: { code: "INTERNAL", message: "boom" } }, { status: 500 }),
+        HttpResponse.json(
+          { error: { code: "INTERNAL", message: "boom" } },
+          { status: 500 },
+        ),
       ),
     );
     renderSales();
@@ -244,19 +300,30 @@ describe("undoing a sale", () => {
     renderSales();
     await screen.findByText("Café pergamino seco");
 
-    const before = (await api.listProducts()).find((p) => p.id === PERGAMINO)!.stock;
+    const before = (await api.listProducts()).find(
+      (p) => p.id === PERGAMINO,
+    )!.stock;
 
-    await user.click(screen.getAllByRole("button", { name: /^Acciones de/ })[0]);
-    await user.click(await screen.findByRole("menuitem", { name: "Anular la venta" }));
+    await user.click(
+      screen.getAllByRole("button", { name: /^Acciones de/ })[0],
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Anular la venta" }),
+    );
 
     // The confirmation says what will happen to the warehouse, not just "are
     // you sure".
-    expect(await screen.findByText(/vuelven a Bodega principal con una entrada de corrección/))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /vuelven a Bodega principal con una entrada de corrección/,
+      ),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Anular la venta" }));
 
     await waitFor(async () => {
-      const after = (await api.listProducts()).find((p) => p.id === PERGAMINO)!.stock;
+      const after = (await api.listProducts()).find(
+        (p) => p.id === PERGAMINO,
+      )!.stock;
       expect(after).toBeGreaterThan(before);
     });
   }, 30000);
@@ -266,6 +333,8 @@ describe("undoing a sale", () => {
     renderSales();
     await screen.findByText("Café pergamino seco");
     await user.click(screen.getByRole("button", { name: "Inactivas" }));
-    await waitFor(() => expect(screen.getAllByText("anulada").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("anulada").length).toBeGreaterThan(0),
+    );
   }, 20000);
 });
