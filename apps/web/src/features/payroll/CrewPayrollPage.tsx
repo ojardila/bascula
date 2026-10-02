@@ -523,8 +523,8 @@ export function CrewPayrollPage() {
                 que ganó cada persona. Todavía no sale plata.
               </Typography>
             </Box>
-            <Box sx={{ textAlign: { md: "right" } }}>
-              <Typography variant="overline" color="text.secondary">
+            <Box sx={{ textAlign: { md: "right" }, flexShrink: 0 }}>
+              <Typography variant="overline" component="div" color="text.secondary">
                 Bruto a liquidar
               </Typography>
               {loading ? (
@@ -732,8 +732,8 @@ export function CrewPayrollPage() {
                 pasos, sigue aquí.
               </Typography>
             </Box>
-            <Box sx={{ textAlign: { md: "right" } }}>
-              <Typography variant="overline" color="text.secondary">
+            <Box sx={{ textAlign: { md: "right" }, flexShrink: 0 }}>
+              <Typography variant="overline" component="div" color="text.secondary">
                 A entregar
               </Typography>
               {loading ? (
@@ -1224,19 +1224,19 @@ function SettleDriftDialog({
               divider={<Divider orientation="vertical" flexItem />}
             >
               <Box>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" component="div" color="text.secondary">
                   Aprobado
                 </Typography>
                 <Money cents={d.beforeCents} variant="small" />
               </Box>
               <Box>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" component="div" color="text.secondary">
                   Ahora
                 </Typography>
                 <Money cents={d.afterCents} variant="small" />
               </Box>
               <Box>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" component="div" color="text.secondary">
                   Diferencia
                 </Typography>
                 <Money cents={d.deltaCents} signed colored variant="small" />
