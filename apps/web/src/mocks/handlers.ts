@@ -2629,9 +2629,14 @@ export const handlers = [
     return HttpResponse.json({ items });
   }),
 
-  http.post("*/v1/me/passkeys/options", ({ request }) => {
+  http.post("*/v1/me/passkeys/options", async ({ request }) => {
     const g = guard(request, "me.passkeys.write");
     if (g.deny) return g.deny;
+    const body = (await request.json().catch(() => ({}))) as { currentPassword?: string };
+    if (!body.currentPassword) return badRequest("currentPassword is required");
+    if (g.p.user.password !== body.currentPassword) {
+      return fail(403, "INVALID_CREDENTIALS", "the current password is not correct");
+    }
     return HttpResponse.json({
       challenge: `mock-${crypto.randomUUID()}`,
       publicKey: {

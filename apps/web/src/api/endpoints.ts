@@ -1228,9 +1228,13 @@ export const api = {
   listPasskeys: async (): Promise<PasskeyItem[]> =>
     (await http.get<{ items: PasskeyItem[] }>("/v1/me/passkeys")).items,
 
-  /** Asks the phone for a new passkey and stores it on the account. */
-  addPasskey: async (name: string): Promise<PasskeyItem> => {
-    const opts = await http.post<PasskeyOptions>("/v1/me/passkeys/options");
+  /**
+   * Asks the phone for a new passkey and stores it on the account. The
+   * current password comes first: a passkey outlives the session, so a
+   * session alone is not enough to add one.
+   */
+  addPasskey: async (name: string, currentPassword: string): Promise<PasskeyItem> => {
+    const opts = await http.post<PasskeyOptions>("/v1/me/passkeys/options", { currentPassword });
     const credential = await createPasskey(opts.publicKey);
     return http.post<PasskeyItem>("/v1/me/passkeys", {
       challenge: opts.challenge,

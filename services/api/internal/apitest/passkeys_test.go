@@ -1,6 +1,7 @@
 package apitest
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -178,9 +179,12 @@ func (h *harness) doOrigin(t *testing.T, ip, origin, method, path, token string,
 	return out
 }
 
+// reauth is what the passkey options ask for: every fixture user's password.
+var reauth = map[string]any{"currentPassword": "una-clave-larga-1"}
+
 func (h *harness) registerPasskey(t *testing.T, token string, p *softPasskey) map[string]any {
 	t.Helper()
-	opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", token, nil)
+	opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", token, reauth)
 	if opts.Status != http.StatusOK {
 		t.Fatalf("register options: %d %s", opts.Status, opts.Raw)
 	}
@@ -385,7 +389,7 @@ func TestPasskeyRegistrationIsBoundToTheCaller(t *testing.T) {
 	f := h.signupFarm(t, "Finca de registro", 80000)
 
 	t.Run("a challenge made for one user does not register for another", func(t *testing.T) {
-		opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", f.OwnerToken, nil)
+		opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", f.OwnerToken, reauth)
 		res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys", f.AdminToken, map[string]any{
 			"challenge": opts.Body["challenge"], "credential": newSoftPasskey(t).create(t, opts.Body, passkeyOrigin),
 		})
@@ -397,7 +401,7 @@ func TestPasskeyRegistrationIsBoundToTheCaller(t *testing.T) {
 	t.Run("the same key cannot be registered twice", func(t *testing.T) {
 		key := newSoftPasskey(t)
 		h.registerPasskey(t, f.AdminToken, key)
-		opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", f.AdminToken, nil)
+		opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", f.AdminToken, reauth)
 		res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys", f.AdminToken, map[string]any{
 			"challenge": opts.Body["challenge"], "credential": key.create(t, opts.Body, passkeyOrigin),
 		})
@@ -467,5 +471,100 @@ func TestPasskeyNeedsAVerifiedAddress(t *testing.T) {
 	})
 	if res.Status != http.StatusForbidden || res.code() != "EMAIL_NOT_VERIFIED" {
 		t.Fatalf("unverified address: %d %s, want 403 EMAIL_NOT_VERIFIED", res.Status, res.Raw)
+	}
+}
+
+// A passkey outlives the session that made it and survives a password change,
+// so a session alone, which may be a stolen one, must not be enough to add one.
+func TestAddingAPasskeyAsksForThePassword(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca de reautenticación", 80000)
+	options := func(ip string, body map[string]any) response {
+		return h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", f.OwnerToken, body)
+	}
+
+	if res := options("10.0.9.1", map[string]any{}); res.Status != http.StatusBadRequest {
+		t.Fatalf("no password: %d %s, want 400", res.Status, res.Raw)
+	}
+	if res := options("10.0.9.1", map[string]any{"currentPassword": strings.Repeat("a", 129)}); res.Status != http.StatusBadRequest {
+		t.Fatalf("an overlong password: %d %s, want 400", res.Status, res.Raw)
+	}
+	res := options("10.0.9.1", map[string]any{"currentPassword": "no-es-la-clave"})
+	if res.Status != http.StatusForbidden || res.code() != "INVALID_CREDENTIALS" {
+		t.Fatalf("a wrong password: %d %s, want 403 INVALID_CREDENTIALS", res.Status, res.Raw)
+	}
+	if res := options("10.0.9.1", reauth); res.Status != http.StatusOK {
+		t.Fatalf("the right password: %d %s, want 200", res.Status, res.Raw)
+	}
+
+	// A wrong password is a failed sign-in, limited like one: a session left
+	// open is no place to guess the password at full speed.
+	limited := false
+	for i := 0; i < 12 && !limited; i++ {
+		limited = options("10.0.9.2", map[string]any{"currentPassword": "otra-mala"}).Status == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("wrong passwords on the passkey options were never rate limited")
+	}
+}
+
+// A new passkey is a way into the account that a password change does not
+// close, so its owner hears about it, and about one being removed.
+func TestPasskeyChangesAreToldByEmail(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca de avisos de llaves", 80000)
+	srv, mail := mailServer(t, h)
+	// mailServer's public address, the only one its passkeys accept.
+	const origin = "https://bascula.example.com"
+	send := func(method, path string, body any) response {
+		t.Helper()
+		var reader *bytes.Reader
+		if body != nil {
+			raw, _ := json.Marshal(body)
+			reader = bytes.NewReader(raw)
+		} else {
+			reader = bytes.NewReader(nil)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		req.RemoteAddr = "10.0.9.5:12345"
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+f.OwnerToken)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		out := response{Status: rec.Code, Raw: rec.Body.String()}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out.Body)
+		return out
+	}
+
+	opts := send(http.MethodPost, "/v1/me/passkeys/options", reauth)
+	if opts.Status != http.StatusOK {
+		t.Fatalf("options: %d %s", opts.Status, opts.Raw)
+	}
+	created := send(http.MethodPost, "/v1/me/passkeys", map[string]any{
+		"challenge": opts.Body["challenge"], "credential": newSoftPasskey(t).create(t, opts.Body, origin),
+		"name": "Celular de Oscar",
+	})
+	if created.Status != http.StatusCreated {
+		t.Fatalf("register: %d %s", created.Status, created.Raw)
+	}
+	waitForMail(t, mail, 1)
+	mail.mu.Lock()
+	added := mail.sent[0]
+	mail.mu.Unlock()
+	if added.To != f.OwnerEmail || !strings.Contains(added.Body, "«Celular de Oscar»") {
+		t.Fatalf("added notice: %+v", added)
+	}
+
+	id, _ := created.Body["id"].(string)
+	if res := send(http.MethodDelete, "/v1/me/passkeys/"+id, nil); res.Status != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", res.Status, res.Raw)
+	}
+	waitForMail(t, mail, 2)
+	mail.mu.Lock()
+	removed := mail.sent[1]
+	mail.mu.Unlock()
+	if removed.To != f.OwnerEmail || removed.Subject != "Se quitó una llave de acceso" {
+		t.Fatalf("removed notice: %+v", removed)
 	}
 }

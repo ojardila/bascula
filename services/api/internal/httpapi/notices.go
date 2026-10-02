@@ -21,6 +21,7 @@ import (
 // changes that its owner would want to know about even if they did not do it.
 //
 //   - the password changed (either door, handlers_password.go)
+//   - a passkey was added to or removed from the account (handlers_passkeys.go)
 //   - an assistant (ChatGPT, …) was connected to a farm (oauthExchangeCode)
 //   - somebody was made owner or administrator of a farm (handlers_users.go),
 //     told to the farm's other owners
@@ -195,4 +196,32 @@ func (s *Server) noticeRoleRaised(r *http.Request, tx pgx.Tx, who, whoName strin
 		}
 		s.mailLater(r, roleRaisedMessage(to, m.FarmName, person, role, actor))
 	}
+}
+
+// passkeyAddedMessage: a passkey opens the account without the password and
+// survives a password change, so a new one is worth hearing about.
+func passkeyAddedMessage(to, name, passkeyName string) mailer.Message {
+	body := fmt.Sprintf(`%s
+
+Se agregó una llave de acceso a su cuenta de Báscula: «%s». Con ella se puede entrar con la huella o la cara del celular, sin escribir la clave.
+
+Si fue usted, no tiene que hacer nada.
+
+Si no fue usted, entre a Báscula, abra Conexiones → Llaves de acceso y quítela. Después cambie su clave.
+%s`, greeting(name), passkeyName, noticeSignature)
+	return mailer.Message{To: to, Subject: "Se agregó una llave de acceso", Body: body}
+}
+
+// passkeyRemovedMessage: removing one is less dangerous than adding one, but
+// the owner should still know their way in changed.
+func passkeyRemovedMessage(to, name string) mailer.Message {
+	body := fmt.Sprintf(`%s
+
+Se quitó una llave de acceso de su cuenta de Báscula. Su clave sigue sirviendo igual.
+
+Si fue usted, no tiene que hacer nada.
+
+Si no fue usted, cambie su clave y avísele al dueño de la finca.
+%s`, greeting(name), noticeSignature)
+	return mailer.Message{To: to, Subject: "Se quitó una llave de acceso", Body: body}
 }
