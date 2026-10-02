@@ -238,3 +238,5 @@ jobs:
         working-directory: services/api
         env:
           TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+          # The season perf test's ceiling on a shared runner; see reportBudget.
+          REPORT_BUDGET: 6s

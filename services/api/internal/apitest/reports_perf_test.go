@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -27,7 +28,24 @@ import (
 // The ceiling is deliberately generous — none of these should be anywhere near
 // it — because what it exists to catch is not a slow millisecond, it is a
 // return to the shape that took eleven seconds.
-const reportBudget = 2 * time.Second
+const defaultReportBudget = 2 * time.Second
+
+// reportBudget is the ceiling, which REPORT_BUDGET (a Go duration) can raise.
+// CI sets it: a shared two-core runner running every package at once is ten
+// to fifteen times slower than a laptop on these queries, which put the
+// anomalies report at 2.2-3s there against 0.2s here. The shape this test
+// exists to catch would still blow through a CI ceiling of a few seconds.
+func reportBudget(t *testing.T) time.Duration {
+	raw := os.Getenv("REPORT_BUDGET")
+	if raw == "" {
+		return defaultReportBudget
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		t.Fatalf("REPORT_BUDGET=%q is not a positive duration", raw)
+	}
+	return d
+}
 
 // The season. 18,000 is the figure the phone's own notes use for the run that
 // took 10.8 seconds.
@@ -60,6 +78,7 @@ func TestReportsHoldUpOnASeason(t *testing.T) {
 		seasonWeighings, len(workers), len(crops), seasonDays,
 		time.Since(seeded).Round(time.Millisecond))
 
+	budget := reportBudget(t)
 	monday := mondayOf(daysAgo(30))
 	cases := []struct{ name, path string }{
 		{"weeks (list)", "/v1/reports/weeks"},
@@ -91,11 +110,11 @@ func TestReportsHoldUpOnASeason(t *testing.T) {
 		}
 
 		t.Logf("%-28s %8s", c.name, took.Round(time.Millisecond))
-		if took > reportBudget {
+		if took > budget {
 			t.Errorf("%s took %s over a season of %d weighings, budget %s.\n"+
 				"This is the shape the phone's crew rule had before it was "+
 				"rewritten: check whether a self-join has come back.",
-				c.name, took.Round(time.Millisecond), seasonWeighings, reportBudget)
+				c.name, took.Round(time.Millisecond), seasonWeighings, budget)
 		}
 	}
 
