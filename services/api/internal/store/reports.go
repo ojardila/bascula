@@ -1221,20 +1221,27 @@ SELECT ` + anomalyCols + `, $3::float8
 // ix_work_records_dup is what makes this a lookup rather than the quadratic
 // scan that made this one rule cost more than the other four together.
 const ruleDuplicateSQL = `
-WITH ` + harvestCTE + `, ` + cropLinkCTE + `
+WITH ` + harvestCTE + `, ` + cropLinkCTE + `,
+-- The weighing just before this one with the same person, quantity and crop.
+-- If ANY earlier twin is within three minutes, the latest earlier twin is too,
+-- so one look back with lag() finds exactly what the old self-join found.
+--
+-- harvest is read ONCE, on purpose. A CTE named twice in one query is
+-- materialised whole, people column and all, and over a season that was most
+-- of this rule's time; named once, the planner inlines it and drops the
+-- columns nobody reads.
+twins AS (
+  SELECT h.id, h.employee_id, h.quantity, h.kg, h.local_day,
+         h.created_at - lag(h.created_at) OVER (
+           PARTITION BY h.employee_id, h.quantity, ca.plot_crop_id
+           ORDER BY h.created_at, h.id) AS gap
+    FROM harvest h
+    LEFT JOIN crop_link ca ON ca.work_record_id = h.id
+)
 SELECT ` + anomalyCols + `, h.quantity::float8
-  FROM harvest h
+  FROM twins h
   JOIN employees e ON e.id = h.employee_id
-  LEFT JOIN crop_link ca ON ca.work_record_id = h.id
- WHERE EXISTS (
-   SELECT 1
-     FROM harvest b
-     LEFT JOIN crop_link cb ON cb.work_record_id = b.id
-    WHERE b.employee_id = h.employee_id
-      AND b.quantity = h.quantity
-      AND cb.plot_crop_id IS NOT DISTINCT FROM ca.plot_crop_id
-      AND (b.created_at, b.id) < (h.created_at, h.id)
-      AND h.created_at - b.created_at <= interval '3 minutes')
+ WHERE h.gap <= interval '3 minutes'
  ORDER BY h.local_day DESC
  LIMIT $3`
 
@@ -1280,25 +1287,27 @@ SELECT ` + anomalyCols + `,
 const ruleOutlierSQL = `
 WITH ` + harvestCTE + `,
 dayplot AS (
-  -- Per head, so a team's shared sack is not "four times the crew".
-  SELECT h.id, h.employee_id, c.plot_crop_id, h.kg / ` + headsExpr + ` AS kg, h.local_day
+  -- Per head, so a team's shared sack is not "four times the crew". The row
+  -- carries what the report shows, so harvest is named once and never joined
+  -- back to itself (see ruleDuplicateSQL).
+  SELECT h.id, h.employee_id, h.quantity, h.kg, h.local_day, c.plot_crop_id,
+         h.kg / ` + headsExpr + ` AS head_kg
     FROM harvest h
     JOIN work_record_plot_crops c ON c.work_record_id = h.id
    WHERE h.kg IS NOT NULL
 ),
 agg AS (
-  SELECT plot_crop_id, local_day, sum(kg) AS tot, count(*) AS n
+  SELECT plot_crop_id, local_day, sum(head_kg) AS tot, count(*) AS n
     FROM dayplot GROUP BY 1, 2
 )
 SELECT ` + anomalyCols + `,
-       ((agg.tot - dp.kg) / (agg.n - 1))::float8
-  FROM dayplot dp
-  JOIN agg ON agg.plot_crop_id = dp.plot_crop_id AND agg.local_day = dp.local_day
-  JOIN harvest h ON h.id = dp.id
+       ((agg.tot - h.head_kg) / (agg.n - 1))::float8
+  FROM dayplot h
+  JOIN agg ON agg.plot_crop_id = h.plot_crop_id AND agg.local_day = h.local_day
   JOIN employees e ON e.id = h.employee_id
  WHERE agg.n >= 5
-   AND (agg.tot - dp.kg) / (agg.n - 1) > 0
-   AND dp.kg >= 4 * ((agg.tot - dp.kg) / (agg.n - 1))
+   AND (agg.tot - h.head_kg) / (agg.n - 1) > 0
+   AND h.head_kg >= 4 * ((agg.tot - h.head_kg) / (agg.n - 1))
  ORDER BY h.local_day DESC
  LIMIT $3`
 
