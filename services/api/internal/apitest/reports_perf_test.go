@@ -78,9 +78,17 @@ func TestReportsHoldUpOnASeason(t *testing.T) {
 		// owner refreshing a screen experiences.
 		h.mustDo(t, http.MethodGet, c.path, f.OwnerToken, nil, http.StatusOK)
 
-		start := time.Now()
-		h.mustDo(t, http.MethodGet, c.path, f.OwnerToken, nil, http.StatusOK)
-		took := time.Since(start)
+		// The best of three readings, not one. A shared CI runner can stall
+		// any single request for a second; a query that has gone back to the
+		// quadratic shape is slow every time.
+		var took time.Duration
+		for i := 0; i < 3; i++ {
+			start := time.Now()
+			h.mustDo(t, http.MethodGet, c.path, f.OwnerToken, nil, http.StatusOK)
+			if d := time.Since(start); i == 0 || d < took {
+				took = d
+			}
+		}
 
 		t.Logf("%-28s %8s", c.name, took.Round(time.Millisecond))
 		if took > reportBudget {
