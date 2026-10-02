@@ -14,10 +14,13 @@ plain Spanish, built for people around fifty who don't live in software.
   <img src="docs/screenshots/web/web-desktop-home.png" width="100%" alt="The harvest dashboard in a desktop browser" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/web/web-desktop-week.png"    width="49%" alt="One week: kilos per day and per picker" />
-  <img src="docs/screenshots/web/web-desktop-payroll.png" width="49%" alt="Crew payroll" />
-  <img src="docs/screenshots/web/web-desktop-account.png" width="49%" alt="A picker's profile and balance" />
-  <img src="docs/screenshots/web/web-desktop-crops.png"   width="49%" alt="Harvest per crop and lot" />
+  <img src="docs/screenshots/web/web-desktop-register.png" width="49%" alt="Recording one weighing: person, lot, day and kilos" />
+  <img src="docs/screenshots/web/web-desktop-week.png"     width="49%" alt="One week: kilos per day and per picker" />
+  <img src="docs/screenshots/web/web-desktop-workers.png"  width="49%" alt="Workers and what the farm owes each one" />
+  <img src="docs/screenshots/web/web-desktop-account.png"  width="49%" alt="A picker's profile and balance" />
+  <img src="docs/screenshots/web/web-desktop-payroll.png"  width="49%" alt="Crew payroll" />
+  <img src="docs/screenshots/web/web-desktop-crops.png"    width="49%" alt="Harvest per crop and lot" />
+  <img src="docs/screenshots/web/web-desktop-lots.png"     width="49%" alt="Lots with area and crops" />
 </p>
 
 <sub>Screens use demo data. More in [`docs/screenshots`](docs/screenshots/README.md).</sub>
