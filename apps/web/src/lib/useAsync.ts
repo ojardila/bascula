@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { messageFor } from "../api/errors";
 import { ApiError } from "../api/errors";
+import { subscribeMutations } from "./crossTab";
 
 interface AsyncState<T> {
   data: T | null;
@@ -49,5 +50,31 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
   }, [...deps, tick]);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
+
+  /**
+   * Two more doors into `reload`, both outside the caller's control:
+   *
+   * - **Another tab wrote.** `subscribeMutations` fires on every write any tab
+   *   makes, including this one's own. The extra GET in the writing tab is
+   *   benign (any screen with more than the touched resource open can show
+   *   something fresher), and the alternative — a separate code path for local
+   *   writes — is a bifurcation waiting to rot.
+   * - **This tab was hidden and came back.** A page suspended by the browser
+   *   can miss broadcasts entirely; checking `visibilityState` on
+   *   `visibilitychange` catches that case without a timer.
+   */
+  useEffect(() => {
+    const bump = () => setTick((t) => t + 1);
+    const unsubscribe = subscribeMutations(bump);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") bump();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   return { data, error, denied, loading: data === null && !error && !denied, reload };
 }
