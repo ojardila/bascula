@@ -134,6 +134,11 @@ Not changed, and why:
 Expected after, with both halves changed: CI on a PR ~5 min → ~2½–3 min, and
 merge → `release` starts ~6½ min → ~4 min.
 
+First measurement, on the PR that made the change (every suite ran, since it
+touches `.github/` and `scripts/`): CI 2 min 58 s (`api` 2 min 47 s, of which
+`test` 2 min 4 s with apitest shards of 116 / 97 / 60 / 69 s; slowest vitest
+shard 1 min 55 s), SonarQube 4 min 49 s.
+
 ## Auto-approval of production (prepared, OFF)
 
 Production requires Oscar's approval on every release. Most releases are a

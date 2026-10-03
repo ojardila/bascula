@@ -194,7 +194,7 @@ jobs:
           # coverage (master once reported 0% new coverage that way).
           npm install --no-save --workspace apps/web "@vitest/coverage-v8@${V}"
           npx --workspace apps/web vitest run --shard="${SHARD}/3" --coverage.enabled \
-            --coverage.provider=v8 --coverage.reportOnFailure --coverage.reporter=lcov \
+            --coverage.provider=v8 --coverage.reportOnFailure --coverage.reporter=lcovonly \
             --coverage.reportsDirectory="coverage-${SHARD}"
 
       # Once, on the first shard: the linter reads every file anyway.
