@@ -123,6 +123,26 @@ describe("row actions", () => {
     ]);
   }, 40000);
 
+  it("«Sin canasto» opens the edit form, not the profile behind it", async () => {
+    // The chip sits inside the clickable row. Its click used to bubble to the
+    // row, whose navigation to the profile ran last and won.
+    db.tenantOf(db.FARM_ID)!.workers.find((w) => w.id === MARIA)!.tag = null;
+    const user = userEvent.setup();
+    renderList();
+    await user.click(await screen.findByText("Sin canasto"));
+    expect(await where()).toBe(`/empleados/${MARIA}/editar`);
+  }, 20000);
+
+  it("«Sin canasto» by keyboard opens the edit form too", async () => {
+    db.tenantOf(db.FARM_ID)!.workers.find((w) => w.id === MARIA)!.tag = null;
+    const user = userEvent.setup();
+    renderList();
+    const chip = (await screen.findByText("Sin canasto")).closest<HTMLElement>("[role=button]")!;
+    chip.focus();
+    await user.keyboard("{Enter}");
+    expect(await where()).toBe(`/empleados/${MARIA}/editar`);
+  }, 20000);
+
   it("the toolbar creates a person or a team", async () => {
     const user = userEvent.setup();
     const { unmount } = renderList();

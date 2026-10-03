@@ -158,6 +158,52 @@ describe("building the accounts out of the two list reads", () => {
     expect(totalOwedCents(map.get(W1)!)).toBeNull();
   });
 
+  describe("an unreadable row keeps the account unknown whatever the order", () => {
+    const readable = (cents: number) => ({
+      workerId: W1,
+      settled: false,
+      estimatedAmountCents: cents,
+      amountIsEstimate: false,
+    });
+    const unreadable = {
+      workerId: W1,
+      settled: false,
+      estimatedAmountCents: null,
+      amountIsEstimate: null,
+    };
+
+    it("unreadable first, then readable: still unknown", () => {
+      // The bug: `(pendingCents ?? 0) + 1000` restarted the sum after the
+      // unreadable row and showed 1000 as if it were the whole account.
+      const map = owedByWorker([], [unreadable, readable(10_00)]);
+      expect(map.get(W1)!.pendingCents).toBeNull();
+      expect(totalOwedCents(map.get(W1)!)).toBeNull();
+    });
+
+    it("readable first, then unreadable: unknown", () => {
+      const map = owedByWorker([], [readable(10_00), unreadable]);
+      expect(map.get(W1)!.pendingCents).toBeNull();
+      expect(totalOwedCents(map.get(W1)!)).toBeNull();
+    });
+
+    it("readable rows on both sides of an unreadable one: unknown", () => {
+      const map = owedByWorker([], [readable(5_00), unreadable, readable(10_00)]);
+      expect(map.get(W1)!.pendingCents).toBeNull();
+    });
+
+    it("all readable: the plain sum", () => {
+      const map = owedByWorker([], [readable(5_00), readable(10_00), readable(2_50)]);
+      expect(map.get(W1)!.pendingCents).toBe(17_50);
+      expect(totalOwedCents(map.get(W1)!)).toBe(17_50);
+    });
+
+    it("all unreadable: unknown", () => {
+      const map = owedByWorker([], [unreadable, { ...unreadable }]);
+      expect(map.get(W1)!.pendingCents).toBeNull();
+      expect(totalOwedCents(map.get(W1)!)).toBeNull();
+    });
+  });
+
   it("asserts nothing about somebody who shows up in neither read", () => {
     const map = owedByWorker(null, null);
     expect(owedState(owedOf(map, "nobody", false, false)).kind).toBe("unknown");
