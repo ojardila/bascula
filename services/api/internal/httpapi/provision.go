@@ -181,34 +181,50 @@ func (s *Server) watchTenant(slug string) {
 	s.prov.watching[slug] = true
 	s.prov.mu.Unlock()
 
-	go func() {
-		defer func() {
-			s.prov.mu.Lock()
-			delete(s.prov.watching, slug)
-			s.prov.mu.Unlock()
-		}()
-		every := s.cfg.ProvisionPollEvery
-		if every <= 0 {
-			every = 15 * time.Second
-		}
-		deadline := time.Now().Add(s.provisionWatchFor())
-		for time.Now().Before(deadline) {
-			info, err := s.tenantInfo(context.Background(), slug)
-			if err == nil && info.Seeded {
-				return
-			}
-			if err == nil && info.Database {
-				if err := s.seedTenant(context.Background(), slug); err != nil {
-					slog.Warn("tenant seed", "slug", slug, "err", err)
-				} else {
-					slog.Info("tenant seeded", "slug", slug)
-					return
-				}
-			}
-			time.Sleep(every)
-		}
-		slog.Warn("tenant watch gave up", "slug", slug)
+	go s.pollTenant(slug)
+}
+
+// pollTenant is watchTenant's background loop; it releases the slug when it
+// stops.
+func (s *Server) pollTenant(slug string) {
+	defer func() {
+		s.prov.mu.Lock()
+		delete(s.prov.watching, slug)
+		s.prov.mu.Unlock()
 	}()
+	every := s.cfg.ProvisionPollEvery
+	if every <= 0 {
+		every = 15 * time.Second
+	}
+	deadline := time.Now().Add(s.provisionWatchFor())
+	for time.Now().Before(deadline) {
+		if s.trySeedTenant(slug) {
+			return
+		}
+		time.Sleep(every)
+	}
+	slog.Warn("tenant watch gave up", "slug", slug)
+}
+
+// trySeedTenant is one poll: it reports whether the stack is seeded, seeding
+// it first when its database is up and it is not seeded yet.
+func (s *Server) trySeedTenant(slug string) bool {
+	info, err := s.tenantInfo(context.Background(), slug)
+	if err != nil {
+		return false
+	}
+	if info.Seeded {
+		return true
+	}
+	if !info.Database {
+		return false
+	}
+	if err := s.seedTenant(context.Background(), slug); err != nil {
+		slog.Warn("tenant seed", "slug", slug, "err", err)
+		return false
+	}
+	slog.Info("tenant seeded", "slug", slug)
+	return true
 }
 
 func (s *Server) provisionWatchFor() time.Duration {
