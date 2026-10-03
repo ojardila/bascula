@@ -59,7 +59,7 @@ async function fillRest(user: User, who: RegExp, lote: string, qty: string) {
   await user.keyboard("{Escape}");
   await user.click(screen.getByLabelText(/^Cultivos/));
   const crops = await screen.findAllByRole("option", {
-    name: new RegExp(`^${lote} · `),
+    name: (name) => name.startsWith(`${lote} · `),
   });
   await user.click(crops[0]);
   await user.keyboard("{Escape}");
