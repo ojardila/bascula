@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/store"
@@ -97,46 +98,48 @@ func (rr rateRequest) toStore(ctx context.Context) (store.ActivityRate, error) {
 	return out, nil
 }
 
+// validateNewActivity checks a create request and fills in the default rate
+// source.
+func validateNewActivity(body *activityRequest) error {
+	if body.Name == "" {
+		return domain.BadRequest("name is required")
+	}
+	if !body.PayScheme.Valid() {
+		return domain.BadRequest("payScheme must be contrato, tiempo or unidad_trabajo")
+	}
+	if body.Category == "" && body.CategoryID == "" {
+		return domain.BadRequest("categoryId or category is required")
+	}
+	if body.RateSource == "" {
+		body.RateSource = domain.RateActivityDated
+	}
+	if body.RateSource == domain.RateWeeklyPrice && body.PayScheme != domain.PaySchemeWorkUnit {
+		return domain.BadRequest("only a work-unit activity can be priced by the week")
+	}
+	if body.RateSource == domain.RateExplicit {
+		return domain.BadRequest(
+			"an activity is priced by date or by the week; 'explicit' belongs to a task")
+	}
+	if body.Rate.RateCents <= 0 {
+		return domain.BadRequest("rate.rateCents must be positive")
+	}
+	if body.PayScheme == domain.PaySchemeWorkUnit && body.UnitID == nil {
+		return domain.BadRequest("a work-unit activity needs unitId")
+	}
+	if body.PayScheme != domain.PaySchemeWorkUnit && body.UnitID != nil {
+		return domain.BadRequest("only a work-unit activity has a unit")
+	}
+	return nil
+}
+
 func (s *Server) handleCreateActivity(w http.ResponseWriter, r *http.Request) {
 	var body activityRequest
 	if err := decode(r, &body); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	if body.Name == "" {
-		writeError(w, r, domain.BadRequest("name is required"))
-		return
-	}
-	if !body.PayScheme.Valid() {
-		writeError(w, r, domain.BadRequest("payScheme must be contrato, tiempo or unidad_trabajo"))
-		return
-	}
-	if body.Category == "" && body.CategoryID == "" {
-		writeError(w, r, domain.BadRequest("categoryId or category is required"))
-		return
-	}
-	if body.RateSource == "" {
-		body.RateSource = domain.RateActivityDated
-	}
-	if body.RateSource == domain.RateWeeklyPrice && body.PayScheme != domain.PaySchemeWorkUnit {
-		writeError(w, r, domain.BadRequest("only a work-unit activity can be priced by the week"))
-		return
-	}
-	if body.RateSource == domain.RateExplicit {
-		writeError(w, r, domain.BadRequest(
-			"an activity is priced by date or by the week; 'explicit' belongs to a task"))
-		return
-	}
-	if body.Rate.RateCents <= 0 {
-		writeError(w, r, domain.BadRequest("rate.rateCents must be positive"))
-		return
-	}
-	if body.PayScheme == domain.PaySchemeWorkUnit && body.UnitID == nil {
-		writeError(w, r, domain.BadRequest("a work-unit activity needs unitId"))
-		return
-	}
-	if body.PayScheme != domain.PaySchemeWorkUnit && body.UnitID != nil {
-		writeError(w, r, domain.BadRequest("only a work-unit activity has a unit"))
+	if err := validateNewActivity(&body); err != nil {
+		writeError(w, r, err)
 		return
 	}
 	rate, err := body.Rate.toStore(r.Context())
@@ -178,6 +181,22 @@ func (s *Server) handleCreateActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// setActivityStatus archives or restores an activity; "" leaves it as it is.
+// store.NoRows (already in that state, or not found) is not an error here.
+func setActivityStatus(ctx context.Context, tx pgx.Tx, id, status string) error {
+	var err error
+	switch status {
+	case "inactive":
+		err = store.ArchiveActivity(ctx, tx, id)
+	case "active":
+		err = store.RestoreActivity(ctx, tx, id)
+	}
+	if err != nil && err != store.NoRows {
+		return err
+	}
+	return nil
 }
 
 // handleUpdateActivity renames, recategorises, archives and unarchives. What
@@ -222,17 +241,9 @@ func (s *Server) handleUpdateActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch body.Status {
-	case "inactive":
-		if err := store.ArchiveActivity(r.Context(), tx, id); err != nil && err != store.NoRows {
-			writeError(w, r, err)
-			return
-		}
-	case "active":
-		if err := store.RestoreActivity(r.Context(), tx, id); err != nil && err != store.NoRows {
-			writeError(w, r, err)
-			return
-		}
+	if err := setActivityStatus(r.Context(), tx, id, body.Status); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	if body.CategoryID == "" && body.Category != "" {

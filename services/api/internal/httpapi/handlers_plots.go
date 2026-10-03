@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -40,6 +41,35 @@ func (s *Server) handleGetPlot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// prepareNewPlot checks a create request and assigns the ids the client left
+// out, on the plot and on each crop.
+func prepareNewPlot(body *store.Plot) error {
+	if body.Name == "" {
+		return domain.BadRequest("name is required")
+	}
+	if body.ID == "" {
+		body.ID = newID()
+	}
+	// plots.area_ha and plot_crops.area_ha are numeric(10, 3).
+	if err := checkFixedScale("areaHa", body.AreaHa,
+		domain.AreaPrecision, domain.AreaScale); err != nil {
+		return err
+	}
+	for i := range body.Crops {
+		if body.Crops[i].ID == "" {
+			body.Crops[i].ID = newID()
+		}
+		if body.Crops[i].CropType == "" && body.Crops[i].CropTypeID == "" {
+			return domain.BadRequest("every crop needs cropTypeId or cropType")
+		}
+		if err := checkFixedScale("crops[].areaHa", body.Crops[i].AreaHa,
+			domain.AreaPrecision, domain.AreaScale); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // handleCreatePlot takes the plot and its crops in one body, because the form
 // the owner fills in is one form: identity and location, then what is planted.
 func (s *Server) handleCreatePlot(w http.ResponseWriter, r *http.Request) {
@@ -48,32 +78,9 @@ func (s *Server) handleCreatePlot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if body.Name == "" {
-		writeError(w, r, domain.BadRequest("name is required"))
-		return
-	}
-	if body.ID == "" {
-		body.ID = newID()
-	}
-	// plots.area_ha and plot_crops.area_ha are numeric(10, 3).
-	if err := checkFixedScale("areaHa", body.AreaHa,
-		domain.AreaPrecision, domain.AreaScale); err != nil {
+	if err := prepareNewPlot(&body); err != nil {
 		writeError(w, r, err)
 		return
-	}
-	for i := range body.Crops {
-		if body.Crops[i].ID == "" {
-			body.Crops[i].ID = newID()
-		}
-		if body.Crops[i].CropType == "" && body.Crops[i].CropTypeID == "" {
-			writeError(w, r, domain.BadRequest("every crop needs cropTypeId or cropType"))
-			return
-		}
-		if err := checkFixedScale("crops[].areaHa", body.Crops[i].AreaHa,
-			domain.AreaPrecision, domain.AreaScale); err != nil {
-			writeError(w, r, err)
-			return
-		}
 	}
 
 	tx, err := tenant.Tx(r.Context())
@@ -126,6 +133,34 @@ type updatePlotRequest struct {
 	Status string `json:"status"`
 }
 
+// setPlotStatus takes a plot out of service or puts it back; "" leaves it as
+// it is.
+func setPlotStatus(ctx context.Context, tx pgx.Tx, id, status string) error {
+	switch status {
+	case "inactive":
+		// The same refusal DELETE makes, for the same reason: a plot taken out
+		// of service under a live crop orphans the work records pointing at
+		// that crop.
+		n, err := store.CountActiveCrops(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return domain.Conflict(domain.CodePlotHasActiveCrops,
+				"remove the crops before taking the plot out of service").
+				WithDetails(map[string]any{"activeCrops": n})
+		}
+		if err := store.SoftDeletePlot(ctx, tx, id); err != nil && err != store.NoRows {
+			return err
+		}
+	case "active":
+		if _, err := store.RestorePlot(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Server) handleUpdatePlot(w http.ResponseWriter, r *http.Request) {
 	var body updatePlotRequest
 	if err := decode(r, &body); err != nil {
@@ -148,31 +183,9 @@ func (s *Server) handleUpdatePlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch body.Status {
-	case "inactive":
-		// The same refusal DELETE makes, for the same reason: a plot taken out
-		// of service under a live crop orphans the work records pointing at
-		// that crop.
-		n, err := store.CountActiveCrops(r.Context(), tx, id)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if n > 0 {
-			writeError(w, r, domain.Conflict(domain.CodePlotHasActiveCrops,
-				"remove the crops before taking the plot out of service").
-				WithDetails(map[string]any{"activeCrops": n}))
-			return
-		}
-		if err := store.SoftDeletePlot(r.Context(), tx, id); err != nil && err != store.NoRows {
-			writeError(w, r, err)
-			return
-		}
-	case "active":
-		if _, err := store.RestorePlot(r.Context(), tx, id); err != nil {
-			writeError(w, r, err)
-			return
-		}
+	if err := setPlotStatus(r.Context(), tx, id, body.Status); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	updated, err := store.UpdatePlot(r.Context(), tx, id, body.Plot)
