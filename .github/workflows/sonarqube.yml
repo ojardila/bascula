@@ -37,20 +37,11 @@
 name: SonarQube
 
 on:
+  # No `paths:` here on purpose: `sonarqube` is a REQUIRED check on master,
+  # and a workflow that never starts never reports it, which would block a
+  # docs-only PR forever. The `changes` job below skips the heavy jobs
+  # instead; a job skipped by `if` counts as passed for a required check.
   pull_request:
-    paths:
-      - 'services/api/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - 'manifests/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'sonar-project.properties'
-      - 'scripts/sonar-report.py'
-      - 'scripts/ci/go-test.sh'
-      - 'scripts/ci/apitest-weights.txt'
-      - 'scripts/ci/merge-lcov.py'
-      - '.github/workflows/sonarqube.yml'
   push:
     branches: [master]
     paths:
@@ -76,14 +67,47 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Did this PR touch anything Sonar analyses? Pushes to master are already
+  # filtered by `paths:` above, so this only decides for pull requests.
+  changes:
+    name: sonar inputs changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            code:
+            - 'services/api/**'
+            - 'apps/web/**'
+            - 'packages/**'
+            - 'manifests/**'
+            - 'package.json'
+            - 'package-lock.json'
+            - 'sonar-project.properties'
+            - 'scripts/sonar-report.py'
+            - 'scripts/ci/go-test.sh'
+            - 'scripts/ci/apitest-weights.txt'
+            - 'scripts/ci/merge-lcov.py'
+            - '.github/workflows/sonarqube.yml'
+
   coverage-api:
     name: coverage (api)
     # Same rule as the image builds in ci.yml: forks and Dependabot get no
     # Actions secrets, so the scan could not run; do not test for it either.
+    needs: changes
     if: >-
-      github.event_name != 'pull_request' || (
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login != 'dependabot[bot]')
+      needs.changes.outputs.code == 'true' && (
+        github.event_name != 'pull_request' || (
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -163,10 +187,12 @@ jobs:
 
   coverage-web:
     name: coverage (web ${{ matrix.shard }}/3)
+    needs: changes
     if: >-
-      github.event_name != 'pull_request' || (
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.user.login != 'dependabot[bot]')
+      needs.changes.outputs.code == 'true' && (
+        github.event_name != 'pull_request' || (
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -236,11 +262,12 @@ jobs:
 
   sonarqube:
     name: sonarqube
-    needs: [coverage-api, coverage-web]
+    needs: [changes, coverage-api, coverage-web]
     # !cancelled(): a coverage job that failed still hands over what it has;
-    # the scan runs with whatever coverage arrived.
+    # the scan runs with whatever coverage arrived. A PR that touches nothing
+    # Sonar reads skips it, and a skipped required check counts as passed.
     if: >-
-      !cancelled() && (
+      !cancelled() && needs.changes.outputs.code == 'true' && (
         github.event_name != 'pull_request' || (
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.login != 'dependabot[bot]'))
