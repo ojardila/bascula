@@ -490,24 +490,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeError(w, r, err)
 			return
 		}
-		// An assistant's token opens /mcp. Its tools reach the REST routes
-		// in-process (mcpDispatched), where the money confirmation lives;
-		// the same token sent straight to /v1 would skip it.
-		if claims.ForMCPOnly() && r.URL.Path != "/mcp" && !mcpDispatched(r.Context()) {
-			writeError(w, r, domain.Unauthorized("this token is for the MCP endpoint (/mcp) only"))
+		if s.refuseMisplacedMCPToken(w, r, claims) {
 			return
-		}
-		// RFC 8707 audience binding: an assistant's token names the MCP
-		// resource it was issued for, and is refused anywhere else — a token
-		// from one farm's address does not open another's. Tokens minted
-		// before the binding carry no resource and lapse within AccessTTL.
-		if claims.ForMCPOnly() && r.URL.Path == "/mcp" && !mcpDispatched(r.Context()) {
-			if res := claims.MCPResource(); res != "" && !s.resourceIsThisServer(r, res) {
-				s.writeMCPChallenge(w, r, "invalid_token")
-				writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
-					"this token was issued for another MCP resource"))
-				return
-			}
 		}
 		p := &auth.Principal{
 			UserID:     claims.Subject,
@@ -522,6 +506,32 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})
+}
+
+// refuseMisplacedMCPToken answers, and reports true, when an assistant's token
+// is presented somewhere it does not open.
+func (s *Server) refuseMisplacedMCPToken(w http.ResponseWriter, r *http.Request, claims *auth.Claims) bool {
+	if !claims.ForMCPOnly() || mcpDispatched(r.Context()) {
+		return false
+	}
+	// An assistant's token opens /mcp. Its tools reach the REST routes
+	// in-process (mcpDispatched), where the money confirmation lives;
+	// the same token sent straight to /v1 would skip it.
+	if r.URL.Path != "/mcp" {
+		writeError(w, r, domain.Unauthorized("this token is for the MCP endpoint (/mcp) only"))
+		return true
+	}
+	// RFC 8707 audience binding: an assistant's token names the MCP
+	// resource it was issued for, and is refused anywhere else — a token
+	// from one farm's address does not open another's. Tokens minted
+	// before the binding carry no resource and lapse within AccessTTL.
+	if res := claims.MCPResource(); res != "" && !s.resourceIsThisServer(r, res) {
+		s.writeMCPChallenge(w, r, "invalid_token")
+		writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
+			"this token was issued for another MCP resource"))
+		return true
+	}
+	return false
 }
 
 // requireAction is link three: the permission table, consulted once, in one
@@ -541,55 +551,64 @@ func (s *Server) requireAction(action auth.Action) func(http.Handler) http.Handl
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			p, ok := auth.PrincipalFrom(r.Context())
-			if !ok {
-				if action == auth.ActionMCP {
-					s.writeMCPChallenge(w, r, "")
-				}
-				writeError(w, r, domain.Unauthorized("authentication required"))
-				return
-			}
-			if !rule.TenantOptional && !tenant.HasFarm(r.Context()) {
-				// RLS answers with zero rows and no error when app.farm_id is
-				// unset. That silence is worse than a failure, so it becomes
-				// one.
-				writeError(w, r, domain.TenantNotSet())
-				return
-			}
-			// A platform administrator who is not a member of the farm their
-			// token names may work the console and nothing else.
-			//
-			// The tenant middleware lets them past the membership check on
-			// purpose — a farm that removed them must not be able to lock the
-			// lever holder out of the room the lever is in — but that exemption
-			// is about the console, not about the farm. Without this line the
-			// token's `role` claim went on describing them as the owner of a
-			// farm that had taken them off it, with no membership row left to
-			// disagree, and auth.Rule's one-line rule — "a super-admin
-			// administers farms from the outside and cannot read inside one" —
-			// held only in its first half. The code is MEMBERSHIP_REVOKED
-			// because that is exactly what happened and the clients already
-			// know the sentence for it.
-			if !rule.Superadmin && tenant.PlatformOnly(r.Context()) {
-				writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
-					"that account no longer has access to this farm"))
-				return
-			}
-			if !auth.AllowedFor(p.Role, p.Superadmin, action) {
-				if rule.Superadmin {
-					// A farm role, however senior, is not a platform role: an
-					// owner administering their own farm has no business
-					// listing anybody else's.
-					writeError(w, r, domain.Forbidden("that action belongs to the platform administrator"))
-					return
-				}
-				writeError(w, r, domain.Forbidden("your role may not perform this action"))
+			if s.refuseAction(w, r, action, rule) {
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// refuseAction applies a non-public rule of the permission table to the
+// request. When the caller may not perform the action it answers, and reports
+// true.
+func (s *Server) refuseAction(w http.ResponseWriter, r *http.Request, action auth.Action, rule auth.Rule) bool {
+	p, ok := auth.PrincipalFrom(r.Context())
+	if !ok {
+		if action == auth.ActionMCP {
+			s.writeMCPChallenge(w, r, "")
+		}
+		writeError(w, r, domain.Unauthorized("authentication required"))
+		return true
+	}
+	if !rule.TenantOptional && !tenant.HasFarm(r.Context()) {
+		// RLS answers with zero rows and no error when app.farm_id is
+		// unset. That silence is worse than a failure, so it becomes
+		// one.
+		writeError(w, r, domain.TenantNotSet())
+		return true
+	}
+	// A platform administrator who is not a member of the farm their
+	// token names may work the console and nothing else.
+	//
+	// The tenant middleware lets them past the membership check on
+	// purpose — a farm that removed them must not be able to lock the
+	// lever holder out of the room the lever is in — but that exemption
+	// is about the console, not about the farm. Without this line the
+	// token's `role` claim went on describing them as the owner of a
+	// farm that had taken them off it, with no membership row left to
+	// disagree, and auth.Rule's one-line rule — "a super-admin
+	// administers farms from the outside and cannot read inside one" —
+	// held only in its first half. The code is MEMBERSHIP_REVOKED
+	// because that is exactly what happened and the clients already
+	// know the sentence for it.
+	if !rule.Superadmin && tenant.PlatformOnly(r.Context()) {
+		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeMembershipRevoked,
+			"that account no longer has access to this farm"))
+		return true
+	}
+	if !auth.AllowedFor(p.Role, p.Superadmin, action) {
+		if rule.Superadmin {
+			// A farm role, however senior, is not a platform role: an
+			// owner administering their own farm has no business
+			// listing anybody else's.
+			writeError(w, r, domain.Forbidden("that action belongs to the platform administrator"))
+			return true
+		}
+		writeError(w, r, domain.Forbidden("your role may not perform this action"))
+		return true
+	}
+	return false
 }
 
 // oauthMaxBody bounds every request body on the OAuth endpoints.
