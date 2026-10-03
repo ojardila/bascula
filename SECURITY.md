@@ -21,8 +21,23 @@ Include what you can of:
 - the impact you expect (which role can do what to whom);
 - any fix you suggest.
 
-Reports are handled on a best-effort basis. You will get an answer in the
-advisory thread, and credit in the published advisory if you want it.
+## Severity and response targets
+
+Reports are triaged into one of four tiers. Targets are first-response
+times measured from the moment the advisory is opened; the fix lands when
+it lands, but a reporter should always hear back within the window below.
+Credit in the published advisory is offered to every reporter who wants it.
+
+| Tier  | Example                                                                                 | First response |
+|-------|-----------------------------------------------------------------------------------------|----------------|
+| sev-1 | Cross-tenant access, credential or token leak, auth bypass, privilege escalation         | 24 hours       |
+| sev-2 | Wrong money result (settlement, idempotency, double-payment lock)                        | 72 hours       |
+| sev-3 | Availability (crash, lockout, resource exhaustion) with no data impact                   | 5 business days|
+| sev-4 | Cosmetic, hardening suggestion, or a report that turns out not to be a vulnerability     | 10 business days|
+
+The maintainer running the response follows
+[`docs/incident-response.md`](docs/incident-response.md): triage, private
+comms channel, the sev-1 mitigation chain, the post-mortem template.
 
 ## Testing rules
 
