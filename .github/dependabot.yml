@@ -20,10 +20,12 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
     ignore:
-      # typescript-eslint supports TypeScript below 6.1 only; lift this once
-      # it supports 7.
+      # Hold TypeScript at 5.x: openapi-typescript (7.13.0, latest) still
+      # declares peer typescript ^5.x, so TS 6 cannot install cleanly (#235).
+      # typescript-eslint supports TypeScript below 6.1 only. Lift once
+      # openapi-typescript accepts 6.
       - dependency-name: typescript
-        versions: [">=7"]
+        versions: [">=6"]
   - package-ecosystem: gomod
     directory: /services/api
     schedule: {interval: weekly}
