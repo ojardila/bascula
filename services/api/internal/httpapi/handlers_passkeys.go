@@ -108,6 +108,22 @@ func (s *Server) passkeyRPIDFor(r *http.Request) (string, error) {
 	return host, nil
 }
 
+// validDNSName: every dot-separated label is a well-formed DNS label. A name
+// such as "a..localhost" or "x..bascula.engp.io" passes a suffix check but
+// is not a relying party WebAuthn accepts; refused here, it is the 400 a bad
+// Origin deserves instead of the library's error surfacing as a 500.
+func validDNSName(host string) bool {
+	if len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if !dnsLabel.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
+
 func isLocalHostname(host string) bool {
 	return host == "localhost" || strings.HasSuffix(host, ".localhost")
 }
@@ -117,7 +133,7 @@ func isLocalHostname(host string) bool {
 // WebAuthn has no relying party for one.
 func (s *Server) passkeyHostAllowed(host string) error {
 	bad := domain.BadRequest("passkeys need a browser on this site's address")
-	if host == "" || net.ParseIP(host) != nil {
+	if host == "" || net.ParseIP(host) != nil || !validDNSName(host) {
 		return bad
 	}
 	if base := strings.TrimSpace(s.cfg.PublicBaseURL); base != "" {
