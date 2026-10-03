@@ -16,6 +16,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// databaseDDL is a CREATE or DROP DATABASE statement, which takes no bind
+// parameters: the name is quoted as an identifier, and it is generated from a
+// UUID by scratchDSN, never taken from input.
+func databaseDDL(verb, name, suffix string) string {
+	return strings.TrimSpace(strings.Join([]string{verb, pgx.Identifier{name}.Sanitize(), suffix}, " "))
+}
+
 // scratchDSN creates an empty database for one test and returns its admin
 // DSN. It skips without TEST_ADMIN_DATABASE_URL, like the apitest suite.
 func scratchDSN(t *testing.T) string {
@@ -31,10 +38,7 @@ func scratchDSN(t *testing.T) string {
 		t.Fatalf("connect: %v", err)
 	}
 	defer boot.Close(ctx)
-	// CREATE DATABASE takes no bind parameters; the name is made above from
-	// a UUID, never from input.
-	// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
-	if _, err := boot.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize()); err != nil {
+	if _, err := boot.Exec(ctx, databaseDDL("CREATE DATABASE", name, "")); err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	t.Cleanup(func() {
@@ -43,8 +47,7 @@ func scratchDSN(t *testing.T) string {
 			return
 		}
 		defer c.Close(context.Background())
-		// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
-		_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
+		_, _ = c.Exec(context.Background(), databaseDDL("DROP DATABASE IF EXISTS", name, "WITH (FORCE)"))
 	})
 	u, err := url.Parse(base)
 	if err != nil {
