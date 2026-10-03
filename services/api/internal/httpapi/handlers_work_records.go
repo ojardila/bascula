@@ -196,7 +196,7 @@ func (s *Server) createWorkRecord(r *http.Request, body workRecordRequest) (any,
 
 	record := newWorkRecord(&body, activity, quantity, principal)
 
-	if err := priceWorkRecord(r.Context(), tx, &record, activity, body.RateCents, qty, from, to); err != nil {
+	if err := priceWorkRecord(r.Context(), tx, &record, activity, body.RateCents, qty, workRecordDays{from: from, to: to}); err != nil {
 		return nil, 0, err
 	}
 	// The unit rides on the activity, so a weigher who may not read a single
@@ -267,10 +267,17 @@ func workRecordQuantity(activity *store.Activity, quantity json.Number) (json.Nu
 	return quantity, qty, nil
 }
 
+// workRecordDays is the record's first and last local day; they are the same
+// day for a single day's work.
+type workRecordDays struct {
+	from, to time.Time
+}
+
 // priceWorkRecord sets where the record's price comes from, the price when
 // it is known now, and the amount it adds up to.
 func priceWorkRecord(ctx context.Context, tx pgx.Tx, record *store.WorkRecord, activity *store.Activity,
-	rateCents *int64, qty *big.Rat, from, to time.Time) error {
+	rateCents *int64, qty *big.Rat, days workRecordDays) error {
+	from, to := days.from, days.to
 	switch {
 	case rateCents != nil:
 		// The caller named the price, so it freezes here and a date range is

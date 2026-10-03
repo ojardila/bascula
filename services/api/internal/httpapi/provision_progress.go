@@ -351,7 +351,9 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 	defs := sharedStages
 	if st.Dedicated {
 		defs = dedicatedStages
-		s.provDedicatedSignals(ctx, st, createdAt, done, database, app, certificate, web)
+		s.provDedicatedSignals(ctx, st, createdAt, done, provSignals{
+			database: database, app: app, certificate: certificate, web: web,
+		})
 	} else {
 		st.Source = "basic"
 		done["site"] = web && certificate
@@ -389,11 +391,18 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 	}
 }
 
+// provSignals is what the farm's own stack answered when it was probed: its
+// database, the app, the certificate and the web front.
+type provSignals struct {
+	database, app, certificate, web bool
+}
+
 // provDedicatedSignals fills done for a dedicated farm stack from the
 // cluster, or, when it cannot be read, from GitHub Actions and the stack's
 // own answer. It sets st.Source (and st.Note on the fallback).
 func (s *Server) provDedicatedSignals(ctx context.Context, st *provisionStatus, createdAt time.Time,
-	done map[string]bool, database, app, certificate, web bool) {
+	done map[string]bool, sig provSignals) {
+	database, app, certificate, web := sig.database, sig.app, sig.certificate, sig.web
 	slug := st.Slug
 	cv := s.readCluster(ctx, slug)
 	// GitHub is asked only until the pipeline is known to be done.

@@ -60,9 +60,7 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 	if pago == nil {
 		return nil, pgx.ErrNoRows
 	}
-	switch pago.Kind {
-	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction:
-	default:
+	if !hasReceipt(pago.Kind) {
 		return nil, pgx.ErrNoRows
 	}
 
@@ -80,13 +78,7 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 	//                     is the only reading the figures may use: a settlement
 	//                     voided a month after the payment must not change what
 	//                     the payment's receipt says the week was.
-	pagoAt := -1
-	for i, e := range all {
-		if e.ID == pago.ID {
-			pagoAt = i
-			break
-		}
-	}
+	pagoAt := ledgerIndexOf(all, pago.ID)
 	if pagoAt < 0 {
 		return nil, pgx.ErrNoRows
 	}
@@ -102,15 +94,7 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 	w := receiptWeek{deductions: []ReceiptDeduction{}, settlementIDs: []string{}}
 	// An advance or a deduction is its own amount and nothing else.
 	if pago.Kind == domain.KindPayment {
-		for _, e := range all[:pagoAt] {
-			if !live(e) {
-				continue
-			}
-			if prevPagoID != "" && (e.CreatedAt.Before(prevPagoAt) || (e.CreatedAt.Equal(prevPagoAt) && e.ID <= prevPagoID)) {
-				continue
-			}
-			w.add(e)
-		}
+		w.addSince(all[:pagoAt], live, prevPagoAt, prevPagoID)
 	}
 
 	weekFrom, weekTo, err := settlementsSpan(ctx, tx, w.settlementIDs)
@@ -197,6 +181,27 @@ func receiptBalance(upTo []LedgerEntry, live func(LedgerEntry) bool) (remaining 
 	return remaining, prevPagoAt, prevPagoID
 }
 
+// hasReceipt reports whether a movement of this kind has a slip of its own:
+// a payment, an advance or a deduction.
+func hasReceipt(kind domain.LedgerKind) bool {
+	switch kind {
+	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction:
+		return true
+	default:
+		return false
+	}
+}
+
+// ledgerIndexOf is the position of the first entry with this id, or -1.
+func ledgerIndexOf(all []LedgerEntry, id string) int {
+	for i, e := range all {
+		if e.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // receiptWeek accumulates what a payment's slip names between the previous
 // payment and this one.
 type receiptWeek struct {
@@ -205,6 +210,21 @@ type receiptWeek struct {
 	deductions    []ReceiptDeduction
 	settlementID  *string
 	settlementIDs []string
+}
+
+// addSince adds every live entry written after the previous payment (all of
+// them when there is none). Entries are compared by (created_at, id), the
+// order the ledger was written in.
+func (w *receiptWeek) addSince(entries []LedgerEntry, live func(LedgerEntry) bool, prevPagoAt time.Time, prevPagoID string) {
+	for _, e := range entries {
+		if !live(e) {
+			continue
+		}
+		if prevPagoID != "" && (e.CreatedAt.Before(prevPagoAt) || (e.CreatedAt.Equal(prevPagoAt) && e.ID <= prevPagoID)) {
+			continue
+		}
+		w.add(e)
+	}
 }
 
 func (w *receiptWeek) add(e LedgerEntry) {

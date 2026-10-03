@@ -272,27 +272,35 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 	}
 	out.LastRecordOn = asDay(last)
 
-	from := thisWeek.AddDate(0, 0, -7*(weeks-1))
-	to := thisWeek.AddDate(0, 0, 6)
+	window := perfWindow{
+		from: thisWeek.AddDate(0, 0, -7*(weeks-1)),
+		to:   thisWeek.AddDate(0, 0, 6),
+	}
 
-	if err := perfLoadWeeks(ctx, tx, out, employeeID, from, to, thisWeek); err != nil {
+	if err := perfLoadWeeks(ctx, tx, out, employeeID, window, thisWeek); err != nil {
 		return nil, err
 	}
 	perfSummarizeRecent(out, thisWeek)
-	if err := perfLoadDays(ctx, tx, out, employeeID, from, to, today, thisWeek); err != nil {
+	if err := perfLoadDays(ctx, tx, out, employeeID, window, today, thisWeek); err != nil {
 		return nil, err
 	}
-	if err := perfLoadPlots(ctx, tx, out, employeeID, from, to); err != nil {
+	if err := perfLoadPlots(ctx, tx, out, employeeID, window); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
+// perfWindow is the span of local days the performance sheet reads: from the
+// Monday of the oldest week shown to the Sunday of the running one.
+type perfWindow struct {
+	from, to time.Time
+}
+
 // perfLoadWeeks reads the weeks of the window into out.Weeks.
 func perfLoadWeeks(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
-	employeeID string, from, to, thisWeek time.Time) error {
+	employeeID string, window perfWindow, thisWeek time.Time) error {
 
-	rows, err := tx.Query(ctx, perfWeeksSQL, employeeID, from, to, thisWeek)
+	rows, err := tx.Query(ctx, perfWeeksSQL, employeeID, window.from, window.to, thisWeek)
 	if err != nil {
 		return err
 	}
@@ -335,11 +343,11 @@ func perfSummarizeRecent(out *EmployeePerformance, thisWeek time.Time) {
 // perfLoadDays reads the days of the running week, and last week up to the
 // same weekday.
 func perfLoadDays(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
-	employeeID string, from, to, today, thisWeek time.Time) error {
+	employeeID string, window perfWindow, today, thisWeek time.Time) error {
 
 	lastMonday := thisWeek.AddDate(0, 0, -7)
 	byDay := map[string]PerformanceDay{}
-	drows, err := tx.Query(ctx, perfDaysSQL, employeeID, from, to, lastMonday)
+	drows, err := tx.Query(ctx, perfDaysSQL, employeeID, window.from, window.to, lastMonday)
 	if err != nil {
 		return err
 	}
@@ -375,9 +383,9 @@ func perfLoadDays(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
 
 // perfLoadPlots reads the lotes over the recent window.
 func perfLoadPlots(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
-	employeeID string, from, to time.Time) error {
+	employeeID string, window perfWindow) error {
 
-	prows, err := tx.Query(ctx, perfPlotsSQL, employeeID, from, to, out.Summary.RecentFrom.Time)
+	prows, err := tx.Query(ctx, perfPlotsSQL, employeeID, window.from, window.to, out.Summary.RecentFrom.Time)
 	if err != nil {
 		return err
 	}
