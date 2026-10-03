@@ -72,6 +72,9 @@ const pendingSQL = `
      AND l.id NOT IN (SELECT si.payable_id FROM settlement_items si WHERE si.voided_at IS NULL)
    ORDER BY l.local_day, l.id`
 
+// The refusal for a client-chosen id that another row already took.
+const msgIDInUse = "that id is already in use"
+
 // Balance runs the ported balance query.
 func Balance(ctx context.Context, tx pgx.Tx, employeeID string) (*domain.Balance, error) {
 	var b domain.Balance
@@ -503,7 +506,7 @@ func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, boo
 		}
 		if existing == nil {
 			return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
-				"that id is already in use")
+				msgIDInUse)
 		}
 		return existing, false, nil
 	}
@@ -1220,7 +1223,7 @@ func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEn
 		// be a lie about a write that genuinely cannot be performed. The id is
 		// in use; that is all the caller gets, and all it needs.
 		return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
-			"that id is already in use")
+			msgIDInUse)
 	}
 	if !existing.Matches(e, e.Kind) {
 		return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
@@ -1314,7 +1317,7 @@ func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, args ReverseParams) (*Le
 			// The id belongs to a row this farm cannot see. Same answer as
 			// AddLedgerEntry, for the same reason.
 			return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
-				"that id is already in use")
+				msgIDInUse)
 		}
 		return nil, false, err
 	}
