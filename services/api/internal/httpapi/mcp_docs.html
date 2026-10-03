@@ -382,6 +382,15 @@
     return j;
   }
   function firstSentence(s) { s = s || ""; var i = s.indexOf(". "); return i > 0 ? s.slice(0, i + 1) : s; }
+  // Returns v as an absolute http(s) URL, or null for anything else
+  // (javascript:, data:, unparsable…).
+  function safeHttpURL(v) {
+    if (typeof v !== "string" || !v) return null;
+    var u;
+    try { u = new URL(v, location.href); } catch (e) { return null; }
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.href;
+  }
 
   function render(c) {
     cat = c;
@@ -389,7 +398,10 @@
     document.getElementById("endpoint2").textContent = c.endpoint;
     document.getElementById("transport").textContent = c.transport;
     document.getElementById("instructions").textContent = c.instructions;
-    document.getElementById("prm").href = c.auth.protectedResourceMetadata;
+    // The catalogue is text read back from the DOM: only an http(s) URL may
+    // become the link target; otherwise the static default href stays.
+    var prm = safeHttpURL(c.auth && c.auth.protectedResourceMetadata);
+    if (prm) document.getElementById("prm").setAttribute("href", prm);
     var host = document.getElementById("tools");
     var groups = [["read", "Read tools"], ["write", "Write tools"]];
     groups.forEach(function (g) {
