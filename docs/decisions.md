@@ -362,3 +362,14 @@ a prefix, so this is one key for all farms: rotation is one Secret, but a
 compromised farm-side holder of the key could read other farms' backups.
 A deleted farm's prefix must be purged before its slug is reused. Photos are
 covered by Longhorn's recurring backup (#311, above).
+
+Turning the plugin on for an already running single-instance farm goes through
+hibernation (clean stop with the old spec, add the plugin, wake), never a
+force-deleted pod; the procedure is in `manifests/README.md`. On 2026-10-02 a
+force delete let two postmasters share `bascula-finca3`'s volume and corrupted
+its WAL; the farm was restored from its hourly Longhorn snapshot.
+
+**Restore drill, 2026-10-03.** `bascula-san-jose` was restored from its first
+base backup plus WAL into a scratch cluster in its namespace. Row counts and an
+md5 over every `work_records` row matched the live database. The scratch
+cluster was deleted afterwards.
