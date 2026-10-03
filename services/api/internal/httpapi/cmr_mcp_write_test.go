@@ -41,8 +41,9 @@ func cmrCaller(t *testing.T, routes map[string]cmrReply) (*mcpCaller, *[]string)
 		if !ok {
 			rep = cmrReply{http.StatusNotFound, `{"error":{"code":"NOT_FOUND","message":"not found"}}`}
 		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(rep.status)
-		_, _ = w.Write([]byte(rep.body))
+		_ = json.NewEncoder(w).Encode(json.RawMessage(rep.body))
 	})
 	s.router = r
 	tok, err := signer.Issue("u-1", "f-1", domain.RoleOwner, "", false)

@@ -77,7 +77,7 @@ function renderDialog(expense: Expense | null = null) {
 }
 
 async function pick(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
-  await user.click(screen.getByRole("combobox", { name: new RegExp(label) }));
+  await user.click(screen.getByRole("combobox", { name: (name) => name.includes(label) }));
   await user.click(await screen.findByRole("option", { name: option }));
 }
 

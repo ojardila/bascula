@@ -338,6 +338,8 @@ func TestCpvTenantInfoRefusesWhatTheStackSays(t *testing.T) {
 			http.Error(w, "x", http.StatusInternalServerError)
 			return
 		}
+		// A fake upstream replaying canned bodies, some malformed on purpose; no browser reads it.
+		// nosemgrep: go.lang.security.audit.xss.no-io-writestring-to-responsewriter.no-io-writestring-to-responsewriter
 		_, _ = io.WriteString(w, a)
 	}))
 	defer stack.Close()
@@ -526,6 +528,8 @@ func TestCpvReadClusterBranches(t *testing.T) {
 		case body == "403":
 			http.Error(w, "no", http.StatusForbidden)
 		default:
+			// A fake upstream replaying canned bodies, some malformed on purpose; no browser reads it.
+			// nosemgrep: go.lang.security.audit.xss.no-io-writestring-to-responsewriter.no-io-writestring-to-responsewriter
 			_, _ = io.WriteString(w, body)
 		}
 	}))
@@ -595,6 +599,8 @@ func TestCpvReadPipeline(t *testing.T) {
 			http.Error(w, "rate limited", http.StatusForbidden)
 			return
 		}
+		// A fake upstream replaying canned bodies, some malformed on purpose; no browser reads it.
+		// nosemgrep: go.lang.security.audit.xss.no-io-writestring-to-responsewriter.no-io-writestring-to-responsewriter
 		_, _ = io.WriteString(w, a)
 	}))
 	defer gh.Close()
