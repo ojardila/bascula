@@ -172,7 +172,10 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ inputs.component }}-deps
 
       - if: steps.exists.outputs.hit != 'true'
+        id: build
         name: Build and push
+        # See "Pushed by a parallel run?" below.
+        continue-on-error: ${{ inputs.push }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ steps.key.outputs.context }}
@@ -189,3 +192,21 @@ jobs:
           sbom: false
           # Reads the dependency layer only and exports nothing (see the top).
           cache-from: type=gha,scope=${{ inputs.component }}-deps
+
+      # Two runs can find the same key missing and build it at once (two
+      # merges seconds apart in CD, run 37094113740). The second push then
+      # gets Harbor's 412 on the manifest the first one has just pushed and
+      # not scanned yet. That image was built from the same sources, so it is
+      # the image this run would have pushed: only a key that is still
+      # missing fails the job.
+      - if: steps.build.outcome == 'failure'
+        name: Pushed by a parallel run?
+        env:
+          IMAGE: ${{ steps.key.outputs.image }}
+        run: |
+          if scripts/ci/image-exists.sh "${IMAGE}"; then
+            echo "::warning::build or push failed, but ${IMAGE} is in Harbor (pushed by a parallel run from the same sources)"
+          else
+            echo "::error::build or push failed and ${IMAGE} is not in Harbor"
+            exit 1
+          fi
