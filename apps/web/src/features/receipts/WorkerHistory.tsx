@@ -125,19 +125,19 @@ export function WorkerHistory({
     <List disablePadding data-testid="worker-history">
       {rows.map((r) =>
         r.target ? (
-          <ListItemButton
-            key={r.id}
-            divider
-            sx={{ py: 1.5, px: 1 }}
-            onClick={() =>
-              navigate(
-                `/empleados/${workerId}/historial/${r.target!.kind}/${r.target!.entryId}`,
-              )
-            }
-            aria-label={`Ver ${r.label.toLowerCase()} del ${formatDate(r.date)}`}
-          >
-            <RowBody r={r} />
-          </ListItemButton>
+          <ListItem key={r.id} disablePadding divider>
+            <ListItemButton
+              sx={{ py: 1.5, px: 1 }}
+              onClick={() =>
+                navigate(
+                  `/empleados/${workerId}/historial/${r.target!.kind}/${r.target!.entryId}`,
+                )
+              }
+              aria-label={`Ver ${r.label.toLowerCase()} del ${formatDate(r.date)}`}
+            >
+              <RowBody r={r} />
+            </ListItemButton>
+          </ListItem>
         ) : (
           <ListItem key={r.id} divider sx={{ py: 1.5, px: 1 }}>
             <RowBody r={r} />
