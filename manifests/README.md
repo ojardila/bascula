@@ -232,6 +232,9 @@ API sends:
   which the link is built from; without either, the screen says who to ask.
 - Security notices: the password changed, an assistant (ChatGPT, …) was
   connected, somebody was made owner or administrator (to the other owners).
+- Security alerts to the operator, when `security-alert-to` is set: a burst of
+  refused sign-ins, failing assistant writes, 5xx or OAuth errors
+  ([docs/detections.md](../docs/detections.md)).
 
 Dedicated farm stacks send the last two as well, so each `bascula-<slug>`
 namespace needs its own `bascula-mail` ConfigMap (and Secret, with auth).
@@ -243,6 +246,8 @@ namespace needs its own `bascula-mail` ConfigMap (and Secret, with auth).
 | `SMTP_FROM` | ConfigMap `bascula-mail` `from` | — (required), e.g. `Báscula <no-responder@bascula.engp.io>` |
 | `SMTP_TLS` | ConfigMap `bascula-mail` `tls` | `none` on 25, `starttls` on 587, `tls` on 465 |
 | `SMTP_USER` / `SMTP_PASSWORD` | Secret `bascula-mail` `user` / `password` | none; refused with `SMTP_TLS=none` |
+| `SECURITY_ALERT_EMAIL` | ConfigMap `bascula-mail` `security-alert-to` | none (security alerts off); see [docs/detections.md](../docs/detections.md) |
+| `SECURITY_ALERT_SILENCE_UNTIL` | ConfigMap `bascula-mail` `security-alert-silence-until` | none; RFC 3339, mutes alert mail for a planned drill |
 
 For the in-cluster relay (no auth):
 

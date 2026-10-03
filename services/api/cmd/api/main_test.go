@@ -237,3 +237,49 @@ func TestResolveConfigTrustedProxyCIDRs(t *testing.T) {
 		})
 	}
 }
+
+// Security alerts (issue #312) are on only with an address AND a mailer, an
+// address that is not one refuses to boot, and a stack without mail warns.
+func TestResolveConfigSecurityAlerts(t *testing.T) {
+	base := func() map[string]string {
+		return map[string]string{
+			"UPLOAD_DIR": "/srv/uploads", "JWT_SECRET": strings.Repeat("a", minSecretBytes),
+			"PUBLIC_BASE_URL": "https://bascula.example.com",
+			"SMTP_HOST":       "127.0.0.1", "SMTP_FROM": "bascula@example.com",
+		}
+	}
+	rc, err := resolveConfig(getenvFrom(base()))
+	if err != nil || rc.http.Alerts != nil {
+		t.Fatalf("no address: alerts=%v err=%v", rc.http.Alerts, err)
+	}
+
+	envs := base()
+	envs["SECURITY_ALERT_EMAIL"] = "ops@example.com"
+	rc, err = resolveConfig(getenvFrom(envs))
+	if err != nil || rc.http.Alerts == nil {
+		t.Fatalf("address and mailer: alerts=%v err=%v", rc.http.Alerts, err)
+	}
+	if !strings.Contains(rc.http.Alerts.Describe(), "to=ops@example.com") {
+		t.Errorf("describe: %s", rc.http.Alerts.Describe())
+	}
+
+	envs["SECURITY_ALERT_EMAIL"] = "not an address"
+	if _, err := resolveConfig(getenvFrom(envs)); err == nil {
+		t.Fatal("a bad SECURITY_ALERT_EMAIL must refuse to boot")
+	}
+
+	envs = base()
+	delete(envs, "SMTP_HOST")
+	envs["SECURITY_ALERT_EMAIL"] = "ops@example.com"
+	rc, err = resolveConfig(getenvFrom(envs))
+	if err != nil || rc.http.Alerts != nil {
+		t.Fatalf("no mailer: alerts=%v err=%v", rc.http.Alerts, err)
+	}
+	found := false
+	for _, w := range rc.warnings {
+		found = found || strings.Contains(w, "SECURITY_ALERT_EMAIL")
+	}
+	if !found {
+		t.Errorf("no warning for an address without a mailer: %v", rc.warnings)
+	}
+}

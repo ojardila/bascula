@@ -236,6 +236,25 @@ spec:
                   name: bascula-mail
                   key: password
                   optional: true
+            # Security alerts (issue #312, docs/detections.md): one email to the
+            # operator when a security signal crosses its threshold, through the
+            # mailer above. Off unless the key exists; bascula-mail is cloned into
+            # every Bascula namespace from bascula-shared (gitops repo), so one
+            # address there covers prod, dev and every farm stack.
+            - name: SECURITY_ALERT_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: security-alert-to
+                  optional: true
+            # A planned drill: RFC 3339 instant until which alerts are logged
+            # but not mailed. Read at boot (rollout restart after setting it).
+            - name: SECURITY_ALERT_SILENCE_UNTIL
+              valueFrom:
+                configMapKeyRef:
+                  name: bascula-mail
+                  key: security-alert-silence-until
+                  optional: true
           volumeMounts:
             - name: uploads
               mountPath: /srv/uploads

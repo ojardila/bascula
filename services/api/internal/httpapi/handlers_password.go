@@ -383,6 +383,7 @@ func (s *Server) checkCurrentPassword(w http.ResponseWriter, r *http.Request, tx
 		return false, false
 	}
 	if byPair >= s.cfg.LoginFailuresPerEmailPerIP || byIP >= s.cfg.LoginFailuresPerIP {
+		s.loginRefused(ip, email, "current-password")
 		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
 			"too many failed attempts; try again later"))
 		return false, false
@@ -400,6 +401,7 @@ func (s *Server) checkCurrentPassword(w http.ResponseWriter, r *http.Request, tx
 	if ok, err := auth.VerifyPassword(password, current); err != nil || !ok {
 		// The failure is kept although the answer is an error; nothing else
 		// has been written yet. See refuse in handleLogin.
+		s.loginRefused(ip, email, "current-password")
 		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
 			writeError(w, r, domain.Internal("could not record the failed attempt").WithCause(err))
 			return false, false

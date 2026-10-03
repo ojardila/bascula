@@ -29,6 +29,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/httpapi"
 	"github.com/ojardila/bascula/services/api/internal/kube"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
+	"github.com/ojardila/bascula/services/api/internal/secalert"
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
@@ -160,6 +161,9 @@ func run(migrateOnly, pruneOnly bool) error {
 	api := httpapi.New(pool, auth.NewSigner(rc.secret, "bascula"), cfg)
 	if rc.mail != "" {
 		slog.Info("mail on", "relay", rc.mail)
+		if cfg.Alerts != nil {
+			slog.Info("security alerts on", "alerts", cfg.Alerts.Describe())
+		}
 		api.ResumeReadyEmails(ctx)
 	}
 	if cfg.TenantSlug != "" {
@@ -382,6 +386,19 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 		// password and get security notices there. The ready notice stays
 		// the platform's (readyEmailAvailable).
 	}
+	// Security alerts (issue #312): an email to the operator when a signal
+	// crosses its threshold, through the mailer above. Off unless
+	// SECURITY_ALERT_EMAIL is set and mail is on.
+	stack := rc.http.TenantSlug
+	if stack == "" {
+		stack = strings.TrimPrefix(strings.TrimPrefix(rc.http.PublicBaseURL, "https://"), "http://")
+	}
+	alerts, alertWarnings, err := secalert.FromEnv(getenv, rc.http.Mailer, stack)
+	if err != nil {
+		return resolved{}, err
+	}
+	rc.warnings = append(rc.warnings, alertWarnings...)
+	rc.http.Alerts = alerts
 	// Only the platform reads the cluster (read-only) for provisioning
 	// progress; a farm's own stack has no business there.
 	if rc.http.TenantSlug == "" {
