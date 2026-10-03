@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -184,45 +185,10 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, r, domain.BadRequest("name is required"))
-		return
-	}
-	// Like signup: these leave the service in the provision-tenant dispatch.
-	if err := validFarmName("name", req.Name); err != nil {
+	email, err := adminFarmCheckRequest(&req)
+	if err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if req.PriceCents <= 0 {
-		writeError(w, r, domain.BadRequest("priceCents must be positive"))
-		return
-	}
-	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
-	if email == "" || !strings.Contains(email, "@") {
-		writeError(w, r, domain.BadRequest("owner.email is required"))
-		return
-	}
-	if err := validEmail("owner.email", email); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if req.Owner.Password != "" && len(req.Owner.Password) < 10 {
-		writeError(w, r, domain.BadRequest("password must be at least 10 characters"))
-		return
-	}
-	if len(req.Owner.Password) > auth.MaxPasswordLength {
-		writeError(w, r, domain.BadRequest("password is too long"))
-		return
-	}
-	if req.Timezone == "" {
-		req.Timezone = "America/Bogota"
-	}
-	if req.Currency == "" {
-		req.Currency = "COP"
 	}
 
 	tx, err := tenant.Tx(r.Context())
@@ -230,64 +196,19 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	ok, err := store.IsKnownTimezone(r.Context(), tx, req.Timezone)
+	if err := adminFarmCheckTimezone(r.Context(), tx, req.Timezone); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	if req.ID != "" && adminFarmReplay(w, r, tx, req.ID) {
+		return
+	}
+
+	user, ownerCreated, temporary, err := adminFarmOwner(r, tx, email, &req)
 	if err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if !ok {
-		writeError(w, r, domain.BadRequest(msgInvalidTimezone))
-		return
-	}
-
-	if req.ID != "" {
-		if existing, err := store.GetAdminFarm(r.Context(), tx, req.ID); err == nil {
-			writeJSON(w, http.StatusOK, existing)
-			return
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, r, err)
-			return
-		}
-	}
-
-	user, err := store.FindUserByEmail(r.Context(), tx, email)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, r, err)
-		return
-	}
-
-	ownerCreated := false
-	var temporary string
-	if user == nil {
-		temporary = req.Owner.Password
-		if temporary == "" {
-			temporary, err = newTemporaryPassword()
-			if err != nil {
-				writeError(w, r, domain.Internal("could not mint a password").WithCause(err))
-				return
-			}
-		}
-		hash, hashErr := auth.HashPassword(temporary)
-		if hashErr != nil {
-			writeError(w, r, domain.Internal("could not hash the password").WithCause(hashErr))
-			return
-		}
-		name := strings.TrimSpace(req.Owner.Name)
-		user = &store.User{ID: newID(), Email: email, Name: name, PasswordHash: hash}
-		if err := store.CreateUser(r.Context(), tx, *user); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		ownerCreated = true
-	} else if user.EmailVerifiedAt == nil {
-		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
-			writeError(w, r, err)
-			return
-		}
 	}
 
 	farmID := req.ID
@@ -299,24 +220,7 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if err := createFarmRecord(ctx, tx, &store.NewFarm{
-		ID: farmID, Name: req.Name, Timezone: req.Timezone,
-		Currency: req.Currency, PriceMinor: req.PriceCents,
-		PriceConfirmed: true, // required and chosen by the caller
-	}, req.Slug); err != nil {
-		if store.IsUniqueViolation(err, "") {
-			writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
-				"that id is already in use"))
-			return
-		}
-		writeError(w, r, err)
-		return
-	}
-	if err := store.CreateMembership(ctx, tx, farmID, user.ID, domain.RoleOwner); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := seedFarm(ctx, tx, farmID, req.PriceCents); err != nil {
+	if err := adminFarmCreate(ctx, tx, farmID, user.ID, &req); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -344,6 +248,139 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		out["temporaryPasswordNote"] = "shown once: hand it over now, it cannot be read again"
 	}
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// adminFarmCheckRequest validates the operator's request, fills the default
+// timezone and currency, and returns the owner's normalized email.
+func adminFarmCheckRequest(req *adminCreateFarmRequest) (string, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		return "", domain.BadRequest("name is required")
+	}
+	// Like signup: these leave the service in the provision-tenant dispatch.
+	if err := validFarmName("name", req.Name); err != nil {
+		return "", err
+	}
+	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
+		return "", err
+	}
+	if req.PriceCents <= 0 {
+		return "", domain.BadRequest("priceCents must be positive")
+	}
+	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		return "", domain.BadRequest("owner.email is required")
+	}
+	if err := validEmail("owner.email", email); err != nil {
+		return "", err
+	}
+	if req.Owner.Password != "" && len(req.Owner.Password) < 10 {
+		return "", domain.BadRequest("password must be at least 10 characters")
+	}
+	if len(req.Owner.Password) > auth.MaxPasswordLength {
+		return "", domain.BadRequest("password is too long")
+	}
+	if req.Timezone == "" {
+		req.Timezone = "America/Bogota"
+	}
+	if req.Currency == "" {
+		req.Currency = "COP"
+	}
+	return email, nil
+}
+
+// adminFarmReplay answers a retried request whose farm id already exists
+// with that farm. It returns true when it has answered.
+func adminFarmReplay(w http.ResponseWriter, r *http.Request, tx pgx.Tx, id string) bool {
+	existing, err := store.GetAdminFarm(r.Context(), tx, id)
+	if err == nil {
+		writeJSON(w, http.StatusOK, existing)
+		return true
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, r, err)
+		return true
+	}
+	return false
+}
+
+// adminFarmOwner finds the owner's account, verifying its address, or creates
+// it verified with the caller's password or a minted one. temporary is the
+// new account's password; created says whether the account is new.
+func adminFarmOwner(r *http.Request, tx pgx.Tx, email string, req *adminCreateFarmRequest) (user *store.User, created bool, temporary string, err error) {
+	user, err = store.FindUserByEmail(r.Context(), tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, "", err
+	}
+	if user != nil {
+		if user.EmailVerifiedAt == nil {
+			if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+				return nil, false, "", err
+			}
+		}
+		return user, false, "", nil
+	}
+	user, temporary, err = adminFarmNewOwner(r, tx, email, req)
+	if err != nil {
+		return nil, false, "", err
+	}
+	return user, true, temporary, nil
+}
+
+// adminFarmNewOwner creates the owner's account, verified, with the caller's
+// password or a minted one, and returns it with that password.
+func adminFarmNewOwner(r *http.Request, tx pgx.Tx, email string, req *adminCreateFarmRequest) (*store.User, string, error) {
+	var err error
+	temporary := req.Owner.Password
+	if temporary == "" {
+		temporary, err = newTemporaryPassword()
+		if err != nil {
+			return nil, "", domain.Internal("could not mint a password").WithCause(err)
+		}
+	}
+	hash, hashErr := auth.HashPassword(temporary)
+	if hashErr != nil {
+		return nil, "", domain.Internal("could not hash the password").WithCause(hashErr)
+	}
+	name := strings.TrimSpace(req.Owner.Name)
+	user := &store.User{ID: newID(), Email: email, Name: name, PasswordHash: hash}
+	if err := store.CreateUser(r.Context(), tx, *user); err != nil {
+		return nil, "", err
+	}
+	if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+		return nil, "", err
+	}
+	return user, temporary, nil
+}
+
+// adminFarmCheckTimezone refuses a timezone the database does not know.
+func adminFarmCheckTimezone(ctx context.Context, tx pgx.Tx, tz string) error {
+	ok, err := store.IsKnownTimezone(ctx, tx, tz)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.BadRequest(msgInvalidTimezone)
+	}
+	return nil
+}
+
+// adminFarmCreate writes the farm, its owner's membership and its seed data.
+func adminFarmCreate(ctx context.Context, tx pgx.Tx, farmID, userID string, req *adminCreateFarmRequest) error {
+	if err := createFarmRecord(ctx, tx, &store.NewFarm{
+		ID: farmID, Name: req.Name, Timezone: req.Timezone,
+		Currency: req.Currency, PriceMinor: req.PriceCents,
+		PriceConfirmed: true, // required and chosen by the caller
+	}, req.Slug); err != nil {
+		if store.IsUniqueViolation(err, "") {
+			return domain.Conflict(domain.CodeIdempotencyKeyReused,
+				"that id is already in use")
+		}
+		return err
+	}
+	if err := store.CreateMembership(ctx, tx, farmID, userID, domain.RoleOwner); err != nil {
+		return err
+	}
+	return seedFarm(ctx, tx, farmID, req.PriceCents)
 }
 
 // handleSetFarmStatus suspends a farm or brings it back.

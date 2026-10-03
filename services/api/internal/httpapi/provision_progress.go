@@ -109,6 +109,28 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 	defer cancel()
 	ns := farmNamespacePrefix + slug
 
+	readable, active := provReadNamespace(ctx, c, ns)
+	if !readable {
+		return v
+	}
+	v.Readable = true
+	v.Namespace = active
+
+	v.AppExists, v.AppSynced = s.provReadArgoApp(ctx, c, slug)
+	if !v.Namespace {
+		return v
+	}
+
+	v.Database = provReadDatabase(ctx, c, ns)
+	v.Migrations = provReadMigrations(ctx, c, ns)
+	v.Pods = provDeploymentReady(ctx, c, ns, "bascula-api") && provDeploymentReady(ctx, c, ns, "bascula-web")
+	v.Route = provReadRoute(ctx, c, ns)
+	return v
+}
+
+// provReadNamespace reports whether the farm namespace could be read (it
+// exists or is known not to) and whether it is Active.
+func provReadNamespace(ctx context.Context, c *kube.Client, ns string) (readable, active bool) {
 	var nsObj struct {
 		Status struct {
 			Phase string `json:"phase"`
@@ -116,14 +138,17 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 	}
 	switch err := c.Get(ctx, "/api/v1/namespaces/"+ns, &nsObj); {
 	case err == nil:
-		v.Readable = true
-		v.Namespace = nsObj.Status.Phase == "Active"
+		return true, nsObj.Status.Phase == "Active"
 	case errors.Is(err, kube.ErrNotFound):
-		v.Readable = true
+		return true, false
 	default:
-		return v
+		return false, false
 	}
+}
 
+// provReadArgoApp reports whether the farm's Argo CD Application exists and
+// whether it has synced.
+func (s *Server) provReadArgoApp(ctx context.Context, c *kube.Client, slug string) (exists, synced bool) {
 	var app struct {
 		Status struct {
 			Sync struct {
@@ -134,14 +159,15 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 			} `json:"operationState"`
 		} `json:"status"`
 	}
-	if err := c.Get(ctx, "/apis/argoproj.io/v1alpha1/namespaces/"+s.argoNamespace()+"/applications/bascula-"+slug, &app); err == nil {
-		v.AppExists = true
-		v.AppSynced = app.Status.Sync.Status == "Synced" || app.Status.OperationState.Phase == "Succeeded"
+	if err := c.Get(ctx, "/apis/argoproj.io/v1alpha1/namespaces/"+s.argoNamespace()+"/applications/bascula-"+slug, &app); err != nil {
+		return false, false
 	}
-	if !v.Namespace {
-		return v
-	}
+	return true, app.Status.Sync.Status == "Synced" || app.Status.OperationState.Phase == "Succeeded"
+}
 
+// provReadDatabase reports whether the CNPG cluster has all its instances
+// ready.
+func provReadDatabase(ctx context.Context, c *kube.Client, ns string) bool {
 	var db struct {
 		Spec struct {
 			Instances int `json:"instances"`
@@ -150,39 +176,49 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 			ReadyInstances int `json:"readyInstances"`
 		} `json:"status"`
 	}
-	if err := c.Get(ctx, "/apis/postgresql.cnpg.io/v1/namespaces/"+ns+"/clusters/bascula-db", &db); err == nil {
-		v.Database = db.Spec.Instances > 0 && db.Status.ReadyInstances >= db.Spec.Instances
+	if err := c.Get(ctx, "/apis/postgresql.cnpg.io/v1/namespaces/"+ns+"/clusters/bascula-db", &db); err != nil {
+		return false
 	}
+	return db.Spec.Instances > 0 && db.Status.ReadyInstances >= db.Spec.Instances
+}
 
+// provReadMigrations reports whether the migrate Job succeeded.
+func provReadMigrations(ctx context.Context, c *kube.Client, ns string) bool {
 	var job struct {
 		Status struct {
 			Succeeded int `json:"succeeded"`
 		} `json:"status"`
 	}
-	if err := c.Get(ctx, "/apis/batch/v1/namespaces/"+ns+"/jobs/bascula-migrate", &job); err == nil {
-		v.Migrations = job.Status.Succeeded > 0
+	if err := c.Get(ctx, "/apis/batch/v1/namespaces/"+ns+"/jobs/bascula-migrate", &job); err != nil {
+		return false
 	}
+	return job.Status.Succeeded > 0
+}
 
-	ready := func(name string) bool {
-		var d struct {
-			Spec struct {
-				Replicas *int `json:"replicas"`
-			} `json:"spec"`
-			Status struct {
-				ReadyReplicas int `json:"readyReplicas"`
-			} `json:"status"`
-		}
-		if err := c.Get(ctx, "/apis/apps/v1/namespaces/"+ns+"/deployments/"+name, &d); err != nil {
-			return false
-		}
-		want := 1
-		if d.Spec.Replicas != nil {
-			want = *d.Spec.Replicas
-		}
-		return want > 0 && d.Status.ReadyReplicas >= want
+// provDeploymentReady reports whether the Deployment has all its replicas
+// (one when unset) ready.
+func provDeploymentReady(ctx context.Context, c *kube.Client, ns, name string) bool {
+	var d struct {
+		Spec struct {
+			Replicas *int `json:"replicas"`
+		} `json:"spec"`
+		Status struct {
+			ReadyReplicas int `json:"readyReplicas"`
+		} `json:"status"`
 	}
-	v.Pods = ready("bascula-api") && ready("bascula-web")
+	if err := c.Get(ctx, "/apis/apps/v1/namespaces/"+ns+"/deployments/"+name, &d); err != nil {
+		return false
+	}
+	want := 1
+	if d.Spec.Replicas != nil {
+		want = *d.Spec.Replicas
+	}
+	return want > 0 && d.Status.ReadyReplicas >= want
+}
 
+// provReadRoute reports whether the HTTPRoute was accepted by a parent and
+// both Services it points at exist.
+func provReadRoute(ctx context.Context, c *kube.Client, ns string) bool {
 	var route struct {
 		Status struct {
 			Parents []struct {
@@ -193,24 +229,28 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 			} `json:"parents"`
 		} `json:"status"`
 	}
-	if err := c.Get(ctx, "/apis/gateway.networking.k8s.io/v1/namespaces/"+ns+"/httproutes/bascula", &route); err == nil {
-		for _, p := range route.Status.Parents {
-			for _, cond := range p.Conditions {
-				if cond.Type == "Accepted" && cond.Status == "True" {
-					v.Route = true
-				}
+	if err := c.Get(ctx, "/apis/gateway.networking.k8s.io/v1/namespaces/"+ns+"/httproutes/bascula", &route); err != nil {
+		return false
+	}
+	accepted := false
+	for _, p := range route.Status.Parents {
+		for _, cond := range p.Conditions {
+			if cond.Type == "Accepted" && cond.Status == "True" {
+				accepted = true
 			}
 		}
 	}
-	if v.Route {
-		var svc struct{}
-		for _, name := range []string{"bascula-api", "bascula-web"} {
-			if err := c.Get(ctx, "/api/v1/namespaces/"+ns+"/services/"+name, &svc); err != nil {
-				v.Route = false
-			}
+	if !accepted {
+		return false
+	}
+	ok := true
+	var svc struct{}
+	for _, name := range []string{"bascula-api", "bascula-web"} {
+		if err := c.Get(ctx, "/api/v1/namespaces/"+ns+"/services/"+name, &svc); err != nil {
+			ok = false
 		}
 	}
-	return v
+	return ok
 }
 
 // pipelineView is the provision-tenant workflow run for the farm.
@@ -309,40 +349,7 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 	defs := sharedStages
 	if st.Dedicated {
 		defs = dedicatedStages
-		cv := s.readCluster(ctx, slug)
-		// GitHub is asked only until the pipeline is known to be done.
-		var pv pipelineView
-		if !s.stageSeen(slug, "pipeline_done") {
-			pv = s.readPipeline(ctx, slug, createdAt)
-		}
-		done["pipeline_started"] = pv.Started
-		done["pipeline_done"] = pv.Done
-		done["app"] = app
-		if cv.Readable {
-			st.Source = "cluster"
-			done["deployment"] = cv.AppSynced
-			done["namespace"] = cv.Namespace
-			done["database"] = cv.Database
-			done["migrations"] = cv.Migrations
-			done["pods"] = cv.Pods
-			done["route"] = cv.Route
-			if cv.AppExists {
-				done["pipeline_started"], done["pipeline_done"] = true, true
-			}
-		} else {
-			// Fallback: the stack's own answer covers the database; the
-			// app answering means migrations ran and its pods are up.
-			st.Note = noteNoCluster
-			st.Source = "basic"
-			if pv.Known {
-				st.Source = "pipeline"
-			}
-			done["database"] = database
-			done["migrations"] = app
-			done["pods"] = app
-			done["route"] = app && web
-		}
-		done["site"] = web && certificate && done["route"] && done["pods"]
+		s.provDedicatedSignals(ctx, st, createdAt, done, database, app, certificate, web)
 	} else {
 		st.Source = "basic"
 		done["site"] = web && certificate
@@ -356,14 +363,7 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 
 	// A later link of the chain implies every earlier one.
 	if st.Dedicated {
-		for i := chainLen - 1; i > 0; i-- {
-			if done[defs[i].key] {
-				for j := 0; j < i; j++ {
-					done[defs[j].key] = true
-				}
-				break
-			}
-		}
+		provChainImplies(defs, done)
 	}
 
 	now := time.Now()
@@ -373,47 +373,8 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 		mem = &stageMemory{doneAt: map[string]time.Time{}}
 		s.prov.stages[slug] = mem
 	}
-	var newly []string
-	for _, d := range defs {
-		if done[d.key] {
-			if _, seen := mem.doneAt[d.key]; !seen {
-				mem.doneAt[d.key] = now
-				newly = append(newly, d.key)
-			}
-		} else if _, seen := mem.doneAt[d.key]; seen {
-			done[d.key] = true // never go back
-		}
-	}
-	percent := 0
-	st.Stages = make([]provisionStage, 0, len(defs))
-	active := false
-	for _, d := range defs {
-		ps := provisionStage{Key: d.key, Label: d.label, Weight: d.weight, State: "pending"}
-		if done[d.key] {
-			ps.State = "done"
-			percent += d.weight
-			secs := int64(mem.doneAt[d.key].Sub(createdAt).Seconds())
-			if secs < 0 {
-				secs = 0
-			}
-			ps.DoneAfterSeconds = &secs
-		} else if !active {
-			ps.State = "active"
-			active = true
-			st.Current = d.doing
-		}
-		st.Stages = append(st.Stages, ps)
-	}
-	if !st.Ready && percent >= 100 {
-		percent = 99 // everything seen but the gate says no: never claim 100
-		if st.Current == "" {
-			st.Current = "Estamos haciendo la última comprobación de seguridad."
-		}
-	}
-	if percent < mem.percent {
-		percent = mem.percent
-	}
-	mem.percent = percent
+	newly := provRememberDone(mem, defs, done, now)
+	percent := provCapPercent(st, mem, provBuildStages(st, mem, defs, done, createdAt))
 	s.prov.mu.Unlock()
 	st.Percent = percent
 	if st.Ready {
@@ -424,6 +385,120 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 		slog.Info("provision stage done", "slug", logsafe.Str(slug), "stage", k,
 			"afterSeconds", int64(now.Sub(createdAt).Seconds()))
 	}
+}
+
+// provDedicatedSignals fills done for a dedicated farm stack from the
+// cluster, or, when it cannot be read, from GitHub Actions and the stack's
+// own answer. It sets st.Source (and st.Note on the fallback).
+func (s *Server) provDedicatedSignals(ctx context.Context, st *provisionStatus, createdAt time.Time,
+	done map[string]bool, database, app, certificate, web bool) {
+	slug := st.Slug
+	cv := s.readCluster(ctx, slug)
+	// GitHub is asked only until the pipeline is known to be done.
+	var pv pipelineView
+	if !s.stageSeen(slug, "pipeline_done") {
+		pv = s.readPipeline(ctx, slug, createdAt)
+	}
+	done["pipeline_started"] = pv.Started
+	done["pipeline_done"] = pv.Done
+	done["app"] = app
+	if cv.Readable {
+		st.Source = "cluster"
+		done["deployment"] = cv.AppSynced
+		done["namespace"] = cv.Namespace
+		done["database"] = cv.Database
+		done["migrations"] = cv.Migrations
+		done["pods"] = cv.Pods
+		done["route"] = cv.Route
+		if cv.AppExists {
+			done["pipeline_started"], done["pipeline_done"] = true, true
+		}
+	} else {
+		// Fallback: the stack's own answer covers the database; the
+		// app answering means migrations ran and its pods are up.
+		st.Note = noteNoCluster
+		st.Source = "basic"
+		if pv.Known {
+			st.Source = "pipeline"
+		}
+		done["database"] = database
+		done["migrations"] = app
+		done["pods"] = app
+		done["route"] = app && web
+	}
+	done["site"] = web && certificate && done["route"] && done["pods"]
+}
+
+// provChainImplies marks done every chain stage before the latest one seen
+// done.
+func provChainImplies(defs []stageDef, done map[string]bool) {
+	for i := chainLen - 1; i > 0; i-- {
+		if !done[defs[i].key] {
+			continue
+		}
+		for j := 0; j < i; j++ {
+			done[defs[j].key] = true
+		}
+		return
+	}
+}
+
+// provRememberDone records when each stage was first seen done and keeps
+// done every stage seen before (never go back). It returns the stages newly
+// done. The caller holds s.prov.mu.
+func provRememberDone(mem *stageMemory, defs []stageDef, done map[string]bool, now time.Time) []string {
+	var newly []string
+	for _, d := range defs {
+		_, seen := mem.doneAt[d.key]
+		switch {
+		case done[d.key] && !seen:
+			mem.doneAt[d.key] = now
+			newly = append(newly, d.key)
+		case !done[d.key] && seen:
+			done[d.key] = true // never go back
+		}
+	}
+	return newly
+}
+
+// provCapPercent keeps the percentage below 100 until the gate says ready,
+// and never lower than it was shown before; it remembers the result. The
+// caller holds s.prov.mu.
+func provCapPercent(st *provisionStatus, mem *stageMemory, percent int) int {
+	if !st.Ready && percent >= 100 {
+		percent = 99 // everything seen but the gate says no: never claim 100
+		if st.Current == "" {
+			st.Current = "Estamos haciendo la última comprobación de seguridad."
+		}
+	}
+	if percent < mem.percent {
+		percent = mem.percent
+	}
+	mem.percent = percent
+	return percent
+}
+
+// provBuildStages fills st.Stages and st.Current (the first stage not done)
+// and returns the done weight. The caller holds s.prov.mu.
+func provBuildStages(st *provisionStatus, mem *stageMemory, defs []stageDef, done map[string]bool, createdAt time.Time) int {
+	percent := 0
+	st.Stages = make([]provisionStage, 0, len(defs))
+	active := false
+	for _, d := range defs {
+		ps := provisionStage{Key: d.key, Label: d.label, Weight: d.weight, State: "pending"}
+		if done[d.key] {
+			ps.State = "done"
+			percent += d.weight
+			secs := max(int64(mem.doneAt[d.key].Sub(createdAt).Seconds()), 0)
+			ps.DoneAfterSeconds = &secs
+		} else if !active {
+			ps.State = "active"
+			active = true
+			st.Current = d.doing
+		}
+		st.Stages = append(st.Stages, ps)
+	}
+	return percent
 }
 
 // reconcileFarmHostnames makes sure every dedicated farm namespace

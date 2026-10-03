@@ -600,19 +600,22 @@ func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, p *auth.Principal
 	return applied(op.OpID, e.ID, created)
 }
 
+// pushWorkRecordPayload is a work record as the phone pushes it.
+type pushWorkRecordPayload struct {
+	ID         string      `json:"id"`
+	WorkerID   string      `json:"workerId"`
+	CropID     string      `json:"cropId"`
+	Quantity   json.Number `json:"quantity"`
+	OccurredAt string      `json:"occurredAt"`
+	Note       *string     `json:"note"`
+	DeviceID   *string     `json:"deviceId"`
+	DeletedAt  *string     `json:"deletedAt"`
+}
+
 func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 	p *auth.Principal, op pushOp) store.SyncOpResult {
 
-	var payload struct {
-		ID         string      `json:"id"`
-		WorkerID   string      `json:"workerId"`
-		CropID     string      `json:"cropId"`
-		Quantity   json.Number `json:"quantity"`
-		OccurredAt string      `json:"occurredAt"`
-		Note       *string     `json:"note"`
-		DeviceID   *string     `json:"deviceId"`
-		DeletedAt  *string     `json:"deletedAt"`
-	}
+	var payload pushWorkRecordPayload
 	if err := decodePayload(op.Payload, &payload); err != nil {
 		return rejected(op.OpID, err)
 	}
@@ -620,79 +623,23 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 		return rejected(op.OpID, domain.BadRequest("a work record needs id and workerId"))
 	}
 
-	// Already here: layer 1 did its job, and this is a resend after a lost
-	// response. The one thing it must not do is create a second weighing —
-	// and it cannot, because a retry cannot invent a second uuid: the uuid was
-	// generated when the button was pressed, not when the request was sent.
-	if existing, err := store.GetWorkRecord(ctx, tx, payload.ID); err == nil {
-		if payload.DeletedAt != nil && existing.DeletedAt == nil {
-			if err := store.SoftDeleteWorkRecord(ctx, tx, payload.ID); err != nil {
-				return rejected(op.OpID, err)
-			}
-			return applied(op.OpID, payload.ID, true)
-		}
-		return duplicate(op.OpID, payload.ID)
+	if res, done := pushWorkRecordSeen(ctx, tx, op, &payload); done {
+		return res
 	}
 
-	// A deletion of something that never arrived. Nothing to do and nothing
-	// wrong: the row and its own deletion crossed in one batch.
-	if payload.DeletedAt != nil {
-		return duplicate(op.OpID, payload.ID)
-	}
-
-	// §5.6 and the receiving order of 2026-08-29. A worker who was deactivated
-	// on the web still resolves — the delete is logical, the composite foreign
-	// key holds, and the weighing goes in. A worker who is ABSENT is a
-	// different thing: it is an incomplete pull, not a conflict, and the phone
-	// retries once the references have come down.
-	if _, err := store.GetEmployee(ctx, tx, payload.WorkerID); err != nil {
-		return rejected(op.OpID, domain.NotFound(
-			"that worker is not on this farm yet; pull the references first"))
-	}
-
-	if payload.OccurredAt == "" {
-		return rejected(op.OpID, domain.BadRequest(
-			"occurredAt is required: the instant travels with its offset, never a bare day"))
-	}
-	// §3.2. The instant travels; the farm's calendar day is written by the
-	// trigger from the farm's own timezone, and Go never computes it. That
-	// agreement is what makes golden case 04 — the Sunday evening weighing —
-	// come out the same on both sides.
-	occurred, err := time.Parse(time.RFC3339, payload.OccurredAt)
-	if err != nil {
-		return rejected(op.OpID, domain.BadRequest(
-			"occurredAt must be an RFC3339 instant with its offset"))
-	}
-	qty, ok := new(big.Rat).SetString(payload.Quantity.String())
-	if !ok || qty.Sign() <= 0 {
-		return rejected(op.OpID, domain.BadRequest("quantity must be a positive number"))
-	}
-	// numeric(12, 3), and the push is the door the scale actually arrives
-	// through: a handset that lets somebody type a fourth decimal place would
-	// otherwise have it rounded here, silently, into a different weight and a
-	// different amount than the phone computed. BAD_REQUEST is §4.3's "never
-	// retry — it is a client bug", which is exactly what it is.
-	if err := domain.CheckNumeric("quantity", payload.Quantity.String(),
-		domain.QuantityPrecision, domain.QuantityScale); err != nil {
-		return rejected(op.OpID, err)
-	}
-
-	activityID, err := store.HarvestActivityID(ctx, tx)
-	if err != nil {
-		return rejected(op.OpID, err)
-	}
-	activity, err := store.GetActivity(ctx, tx, activityID)
+	occurred, err := pushWorkRecordCheck(ctx, tx, &payload)
 	if err != nil {
 		return rejected(op.OpID, err)
 	}
 
-	var cropIDs []string
-	if payload.CropID != "" {
-		if _, err := store.GetPlotCrop(ctx, tx, payload.CropID); err != nil {
-			return rejected(op.OpID, domain.NotFound(
-				"that crop is not on this farm yet; pull the references first"))
-		}
-		cropIDs = []string{payload.CropID}
+	activity, err := pushWorkRecordHarvest(ctx, tx)
+	if err != nil {
+		return rejected(op.OpID, err)
+	}
+
+	cropIDs, err := pushWorkRecordCrops(ctx, tx, payload.CropID)
+	if err != nil {
+		return rejected(op.OpID, err)
 	}
 
 	device := payload.DeviceID
@@ -704,9 +651,7 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 		PayScheme: activity.PayScheme, RateSource: domain.RateWeeklyPrice,
 		Quantity: payload.Quantity, UnitID: activity.UnitID, Note: payload.Note,
 		DeviceID: device, StartedAt: occurred, PlotCropIDs: cropIDs,
-	}
-	if p != nil && p.UserID != "" {
-		record.CreatedBy = &p.UserID
+		CreatedBy: pushWorkRecordCreatedBy(p),
 	}
 	out, err := store.CreateWorkRecord(ctx, tx, farmID, record)
 	if err != nil {
@@ -738,6 +683,106 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 		return rejected(op.OpID, err)
 	}
 	return applied(op.OpID, out.ID, true)
+}
+
+// pushWorkRecordSeen answers a work record that is already here, or the
+// deletion of one that never arrived. done is false when the record is new
+// and must be created.
+func pushWorkRecordSeen(ctx context.Context, tx pgx.Tx, op pushOp, payload *pushWorkRecordPayload) (res store.SyncOpResult, done bool) {
+	// Already here: layer 1 did its job, and this is a resend after a lost
+	// response. The one thing it must not do is create a second weighing —
+	// and it cannot, because a retry cannot invent a second uuid: the uuid was
+	// generated when the button was pressed, not when the request was sent.
+	if existing, err := store.GetWorkRecord(ctx, tx, payload.ID); err == nil {
+		if payload.DeletedAt != nil && existing.DeletedAt == nil {
+			if err := store.SoftDeleteWorkRecord(ctx, tx, payload.ID); err != nil {
+				return rejected(op.OpID, err), true
+			}
+			return applied(op.OpID, payload.ID, true), true
+		}
+		return duplicate(op.OpID, payload.ID), true
+	}
+
+	// A deletion of something that never arrived. Nothing to do and nothing
+	// wrong: the row and its own deletion crossed in one batch.
+	if payload.DeletedAt != nil {
+		return duplicate(op.OpID, payload.ID), true
+	}
+	return store.SyncOpResult{}, false
+}
+
+// pushWorkRecordCheck validates a new work record's worker, instant and
+// quantity, and returns the instant it happened.
+func pushWorkRecordCheck(ctx context.Context, tx pgx.Tx, payload *pushWorkRecordPayload) (time.Time, error) {
+	// §5.6 and the receiving order of 2026-08-29. A worker who was deactivated
+	// on the web still resolves — the delete is logical, the composite foreign
+	// key holds, and the weighing goes in. A worker who is ABSENT is a
+	// different thing: it is an incomplete pull, not a conflict, and the phone
+	// retries once the references have come down.
+	if _, err := store.GetEmployee(ctx, tx, payload.WorkerID); err != nil {
+		return time.Time{}, domain.NotFound(
+			"that worker is not on this farm yet; pull the references first")
+	}
+
+	if payload.OccurredAt == "" {
+		return time.Time{}, domain.BadRequest(
+			"occurredAt is required: the instant travels with its offset, never a bare day")
+	}
+	// §3.2. The instant travels; the farm's calendar day is written by the
+	// trigger from the farm's own timezone, and Go never computes it. That
+	// agreement is what makes golden case 04 — the Sunday evening weighing —
+	// come out the same on both sides.
+	occurred, err := time.Parse(time.RFC3339, payload.OccurredAt)
+	if err != nil {
+		return time.Time{}, domain.BadRequest(
+			"occurredAt must be an RFC3339 instant with its offset")
+	}
+	qty, ok := new(big.Rat).SetString(payload.Quantity.String())
+	if !ok || qty.Sign() <= 0 {
+		return time.Time{}, domain.BadRequest("quantity must be a positive number")
+	}
+	// numeric(12, 3), and the push is the door the scale actually arrives
+	// through: a handset that lets somebody type a fourth decimal place would
+	// otherwise have it rounded here, silently, into a different weight and a
+	// different amount than the phone computed. BAD_REQUEST is §4.3's "never
+	// retry — it is a client bug", which is exactly what it is.
+	if err := domain.CheckNumeric("quantity", payload.Quantity.String(),
+		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		return time.Time{}, err
+	}
+	return occurred, nil
+}
+
+// pushWorkRecordCreatedBy is the pushing user, or nil when the principal
+// names none.
+func pushWorkRecordCreatedBy(p *auth.Principal) *string {
+	if p != nil && p.UserID != "" {
+		return &p.UserID
+	}
+	return nil
+}
+
+// pushWorkRecordHarvest is the farm's harvest activity, which every pushed
+// work record is recorded against.
+func pushWorkRecordHarvest(ctx context.Context, tx pgx.Tx) (*store.Activity, error) {
+	activityID, err := store.HarvestActivityID(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return store.GetActivity(ctx, tx, activityID)
+}
+
+// pushWorkRecordCrops resolves the record's crop, which must already be on
+// the farm. No crop is no crop list.
+func pushWorkRecordCrops(ctx context.Context, tx pgx.Tx, cropID string) ([]string, error) {
+	if cropID == "" {
+		return nil, nil
+	}
+	if _, err := store.GetPlotCrop(ctx, tx, cropID); err != nil {
+		return nil, domain.NotFound(
+			"that crop is not on this farm yet; pull the references first")
+	}
+	return []string{cropID}, nil
 }
 
 // pushLedgerKindRefusal admits the kinds a handset may push.

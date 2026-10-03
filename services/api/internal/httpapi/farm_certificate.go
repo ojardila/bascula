@@ -107,77 +107,118 @@ func (s *Server) ensureFarmCertificate(slug string) {
 	if c == nil || slug == "" || host == "" {
 		return
 	}
-	s.prov.mu.Lock()
-	if st, ok := s.prov.certs[slug]; ok && (st.Watching || st.Active) {
-		s.prov.mu.Unlock()
+	if !s.farmCertStartWatching(slug) {
 		return
+	}
+	go s.farmCertWatch(c, slug, host)
+}
+
+// farmCertStartWatching marks the slug's certificate as watched. It returns
+// false when a watcher already runs or the certificate is already active.
+func (s *Server) farmCertStartWatching(slug string) bool {
+	s.prov.mu.Lock()
+	defer s.prov.mu.Unlock()
+	if st, ok := s.prov.certs[slug]; ok && (st.Watching || st.Active) {
+		return false
 	}
 	if s.prov.certs[slug] == nil {
 		s.prov.certs[slug] = &certState{}
 	}
 	s.prov.certs[slug].Watching = true
-	s.prov.mu.Unlock()
+	return true
+}
 
-	go func() {
-		var last *cfsaas.Hostname
-		defer func() { s.setCertState(slug, last, false) }()
-		every := s.cfg.ProvisionPollEvery
-		if every <= 0 {
-			every = 15 * time.Second
+// farmCertWatcher is one background watch of a farm's custom hostname.
+type farmCertWatcher struct {
+	s               *Server
+	c               *cfsaas.Client
+	slug, host      string
+	revalidateAfter time.Duration
+	started         time.Time
+	revalidated     bool
+	lastRevalidate  time.Time
+	last            *cfsaas.Hostname
+}
+
+// farmCertWatch polls Cloudflare until the hostname's certificate is active
+// or ProvisionWatchFor runs out.
+func (s *Server) farmCertWatch(c *cfsaas.Client, slug, host string) {
+	w := &farmCertWatcher{s: s, c: c, slug: slug, host: host}
+	defer func() { s.setCertState(slug, w.last, false) }()
+	every := s.cfg.ProvisionPollEvery
+	if every <= 0 {
+		every = 15 * time.Second
+	}
+	w.revalidateAfter = 2 * time.Minute
+	if every < time.Second {
+		w.revalidateAfter = 5 * every
+	}
+	w.started = time.Now()
+	deadline := w.started.Add(s.provisionWatchFor())
+	for time.Now().Before(deadline) {
+		if w.tick() {
+			return
 		}
-		revalidateAfter := 2 * time.Minute
-		if every < time.Second {
-			revalidateAfter = 5 * every
-		}
-		started := time.Now()
-		revalidated := false
-		var lastRevalidate time.Time
-		deadline := started.Add(s.provisionWatchFor())
-		for time.Now().Before(deadline) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			var h *cfsaas.Hostname
-			var err error
-			if last == nil || last.ID == "" {
-				h, err = c.Ensure(ctx, host)
-				if err == nil && h != nil {
-					slog.Info("farm hostname requested", "slug", logsafe.Str(slug), "hostname", logsafe.Str(host), "state", logsafe.Str(h.Summary()))
-				}
-			} else {
-				h, err = c.Get(ctx, last.ID)
-			}
-			cancel()
-			if err != nil {
-				// Retried on the next tick; the status shows the error.
-				slog.Warn("farm hostname", "slug", logsafe.Str(slug), "hostname", logsafe.Str(host), "err", logsafe.Str(err.Error()))
-				s.setCertError(slug, err)
-			} else if h != nil {
-				last = h
-				s.setCertState(slug, h, true)
-				if h.Active() {
-					slog.Info("farm certificate active", "slug", logsafe.Str(slug), "hostname", logsafe.Str(host))
-					return
-				}
-				// A failed or timed-out certificate never fixes itself: ask
-				// Cloudflare to issue it again (at most once per revalidate
-				// window) instead of giving up and leaving the farm without
-				// one. HTTP validation also needs the hostname to point at the
-				// zone when Cloudflare checks; ask once more if still pending.
-				if h.Failed() {
-					slog.Warn("farm certificate failed; asking again", "slug", logsafe.Str(slug), "state", logsafe.Str(h.Summary()))
-				}
-				if (h.Failed() && time.Since(lastRevalidate) > revalidateAfter) ||
-					(!revalidated && time.Since(started) > revalidateAfter) {
-					lastRevalidate = time.Now()
-					revalidated = true
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					if _, err := c.Revalidate(ctx, h.ID); err != nil {
-						slog.Warn("farm hostname revalidate", "slug", logsafe.Str(slug), "err", logsafe.Str(err.Error()))
-					}
-					cancel()
-				}
-			}
-			time.Sleep(every)
-		}
-		slog.Warn("farm certificate watch gave up", "slug", logsafe.Str(slug), "state", logsafe.Str(last.Summary()))
-	}()
+		time.Sleep(every)
+	}
+	slog.Warn("farm certificate watch gave up", "slug", logsafe.Str(slug), "state", logsafe.Str(w.last.Summary()))
+}
+
+// fetch creates the custom hostname until Cloudflare has given it an ID, and
+// reads it back afterwards.
+func (w *farmCertWatcher) fetch() (*cfsaas.Hostname, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if w.last != nil && w.last.ID != "" {
+		return w.c.Get(ctx, w.last.ID)
+	}
+	h, err := w.c.Ensure(ctx, w.host)
+	if err == nil && h != nil {
+		slog.Info("farm hostname requested", "slug", logsafe.Str(w.slug), "hostname", logsafe.Str(w.host), "state", logsafe.Str(h.Summary()))
+	}
+	return h, err
+}
+
+// tick is one poll. It returns true once the certificate is active.
+func (w *farmCertWatcher) tick() bool {
+	h, err := w.fetch()
+	if err != nil {
+		// Retried on the next tick; the status shows the error.
+		slog.Warn("farm hostname", "slug", logsafe.Str(w.slug), "hostname", logsafe.Str(w.host), "err", logsafe.Str(err.Error()))
+		w.s.setCertError(w.slug, err)
+		return false
+	}
+	if h == nil {
+		return false
+	}
+	w.last = h
+	w.s.setCertState(w.slug, h, true)
+	if h.Active() {
+		slog.Info("farm certificate active", "slug", logsafe.Str(w.slug), "hostname", logsafe.Str(w.host))
+		return true
+	}
+	// A failed or timed-out certificate never fixes itself: ask
+	// Cloudflare to issue it again (at most once per revalidate
+	// window) instead of giving up and leaving the farm without
+	// one. HTTP validation also needs the hostname to point at the
+	// zone when Cloudflare checks; ask once more if still pending.
+	if h.Failed() {
+		slog.Warn("farm certificate failed; asking again", "slug", logsafe.Str(w.slug), "state", logsafe.Str(h.Summary()))
+	}
+	if (h.Failed() && time.Since(w.lastRevalidate) > w.revalidateAfter) ||
+		(!w.revalidated && time.Since(w.started) > w.revalidateAfter) {
+		w.revalidate(h)
+	}
+	return false
+}
+
+// revalidate asks Cloudflare to issue the hostname's certificate again.
+func (w *farmCertWatcher) revalidate(h *cfsaas.Hostname) {
+	w.lastRevalidate = time.Now()
+	w.revalidated = true
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := w.c.Revalidate(ctx, h.ID); err != nil {
+		slog.Warn("farm hostname revalidate", "slug", logsafe.Str(w.slug), "err", logsafe.Str(err.Error()))
+	}
 }
