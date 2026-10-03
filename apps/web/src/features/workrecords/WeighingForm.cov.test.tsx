@@ -462,7 +462,7 @@ describe("the doubt about a heavy sack", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(tenant().workRecords.length).toBe(before);
+    expect(tenant().workRecords).toHaveLength(before);
     expect(screen.getByLabelText("Kilos")).toHaveValue("500");
   }, 30000);
 });

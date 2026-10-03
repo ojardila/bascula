@@ -152,8 +152,8 @@ describe("teams and accounts without a basket number", () => {
     const box = screen.getByLabelText("Buscar por nombre o canasto");
     await user.type(box, "zzz");
     expect(
-      (await screen.findAllByText("Nadie coincide con el filtro.")).length,
-    ).toBe(2);
+      await screen.findAllByText("Nadie coincide con el filtro."),
+    ).toHaveLength(2);
     await user.clear(box);
 
     // Unticking and ticking again puts the person back in the run.
