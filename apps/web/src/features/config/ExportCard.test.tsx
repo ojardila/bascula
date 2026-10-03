@@ -46,23 +46,19 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("each button", () => {
   it.each([
-    ["Pesadas", "pesadas"],
-    ["Movimientos de dinero", "movimientos"],
-    ["Saldos por empleado", "saldos"],
-  ])(
+    ["Pesadas", "pesadas", /Se descargó bascula-.*-pesadas-\d{4}-\d{2}-\d{2}\.csv\./],
+    ["Movimientos de dinero", "movimientos", /Se descargó bascula-.*-movimientos-\d{4}-\d{2}-\d{2}\.csv\./],
+    ["Saldos por empleado", "saldos", /Se descargó bascula-.*-saldos-\d{4}-\d{2}-\d{2}\.csv\./],
+  ] as const)(
     "«%s» downloads its file and names it",
-    async (label, kind) => {
+    async (label, kind, message) => {
       const download = vi.spyOn(csv, "downloadCsv").mockReturnValue(true);
       const user = userEvent.setup();
       renderCard();
       await user.click(await screen.findByRole("button", { name: label }));
-      const done = await screen.findByText(
-        new RegExp(
-          `Se descargó bascula-.*-${kind}-\\d{4}-\\d{2}-\\d{2}\\.csv\\.`,
-        ),
-      );
+      const done = await screen.findByText(message);
       expect(download).toHaveBeenCalledTimes(1);
-      expect(download.mock.calls[0][0]).toMatch(new RegExp(`-${kind}-`));
+      expect(download.mock.calls[0][0]).toContain(`-${kind}-`);
       await user.click(
         within(done.closest(".MuiAlert-root") as HTMLElement).getByRole(
           "button",

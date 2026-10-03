@@ -71,7 +71,7 @@ describe("Cree su finca — the farm's web address", () => {
     await user.type(screen.getByLabelText(/^Clave/), "una-clave-larga");
     await user.click(screen.getByRole("button", { name: "Crear mi finca" }));
     expect(await screen.findByText("Preparando su finca…", {}, { timeout: 4000 })).toBeInTheDocument();
-    expect(screen.getByText(/lapalma\.bascula\.engp\.io/)).toBeInTheDocument();
+    expect(screen.getByText("lapalma.bascula.engp.io", { exact: false })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("step-database")).toBeInTheDocument());
     expect(screen.getByText(/Puede tardar unos minutos/)).toBeInTheDocument();
   });
@@ -86,7 +86,7 @@ describe("Cree su finca — the farm's web address", () => {
     await user.type(screen.getByLabelText(/^Clave/), "otra-clave-para-esta-finca");
     await user.click(screen.getByRole("button", { name: "Crear mi finca" }));
     expect(await screen.findByText("Preparando su finca…", {}, { timeout: 4000 })).toBeInTheDocument();
-    expect(screen.getByText(/segunda-finca\.bascula\.engp\.io/)).toBeInTheDocument();
+    expect(screen.getByText("segunda-finca.bascula.engp.io", { exact: false })).toBeInTheDocument();
     expect(screen.queryByText("Ese correo ya tiene cuenta")).not.toBeInTheDocument();
   });
 });
