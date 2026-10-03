@@ -78,7 +78,7 @@ function readLocal(key: string): Partial<Record<TourName, SavedTour>> {
   }
 }
 
-export function TourProvider({ children }: { children: ReactNode }) {
+export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
   const { user, principal, readOnly } = useAuth();
   const [saved, setSaved] = useState<Partial<Record<TourName, SavedTour>>>({});
   const [loaded, setLoaded] = useState(false);

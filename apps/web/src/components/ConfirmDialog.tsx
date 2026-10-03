@@ -23,7 +23,7 @@ interface Props {
  */
 export function ConfirmDialog({
   open, title, body, confirmLabel = "Confirmar", destructive, busy, onConfirm, onCancel,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <Dialog open={open} onClose={busy ? undefined : onCancel} maxWidth="xs" fullWidth>
       <DialogTitle>{title}</DialogTitle>

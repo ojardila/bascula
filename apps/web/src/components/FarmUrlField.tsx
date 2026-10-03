@@ -83,14 +83,14 @@ export function slugErrorFromApi(err: unknown): string | null {
 
 export function FarmUrlField({
   slug, onChange, check, serverError, disabled,
-}: {
+}: Readonly<{
   slug: string;
   onChange: (value: string) => void;
   check: SlugCheck;
   /** A refusal from the create call (409 taken, 400 reserved). */
   serverError?: string | null;
   disabled?: boolean;
-}) {
+}>) {
   const [blurred, setBlurred] = useState(false);
   const local = slug ? farmSlugProblem(slug) : null;
   const problem =

@@ -525,11 +525,11 @@ function Verdict({
   curve,
   current,
   lastFinished,
-}: {
+}: Readonly<{
   curve: Awaited<ReturnType<typeof reportHarvestCurve>>;
   current?: { kg: number | null } | undefined;
   lastFinished?: { kg: number | null } | undefined;
-}) {
+}>) {
   const { shape } = curve;
 
   if (shape.reason === "no_finished_weeks" || !shape.peak) {

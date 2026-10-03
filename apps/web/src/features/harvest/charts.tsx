@@ -105,7 +105,7 @@ export function Curve({
   color = GREEN,
   summary,
   onSelect,
-}: CurveProps) {
+}: Readonly<CurveProps>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -356,14 +356,14 @@ export function Sparkline({
   height = 30,
   color = GREEN,
   label,
-}: {
+}: Readonly<{
   /** `null` is a week whose kilos are unknown: it breaks the line, never zeroes it. */
   values: (number | null)[];
   width?: number;
   height?: number;
   color?: string;
   label: string;
-}) {
+}>) {
   const known = values.filter((v): v is number => v !== null);
   if (known.length < 2) {
     return (
@@ -456,7 +456,7 @@ export function WeekBars({
   summary,
   onSelect,
   color = GREEN,
-}: Omit<CurveProps, "highlight" | "highlightLabel">) {
+}: Readonly<Omit<CurveProps, "highlight" | "highlightLabel">>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const plotW = Math.max(0, width - PAD.left - PAD.right);
@@ -595,10 +595,10 @@ export function WeekBars({
 export function RowBar({
   fraction,
   color = GREEN,
-}: {
+}: Readonly<{
   fraction: number;
   color?: string;
-}) {
+}>) {
   const pct =
     Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0)) * 100;
   return (

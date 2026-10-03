@@ -19,7 +19,7 @@ interface Props {
  * 100 on its own. Tabular numerals so columns of money line up; a stack of
  * right-aligned amounts that jitters is a stack nobody can scan.
  */
-export function Money({ cents, signed, colored, variant = "inherit", sx }: Props) {
+export function Money({ cents, signed, colored, variant = "inherit", sx }: Readonly<Props>) {
   const text = signed ? formatMoneySigned(cents) : formatMoney(cents);
   return (
     <Box
