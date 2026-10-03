@@ -67,7 +67,7 @@ function priceOn(state: WireBasePriceState, monday: string): number | null {
   return row ? row.priceCents : null;
 }
 
-export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
+export function BasePriceCard({ onSaved }: Readonly<{ onSaved?: () => void }>) {
   const tour = useTour();
   const [tick, setTick] = useState(0);
   const { data, error } = useAsync(() => api.getBasePrice(), [tick]);

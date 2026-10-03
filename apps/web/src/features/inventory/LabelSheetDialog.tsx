@@ -28,10 +28,10 @@ import type { LabelBatch } from "../../api/types";
 export function LabelSheetDialog({
   batch,
   onClose,
-}: {
+}: Readonly<{
   batch: LabelBatch | null;
   onClose: () => void;
-}) {
+}>) {
   return (
     <Dialog open={!!batch} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle className="no-print">

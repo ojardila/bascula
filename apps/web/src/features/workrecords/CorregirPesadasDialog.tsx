@@ -34,7 +34,7 @@ export function CorregirPesadasDialog({
   records,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   open: boolean;
   name: string;
   dayLabel: string;
@@ -42,7 +42,7 @@ export function CorregirPesadasDialog({
   onClose: () => void;
   /** Called with how many pesadas changed, after they were written. */
   onSaved: (changed: number) => void;
-}) {
+}>) {
   // Mounted afresh for each person (see the page), so it starts from what is
   // registered now.
   const [texts, setTexts] = useState<Record<string, string>>(() =>
