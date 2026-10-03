@@ -12,7 +12,7 @@ How the MCP server (`/mcp`) and its OAuth authorization server (`/oauth/*`,
 
 - There are no API keys. An assistant (ChatGPT, Claude) gets a token through
   OAuth 2.1 (DCR + authorization code + PKCE S256), signed in with the same
-  email and password as the web, for one farm.
+  email and password as the web (or the same passkey), for one farm.
 - **A tool is a route.** Every tool builds an in-process request against the
   REST router *as the caller* (same bearer, same client address), so it walks
   the whole chain: authenticate → tenant transaction (`SET LOCAL app.farm_id`,
@@ -78,8 +78,17 @@ write.
   `form-action 'self'`, `Referrer-Policy: no-referrer`. The form posts a
   password (or, in the farm-pick step, a short-lived signed ticket bound to
   the user), so a cross-site post cannot complete a consent by itself.
+- The page can also be passed with a passkey («Entrar con llave de acceso»).
+  The answer is checked exactly like `/v1/auth/passkeys/login`: the relying
+  party is the page's own `Origin`, user verification is required, the
+  challenge is single-use, the signature counter is checked for clones, and a
+  passkey pinned to one farm only unlocks that farm. The script that asks the
+  browser for it is the only script on the page and runs under a per-response
+  `script-src 'nonce-…'` with `connect-src 'self'`; the consent choice
+  (read or read-and-write) is the same form either way.
 - `state` is passed through untouched; `iss` is added (RFC 9207).
-- Sign-in attempts share the login limiter with `/v1/auth/login`.
+- Sign-in attempts share the login limiter with `/v1/auth/login`; passkey
+  attempts count per address.
 
 ### Dynamic client registration
 
