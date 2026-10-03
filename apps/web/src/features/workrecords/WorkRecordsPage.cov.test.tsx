@@ -228,7 +228,10 @@ describe("WorkRecordsPage", () => {
       screen.queryByRole("columnheader", { name: "Valor" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/pendientes de liquidar/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Una labor" })).toBeInTheDocument();
+    // Wait for /v1/me: until then `can()` is false and the create buttons are hidden.
+    expect(
+      await screen.findByRole("button", { name: "Una labor" }),
+    ).toBeInTheDocument();
     const actions = screen.queryByRole("button", {
       name: "Acciones de Plateo de María Restrepo",
     });
