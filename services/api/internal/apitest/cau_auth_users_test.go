@@ -60,9 +60,9 @@ func cauEmail(prefix string) string {
 	return fmt.Sprintf("%s-%s@example.com", prefix, uuid.NewString()[:8])
 }
 
-// cauReplayed runs the fault replay over one request, then serves it for
-// real from ip, with an optional Host.
-func cauReplayed(t *testing.T, srv http.Handler, ip, host, method, path, token string, body any) response {
+// cauReplayed runs the fault replay over one anonymous JSON POST, then
+// serves it for real from ip, with an optional Host.
+func cauReplayed(t *testing.T, srv http.Handler, ip, host, path string, body any) response {
 	t.Helper()
 	raw := ""
 	if body != nil {
@@ -73,15 +73,12 @@ func cauReplayed(t *testing.T, srv http.Handler, ip, host, method, path, token s
 		raw = string(b)
 	}
 	newReq := func() *http.Request {
-		req := httptest.NewRequest(method, path, strings.NewReader(raw))
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(raw))
 		req.RemoteAddr = ip + ":12345"
 		if host != "" {
 			req.Host = host
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
 		return req
 	}
 	if faultReplayOn() {
@@ -108,14 +105,14 @@ func TestCauSignupSurvivesFaultsOnEveryBranch(t *testing.T) {
 
 	t.Run("with the platform-wide ceiling on, a new address", func(t *testing.T) {
 		srv := cauServer(t, h, false, func(c *httpapi.Config) { c.SignupsPerHour = 1 << 20 })
-		res := cauReplayed(t, srv, "10.81.0.1", "", http.MethodPost, "/v1/signup", "",
+		res := cauReplayed(t, srv, "10.81.0.1", "", "/v1/signup",
 			cauSignupBody("Finca techo cau", cauEmail("cau-techo"), "una-clave-larga-1"))
 		expectStatus(t, "signup under the ceiling", res, http.StatusCreated)
 	})
 
 	t.Run("a verified address registering another farm keeps the new password on that farm", func(t *testing.T) {
 		f := h.signupFarm(t, "Finca cau existente", 90000)
-		res := cauReplayed(t, h.server, "10.81.0.2", "", http.MethodPost, "/v1/signup", "",
+		res := cauReplayed(t, h.server, "10.81.0.2", "", "/v1/signup",
 			cauSignupBody("Finca cau segunda", f.OwnerEmail, "clave-de-la-segunda-1"))
 		expectStatus(t, "signup with a verified address", res, http.StatusCreated)
 		if _, leaked := res.Body["farmId"]; leaked {
@@ -139,7 +136,7 @@ func TestCauSignupSurvivesFaultsOnEveryBranch(t *testing.T) {
 		if first.Body["verificationRequired"] != true {
 			t.Fatalf("with a mailer signup must ask for the link: %s", first.Raw)
 		}
-		second := cauReplayed(t, srv, "10.81.0.4", "", http.MethodPost, "/v1/signup", "",
+		second := cauReplayed(t, srv, "10.81.0.4", "", "/v1/signup",
 			cauSignupBody("Finca del segundo", email, "clave-del-segundo-2"))
 		expectStatus(t, "second claim", second, http.StatusCreated)
 		token := mustString(t, second.Body, "verificationToken")
@@ -162,7 +159,7 @@ func TestCauLoginErrorBranches(t *testing.T) {
 	f := h.signupFarm(t, "Finca cau ingreso", 90000)
 
 	t.Run("a wrong password is counted even when the database fails around it", func(t *testing.T) {
-		res := cauReplayed(t, h.server, "10.82.0.1", "", http.MethodPost, "/v1/auth/login", "",
+		res := cauReplayed(t, h.server, "10.82.0.1", "", "/v1/auth/login",
 			map[string]any{"email": f.OwnerEmail, "password": "no-es-la-clave-1"})
 		expectCode(t, "wrong password", res, http.StatusUnauthorized, domain.CodeInvalidCredentials)
 	})
@@ -188,7 +185,7 @@ func TestCauLoginErrorBranches(t *testing.T) {
 		h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken,
 			map[string]any{"email": email, "name": "Invitado", "role": "weigher", "password": "clave-de-finca-1"},
 			http.StatusCreated)
-		res := cauReplayed(t, h.server, "10.82.0.3", "", http.MethodPost, "/v1/auth/login", "",
+		res := cauReplayed(t, h.server, "10.82.0.3", "", "/v1/auth/login",
 			map[string]any{"email": email, "password": "clave-de-finca-1"})
 		expectStatus(t, "invited login", res, http.StatusOK)
 		if res.Body["farmId"] != f.FarmID || res.Body["role"] != "weigher" {
@@ -198,7 +195,7 @@ func TestCauLoginErrorBranches(t *testing.T) {
 
 	t.Run("a farm pinned by host and body opens that farm", func(t *testing.T) {
 		slug := h.farmSlug(t, f.FarmID)
-		res := cauReplayed(t, h.server, "10.82.0.4", slug+".bascula.engp.io", http.MethodPost, "/v1/auth/login", "",
+		res := cauReplayed(t, h.server, "10.82.0.4", slug+".bascula.engp.io", "/v1/auth/login",
 			map[string]any{"email": f.OwnerEmail, "password": f.loginSecret(), "farmSlug": slug})
 		expectStatus(t, "pinned login", res, http.StatusOK)
 		if res.Body["farmId"] != f.FarmID {
@@ -216,7 +213,7 @@ func TestCauRefreshReuseClosesTheFamilyUnderFaults(t *testing.T) {
 	rotated := h.mustDo(t, http.MethodPost, "/v1/auth/refresh", "",
 		map[string]any{"refreshToken": old}, http.StatusOK)
 
-	res := cauReplayed(t, h.server, "10.83.0.1", "", http.MethodPost, "/v1/auth/refresh", "",
+	res := cauReplayed(t, h.server, "10.83.0.1", "", "/v1/auth/refresh",
 		map[string]any{"refreshToken": old})
 	expectCode(t, "reused refresh token", res, http.StatusUnauthorized, domain.CodeTokenReused)
 
