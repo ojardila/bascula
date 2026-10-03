@@ -88,7 +88,12 @@ function validFromText(validFrom: string, future: boolean): string {
 
 function groupPesos(digits: string): string {
   const clean = digits.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  let out = "";
+  for (let i = 0; i < clean.length; i++) {
+    if (i > 0 && (clean.length - i) % 3 === 0) out += ".";
+    out += clean[i];
+  }
+  return out;
 }
 
 function priceOn(state: WireBasePriceState, monday: string): number | null {

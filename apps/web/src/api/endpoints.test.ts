@@ -194,6 +194,6 @@ describe("endpoints that no screen test reaches", () => {
   });
 
   it("logs out", async () => {
-    await api.logout();
+    await expect(api.logout()).resolves.toBeUndefined();
   });
 });

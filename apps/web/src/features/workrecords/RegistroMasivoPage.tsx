@@ -31,13 +31,11 @@
  * never counts a weighing twice.
  */
 import { useEffect, useRef, useState } from "react";
-import { Link as RouterLink, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -45,19 +43,12 @@ import {
   DialogTitle,
   IconButton,
   MenuItem,
-  Paper,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
-import SaveIcon from "@mui/icons-material/Save";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import type { Activity, Plot, Worker, WorkRecord } from "../../api/types";
@@ -65,7 +56,6 @@ import { PermissionDenied } from "../../components/Guards";
 import { useAuth } from "../../auth/AuthContext";
 import {
   addDays,
-  formatWeekRange,
   mondayOf,
   parseDay,
   todayInFarm,
@@ -75,71 +65,38 @@ import { PLOT } from "../../lib/vocab";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { useOffline } from "../../offline/OfflineContext";
 import {
-  DAY_LETTERS,
   daysOfWeek,
   isIsoDay,
   pickHarvestActivity,
   workerLabel,
 } from "./planilla";
 import { MAX_PLAUSIBLE_KG } from "./WeighingForm";
-import { isTeam, teamLine, weighable } from "../teams/team";
-import { BasketTile } from "../workers/Basket";
+import { weighable } from "../teams/team";
 import {
   bulkEntries,
   filterWorkers,
   registeredByWorker,
-  soFarLabel,
   weekLocks,
-  type BulkEntry,
 } from "./bulk";
 import { CorregirPesadasDialog } from "./CorregirPesadasDialog";
-
-const DAY_NAMES = [
-  "Lunes",
-  "Martes",
-  "Miércoles",
-  "Jueves",
-  "Viernes",
-  "Sábado",
-  "Domingo",
-] as const;
-const MONTHS = [
-  "enero",
-  "febrero",
-  "marzo",
-  "abril",
-  "mayo",
-  "junio",
-  "julio",
-  "agosto",
-  "septiembre",
-  "octubre",
-  "noviembre",
-  "diciembre",
-] as const;
+import {
+  AddedAlert,
+  DayPicker,
+  RegistroHeader,
+  SaveBar,
+  WeekNotices,
+  WorkerKilosRow,
+  WorkerList,
+  dayTitle,
+  iso,
+  pesadas,
+  type Added,
+} from "./RegistroMasivoParts";
 
 /** Remembered per device, so the next time opens on the same lote. */
 const LAST_LOTE = "bascula.registroMasivo.lote";
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-
-/** «Hoy, viernes 26 de septiembre» · «Ayer, …» · «Martes 22 de septiembre». */
-export function dayTitle(day: string, today: string): string {
-  const d = parseDay(day);
-  const name = DAY_NAMES[(d.getUTCDay() + 6) % 7];
-  const rest = `${d.getUTCDate()} de ${MONTHS[d.getUTCMonth()]}`;
-  if (day === today) return `Hoy, ${name.toLowerCase()} ${rest}`;
-  if (day === iso(addDays(parseDay(today), -1)))
-    return `Ayer, ${name.toLowerCase()} ${rest}`;
-  return `${name} ${rest}`;
-}
-
-/** What the last save added, to say it plainly afterwards. */
-interface Added {
-  day: string;
-  plotName: string;
-  entries: BulkEntry[];
-}
+export { dayTitle };
 
 export function RegistroMasivoPage() {
   const { can, user } = useAuth();
@@ -268,34 +225,10 @@ export function RegistroMasivoPage() {
   }
 
   const header = (
-    <>
-      {can("harvest.read") && (
-        <Button
-          component={RouterLink}
-          to="/cosecha"
-          startIcon={<ArrowBackIcon />}
-          sx={{ mb: 1, fontSize: "1rem" }}
-        >
-          Volver a la cosecha
-        </Button>
-      )}
-      <Typography variant="h1" gutterBottom>
-        Registro de recolección masivo
-      </Typography>
-      <Typography
-        sx={{
-          color: "text.secondary",
-          mb: 2,
-          fontSize: "1.1rem",
-        }}
-      >
-        Las pesadas de todos los empleados en un día. Elija el día y el lote, y
-        escriba los kilos de cada persona. Cada número es una pesada nueva. Si
-        no pesó, déjelo en blanco.
-        {can("workRecords.correct") &&
-          " Para cambiar una pesada ya registrada, toque «Corregir»."}
-      </Typography>
-    </>
+    <RegistroHeader
+      canGoBack={can("harvest.read")}
+      canCorrect={can("workRecords.correct")}
+    />
   );
 
   if (loadError)
@@ -351,13 +284,9 @@ export function RegistroMasivoPage() {
     ([id, t]) => t.trim() !== "" && !locked(id),
   );
   const dayKilos = (dayRecords ?? []).reduce((s, r) => s + r.quantity, 0);
-  const prevMonday = iso(addDays(parseDay(week[0]), -7));
-  const nextMonday = iso(addDays(parseDay(week[0]), 7));
   const correctingWorker = correcting
     ? (workers.find((w) => w.id === correcting) ?? null)
     : null;
-  const pesadas = (n: number) =>
-    n === 1 ? "1 pesada nueva" : `${n} pesadas nuevas`;
 
   function askToSave() {
     setAdded(null);
@@ -419,123 +348,48 @@ export function RegistroMasivoPage() {
     }
   }
 
+  const renderRow = (w: Worker) => (
+    <WorkerKilosRow
+      key={w.id}
+      w={w}
+      name={workerLabel(w)}
+      has={soFar[w.id]}
+      isLocked={locked(w.id)}
+      weekSettled={weekSettled}
+      canCorrect={canCorrect}
+      busy={busy}
+      online={offline.online}
+      text={texts[w.id] ?? ""}
+      onTextChange={(v) => {
+        setTexts((prev) => ({ ...prev, [w.id]: v }));
+        setAdded(null);
+      }}
+      onKilosFocus={() => {
+        lastKilos.current = w.id;
+      }}
+      onEnterSave={askToSave}
+      onNameClick={() => focusKilos(w.id)}
+      onCorrect={() => {
+        setCorrected(null);
+        setCorrecting(w.id);
+      }}
+      inputRef={(el: HTMLInputElement | null) => {
+        kilosRefs.current[w.id] = el;
+      }}
+    />
+  );
+
   return (
     <Box sx={{ pb: 12, maxWidth: 760 }}>
       {header}
 
-      {/* 1. The day — first and biggest. */}
-      <Paper
-        variant="outlined"
-        sx={{ p: { xs: 1.5, sm: 2 }, mb: 2, borderRadius: 3 }}
-      >
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{
-            alignItems: "center",
-            mb: 1,
-          }}
-        >
-          <Typography
-            sx={{ fontSize: "1rem", fontWeight: 600, color: "text.secondary" }}
-          >
-            Día
-          </Typography>
-          <Box sx={{ flex: 1 }} />
-          <IconButton
-            aria-label="Semana anterior"
-            onClick={() => setDay(prevMonday)}
-            size="small"
-            disabled={busy}
-          >
-            <ChevronLeftIcon />
-          </IconButton>
-          <Typography
-            sx={{
-              fontSize: "0.95rem",
-              color: "text.secondary",
-              minWidth: 96,
-              textAlign: "center",
-            }}
-          >
-            {formatWeekRange(week[0])}
-          </Typography>
-          <IconButton
-            aria-label="Semana siguiente"
-            onClick={() => setDay(nextMonday)}
-            disabled={busy || nextMonday > today}
-            size="small"
-          >
-            <ChevronRightIcon />
-          </IconButton>
-        </Stack>
-        <ToggleButtonGroup
-          exclusive
-          value={day}
-          onChange={(_, v: string | null) => v && setDay(v)}
-          aria-label="Día"
-          disabled={busy}
-          sx={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 1fr)",
-            width: "100%",
-          }}
-        >
-          {week.map((d, i) => (
-            <ToggleButton
-              key={d}
-              value={d}
-              disabled={busy || d > today}
-              aria-label={dayTitle(d, today)}
-              sx={{
-                flexDirection: "column",
-                py: 1,
-                px: 0,
-                lineHeight: 1.2,
-                "&.Mui-selected": {
-                  bgcolor: "primary.main",
-                  color: "#fff",
-                  "&:hover": { bgcolor: "primary.dark" },
-                },
-              }}
-            >
-              <Box component="span" sx={{ fontWeight: 700, fontSize: "1rem" }}>
-                {DAY_LETTERS[i]}
-              </Box>
-              <Box component="span" sx={{ fontSize: "1.1rem" }}>
-                {parseDay(d).getUTCDate()}
-              </Box>
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-        <Stack
-          direction="row"
-          spacing={1.5}
-          useFlexGap
-          sx={{
-            alignItems: "center",
-            mt: 1.5,
-            flexWrap: "wrap",
-          }}
-        >
-          <Typography
-            variant="h2"
-            component="p"
-            sx={{ flex: 1, minWidth: 200 }}
-          >
-            {dayTitle(day, today)}
-          </Typography>
-          {day !== today && (
-            <Button
-              variant="outlined"
-              onClick={() => setDay(today)}
-              disabled={busy}
-            >
-              Ir a hoy
-            </Button>
-          )}
-        </Stack>
-      </Paper>
+      <DayPicker
+        week={week}
+        day={day}
+        today={today}
+        busy={busy}
+        setDay={setDay}
+      />
 
       {/* 2. The lote of the new pesadas, and next to it the search by name. */}
       <Stack
@@ -626,19 +480,11 @@ export function RegistroMasivoPage() {
         />
       </Stack>
 
-      {loadedWeek && weekSettled && (
-        <Alert severity="warning" sx={{ mb: 2, fontSize: "1.15rem" }}>
-          <strong>Esta semana ya se liquidó, no se puede cambiar.</strong> Los
-          kilos de una semana liquidada quedan como se pagaron. Puede ver lo
-          registrado, pero no agregar ni corregir.
-        </Alert>
-      )}
-      {loadedWeek && !weekSettled && settledWorkers.size > 0 && (
-        <Alert severity="info" sx={{ mb: 2, fontSize: "1.05rem" }}>
-          {settledWorkers.size === 1
-            ? "A 1 persona ya se le liquidó esta semana: sus kilos no se pueden cambiar."
-            : `A ${settledWorkers.size} personas ya se les liquidó esta semana: sus kilos no se pueden cambiar.`}
-        </Alert>
+      {loadedWeek && (
+        <WeekNotices
+          weekSettled={weekSettled}
+          settledCount={settledWorkers.size}
+        />
       )}
       {corrected && (
         <Alert
@@ -665,283 +511,35 @@ export function RegistroMasivoPage() {
         </Alert>
       )}
       {added && (
-        <Alert
-          severity="success"
-          sx={{ mb: 2, fontSize: "1.1rem" }}
+        <AddedAlert
+          added={added}
+          today={today}
           onClose={() => setAdded(null)}
-        >
-          <strong>Listo.</strong>{" "}
-          {added.entries.length === 1
-            ? "Se agregó 1 pesada nueva"
-            : `Se agregaron ${added.entries.length} pesadas nuevas`}{" "}
-          · {dayTitle(added.day, today)} · {added.plotName}:
-          <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 3 }}>
-            {added.entries.map((e) => (
-              <li key={e.workerId}>
-                {e.name}: <strong>{formatQuantity(e.quantity)} kg</strong>
-              </li>
-            ))}
-          </Box>
-        </Alert>
+        />
       )}
 
       {/* 3. One row per employee: what they have, and a box to add one more. */}
-      {!plotId ? (
-        <Alert severity="info">Elija el lote.</Alert>
-      ) : !dayRecords ? (
-        <Stack
-          sx={{
-            alignItems: "center",
-            py: 6,
-          }}
-        >
-          <CircularProgress />
-        </Stack>
-      ) : workers.length === 0 ? (
-        <Alert severity="info">
-          No hay empleados activos. Regístrelos primero en Empleados.
-        </Alert>
-      ) : (
-        // While searching on a phone, keep room below so the search can stay
-        // at the top of the screen with the matches right under it.
-        <Box sx={{ minHeight: searching ? { xs: "80vh", sm: 0 } : undefined }}>
-          {searching && shown.length > 0 && (
-            <Stack
-              direction="row"
-              spacing={1}
-              sx={{
-                alignItems: "center",
-                mb: 1,
-              }}
-            >
-              <Typography
-                sx={{
-                  color: "text.secondary",
-                  flex: 1,
-                  fontSize: "1.05rem",
-                }}
-              >
-                {shown.length === 1 ? "1 persona" : `${shown.length} personas`}{" "}
-                de {workers.length}
-              </Typography>
-              <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>
-                Ver a todos
-              </Button>
-            </Stack>
-          )}
-          {searching && shown.length === 0 && (
-            <Alert
-              severity="info"
-              sx={{ fontSize: "1.1rem", alignItems: "center" }}
-              action={
-                <Button onClick={clearSearch} sx={{ fontSize: "1rem" }}>
-                  Ver a todos
-                </Button>
-              }
-            >
-              No hay nadie con ese nombre o canasto
-            </Alert>
-          )}
-          <Stack spacing={1.25}>
-            {shown.map((w) => {
-              const name = workerLabel(w);
-              const has = soFar[w.id];
-              const isLocked = locked(w.id);
-              return (
-                <Card key={w.id} variant="outlined">
-                  <CardContent
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.5,
-                      py: 1.25,
-                      "&:last-child": { pb: 1.25 },
-                    }}
-                  >
-                    <BasketTile tag={w.tag} team={isTeam(w)} size={48} />
-                    <Box
-                      sx={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                      onClick={() => focusKilos(w.id)}
-                    >
-                      <Typography sx={{ fontWeight: 600, fontSize: "1.1rem" }}>
-                        {name}
-                      </Typography>
-                      {isTeam(w) && (
-                        <Typography
-                          sx={{
-                            fontSize: "0.95rem",
-                            fontWeight: 600,
-                            color: "success.dark",
-                          }}
-                        >
-                          {teamLine(w)}
-                        </Typography>
-                      )}
-                      <Typography
-                        sx={{ fontSize: "0.95rem", color: "text.secondary" }}
-                      >
-                        {has ? (
-                          <>
-                            Ya tiene:{" "}
-                            <strong>{soFarLabel(has, formatQuantity)}</strong>
-                            <Box
-                              component="span"
-                              sx={{ display: { xs: "none", sm: "inline" } }}
-                            >
-                              {" "}
-                              (
-                              {has.records
-                                .map((r) =>
-                                  `${formatQuantity(r.quantity)} kg ${r.plotNames.join(", ")}`.trim(),
-                                )
-                                .join(" · ")}
-                              )
-                            </Box>
-                          </>
-                        ) : (
-                          "Sin pesadas este día"
-                        )}
-                      </Typography>
-                      {isLocked && !weekSettled && (
-                        <Typography
-                          sx={{
-                            fontSize: "0.95rem",
-                            fontWeight: 600,
-                            color: "warning.dark",
-                          }}
-                        >
-                          Semana liquidada: no se puede cambiar
-                        </Typography>
-                      )}
-                      {has && canCorrect && !isLocked && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          disabled={busy || !offline.online}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCorrected(null);
-                            setCorrecting(w.id);
-                          }}
-                          aria-label={`Corregir las pesadas de ${name}`}
-                          sx={{ mt: 0.75, minHeight: 40, fontSize: "1rem" }}
-                        >
-                          Corregir
-                        </Button>
-                      )}
-                    </Box>
-                    <TextField
-                      value={texts[w.id] ?? ""}
-                      placeholder="+"
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setTexts((prev) => ({ ...prev, [w.id]: v }));
-                        setAdded(null);
-                      }}
-                      onFocus={() => {
-                        lastKilos.current = w.id;
-                      }}
-                      onKeyDown={(e) => {
-                        // Enter with kilos written asks to save: type, Enter, «Sí, guardar».
-                        if (
-                          e.key === "Enter" &&
-                          (texts[w.id] ?? "").trim() !== ""
-                        ) {
-                          e.preventDefault();
-                          askToSave();
-                        }
-                      }}
-                      disabled={busy || isLocked}
-                      inputRef={(el: HTMLInputElement | null) => {
-                        kilosRefs.current[w.id] = el;
-                      }}
-                      sx={{
-                        width: { xs: 128, sm: 150 },
-                        flexShrink: 0,
-                        "& input": {
-                          textAlign: "right",
-                          fontSize: 26,
-                          fontWeight: 600,
-                          py: 1.5,
-                        },
-                      }}
-                      slotProps={{
-                        input: {
-                          endAdornment: (
-                            <Typography
-                              sx={{ ml: 0.5, color: "text.secondary" }}
-                            >
-                              kg
-                            </Typography>
-                          ),
-                        },
-                        htmlInput: {
-                          inputMode: "decimal",
-                          enterKeyHint: "done",
-                          "aria-label": `${name}, kilos`,
-                        },
-                      }}
-                    />
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </Stack>
-          <Typography sx={{ mt: 2, fontSize: "1.15rem" }}>
-            Registrado este día: <strong>{formatQuantity(dayKilos)} kg</strong>
-            {entries.length > 0 && (
-              <>
-                {" "}
-                · por agregar: <strong>{formatQuantity(newKilos)} kg</strong>
-              </>
-            )}
-          </Typography>
-        </Box>
-      )}
+      <WorkerList
+        plotId={plotId}
+        loaded={dayRecords !== null}
+        workers={workers}
+        shown={shown}
+        searching={searching}
+        clearSearch={clearSearch}
+        renderRow={renderRow}
+        dayKilos={dayKilos}
+        entriesCount={entries.length}
+        newKilos={newKilos}
+      />
 
       {/* 4. Save. Stuck to the bottom only while there is something to save. */}
       {plotId && workers.length > 0 && !(loadedWeek && weekSettled) && (
-        <Paper
-          elevation={dirty ? 6 : 0}
-          variant={dirty ? "elevation" : "outlined"}
-          sx={{
-            position: dirty ? "sticky" : "static",
-            bottom: 12,
-            mt: 3,
-            p: 1.5,
-            borderRadius: 3,
-            display: "flex",
-            alignItems: "center",
-            gap: 2,
-            flexWrap: "wrap",
-            zIndex: 2,
-          }}
-        >
-          <Typography
-            sx={{ flex: 1, minWidth: 160, fontSize: "1.05rem" }}
-            color={dirty ? "text.primary" : "text.secondary"}
-          >
-            {dirty
-              ? `${pesadas(entries.length)} sin guardar`
-              : "Escriba los kilos para agregar pesadas"}
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<SaveIcon />}
-            onClick={askToSave}
-            disabled={busy || !dirty}
-            sx={{
-              minHeight: 56,
-              px: 4,
-              fontSize: "1.15rem",
-              borderRadius: 3,
-              flexGrow: { xs: 1, sm: 0 },
-            }}
-          >
-            Guardar
-          </Button>
-        </Paper>
+        <SaveBar
+          dirty={dirty}
+          count={entries.length}
+          busy={busy}
+          onSave={askToSave}
+        />
       )}
 
       <Dialog

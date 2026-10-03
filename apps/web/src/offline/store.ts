@@ -49,7 +49,7 @@ function open(): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
       opening = null;
-      reject(req.error);
+      reject(req.error ?? new Error("IndexedDB open failed"));
     };
   });
   return opening;
@@ -58,7 +58,7 @@ function open(): Promise<IDBDatabase> {
 function done<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
   });
 }
 
