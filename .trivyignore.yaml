@@ -1,0 +1,37 @@
+# Trivy misconfiguration findings that were reviewed and accepted
+# (.github/workflows/iac.yml). Each entry says why; narrow by path where the
+# reason only holds for that file.
+misconfigurations:
+  - id: KSV-0125
+    statement: >-
+      "Trusted registries" is Trivy's built-in allowlist; every image here
+      comes from our own Harbor (harbor.int.engp.io), which scans on push.
+
+  - id: KSV-0041
+    paths: ["manifests/cluster/harbor-pull-clone.yaml"]
+    statement: >-
+      Kyverno's background controller needs secret write access to clone
+      harbor-pull into each bascula-* namespace (generate + synchronize). An
+      aggregated ClusterRole cannot be namespace-scoped, and create/list/watch
+      cannot be narrowed with resourceNames.
+
+  - id: KSV-0113
+    paths: ["manifests/overlays/tenant/bootstrap-secrets.yaml"]
+    statement: >-
+      The bootstrap Job creates the farm stack's own secrets on first deploy
+      (Role: get, create on secrets, in its own namespace only).
+
+  # A strategic-merge patch that only sets an env var: Trivy reads it as a
+  # whole Deployment with no securityContext. The real one, with
+  # runAsNonRoot, read-only root and dropped capabilities, is
+  # manifests/base/api.yaml.
+  - id: KSV-0001
+    paths: ["manifests/overlays/dev/public-base-url.yaml"]
+  - id: KSV-0012
+    paths: ["manifests/overlays/dev/public-base-url.yaml"]
+  - id: KSV-0014
+    paths: ["manifests/overlays/dev/public-base-url.yaml"]
+  - id: KSV-0104
+    paths: ["manifests/overlays/dev/public-base-url.yaml"]
+  - id: KSV-0118
+    paths: ["manifests/overlays/dev/public-base-url.yaml"]
