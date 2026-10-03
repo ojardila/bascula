@@ -30,7 +30,7 @@ const AUTH = vi.hoisted(() => ({
 
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => AUTH.value }));
 
-const KEY = "bascula.tours.u-cov2.La Palma";
+const STORAGE_NAME = "bascula.tours.u-cov2.La Palma";
 
 function Probe() {
   const t = useTour();
@@ -74,7 +74,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  localStorage.removeItem(KEY);
+  localStorage.removeItem(STORAGE_NAME);
   listTours.mockReset();
   saveTour.mockReset();
   saveTour.mockResolvedValue({});
@@ -105,7 +105,7 @@ describe("TourProvider", () => {
   });
 
   it("reads a corrupt local copy as nothing when the server cannot be reached", async () => {
-    localStorage.setItem(KEY, "{no es json");
+    localStorage.setItem(STORAGE_NAME, "{no es json");
     listTours.mockRejectedValue(new Error("offline"));
     const view = mount();
     await waitFor(() => expect(text("loaded")).toBe("true"));
@@ -120,7 +120,7 @@ describe("TourProvider", () => {
     click("Empezar");
     await act(async () => {});
     expect(saveTour).toHaveBeenCalledWith("owner", 0, "active");
-    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(localStorage.getItem(STORAGE_NAME)).toBeNull();
   });
 
   it("does nothing with a load that fails after the page is gone", async () => {
@@ -134,14 +134,14 @@ describe("TourProvider", () => {
   });
 
   it("ignores rows for tours it does not know, and keeps a pending save when the handover fails", async () => {
-    localStorage.setItem(KEY, JSON.stringify({ owner: { step: 4, status: "later", pending: true } }));
+    localStorage.setItem(STORAGE_NAME, JSON.stringify({ owner: { step: 4, status: "later", pending: true } }));
     listTours.mockResolvedValue([{ tour: "otro", step: 9, status: "done" }]);
     saveTour.mockRejectedValue(new Error("offline"));
     mount();
     await waitFor(() => expect(text("loaded")).toBe("true"));
     expect(text("owner")).toBe("later:4");
     await act(async () => {});
-    expect(JSON.parse(localStorage.getItem(KEY)!).owner.pending).toBe(true);
+    expect(JSON.parse(localStorage.getItem(STORAGE_NAME)!).owner.pending).toBe(true);
     expect(text("current")).toBe("none");
   });
 
