@@ -123,7 +123,7 @@ export function WorkerPerformance({ workerId }: Readonly<{ workerId: string }>) 
         )}
         {!error && !data && <Loading />}
         {data?.lastRecordOn === null && <Empty />}
-        {data && data.lastRecordOn !== null && (
+        {data?.lastRecordOn != null && (
           <Body
             today={data.today}
             lastRecordOn={data.lastRecordOn}
@@ -574,7 +574,7 @@ function WeeklyChart({
           )}
           {runningAvg && finishedAvg.length > 0 && (
             <path
-              d={`M${cx(finishedAvg[finishedAvg.length - 1].i)},${y(finishedAvg[finishedAvg.length - 1].v)} L${cx(runningAvg.i)},${y(runningAvg.v)}`}
+              d={`M${cx(finishedAvg.at(-1)!.i)},${y(finishedAvg.at(-1)!.v)} L${cx(runningAvg.i)},${y(runningAvg.v)}`}
               fill="none"
               stroke={AVG_LINE}
               strokeWidth={2}

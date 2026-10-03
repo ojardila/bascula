@@ -195,7 +195,8 @@ export function Curve({
               ? s.pts.filter((p) => p.i !== points.length - 1)
               : s.pts;
             if (pts.length < 2) return null;
-            const d = `${line(pts)} L${x(pts[pts.length - 1].i)},${y(0)} L${x(pts[0].i)},${y(0)} Z`;
+            const end = pts.at(-1)!;
+            const d = `${line(pts)} L${x(end.i)},${y(0)} L${x(pts[0].i)},${y(0)} Z`;
             return <path key={`a${si}`} d={d} fill={color} opacity={0.1} />;
           })}
 
@@ -405,8 +406,8 @@ export function Sparkline({
 
   const path = (pts: { i: number; v: number }[]) =>
     pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
-  const last = runs[runs.length - 1];
-  const lastPoint = last[last.length - 1];
+  const last = runs.at(-1)!;
+  const lastPoint = last.at(-1)!;
 
   return (
     <Box
@@ -423,7 +424,7 @@ export function Sparkline({
         pts.length > 1 ? (
           <path
             key={`a${k}`}
-            d={`${path(pts)} L${x(pts[pts.length - 1].i)},${height} L${x(pts[0].i)},${height} Z`}
+            d={`${path(pts)} L${x(pts.at(-1)!.i)},${height} L${x(pts[0].i)},${height} Z`}
             fill={color}
             opacity={0.1}
           />
