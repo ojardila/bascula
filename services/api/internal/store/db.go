@@ -99,6 +99,14 @@ func IsUniqueViolation(err error, constraint string) bool {
 	return constraint == "" || pe.ConstraintName == constraint
 }
 
+// IsForeignKeyViolation reports whether err is a foreign key violation: a
+// row that names a parent (a worker, a plot) that is not there. Under RLS a
+// parent on another farm is just as absent, which is why it reads as a 404.
+func IsForeignKeyViolation(err error) bool {
+	pe, ok := PgErr(err)
+	return ok && pe.Code == "23503"
+}
+
 // IsCheckViolation reports whether err is a CHECK constraint violation,
 // optionally a specific one. It is how a rule the database owns — a valid IANA
 // timezone, a line that adds up — becomes a message a form can show instead of

@@ -286,6 +286,11 @@ func (s *Server) createWorkRecord(r *http.Request, body workRecordRequest) (any,
 	}
 
 	created, err := store.CreateWorkRecord(r.Context(), tx, farmID, record)
+	if store.IsForeignKeyViolation(err) {
+		// A workerId (or plot) that is not on this farm. It is the caller's
+		// mistake, not a server fault.
+		return nil, 0, domain.NotFound("that worker or plot is not on this farm").WithCause(err)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
