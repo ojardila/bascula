@@ -46,16 +46,7 @@ func run(args []string) error {
 	ctx := context.Background()
 	switch cmd {
 	case "check":
-		h, err := c.Find(ctx, host)
-		if err != nil {
-			return err
-		}
-		if h == nil {
-			fmt.Println(host + ": no custom hostname yet")
-			return nil
-		}
-		show(h)
-		return nil
+		return check(ctx, c, host)
 	case "create":
 		h, err := c.Ensure(ctx, host)
 		if err != nil {
@@ -64,25 +55,45 @@ func run(args []string) error {
 		show(h)
 		return nil
 	case "wait":
-		h, err := c.Ensure(ctx, host)
-		if err != nil {
-			return err
-		}
-		deadline := time.Now().Add(15 * time.Minute)
-		for !h.Active() && !h.Failed() && time.Now().Before(deadline) {
-			show(h)
-			time.Sleep(10 * time.Second)
-			if h, err = c.Get(ctx, h.ID); err != nil {
-				return err
-			}
-		}
-		show(h)
-		if !h.Active() {
-			return errors.New("not active")
-		}
-		return nil
+		return wait(ctx, c, host)
 	}
 	return fmt.Errorf("unknown command %q", cmd)
+}
+
+// check prints the custom hostname's state, if there is one yet.
+func check(ctx context.Context, c *cfsaas.Client, host string) error {
+	h, err := c.Find(ctx, host)
+	if err != nil {
+		return err
+	}
+	if h == nil {
+		fmt.Println(host + ": no custom hostname yet")
+		return nil
+	}
+	show(h)
+	return nil
+}
+
+// wait creates the custom hostname if needed and polls it for up to fifteen
+// minutes, until it is active or has failed.
+func wait(ctx context.Context, c *cfsaas.Client, host string) error {
+	h, err := c.Ensure(ctx, host)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(15 * time.Minute)
+	for !h.Active() && !h.Failed() && time.Now().Before(deadline) {
+		show(h)
+		time.Sleep(10 * time.Second)
+		if h, err = c.Get(ctx, h.ID); err != nil {
+			return err
+		}
+	}
+	show(h)
+	if !h.Active() {
+		return errors.New("not active")
+	}
+	return nil
 }
 
 func show(h *cfsaas.Hostname) {

@@ -48,6 +48,50 @@ func main() {
 	}
 }
 
+// runMigrate is -migrate: apply the migrations and exit.
+func runMigrate(ctx context.Context, adminDSN string) error {
+	migCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	// Only APP_ENV=development creates bascula_api with the committed
+	// development password (store.MigrateDev). A cluster's migration Job
+	// never sets it: there the role is CNPG's, with a minted password.
+	migrate := store.Migrate
+	if os.Getenv("APP_ENV") == appEnvDevelopment {
+		migrate = store.MigrateDev
+	}
+	if err := migrate(migCtx, adminDSN); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	slog.Info("migrations applied")
+	return nil
+}
+
+// runPrune is -prune: the nightly sweep of the sync feed (see run).
+func runPrune(ctx context.Context, adminDSN string) error {
+	pruneCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	admin, err := pgxpool.New(pruneCtx, adminDSN)
+	if err != nil {
+		return fmt.Errorf("prune: connect: %w", err)
+	}
+	defer admin.Close()
+	rep, err := store.PruneSync(pruneCtx, admin,
+		store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
+		store.LoginFailureRetentionDays)
+	if err != nil {
+		return fmt.Errorf("prune: %w", err)
+	}
+	slog.Info("sync feed pruned",
+		"syncLogDeleted", rep.SyncLogDeleted,
+		"syncOpsDeleted", rep.SyncOpsDeleted,
+		"loginFailuresDeleted", rep.LoginFailuresDeleted,
+		"syncLogRetentionDays", store.SyncLogRetentionDays,
+		"syncOpsRetentionDays", store.SyncOpsRetentionDays,
+		"loginFailureRetentionDays", store.LoginFailureRetentionDays,
+		"took", rep.Took.String())
+	return nil
+}
+
 func run(migrateOnly, pruneOnly bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -65,20 +109,7 @@ func run(migrateOnly, pruneOnly bool) error {
 		"postgres://bascula_api:bascula_api_dev@localhost:5433/bascula?sslmode=disable")
 
 	if migrateOnly {
-		migCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		// Only APP_ENV=development creates bascula_api with the committed
-		// development password (store.MigrateDev). A cluster's migration Job
-		// never sets it: there the role is CNPG's, with a minted password.
-		migrate := store.Migrate
-		if os.Getenv("APP_ENV") == appEnvDevelopment {
-			migrate = store.MigrateDev
-		}
-		if err := migrate(migCtx, adminDSN); err != nil {
-			return fmt.Errorf("migrate: %w", err)
-		}
-		slog.Info("migrations applied")
-		return nil
+		return runMigrate(ctx, adminDSN)
 	}
 
 	// The sweep of docs/archive/synchronization.md §3.4. It runs on the ADMIN url for
@@ -87,28 +118,7 @@ func run(migrateOnly, pruneOnly bool) error {
 	// cannot prune the feed even by accident. A scheduler runs this nightly;
 	// it is idempotent and there is nothing to co-ordinate if two run at once.
 	if pruneOnly {
-		pruneCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-		defer cancel()
-		admin, err := pgxpool.New(pruneCtx, adminDSN)
-		if err != nil {
-			return fmt.Errorf("prune: connect: %w", err)
-		}
-		defer admin.Close()
-		rep, err := store.PruneSync(pruneCtx, admin,
-			store.SyncLogRetentionDays, store.SyncOpsRetentionDays,
-			store.LoginFailureRetentionDays)
-		if err != nil {
-			return fmt.Errorf("prune: %w", err)
-		}
-		slog.Info("sync feed pruned",
-			"syncLogDeleted", rep.SyncLogDeleted,
-			"syncOpsDeleted", rep.SyncOpsDeleted,
-			"loginFailuresDeleted", rep.LoginFailuresDeleted,
-			"syncLogRetentionDays", store.SyncLogRetentionDays,
-			"syncOpsRetentionDays", store.SyncOpsRetentionDays,
-			"loginFailureRetentionDays", store.LoginFailureRetentionDays,
-			"took", rep.Took.String())
-		return nil
+		return runPrune(ctx, adminDSN)
 	}
 
 	rc, err := resolveConfig(os.Getenv)
