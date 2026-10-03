@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 )
 
 // A farm can get a stack of its own: a namespace with its own Postgres, API
@@ -203,7 +205,7 @@ func (s *Server) pollTenant(slug string) {
 		}
 		time.Sleep(every)
 	}
-	slog.Warn("tenant watch gave up", "slug", slug)
+	slog.Warn("tenant watch gave up", "slug", logsafe.Str(slug))
 }
 
 // trySeedTenant is one poll: it reports whether the stack is seeded, seeding
@@ -220,10 +222,10 @@ func (s *Server) trySeedTenant(slug string) bool {
 		return false
 	}
 	if err := s.seedTenant(context.Background(), slug); err != nil {
-		slog.Warn("tenant seed", "slug", slug, "err", err)
+		slog.Warn("tenant seed", "slug", logsafe.Str(slug), "err", logsafe.Str(err.Error()))
 		return false
 	}
-	slog.Info("tenant seeded", "slug", slug)
+	slog.Info("tenant seeded", "slug", logsafe.Str(slug))
 	return true
 }
 
