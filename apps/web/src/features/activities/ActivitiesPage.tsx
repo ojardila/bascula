@@ -78,6 +78,45 @@ function RateCell({ activity: a }: { readonly activity: Activity }) {
   );
 }
 
+interface RowActionsParams {
+  canWrite: boolean;
+  canSetRate: boolean;
+  setEditing: (a: Activity | null) => void;
+  reload: () => void;
+  onError: (message: string) => void;
+}
+
+/**
+ * What the list lets this person do: who may write opens the dialog, and
+ * only who may set prices deactivates or reactivates.
+ */
+function rowActions({
+  canWrite,
+  canSetRate,
+  setEditing,
+  reload,
+  onError,
+}: RowActionsParams) {
+  const deactivate = async (a: Activity) => {
+    try {
+      await api.deactivateActivity(a.id);
+      reload();
+    } catch (e) {
+      onError(messageFor(e));
+    }
+  };
+  const reactivate = async (a: Activity) => {
+    await api.reactivateActivity(a.id);
+    reload();
+  };
+  return {
+    onCreate: canWrite ? () => setEditing(null) : undefined,
+    onEdit: canWrite ? (a: Activity) => setEditing(a) : undefined,
+    onDeactivate: canSetRate ? deactivate : undefined,
+    onReactivate: canSetRate ? reactivate : undefined,
+  };
+}
+
 export function ActivitiesPage() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
@@ -150,6 +189,14 @@ export function ActivitiesPage() {
 
   if (denied) return <PermissionDenied moduleName="ver las actividades" />;
 
+  const actions = rowActions({
+    canWrite: can("activities.write"),
+    canSetRate: can("activities.setRate"),
+    setEditing,
+    reload,
+    onError: setActionError,
+  });
+
   return (
     <Box>
       {actionError && (
@@ -176,32 +223,14 @@ export function ActivitiesPage() {
         searchPlaceholder="Buscar actividad"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={can("activities.write") ? () => setEditing(null) : undefined}
+        onCreate={actions.onCreate}
         createLabel="Nueva actividad"
-        onEdit={can("activities.write") ? (a) => setEditing(a) : undefined}
-        onDeactivate={
-          can("activities.setRate")
-            ? async (a) => {
-                try {
-                  await api.deactivateActivity(a.id);
-                  reload();
-                } catch (e) {
-                  setActionError(messageFor(e));
-                }
-              }
-            : undefined
-        }
-        onReactivate={
-          can("activities.setRate")
-            ? async (a) => {
-                await api.reactivateActivity(a.id);
-                reload();
-              }
-            : undefined
-        }
+        onEdit={actions.onEdit}
+        onDeactivate={actions.onDeactivate}
+        onReactivate={actions.onReactivate}
         emptyTitle="Todavía no hay actividades"
         emptyBody="Una actividad es un tipo de trabajo con su forma de pago: recolección por kilos, guadañada por jornal, siembra por contrato."
-        onRowClick={can("activities.write") ? (a) => setEditing(a) : undefined}
+        onRowClick={actions.onEdit}
         footer={
           <>
             El precio de una actividad tiene{" "}

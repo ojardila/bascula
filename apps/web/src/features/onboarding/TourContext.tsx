@@ -109,6 +109,38 @@ function settleLocal(key: string, tour: TourName, step: number, status: WireTour
   if (l?.pending && l.step === step && l.status === status) writeLocal(key, tour, { step, status });
 }
 
+/** The server's saved progress, keyed by tour; rows for unknown tours are ignored. */
+function serverRows(items: readonly WireTourProgress[]): Partial<Record<TourName, SavedTour>> {
+  const rows: Partial<Record<TourName, SavedTour>> = {};
+  for (const it of items) {
+    if (it.tour === "owner" || it.tour === "weigher") rows[it.tour] = { step: it.step, status: it.status };
+  }
+  return rows;
+}
+
+/**
+ * A save that never reached the server is still the newest fact: keep it in
+ * `rows`, and hand it to the server now so the next device knows too. That
+ * holds even when the server has an older row: a resume card closed with no
+ * signal must not come back on the next load or device.
+ */
+function handOverPending(key: string, rows: Partial<Record<TourName, SavedTour>>) {
+  const local = readLocal(key);
+  for (const t of ["owner", "weigher"] as TourName[]) {
+    const l = local[t];
+    if (l && (l.pending || !rows[t])) {
+      const { step, status } = l;
+      rows[t] = { step, status };
+      api
+        .saveTour(t, step, status)
+        .then(() => settleLocal(key, t, step, status))
+        .catch(() => {
+          /* still offline: try again on the next load */
+        });
+    }
+  }
+}
+
 /** What «Saltar» saves, given what was saved before this run of the tour. */
 function skipStatus(before: WireTourStatus | undefined): WireTourStatus {
   if (before === undefined) return "later"; // the first «no»: the card offers it once
@@ -186,28 +218,8 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
         return;
       }
       if (cancelled) return;
-      const rows: Partial<Record<TourName, SavedTour>> = {};
-      for (const it of items) {
-        if (it.tour === "owner" || it.tour === "weigher") rows[it.tour] = { step: it.step, status: it.status };
-      }
-      // A save that never reached the server is still the newest fact: keep
-      // it, and hand it to the server now so the next device knows too. That
-      // holds even when the server has an older row: a resume card closed
-      // with no signal must not come back on the next load or device.
-      const local = readLocal(key);
-      for (const t of ["owner", "weigher"] as TourName[]) {
-        const l = local[t];
-        if (l && (l.pending || !rows[t])) {
-          const { step, status } = l;
-          rows[t] = { step, status };
-          api
-            .saveTour(t, step, status)
-            .then(() => settleLocal(key, t, step, status))
-            .catch(() => {
-              /* still offline: try again on the next load */
-            });
-        }
-      }
+      const rows = serverRows(items);
+      handOverPending(key, rows);
       // Whatever this page already wrote (a tour started by hand while the
       // load was retrying) is newer than what the server just said.
       setSaved({ ...rows, ...written.current });

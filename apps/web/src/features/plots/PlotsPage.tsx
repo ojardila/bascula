@@ -103,6 +103,47 @@ function PlotCropsCell({ plot: p }: Readonly<{ plot: Plot }>) {
   );
 }
 
+interface RowActionsParams {
+  canWrite: boolean;
+  canDelete: boolean;
+  navigate: (to: string) => void;
+  reload: () => void;
+  onError: (message: string) => void;
+}
+
+/**
+ * What the list lets this person do: who may write creates and edits, and
+ * only who may delete deactivates or reactivates.
+ */
+function rowActions({
+  canWrite,
+  canDelete,
+  navigate,
+  reload,
+  onError,
+}: RowActionsParams) {
+  const deactivate = async (p: Plot) => {
+    try {
+      await api.deactivatePlot(p.id);
+      reload();
+    } catch (e) {
+      onError(String((e as Error).message));
+    }
+  };
+  const reactivate = async (p: Plot) => {
+    await api.reactivatePlot(p.id);
+    reload();
+  };
+  return {
+    onCreate: canWrite ? () => navigate(`${PLOT.path}/nuevo`) : undefined,
+    onEdit: canWrite
+      ? (p: Plot) => navigate(`${PLOT.path}/${p.id}/editar`)
+      : undefined,
+    onDeactivate: canDelete ? deactivate : undefined,
+    onReactivate: canDelete ? reactivate : undefined,
+  };
+}
+
 export function PlotsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -169,6 +210,14 @@ export function PlotsPage() {
   const totalHa = declared.reduce((a, p) => a + (p.areaHa as number), 0);
   const undeclared = (data ?? []).length - declared.length;
 
+  const actions = rowActions({
+    canWrite: can("plots.write"),
+    canDelete: can("plots.delete"),
+    navigate,
+    reload,
+    onError: setActionError,
+  });
+
   return (
     <Box>
       {actionError && (
@@ -195,36 +244,12 @@ export function PlotsPage() {
         searchPlaceholder="Buscar por nombre o municipio"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={
-          can("plots.write") ? () => navigate(`${PLOT.path}/nuevo`) : undefined
-        }
+        onCreate={actions.onCreate}
         createLabel={`Nuevo ${PLOT.one}`}
         onRowClick={(p) => navigate(`${PLOT.path}/${p.id}`)}
-        onEdit={
-          can("plots.write")
-            ? (p) => navigate(`${PLOT.path}/${p.id}/editar`)
-            : undefined
-        }
-        onDeactivate={
-          can("plots.delete")
-            ? async (p) => {
-                try {
-                  await api.deactivatePlot(p.id);
-                  reload();
-                } catch (e) {
-                  setActionError(String((e as Error).message));
-                }
-              }
-            : undefined
-        }
-        onReactivate={
-          can("plots.delete")
-            ? async (p) => {
-                await api.reactivatePlot(p.id);
-                reload();
-              }
-            : undefined
-        }
+        onEdit={actions.onEdit}
+        onDeactivate={actions.onDeactivate}
+        onReactivate={actions.onReactivate}
         emptyTitle={`Todavía no hay ${PLOT.many}`}
         emptyBody="Un lote es un pedazo de tierra con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre él."
         footer={
