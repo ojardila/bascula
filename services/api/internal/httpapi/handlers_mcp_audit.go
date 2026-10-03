@@ -64,7 +64,10 @@ func (s *Server) mcpAudit(ctx context.Context, p *auth.Principal, tool, outcome 
 		client = &c
 	}
 	err := tenant.RunAs(context.WithoutCancel(ctx), s.pool, p, func(ctx context.Context, tx pgx.Tx) error {
-		return store.InsertMCPAudit(ctx, tx, newID(), p.FarmID, p.UserID, client, tool, outcome, summary, raw)
+		return store.InsertMCPAudit(ctx, tx, p.FarmID, store.MCPAuditEntry{
+			ID: newID(), UserID: p.UserID, ClientID: client,
+			Tool: tool, Outcome: outcome, Summary: summary, Args: raw,
+		})
 	})
 	if err != nil {
 		slog.Error("mcp audit", "tool", tool, "err", err)

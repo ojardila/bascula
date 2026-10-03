@@ -103,8 +103,10 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, uploadResponse(existing))
 		return
 	}
-	a, err := store.CreatePendingAttachment(r.Context(), tx, farmID, body.ID,
-		blob.Key(farmID, body.ID), body.Purpose, body.OriginalName, principalID(r))
+	a, err := store.CreatePendingAttachment(r.Context(), tx, farmID, store.PendingAttachment{
+		ID: body.ID, ObjectKey: blob.Key(farmID, body.ID), Purpose: body.Purpose,
+		OriginalName: body.OriginalName, CreatedBy: principalID(r),
+	})
 	if err != nil {
 		writeError(w, r, err)
 		return
