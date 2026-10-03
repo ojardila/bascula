@@ -26,10 +26,19 @@ func (h *harness) oauthPostOrigin(t *testing.T, ip, origin, path string, form ur
 	return rec
 }
 
-// TestOAuthSignInWithPasskey: the page ChatGPT or Claude opens to connect
-// can be passed with a passkey instead of the password, checked exactly like
-// the app's passkey sign-in.
-func TestOAuthSignInWithPasskey(t *testing.T) {
+// oauthPasskeySetup holds a registered OAuth client and a soft passkey so each
+// subtest can stay flat (keeps Cognitive Complexity of the parent test low).
+type oauthPasskeySetup struct {
+	h        *harness
+	key      *softPasskey
+	clientID string
+	verifier string
+	redirect string
+	base     url.Values
+}
+
+func newOAuthPasskeySetup(t *testing.T) oauthPasskeySetup {
+	t.Helper()
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca OAuth con Llave", 120000)
 	key := newSoftPasskey(t)
@@ -47,80 +56,119 @@ func TestOAuthSignInWithPasskey(t *testing.T) {
 		"code_challenge":        {base64.RawURLEncoding.EncodeToString(sum[:])},
 		"code_challenge_method": {"S256"}, "access": {"read"}, "state": {"s1"},
 	}
-	answer := func(ip string) url.Values {
-		opts := h.passkeyOptions(t, ip)
-		cred, err := json.Marshal(key.get(t, opts, passkeyOrigin))
-		if err != nil {
-			t.Fatal(err)
-		}
-		form := url.Values{}
-		for k, v := range base {
-			form[k] = v
-		}
-		form.Set("passkey_challenge", opts["challenge"].(string))
-		form.Set("passkey_credential", string(cred))
-		return form
+	return oauthPasskeySetup{
+		h: h, key: key, clientID: clientID, verifier: verifier, redirect: redirect, base: base,
 	}
+}
+
+func (s oauthPasskeySetup) answerForm(t *testing.T, ip string) url.Values {
+	t.Helper()
+	opts := s.h.passkeyOptions(t, ip)
+	cred, err := json.Marshal(s.key.get(t, opts, passkeyOrigin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := cloneURLValues(s.base)
+	form.Set("passkey_challenge", opts["challenge"].(string))
+	form.Set("passkey_credential", string(cred))
+	return form
+}
+
+func cloneURLValues(in url.Values) url.Values {
+	out := make(url.Values, len(in))
+	for k, v := range in {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
+}
+
+func checkOAuthPasskeyPageOffers(t *testing.T, h *harness, base url.Values) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+base.Encode(), nil)
+	rec := httptest.NewRecorder()
+	h.server.ServeHTTP(rec, req)
+	csp := rec.Header().Get("Content-Security-Policy")
+	body := rec.Body.String()
+	if !strings.Contains(csp, "script-src 'nonce-") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Fatalf("csp: %s", csp)
+	}
+	nonce := csp[strings.Index(csp, "'nonce-")+7:]
+	nonce = nonce[:strings.Index(nonce, "'")]
+	if !strings.Contains(body, `<script nonce="`+nonce+`">`) || !strings.Contains(body, "Entrar con llave de acceso") {
+		t.Fatalf("page has no passkey button under the nonce")
+	}
+}
+
+func checkForeignOriginPasskeyRefused(t *testing.T, s oauthPasskeySetup) {
+	t.Helper()
+	rec := s.h.oauthPostOrigin(t, "10.31.0.1", "https://evil.example", "/oauth/authorize", s.answerForm(t, "10.31.0.1"))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "No reconocimos esa llave de acceso") {
+		t.Fatalf("foreign origin: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func checkPasskeySignsInReadOnly(t *testing.T, s oauthPasskeySetup, form url.Values) {
+	t.Helper()
+	rec := s.h.oauthPostOrigin(t, "10.31.0.2", passkeyOrigin, "/oauth/authorize", form)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("authorize with passkey: %d %s", rec.Code, rec.Body.String())
+	}
+	loc, _ := rec.Result().Location()
+	if loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
+		t.Fatalf("redirect: %s", loc)
+	}
+	tok := s.h.oauthPost(t, "/oauth/token", url.Values{
+		"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")},
+		"redirect_uri": {s.redirect}, "client_id": {s.clientID}, "code_verifier": {s.verifier},
+	})
+	if tok.Code != http.StatusOK || !strings.Contains(tok.Body.String(), "mcp:read") {
+		t.Fatalf("token: %d %s", tok.Code, tok.Body.String())
+	}
+}
+
+func checkPasskeyReplayRefused(t *testing.T, s oauthPasskeySetup, form url.Values) {
+	t.Helper()
+	rec := s.h.oauthPostOrigin(t, "10.31.0.3", passkeyOrigin, "/oauth/authorize", form)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "No reconocimos esa llave de acceso") {
+		t.Fatalf("replay: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func checkPasskeyRefusalsRateLimited(t *testing.T, s oauthPasskeySetup) {
+	t.Helper()
+	bad := s.answerForm(t, "10.31.0.4")
+	bad.Set("passkey_challenge", "forged")
+	var last *httptest.ResponseRecorder
+	for i := 0; i < 40; i++ {
+		last = s.h.oauthPostOrigin(t, "10.31.0.4", passkeyOrigin, "/oauth/authorize", bad)
+		if strings.Contains(last.Body.String(), "Demasiados intentos") {
+			return
+		}
+	}
+	t.Fatalf("never limited: %s", last.Body.String())
+}
+
+// TestOAuthSignInWithPasskey: the page ChatGPT or Claude opens to connect
+// can be passed with a passkey instead of the password, checked exactly like
+// the app's passkey sign-in.
+func TestOAuthSignInWithPasskey(t *testing.T) {
+	s := newOAuthPasskeySetup(t)
 
 	t.Run("the page offers the passkey under a nonce-only script policy", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+base.Encode(), nil)
-		rec := httptest.NewRecorder()
-		h.server.ServeHTTP(rec, req)
-		csp := rec.Header().Get("Content-Security-Policy")
-		body := rec.Body.String()
-		if !strings.Contains(csp, "script-src 'nonce-") || !strings.Contains(csp, "frame-ancestors 'none'") {
-			t.Fatalf("csp: %s", csp)
-		}
-		nonce := csp[strings.Index(csp, "'nonce-")+7:]
-		nonce = nonce[:strings.Index(nonce, "'")]
-		if !strings.Contains(body, `<script nonce="`+nonce+`">`) || !strings.Contains(body, "Entrar con llave de acceso") {
-			t.Fatalf("page has no passkey button under the nonce")
-		}
+		checkOAuthPasskeyPageOffers(t, s.h, s.base)
 	})
-
 	t.Run("a passkey answer from another site's page is refused", func(t *testing.T) {
-		rec := h.oauthPostOrigin(t, "10.31.0.1", "https://evil.example", "/oauth/authorize", answer("10.31.0.1"))
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "No reconocimos esa llave de acceso") {
-			t.Fatalf("foreign origin: %d %s", rec.Code, rec.Body.String())
-		}
+		checkForeignOriginPasskeyRefused(t, s)
 	})
 
-	form := answer("10.31.0.2")
+	form := s.answerForm(t, "10.31.0.2")
 	t.Run("a passkey signs in and the code becomes a read-only connection", func(t *testing.T) {
-		rec := h.oauthPostOrigin(t, "10.31.0.2", passkeyOrigin, "/oauth/authorize", form)
-		if rec.Code != http.StatusFound {
-			t.Fatalf("authorize with passkey: %d %s", rec.Code, rec.Body.String())
-		}
-		loc, _ := rec.Result().Location()
-		if loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
-			t.Fatalf("redirect: %s", loc)
-		}
-		tok := h.oauthPost(t, "/oauth/token", url.Values{
-			"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")},
-			"redirect_uri": {redirect}, "client_id": {clientID}, "code_verifier": {verifier},
-		})
-		if tok.Code != http.StatusOK || !strings.Contains(tok.Body.String(), "mcp:read") {
-			t.Fatalf("token: %d %s", tok.Code, tok.Body.String())
-		}
+		checkPasskeySignsInReadOnly(t, s, form)
 	})
-
 	t.Run("the same answer is not accepted twice", func(t *testing.T) {
-		rec := h.oauthPostOrigin(t, "10.31.0.3", passkeyOrigin, "/oauth/authorize", form)
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "No reconocimos esa llave de acceso") {
-			t.Fatalf("replay: %d %s", rec.Code, rec.Body.String())
-		}
+		checkPasskeyReplayRefused(t, s, form)
 	})
-
 	t.Run("refusals count against the address and then stop it", func(t *testing.T) {
-		bad := answer("10.31.0.4")
-		bad.Set("passkey_challenge", "forged")
-		var last *httptest.ResponseRecorder
-		for i := 0; i < 40; i++ {
-			last = h.oauthPostOrigin(t, "10.31.0.4", passkeyOrigin, "/oauth/authorize", bad)
-			if strings.Contains(last.Body.String(), "Demasiados intentos") {
-				return
-			}
-		}
-		t.Fatalf("never limited: %s", last.Body.String())
+		checkPasskeyRefusalsRateLimited(t, s)
 	})
 }
