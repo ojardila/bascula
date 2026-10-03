@@ -97,7 +97,7 @@ func (s *Server) readyEmailState(ctx context.Context, slug string) (requested, s
 	err := s.pool.QueryRow(ctx, `SELECT requested, sent FROM farm_ready_email_state($1)`, slug).
 		Scan(&requested, &sent)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("ready email state", "slug", slug, "err", err)
+		slog.Warn("ready email state", "slug", logSafe(slug), "err", logSafeErr(err))
 	}
 	return requested, sent
 }
@@ -138,7 +138,7 @@ func (s *Server) watchReadyEmail(slug string, createdAt time.Time) {
 			}
 			time.Sleep(every)
 		}
-		slog.Warn("ready email: farm not ready in time, nothing sent", "slug", slug)
+		slog.Warn("ready email: farm not ready in time, nothing sent", "slug", logSafe(slug))
 	}()
 }
 
@@ -189,23 +189,23 @@ func (s *Server) sendReadyEmail(ctx context.Context, slug, url string) {
 		return
 	}
 	if err != nil {
-		slog.Warn("ready email claim", "slug", slug, "err", err)
+		slog.Warn("ready email claim", "slug", logSafe(slug), "err", logSafeErr(err))
 		return
 	}
 	msg := readyEmailMessage(email, ownerName, farmName, url)
 	sendCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	if err := s.cfg.Mailer.Send(sendCtx, msg); err != nil {
-		slog.Error("ready email send", "slug", slug, "err", err)
+		slog.Error("ready email send", "slug", logSafe(slug), "err", logSafeErr(err))
 		// farm_ready_email_* are SECURITY DEFINER functions keyed by slug.
 		// nosemgrep: bascula-pool-query-outside-tenant-tx
 		if _, rerr := s.pool.Exec(context.Background(), `SELECT farm_ready_email_release($1)`, slug); rerr != nil {
-			slog.Error("ready email release", "slug", slug, "err", rerr)
+			slog.Error("ready email release", "slug", logSafe(slug), "err", logSafeErr(rerr))
 		}
 		return
 	}
 	s.forgetStatus(slug)
-	slog.Info("ready email sent", "slug", slug)
+	slog.Info("ready email sent", "slug", logSafe(slug))
 }
 
 // readyEmailMessage is the notice, in plain Spanish for somebody who does

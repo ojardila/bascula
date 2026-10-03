@@ -160,6 +160,6 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	slog.Info("tenant seeded from platform", "slug", seed.Farm.Slug, "members", len(seed.Members))
+	slog.Info("tenant seeded from platform", "slug", logSafe(seed.Farm.Slug), "members", len(seed.Members))
 	writeJSON(w, http.StatusCreated, map[string]any{"seeded": true, "created": true})
 }

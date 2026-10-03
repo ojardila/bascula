@@ -55,13 +55,13 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 			de = domain.NotFound("resource not found")
 		default:
 			slog.ErrorContext(r.Context(), "unhandled error",
-				"err", err, "path", r.URL.Path, "method", r.Method)
+				"err", logSafeErr(err), "path", logSafe(r.URL.Path), "method", logSafe(r.Method))
 			de = domain.Internal("unexpected error")
 		}
 	}
 	if de.Status >= 500 {
 		slog.ErrorContext(r.Context(), "server error",
-			"err", de.Error(), "code", de.Code, "path", r.URL.Path)
+			"err", logSafe(de.Error()), "code", de.Code, "path", logSafe(r.URL.Path))
 	}
 
 	var body errorBody

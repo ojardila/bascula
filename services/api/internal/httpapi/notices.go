@@ -51,7 +51,7 @@ func (s *Server) mailLater(r *http.Request, m mailer.Message) {
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
 			if err := send.Send(ctx, m); err != nil {
-				slog.Error("notice email", "subject", m.Subject, "err", err)
+				slog.Error("notice email", "subject", logSafe(m.Subject), "err", logSafeErr(err))
 			}
 		}()
 	})

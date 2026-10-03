@@ -420,7 +420,7 @@ func (s *Server) fillStages(ctx context.Context, st *provisionStatus, createdAt 
 		st.Current = "¡Su finca está lista!"
 	}
 	for _, k := range newly {
-		slog.Info("provision stage done", "slug", slug, "stage", k,
+		slog.Info("provision stage done", "slug", logSafe(slug), "stage", k,
 			"afterSeconds", int64(now.Sub(createdAt).Seconds()))
 	}
 }

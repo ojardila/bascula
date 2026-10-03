@@ -44,25 +44,25 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		attrs := []any{
-			"method", r.Method,
-			"path", p,
-			"host", r.Host,
+			"method", logSafe(r.Method),
+			"path", logSafe(p),
+			"host", logSafe(r.Host),
 			"status", ww.Status(),
 			"ms", time.Since(start).Milliseconds(),
-			"ua", r.UserAgent(),
+			"ua", logSafe(r.UserAgent()),
 			"ip", middleware.GetClientIP(r.Context()),
 		}
 		if rpcMethod != "" {
-			attrs = append(attrs, "rpc", rpcMethod)
+			attrs = append(attrs, "rpc", logSafe(rpcMethod))
 		}
 		if rpcTool != "" {
-			attrs = append(attrs, "tool", rpcTool)
+			attrs = append(attrs, "tool", logSafe(rpcTool))
 		}
 		if p == "/mcp" {
 			attrs = append(attrs,
 				"bearer", bearerToken(r) != "",
-				"accept", r.Header.Get("Accept"),
-				"mcp_protocol", r.Header.Get("MCP-Protocol-Version"),
+				"accept", logSafe(r.Header.Get("Accept")),
+				"mcp_protocol", logSafe(r.Header.Get("MCP-Protocol-Version")),
 				"mcp_session", r.Header.Get("Mcp-Session-Id") != "")
 		}
 		if strings.HasPrefix(p, "/oauth/") {
@@ -90,20 +90,20 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 				clientAuth = "post"
 			}
 			attrs = append(attrs,
-				"client_id", clientID,
+				"client_id", logSafe(clientID),
 				"client_auth", clientAuth,
-				"grant_type", get("grant_type"),
-				"redirect_uri", get("redirect_uri"),
-				"resource", get("resource"),
-				"scope", get("scope"),
-				"pkce", get("code_challenge_method"),
+				"grant_type", logSafe(get("grant_type")),
+				"redirect_uri", logSafe(get("redirect_uri")),
+				"resource", logSafe(get("resource")),
+				"scope", logSafe(get("scope")),
+				"pkce", logSafe(get("code_challenge_method")),
 				"has_state", get("state") != "")
 			if loc := ww.Header().Get("Location"); loc != "" {
 				if u, err := url.Parse(loc); err == nil {
 					attrs = append(attrs,
-						"redirect_to", u.Scheme+"://"+u.Host+u.Path,
+						"redirect_to", logSafe(u.Scheme+"://"+u.Host+u.Path),
 						"redirect_has_code", u.Query().Get("code") != "",
-						"redirect_error", u.Query().Get("error"))
+						"redirect_error", logSafe(u.Query().Get("error")))
 				}
 			}
 		}

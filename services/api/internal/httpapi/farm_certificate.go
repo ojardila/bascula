@@ -139,7 +139,7 @@ func (s *Server) ensureFarmCertificate(slug string) {
 			if last == nil || last.ID == "" {
 				h, err = c.Ensure(ctx, host)
 				if err == nil && h != nil {
-					slog.Info("farm hostname requested", "slug", slug, "hostname", host, "state", h.Summary())
+					slog.Info("farm hostname requested", "slug", logSafe(slug), "hostname", logSafe(host), "state", logSafe(h.Summary()))
 				}
 			} else {
 				h, err = c.Get(ctx, last.ID)
@@ -147,13 +147,13 @@ func (s *Server) ensureFarmCertificate(slug string) {
 			cancel()
 			if err != nil {
 				// Retried on the next tick; the status shows the error.
-				slog.Warn("farm hostname", "slug", slug, "hostname", host, "err", err)
+				slog.Warn("farm hostname", "slug", logSafe(slug), "hostname", logSafe(host), "err", logSafeErr(err))
 				s.setCertError(slug, err)
 			} else if h != nil {
 				last = h
 				s.setCertState(slug, h, true)
 				if h.Active() {
-					slog.Info("farm certificate active", "slug", slug, "hostname", host)
+					slog.Info("farm certificate active", "slug", logSafe(slug), "hostname", logSafe(host))
 					return
 				}
 				// A failed or timed-out certificate never fixes itself: ask
@@ -162,7 +162,7 @@ func (s *Server) ensureFarmCertificate(slug string) {
 				// one. HTTP validation also needs the hostname to point at the
 				// zone when Cloudflare checks; ask once more if still pending.
 				if h.Failed() {
-					slog.Warn("farm certificate failed; asking again", "slug", slug, "state", h.Summary())
+					slog.Warn("farm certificate failed; asking again", "slug", logSafe(slug), "state", logSafe(h.Summary()))
 				}
 				if (h.Failed() && time.Since(lastRevalidate) > revalidateAfter) ||
 					(!revalidated && time.Since(started) > revalidateAfter) {
@@ -170,13 +170,13 @@ func (s *Server) ensureFarmCertificate(slug string) {
 					revalidated = true
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					if _, err := c.Revalidate(ctx, h.ID); err != nil {
-						slog.Warn("farm hostname revalidate", "slug", slug, "err", err)
+						slog.Warn("farm hostname revalidate", "slug", logSafe(slug), "err", logSafeErr(err))
 					}
 					cancel()
 				}
 			}
 			time.Sleep(every)
 		}
-		slog.Warn("farm certificate watch gave up", "slug", slug, "state", last.Summary())
+		slog.Warn("farm certificate watch gave up", "slug", logSafe(slug), "state", logSafe(last.Summary()))
 	}()
 }
