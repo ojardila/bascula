@@ -54,7 +54,7 @@ describe("Preparando su finca", () => {
     );
     const calls = spy.mock.calls.length;
     await new Promise((r) => setTimeout(r, 50));
-    expect(spy.mock.calls.length).toBe(calls); // stops polling once ready
+    expect(spy.mock.calls).toHaveLength(calls); // stops polling once ready
   });
 
   it("shows the secure-connection step only when the platform reports it", async () => {

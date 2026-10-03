@@ -362,7 +362,7 @@ describe("the mock is the server", () => {
 
   it("catalogues answer {items} and 200 on create", async () => {
     const l = await get("/v1/catalogs/crop-types", OWNER);
-    expect(l.body.items.length).toBe(4);
+    expect(l.body.items).toHaveLength(4);
     const c = await post("/v1/catalogs/crop-types", OWNER, { name: "café" });
     expect(c.status).toBe(200);
     expect(c.body.name).toBe("Café"); // idempotent by lower(name)
@@ -420,7 +420,7 @@ describe("the mock is the server", () => {
 
   it("keeps notes append-only and private", async () => {
     const l = await get(`/v1/workers/${MARIA}/notes`, OWNER);
-    expect(l.body.items.length).toBe(2);
+    expect(l.body.items).toHaveLength(2);
     expect(l.body.items[0].text).toContain("adelanto");
     const c = await post(`/v1/workers/${MARIA}/notes`, OWNER, { text: "Nueva nota", date: "2026-08-28" });
     expect(c.status).toBe(201);
@@ -451,7 +451,7 @@ describe("the mock is the server", () => {
     expect((await get("/v1/admin/farms", OWNER)).status).toBe(403);
     const l = await get("/v1/admin/farms", SUPER);
     expect(l.status).toBe(200);
-    expect(l.body.items.length).toBe(4);
+    expect(l.body.items).toHaveLength(4);
     for (const f of l.body.items) {
       expect(Object.keys(f).sort()).toEqual([
         "city", "country", "createdAt", "currency", "id", "name", "slug", "status", "suspendedAt", "timezone",

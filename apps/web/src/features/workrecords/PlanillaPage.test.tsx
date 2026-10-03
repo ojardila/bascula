@@ -136,7 +136,7 @@ describe("Planilla de recolección", () => {
     await user.click(await screen.findByRole("option", { name: /María Restrepo Ospina/ }));
     await user.type(screen.getByLabelText("Kilos"), "42");
     await user.click(screen.getByRole("button", { name: "Guardar pesada" }));
-    await waitFor(() => expect(posted.length).toBe(2));
+    await waitFor(() => expect(posted).toHaveLength(2));
     expect((posted[1] as { id: string }).id).not.toBe((posted[0] as { id: string }).id);
 
     // Next time the screen opens on this device, the lote is already chosen.

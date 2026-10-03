@@ -161,7 +161,7 @@ describe("the race guard, applied to a group", () => {
 
     // And not one settlement written: not María's, not Luz Dary's, whose
     // figures did not move at all. That is what "pay nobody" means.
-    expect(liveSettlements().length).toBe(before);
+    expect(liveSettlements()).toHaveLength(before);
   }, 30000);
 
   it("the only way out is to look again, never a retry", async () => {
@@ -208,7 +208,7 @@ describe("the race guard, applied to a group", () => {
     await user.click(within(dialog).getByRole("button", { name: "Liquidar" }));
 
     expect(await screen.findByText("Liquidación de cuadrilla")).toBeInTheDocument();
-    expect(liveSettlements().length).toBe(4);
+    expect(liveSettlements()).toHaveLength(4);
     expect(await screen.findByText(/Llegó trabajo nuevo mientras revisaba/)).toBeInTheDocument();
     expect(screen.getByText(/No entra en esta corrida/)).toBeInTheDocument();
   }, 30000);
@@ -281,7 +281,7 @@ describe("a double click cannot fire the payroll twice", () => {
     await screen.findByText("Liquidación de cuadrilla");
     // Three people, three settlements. Not six.
     expect(posts).toHaveLength(3);
-    expect(liveSettlements().length).toBe(4);
+    expect(liveSettlements()).toHaveLength(4);
   }, 30000);
 
   it("and pays once only", async () => {
@@ -328,7 +328,7 @@ describe("the complete run, and its report", () => {
     const settle = await openSettleConfirm(user);
     await user.click(within(settle).getByRole("button", { name: "Liquidar" }));
     await screen.findByText("Liquidación de cuadrilla");
-    expect(liveSettlements().length).toBe(4);
+    expect(liveSettlements()).toHaveLength(4);
 
     // Now step 2 brings all four: the three just settled, and Édinson.
     await waitFor(() =>

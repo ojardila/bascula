@@ -147,7 +147,7 @@ describe("the farm price card", () => {
     await waitFor(() => expect(priceField()).not.toBeDisabled());
     await user.click(screen.getByLabelText("Desde"));
     const options = await screen.findAllByRole("option");
-    expect(options.length).toBe(13);
+    expect(options).toHaveLength(13);
     expect(
       screen.getByRole("option", { name: /\(esta semana\)/ }),
     ).toBeInTheDocument();

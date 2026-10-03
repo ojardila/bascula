@@ -79,7 +79,7 @@ describe("saving a labor", () => {
     await user.type(screen.getByLabelText(/^Nota/), "Ronda del lunes");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     expect(await screen.findByText("lista de labores")).toBeInTheDocument();
-    expect(tenant().workRecords.length).toBe(before + 1);
+    expect(tenant().workRecords).toHaveLength(before + 1);
   }, 30000);
 
   it("«Guardar y registrar otra» keeps the activity and clears the person", async () => {
@@ -94,7 +94,7 @@ describe("saving a labor", () => {
     expect(
       await screen.findByText("Labor guardada. Puede registrar la siguiente."),
     ).toBeInTheDocument();
-    expect(tenant().workRecords.length).toBe(before + 1);
+    expect(tenant().workRecords).toHaveLength(before + 1);
     expect(screen.getByLabelText(/^Empleado/)).toHaveValue("");
   }, 30000);
 
