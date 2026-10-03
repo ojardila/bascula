@@ -68,7 +68,9 @@ func TestHandlersFailClosed(t *testing.T) {
 		for _, role := range []domain.Role{domain.RoleOwner, domain.RoleWeigher} {
 			r := faultSweepRouter(s, mode, role, farmID, id)
 			for _, rt := range s.Routes() {
-				faultSweepRoute(r, rt, mode, id, ok2xx)
+				if faultSweepRoute(r, rt, mode, id) {
+					ok2xx[rt.Method+" "+rt.Pattern] = true
+				}
 			}
 		}
 	}
@@ -103,9 +105,9 @@ func faultSweepRouter(s *Server, mode string, role domain.Role, farmID, id strin
 	return r
 }
 
-// faultSweepRoute sends rt a few bodies and records in ok2xx a route that
+// faultSweepRoute sends rt a few bodies and reports whether it
 // answered 2xx to "{}" with the database down. A panic is not a failure here.
-func faultSweepRoute(r chi.Router, rt Route, mode, id string, ok2xx map[string]bool) {
+func faultSweepRoute(r chi.Router, rt Route, mode, id string) (answered2xx bool) {
 	path := strings.NewReplacer("{id}", id, "{slug}", "finca", "{cropId}", id,
 		"{workerId}", id, "{plotId}", id, "{token}", "x", "{noteId}", id).Replace(rt.Pattern)
 	path = strings.ReplaceAll(path, "*", "x")
@@ -117,10 +119,11 @@ func faultSweepRoute(r chi.Router, rt Route, mode, id string, ok2xx map[string]b
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, req)
 			if mode == "broken-db" && rec.Code < 300 && body == "{}" {
-				ok2xx[rt.Method+" "+rt.Pattern] = true
+				answered2xx = true
 			}
 		}()
 	}
+	return answered2xx
 }
 
 // faultSweepIsV1 reports whether k ("METHOD /path") is a /v1/ API route.
