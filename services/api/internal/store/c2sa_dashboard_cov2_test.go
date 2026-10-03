@@ -65,45 +65,52 @@ func TestC2saHarvestDashboardBreaksTiesAndCountsGaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard: %v", err)
 	}
-
-	// Lotes: P1 and P2 tie on 10 kg this week, last week decides; P3 and P4
-	// tie on everything, the name decides, case-insensitively.
-	t.Run("plot order", func(t *testing.T) {
-		var plots []string
-		for _, p := range out.Plots {
-			plots = append(plots, p.PlotID)
-		}
-		if want := []string{"P1", "P2", "P4", "P3"}; !c2saSameOrder(plots, want) {
-			t.Errorf("plot order %v, want %v", plots, want)
-		}
-	})
-
-	// People: the team and Eva tie on 20 kg each, the team's 40 kg together
-	// goes first; Ana and beto tie on everything; Zoe has no kilos.
-	t.Run("people order", func(t *testing.T) {
-		var people []string
-		for _, p := range out.People {
-			people = append(people, p.EmployeeID)
-		}
-		if want := []string{"T", "E1", "E3", "E2", "E4"}; !c2saSameOrder(people, want) {
-			t.Errorf("people order %v, want %v", people, want)
-		}
-	})
+	t.Run("plot order", func(t *testing.T) { c2saCheckDashPlotOrder(t, out) })
+	t.Run("people order", func(t *testing.T) { c2saCheckDashPeopleOrder(t, out) })
 	t.Run("people rows", func(t *testing.T) {
 		for _, p := range out.People {
 			c2saCheckDashPerson(t, p)
 		}
 	})
+	t.Run("summary", func(t *testing.T) { c2saCheckDashSummary(t, out) })
+}
 
-	t.Run("summary", func(t *testing.T) {
-		w := out.Summary.ThisWeek
-		if w.Records != 6 || w.RecordsNotInKg != 1 || w.RecordsWithoutValue != 1 || w.RecordsSpanningWeeks != 1 {
-			t.Errorf("this week totals %+v: want 6 records, one each not in kg, without value, spanning weeks", w)
-		}
-		if out.Summary.LastWeek.Kg == nil || *out.Summary.LastWeek.Kg != 8 {
-			t.Errorf("last week kg %v, want 8", out.Summary.LastWeek.Kg)
-		}
-	})
+// c2saCheckDashPlotOrder: P1 and P2 tie on 10 kg this week, last week
+// decides; P3 and P4 tie on everything, the name decides, case-insensitively.
+func c2saCheckDashPlotOrder(t *testing.T, out *HarvestDashboard) {
+	t.Helper()
+	var plots []string
+	for _, p := range out.Plots {
+		plots = append(plots, p.PlotID)
+	}
+	if want := []string{"P1", "P2", "P4", "P3"}; !c2saSameOrder(plots, want) {
+		t.Errorf("plot order %v, want %v", plots, want)
+	}
+}
+
+// c2saCheckDashPeopleOrder: the team and Eva tie on 20 kg each, the team's
+// 40 kg together goes first; Ana and beto tie on everything; Zoe has no kilos.
+func c2saCheckDashPeopleOrder(t *testing.T, out *HarvestDashboard) {
+	t.Helper()
+	var people []string
+	for _, p := range out.People {
+		people = append(people, p.EmployeeID)
+	}
+	if want := []string{"T", "E1", "E3", "E2", "E4"}; !c2saSameOrder(people, want) {
+		t.Errorf("people order %v, want %v", people, want)
+	}
+}
+
+// c2saCheckDashSummary checks the week totals of the scripted week.
+func c2saCheckDashSummary(t *testing.T, out *HarvestDashboard) {
+	t.Helper()
+	w := out.Summary.ThisWeek
+	if w.Records != 6 || w.RecordsNotInKg != 1 || w.RecordsWithoutValue != 1 || w.RecordsSpanningWeeks != 1 {
+		t.Errorf("this week totals %+v: want 6 records, one each not in kg, without value, spanning weeks", w)
+	}
+	if out.Summary.LastWeek.Kg == nil || *out.Summary.LastWeek.Kg != 8 {
+		t.Errorf("last week kg %v, want 8", out.Summary.LastWeek.Kg)
+	}
 }
 
 // c2saCheckDashPerson checks one people row of the scripted week.
