@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -168,14 +169,26 @@ func (s *Server) passwordResetBase(r *http.Request) string {
 	}
 	apex := strings.ToLower(u.Hostname())
 	host := strings.ToLower(requestHostname(r))
-	if host != apex && !strings.HasSuffix(host, "."+apex) {
-		return base
+	// The host comes from X-Forwarded-Host or Host, both of which the caller
+	// writes. A suffix check is not enough: "evil.com?.bascula.engp.io" ends
+	// in ".bascula.engp.io" and turns the mailed link into
+	// https://evil.com?.bascula.engp.io/restablecer-clave#SECRET, so a genuine
+	// Báscula email hands the secret to a stranger's page. Only the apex or
+	// exactly one DNS label in front of it (a farm address) is accepted.
+	if host != apex {
+		label, ok := strings.CutSuffix(host, "."+apex)
+		if !ok || !dnsLabel.MatchString(label) {
+			return base
+		}
 	}
 	if u.Port() != "" {
 		host += ":" + u.Port()
 	}
 	return u.Scheme + "://" + host
 }
+
+// dnsLabel is one lowercase DNS label: what a farm slug looks like.
+var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 type passwordResetRequest struct {
 	Email string `json:"email"`

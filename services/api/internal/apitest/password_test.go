@@ -3,6 +3,7 @@ package apitest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -290,5 +291,47 @@ func TestRaisingSomebodyToAdminTellsTheOtherOwners(t *testing.T) {
 	if len(mail.sent) != 1 || mail.sent[0].To != coOwnerEmail ||
 		!strings.Contains(mail.sent[0].Body, "administrador de la finca Finca Aviso") {
 		t.Fatalf("notices: %+v", mail.sent)
+	}
+}
+
+// TestPasswordResetLinkCannotBeSmuggledPastTheSuffixCheck: "evil.com?" in
+// front of the apex still ends in ".bascula.example.com", and the link became
+// https://evil.com?.bascula.example.com/restablecer-clave#SECRET, a page on
+// evil.com holding the secret. The client's X-Forwarded-Host reaches the API
+// in production, so this was a takeover by email address alone.
+func TestPasswordResetLinkCannotBeSmuggledPastTheSuffixCheck(t *testing.T) {
+	h := requireDB(t)
+	srv, mail := mailServer(t, h)
+
+	hostile := []string{
+		"evil.com?.bascula.example.com",
+		"evil.com/x.bascula.example.com",
+		"evil.com#.bascula.example.com",
+		"evil.com\\.bascula.example.com",
+		"a.b.bascula.example.com",
+		"evil.com@x.bascula.example.com",
+	}
+	for i, host := range hostile {
+		// A farm per attempt: the per-address limit is three an hour.
+		f := h.signupFarm(t, fmt.Sprintf("Finca Contrabando %d", i), 90000)
+		raw, _ := json.Marshal(map[string]any{"email": f.OwnerEmail})
+		req := httptest.NewRequest(http.MethodPost, "/v1/auth/password-reset/request", strings.NewReader(string(raw)))
+		req.RemoteAddr = fmt.Sprintf("10.0.8.%d:1", i+1)
+		req.Host = "bascula.example.com"
+		req.Header.Set("X-Forwarded-Host", host)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("%s: %d %s", host, rec.Code, rec.Body.String())
+		}
+		waitForMail(t, mail, 1)
+		mail.mu.Lock()
+		body := mail.sent[len(mail.sent)-1].Body
+		mail.sent = nil
+		mail.mu.Unlock()
+		if !strings.Contains(body, "https://bascula.example.com/restablecer-clave#") || strings.Contains(body, "evil") {
+			t.Fatalf("X-Forwarded-Host %q steered the link: %s", host, body)
+		}
 	}
 }
