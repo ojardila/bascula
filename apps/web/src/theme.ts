@@ -29,7 +29,10 @@ export const theme = createTheme(
       primary: { main: GREEN, dark: GREEN_DARK, contrastText: "#ffffff" },
       secondary: { main: "#6d4c41" }, // dried coffee parchment
       success: { main: GREEN },
-      warning: { main: "#c08a17" },
+      // Dark enough to read as TEXT on paper: an outlined «provisional» chip
+      // reads 4.85:1 against white; the former #c08a17 sat at 3:1 and was WCAG
+      // AA's commonest failure in the console.
+      warning: { main: "#946a0d" },
       error: { main: "#b3261e" },
       background: { default: "#f6f7f4", paper: "#ffffff" },
       text: { primary: "#1a1c19", secondary: "#43483f" },

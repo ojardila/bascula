@@ -223,6 +223,15 @@ function WeekSummaryLoader({
   return <>{content}</>;
 }
 
+/**
+ * The hint's opacity on `BigAction`. Factored out so a WCAG test can hold the
+ * palette and the opacity together: the chosen value, blended with white over
+ * `primary.main`, has to read on the card. The former value, 0.9, flattened to
+ * `#eaf2eb` on green and sat at 4.49:1 — one hundredth below AA. See
+ * `src/test/a11yPaletteContrast.test.ts`.
+ */
+export const BIG_ACTION_HINT_OPACITY = 0.95;
+
 function BigAction({
   to,
   icon,
@@ -275,7 +284,7 @@ function BigAction({
         </Typography>
         <Typography
           component="span"
-          sx={{ display: "block", fontSize: "1rem", opacity: 0.9 }}
+          sx={{ display: "block", fontSize: "1rem", opacity: BIG_ACTION_HINT_OPACITY }}
         >
           {hint}
         </Typography>
