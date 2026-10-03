@@ -149,6 +149,10 @@ jobs:
   # database. govulncheck reports only vulnerabilities whose code the API
   # actually reaches, so an advisory in an unused corner of a dependency does
   # not turn the PR red. Same reasoning as npm audit: a separate job.
+  #
+  # The standard library it checks is the one the release binary is built
+  # with: the Go of services/api/Dockerfile's builder image (golang:1.27, the
+  # newest patch), not go.mod's minimum, which the tests run on.
   govulncheck:
     name: govulncheck
     needs: changes
@@ -157,9 +161,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Go version of the image build
+        id: go
+        run: |
+          v=$(sed -nE 's/^FROM golang:([0-9.]+)-.*/\1/p' services/api/Dockerfile | head -n 1)
+          test -n "$v"
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: services/api/go.mod
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: true
           cache-dependency-path: services/api/go.sum
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
         working-directory: services/api
