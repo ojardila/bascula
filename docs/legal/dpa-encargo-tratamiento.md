@@ -6,6 +6,13 @@
 > finca firme este contrato, un abogado habilitado debe revisarlo
 > contra la situación concreta del operador de Báscula y las partes
 > contratantes.
+>
+> Es una **plantilla**: describe sólo lo que el servicio hace hoy. Lo
+> marcado **[pendiente / to be implemented]** no existe todavía en la
+> plataforma (ver la sección «What is pending» de
+> [`docs/data-protection.md`](../data-protection.md#what-is-pending));
+> mientras no exista, el Operador lo cumple manualmente o la cláusula se
+> ajusta antes de firmar.
 
 ## Partes
 
@@ -23,8 +30,9 @@ Entre:
   dominio `*.bascula.engp.io`,
 
 se celebra el presente contrato de encargo del tratamiento de datos
-personales, en los términos de los artículos 25 y 50 del Decreto 1377
-de 2013, reglamentario de la Ley 1581 de 2012.
+personales, en los términos de los artículos 24 y 25 del Decreto 1377
+de 2013 (compilado en el Decreto Único 1074 de 2015), reglamentario de
+la Ley 1581 de 2012.
 
 ## 1. Objeto
 
@@ -46,17 +54,27 @@ de datos (el detalle técnico está en
   país.
 - Fotografía del trabajador, cuando la Finca la cargue.
 - Historial laboral dentro de la Finca: días trabajados, lotes,
-  actividades, productividad.
+  actividades, productividad, y la nota de texto libre que quien
+  registra la jornada puede escribir en cada registro.
 - Movimientos económicos del trabajador en la Finca: liquidaciones,
-  anticipos, devengos y pagos.
+  devengos, pagos, anticipos, deducciones, ajustes y reversos.
 - Notas internas que la Finca registre sobre el trabajador, que nacen
   privadas y así permanecen.
 - Datos de los usuarios de la Finca con acceso a la plataforma: correo,
-  nombre, teléfono y credenciales (siempre almacenadas con hash).
+  nombre, teléfono y credenciales. Las contraseñas se guardan con hash
+  argon2id y los tokens de verificación, recuperación y sesión sólo como
+  hash; las llaves de acceso (passkeys) guardan la llave pública; el
+  código de autorización OAuth y el token de acceso que entrega a un
+  asistente conectado se guardan en texto claro mientras viven (son de
+  corta duración).
+- Registros operativos y de seguridad: dirección IP y correo de cada
+  ingreso rechazado y de cada intento de registro, y la auditoría de las
+  acciones de escritura de asistentes conectados (MCP).
 
-Los datos cumplen el principio de **limitación** (artículo 4 literal c
-de la Ley 1581): el Operador no solicita a la Finca datos adicionales
-a los necesarios para prestar el servicio.
+En desarrollo del principio de **finalidad** (artículo 4 literal b de
+la Ley 1581) y del artículo 4 del Decreto 1377 de 2013, el Operador no
+solicita a la Finca datos adicionales a los necesarios para prestar el
+servicio.
 
 ## 3. Finalidades del tratamiento
 
@@ -90,19 +108,36 @@ b. Conservar la información bajo las condiciones de seguridad
    respuesta a incidentes en
    [`docs/incident-response.md`](../incident-response.md).
 c. Realizar oportunamente la actualización, rectificación o supresión
-   de los datos, cuando la Finca así lo instruya.
+   de los datos, cuando la Finca así lo instruya. La Finca corrige y
+   suprime directamente los datos de sus trabajadores desde la consola
+   de administración; la supresión es hoy un borrado lógico
+   (`deleted_at`) y la supresión definitiva no existe en la plataforma
+   **[pendiente / to be implemented]**: cuando la Finca la instruya, el
+   Operador la ejecuta manualmente. Los usuarios no pueden cambiar por
+   sí mismos su correo, nombre o teléfono **[pendiente / to be
+   implemented]**: el Operador hace ese cambio manualmente a solicitud
+   de la Finca.
 d. Actualizar la información reportada por la Finca dentro de los
-   cinco (5) días hábiles siguientes a su recibo.
+   cinco (5) días hábiles siguientes a su recibo, manualmente en lo que
+   la Finca no pueda hacer desde la consola (literal c).
 e. Tramitar las consultas y los reclamos formulados por los Titulares
    en los términos de los artículos 14 y 15 de la Ley 1581,
-   remitiéndolos a la Finca cuando corresponda.
+   remitiéndolos a la Finca cuando corresponda. Los trabajadores no
+   tienen cuenta en la plataforma y no hay buzón de privacidad dedicado
+   ni exportación de los datos de un trabajador **[pendiente / to be
+   implemented]**; hoy las solicitudes llegan al Operador por el canal
+   privado de [`SECURITY.md`](../../SECURITY.md) y el Operador las
+   atiende manualmente (ver [`docs/data-protection.md`, «What is pending»](../data-protection.md#what-is-pending)).
 f. Abstenerse de circular información que esté siendo controvertida
    por el Titular y cuyo bloqueo haya ordenado la Superintendencia de
-   Industria y Comercio.
+   Industria y Comercio. La plataforma no tiene un mecanismo de bloqueo
+   **[pendiente / to be implemented]**; el Operador lo cumple
+   manualmente.
 g. Permitir el acceso a la información únicamente a quienes puedan
    tener acceso a ella según el modelo de roles de la plataforma.
 h. Informar a la Superintendencia de Industria y Comercio y a la
-   Finca los incidentes que afecten los datos personales, en los
+   Finca las violaciones a los códigos de seguridad que afecten los
+   datos personales (artículo 18 literal k de la Ley 1581), en los
    términos del numeral 8 de este contrato.
 i. Cumplir las instrucciones y requerimientos que imparta la
    Superintendencia de Industria y Comercio.
@@ -116,6 +151,9 @@ a. Obtener del Titular, antes o al momento de la recolección, la
    los términos del artículo 9 de la Ley 1581 y del aviso de
    privacidad modelo del Operador
    ([`aviso-privacidad-trabajador.md`](aviso-privacidad-trabajador.md)).
+   La plataforma no muestra ni registra hoy ese aviso al crear un
+   trabajador **[pendiente / to be implemented]**: la Finca obtiene y
+   conserva la autorización por fuera de la plataforma.
 b. Conservar prueba de la autorización otorgada por el Titular.
 c. Suministrar al Operador información veraz, completa, exacta,
    actualizada, comprobable y comprensible.
@@ -132,19 +170,31 @@ g. Inscribir sus bases de datos en el Registro Nacional de Bases de
 
 ## 6. Subencargados
 
-El Operador se apoya en los siguientes proveedores de infraestructura
-para prestar el servicio, cuyo uso la Finca autoriza al firmar este
-contrato:
+La base de datos y los archivos adjuntos (fotos) se alojan en un
+clúster Kubernetes propio del Operador, ubicado en [CIUDAD], Colombia;
+no hay un proveedor externo de almacenamiento de adjuntos. El Operador
+se apoya en los siguientes proveedores, cuyo uso la Finca autoriza al
+firmar este contrato:
 
-- Proveedor de almacenamiento de archivos adjuntos (fotos,
-  documentos): [PROVEEDOR, UBICACIÓN DE DATOS].
-- Proveedor de respaldo de la base de datos: [PROVEEDOR, UBICACIÓN DE
-  DATOS].
-- Proveedor de correo transaccional (verificación de correo,
-  recuperación de contraseña): [PROVEEDOR, UBICACIÓN DE DATOS].
+- **Cloudflare, Inc.** (red global; sede en Estados Unidos): DNS, túnel
+  de entrada y certificados por finca. Todo el tráfico entre el
+  navegador y el servicio pasa por su red.
+- **DigitalOcean, LLC** (Spaces, región NYC3, Estados Unidos): copias
+  de respaldo de la base de datos de producción
+  compartida (30 días, con recuperación a un punto en el tiempo) y de
+  las fotos de todas las fincas (14 respaldos diarios). Las bases de
+  datos de las fincas con instalación dedicada **no tienen respaldo
+  hoy [pendiente / to be implemented]**.
+- **Resend** (relay SMTP; [UBICACIÓN DE DATOS — confirmar con el
+  proveedor]): correo transaccional (verificación de correo,
+  recuperación de contraseña, avisos de seguridad); recibe la dirección
+  y el contenido de cada correo.
+- **GitHub, Inc.** (Estados Unidos): aloja el código y el canal privado
+  de reportes de [`SECURITY.md`](../../SECURITY.md), que hoy es también
+  el canal de solicitudes de usuarios al Operador; no aloja la base de
+  datos de la Finca.
 
-El Operador mantendrá la lista actualizada en el repositorio del
-servicio. Un cambio de subencargado se le notifica a la Finca con al
+El Operador mantendrá esta lista actualizada. Un cambio de subencargado se le notifica a la Finca con al
 menos quince (15) días de antelación; la Finca podrá oponerse por
 escrito, en cuyo caso las partes buscarán una solución alternativa de
 buena fe o darán por terminado el contrato principal.
@@ -156,55 +206,76 @@ tratara los datos directamente.
 
 El servicio contempla un registro cruzado entre fincas descrito en
 [`docs/data-model.md`](../data-model.md) §D y en
-[`docs/data-protection.md`](../data-protection.md) §2. Son condiciones
-de este registro:
+[`docs/data-protection.md`](../data-protection.md) («Cross-farm
+registry»). **Hoy el registro está diseñado pero no activo**: existe
+como un esquema vacío y no se habilitará mientras no exista la
+pantalla con la que el trabajador ve quién lo consultó **[pendiente /
+to be implemented]**. Las condiciones siguientes describen el diseño y
+rigen cuando se active:
 
 a. **Es opcional.** Cada participación nace con el indicador
    `disclosable = false`; la Finca decide expresamente cuáles publica.
 b. **Lo que se publica.** Para una participación marcada como
-   `disclosable`, el registro revela únicamente: nombre de la finca y
-   fechas de inicio y fin de la participación.
+   `disclosable`, el registro revela únicamente las fechas de inicio y
+   fin de la participación y, según el diseño actual, el nombre de la
+   finca. Si el nombre de la finca se revela o no es una decisión
+   abierta que debe resolverse antes de construir el registro
+   **[pendiente]**.
 c. **Lo que nunca se publica.** Notas, saldos, deudas, anticipos,
    kilos, productividad, teléfono, dirección, fotografía ni el nombre
    de otras fincas que no hayan publicado la participación.
 d. **Identidad hasheada.** El documento del trabajador se almacena en
-   el registro cruzado sólo como huella criptográfica con una sal de
-   servidor; una copia del registro no revela cédulas.
+   el registro cruzado sólo como huella criptográfica (sha256) con un
+   secreto del servidor (pepper); una copia del registro no revela
+   cédulas.
 e. **Trazabilidad.** Toda consulta queda registrada con el usuario y
    finca que consultó, la razón declarada (mínimo diez caracteres), la
-   fecha y el número de resultados. El trabajador podrá, cuando la
-   funcionalidad esté habilitada, consultar quién lo ha buscado.
+   fecha y el número de resultados. El trabajador podrá consultar quién
+   lo ha buscado; esa pantalla es la condición para activar el
+   registro.
 f. **Límite.** Cincuenta consultas por finca por día.
-g. **Interruptor.** El registro cruzado se habilita por finca,
-   solicitándolo expresamente al Operador.
+g. **Interruptor.** Hoy ninguna finca puede habilitarlo. Una vez
+   activo, cada Finca decide qué participaciones publica (literal a).
 
 ## 8. Incidentes de seguridad
 
-El Operador le notificará a la Finca cualquier incidente de seguridad
-que confirmadamente haya expuesto datos personales de los trabajadores
-a terceros no autorizados, dentro de las **veinticuatro (24) horas**
-siguientes a la confirmación, por el canal interno de notificaciones
-del servicio y por el hilo privado de asesoría regulado en
-[`SECURITY.md`](../../SECURITY.md). La notificación describirá:
+Ante un incidente de seguridad que confirmadamente haya expuesto datos
+personales de los trabajadores a terceros no autorizados, el Operador
+sigue el procedimiento de [`SECURITY.md`](../../SECURITY.md) y
+[`docs/incident-response.md`](../incident-response.md). Hoy la Finca
+es informada una vez el arreglo está en producción y el aviso de
+seguridad se publica, mediante las notas de versión y el aviso
+publicado en GitHub. No existe hoy un aviso dentro de la plataforma ni
+un aviso a la Finca en un plazo fijo **[pendiente / to be implemented]**
+(ver [`docs/data-protection.md`, «What is pending»](../data-protection.md#what-is-pending)). [Si el Operador se compromete a un plazo, p. ej.
+veinticuatro (24) horas desde la confirmación, lo cumple manualmente
+por correo al propietario de la Finca; completar o eliminar antes de
+firmar.] La comunicación describirá:
 
 - la naturaleza del incidente,
 - las categorías y volumen aproximado de datos involucrados,
 - las medidas que el Operador adoptó para contenerlo,
 - las medidas recomendadas a la Finca.
 
-El Operador apoyará a la Finca con la información necesaria para la
-notificación a la Superintendencia de Industria y Comercio prevista
-en el artículo 17 literal n de la Ley 1581 y la Circular Externa 005
-de 2017 (o la norma que la sustituya).
+El Operador informará a la Superintendencia de Industria y Comercio
+conforme al artículo 18 literal k de la Ley 1581 y apoyará a la Finca
+con la información necesaria para la notificación que le corresponde
+a ella según el artículo 17 literal n, dentro del plazo que fijen las
+instrucciones vigentes de la SIC.
 
 ## 9. Transferencia y transmisión internacional
 
 El Operador no transferirá datos personales a países que no ofrezcan
 niveles adecuados de protección en los términos del artículo 26 de la
 Ley 1581, salvo autorización expresa y escrita de la Finca o
-cumplimiento de alguno de los supuestos del parágrafo del artículo
+cumplimiento de alguno de los supuestos de los literales del artículo
 26. La ubicación de los datos y de cada subencargado se declara en el
-numeral 6.
+numeral 6: hoy los respaldos se guardan en Estados Unidos y el tráfico
+pasa por la red de Cloudflare, lo que constituye una transmisión
+internacional en los términos de los artículos 24 y 25 del Decreto
+1377 de 2013. El abogado que revise esta plantilla debe confirmar el
+nivel adecuado de protección de esos países según la lista vigente de
+la SIC (Circular Externa 005 de 2017 o la norma que la sustituya).
 
 ## 10. Vigencia y terminación
 
@@ -212,14 +283,21 @@ Este contrato está vigente mientras lo esté el contrato principal
 entre las partes. Al terminar:
 
 a. El Operador pondrá a disposición de la Finca la exportación de los
-   datos durante los **treinta (30) días calendario** siguientes.
+   datos durante los **treinta (30) días calendario** siguientes. La
+   plataforma no tiene hoy una función de exportación de los datos de
+   la Finca **[pendiente / to be implemented]**: el Operador la genera
+   manualmente.
 b. Vencido ese plazo, el Operador suprimirá los datos personales de
    los sistemas de producción, salvo las obligaciones legales de
    conservación (contabilidad, prevención de fraude), que se
-   cumplirán bajo mínimos de acceso.
-c. Las copias de respaldo con datos personales serán sobreescritas en
-   el ciclo normal de rotación, en un plazo máximo de **ciento
-   ochenta (180) días** desde la terminación.
+   cumplirán bajo mínimos de acceso. La plataforma sólo permite
+   suspender una finca, no eliminarla **[pendiente / to be
+   implemented]**: el Operador ejecuta la supresión manualmente.
+c. Las copias de respaldo con datos personales expiran según su
+   retención (30 días para la base de datos compartida; 14 respaldos
+   diarios para las fotos). Los respaldos de una finca eliminada no se
+   borran solos: el Operador los elimina manualmente, en un plazo
+   máximo de **ciento ochenta (180) días** desde la terminación.
 
 ## 11. Confidencialidad
 
