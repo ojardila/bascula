@@ -105,17 +105,24 @@ func ListSpecialPrices(ctx context.Context, tx pgx.Tx) ([]SpecialPrice, error) {
 	return out, rows.Err()
 }
 
+// SpecialPriceChange is one dated entry SetSpecialPrice writes.
+type SpecialPriceChange struct {
+	Kind       SpecialKind
+	TargetID   string
+	ValidFrom  time.Time
+	PriceMinor *int64
+}
+
 // SetSpecialPrice stores (or corrects) the entry for one Monday. A nil price
 // ends the exception from that Monday.
-func SetSpecialPrice(ctx context.Context, tx pgx.Tx, farmID, userID string, kind SpecialKind,
-	targetID string, validFrom time.Time, priceMinor *int64) error {
-	table, col := kind.table()
+func SetSpecialPrice(ctx context.Context, tx pgx.Tx, farmID, userID string, c SpecialPriceChange) error {
+	table, col := c.Kind.table()
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO `+table+` (farm_id, `+col+`, valid_from, price_minor, created_by)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (farm_id, `+col+`, valid_from) DO UPDATE
 		  SET price_minor = EXCLUDED.price_minor, created_by = EXCLUDED.created_by, created_at = now()`,
-		farmID, targetID, validFrom, priceMinor, nilIfEmpty(userID))
+		farmID, c.TargetID, c.ValidFrom, c.PriceMinor, nilIfEmpty(userID))
 	if err != nil {
 		return err
 	}

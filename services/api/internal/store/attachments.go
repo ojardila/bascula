@@ -52,17 +52,25 @@ func scanAttachment(row pgx.Row) (*Attachment, error) {
 	return &a, nil
 }
 
+// PendingAttachment is what CreatePendingAttachment reserves a row with.
+type PendingAttachment struct {
+	ID           string
+	ObjectKey    string
+	Purpose      string
+	OriginalName string
+	CreatedBy    string
+}
+
 // CreatePendingAttachment reserves the row and the object key. No size is
 // recorded here even if the client offered one, because a size the client
 // declares is a size the client can lie about, and the only number that ends
 // up in the row is the one the server counted.
-func CreatePendingAttachment(ctx context.Context, tx pgx.Tx, farmID, id, objectKey string,
-	purpose, originalName, createdBy string) (*Attachment, error) {
+func CreatePendingAttachment(ctx context.Context, tx pgx.Tx, farmID string, p PendingAttachment) (*Attachment, error) {
 	return scanAttachment(tx.QueryRow(ctx, `
 		INSERT INTO attachments (id, farm_id, object_key, status, purpose, original_name, created_by)
 		VALUES ($1, $2, $3, 'pending', $4, $5, $6)
 		RETURNING `+attachmentCols,
-		id, farmID, objectKey, nilIfEmpty(purpose), nilIfEmpty(originalName), nilIfEmpty(createdBy)))
+		p.ID, farmID, p.ObjectKey, nilIfEmpty(p.Purpose), nilIfEmpty(p.OriginalName), nilIfEmpty(p.CreatedBy)))
 }
 
 func GetAttachment(ctx context.Context, tx pgx.Tx, id string) (*Attachment, error) {
