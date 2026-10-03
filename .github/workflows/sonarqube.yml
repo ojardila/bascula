@@ -14,6 +14,11 @@
 #   pull request   -> scratch project `bascula-pr`, compared with `bascula`
 #                     by scripts/sonar-report.py, posted as one PR comment
 #                     (updated in place) and as the job summary.
+#                     Each PR scan overwrites it, so its dashboard shows only
+#                     the last PR scanned (named in the project title), on
+#                     that branch's base, and its "new code" is measured
+#                     against the previous PR, not master. Read `bascula` for
+#                     master and the PR comment for a PR.
 #
 # The tests run here again, with coverage, instead of handing coverage over
 # from ci.yml: CI on master is called by CD and skips suites a PR already
@@ -391,7 +396,7 @@ jobs:
         with:
           args: >-
             -Dsonar.projectKey=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
-            -Dsonar.projectName=${{ env.PR_SCAN == 'true' && 'bascula-pr' || 'bascula' }}
+            -Dsonar.projectName=${{ env.PR_SCAN == 'true' && format('bascula-pr_SCRATCH_last-scan-PR-{0}_not-master', github.event.pull_request.number) || 'bascula' }}
             -Dsonar.projectVersion=${{ steps.version.outputs.value }}
 
       - name: Changed files
