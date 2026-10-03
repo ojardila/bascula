@@ -122,6 +122,39 @@ def issues(project, paths):
     return found
 
 
+def open_findings(project):
+    """Every open issue and every hotspot still to review in the project, as
+    markdown list items, worst first."""
+    rank = {"BLOCKER": 0, "CRITICAL": 1, "HIGH": 1, "MAJOR": 2, "MEDIUM": 2, "MINOR": 3, "LOW": 3, "INFO": 4}
+    rows = []
+    page = 1
+    while True:
+        res = api("issues/search", componentKeys=project, resolved="false", ps=500, p=page)
+        for it in res["issues"]:
+            path = it["component"].split(":", 1)[1]
+            loc = f"{path}:{it['line']}" if it.get("line") else path
+            sev = it.get("severity", "")
+            rows.append((rank.get(sev, 5), loc, f"- `{loc}` {it.get('type', '').replace('_', ' ').lower()} "
+                                                f"({sev.lower()}): {it.get('message', '')} `{it['rule']}`"))
+        if page * 500 >= res["paging"]["total"]:
+            break
+        page += 1
+    page = 1
+    while True:
+        res = api("hotspots/search", projectKey=project, status="TO_REVIEW", ps=500, p=page)
+        for h in res.get("hotspots", []):
+            path = h["component"].split(":", 1)[1]
+            loc = f"{path}:{h['line']}" if h.get("line") else path
+            prob = h.get("vulnerabilityProbability", "")
+            rows.append((rank.get(prob, 5), loc, f"- `{loc}` security hotspot ({prob.lower()}): "
+                                                 f"{h.get('message', '')} `{h.get('ruleKey', '')}`"))
+        if page * 500 >= res.get("paging", {}).get("total", 0):
+            break
+        page += 1
+    rows.sort()
+    return [r[2] for r in rows]
+
+
 def main():
     task = wait_for_analysis(report_task())
     dash = f"{HOST}/dashboard?id={urllib.parse.quote(PROJECT)}"
@@ -150,6 +183,21 @@ def main():
             lines.append("")
             lines.append("Failing conditions: " + ", ".join(
                 f"`{c['metricKey']}` {c.get('actualValue')} (threshold {c.get('errorThreshold')})" for c in failed))
+        open_list = open_findings(PROJECT)
+        lines.append("")
+        if open_list:
+            lines.append(f"<details><summary>{len(open_list)} open issue(s) and hotspot(s) to review</summary>")
+            lines.append("")
+            lines.extend(open_list)
+            lines.append("")
+            lines.append("</details>")
+        else:
+            lines.append("No open issues and no hotspots to review.")
+        # Also in the log, so the list can be read with `gh run view --log`
+        # without a SonarQube login (the server is tailnet only).
+        print(f"open findings: {len(open_list)}")
+        for item in open_list:
+            print(f"sonar-open {item[2:]}")
         write(lines)
         verdict(status != "ERROR")
         print(f"quality gate: {status}")
