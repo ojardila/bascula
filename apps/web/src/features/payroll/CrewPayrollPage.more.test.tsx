@@ -183,6 +183,10 @@ describe("paying the crew", () => {
     const dialog = await openPayConfirm(user);
     await user.click(within(dialog).getByRole("button", { name: /^Pagar / }));
     await screen.findByText("Nómina pagada", {}, { timeout: 15000 });
+    // The payment dialog has to be gone: while it closes the page takes no clicks.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
     await user.click(await screen.findByRole("button", { name: /^Planilla/ }));
     const alert = (
       await screen.findByText(
@@ -223,6 +227,10 @@ describe("undoing a payment run", () => {
     const dialog = await openPayConfirm(user);
     await user.click(within(dialog).getByRole("button", { name: /^Pagar / }));
     await screen.findByText("Nómina pagada", {}, { timeout: 15000 });
+    // The payment dialog has to be gone: while it closes the page takes no clicks.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
 
     await user.click(await screen.findByRole("button", { name: "Deshacer" }));
     let ask = await screen.findByRole("dialog");
