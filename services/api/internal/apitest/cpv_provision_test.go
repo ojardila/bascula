@@ -335,58 +335,31 @@ func TestCpvSeedPushRetriesThroughRefusalsAndFailures(t *testing.T) {
 // The dedicated stack's internal listener
 // ---------------------------------------------------------------------------
 
-func TestCpvInternalSeedRollsBackEveryFailedQuery(t *testing.T) {
-	h := requireDB(t)
-	admin, app, faults := cpvScratch(t, h)
-	slug := cpvSlug("cpv-stack")
-	cfg := httpapi.DefaultConfig()
-	cfg.UploadDir = t.TempDir()
-	cfg.TenantSlug = slug
-	stackAPI := httpapi.New(app, auth.NewSigner([]byte("tenant-signing-key-0123456789abcdef"), "bascula"), cfg)
-	internal := stackAPI.InternalHandler()
+// cpvExistingUser creates an account directly on the stack's database, as if
+// somebody signed up there before the seed arrived.
+func cpvExistingUser(t *testing.T, admin *pgxpool.Pool) (id, email string) {
+	t.Helper()
 	ctx := context.Background()
-
-	// Somebody already has an account on this stack: the seed reuses it and
-	// never overwrites it.
-	existingID, existingEmail := uuid.NewString(), "ya-estaba-"+uuid.NewString()[:6]+"@example.com"
+	id, email = uuid.NewString(), "ya-estaba-"+uuid.NewString()[:6]+"@example.com"
 	tx, err := admin.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUser(ctx, tx, store.User{ID: existingID, Email: existingEmail, Name: "Ya Estaba",
+	if err := store.CreateUser(ctx, tx, store.User{ID: id, Email: email, Name: "Ya Estaba",
 		PasswordHash: "hash-propio"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
+	return id, email
+}
 
-	ownerID, adminID := uuid.NewString(), uuid.NewString()
-	verified := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
-	seed := map[string]any{
-		"farm": map[string]any{"id": uuid.NewString(), "name": "Finca Pila", "slug": slug,
-			"timezone": "America/Bogota", "currency": "COP", "priceMinor": 0},
-		"members": []map[string]any{
-			{"id": ownerID, "email": "duena-" + uuid.NewString()[:6] + "@example.com", "name": "Dueña",
-				"passwordHash": "hash-duena", "emailVerifiedAt": verified, "role": "owner"},
-			{"id": adminID, "email": "admin-" + uuid.NewString()[:6] + "@example.com", "name": "Admin",
-				"passwordHash": "hash-admin", "role": "admin"},
-			{"id": uuid.NewString(), "email": existingEmail, "name": "Otro nombre",
-				"passwordHash": "otro-hash", "role": "weigher"},
-		},
-	}
-
-	// The listener's own answer, with its database failing and not.
-	faults.armFunc(func(string) bool { return true }, 0)
-	down := call(t, internal, http.MethodGet, "/internal/tenant", "", nil)
-	if down.Status != http.StatusOK || down.Body["database"] != false || down.Body["seeded"] != false {
-		t.Fatalf("tenant info with the database failing: %s", down.Raw)
-	}
-
-	// Fail the 1st query of the seed, then the 2nd, ... until one run makes
-	// it through: each failed run answers an error and leaves nothing behind.
-	created := false
-	for n := 0; n < 200 && !created; n++ {
+// cpvSeedThroughFaults pushes seed with its 1st query failing, then its 2nd,
+// ... until a run goes through, checking every failed run left no farm.
+func cpvSeedThroughFaults(t *testing.T, internal http.Handler, faults *cpvFaults, seed map[string]any) {
+	t.Helper()
+	for n := 0; n < 200; n++ {
 		faults.armFunc(func(string) bool { return true }, n)
 		res := call(t, internal, http.MethodPost, "/internal/tenant/seed", "", seed)
 		hit := faults.hit()
@@ -395,22 +368,21 @@ func TestCpvInternalSeedRollsBackEveryFailedQuery(t *testing.T) {
 			if res.Status != http.StatusCreated || res.Body["created"] != true {
 				t.Fatalf("seed with no fault: %d %s", res.Status, res.Raw)
 			}
-			created = true
-			break
+			return
 		}
 		cpvFailed(t, fmt.Sprintf("seed failing at query %d", n+1), res)
 		if info := call(t, internal, http.MethodGet, "/internal/tenant", "", nil); info.Body["seeded"] != false {
 			t.Fatalf("a seed failing at query %d left the farm behind: %s", n+1, info.Raw)
 		}
 	}
-	if !created {
-		t.Fatal("the seed never went through")
-	}
+	t.Fatal("the seed never went through")
+}
 
-	info := call(t, internal, http.MethodGet, "/internal/tenant", "", nil)
-	if info.Body["slug"] != slug || info.Body["database"] != true || info.Body["seeded"] != true {
-		t.Fatalf("tenant info after the seed: %s", info.Raw)
-	}
+// cpvCheckSeededRows checks what the seed wrote: the existing account kept,
+// only the owner verified, the default unconfirmed price, three members.
+func cpvCheckSeededRows(t *testing.T, admin *pgxpool.Pool, slug, existingID, ownerID, adminID string) {
+	t.Helper()
+	ctx := context.Background()
 	var name, hash string
 	if err := admin.QueryRow(ctx, `SELECT name, password_hash FROM users WHERE id = $1`, existingID).Scan(&name, &hash); err != nil {
 		t.Fatal(err)
@@ -445,6 +417,53 @@ func TestCpvInternalSeedRollsBackEveryFailedQuery(t *testing.T) {
 	if memberships != 3 {
 		t.Fatalf("memberships = %d, want 3", memberships)
 	}
+}
+
+func TestCpvInternalSeedRollsBackEveryFailedQuery(t *testing.T) {
+	h := requireDB(t)
+	admin, app, faults := cpvScratch(t, h)
+	slug := cpvSlug("cpv-stack")
+	cfg := httpapi.DefaultConfig()
+	cfg.UploadDir = t.TempDir()
+	cfg.TenantSlug = slug
+	stackAPI := httpapi.New(app, auth.NewSigner([]byte("tenant-signing-key-0123456789abcdef"), "bascula"), cfg)
+	internal := stackAPI.InternalHandler()
+
+	// Somebody already has an account on this stack: the seed reuses it and
+	// never overwrites it.
+	existingID, existingEmail := cpvExistingUser(t, admin)
+
+	ownerID, adminID := uuid.NewString(), uuid.NewString()
+	verified := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	seed := map[string]any{
+		"farm": map[string]any{"id": uuid.NewString(), "name": "Finca Pila", "slug": slug,
+			"timezone": "America/Bogota", "currency": "COP", "priceMinor": 0},
+		"members": []map[string]any{
+			{"id": ownerID, "email": "duena-" + uuid.NewString()[:6] + "@example.com", "name": "Dueña",
+				"passwordHash": "hash-duena", "emailVerifiedAt": verified, "role": "owner"},
+			{"id": adminID, "email": "admin-" + uuid.NewString()[:6] + "@example.com", "name": "Admin",
+				"passwordHash": "hash-admin", "role": "admin"},
+			{"id": uuid.NewString(), "email": existingEmail, "name": "Otro nombre",
+				"passwordHash": "otro-hash", "role": "weigher"},
+		},
+	}
+
+	// The listener's own answer, with its database failing and not.
+	faults.armFunc(func(string) bool { return true }, 0)
+	down := call(t, internal, http.MethodGet, "/internal/tenant", "", nil)
+	if down.Status != http.StatusOK || down.Body["database"] != false || down.Body["seeded"] != false {
+		t.Fatalf("tenant info with the database failing: %s", down.Raw)
+	}
+
+	// Fail the 1st query of the seed, then the 2nd, ... until one run makes
+	// it through: each failed run answers an error and leaves nothing behind.
+	cpvSeedThroughFaults(t, internal, faults, seed)
+
+	info := call(t, internal, http.MethodGet, "/internal/tenant", "", nil)
+	if info.Body["slug"] != slug || info.Body["database"] != true || info.Body["seeded"] != true {
+		t.Fatalf("tenant info after the seed: %s", info.Raw)
+	}
+	cpvCheckSeededRows(t, admin, slug, existingID, ownerID, adminID)
 
 	// A second push is a no-op, and a failing lookup of the farm is an error,
 	// not a second farm.
