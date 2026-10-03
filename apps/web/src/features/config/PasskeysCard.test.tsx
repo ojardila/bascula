@@ -158,6 +158,14 @@ describe("Llaves de acceso", () => {
     expect(db.passkeys).toHaveLength(1);
   });
 
+  it("warns not to add one on a device other people use", async () => {
+    stubAuthenticator(vi.fn());
+    renderCard();
+    expect(
+      await screen.findByText(/celular o computador que usan otras personas/),
+    ).toBeInTheDocument();
+  });
+
   it("does not offer to add one where the browser cannot", async () => {
     vi.stubGlobal("PublicKeyCredential", undefined);
     renderCard();

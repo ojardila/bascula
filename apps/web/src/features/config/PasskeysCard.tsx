@@ -30,6 +30,10 @@ import {
 /** What the passkey is called when the person leaves the name empty. */
 export const DEFAULT_PASSKEY_NAME = "Llave de acceso";
 
+/** Shown next to «Agregar»: a passkey on a shared device lets anyone in. */
+export const SHARED_DEVICE_WARNING =
+  "No agregue una llave de acceso en un celular o computador que usan otras personas: quien lo tenga podría entrar con su cuenta.";
+
 function formatWhen(iso: string, timeZone: string): string {
   try {
     return new Date(iso).toLocaleString("es-CO", {
@@ -184,7 +188,11 @@ export function PasskeysCard() {
                     // Made on another address (the main domain or another
                     // farm). It does not work here, but it opens the account
                     // there, so it is listed where it can be removed.
-                    <Typography variant="caption" sx={{ color: "text.secondary" }} noWrap>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "text.secondary" }}
+                      noWrap
+                    >
                       Sirve en {p.host}
                     </Typography>
                   )}
@@ -212,26 +220,36 @@ export function PasskeysCard() {
         )}
 
         {supported ? (
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <TextField
-              label="Nombre (opcional)"
-              placeholder="Por ejemplo: Mi celular"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              slotProps={{ htmlInput: { maxLength: 60 } }}
-              sx={{ flex: 1 }}
-            />
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<Fingerprint />}
-              onClick={startAdding}
-              disabled={busy}
-              sx={{ whiteSpace: "nowrap" }}
+          <>
+            {/* A passkey opens the account for whoever holds the device, so a
+              shared phone or computer hands the account to everyone on it. */}
+            <Typography
+              variant="body2"
+              sx={{ color: "text.secondary", mb: 1.5 }}
             >
-              {busy ? "Esperando…" : "Agregar llave de acceso"}
-            </Button>
-          </Stack>
+              {SHARED_DEVICE_WARNING}
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              <TextField
+                label="Nombre (opcional)"
+                placeholder="Por ejemplo: Mi celular"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                slotProps={{ htmlInput: { maxLength: 60 } }}
+                sx={{ flex: 1 }}
+              />
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Fingerprint />}
+                onClick={startAdding}
+                disabled={busy}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                {busy ? "Esperando…" : "Agregar llave de acceso"}
+              </Button>
+            </Stack>
+          </>
         ) : (
           <Alert severity="info">
             Este navegador no permite llaves de acceso.

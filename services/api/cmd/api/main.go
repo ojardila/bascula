@@ -334,9 +334,9 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 
 	rc.http.DevEcho = development
 	if development {
-		// The signup response echoes the email verification token, because
-		// there is no mail sender yet. Saying so out loud beats discovering it
-		// in production.
+		// The signup response echoes the email verification token, so a
+		// deployment with no mailer (development) can still finish signup.
+		// Saying so out loud beats discovering it in production.
 		rc.warnings = append(rc.warnings,
 			"development mode: signup echoes the email verification token")
 	}
