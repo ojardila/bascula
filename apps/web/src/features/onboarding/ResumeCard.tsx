@@ -2,7 +2,9 @@
  * «Termine de preparar su finca» on Cosecha, for an owner who left the tour
  * half way («Saltar» or «Ahora no, más tarde»). It shows how far they got in
  * the three parts the welcome promised and takes them back to the saved step.
- * The × hides it for good; the tour stays in «Ayuda y recorrido».
+ * «No, gracias» (or the ×) hides it for good — saved on the server, so it
+ * stays hidden after a reload, on other devices and at the next sign-in. The
+ * tour itself stays in the menu, in «Ayuda y recorrido».
  */
 import {
   Box,
@@ -103,6 +105,24 @@ export function ResumeCard() {
       >
         Seguir donde iba
       </Button>
+      <Button
+        fullWidth
+        color="inherit"
+        onClick={() => t.dismiss("owner")}
+        sx={{
+          mt: 1,
+          minHeight: 48,
+          fontSize: 17,
+          fontWeight: 600,
+          textDecoration: "underline",
+        }}
+      >
+        No, gracias
+      </Button>
+      <Typography sx={{ fontSize: 15, color: "text.secondary", mt: 1 }}>
+        Si cambia de idea, el recorrido está en el menú, en «Ayuda y
+        recorrido».
+      </Typography>
     </Box>
   );
 }
