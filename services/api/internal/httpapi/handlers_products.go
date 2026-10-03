@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -138,7 +139,7 @@ func (s *Server) handleUpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	switch body.Status {
 	case "inactive":
-		if err := store.SoftDeleteProduct(r.Context(), tx, id); err != nil && err != store.NoRows {
+		if err := store.SoftDeleteProduct(r.Context(), tx, id); err != nil && !errors.Is(err, store.NoRows) {
 			writeError(w, r, err)
 			return
 		}

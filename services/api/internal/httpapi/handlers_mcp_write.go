@@ -142,7 +142,7 @@ func parseMCPArgs(req *mcp.CallToolRequest, params []mcpParam) (mcpArgs, error) 
 		dec := json.NewDecoder(bytes.NewReader(req.Params.Arguments))
 		dec.UseNumber()
 		if err := dec.Decode(&a); err != nil {
-			return nil, fmt.Errorf("argumentos inválidos: %v", err)
+			return nil, fmt.Errorf("argumentos inválidos: %w", err)
 		}
 	}
 	declared := map[string]bool{}
@@ -878,7 +878,7 @@ var mcpWriteTools = []mcpWriteTool{
 				}
 				kg, err := ra.num("kg")
 				if err != nil {
-					return mcpCall{}, fmt.Errorf("weighings[%d]: %v", i, err)
+					return mcpCall{}, fmt.Errorf("weighings[%d]: %w", i, err)
 				}
 				it := map[string]any{"workerId": row["workerId"], "quantity": kg, "dateFrom": row["date"]}
 				if ra.has("plotId") {

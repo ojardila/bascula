@@ -1,0 +1,72 @@
+# golangci-lint for SonarQube's external issues: .github/workflows/sonarqube.yml
+# runs it and imports the checkstyle report (sonar.go.golangci-lint.reportPaths).
+# Only linters that add something to Sonar's own Go rules:
+#   gosec       security (taint-based SSRF/open redirect, file modes, ...)
+#   staticcheck bugs and dead code (SA), simplifications (S)
+#   errorlint   errors compared with == or formatted with %v instead of %w
+#
+# Reviewed findings are excluded below with the reason; a new one shows up in
+# SonarQube as an issue on new code and fails its quality gate.
+version: "2"
+linters:
+  default: none
+  enable:
+    - gosec
+    - staticcheck
+    - errorlint
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # The defaults golangci-lint turns off (package comments, naming).
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        # Error strings: many are user-facing Spanish messages that start
+        # with a capital letter on purpose.
+        - -ST1005
+        # Quick fixes are style suggestions; Sonar has its own.
+        - -QF*
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      - linters: [gosec]
+        text: "G101:"
+        # Names that contain "pass"/"credential", not credentials: auth
+        # action and error codes, a SQL column list, an inline script.
+        # Real secrets are caught by gitleaks and GitHub secret scanning.
+      - linters: [gosec]
+        path: internal/httpapi/handlers_oauth\.go
+        text: "G710:"
+        # redirect_uri is exact-matched against the client's registered URIs
+        # before either redirect (RFC 6749); Semgrep's rule carries the same note.
+      - linters: [gosec]
+        path: internal/httpapi/provision\.go
+        text: "G704:"
+        # tenantInternalURL builds the in-cluster service URL from a slug
+        # that normalizeFarmSlug has already validated.
+      - linters: [gosec]
+        text: "G118:"
+        # Fire-and-forget work (mail, the ready-email watcher) must outlive
+        # the request, so it starts from context.Background with a timeout.
+      - linters: [gosec]
+        path: internal/blob/blob\.go
+        text: "G30[24]:"
+        # Paths come from safePath: two segments of at most 64 characters
+        # with no '/', '\' or '.', joined under Disk.Root. 0640 and 0750 give
+        # no access to other users.
+      - linters: [gosec]
+        path: cmd/dbdiagram/
+        # A developer tool that writes docs/database.md; not shipped.
+      - linters: [gosec]
+        path: internal/auth/password\.go
+        text: "G115:"
+        # len(want) is the decoded hash length from our own PHC string
+        # (32 bytes), far below uint32.
+run:
+  tests: false

@@ -76,7 +76,7 @@ describe("a team and its members", () => {
     renderProfile(TEAM);
     expect(await screen.findByText("Integrantes")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Registrar deuda" }),
+      screen.getByRole("button", { name: "Registrar deuda" }),
     ).toBeInTheDocument();
     await user.click(
       screen.getAllByRole("button", { name: "Cambiar integrantes" })[0],

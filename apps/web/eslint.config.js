@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
+import security from "eslint-plugin-security";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -44,6 +45,31 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+    },
+  },
+  // eslint-plugin-security: injection-shaped patterns (non-literal RegExp,
+  // eval-like calls, timing-unsafe comparisons, ...). Warnings, so `npm run
+  // lint` stays the gate it was; SonarQube imports them as external issues
+  // (eslint-report.json, .github/workflows/sonarqube.yml) and its quality gate
+  // counts new ones. Off, after review on the whole console:
+  //   detect-object-injection        flags every obj[key]; TypeScript types them.
+  //   detect-unsafe-regex            flagged only linear patterns (digit
+  //                                  grouping, slugs); SonarQube's own ReDoS
+  //                                  rule (S5852) does the real analysis.
+  //   detect-possible-timing-attacks a browser comparing what the user typed
+  //                                  twice has no timing oracle to protect.
+  // Tests build regexps and read fixtures on purpose, so they are left out.
+  {
+    files: ["**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}", "src/test/**", "e2e/**"],
+    plugins: { security },
+    rules: {
+      ...Object.fromEntries(
+        Object.keys(security.configs.recommended.rules).map((r) => [r, "warn"]),
+      ),
+      "security/detect-object-injection": "off",
+      "security/detect-unsafe-regex": "off",
+      "security/detect-possible-timing-attacks": "off",
     },
   },
 );

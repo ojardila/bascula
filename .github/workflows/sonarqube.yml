@@ -1,6 +1,12 @@
 # SonarQube analysis (https://sonarqube.int.engp.io, tailnet only; the server
-# is apps/sonarqube in the gitops repo). Advisory: nothing here fails a PR on
-# the quality gate, and ci.yml stays the gate that matters.
+# is apps/sonarqube in the gitops repo). The job fails when the analysis does
+# (master: the quality gate; PR: a regression against master or a new issue
+# in the changed files), after the summary and PR comment are written. It is
+# not a required check.
+#
+# Besides Sonar's own rules it imports external issues: golangci-lint (gosec,
+# staticcheck, errorlint; services/api/.golangci.yml) and the console's
+# eslint-plugin-security warnings (apps/web/eslint.config.js).
 #
 # Community Build analyses one branch per project, so:
 #   push to master -> project `bascula`, the dashboard everyone looks at.
@@ -34,7 +40,7 @@ concurrency:
 
 jobs:
   sonarqube:
-    name: sonarqube (advisory)
+    name: sonarqube
     # Same rule as the image builds in ci.yml: forks and Dependabot get no
     # Actions secrets, so they could neither join the tailnet nor scan.
     if: >-
@@ -138,6 +144,38 @@ jobs:
           node --test --experimental-test-coverage --test-reporter=lcov \
             --test-reporter-destination=lcov.info src/*.test.ts
 
+      # External issues for SonarQube. Neither step fails the job: the
+      # findings are reported through the quality gate.
+      - name: golangci-lint report
+        if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        working-directory: services/api
+        env:
+          GOLANGCI_IMAGE: golangci/golangci-lint:v2.13.2@sha256:ba07dffad130794ae79ebaa0056809d18c0168f3f846480ffd3eb6c04578b83d
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app -v "$(go env GOMODCACHE):/go/pkg/mod" "$GOLANGCI_IMAGE" \
+            golangci-lint run --issues-exit-code=0 --path-prefix=services/api \
+              --max-issues-per-linter=0 --max-same-issues=0 \
+              --output.checkstyle.path=golangci-lint.xml --output.text.path=stdout ./...
+
+      - name: eslint report (security rules)
+        if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        run: |
+          npx --workspace apps/web eslint . -f json -o eslint-raw.json || true
+          # Only eslint-plugin-security's findings: the react-hooks warnings
+          # are already tracked by the lint itself.
+          python3 - <<'PY'
+          import json
+          d = json.load(open("apps/web/eslint-raw.json"))
+          for f in d:
+              f["messages"] = [m for m in f["messages"] if (m.get("ruleId") or "").startswith("security/")]
+              f["errorCount"] = sum(1 for m in f["messages"] if m["severity"] == 2)
+              f["warningCount"] = sum(1 for m in f["messages"] if m["severity"] == 1)
+          json.dump(d, open("apps/web/eslint-report.json", "w"))
+          print(sum(len(f["messages"]) for f in d), "eslint-plugin-security findings")
+          PY
+
       # Only now, with the PR's code done running, join the tailnet.
       - name: Join the tailnet
         if: steps.secrets.outputs.ok == 'true'
@@ -199,6 +237,7 @@ jobs:
           wc -l < changed-files.txt
 
       - name: Report
+        id: report
         if: steps.secrets.outputs.ok == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -224,4 +263,14 @@ jobs:
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@sonar-report.md >/dev/null
           else
             gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@sonar-report.md >/dev/null
+          fi
+
+      - name: Gate
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          VERDICT: ${{ steps.report.outputs.verdict }}
+        run: |
+          if [ "$VERDICT" = "fail" ]; then
+            echo "::error::SonarQube: see the summary above (quality gate, or new issues against master)."
+            exit 1
           fi

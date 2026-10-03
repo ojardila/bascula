@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"time"
@@ -489,7 +490,7 @@ func (s *Server) handleUpdateWorkRecord(w http.ResponseWriter, r *http.Request) 
 	// quantity and files the record away therefore does both, instead of
 	// silently dropping one.
 	if body.Status == "active" {
-		if err := store.RestoreWorkRecord(r.Context(), tx, id); err != nil && err != store.NoRows {
+		if err := store.RestoreWorkRecord(r.Context(), tx, id); err != nil && !errors.Is(err, store.NoRows) {
 			writeError(w, r, err)
 			return
 		}

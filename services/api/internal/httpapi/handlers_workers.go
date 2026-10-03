@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -293,7 +294,7 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 	// renames works: UpdateEmployee only touches rows that are not deleted.
 	switch body.Status {
 	case "inactive":
-		if err := store.SoftDeleteEmployee(r.Context(), tx, id, principalUserID(p)); err != nil && err != store.NoRows {
+		if err := store.SoftDeleteEmployee(r.Context(), tx, id, principalUserID(p)); err != nil && !errors.Is(err, store.NoRows) {
 			writeError(w, r, err)
 			return
 		}

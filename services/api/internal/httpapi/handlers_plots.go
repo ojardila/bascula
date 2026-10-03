@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -150,7 +151,7 @@ func setPlotStatus(ctx context.Context, tx pgx.Tx, id, status string) error {
 				"remove the crops before taking the plot out of service").
 				WithDetails(map[string]any{"activeCrops": n})
 		}
-		if err := store.SoftDeletePlot(ctx, tx, id); err != nil && err != store.NoRows {
+		if err := store.SoftDeletePlot(ctx, tx, id); err != nil && !errors.Is(err, store.NoRows) {
 			return err
 		}
 	case "active":
