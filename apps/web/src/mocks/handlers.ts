@@ -1250,7 +1250,7 @@ export const handlers = [
       });
     }
     db.memberships.push({ farmId: g.p.farmId, userId, role });
-    db.farmPasswords.set(`${g.p.farmId}:${userId}`, chosen || temporary);
+    db.setFarmPassword(g.p.farmId, userId, chosen || temporary);
     return HttpResponse.json({
       ...projectFarmUser({ farmId: g.p.farmId, userId, role }),
       name,
