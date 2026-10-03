@@ -40,6 +40,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useAuth } from "../../auth/AuthContext";
 import { todayInFarm } from "../../lib/dates";
 import { PROVISIONAL } from "../../lib/vocab";
+import { trimTrailing } from "../../lib/trimTrailing";
 
 /** How far back a reading goes. Named in weeks, because a season is weeks. */
 export const RANGES = [
@@ -106,7 +107,7 @@ export function HarvestLayout() {
   };
 
   // The dashboard draws its own, much simpler, page.
-  if (location.pathname.replace(/\/+$/, "") === "/cosecha") {
+  if (trimTrailing(location.pathname, "/") === "/cosecha") {
     return (
       <Ctx.Provider value={ctx}>
         <Outlet />

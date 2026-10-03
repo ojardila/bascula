@@ -8,6 +8,8 @@
  * the small fallback below, so a phone a couple of years old still works.
  */
 
+import { trimTrailing } from "./trimTrailing";
+
 type Json = Record<string, unknown>;
 
 /** Whether this browser can use passkeys at all. */
@@ -49,7 +51,7 @@ function toB64url(buf: ArrayBuffer | null | undefined): string | undefined {
   const bytes = new Uint8Array(buf);
   let bin = "";
   for (const b of bytes) bin += String.fromCodePoint(b);
-  return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  return trimTrailing(btoa(bin).replaceAll("+", "-").replaceAll("/", "_"), "=");
 }
 
 function descriptors(

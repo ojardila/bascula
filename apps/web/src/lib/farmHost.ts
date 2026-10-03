@@ -124,7 +124,8 @@ export function slugifyFarmName(name: string): string {
     .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    // Runs were just collapsed to one "-", so at most one sits at each end.
+    .replace(/^-|-$/g, "")
     .slice(0, 63);
   if (!slug || RESERVED.has(slug)) return "finca";
   return slug;
