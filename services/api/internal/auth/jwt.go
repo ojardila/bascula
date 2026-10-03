@@ -53,47 +53,58 @@ func NewSigner(key []byte, issuer string) *Signer {
 	return &Signer{key: key, issuer: issuer, now: time.Now}
 }
 
-// Issue mints an access token carrying sub, farm_id and role.
 // AudienceMCP marks an access token issued to an assistant through OAuth. It
 // opens /mcp, and the REST API only through the MCP tools (which add the
 // two-step confirmation on anything that moves money), never directly.
 const AudienceMCP = "mcp"
 
+// TokenSubject is who an access token speaks for: the claims every token
+// carries whatever its audience.
+type TokenSubject struct {
+	UserID     string
+	FarmID     string
+	Role       domain.Role
+	DeviceID   string
+	Superadmin bool
+}
+
+// Issue mints an access token carrying sub, farm_id and role.
 func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	return s.IssueFor("", userID, farmID, role, deviceID, superadmin)
 }
 
 // IssueFor is Issue with an audience; "" issues an ordinary session token.
 func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+	sub := TokenSubject{UserID: userID, FarmID: farmID, Role: role, DeviceID: deviceID, Superadmin: superadmin}
 	if audience == "" {
-		return s.issue(nil, "", "", userID, farmID, role, deviceID, superadmin)
+		return s.issue(nil, "", "", sub)
 	}
-	return s.issue([]string{audience}, "", "", userID, farmID, role, deviceID, superadmin)
+	return s.issue([]string{audience}, "", "", sub)
 }
 
 // IssueMCP mints an assistant's access token. Its audience is AudienceMCP
 // plus the MCP resource it was issued for (RFC 8707: https://<host>/mcp), so a
 // token obtained from one farm's address is refused on another's; clientID is
 // the OAuth client that holds the grant.
-func (s *Signer) IssueMCP(resource, clientID, scope, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+func (s *Signer) IssueMCP(resource, clientID, scope string, sub TokenSubject) (string, error) {
 	aud := []string{AudienceMCP}
 	if resource != "" {
 		aud = append(aud, resource)
 	}
-	return s.issue(aud, clientID, scope, userID, farmID, role, deviceID, superadmin)
+	return s.issue(aud, clientID, scope, sub)
 }
 
-func (s *Signer) issue(audience []string, clientID, scope, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+func (s *Signer) issue(audience []string, clientID, scope string, sub TokenSubject) (string, error) {
 	now := s.now()
 	c := Claims{
-		FarmID:     farmID,
-		Role:       role,
-		DeviceID:   deviceID,
-		Superadmin: superadmin,
+		FarmID:     sub.FarmID,
+		Role:       sub.Role,
+		DeviceID:   sub.DeviceID,
+		Superadmin: sub.Superadmin,
 		ClientID:   clientID,
 		Scope:      scope,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   userID,
+			Subject:   sub.UserID,
 			Issuer:    s.issuer,
 			ID:        uuid.NewString(),
 			IssuedAt:  jwt.NewNumericDate(now),
