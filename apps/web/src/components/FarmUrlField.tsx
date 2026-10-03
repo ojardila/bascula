@@ -21,22 +21,22 @@ export type SlugCheck = "idle" | "checking" | "free" | "taken" | "reserved" | "i
 
 /** Name -> address, until the owner edits the address themselves. */
 export function useFarmUrl() {
-  const [slug, setSlugState] = useState("");
+  const [farmSlug, setFarmSlug] = useState("");
   const [touched, setTouched] = useState(false);
   return {
-    slug,
+    slug: farmSlug,
     /** Call from the farm-name field's onChange. */
     followName: (name: string) => {
-      if (!touched) setSlugState(name.trim() ? slugifyFarmName(name) : "");
+      if (!touched) setFarmSlug(name.trim() ? slugifyFarmName(name) : "");
     },
     /** Call from the address field's onChange. */
     setSlug: (value: string) => {
       setTouched(true);
-      setSlugState(cleanFarmSlugInput(value));
+      setFarmSlug(cleanFarmSlugInput(value));
     },
     reset: () => {
       setTouched(false);
-      setSlugState("");
+      setFarmSlug("");
     },
   };
 }
