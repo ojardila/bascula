@@ -31,7 +31,10 @@ func scratchDSN(t *testing.T) string {
 		t.Fatalf("connect: %v", err)
 	}
 	defer boot.Close(ctx)
-	if _, err := boot.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+	// CREATE DATABASE takes no bind parameters; the name is made above from
+	// a UUID, never from input.
+	// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
+	if _, err := boot.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize()); err != nil {
 		t.Fatalf("create database: %v", err)
 	}
 	t.Cleanup(func() {
@@ -40,7 +43,8 @@ func scratchDSN(t *testing.T) string {
 			return
 		}
 		defer c.Close(context.Background())
-		_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
+		_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
 	})
 	u, err := url.Parse(base)
 	if err != nil {
