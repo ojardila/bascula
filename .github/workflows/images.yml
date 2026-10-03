@@ -9,11 +9,10 @@
 # keeps the API key, finds src-<api key> already in Harbor and builds nothing
 # for the API, and the other way around.
 #
-# ONE tag and no attestations. Harbor's bascula project has "prevent
-# vulnerable images" on, which answers 412 to any manifest that has not been
-# scanned yet; buildx HEADs the manifest again for every extra tag (and for
-# the provenance index) right after the first push, before Trivy has had a
-# chance. That 412 is what failed CD for PR #38 (run 36030996313).
+# ONE tag and no build-time attestations (Harbor answers 412 to the extra
+# manifests buildx pushes before Trivy has scanned the image; run
+# 36030996313). SBOM and SLSA provenance are attached to the released digest
+# by the `attest` job in cd.yml instead (docs/decisions.md, 2026-10-03).
 #
 # CACHING. Only the dependency stage of each Dockerfile (`deps`: go mod
 # download / npm ci) is kept as a layer cache, in its own scope. Everything

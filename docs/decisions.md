@@ -240,6 +240,39 @@ client to send the gross it saw (`expectedGrossCents`) and the server to reject
 the settlement if it has changed. That field does not exist yet. Without it,
 somebody can settle looking at one figure and sign for another.
 
+## 2026-10-03 — Image SBOM and provenance are attached on release, not at build
+
+Every released image (api, web) carries an SPDX SBOM and SLSA v1 build
+provenance, both signed through Sigstore with this repository's GitHub OIDC
+identity and pushed to Harbor as OCI referrers of the released digest. The
+`attest` job in `.github/workflows/cd.yml` does it right after `release`
+promotes `src-<key>` to `vX.Y.Z`, beside the `production` job so it never
+holds a deploy (#307).
+
+**Why on release (Path 2) and not at build time (Path 1).** Harbor's bascula
+project has "prevent vulnerable images" on, and it answers 412 to any manifest
+Trivy has not scanned yet. buildx pushes the provenance and SBOM manifests
+right after the image, before the scan, which is what broke CD for PR #38. Making
+that work means loosening the gate, the one control that stops an unscanned
+image reaching a farm. By release time `promote.sh` has already waited for the
+scan, so the referrers land on a scanned digest and the gate stays as it is.
+The images stay built once and promoted unchanged: the attestations point at
+that digest and add nothing to it.
+
+**What the provenance says.** Its builder is the CD workflow run that
+released the digest. The image itself was built by `images.yml` from the same
+sources (the digest's `io.engp.bascula.source-key` label is the key of those
+sources), usually in the PR's CI.
+
+**Checking a release.**
+
+```sh
+gh attestation verify oci://harbor.int.engp.io/bascula/api:vX.Y.Z --owner ojardila
+gh attestation verify oci://harbor.int.engp.io/bascula/api:vX.Y.Z --owner ojardila \
+  --predicate-type https://spdx.dev/Document/v2.3
+cosign tree harbor.int.engp.io/bascula/api@sha256:...
+```
+
 ## Debt declared at the close of sprint 5
 
 Things that were worked around honestly and have to be closed. None of them is
