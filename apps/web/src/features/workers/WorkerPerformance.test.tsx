@@ -169,7 +169,7 @@ describe("WorkerPerformance", () => {
       recordsNotInKg: 1,
     };
 
-    function answer(body: unknown) {
+    function answer(body: Record<string, unknown>) {
       server.use(
         http.get("*/v1/workers/:id/performance", () => HttpResponse.json(body)),
       );
