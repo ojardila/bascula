@@ -1485,6 +1485,20 @@ const LABELS: Record<Field, string> = {
   farm: "Nombre de la finca",
 };
 
+const INPUT_TYPE: Record<Field, string> = {
+  name: "text",
+  phone: "tel",
+  email: "email",
+  farm: "text",
+};
+
+const AUTOCOMPLETE: Record<Field, string> = {
+  name: "name",
+  phone: "tel",
+  email: "email",
+  farm: "organization",
+};
+
 export function validateDemo(v: Values): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (!v.name.trim()) errors.name = "Escriba su nombre.";
@@ -1619,18 +1633,8 @@ function DemoForm() {
               onChange={(e) => set(field, e.target.value)}
               fullWidth
               required
-              type={
-                field === "email" ? "email" : field === "phone" ? "tel" : "text"
-              }
-              autoComplete={
-                field === "name"
-                  ? "name"
-                  : field === "phone"
-                    ? "tel"
-                    : field === "email"
-                      ? "email"
-                      : "organization"
-              }
+              type={INPUT_TYPE[field]}
+              autoComplete={AUTOCOMPLETE[field]}
               error={Boolean(errors[field])}
               helperText={errors[field]}
               sx={fieldSx}

@@ -7,7 +7,7 @@
  * goes to the login screen and types the new password, which is also how
  * they find out it works.
  */
-import { useState, type SubmitEvent } from "react";
+import { useState, type SubmitEvent, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Button, Stack, TextField, Typography } from "@mui/material";
 import { AuthLayout } from "./AuthLayout";
@@ -61,52 +61,61 @@ export function ResetPasswordPage() {
     </Button>
   );
 
+  let content: ReactNode;
+  if (done) {
+    content = (
+      <Stack spacing={2.5}>
+        <Alert severity="success" sx={{ fontSize: "1.1rem" }}>
+          Listo. Su clave cambió y se cerraron las sesiones abiertas en otros equipos.
+        </Alert>
+        {toLogin}
+      </Stack>
+    );
+  } else if (expired) {
+    content = (
+      <Stack spacing={2.5}>
+        <Alert severity="warning" sx={{ fontSize: "1.1rem" }}>
+          Este enlace ya no sirve: vence a los 30 minutos y se puede usar una sola vez.
+        </Alert>
+        <Button component={RouterLink} to="/olvide-mi-clave" variant="contained" size="large" sx={{ minHeight: 56, fontSize: "1.15rem" }}>
+          Pedir otro enlace
+        </Button>
+      </Stack>
+    );
+  } else {
+    content = (
+      <Stack component="form" spacing={2.5} onSubmit={onSubmit} noValidate>
+        <Typography sx={TEXT}>Escriba su clave nueva dos veces. Debe tener al menos 10 caracteres.</Typography>
+        {error && <Alert severity="error">{error}</Alert>}
+        <TextField
+          label="Clave nueva"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
+          autoFocus
+          fullWidth
+          required
+        />
+        <TextField
+          label="Repita la clave nueva"
+          type="password"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value)}
+          autoComplete="new-password"
+          fullWidth
+          required
+        />
+        <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ minHeight: 56, fontSize: "1.15rem" }}>
+          {busy ? "Guardando…" : "Guardar clave nueva"}
+        </Button>
+      </Stack>
+    );
+  }
+
   return (
     <AuthLayout title="Poner una clave nueva">
-      {done ? (
-        <Stack spacing={2.5}>
-          <Alert severity="success" sx={{ fontSize: "1.1rem" }}>
-            Listo. Su clave cambió y se cerraron las sesiones abiertas en otros equipos.
-          </Alert>
-          {toLogin}
-        </Stack>
-      ) : expired ? (
-        <Stack spacing={2.5}>
-          <Alert severity="warning" sx={{ fontSize: "1.1rem" }}>
-            Este enlace ya no sirve: vence a los 30 minutos y se puede usar una sola vez.
-          </Alert>
-          <Button component={RouterLink} to="/olvide-mi-clave" variant="contained" size="large" sx={{ minHeight: 56, fontSize: "1.15rem" }}>
-            Pedir otro enlace
-          </Button>
-        </Stack>
-      ) : (
-        <Stack component="form" spacing={2.5} onSubmit={onSubmit} noValidate>
-          <Typography sx={TEXT}>Escriba su clave nueva dos veces. Debe tener al menos 10 caracteres.</Typography>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            label="Clave nueva"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            autoFocus
-            fullWidth
-            required
-          />
-          <TextField
-            label="Repita la clave nueva"
-            type="password"
-            value={repeat}
-            onChange={(e) => setRepeat(e.target.value)}
-            autoComplete="new-password"
-            fullWidth
-            required
-          />
-          <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ minHeight: 56, fontSize: "1.15rem" }}>
-            {busy ? "Guardando…" : "Guardar clave nueva"}
-          </Button>
-        </Stack>
-      )}
+      {content}
     </AuthLayout>
   );
 }

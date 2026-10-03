@@ -75,16 +75,13 @@ export function PlanillaPage({
       lunes: mondayParam,
       dia: diaParam,
     });
+  const anchorDay = isIsoDay(diaParam) ? diaParam : today;
   const monday =
     isIsoDay(mondayParam) && mondayOf(mondayParam) === mondayParam
       ? mondayParam
-      : mondayOf(isIsoDay(diaParam) ? diaParam : today);
-  const day =
-    isIsoDay(diaParam) && diaParam <= today
-      ? diaParam
-      : mode === "dia"
-        ? today
-        : monday;
+      : mondayOf(anchorDay);
+  let day = mode === "dia" ? today : monday;
+  if (isIsoDay(diaParam) && diaParam <= today) day = diaParam;
   const plotId = params.get("lote") ?? "";
 
   const days = useMemo(

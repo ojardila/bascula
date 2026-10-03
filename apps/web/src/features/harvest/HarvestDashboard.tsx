@@ -58,12 +58,20 @@ import { affix } from "../../lib/affix";
 const TOP_PEOPLE = 10;
 const TRACK = "rgba(46,125,50,.12)";
 
+/** « · 32 kg al día», « · 32 kg al día c/u» for a team, nothing without data. */
+function perDayText(kgPerDay: number | null, team: boolean): string {
+  if (kgPerDay === null) return "";
+  return ` · ${kgText(kgPerDay)} al día${team ? " c/u" : ""}`;
+}
+
 function changeColor(direction: string): string {
   if (direction === "down") return "warning.dark";
   return direction === "up" ? "primary.main" : "text.secondary";
 }
 
-export function HarvestDashboard({ canSeeMoney }: Readonly<{ canSeeMoney: boolean }>) {
+export function HarvestDashboard({
+  canSeeMoney,
+}: Readonly<{ canSeeMoney: boolean }>) {
   const { data, error, denied } = useAsync(() => reportHarvestDashboard(), []);
 
   if (denied) return <PermissionDenied moduleName="ver la cosecha" />;
@@ -443,9 +451,7 @@ function PersonRow({
       )}
       <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>
         {count(p.daysWorked, "día", "días")}
-        {p.kgPerDay !== null
-          ? ` · ${kgText(p.kgPerDay)} al día${team ? " c/u" : ""}`
-          : ""}
+        {perDayText(p.kgPerDay, team)}
       </Typography>
       {p.belowAverage && (
         <Stack

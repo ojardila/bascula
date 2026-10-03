@@ -75,6 +75,32 @@ export function CosechaHome() {
 
   const canWrite = can("workRecords.write");
 
+  let home: ReactNode;
+  if (mode.on === null) {
+    home = (
+      // Not known yet (first visit on this device): wait rather than show
+      // one screen and swap it for the other a second later.
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 4,
+        }}
+      >
+        <CircularProgress />
+      </Stack>
+    );
+  } else if (harvestOn) {
+    home = <HarvestDashboard canSeeMoney={canSeeMoney} />;
+  } else {
+    home = (
+      <WeekSummaryLoader
+        thisMonday={thisMonday}
+        lastMonday={lastMonday}
+        canSeeMoney={canSeeMoney}
+      />
+    );
+  }
+
   return (
     <Stack spacing={3}>
       <Box>
@@ -117,28 +143,7 @@ export function CosechaHome() {
         </Box>
       )}
 
-      <Box data-tour="week-summary">
-        {mode.on === null ? (
-          // Not known yet (first visit on this device): wait rather than show
-          // one screen and swap it for the other a second later.
-          <Stack
-            sx={{
-              alignItems: "center",
-              py: 4,
-            }}
-          >
-            <CircularProgress />
-          </Stack>
-        ) : harvestOn ? (
-          <HarvestDashboard canSeeMoney={canSeeMoney} />
-        ) : (
-          <WeekSummaryLoader
-            thisMonday={thisMonday}
-            lastMonday={lastMonday}
-            canSeeMoney={canSeeMoney}
-          />
-        )}
-      </Box>
+      <Box data-tour="week-summary">{home}</Box>
 
       <Box sx={{ pt: 1 }}>
         <Link
@@ -184,35 +189,38 @@ function WeekSummaryLoader({
       Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
     [thisMonday],
   );
-  return (
-    <>
-      {denied ? (
-        <PermissionDenied moduleName="ver la cosecha" />
-      ) : error ? (
-        <Alert severity="error">
-          No se pudo consultar la cosecha: {error}. Las cifras no se pudieron
-          calcular — no son cero.
-        </Alert>
-      ) : !data ? (
-        <Stack
-          sx={{
-            alignItems: "center",
-            py: 4,
-          }}
-        >
-          <CircularProgress />
-        </Stack>
-      ) : (
-        <WeekSummary
-          week={data[0]}
-          lastWeek={
-            data[1].items.find((w) => w.weekStart === lastMonday) ?? null
-          }
-          canSeeMoney={canSeeMoney}
-        />
-      )}
-    </>
-  );
+  let content: ReactNode;
+  if (denied) {
+    content = <PermissionDenied moduleName="ver la cosecha" />;
+  } else if (error) {
+    content = (
+      <Alert severity="error">
+        No se pudo consultar la cosecha: {error}. Las cifras no se pudieron
+        calcular — no son cero.
+      </Alert>
+    );
+  } else if (!data) {
+    content = (
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 4,
+        }}
+      >
+        <CircularProgress />
+      </Stack>
+    );
+  } else {
+    content = (
+      <WeekSummary
+        week={data[0]}
+        lastWeek={data[1].items.find((w) => w.weekStart === lastMonday) ?? null}
+        canSeeMoney={canSeeMoney}
+      />
+    );
+  }
+
+  return <>{content}</>;
 }
 
 function BigAction({
