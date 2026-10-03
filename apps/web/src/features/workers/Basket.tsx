@@ -45,6 +45,7 @@ export function BasketTile({
   const font = len <= 2 ? size * 0.46 : len <= 3 ? size * 0.38 : len <= 5 ? size * 0.28 : size * 0.22;
   return (
     <Box
+      role="img"
       aria-label={basketText(tag)}
       title={basketText(tag)}
       sx={{
