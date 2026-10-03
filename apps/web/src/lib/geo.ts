@@ -148,14 +148,16 @@ const samePoint = (a: Position, b: Position) => a[0] === b[0] && a[1] === b[1];
 
 /** Drops the repeated last position, if there is one. */
 export function openRing(ring: LinearRing): LinearRing {
-  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) return ring.slice(0, -1);
+  const last = ring.at(-1);
+  if (ring.length > 1 && last !== undefined && samePoint(ring[0], last)) return ring.slice(0, -1);
   return ring.slice();
 }
 
 /** Repeats the first position at the end, which is what GeoJSON requires. */
 export function closeRing(ring: LinearRing): LinearRing {
   if (ring.length === 0) return [];
-  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) return ring.slice();
+  const last = ring.at(-1);
+  if (ring.length > 1 && last !== undefined && samePoint(ring[0], last)) return ring.slice();
   return [...ring, ring[0]];
 }
 
@@ -515,5 +517,5 @@ const NICE_METRES = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 50
 export function niceDistance(mPerPx: number, targetPx: number): number {
   const wanted = mPerPx * targetPx;
   for (const candidate of NICE_METRES) if (candidate >= wanted) return candidate;
-  return NICE_METRES[NICE_METRES.length - 1];
+  return NICE_METRES.at(-1) ?? NICE_METRES[0];
 }
