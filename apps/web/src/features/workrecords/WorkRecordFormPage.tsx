@@ -58,6 +58,7 @@ import {
   type KiloPriceBook,
 } from "../../offline/priceBook";
 import { getCache } from "../../offline/store";
+import { affix } from "../../lib/affix";
 
 interface CachedRefs {
   workers: Worker[];
@@ -427,9 +428,10 @@ export function WorkRecordFormPage() {
           <Stack spacing={2.5} sx={{ mt: 1.5 }}>
             <Autocomplete
               options={workers}
-              getOptionLabel={(w) =>
-                `${w.name} ${w.lastName}${w.documentNumber ? ` · ${w.documentType} ${w.documentNumber}` : ""}`
-              }
+              getOptionLabel={(w) => {
+                const doc = w.documentNumber ? `${w.documentType} ${w.documentNumber}` : null;
+                return `${w.name} ${w.lastName}${affix(doc, " · ")}`;
+              }}
               value={workers.find((w) => w.id === draft.workerId) ?? null}
               onChange={(_, v) =>
                 setDraft((d) => ({ ...d, workerId: v?.id ?? "" }))

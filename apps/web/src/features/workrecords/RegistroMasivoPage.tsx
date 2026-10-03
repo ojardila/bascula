@@ -1026,8 +1026,9 @@ export function RegistroMasivoPage() {
           onClose={() => setCorrecting(null)}
           onSaved={(n) => {
             setCorrecting(null);
+            const what = n === 1 ? "Se corrigió 1 pesada" : `Se corrigieron ${n} pesadas`;
             setCorrected(
-              `${n === 1 ? "Se corrigió 1 pesada" : `Se corrigieron ${n} pesadas`} de ${workerLabel(correctingWorker)} · ${dayTitle(day, today)}.`,
+              `${what} de ${workerLabel(correctingWorker)} · ${dayTitle(day, today)}.`,
             );
             void loadWeek(activity.id, monday)
               .then((r) => setWeekRecords({ monday, records: r }))

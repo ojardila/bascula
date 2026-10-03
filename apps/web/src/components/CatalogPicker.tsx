@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Autocomplete, TextField, createFilterOptions } from "@mui/material";
 import type { CatalogItem } from "../api/types";
+import { affix } from "../lib/affix";
 
 /**
  * "Elija uno, o escriba uno nuevo" — the picker RSP-011, RSP-019 and RSP-027
@@ -71,7 +72,7 @@ export function CatalogPicker({
       renderOption={(props, option) => (
         <li {...props} key={`${option.id}-${option.name}`}>
           {option.id === "__new__"
-            ? `Agregar ${addWhat ? `${addWhat} ` : ""}«${option.name}»`
+            ? `Agregar ${affix(addWhat, "", " ")}«${option.name}»`
             : option.name}
         </li>
       )}

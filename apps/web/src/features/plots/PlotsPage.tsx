@@ -14,6 +14,10 @@ import { formatArea } from "../../lib/money";
 import { PLOT } from "../../lib/vocab";
 import type { Plot } from "../../api/types";
 
+function declaredAreaText(areaHa: number | null): string {
+  return areaHa === null ? "sin declarar" : `${formatArea(areaHa)} ha`;
+}
+
 export function PlotsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -79,7 +83,7 @@ export function PlotsPage() {
               </Typography>
             ) : (
               <Tooltip
-                title={`Declarada ${p.areaHa === null ? "sin declarar" : `${formatArea(p.areaHa)} ha`} · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
+                title={`Declarada ${declaredAreaText(p.areaHa)} · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
               >
                 {/* No warning icon and no amber. The two figures differing is
                     the normal state of the world, not an incident: a deed says

@@ -57,6 +57,13 @@ export function formatMondayLong(iso: string): string {
 }
 
 /** Pesos as people write them here: 1000 -> "1.000". */
+/** « Una semana tiene su propio precio y lo conserva.» · « 3 semanas tienen … y lo conservan.» */
+function ownPriceWeeksText(weeks: number): string {
+  return weeks === 1
+    ? " Una semana tiene su propio precio y lo conserva."
+    : ` ${weeks} semanas tienen su propio precio y lo conservan.`;
+}
+
 function groupPesos(digits: string): string {
   const clean = digits.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
   return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -174,7 +181,7 @@ export function BasePriceCard({ onSaved }: { onSaved?: () => void }) {
           ? `${impact.settledRecords} ${impact.settledRecords === 1 ? "pesada ya liquidada no cambia" : "pesadas ya liquidadas no cambian"}.`
           : "Lo ya liquidado no cambia.") +
         (impact.weeksWithOwnPrice > 0
-          ? ` ${impact.weeksWithOwnPrice === 1 ? "Una semana tiene" : `${impact.weeksWithOwnPrice} semanas tienen`} su propio precio y lo conserva${impact.weeksWithOwnPrice === 1 ? "" : "n"}.`
+          ? ownPriceWeeksText(impact.weeksWithOwnPrice)
           : "")
     : null;
 
