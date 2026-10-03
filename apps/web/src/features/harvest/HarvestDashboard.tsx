@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «MODO COSECHA»: the harvest week at a glance, on the farm's home screen.
  *

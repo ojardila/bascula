@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, expect, it } from "vitest";
 import { pickHarvestActivity } from "./RecoleccionFormPage";
 import type { Activity } from "../../api/types";

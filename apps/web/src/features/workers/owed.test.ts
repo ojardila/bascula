@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ONE SINGLE ANSWER TO "HOW MUCH DO I OWE THEM?", AND ITS HOLES.
  *

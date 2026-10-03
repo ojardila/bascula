@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * @bascula/shared — what must not diverge.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * GESTIÓN DE USUARIOS — who can get into this farm, and as what.
  *

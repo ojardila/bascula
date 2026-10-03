@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Money is the only thing in this app that cannot be a little bit wrong.
  *

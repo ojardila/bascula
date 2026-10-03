@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Inventory, the paths around the derived-stock rule: opening the product
  * form and the movement dialog from a row, taking a product out of use and

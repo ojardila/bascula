@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `/` on a farm's own address ({slug}.bascula.engp.io) and on the general
  * demo: not the marketing landing, just the door. On a farm: enter, and what

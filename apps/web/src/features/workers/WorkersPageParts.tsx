@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Pieces of the employee list (`WorkersPage`), split out so each one can be
  * read on its own: the name cell, the footer and the row actions.

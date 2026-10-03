@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * One list screen, used by every module.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Money. Integer cents, always. Never a float.
  *

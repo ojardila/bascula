@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE DIFFERENCE SCREEN, from the outside.
  *

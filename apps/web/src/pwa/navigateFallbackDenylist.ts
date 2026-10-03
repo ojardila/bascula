@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Paths the service worker must never answer with the app shell.
  *

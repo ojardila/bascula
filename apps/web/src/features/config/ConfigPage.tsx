@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useEffect, useState } from "react";
 import { APP_BUILD, fetchServerVersion } from "../../lib/appVersion";
 import { Link as RouterLink } from "react-router-dom";

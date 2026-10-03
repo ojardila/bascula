@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `/confirmar-correo#<secreto>`: the link signup mails when this deployment
  * sends email.

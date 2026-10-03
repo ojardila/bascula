@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package store is the only place that speaks SQL. The money queries in
 // money.go are ports of apps/mobile/src/schema.ts, kept as close to the
 // original text as Postgres allows: a rewrite would prove nothing about what

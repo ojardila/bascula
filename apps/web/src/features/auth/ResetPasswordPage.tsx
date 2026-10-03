@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `/restablecer-clave#<secreto>`: the link «olvidé mi clave» mails.
  *

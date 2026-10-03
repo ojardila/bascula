@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ONE LINE PER WEEK, ACTIVITY AND LOTE.
  *

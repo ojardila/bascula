@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { Box, type SxProps, type Theme } from "@mui/material";
 import { formatMoney, formatMoneySigned } from "../lib/money";
 import { moneyFont } from "../theme";

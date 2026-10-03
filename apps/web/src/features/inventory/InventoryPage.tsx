@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-018 … RSP-025, on the module template the other four screens use.
  *

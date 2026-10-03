@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Who is logged in, and what the app is willing to show them.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm price card, the states `BasePriceCard.test.tsx` leaves out: a price
  * the app set and nobody confirmed yet, how the impact reads with nothing

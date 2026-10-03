@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package kube is a tiny, read-only Kubernetes API client for the platform
 // API: just enough to GET a handful of objects and read their status while a
 // new farm stack comes up. It uses the pod's own ServiceAccount (in-cluster

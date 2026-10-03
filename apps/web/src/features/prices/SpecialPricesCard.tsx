@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «PRECIOS ESPECIALES»: a fixed kilo price for one lote or one person, from a
  * Monday on (migration 00034).

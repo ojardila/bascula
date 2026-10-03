@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useState } from "react";
 import { Alert, Button, Stack, Typography } from "@mui/material";
 import Fingerprint from "@mui/icons-material/Fingerprint";

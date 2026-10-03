@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A whole coffee farm, in memory, in the SERVER's own shapes.
  *

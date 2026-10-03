@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Public landing for coffee-farm owners and administrators who pay the harvest
  * by the kilo. Structure and copy: Notion "Báscula: Landing completa, estructura
