@@ -66,7 +66,7 @@ export function SuperAdminPage() {
   const [confirm, setConfirm] = useState<AdminFarm | null>(null);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<AdminFarmCreated | null>(null);
-  const [error, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     data,
@@ -199,7 +199,7 @@ export function SuperAdminPage() {
           singular="finca"
           plural="fincas"
           rows={rows}
-          error={loadError ?? error}
+          error={loadError ?? actionError}
           columns={columns}
           getId={(f) => f.id}
           getName={(f) => f.name}
