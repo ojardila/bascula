@@ -106,18 +106,28 @@ func (h *harness) cpkPasskeyCount(t *testing.T, userID string) int {
 	return n
 }
 
+// cpkReq is one request cpkCall sends: who it comes from (ip, Origin,
+// Host), what it asks for, and the bearer token and JSON body, if any.
+type cpkReq struct {
+	ip, origin, host string
+	method, path     string
+	token            string
+	body             any
+}
+
 // cpkCall sends one request to srv with an Origin header and a Host.
-func cpkCall(t *testing.T, srv http.Handler, ip, origin, host, method, path, token string, body any) response {
+func cpkCall(t *testing.T, srv http.Handler, r cpkReq) response {
 	t.Helper()
+	ip, origin, host, token := r.ip, r.origin, r.host, r.token
 	raw := ""
-	if body != nil {
-		b, err := json.Marshal(body)
+	if r.body != nil {
+		b, err := json.Marshal(r.body)
 		if err != nil {
 			t.Fatal(err)
 		}
 		raw = string(b)
 	}
-	req := httptest.NewRequest(method, path, strings.NewReader(raw))
+	req := httptest.NewRequest(r.method, r.path, strings.NewReader(raw))
 	req.RemoteAddr = ip + ":12345"
 	if host != "" {
 		req.Host = host
@@ -492,7 +502,7 @@ func TestCpkPasskeyRelyingPartyUnderPublicBaseURL(t *testing.T) {
 		"http://finca.bascula.example.com":    http.StatusBadRequest,
 		"https://[2001:db8::1]":               http.StatusBadRequest,
 	} {
-		res := cpkCall(t, srv, "10.74.7.1", origin, "", http.MethodPost, cpkLoginOptions, "", nil)
+		res := cpkCall(t, srv, cpkReq{ip: "10.74.7.1", origin: origin, method: http.MethodPost, path: cpkLoginOptions})
 		cpkExpectCode(t, "login options from "+origin, res, want, "")
 		if want == http.StatusOK {
 			pk, _ := res.Body["publicKey"].(map[string]any)
@@ -502,10 +512,10 @@ func TestCpkPasskeyRelyingPartyUnderPublicBaseURL(t *testing.T) {
 		}
 	}
 	// A same-origin GET carries no Origin: the host it came to stands in.
-	cpkExpectCode(t, "list on a farm subdomain", cpkCall(t, srv, "10.74.7.1", "", "finca.bascula.example.com",
-		http.MethodGet, cpkRegister, f.OwnerToken, nil), http.StatusOK, "")
-	cpkExpectCode(t, "list on another domain", cpkCall(t, srv, "10.74.7.1", "", "bascula.example.org",
-		http.MethodGet, cpkRegister, f.OwnerToken, nil), http.StatusBadRequest, "")
+	cpkExpectCode(t, "list on a farm subdomain", cpkCall(t, srv, cpkReq{ip: "10.74.7.1", host: "finca.bascula.example.com",
+		method: http.MethodGet, path: cpkRegister, token: f.OwnerToken}), http.StatusOK, "")
+	cpkExpectCode(t, "list on another domain", cpkCall(t, srv, cpkReq{ip: "10.74.7.1", host: "bascula.example.org",
+		method: http.MethodGet, path: cpkRegister, token: f.OwnerToken}), http.StatusBadRequest, "")
 
 	// A PUBLIC_BASE_URL with no host is the operator's mistake, not the
 	// visitor's: 500, and no challenge.
@@ -515,8 +525,8 @@ func TestCpkPasskeyRelyingPartyUnderPublicBaseURL(t *testing.T) {
 		cfg.UploadDir = t.TempDir()
 		cfg.PublicBaseURL = base
 		broken := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), cfg)
-		cpkExpectCode(t, "PUBLIC_BASE_URL "+base, cpkCall(t, broken, "10.74.7.2", "https://bascula.example.com", "",
-			http.MethodPost, cpkLoginOptions, "", nil), http.StatusInternalServerError, "")
+		cpkExpectCode(t, "PUBLIC_BASE_URL "+base, cpkCall(t, broken, cpkReq{ip: "10.74.7.2", origin: "https://bascula.example.com",
+			method: http.MethodPost, path: cpkLoginOptions}), http.StatusInternalServerError, "")
 	}
 }
 
