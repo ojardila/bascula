@@ -26,7 +26,7 @@ import type { ReceiptDoc } from "./receiptDoc";
 
 const money = (c: number) => formatMoney(c);
 
-export function ReceiptView({ doc }: { doc: ReceiptDoc }) {
+export function ReceiptView({ doc }: Readonly<{ doc: ReceiptDoc }>) {
   return (
     <Card
       variant="outlined"

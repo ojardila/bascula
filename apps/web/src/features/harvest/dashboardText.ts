@@ -35,6 +35,6 @@ export function lastSeenText(lastRecordOn: string, today: string): string {
 /** "Muy por debajo del promedio: Ana y Beto." — the names behind the flag. */
 export function belowAverageText(names: string[]): string | null {
   if (names.length === 0) return null;
-  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} y ${names.at(-1)}`;
   return `Muy por debajo del promedio: ${list}.`;
 }

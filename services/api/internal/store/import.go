@@ -26,6 +26,9 @@ import (
 // handset with a wrong clock is ordinary and a handset a year fast is not.
 var importEarliestDay = time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// Every imported row whose id is not a uuid is refused with this suffix.
+const msgHandsetUUIDs = ": ids travel as the handset's own uuids"
+
 func importHorizon(now time.Time) time.Time { return now.UTC().AddDate(1, 0, 0) }
 
 // checkImportDay refuses a day outside the window, naming the row it came from.
@@ -279,7 +282,7 @@ func (im *seasonImporter) worker(wkr ImportWorker) error {
 		return domain.BadRequest("every imported worker needs an id and a name")
 	}
 	if !isUUID(wkr.ID) {
-		return domain.BadRequest("worker " + wkr.ID + ": ids travel as the handset's own uuids")
+		return domain.BadRequest("worker " + wkr.ID + msgHandsetUUIDs)
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO employees (id, farm_id, name, last_name, document_type, doc_id, tag,
@@ -390,16 +393,17 @@ func (im *seasonImporter) workRecord(activity *Activity, wr ImportWorkRecord) er
 	if wr.ID == "" || wr.WorkerID == "" {
 		return domain.BadRequest("every imported weighing needs an id and a workerId")
 	}
+	subject := "weighing " + wr.ID
 	if wr.OccurredAt.IsZero() {
-		return domain.BadRequest("weighing " + wr.ID + " has no occurredAt")
+		return domain.BadRequest(subject + " has no occurredAt")
 	}
 	if !isUUID(wr.ID) || !isUUID(wr.WorkerID) {
-		return domain.BadRequest("weighing " + wr.ID + ": ids travel as the handset's own uuids")
+		return domain.BadRequest(subject + msgHandsetUUIDs)
 	}
-	if err := checkImportDay("weighing "+wr.ID, wr.OccurredAt, now); err != nil {
+	if err := checkImportDay(subject, wr.OccurredAt, now); err != nil {
 		return err
 	}
-	if err := domain.CheckNumeric("weighing "+wr.ID+" quantity", wr.Quantity.String(),
+	if err := domain.CheckNumeric(subject+" quantity", wr.Quantity.String(),
 		domain.QuantityPrecision, domain.QuantityScale); err != nil {
 		return err
 	}
@@ -413,7 +417,7 @@ func (im *seasonImporter) workRecord(activity *Activity, wr ImportWorkRecord) er
 		wr.OccurredAt, wr.Quantity.String(), activity.UnitID, wr.Note,
 		nilUUID(deref(wr.DeviceID)), nilUUID(createdBy), wr.OccurredAt, wr.DeletedAt)
 	if err != nil {
-		return importFailure("weighing "+wr.ID, err)
+		return importFailure(subject, err)
 	}
 	count(&rep.WorkRecords, tag.RowsAffected())
 	if tag.RowsAffected() == 1 && wr.CropID != "" {
@@ -421,7 +425,7 @@ func (im *seasonImporter) workRecord(activity *Activity, wr ImportWorkRecord) er
 			INSERT INTO work_record_plot_crops (work_record_id, plot_crop_id, farm_id)
 			VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 			wr.ID, wr.CropID, farmID); err != nil {
-			return importFailure("weighing "+wr.ID, err)
+			return importFailure(subject, err)
 		}
 	}
 	return nil
@@ -544,7 +548,7 @@ func (im *seasonImporter) settlement(st ImportSettlement) error {
 			subject + ": a void settlement carries voidedAt and an open one does not")
 	}
 	if !isUUID(st.ID) || !isUUID(st.WorkerID) {
-		return domain.BadRequest(subject + ": ids travel as the handset's own uuids")
+		return domain.BadRequest(subject + msgHandsetUUIDs)
 	}
 	if err := checkImportDay(subject, periodStart, now); err != nil {
 		return err
@@ -597,18 +601,19 @@ func (im *seasonImporter) ledgerEntry(l ImportLedger) error {
 	if l.ID == "" || l.WorkerID == "" {
 		return domain.BadRequest("every imported movement needs an id and a workerId")
 	}
+	subject := "movement " + l.ID
 	if l.AmountCents == 0 {
-		return domain.BadRequest("movement " + l.ID + " has an amount of zero")
+		return domain.BadRequest(subject + " has an amount of zero")
 	}
 	if !isUUID(l.ID) || !isUUID(l.WorkerID) {
-		return domain.BadRequest("movement " + l.ID + ": ids travel as the handset's own uuids")
+		return domain.BadRequest(subject + msgHandsetUUIDs)
 	}
 	kind := domain.LedgerKind(l.Kind)
 	day, err := time.Parse(time.DateOnly, l.Date)
 	if err != nil {
-		return domain.BadRequest("movement " + l.ID + ": date must be YYYY-MM-DD")
+		return domain.BadRequest(subject + ": date must be YYYY-MM-DD")
 	}
-	if err := checkImportDay("movement "+l.ID, day, now); err != nil {
+	if err := checkImportDay(subject, day, now); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `
@@ -620,7 +625,7 @@ func (im *seasonImporter) ledgerEntry(l ImportLedger) error {
 		nilUUID(deref(l.SettlementID)), l.Method, l.Note,
 		nilUUID(deref(l.ReversesID)), nilUUID(createdBy), l.CreatedAt)
 	if err != nil {
-		return importFailure("movement "+l.ID, err)
+		return importFailure(subject, err)
 	}
 	count(&rep.Ledger, tag.RowsAffected())
 	return nil

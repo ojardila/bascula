@@ -25,13 +25,13 @@ export function TourCard({
   def,
   onPrimary,
   elevated = true,
-}: {
+}: Readonly<{
   tour: TourName;
   def: TourStepDef;
   /** Overrides the step's action: return true to move on. */
   onPrimary?: () => boolean | Promise<boolean>;
   elevated?: boolean;
-}) {
+}>) {
   const t = useTour();
   const [busy, setBusy] = useState(false);
   const total = TOTALS[tour];

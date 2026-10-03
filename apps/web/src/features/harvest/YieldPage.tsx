@@ -386,12 +386,12 @@ function Distribution({
   lo,
   hi,
   pos,
-}: {
+}: Readonly<{
   rows: WireWorkerPerformance[];
   lo: number;
   hi: number;
   pos: (v: number) => number;
-}) {
+}>) {
   return (
     <Box sx={{ px: 1 }}>
       <Box sx={{ position: "relative", height: 74 }}>

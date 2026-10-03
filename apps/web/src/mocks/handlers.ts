@@ -466,7 +466,7 @@ const seesPrivateData = (p: Principal) => p.role === "owner" || p.role === "admi
 /** 32 random bytes, base64url, as a WebAuthn challenge is sent. */
 function mockChallenge(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCodePoint(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -4156,7 +4156,7 @@ export const handlers = [
       pickers: new Set(rows.map((r) => r.workerId)).size,
       days: new Set(days).size,
       firstOn: days[0] ?? null,
-      lastOn: days[days.length - 1] ?? null,
+      lastOn: days.at(-1) ?? null,
       areaHa: crop.areaHa ?? null,
       kgPerHa: crop.areaHa && totals.kg !== null ? totals.kg / crop.areaHa : null,
       sharedRecords: rows.filter((r) => (r.plotCropIds ?? []).length > 1).length,

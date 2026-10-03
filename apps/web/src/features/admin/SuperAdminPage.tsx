@@ -330,11 +330,11 @@ function CreateFarmDialog({
   open,
   onClose,
   onCreated,
-}: {
+}: Readonly<{
   open: boolean;
   onClose: () => void;
   onCreated: (farm: AdminFarmCreated) => void;
-}) {
+}>) {
   const { busy, run: runOnce } = useWriteOnce();
   const [name, setName] = useState("");
   const url = useFarmUrl();

@@ -634,12 +634,12 @@ function InviteDialog({
   onClose,
   onDone,
   owner = false,
-}: {
+}: Readonly<{
   open: boolean;
   onClose: () => void;
   onDone: () => void;
   owner?: boolean;
-}) {
+}>) {
   const tour = useTour();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");

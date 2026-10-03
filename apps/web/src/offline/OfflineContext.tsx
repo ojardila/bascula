@@ -29,7 +29,7 @@ const OfflineContext = createContext<OfflineValue | null>(null);
 
 const RETRY_MS = 30_000;
 
-export function OfflineProvider({ children }: { children: ReactNode }) {
+export function OfflineProvider({ children }: Readonly<{ children: ReactNode }>) {
   const { user } = useAuth();
   const farmId = user?.farm?.id ?? null;
   const canQueue = storageAvailable();

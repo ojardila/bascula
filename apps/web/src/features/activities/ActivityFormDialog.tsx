@@ -56,7 +56,7 @@ export function ActivityFormDialog({
   knownCategories = [],
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   open: boolean;
   activity: Activity | null;
   canSetRate: boolean;
@@ -64,7 +64,7 @@ export function ActivityFormDialog({
   knownCategories?: string[];
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   // The farm's calendar day, not UTC: after 7 p.m. in Colombia UTC is tomorrow (#152).
   const { user } = useAuth();
   const farmToday = () => todayInFarm(user?.farm?.timezone ?? "America/Bogota");

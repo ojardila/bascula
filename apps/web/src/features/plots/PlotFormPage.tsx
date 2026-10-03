@@ -207,8 +207,8 @@ export function PlotFormPage() {
   }, [id]);
 
   const parsedArea = useMemo(() => {
-    const n = Number(areaHa.replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : NaN;
+    const n = Number(areaHa.replaceAll(".", "").replace(",", "."));
+    return Number.isFinite(n) ? n : Number.NaN;
   }, [areaHa]);
 
   /** The warning about a municipality in another department. Almost always null. */
@@ -279,7 +279,7 @@ export function PlotFormPage() {
             ? await resolveVariety(type.id, r.variety)
             : null;
           const area = r.areaHa.trim()
-            ? Number(r.areaHa.replace(/\./g, "").replace(",", "."))
+            ? Number(r.areaHa.replaceAll(".", "").replace(",", "."))
             : null;
           crops.push({
             id: r.id,
