@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -136,9 +137,14 @@ func (s *Signer) issue(audience []string, clientID, scope string, sub TokenSubje
 // Parse verifies signature, method and expiry.
 func (s *Signer) Parse(raw string) (*Claims, error) {
 	var c Claims
-	// WithValidMethods refuses any alg but HS256 before the key is looked up,
-	// so the key function never sees another signing method.
-	_, err := jwt.ParseWithClaims(raw, &c, func(*jwt.Token) (any, error) {
+	_, err := jwt.ParseWithClaims(raw, &c, func(t *jwt.Token) (any, error) {
+		// WithValidMethods below already refuses any alg but HS256 before the
+		// key is looked up, so no test can reach this. It stays as the second
+		// lock against alg confusion: if the option is ever dropped, the HMAC
+		// key must still never be handed to another signing method.
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
+		}
 		return s.key, nil
 	}, jwt.WithIssuer(s.issuer), jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
