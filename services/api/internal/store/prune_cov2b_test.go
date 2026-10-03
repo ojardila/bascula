@@ -65,6 +65,15 @@ func TestC2SBPruneSyncStopsAtTheFirstFailure(t *testing.T) {
 	ctx := context.Background()
 	pool := c2sbPool(t, cfg)
 
+	c2sbCheckMissingTables(ctx, t, pool)
+	c2sbCheckCommitFailure(ctx, t, pool)
+	c2sbCheckFlagFailure(ctx, t, pool, cfg)
+}
+
+// c2sbCheckMissingTables runs the sweep once per missing table, then
+// creates that table, so each run fails one statement further along.
+func c2sbCheckMissingTables(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
 	steps := []struct {
 		missing string
 		ddl     string
@@ -87,8 +96,12 @@ func TestC2SBPruneSyncStopsAtTheFirstFailure(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
 
-	// Everything in place but a commit that fails: the sweep is the error.
+// c2sbCheckCommitFailure: everything in place but a commit that fails; the
+// sweep is the error.
+func c2sbCheckCommitFailure(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO passkey_used_challenges VALUES (now() - interval '1 day');
 		CREATE FUNCTION c2sb_boom() RETURNS trigger LANGUAGE plpgsql AS
@@ -108,10 +121,13 @@ func TestC2SBPruneSyncStopsAtTheFirstFailure(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM passkey_used_challenges`).Scan(&left); err != nil || left != 1 {
 		t.Errorf("rolled-back sweep deleted rows: %d %v", left, err)
 	}
+}
 
-	// The session flag itself failing: a set_config that shadows the
-	// catalogue's (search_path names pg_catalog last) refuses the sweep
-	// before it deletes anything.
+// c2sbCheckFlagFailure: the session flag itself failing. A set_config that
+// shadows the catalogue's (search_path names pg_catalog last) refuses the
+// sweep before it deletes anything.
+func c2sbCheckFlagFailure(ctx context.Context, t *testing.T, pool *pgxpool.Pool, cfg *pgxpool.Config) {
+	t.Helper()
 	if _, err := pool.Exec(ctx, `
 		CREATE FUNCTION public.set_config(text, text, boolean) RETURNS text LANGUAGE plpgsql AS
 		  $$BEGIN RAISE EXCEPTION 'c2sb flag refused'; END$$`); err != nil {
@@ -119,7 +135,7 @@ func TestC2SBPruneSyncStopsAtTheFirstFailure(t *testing.T) {
 	}
 	shadowed := cfg.Copy()
 	shadowed.ConnConfig.RuntimeParams["search_path"] = "public, pg_catalog"
-	rep, err = PruneSync(ctx, c2sbPool(t, shadowed), 0, 0, 0)
+	rep, err := PruneSync(ctx, c2sbPool(t, shadowed), 0, 0, 0)
 	if err == nil || !strings.Contains(err.Error(), "c2sb flag refused") {
 		t.Fatalf("flag failure: err = %v", err)
 	}
