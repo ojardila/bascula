@@ -4,9 +4,10 @@
 # earlier in the file is overridden by a pattern that comes later, so the
 # order matters: catch-alls at the top, specific rules below.
 #
-# Branch protection on master requires a code-owner review for any file
-# matched here. If no pattern matches, no code-owner review is required
-# (contrast with a '*' rule, which would require review on every PR
+# GitHub requests a review from the owner of any file matched here. This is
+# advisory: no branch protection or ruleset on master requires a code-owner
+# approval, so it does not block a merge. If no pattern matches, no review is
+# requested (contrast with a '*' rule, which would request review on every PR
 # including the smallest web tweak — not the convention we are codifying).
 #
 # Keep this file short: add a path only when its review bar really is
