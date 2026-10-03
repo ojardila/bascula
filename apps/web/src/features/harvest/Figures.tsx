@@ -65,8 +65,12 @@ function Note({ children, title }: { children: ReactNode; title?: string }) {
     </Typography>
   );
   return title ? (
-    <Tooltip title={title}>
-      <Box component="span" role="img" sx={{ cursor: "help" }}>
+    // `describeChild`: the visible note ("provisional", "al menos · faltan 3")
+    // stays the accessible text and the tooltip becomes its description. The
+    // default would paint the tooltip as `aria-label` on the span and hide
+    // the note itself from screen readers.
+    <Tooltip title={title} describeChild>
+      <Box component="span" sx={{ cursor: "help" }}>
         {text}
       </Box>
     </Tooltip>

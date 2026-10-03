@@ -22,6 +22,12 @@
  * the content is a self-contained graphic unit. This test fails before the
  * fix because at least one element with `aria-label` has no role attribute
  * and is not a natively labellable element.
+ *
+ * A third site, `Note` in `Figures.tsx`, got its `aria-label` from MUI's
+ * `Tooltip`, which copies the title onto the child. There the visible text
+ * ("provisional", "al menos · faltan 3") IS the content, so `role="img"`
+ * would hide it. The tooltip uses `describeChild` instead: no label at all,
+ * the text stays readable and the explanation becomes its description.
  */
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
@@ -77,10 +83,10 @@ describe("aria-label only on roles that permit it", () => {
     expect(prohibitedLabels(container)).toEqual([]);
   });
 
-  it("Figures.Note (provisional) labels a role-bearing element", () => {
+  it("Figures.Note (provisional) has no prohibited label and keeps its text readable", () => {
     // valueIsEstimate = true with everything priced -> `estimate` state ->
-    // renders Note with the Provisional tooltip, which MUI copies to the
-    // child as `aria-label`.
+    // renders Note with the Provisional tooltip. Without `describeChild` MUI
+    // copies the title to the child as `aria-label`.
     const total = {
       records: 1,
       kg: 10,
@@ -96,5 +102,12 @@ describe("aria-label only on roles that permit it", () => {
       </ThemeProvider>,
     );
     expect(prohibitedLabels(container)).toEqual([]);
+    // The note's own text must stay in the accessibility tree: no role="img"
+    // (its children are presentational) and no aria-label replacing it.
+    const note = container.querySelector('[title]');
+    expect(note).not.toBeNull();
+    expect(note!.hasAttribute("aria-label")).toBe(false);
+    expect(note!.closest('[role="img"]')).toBeNull();
+    expect(note!.textContent).not.toBe("");
   });
 });
