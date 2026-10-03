@@ -6751,12 +6751,18 @@ components:
 
     Passkey:
       type: object
-      required: [id, name, createdAt, lastUsedAt]
+      required: [id, name, createdAt, lastUsedAt, host, here]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         createdAt: { type: string, format: date-time }
         lastUsedAt: { type: string, format: date-time, nullable: true }
+        host:
+          type: string
+          description: The address the passkey works on (its WebAuthn RP ID), e.g. `bascula.engp.io` or `cafin3.bascula.engp.io`.
+        here:
+          type: boolean
+          description: Whether `host` is the address of this request. The list shows every passkey on the account, so one made elsewhere can be seen and removed.
 
     RefreshRequest:
       type: object

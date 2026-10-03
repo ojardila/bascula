@@ -180,6 +180,14 @@ export function PasskeysCard() {
                       ? `Último uso: ${formatWhen(p.lastUsedAt, tz)}`
                       : `Creada: ${formatWhen(p.createdAt, tz)}`}
                   </Typography>
+                  {!p.here && (
+                    // Made on another address (the main domain or another
+                    // farm). It does not work here, but it opens the account
+                    // there, so it is listed where it can be removed.
+                    <Typography variant="caption" sx={{ color: "text.secondary" }} noWrap>
+                      Sirve en {p.host}
+                    </Typography>
+                  )}
                 </Stack>
                 <IconButton
                   aria-label={`Quitar ${p.name}`}

@@ -2679,7 +2679,7 @@ export const handlers = [
     if (g.deny) return g.deny;
     const items = db.passkeys
       .filter((k) => k.userId === g.p.user.id)
-      .map(({ id, name, createdAt, lastUsedAt }) => ({ id, name, createdAt, lastUsedAt }));
+      .map(({ id, name, createdAt, lastUsedAt }) => ({ id, name, createdAt, lastUsedAt, host: location.hostname, here: true }));
     return HttpResponse.json({ items });
   }),
 
@@ -2724,7 +2724,7 @@ export const handlers = [
     };
     db.passkeys.push(row);
     const { id, name, createdAt, lastUsedAt } = row;
-    return HttpResponse.json({ id, name, createdAt, lastUsedAt }, { status: 201 });
+    return HttpResponse.json({ id, name, createdAt, lastUsedAt, host: location.hostname, here: true }, { status: 201 });
   }),
 
   http.delete("*/v1/me/passkeys/:id", ({ request, params }) => {

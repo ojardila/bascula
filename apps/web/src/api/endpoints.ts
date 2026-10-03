@@ -2417,6 +2417,9 @@ export interface PasskeyItem {
   name: string;
   createdAt: string;
   lastUsedAt: string | null;
+  /** The address it works on; `here` when that is this one. */
+  host: string;
+  here: boolean;
 }
 
 /** One of the caller's open sign-ins on this farm (a browser or a phone). */

@@ -320,11 +320,21 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	var removedPasskeys int64
 	for _, step := range []func() error{
 		func() error { return store.SetUserPasswordHash(r.Context(), tx, userID, hash) },
 		func() error { return store.DropFarmOwnerCredentials(r.Context(), tx, userID) },
 		func() error { return store.VerifyUserEmail(r.Context(), tx, userID) },
 		func() error { return store.RevokeAllUserSessions(r.Context(), tx, userID, "") },
+		// A passkey opens the account without the password and outlives a
+		// password change. Somebody who once had a session (and the password,
+		// which adding one asks for) could plant one, and the owner resetting
+		// from the email would have closed nothing. The mailbox proved who
+		// the account belongs to; every way in now starts from that.
+		func() (err error) {
+			removedPasskeys, err = store.DeleteAllPasskeys(r.Context(), tx, userID)
+			return err
+		},
 	} {
 		if err := step(); err != nil {
 			writeError(w, r, err)
@@ -336,7 +346,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	s.mailLater(r, passwordChangedMessage(user.Email, user.Name, ""))
+	msg := passwordChangedMessage(user.Email, user.Name, "")
+	if removedPasskeys > 0 {
+		msg.Body = strings.Replace(msg.Body, "se cerraron.",
+			"se cerraron, y se quitaron las llaves de acceso (huella o cara) de la cuenta: si las usaba, agréguelas de nuevo desde Conexiones.", 1)
+	}
+	s.mailLater(r, msg)
 	writeJSON(w, http.StatusNoContent, nil)
 }
 

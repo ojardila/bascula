@@ -45,10 +45,33 @@ func InsertPasskey(ctx context.Context, tx pgx.Tx, p Passkey) error {
 
 // ListPasskeys returns the user's passkeys for one relying party, oldest first.
 func ListPasskeys(ctx context.Context, tx pgx.Tx, userID, rpID string) ([]Passkey, error) {
-	rows, err := tx.Query(ctx, `
+	return listPasskeys(ctx, tx, `
 		SELECT `+passkeyColumns+` FROM passkeys
 		 WHERE user_id = $1 AND rp_id = $2
 		 ORDER BY created_at, id`, userID, rpID)
+}
+
+// ListAllPasskeys is every passkey on the account, whatever address it was
+// made on: what the owner must be able to see and remove.
+func ListAllPasskeys(ctx context.Context, tx pgx.Tx, userID string) ([]Passkey, error) {
+	return listPasskeys(ctx, tx, `
+		SELECT `+passkeyColumns+` FROM passkeys
+		 WHERE user_id = $1
+		 ORDER BY created_at, id`, userID)
+}
+
+// DeleteAllPasskeys removes every passkey on the account and says how many
+// there were.
+func DeleteAllPasskeys(ctx context.Context, tx pgx.Tx, userID string) (int64, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM passkeys WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func listPasskeys(ctx context.Context, tx pgx.Tx, query string, args ...any) ([]Passkey, error) {
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
