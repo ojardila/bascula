@@ -99,6 +99,10 @@ export interface ModuleListProps<T> {
   toolbarExtra?: ReactNode;
 }
 
+function confirmTitle(off: boolean, name: string): string {
+  return `${off ? "¿Dar de baja" : "¿Reactivar"} «${name}»?`;
+}
+
 export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
   const {
     title,
@@ -440,11 +444,7 @@ export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
          * — it is the one the person is looking at in the row.
          */
         title={
-          confirming
-            ? `${confirming.kind === "off" ? "¿Dar de baja" : "¿Reactivar"} «${getName(
-                confirming.row,
-              )}»?`
-            : ""
+          confirming ? confirmTitle(confirming.kind === "off", getName(confirming.row)) : ""
         }
         body={
           confirming?.kind === "off"

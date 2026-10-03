@@ -64,6 +64,35 @@ const AVG_LINE = "#43483f";
 const GRID = "#e4ebe1";
 const TRACK = "rgba(46,125,50,.12)";
 
+function thisWeekLabel(share: boolean, teamMembers: number): string {
+  if (share) return "Su parte esta semana";
+  return teamMembers > 1 ? "Esta semana, juntos" : "Esta semana";
+}
+
+function thisWeekNote(days: number, kg: number, teamMembers: number): string {
+  if (days === 0) return "Todavía sin recolección.";
+  const soFar = `${daysWorkedText(days)} hasta hoy.`;
+  return teamMembers > 1 ? `${kgText(kg / teamMembers)} c/u · ${soFar}` : soFar;
+}
+
+/** The sentence under the bars for the week the person tapped. */
+function pickedWeekText(kg: number | null, daysWorked: number, teamMembers: number): string {
+  if (kg === null) return "No recogió en esta semana.";
+  const each = teamMembers > 1 ? kgText(kg / teamMembers) : null;
+  return `Recogió ${kgText(kg)} en ${daysWorkedText(daysWorked)}${affix(each, ", juntos: ", " c/u")}.`;
+}
+
+function dayKgText(kg: number | null, future: boolean): string {
+  if (kg !== null) return kgText(kg);
+  return future ? "todavía no" : "sin kilos";
+}
+
+/** The figure over a day's bar: blank for a day still to come. */
+function barValueText(v: number, future: boolean): string {
+  if (v > 0) return Math.round(v).toLocaleString("es-CO");
+  return future ? "" : "0";
+}
+
 export function WorkerPerformance({ workerId }: Readonly<{ workerId: string }>) {
   const { data, error, denied } = useAsync(
     () => workerPerformance(workerId, WEEKS),
@@ -192,20 +221,11 @@ function Body(props: Readonly<{
       <Grid container spacing={2}>
         <Grid size={{ xs: 6, sm: 4 }}>
           <BigNumber
-            label={
-              share
-                ? "Su parte esta semana"
-                : teamMembers > 1
-                  ? "Esta semana, juntos"
-                  : "Esta semana"
+            label={thisWeekLabel(share, teamMembers)
             }
             value={kgText(summary.thisWeekKg ?? 0)}
             note={
-              daysThisWeek === 0
-                ? "Todavía sin recolección."
-                : teamMembers > 1
-                  ? `${kgText((summary.thisWeekKg ?? 0) / teamMembers)} c/u · ${daysWorkedText(daysThisWeek)} hasta hoy.`
-                  : `${daysWorkedText(daysThisWeek)} hasta hoy.`
+              thisWeekNote(daysThisWeek, summary.thisWeekKg ?? 0, teamMembers)
             }
           />
         </Grid>
@@ -607,9 +627,7 @@ function WeeklyChart({
             )}
           </Typography>
           <Typography sx={{ fontSize: 17 }}>
-            {sel.kg === null
-              ? "No recogió en esta semana."
-              : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${affix(teamMembers > 1 ? kgText(sel.kg / teamMembers) : null, ", juntos: ", " c/u")}.`}
+            {pickedWeekText(sel.kg, sel.daysWorked, teamMembers)}
           </Typography>
           {sel.farmAvgKg !== null && (
             <Typography sx={{ fontSize: 16, color: INK_MUTED }}>
@@ -660,7 +678,7 @@ export function DaysChart({
   const summary = days
     .map(
       (d, i) =>
-        `${DAY_SHORT[i]}: ${d.kg === null ? (d.future ? "todavía no" : "sin kilos") : kgText(d.kg)}`,
+        `${DAY_SHORT[i]}: ${dayKgText(d.kg, d.future)}`,
     )
     .join("; ");
 
@@ -702,11 +720,7 @@ export function DaysChart({
                   fill={v > 0 ? INK : INK_MUTED}
                   style={moneyFont}
                 >
-                  {v > 0
-                    ? Math.round(v).toLocaleString("es-CO")
-                    : d.future
-                      ? ""
-                      : "0"}
+                  {barValueText(v, d.future)}
                 </text>
                 <text
                   x={cx}

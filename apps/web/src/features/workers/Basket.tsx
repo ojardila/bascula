@@ -13,6 +13,22 @@ import { Box, Chip, Typography, type SxProps, type Theme } from "@mui/material";
 export const BASKET_LABEL = "Número de canasto";
 export const BASKET_REQUIRED = "Escriba el número de canasto.";
 
+/** Longer tags get a smaller font so they still fit in the square. */
+function fontScaleFor(len: number): number {
+  if (len <= 2) return 0.46;
+  if (len <= 3) return 0.38;
+  if (len <= 5) return 0.28;
+  return 0.22;
+}
+
+/** A person's basket, a team's basket, or the dashed square of no basket. */
+function basketLook(hasBasket: boolean, team: boolean) {
+  if (!hasBasket) return { border: "2px dashed", borderColor: "divider", color: "text.disabled" };
+  return team
+    ? { bgcolor: "primary.main", color: "primary.contrastText" }
+    : { bgcolor: "#FFF4D6", color: "#5B4300", border: "2px solid #E8C468" };
+}
+
 /** The number trimmed, or null when there is none. */
 export function basketOf(tag: string | null | undefined): string | null {
   const t = (tag ?? "").trim();
@@ -42,7 +58,7 @@ export function BasketTile({
 }>) {
   const b = basketOf(tag);
   const len = b?.length ?? 1;
-  const font = len <= 2 ? size * 0.46 : len <= 3 ? size * 0.38 : len <= 5 ? size * 0.28 : size * 0.22;
+  const font = size * fontScaleFor(len);
   return (
     <Box
       aria-label={basketText(tag)}
@@ -57,11 +73,7 @@ export function BasketTile({
         alignItems: "center",
         justifyContent: "center",
         lineHeight: 1,
-        ...(b
-          ? team
-            ? { bgcolor: "primary.main", color: "primary.contrastText" }
-            : { bgcolor: "#FFF4D6", color: "#5B4300", border: "2px solid #E8C468" }
-          : { border: "2px dashed", borderColor: "divider", color: "text.disabled" }),
+        ...basketLook(Boolean(b), team),
         ...sx,
       }}
     >

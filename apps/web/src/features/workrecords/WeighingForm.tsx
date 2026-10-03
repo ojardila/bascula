@@ -89,6 +89,10 @@ interface Refs {
   activities: Activity[];
 }
 
+function dayWord(day: string, today: string): string {
+  return day === today ? "hoy" : formatDate(day);
+}
+
 /** The request never got an answer from our server: keep it for later. */
 function noSignal(e: unknown): boolean {
   return e instanceof ApiError && (e.status === 0 || e.status >= 502);
@@ -131,8 +135,9 @@ export function WeighingForm() {
   const refsKey = `refs:${farmId}`;
   const lastLoteKey = `bascula.pesada.lote:${farmId}`;
 
-  const day =
-    dayChoice === "hoy" ? today : dayChoice === "ayer" ? yesterday : otherDay;
+  let day = otherDay;
+  if (dayChoice === "hoy") day = today;
+  else if (dayChoice === "ayer") day = yesterday;
 
   useEffect(() => {
     let cancelled = false;
@@ -682,7 +687,7 @@ export function WeighingForm() {
                     secondary={
                       p.error
                         ? `No se pudo subir: ${p.error}`
-                        : `${p.plot} · ${p.day === today ? "hoy" : formatDate(p.day)}`
+                        : `${p.plot} · ${dayWord(p.day, today)}`
                     }
                     slotProps={{
                       primary: { sx: { fontSize: "1.1rem", fontWeight: 600 } },

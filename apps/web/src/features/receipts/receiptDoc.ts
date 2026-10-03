@@ -70,6 +70,14 @@ export function balanceSentence(after: number): string {
   return `Queda un anticipo a favor de la finca: ${formatMoney(-after)}.`;
 }
 
+/** The big figure's caption on each kind of slip. */
+const HEADLINE_LABEL: Record<ReceiptKind, string> = {
+  pago: "Pagado",
+  anticipo: "Anticipo",
+  deduccion: "Descontado",
+  liquidacion: "Descontado",
+};
+
 function fileNameOf(kind: ReceiptKind, workerName: string, date: string, number: string): string {
   const slug = workerName
     .normalize("NFD")
@@ -77,7 +85,8 @@ function fileNameOf(kind: ReceiptKind, workerName: string, date: string, number:
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
-  const what = kind === "liquidacion" ? "liquidacion" : kind === "pago" ? "recibo" : kind;
+  // A payment's file says "recibo"; every other kind keeps its own name.
+  const what = kind === "pago" ? "recibo" : kind;
   return `${what}-${slug || "empleado"}-${date}-${number}.pdf`;
 }
 
@@ -122,11 +131,11 @@ export function movementReceiptDoc(args: {
   summary.push({ label: "Queda", cents: slip.remainingCents, sign: "", strong: true });
 
   const covered = coveredWeeks(lines);
-  const period = covered
-    ? formatPeriod(covered.from, covered.to, args.today)
-    : kind === "pago" && slip.currentWeekFrom && slip.currentWeekTo
-      ? formatPeriod(slip.currentWeekFrom, slip.currentWeekTo, args.today)
-      : null;
+  let period: string | null = null;
+  if (covered) period = formatPeriod(covered.from, covered.to, args.today);
+  else if (kind === "pago" && slip.currentWeekFrom && slip.currentWeekTo) {
+    period = formatPeriod(slip.currentWeekFrom, slip.currentWeekTo, args.today);
+  }
 
   return {
     kind,
@@ -149,7 +158,7 @@ export function movementReceiptDoc(args: {
     linesTotalCents,
     summary,
     headline: {
-      label: kind === "pago" ? "Pagado" : kind === "anticipo" ? "Anticipo" : "Descontado",
+      label: HEADLINE_LABEL[kind],
       cents: slip.paidCents,
     },
     balanceSentence: balanceSentence(slip.remainingCents),
