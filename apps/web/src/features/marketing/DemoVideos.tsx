@@ -2,15 +2,18 @@
  * «Véalo funcionando»: the demo videos on the landing (main domain only; the
  * landing itself is never rendered on a farm's own address, see HomeRoute).
  *
- * Browsers refuse autoplay with sound, and the videos have music, so nothing
- * plays by itself: the poster carries one large play button and a tap starts
- * the video with sound, from inside the user's gesture. Nothing is downloaded
- * until then (`preload="none"`), because a farm's mobile data plan pays for
- * every megabyte and the landing must stay fast on a rural connection.
+ * The main video is the narrated explainer (demo-3): a voice explains, step by
+ * step, how a farm uses Báscula, from the price per kilo to the receipt.
+ * Browsers refuse autoplay with sound, so nothing plays by itself: the poster
+ * carries one large play button and a tap starts the video with sound, from
+ * inside the user's gesture. Nothing is downloaded until then
+ * (`preload="none"`), because a farm's mobile data plan pays for every
+ * megabyte and the landing must stay fast on a rural connection.
  *
- * Phones in portrait get the vertical cut of video 1; everything else the
- * 16:9 one. Video 2 (the longer tour) stays behind a button. Captions are
- * burned into the picture, so they read with the sound off; the Spanish .vtt
+ * Two shorter recordings stay behind their own buttons: the payment of one
+ * picker (video 1, music only; phones in portrait get its vertical cut) and
+ * the full tour (video 2, music only). The step titles and texts are on
+ * screen in every video, so they read with the sound off; the Spanish .vtt
  * is there for screen readers and search, off by default so the text is not
  * shown twice. Files are imported through Vite, so they are served from
  * /assets with fingerprinted names and cached for a year (nginx.conf), and
@@ -44,6 +47,10 @@ import v2Mp4 from "./media/demo-2.mp4?url";
 import v2Webm from "./media/demo-2.webm?url";
 import v2Poster from "./media/demo-2-poster.webp?url";
 import v2Vtt from "./media/demo-2.es.vtt?no-inline";
+import v3Mp4 from "./media/demo-3.mp4?url";
+import v3Webm from "./media/demo-3.webm?url";
+import v3Poster from "./media/demo-3-poster.webp?url";
+import v3Vtt from "./media/demo-3.es.vtt?no-inline";
 
 const DISPLAY = '"Fraunces", Georgia, serif';
 const MUTED = "#43483f";
@@ -62,7 +69,18 @@ export interface DemoClip {
 }
 
 export const CLIPS = {
-  main: {
+  explainer: {
+    mp4: v3Mp4,
+    webm: v3Webm,
+    poster: v3Poster,
+    vtt: v3Vtt,
+    width: 1920,
+    height: 1080,
+    length: "1 min 28 s",
+    title:
+      "Video narrado: cómo funciona Báscula, del precio del kilo y la pesada diaria a la nómina, el pago y el recibo",
+  },
+  payment: {
     mp4: v1Mp4,
     webm: v1Webm,
     poster: v1Poster,
@@ -73,7 +91,7 @@ export const CLIPS = {
     title:
       "Video: una semana en Báscula, del tablero de cosecha al pago de un recolector con su recibo",
   },
-  mainVertical: {
+  paymentVertical: {
     mp4: v1vMp4,
     webm: v1vWebm,
     poster: v1vPoster,
@@ -104,7 +122,7 @@ export interface PlayerHandle {
 /** Poster + one big play button; the tap starts playback with sound. */
 export const DemoPlayer = forwardRef<
   PlayerHandle,
-  { clip: DemoClip; maxWidth?: number | string; hidePoster?: boolean }
+  Readonly<{ clip: DemoClip; maxWidth?: number | string; hidePoster?: boolean }>
 >(function DemoPlayer({ clip, maxWidth, hidePoster }, ref) {
   const video = useRef<HTMLVideoElement>(null);
   const [started, setStarted] = useState(false);
@@ -214,16 +232,93 @@ export const DemoPlayer = forwardRef<
   );
 });
 
+/**
+ * A shorter video behind its own button: nothing is fetched (not even the
+ * poster) until the button is pressed, and that press starts it with sound.
+ */
+function MoreVideo({
+  clip,
+  button,
+  heading,
+  text,
+  maxWidth,
+  testId,
+}: Readonly<{
+  clip: DemoClip;
+  button: string;
+  heading: string;
+  text: string;
+  maxWidth: number;
+  testId: string;
+}>) {
+  const player = useRef<PlayerHandle>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {!open && (
+        <Button
+          variant="outlined"
+          size="large"
+          startIcon={<OndemandVideoIcon />}
+          onClick={() => {
+            setOpen(true);
+            player.current?.start();
+          }}
+          sx={{
+            fontSize: "1.15rem",
+            minHeight: 56,
+            px: 3,
+            borderWidth: 2,
+            "&:hover": { borderWidth: 2 },
+          }}
+        >
+          {button}
+        </Button>
+      )}
+      <Collapse in={open} data-testid={testId} sx={{ width: "100%" }}>
+        <Typography
+          component="h3"
+          sx={{
+            fontWeight: 700,
+            fontSize: { xs: "1.3rem", md: "1.5rem" },
+            textAlign: "center",
+            mb: 1,
+            mt: 2,
+          }}
+        >
+          {heading}
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: "1.1rem",
+            color: MUTED,
+            textAlign: "center",
+            maxWidth: 720,
+            mx: "auto",
+            mb: 3,
+          }}
+        >
+          {text}
+        </Typography>
+        <DemoPlayer
+          ref={player}
+          clip={clip}
+          maxWidth={maxWidth}
+          hidePoster={!open}
+        />
+      </Collapse>
+    </>
+  );
+}
+
 export function DemoVideos() {
-  // Portrait phones get the vertical cut; checked once per render, and the
-  // player is keyed on it so a rotation swaps the whole element.
+  // Portrait phones get the vertical cut of the payment video; checked once
+  // per render, and the player is keyed on it so a rotation swaps the element.
   const phone = useMediaQuery(
     "(max-width:599.95px) and (orientation: portrait)",
     { noSsr: true },
   );
-  const main = phone ? CLIPS.mainVertical : CLIPS.main;
-  const tour = useRef<PlayerHandle>(null);
-  const [tourOpen, setTourOpen] = useState(false);
+  const payment = phone ? CLIPS.paymentVertical : CLIPS.payment;
   return (
     <Box
       component="section"
@@ -257,75 +352,37 @@ export function DemoVideos() {
             mb: { xs: 4, md: 5 },
           }}
         >
-          Una finca de demostración: la semana de cosecha, el pago a un
-          recolector con su anticipo descontado y el recibo. Tiene música; los
-          textos van en pantalla.
+          En menos de un minuto y medio, una voz le explica paso a paso cómo
+          funciona Báscula: el precio del kilo, la pesada de cada día, la nómina
+          de la semana, el pago y el recibo. Los pasos también van escritos en
+          pantalla.
         </Typography>
-        <DemoPlayer
-          key={phone ? "v" : "h"}
-          clip={main}
-          maxWidth={phone ? 420 : 1040}
-        />
+        <DemoPlayer clip={CLIPS.explainer} maxWidth={1040} />
         <Stack
+          spacing={2}
           sx={{
             alignItems: "center",
             mt: 4,
           }}
         >
-          {!tourOpen && (
-            <Button
-              variant="outlined"
-              size="large"
-              startIcon={<OndemandVideoIcon />}
-              onClick={() => {
-                setTourOpen(true);
-                tour.current?.start();
-              }}
-              sx={{
-                fontSize: "1.15rem",
-                minHeight: 56,
-                px: 3,
-                borderWidth: 2,
-                "&:hover": { borderWidth: 2 },
-              }}
-            >
-              Ver el recorrido completo (1 min)
-            </Button>
-          )}
-        </Stack>
-        <Collapse in={tourOpen} data-testid="tour">
-          <Typography
-            component="h3"
-            sx={{
-              fontWeight: 700,
-              fontSize: { xs: "1.3rem", md: "1.5rem" },
-              textAlign: "center",
-              mb: 1,
-            }}
-          >
-            Recorrido completo
-          </Typography>
-          <Typography
-            sx={{
-              fontSize: "1.1rem",
-              color: MUTED,
-              textAlign: "center",
-              maxWidth: 720,
-              mx: "auto",
-              mb: 3,
-            }}
-          >
-            La pesada desde el celular, la nómina con anticipos, la conexión con
-            ChatGPT, fincas separadas y la consola de soporte.
-          </Typography>
-          {/* No poster request until the tour is opened. */}
-          <DemoPlayer
-            ref={tour}
+          <MoreVideo
+            key={phone ? "v" : "h"}
+            clip={payment}
+            maxWidth={phone ? 420 : 1040}
+            testId="payment"
+            button={`Ver el pago a un recolector (${payment.length})`}
+            heading="El pago a un recolector"
+            text="La semana de cosecha, el pago a un recolector con su anticipo descontado y el recibo. Tiene música, sin voz; los textos van en pantalla."
+          />
+          <MoreVideo
             clip={CLIPS.tour}
             maxWidth={1040}
-            hidePoster={!tourOpen}
+            testId="tour"
+            button="Ver el recorrido completo (1 min)"
+            heading="Recorrido completo"
+            text="La pesada desde el celular, la nómina con anticipos, la conexión con ChatGPT, fincas separadas y la consola de soporte. Tiene música, sin voz; los textos van en pantalla."
           />
-        </Collapse>
+        </Stack>
         <Typography
           sx={{
             mt: 2.5,
