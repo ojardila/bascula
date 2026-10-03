@@ -56,7 +56,7 @@ jobs:
           go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
 
-      - uses: github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -71,11 +71,11 @@ jobs:
 
       # Autobuild on Go runs `go build ./...` from the module root; go.mod
       # lives in services/api so no extra config needed.
-      - uses: github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3.38.2
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: /language:${{ matrix.language }}
           upload: always
-          # Advisory for one month: no fail-on, so the step always passes
-          # and findings show only in the Security tab. After one quiet
-          # month on master, add `fail-on: critical` and put this job in
-          # branch-protection required-checks.
+          # Advisory for one month: analyze does not fail on findings, so
+          # the job passes and results show only in the Security tab. After
+          # one quiet month on master, gate via a ruleset `code_scanning`
+          # rule (CodeQL, high_or_higher) and/or require this job.
