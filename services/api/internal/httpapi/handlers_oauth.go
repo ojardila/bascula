@@ -531,6 +531,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	// the request, and it stays nil until the match below.
 	var target *url.URL
 	failToClient := func(code, desc string) {
+		s.oauthErrorSignal(clientID, code)
 		if target == nil {
 			s.oauthForm(w, r, q, desc, nil, nil)
 			return
@@ -614,6 +615,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if (!usingPasskey && failedPair >= s.cfg.LoginFailuresPerEmailPerIP) || failedIP >= s.cfg.LoginFailuresPerIP {
+			s.loginRefused(ip, email, "oauth")
 			s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
 			return
 		}
@@ -624,6 +626,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(ferr, errOAuthBadCredentials) || errors.Is(ferr, errOAuthBadPasskey) {
 			// The page is a 200, so the request transaction commits and the
 			// failure is counted; nothing else has been written by now.
+			s.loginRefused(ip, email, "oauth")
 			if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
 				writeError(w, r, domain.Internal("could not record the failed sign-in").WithCause(err))
 				return

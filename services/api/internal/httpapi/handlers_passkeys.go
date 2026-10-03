@@ -573,11 +573,13 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if failedForIP >= s.cfg.LoginFailuresPerIP {
+		s.loginRefused(ip, "", "passkey")
 		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
 			"too many failed sign-in attempts; try again later"))
 		return
 	}
 	refuse := func() {
+		s.loginRefused(ip, "", "passkey")
 		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, ""); err != nil {
 			writeError(w, r, domain.Internal(
 				"could not record the failed sign-in").WithCause(err))

@@ -571,6 +571,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// victim's own pair, from their own office, is at zero. See
 		// store.CountLoginFailures for why counting an address alone made this
 		// same line a way to hold a farm's owner out of their own payroll.
+		s.loginRefused(ip, email, "password")
 		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
 			"too many failed sign-in attempts; try again later"))
 		return
@@ -591,6 +592,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// count is durable before the 401 leaves rather than shortly after it.
 	// handleRefresh is the other handler with this shape.
 	refuse := func() {
+		s.loginRefused(ip, email, "password")
 		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
 			// Not swallowed, and not answered as a 401 either. A limiter that
 			// silently fails to count is the state this whole change is about,

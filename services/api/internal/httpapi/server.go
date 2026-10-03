@@ -18,6 +18,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/domain"
 	"github.com/ojardila/bascula/services/api/internal/kube"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
+	"github.com/ojardila/bascula/services/api/internal/secalert"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
@@ -178,6 +179,9 @@ type Config struct {
 	// notices of notices.go. cmd/api sets it only when SMTP_HOST and
 	// SMTP_FROM are set.
 	Mailer mailer.Sender
+	// Alerts emails the operator when a security signal crosses its
+	// threshold (internal/secalert, docs/detections.md). Nil means off.
+	Alerts *secalert.Alerter
 }
 
 // DefaultConfig is the production posture.
@@ -319,6 +323,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Use(fromTrustedPeer(s.cfg.TrustedProxyCIDRs,
 			middleware.ClientIPFromXFF(s.cfg.TrustedProxyCIDRs...)))
 	}
+	r.Use(s.watchServerErrors)
 	r.Use(middleware.Recoverer)
 	r.Use(noStore)
 	r.Use(securityHeaders)

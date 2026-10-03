@@ -32,6 +32,9 @@ const (
 // (handleMCP), so it takes one connection of its own. A failure to record is
 // logged, never turned into a failure of the write the person asked for.
 func (s *Server) mcpAudit(ctx context.Context, p *auth.Principal, tool, outcome string, res *mcp.CallToolResult, args mcpArgs) {
+	if p != nil {
+		s.mcpOutcomeSignal(p.UserID, p.FarmID, tool, outcome)
+	}
 	if s.pool == nil || p == nil || p.FarmID == "" {
 		return
 	}
