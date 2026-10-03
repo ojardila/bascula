@@ -1,15 +1,20 @@
 # Weekly, grouped, so updates arrive as a handful of PRs rather than dozens.
 # CI (ci.yml) is what decides whether each one is safe to merge.
+# cooldown: a release is proposed only once it is a week old, so a hijacked
+# package version is usually yanked before it reaches a PR. Security updates
+# ignore the cooldown.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
     groups:
       actions: {patterns: ["*"]}
   - package-ecosystem: npm
     directory: /
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
     open-pull-requests-limit: 5
     groups:
       npm-minor-patch:
@@ -22,9 +27,11 @@ updates:
   - package-ecosystem: gomod
     directory: /services/api
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
     groups:
       go-minor-patch:
         update-types: [minor, patch]
   - package-ecosystem: docker
     directories: [/services/api, /apps/web]
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}

@@ -91,7 +91,11 @@ jobs:
     uses: ./.github/workflows/images.yml
     with:
       component: ${{ matrix.component }}
-    secrets: inherit
+    secrets:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      HARBOR_ROBOT_NAME: ${{ secrets.HARBOR_ROBOT_NAME }}
+      HARBOR_ROBOT_SECRET: ${{ secrets.HARBOR_ROBOT_SECRET }}
 
   migrations:
     name: migration order (no install)
