@@ -31,7 +31,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { formatMoney } from "../../lib/money";
 import { count } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
-import type { Expense } from "../../api/types";
+import type { Expense, ExpenseList } from "../../api/types";
 import { affix } from "../../lib/affix";
 
 function ExpenseTarget({ expense: e }: { readonly expense: Expense }) {
@@ -129,6 +129,70 @@ const COLUMNS: Column<Expense>[] = [
   },
 ];
 
+/**
+ * ── THE FOOTER DESCRIBED A DIFFERENT SET FROM THE ONE ABOVE IT ──
+ *
+ * `GET /v1/expenses` returns `items` for whichever filter was asked
+ * for, and `count`/`totalCents` counting ONLY the live rows — that is
+ * what `handleListExpenses` does and what the mock does. It is the
+ * right decision for the total: an expense taken out of service is
+ * not money the farm spent.
+ *
+ * What was wrong was the footer, which read that `count` as though it
+ * were the table's. With the filter on "Inactivas" the screen showed
+ * twelve rows and, underneath, in the same sentence, "0 gastos, por
+ * un total de $0". This is not a rounding error: it is two different
+ * sets under one label, which is exactly what the audit kept finding
+ * screen after screen.
+ *
+ * The footer now counts what is above it and, when the total is about
+ * something else, says so in the same sentence.
+ */
+function ExpensesFooter({
+  data,
+  status,
+}: {
+  readonly data: ExpenseList;
+  readonly status: StatusFilter;
+}) {
+  return (
+    <>
+      {count(data.items.length, "gasto", "gastos")} en esta lista.{" "}
+      <TotalSentence
+        status={status}
+        liveCount={data.count}
+        totalCents={data.totalCents}
+      />{" "}
+      Cada uno está cargado a una actividad o a un lote, así que lo que sí suma
+      se puede desglosar por completo.
+    </>
+  );
+}
+
+interface WriteHandlers {
+  onCreate?: () => void;
+  onRowClick?: (e: Expense) => void;
+  onEdit?: (e: Expense) => void;
+  onDeactivate?: (e: Expense) => Promise<void>;
+  onReactivate?: (e: Expense) => Promise<void>;
+}
+
+/** The list's write actions, or none at all for a session that may not write. */
+function writeHandlers(
+  canWrite: boolean,
+  edit: (e: Expense | null) => void,
+  runAction: (action: () => Promise<unknown>) => Promise<void>,
+): WriteHandlers {
+  if (!canWrite) return {};
+  return {
+    onCreate: () => edit(null),
+    onRowClick: (e) => edit(e),
+    onEdit: (e) => edit(e),
+    onDeactivate: (e) => runAction(() => api.deactivateExpense(e.id)),
+    onReactivate: (e) => runAction(() => api.reactivateExpense(e.id)),
+  };
+}
+
 export function ExpensesPage() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
@@ -191,57 +255,13 @@ export function ExpensesPage() {
         searchPlaceholder="Buscar por concepto"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={canWrite ? () => setEditing(null) : undefined}
         createLabel="Registrar gasto"
         /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
            The same action, with a target twenty times bigger. */
-        onRowClick={canWrite ? (e) => setEditing(e) : undefined}
-        onEdit={canWrite ? (e) => setEditing(e) : undefined}
-        onDeactivate={
-          canWrite
-            ? (e) => runAction(() => api.deactivateExpense(e.id))
-            : undefined
-        }
-        onReactivate={
-          canWrite
-            ? (e) => runAction(() => api.reactivateExpense(e.id))
-            : undefined
-        }
+        {...writeHandlers(canWrite, setEditing, runAction)}
         emptyTitle="Todavía no hay gastos"
         emptyBody="Registre el primero. Cada gasto se carga a una actividad o a un lote, para que después se pueda saber en qué se fue la plata."
-        /**
-         * ── THE FOOTER DESCRIBED A DIFFERENT SET FROM THE ONE ABOVE IT ──
-         *
-         * `GET /v1/expenses` returns `items` for whichever filter was asked
-         * for, and `count`/`totalCents` counting ONLY the live rows — that is
-         * what `handleListExpenses` does and what the mock does. It is the
-         * right decision for the total: an expense taken out of service is
-         * not money the farm spent.
-         *
-         * What was wrong was the footer, which read that `count` as though it
-         * were the table's. With the filter on "Inactivas" the screen showed
-         * twelve rows and, underneath, in the same sentence, "0 gastos, por
-         * un total de $0". This is not a rounding error: it is two different
-         * sets under one label, which is exactly what the audit kept finding
-         * screen after screen.
-         *
-         * The footer now counts what is above it and, when the total is about
-         * something else, says so in the same sentence.
-         */
-        footer={
-          data ? (
-            <>
-              {count(data.items.length, "gasto", "gastos")} en esta lista.{" "}
-              <TotalSentence
-                status={status}
-                liveCount={data.count}
-                totalCents={data.totalCents}
-              />{" "}
-              Cada uno está cargado a una actividad o a un lote, así que lo que
-              sí suma se puede desglosar por completo.
-            </>
-          ) : null
-        }
+        footer={data ? <ExpensesFooter data={data} status={status} /> : null}
       />
 
       {editing !== undefined && (

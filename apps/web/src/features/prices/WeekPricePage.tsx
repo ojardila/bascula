@@ -469,7 +469,8 @@ function priceProblem(cents: number | null): string | null {
 /** The week's range, followed by its tag (lower-cased) when it has one. */
 function weekOptionLabel(monday: string, today: string): string {
   const tag = weekTag(monday, today);
-  return `${formatWeekRange(monday)}${tag ? ` · ${tag.toLowerCase()}` : ""}`;
+  const suffix = tag ? ` · ${tag.toLowerCase()}` : "";
+  return formatWeekRange(monday) + suffix;
 }
 
 export function WeekPricePage() {

@@ -400,6 +400,30 @@ interface ProductsTabProps {
   readonly onAction: (action: () => Promise<unknown>) => Promise<void>;
 }
 
+interface ProductWriteHandlers {
+  onCreate?: () => void;
+  onRowClick?: (p: Product) => void;
+  onEdit?: (p: Product) => void;
+  onDeactivate?: (p: Product) => Promise<void>;
+  onReactivate?: (p: Product) => Promise<void>;
+}
+
+/** The catalogue's write actions, or none at all for a session that may not edit. */
+function productWriteHandlers(
+  canEdit: boolean,
+  edit: (p: Product | null) => void,
+  onAction: (action: () => Promise<unknown>) => Promise<void>,
+): ProductWriteHandlers {
+  if (!canEdit) return {};
+  return {
+    onCreate: () => edit(null),
+    onRowClick: (p) => edit(p),
+    onEdit: (p) => edit(p),
+    onDeactivate: (p) => onAction(() => api.deactivateProduct(p.id)),
+    onReactivate: (p) => onAction(() => api.reactivateProduct(p.id)),
+  };
+}
+
 function ProductsTab({
   products,
   error,
@@ -429,12 +453,10 @@ function ProductsTab({
       searchPlaceholder="Buscar por nombre de producto"
       statusFilter={status}
       onStatusFilterChange={onStatusChange}
-      onCreate={canEdit ? () => onEdit(null) : undefined}
       createLabel="Nuevo producto"
       /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
        The same action, with a target twenty times bigger. */
-      onRowClick={canEdit ? onEdit : undefined}
-      onEdit={canEdit ? onEdit : undefined}
+      {...productWriteHandlers(canEdit, onEdit, onAction)}
       extraActions={
         writable
           ? (p) => [
@@ -444,12 +466,6 @@ function ProductsTab({
               },
             ]
           : undefined
-      }
-      onDeactivate={
-        canEdit ? (p) => onAction(() => api.deactivateProduct(p.id)) : undefined
-      }
-      onReactivate={
-        canEdit ? (p) => onAction(() => api.reactivateProduct(p.id)) : undefined
       }
       toolbarExtra={
         writable ? (
