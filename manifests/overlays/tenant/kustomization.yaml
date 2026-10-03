@@ -61,7 +61,6 @@ patches:
 # ObjectStore's namespace AFTER the namespace transformer has run (kustomize
 # applies replacements last), so the ApplicationSet's per-farm namespace
 # override is what lands here and nothing per farm is committed.
-# CronJob derives the same prefix from the downward API.
 #
 # Field 3 of destinationPath split on "/": s3: / "" / bucket / prefix.
 replacements:
