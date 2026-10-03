@@ -8,7 +8,8 @@
 # Stages: deps (modules only) -> build (our code) -> the runtime image. CI
 # keeps a layer cache of `deps` alone (images.yml), because it is the only
 # stage a later build can reuse: everything from `COPY . .` on is new on every
-# source key, and an image is built once per key.
+# source key, and an image is built once per key. Keep `deps` free of
+# anything but go.mod and go.sum, or that cache stops being reused.
 FROM golang:1.27-alpine AS deps
 WORKDIR /src
 
