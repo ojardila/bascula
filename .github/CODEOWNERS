@@ -1,0 +1,33 @@
+# .github/CODEOWNERS
+#
+# GitHub reads this file to decide who must review a change. A pattern
+# earlier in the file is overridden by a pattern that comes later, so the
+# order matters: catch-alls at the top, specific rules below.
+#
+# Branch protection on master requires a code-owner review for any file
+# matched here. If no pattern matches, no code-owner review is required
+# (contrast with a '*' rule, which would require review on every PR
+# including the smallest web tweak — not the convention we are codifying).
+#
+# Keep this file short: add a path only when its review bar really is
+# "Oscar sees this before it merges". The rest of the review discipline
+# stays as it is, as a convention.
+
+# --- Money and tenant boundary ---
+services/api/migrations/                 @ojardila
+services/api/internal/auth/              @ojardila
+services/api/internal/tenant/            @ojardila
+services/api/internal/httpapi/           @ojardila
+
+# --- Cluster surface ---
+manifests/                               @ojardila
+.github/workflows/                       @ojardila
+.github/actions/                         @ojardila
+.github/dependabot.yml                   @ojardila
+.github/CODEOWNERS                       @ojardila
+
+# --- Security policy and the audits that back it ---
+SECURITY.md                              @ojardila
+docs/mcp/security.md                     @ojardila
+docs/audits.md                           @ojardila
+docs/decisions.md                        @ojardila
