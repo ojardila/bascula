@@ -5,9 +5,12 @@
 ```
 PR opened/pushed ── CI ──┬─ what changed (path filter)
                          ├─ migration order, money rules        (always, seconds)
-                         ├─ console: lint, vitest, build         (web changes)
+                         ├─ console: lint, build                 (web changes)
+                         ├─ console tests 1/3, 2/3, 3/3: vitest  (web changes)
                          ├─ typecheck                            (web changes)
-                         ├─ api: vet, migrate, diagram, go test  (api changes)
+                         ├─ api lint: vet, gofmt, govulncheck    (api changes)
+                         ├─ api: migrate, diagram, go test       (api changes;
+                         │       apitest in 4 processes)
                          └─ images: api, web → Harbor src-<key>  (in parallel)
 
 merge to master ── CD ── plan ─┬─ ci      (only if the PR did not test these exact sources)
@@ -70,6 +73,71 @@ keeps rapid merges in order without moving dev or production backwards.
 
 Plus the standalone master CI (3 min 15 s) that ran in parallel and changed
 nothing.
+
+## Test suites split across processes and runners (2026-10-03)
+
+### Before (last 40 runs of each workflow, 2026-10-03)
+
+By then the suites had grown and were the critical path of both the PR and
+the release:
+
+| what | median | range |
+|---|---|---|
+| CI on a PR, open/push → green | 5 min 0 s | p90 8 min 22 s |
+| ↳ `console` job | 5 min 20 s | 3 min 14 s – 5 min 39 s |
+| ↳↳ `vitest run` (160 files, 1288 tests) | 4 min 23 s | 2 min 41 s – 4 min 40 s |
+| ↳ `api` job | 4 min 48 s | 3 min 30 s – 5 min 11 s |
+| ↳↳ `go test ./...` | 3 min 58 s | 2 min 48 s – 4 min 11 s |
+| ↳↳↳ of which `internal/apitest`, one process | 3 min 6 s | |
+| ↳↳ vet + gofmt + govulncheck, in front of the tests | 22 s | |
+| SonarQube on a PR (slowest check of all) | 13 min 14 s | 10 min 47 s – 13 min 55 s |
+| ↳ web tests with coverage | 5 min 40 s | |
+| ↳ api tests with coverage (after the web ones) | 4 min 15 s | |
+| CodeQL on a push to master (also docs-only pushes) | 2 min 3 s | |
+| CD: push → `release` starts (CI inside CD) | 6 min 29 s | 5 min 6 s – 10 min 7 s |
+
+Why CD runs CI at all: `plan` found the PR's run covered the merged sources
+in 0 of the last 40 releases. Every one was "master moved under it" (35) or
+had no PR run (5). Even comparing with the merge commit CI really tests
+(`refs/pull/N/merge`) would have matched only 5 of 40, so that is not worth
+the complexity. Making the suites themselves faster is.
+
+The CD runs shown as *cancelled* (30 of 40) are not lost releases. ci.yml's
+concurrency group lets one CI run inside CD run at a time and keeps only the
+newest one waiting, so during a burst of merges the CD runs in between are
+dropped. The next release carries their commits. This batches a burst into
+one release every CI-length instead of one per merge. It is kept: with
+`cancel-in-progress` a steady stream of merges would never release, and with
+no group at all every merge would hold runners for a full CI. Shorter CI
+shortens that wait (up to one CI-length, 63 s in run 37099546567) too.
+
+### What changed
+
+| item | before | change | expected after |
+|---|---|---|---|
+| `internal/apitest` | one process, one scratch DB, 186 s on CI | `scripts/ci/go-test.sh`: the same compiled test binary in 4 processes, each with its own scratch database (TestMain already makes one per process), disjoint subsets of `-test.list`. The four slow tests (season of reports, 12 MB dribbled upload, provisioning poll, certificate gate: 70% of the time) each get their own shard (`scripts/ci/apitest-weights.txt`). Same tests, same order inside a shard, nothing `t.Parallel` | locally on 4 CPUs: whole Go suite 163 s → 39 s; peak 47 Postgres connections of 100 |
+| vet, gofmt, govulncheck | in front of the tests in `api` | own job `api lint`, beside the tests | −22 s on the `api` job |
+| `vitest run` | one runner, 265 s | `console tests (n/3)`: `vitest --shard` over 3 runners, `console` keeps lint + build | locally on 4 CPUs: 112 s → 46 s for the slowest shard; on CI ~4 min 20 s → ~2 min |
+| SonarQube | tests with coverage, web then api, then scan, one runner | `coverage (api)` and `coverage (web n/3)` run in parallel without secrets and hand LCOV / Go profile / linter reports to `sonarqube` as artifacts; shards merged by summing hits (`scripts/ci/merge-lcov.py`, checked against a single run: 9031 vs 9032 of 9701 lines; Go 91.5% both ways); skipped when no analysed source changed | ~13 min → ~6 min; docs-only PRs: 0 |
+| CodeQL on master | every push | same path filter as on PRs; the weekly run still covers everything | docs/workflow-only pushes: 0 |
+
+Not changed, and why:
+
+* **Semgrep** is the one required check (ruleset "master: require semgrep"),
+  so it keeps running on every PR. A path filter would leave it pending on
+  docs-only PRs.
+* **Image builds** are already one-per-source-key and normally no-ops in CD.
+  The PR build is 21–46 s and runs beside the tests.
+* **Go module/build cache** (setup-go, keyed on go.sum, written from master by
+  CD's CI) and the **npm cache** were already in place.
+
+Expected after, with both halves changed: CI on a PR ~5 min → ~2½–3 min, and
+merge → `release` starts ~6½ min → ~4 min.
+
+First measurement, on the PR that made the change (every suite ran, since it
+touches `.github/` and `scripts/`): CI 2 min 58 s (`api` 2 min 47 s, of which
+`test` 2 min 4 s with apitest shards of 116 / 97 / 60 / 69 s; slowest vitest
+shard 1 min 55 s), SonarQube 4 min 49 s.
 
 ## Auto-approval of production (prepared, OFF)
 
