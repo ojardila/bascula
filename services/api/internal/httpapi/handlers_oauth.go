@@ -477,6 +477,27 @@ func oauthRedirectOK(raw string) error {
 	}
 }
 
+// registeredRedirect returns the client's registered redirect URI that
+// equals requested exactly (RFC 6749 §3.1.2.3), parsed. The value returned
+// is the registered one, re-checked like at registration, so a redirect
+// built from it can only go where the client said it would.
+func registeredRedirect(registered []string, requested string) (*url.URL, error) {
+	for _, reg := range registered {
+		if reg != requested {
+			continue
+		}
+		if err := oauthRedirectOK(reg); err != nil {
+			return nil, err
+		}
+		u, err := url.Parse(reg)
+		if err != nil {
+			return nil, fmt.Errorf("redirect_uri is not a URI")
+		}
+		return u, nil
+	}
+	return nil, errors.New("redirect_uri is not registered for this client")
+}
+
 func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	q := r.URL.Query()
@@ -505,16 +526,16 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		method = oauthChallenge
 	}
 
+	// target is the client's registered redirect URI that the request's
+	// redirect_uri matched exactly. Redirects are built from it, never from
+	// the request, and it stays nil until the match below.
+	var target *url.URL
 	failToClient := func(code, desc string) {
-		if redirectURI == "" {
+		if target == nil {
 			s.oauthForm(w, r, q, desc, nil, nil)
 			return
 		}
-		u, err := url.Parse(redirectURI)
-		if err != nil {
-			s.oauthForm(w, r, q, desc, nil, nil)
-			return
-		}
+		u := *target
 		qq := u.Query()
 		qq.Set("error", code)
 		qq.Set("error_description", desc)
@@ -550,7 +571,8 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if !containsString(client.RedirectURIs, redirectURI) {
+	target, err = registeredRedirect(client.RedirectURIs, redirectURI)
+	if err != nil {
 		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil, nil)
 		return
 	}
@@ -643,11 +665,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := url.Parse(redirectURI)
-	if err != nil {
-		writeError(w, r, domain.BadRequest("redirect_uri is not a URI"))
-		return
-	}
+	u := *target
 	qq := u.Query()
 	qq.Set("code", code)
 	if state != "" {
