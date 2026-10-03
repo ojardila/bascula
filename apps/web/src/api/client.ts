@@ -147,6 +147,27 @@ async function refreshTokens(): Promise<Tokens | null> {
   return refreshInFlight;
 }
 
+/**
+ * One retry, and only one: a second 401 after a fresh token is a real 401.
+ * Anything else, or no way to refresh, returns `res` untouched.
+ */
+async function retryAfterRefresh(
+  res: Response,
+  method: string,
+  path: string,
+  body: unknown,
+  opts: RequestOptions,
+): Promise<Response> {
+  if (res.status !== 401 || opts.anonymous || !tokens) return res;
+  const next = await refreshTokens();
+  if (!next) return res;
+  try {
+    return await rawRequest(method, path, body, opts);
+  } catch {
+    throw new ApiError(0, { error: { code: "NETWORK", message: "network" } });
+  }
+}
+
 export async function request<T>(
   method: string,
   path: string,
@@ -161,17 +182,7 @@ export async function request<T>(
     throw new ApiError(0, { error: { code: "NETWORK", message: "network" } });
   }
 
-  // One retry, and only one: a second 401 after a fresh token is a real 401.
-  if (res.status === 401 && !opts.anonymous && tokens) {
-    const next = await refreshTokens();
-    if (next) {
-      try {
-        res = await rawRequest(method, path, body, opts);
-      } catch {
-        throw new ApiError(0, { error: { code: "NETWORK", message: "network" } });
-      }
-    }
-  }
+  res = await retryAfterRefresh(res, method, path, body, opts);
 
   if (res.status === 204) return undefined as T;
   if (!res.ok) {

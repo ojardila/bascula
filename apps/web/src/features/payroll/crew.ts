@@ -710,26 +710,43 @@ export async function undoRun(
     failures: [],
   };
 
-  for (const id of handle.payments) {
-    try {
-      await api.reverseLedgerEntry(id, reason);
-      out.paymentsReversed++;
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "ALREADY_REVERSED") out.alreadyUndone++;
-      else out.failures.push(messageFor(e));
-    }
-  }
-
-  for (const id of handle.settlements) {
-    try {
-      await api.voidSettlement(id, mint(`void:${id}`));
-      out.settlementsVoided++;
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "SETTLEMENT_ALREADY_VOID") out.alreadyUndone++;
-      else out.failures.push(messageFor(e));
-    }
-  }
+  out.paymentsReversed = await undoEach(
+    handle.payments,
+    (id) => api.reverseLedgerEntry(id, reason),
+    "ALREADY_REVERSED",
+    out,
+  );
+  out.settlementsVoided = await undoEach(
+    handle.settlements,
+    (id) => api.voidSettlement(id, mint(`void:${id}`)),
+    "SETTLEMENT_ALREADY_VOID",
+    out,
+  );
   return out;
+}
+
+/**
+ * Undo `ids` one by one, in order. Returns how many were undone now; one that
+ * was already undone (`alreadyCode`) is counted apart, any other error is
+ * recorded as a failure and the loop goes on.
+ */
+async function undoEach(
+  ids: readonly Uuid[],
+  undo: (id: Uuid) => Promise<unknown>,
+  alreadyCode: string,
+  out: UndoResult,
+): Promise<number> {
+  let undone = 0;
+  for (const id of ids) {
+    try {
+      await undo(id);
+      undone++;
+    } catch (e) {
+      if (e instanceof ApiError && e.code === alreadyCode) out.alreadyUndone++;
+      else out.failures.push(messageFor(e));
+    }
+  }
+  return undone;
 }
 
 /** What a run wrote, ready to be undone. */

@@ -58,6 +58,29 @@ export function isOutdated(local: string, server: string | null): boolean {
  * after that reload, the second attempt drops the worker and its caches so
  * the next load comes straight from the network.
  */
+/** Second attempt: no service worker, no caches; the reload hits the network. */
+async function dropWorkerAndCaches(sw: ServiceWorkerContainer): Promise<void> {
+  for (const reg of await sw.getRegistrations()) await reg.unregister();
+  if ("caches" in window) {
+    for (const k of await caches.keys()) await caches.delete(k);
+  }
+}
+
+/** First attempt: fetch the new worker and wait (up to 4 s) for it to take over. */
+async function switchToNewestWorker(sw: ServiceWorkerContainer): Promise<void> {
+  const reg = await sw.getRegistration();
+  if (!reg) return;
+  await reg.update().catch(() => undefined);
+  const next = reg.waiting ?? reg.installing;
+  if (!next) return;
+  next.postMessage({ type: "SKIP_WAITING" });
+  await new Promise<void>((resolve) => {
+    const done = () => resolve();
+    sw.addEventListener("controllerchange", done, { once: true });
+    window.setTimeout(done, 4000);
+  });
+}
+
 export async function applyUpdate(): Promise<void> {
   const KEY = "bascula.updateAttempts";
   const attempts = Number(sessionStorage.getItem(KEY) ?? "0");
@@ -65,26 +88,8 @@ export async function applyUpdate(): Promise<void> {
   try {
     const sw = navigator.serviceWorker;
     if (sw) {
-      if (attempts >= 1) {
-        for (const reg of await sw.getRegistrations()) await reg.unregister();
-        if ("caches" in window) {
-          for (const k of await caches.keys()) await caches.delete(k);
-        }
-      } else {
-        const reg = await sw.getRegistration();
-        if (reg) {
-          await reg.update().catch(() => undefined);
-          const next = reg.waiting ?? reg.installing;
-          if (next) {
-            next.postMessage({ type: "SKIP_WAITING" });
-            await new Promise<void>((resolve) => {
-              const done = () => resolve();
-              sw.addEventListener("controllerchange", done, { once: true });
-              window.setTimeout(done, 4000);
-            });
-          }
-        }
-      }
+      if (attempts >= 1) await dropWorkerAndCaches(sw);
+      else await switchToNewestWorker(sw);
     }
   } catch {
     // Whatever went wrong, the reload below is still the best next step.

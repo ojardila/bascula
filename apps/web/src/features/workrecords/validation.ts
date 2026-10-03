@@ -103,6 +103,38 @@ export function estimateCents(
   return amountCents(quantity, rateCents);
 }
 
+/** The quantity to send (1 when the activity has none); records the error. */
+function checkedQuantity(draft: WorkRecordDraft, activity: Activity, errors: FieldErrors): number {
+  if (!needsQuantity(activity)) return 1;
+  const parsed = parseQuantity(draft.quantity);
+  if (parsed === null) {
+    errors.quantity = `Escriba la cantidad en ${quantityLabel(activity)}.`;
+    return 1;
+  }
+  if (parsed <= 0) {
+    errors.quantity = "La cantidad tiene que ser mayor que cero.";
+    return 1;
+  }
+  return parsed;
+}
+
+/** The rate to send, falling back to the activity's default; records the error. */
+function checkedRate(draft: WorkRecordDraft, activity: Activity, errors: FieldErrors): number | null {
+  // weekly_price: the rate is not the client's to send. Sending the activity
+  // default here would freeze a stale price into the record.
+  if (!needsRateField(activity)) return null;
+  const rate = draft.rateCents ?? activity.defaultRateCents ?? null;
+  if (rate === null) {
+    errors.rateCents =
+      activity.payMode === "contract"
+        ? "Indique el valor total del contrato."
+        : "Indique el precio. La actividad no tiene uno vigente para esta fecha.";
+  } else if (rate <= 0) {
+    errors.rateCents = "El precio tiene que ser mayor que cero.";
+  }
+  return rate;
+}
+
 /**
  * Validates the draft and, if it passes, hands back the request body.
  *
@@ -137,34 +169,8 @@ export function validateWorkRecord(
     errors.dateTo = "La fecha final no puede ser anterior a la inicial.";
   }
 
-  let quantity = 1;
-  if (needsQuantity(activity)) {
-    const parsed = parseQuantity(draft.quantity);
-    if (parsed === null) {
-      errors.quantity = `Escriba la cantidad en ${quantityLabel(activity)}.`;
-    } else if (parsed <= 0) {
-      errors.quantity = "La cantidad tiene que ser mayor que cero.";
-    } else {
-      quantity = parsed;
-    }
-  }
-
-  let rate = draft.rateCents;
-  if (needsRateField(activity)) {
-    rate ??= activity.defaultRateCents ?? null;
-    if (rate === null) {
-      errors.rateCents =
-        activity.payMode === "contract"
-          ? "Indique el valor total del contrato."
-          : "Indique el precio. La actividad no tiene uno vigente para esta fecha.";
-    } else if (rate <= 0) {
-      errors.rateCents = "El precio tiene que ser mayor que cero.";
-    }
-  } else {
-    // weekly_price: the rate is not the client's to send. Sending the activity
-    // default here would freeze a stale price into the record.
-    rate = null;
-  }
+  const quantity = checkedQuantity(draft, activity, errors);
+  const rate = checkedRate(draft, activity, errors);
 
   const valid = Object.keys(errors).length === 0;
   if (!valid) return { errors, valid };
