@@ -180,6 +180,30 @@ export function ProvisionProgress({
     );
   }
 
+  if (status?.awaitingVerification) {
+    // Signup mailed a link; the farm's address is built once it is opened.
+    // The screen keeps polling, so it moves on by itself after that.
+    return (
+      <Stack
+        spacing={2.5}
+        data-testid="provision-awaiting-email"
+        sx={{ alignItems: "center", textAlign: "center" }}
+      >
+        <MailOutline color="primary" sx={{ fontSize: compact ? 56 : 80 }} />
+        <Typography component="h2" sx={{ fontSize: compact ? "1.5rem" : "2rem", fontWeight: 700 }}>
+          Confirme su correo
+        </Typography>
+        <Typography sx={{ fontSize: "1.15rem" }}>
+          Le enviamos un mensaje de Báscula. Ábralo, toque el enlace y escriba la clave que eligió.
+          Apenas confirme, empezamos a preparar su finca y esta pantalla sigue sola.
+        </Typography>
+        <Typography sx={{ fontSize: "1rem", color: "text.secondary" }}>
+          ¿No le llegó? Revise la carpeta de correo no deseado. El enlace sirve por 48 horas.
+        </Typography>
+      </Stack>
+    );
+  }
+
   if (status?.ready) {
     return (
       <Stack

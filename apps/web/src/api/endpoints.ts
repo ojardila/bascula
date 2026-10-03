@@ -475,10 +475,14 @@ export const api = {
 
   /** Another farm for the account that is signed in (POST /v1/farms). */
 
-  verifyEmail: (token: string) =>
-    http.post<{ userId: Uuid; farmId: Uuid; verified: boolean }>(
+  /**
+   * Confirm the address with the mailed link. While the account is not
+   * verified the password chosen at signup is required too.
+   */
+  verifyEmail: (token: string, password?: string) =>
+    http.post<{ userId: Uuid; farmId: Uuid; slug?: string; verified: boolean }>(
       "/v1/auth/verify-email",
-      { token },
+      password ? { token, password } : { token },
       { anonymous: true },
     ),
 

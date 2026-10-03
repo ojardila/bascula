@@ -251,12 +251,30 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 	existing := user != nil
 
+	// With a mailer and a public address, the address is proved by a mailed
+	// link before anything is built for it. Without them (development, a
+	// stack with no SMTP) signup still trusts the password, as it always has.
+	byMail := s.emailVerificationAvailable()
+	// An account nobody has verified belongs to nobody yet. Somebody who
+	// registered an address first, without proving it, must not keep it
+	// against the person whose mailbox it is: the latest registration
+	// replaces the claim, and the link only opens with that registration's
+	// password, so neither side can finish it alone.
+	claim := byMail && existing && user.EmailVerifiedAt == nil
+
 	passwordHash, err := auth.HashPassword(req.Owner.Password)
 	if err != nil {
 		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
 		return
 	}
 	phone := strings.TrimSpace(req.Owner.Phone)
+	if claim {
+		if err := store.ReplaceUnverifiedClaim(r.Context(), tx, user.ID,
+			req.Owner.Name, phone, passwordHash); err != nil {
+			writeError(w, r, err)
+			return
+		}
+	}
 	if !existing {
 		user = &store.User{
 			ID: newID(), Email: email, Name: req.Owner.Name,
@@ -291,7 +309,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if existing {
+	if existing && !claim {
 		if err := store.InsertFarmOwnerCredentials(ctx, tx, farmID, user.ID,
 			strings.TrimSpace(req.Owner.Name), phone, passwordHash); err != nil {
 			writeError(w, r, err)
@@ -312,18 +330,17 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// token development echoes must not become a way to verify it on their
 	// behalf; so for that branch the token is minted (same work, same answer)
 	// and not stored, and verifies nothing.
-	if !existing {
+	if !existing || claim {
 		if err := store.InsertEmailVerification(ctx, tx, newID(), user.ID, farmID, hash,
 			time.Now().Add(48*time.Hour)); err != nil {
 			writeError(w, r, err)
 			return
 		}
 	}
-	// There is still no mail sender. The password they just typed is the
-	// proof that they meant this address; waiting for a mailbox that never
-	// arrives would strand every farm on the landing. When mail is wired,
-	// drop this VerifyUserEmail and let the link in the message do it.
-	if !existing {
+	// Without a mail sender the password they just typed is the proof that
+	// they meant this address; waiting for a mailbox that never arrives would
+	// strand every farm on the landing. With one, the mailed link does it.
+	if !existing && !byMail {
 		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
 			writeError(w, r, err)
 			return
@@ -337,19 +354,36 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// The attempt row records what actually happened. It used to be written
 	// with `true` on every path, including the rejected ones.
 	succeeded = true
-	s.kickTenantProvision(tenantProvision{
-		Slug: newFarm.Slug, FarmName: newFarm.Name,
-		Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
-	})
+	// The farm's own stack is built once its owner has proved the address:
+	// right away for an account that already has, after the link otherwise
+	// (handleVerifyEmail). An address nobody confirms costs the cluster
+	// nothing.
+	pending := byMail && (!existing || claim)
+	if !pending {
+		s.kickTenantProvision(tenantProvision{
+			Slug: newFarm.Slug, FarmName: newFarm.Name,
+			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
+		})
+	}
+	if byMail {
+		// Both branches send one email, so the inbox is the only place the
+		// two differ. A verified account gets a notice instead of a link: its
+		// owner learns a farm was registered with their address.
+		if pending {
+			link := s.passwordResetBase(r) + "/confirmar-correo#" + secret
+			s.mailLater(r, verifyEmailMessage(email, req.Owner.Name, newFarm.Name, link))
+		} else {
+			s.mailLater(r, farmRegisteredNoticeMessage(email, user.Name, newFarm.Name))
+		}
+	}
 
-	// Always false now: the farm exists and its owner can sign in, whether or
-	// not the address already had an account. The key stays for clients that
-	// still read it.
 	// The provision ticket lets this browser, and only it, watch the new
 	// farm's own address come up (provision-status is closed to everybody
 	// else; see farm_lookup.go). Both branches create a farm, so it says
 	// nothing about the address.
-	body := map[string]any{"verificationRequired": false, "provisionTicket": s.provisionTicket(newFarm.Slug)}
+	// verificationRequired is the same for every address (it depends only on
+	// whether this deployment sends mail), so it says nothing about accounts.
+	body := map[string]any{"verificationRequired": byMail, "provisionTicket": s.provisionTicket(newFarm.Slug)}
 	if s.cfg.DevEcho {
 		// There is no mail sender in sprint 1. Echoing the token is a
 		// development affordance and the server refuses to start with it on
@@ -973,6 +1007,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 type verifyEmailRequest struct {
 	Token string `json:"token"`
+	// Password is the one chosen at signup. Required while the account is
+	// not verified yet; see handleVerifyEmail.
+	Password string `json:"password"`
 }
 
 func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
@@ -986,7 +1023,8 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	userID, farmID, err := store.ConsumeEmailVerification(r.Context(), tx, auth.HashToken(req.Token))
+	hash := auth.HashToken(req.Token)
+	userID, farmID, err := store.PeekEmailVerification(r.Context(), tx, hash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, r, domain.BadRequest("that verification link is not valid any more"))
@@ -995,12 +1033,61 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	user, err := store.FindUserByID(r.Context(), tx, userID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// The link alone does not verify an account nobody has proved yet: it
+	// also takes the password of the registration that sent it. A link
+	// mailed because a stranger registered your address cannot be used to
+	// hand them your account, and the stranger has no mailbox to open it.
+	pending := user.EmailVerifiedAt == nil
+	if pending {
+		ok, err := auth.VerifyPassword(req.Password, user.PasswordHash)
+		if err != nil || !ok {
+			writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeInvalidCredentials,
+				"the password does not match this registration"))
+			return
+		}
+	}
+	if _, _, err := store.ConsumeEmailVerification(r.Context(), tx, hash); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	slug := ""
+	if err := tenant.SetUser(r.Context(), tx, userID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if ms, err := store.ListMemberships(r.Context(), tx, userID); err == nil {
+		for _, m := range ms {
+			if m.FarmID == farmID {
+				slug = m.FarmSlug
+				// The waiting screen polls; let its next look see the change.
+				s.prov.mu.Lock()
+				delete(s.prov.cache, m.FarmSlug)
+				s.prov.mu.Unlock()
+				if pending && s.emailVerificationAvailable() {
+					// Signup held the farm's own stack back for this.
+					s.kickTenantProvision(tenantProvision{
+						Slug: m.FarmSlug, FarmName: m.FarmName,
+						Email: user.Email, OwnerName: user.Name, Phone: user.Phone,
+					})
+				}
+			}
+		}
+	}
 	// farmId is here and not on the signup response, and the difference is the
 	// whole of finding 12's second half: this caller has proved the address is
 	// theirs by presenting something that was sent to it. See handleSignup.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"userId": userID, "farmId": farmID, "verified": true})
+		"userId": userID, "farmId": farmID, "slug": slug, "verified": true})
 }
+
+// emailVerificationAvailable: signup asks for a mailed link exactly when the
+// password reset can mail one — a sender and a public address to put in it.
+func (s *Server) emailVerificationAvailable() bool { return s.passwordResetAvailable() }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())

@@ -82,6 +82,8 @@ export interface RefreshRequestBody {
 
 export interface VerifyEmailRequestBody {
   token?: string;
+  /** Required while the account is not verified, like the server. */
+  password?: string;
 }
 
 /* -- workers --------------------------------------------------------- */

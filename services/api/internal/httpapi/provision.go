@@ -433,11 +433,14 @@ type provisionStatus struct {
 	// plain Spanish. Source says where progress was read: "cluster",
 	// "pipeline" (GitHub Actions, cluster unreadable) or "basic". Note, when
 	// set, is a plain-Spanish line for the owner about missing detail.
-	Stages  []provisionStage `json:"stages"`
-	Percent int              `json:"percent"`
-	Current string           `json:"current"`
-	Source  string           `json:"source"`
-	Note    string           `json:"note,omitempty"`
+	// AwaitingVerification: the owner has not opened the mailed link yet,
+	// and the farm's own stack is not being built until they do.
+	AwaitingVerification bool             `json:"awaitingVerification"`
+	Stages               []provisionStage `json:"stages"`
+	Percent              int              `json:"percent"`
+	Current              string           `json:"current"`
+	Source               string           `json:"source"`
+	Note                 string           `json:"note,omitempty"`
 }
 
 // handleProvisionStatus answers the waiting screen. The caller just
@@ -521,6 +524,21 @@ func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provision
 	}
 	if err != nil {
 		return provisionStatus{}, err
+	}
+	// Until its owner confirms the address there is nothing being built:
+	// say so rather than show progress that is not coming.
+	var awaiting bool
+	if err := s.pool.QueryRow(ctx, `SELECT farm_awaiting_owner_email($1)`, slug).Scan(&awaiting); err != nil {
+		return provisionStatus{}, err
+	}
+	if awaiting {
+		return provisionStatus{
+			Slug: slug, URL: s.tenantPublicURL(slug), Dedicated: s.dedicatedProvisioning(),
+			AwaitingVerification: true,
+			Current:              "Esperando que confirme su correo.",
+			Stages:               []provisionStage{}, Steps: []provisionStep{},
+			ElapsedSeconds: int64(time.Since(createdAt).Seconds()),
+		}, nil
 	}
 	st := s.computeProvisionStatus(ctx, slug, createdAt)
 	st.NotifyAvailable = s.readyEmailAvailable()
