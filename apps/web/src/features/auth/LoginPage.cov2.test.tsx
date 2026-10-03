@@ -4,11 +4,8 @@
  * asked for, never the bare "/"), with a password or a passkey, and shows a
  * failure on the "¿A cuál finca entra?" screen.
  *
- * KNOWN BUG (the two `it.fails` below): `goIn()` and the passkey path call
- * `navigate(from)`, but React Router 7 runs that navigation in a transition
- * while the same render flips the page to "authenticated and not holding",
- * so `<Navigate to={landing}>` wins and the person lands on /cosecha instead
- * of the page they asked for. When that is fixed these turn red: drop `.fails`.
+ * These two pinned the redirect bug fixed in #421 (the landing
+ * `<Navigate>` used to win over `navigate(from)`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -86,7 +83,7 @@ afterEach(() => {
 });
 
 describe("LoginPage — where it goes after a password", () => {
-  it.fails("goes to the page the person was trying to open", async () => {
+  it("goes to the page the person was trying to open", async () => {
     const user = userEvent.setup();
     renderLogin("/configuracion");
     await signIn(user);
@@ -102,7 +99,7 @@ describe("LoginPage — where it goes after a password", () => {
 });
 
 describe("LoginPage — where it goes after a passkey", () => {
-  it.fails("goes to the page the person was trying to open", async () => {
+  it("goes to the page the person was trying to open", async () => {
     givePasskey();
     stubAuthenticator("cred-oscar");
     const user = userEvent.setup();
