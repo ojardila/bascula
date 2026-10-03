@@ -569,3 +569,58 @@ func TestPasskeyChangesAreToldByEmail(t *testing.T) {
 		t.Fatalf("removed notice: %+v", removed)
 	}
 }
+
+// TestRemovingAPasskeyClosesTheSessionsItOpened: the passkey of a lost phone,
+// once removed, signs that phone out. The caller's own session stays, and so
+// do the sessions opened with the password or with another passkey.
+func TestRemovingAPasskeyClosesTheSessionsItOpened(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca del telefono perdido", 80000)
+	lost, kept := newSoftPasskey(t), newSoftPasskey(t)
+	lostID := mustString(t, h.registerPasskey(t, f.OwnerToken, lost), "id")
+	h.registerPasskey(t, f.OwnerToken, kept)
+
+	signIn := func(key *softPasskey, ip string) map[string]any {
+		t.Helper()
+		opts := h.passkeyOptions(t, ip)
+		res := h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
+			"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
+		})
+		if res.Status != http.StatusOK {
+			t.Fatalf("passkey sign-in: %d %s", res.Status, res.Raw)
+		}
+		return res.Body
+	}
+	refresh := func(token string) response {
+		return h.do(t, http.MethodPost, "/v1/auth/refresh", "", map[string]any{"refreshToken": token})
+	}
+
+	phone := signIn(lost, "10.7.4.1")
+	// Rotated once: the family, not only its first token, carries the passkey.
+	rotated := refresh(mustString(t, phone, "refreshToken"))
+	if rotated.Status != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rotated.Status, rotated.Raw)
+	}
+	here := signIn(lost, "10.7.4.2") // the session that removes it
+	other := signIn(kept, "10.7.4.3")
+	password := h.login(t, f)
+
+	res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodDelete,
+		"/v1/me/passkeys/"+lostID, mustString(t, here, "accessToken"), nil)
+	if res.Status != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", res.Status, res.Raw)
+	}
+
+	if r := refresh(mustString(t, rotated.Body, "refreshToken")); r.Status != http.StatusUnauthorized {
+		t.Fatalf("the lost phone's session survived: %d %s", r.Status, r.Raw)
+	}
+	for name, tok := range map[string]string{
+		"the caller's own":     mustString(t, here, "refreshToken"),
+		"another passkey's":    mustString(t, other, "refreshToken"),
+		"the password session": password,
+	} {
+		if r := refresh(tok); r.Status != http.StatusOK {
+			t.Fatalf("%s session was closed: %d %s", name, r.Status, r.Raw)
+		}
+	}
+}
