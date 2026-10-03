@@ -1,0 +1,19 @@
+# In a farm namespace, bascula-backup-s3 is cloned by the k8 repo's Kyverno
+# policy sync-backup-s3 (rule clone-backup-s3-bascula-farms) from
+# longhorn-system/longhorn-backup-secret, the bucket's key, whose fields are
+# named AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. Production's copy in ns
+# bascula names them ACCESS_KEY_ID / ACCESS_SECRET_KEY, which is what base
+# reads; a farm reads the AWS_* names.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: bascula-backups
+spec:
+  configuration:
+    s3Credentials:
+      accessKeyId:
+        name: bascula-backup-s3
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKey:
+        name: bascula-backup-s3
+        key: AWS_SECRET_ACCESS_KEY

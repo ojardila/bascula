@@ -343,3 +343,22 @@ into a fresh Longhorn volume mounted read-only in a scratch namespace. The
 restored file's sha256 matched the original. The scratch volume, namespace
 and drill backup were deleted afterwards. Production's uploads volume had
 completed scheduled backups every night that week.
+
+## 2026-10-03 — Every dedicated farm backs up its own database (#309)
+
+The tenant overlay used to delete the `ObjectStore` and `ScheduledBackup` and
+strip the barman-cloud plugin, copied from dev when farm namespaces had no S3
+credentials. A farm is single-instance, so it had no copy of its database off
+the cluster. Now each farm keeps production's setup (WAL archived
+continuously, a base backup every Sunday, `retentionPolicy: 30d`) and writes
+to its own prefix, `s3://k8-longhorn-backups/bascula-{slug}/`, derived from the
+namespace by a kustomize replacement.
+
+Credentials are the bucket key that the k8 repo's Kyverno policy
+`sync-backup-s3` (rule `clone-backup-s3-bascula-farms`) clones into each farm
+from `longhorn-system/longhorn-backup-secret`; its fields are `AWS_*`-named, so
+the overlay reads those (`backup-s3-keys.yaml`). Spaces keys cannot be scoped to
+a prefix, so this is one key for all farms: rotation is one Secret, but a
+compromised farm-side holder of the key could read other farms' backups.
+A deleted farm's prefix must be purged before its slug is reused. Photos are
+covered by Longhorn's recurring backup (#311, above).
