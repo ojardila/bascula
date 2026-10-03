@@ -148,7 +148,10 @@ export function farmHostForHere(slug: string, hostname?: string): string {
 export function farmUrlForHere(slug: string, hostname?: string): string {
   const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
   if (
-    host.endsWith("int.dev.engp.io") ||
+    // The dev zone itself or a name under it, never a look-alike such as
+    // `evilint.dev.engp.io`.
+    host === DEV_SUFFIX.slice(1) ||
+    host.endsWith(DEV_SUFFIX) ||
     host === "localhost" ||
     host === "127.0.0.1"
   ) {
