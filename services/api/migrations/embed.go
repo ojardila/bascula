@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package migrations embeds the SQL migrations in the binary so `make migrate`
 // and the test harness run exactly the files that shipped.
 //

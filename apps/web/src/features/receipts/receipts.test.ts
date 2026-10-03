@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, expect, it } from "vitest";
 import type { LedgerEntry, PayableLine, PaymentReceipt, Settlement } from "../../api/types";
 import { groupReceiptLines, sumGroups } from "./receiptLines";

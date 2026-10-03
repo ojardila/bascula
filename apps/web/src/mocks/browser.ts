@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { setupWorker } from "msw/browser";
 import { handlers } from "./handlers";
 

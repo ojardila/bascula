@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "Dirección web de la finca": the one field that gives a farm its own address,
  * `lapalma.bascula.engp.io`.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "ESTADO: ACTIVE" — in English, and made up on top of that.
  *

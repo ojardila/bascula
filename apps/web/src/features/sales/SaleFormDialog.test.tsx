@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The sale dialog, the paths `SalesPage.test.tsx` leaves out: what it checks
  * before sending, the server saying there is not that much in the warehouse

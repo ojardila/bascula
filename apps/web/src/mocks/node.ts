@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { setupServer } from "msw/node";
 import { handlers } from "./handlers";
 

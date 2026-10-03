@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/endpoints";
 import { signInOwner } from "../../test/renderWithAuth";

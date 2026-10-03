@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-030 … RSP-033, on the module template.
  *

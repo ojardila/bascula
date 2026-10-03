@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── THE DATE FIELD, WITH ITS CALENDAR IN SPANISH ─────────────────────────
  *

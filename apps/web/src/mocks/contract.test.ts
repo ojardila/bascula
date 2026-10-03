@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Does the mock still behave like the server?
  *

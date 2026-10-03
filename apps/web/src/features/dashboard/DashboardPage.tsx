@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {

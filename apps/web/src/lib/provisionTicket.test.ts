@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { beforeEach, describe, expect, it } from "vitest";
 import { loadProvisionTicket, provisionTicketHeaders, saveProvisionTicket } from "./provisionTicket";
 

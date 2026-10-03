@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The rest of farm user management: changing a role, a refused change or
  * revocation, an invitation the server turns down, and the way back.

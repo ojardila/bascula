@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Which build of the web app this page is running, and which one the server
  * has now.

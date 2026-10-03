@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "Preparando su finca…" — what the owner watches after creating a farm with
  * its own web address, from the landing, from the app or from the console.

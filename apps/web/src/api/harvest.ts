@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The six report routes the harvest module reads, and nothing else.
  *

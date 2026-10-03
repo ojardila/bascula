@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The demo-data card: shown only on an empty farm, it asks before loading,
  * shows progress while it loads, says what it created, and shows the error

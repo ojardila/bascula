@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The worker's financial history, as rows a person can open.
  *

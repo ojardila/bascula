@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «COSECHA»: the screen the farm opens every day. Kept simple on purpose.
  *

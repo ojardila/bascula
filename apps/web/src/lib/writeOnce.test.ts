@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The two properties `disabled={busy}` does not have.
  *

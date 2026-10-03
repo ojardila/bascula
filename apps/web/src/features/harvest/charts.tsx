@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The two charts the harvest module draws, by hand, in SVG.
  *

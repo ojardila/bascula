@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The receipt page's own decisions: the PDF button's busy state and its
  * failure, a receipt kind that does not exist, the way back to the history,

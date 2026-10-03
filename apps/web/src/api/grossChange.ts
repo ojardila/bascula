@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE RACE BETWEEN LOOKING AT A FIGURE AND APPROVING IT.
  *

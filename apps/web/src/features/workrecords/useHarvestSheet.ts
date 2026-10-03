@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The state and the writes behind a harvest sheet: people × days on one lote.
  *

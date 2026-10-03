@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Everything the tour context offers the pages once it has loaded: starting,
  * resuming, moving, pausing, leaving it for later, dismissing, finishing, the

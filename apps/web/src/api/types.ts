@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The VIEW MODELS: the shapes the screens read.
  *

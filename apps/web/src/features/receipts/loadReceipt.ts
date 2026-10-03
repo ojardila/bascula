@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Everything a historical receipt needs, in as few round trips as it takes.
  *

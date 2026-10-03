@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The body of the harvest sheet (`PlanillaPage`): the day list, the week
  * grid, and the states before either can be drawn.

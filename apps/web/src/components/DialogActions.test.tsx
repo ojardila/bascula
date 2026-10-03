@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Dialog buttons must never be squeezed into clipped, broken labels.
  *

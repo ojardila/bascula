@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Getting a document to a printer, from a browser, without a server.
  *

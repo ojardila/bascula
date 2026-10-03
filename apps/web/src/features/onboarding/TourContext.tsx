@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE TOUR'S STATE: which tour is running, on which step, and what was saved.
  *

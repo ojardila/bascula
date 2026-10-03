@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Registro de recolección masivo»: one day, every employee, and every filled
  * box is a NEW pesada. People come to the scale several times a day, so the

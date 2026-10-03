@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-001 / RSP-002, in the two steps of cropti: identity and location first,
  * crops second.

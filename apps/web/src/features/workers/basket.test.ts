@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /** «Número de canasto»: finding people by the number on their basket. */
 import { describe, expect, it } from "vitest";
 import { filterWorkers, matchesName } from "../workrecords/bulk";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm's kilo price card: confirming the seeded price, changing it from a
  * Monday with its impact spelled out, the guard against a price in cents, and

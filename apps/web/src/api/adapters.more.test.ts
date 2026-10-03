@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The adapters' fallbacks: what each one turns a missing, empty or unknown
  * field into. Every `??` here is a decision about what an absence means, and

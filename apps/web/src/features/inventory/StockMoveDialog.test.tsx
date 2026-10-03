@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «entrada o salida» dialog, the paths the inventory page tests leave
  * out: what it checks before sending, the direction of an adjustment, the

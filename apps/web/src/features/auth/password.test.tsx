@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Issue #145: a password can be changed, signed in («Cambiar clave») or with
  * a mailed link («Olvidé mi clave» → /restablecer-clave).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The authenticated frame: fixed sidebar, farm in the top bar, content in a
  * card. The layout of cropti/farmlogs that the owner pointed at.

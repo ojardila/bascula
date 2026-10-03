@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package secalert turns a handful of security-relevant events into an email
 // to an operator, through the mailer the API already has.
 //
