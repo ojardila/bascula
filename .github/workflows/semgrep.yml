@@ -56,6 +56,11 @@ jobs:
       # the auth chain, SQL built at run time, money as float), tested by the
       # step above. They are WARNING for now: advisory, like the rest.
       #
+      # Excluded (trailofbits): postgres-insecure-sslmode and
+      # port-all-interfaces only match the local docker-compose database, the
+      # CI service containers and the dev .env files; every deployment uses
+      # sslmode=require (manifests/) and no compose file is deployed.
+      #
       # Excluded rule: header-redefinition is a generic (text) rule that
       # pairs any two add_header lines in apps/web/nginx.conf. That file has
       # no server-level add_header (every location includes
@@ -80,8 +85,14 @@ jobs:
               --config p/dockerfile \
               --config p/kubernetes \
               --config p/github-actions \
+              --config p/gosec \
+              --config p/jwt \
+              --config p/sql-injection \
+              --config p/trailofbits \
               --config .semgrep \
               --exclude-rule generic.nginx.security.header-redefinition.header-redefinition \
+              --exclude-rule trailofbits.generic.postgres-insecure-sslmode.postgres-insecure-sslmode \
+              --exclude-rule trailofbits.yaml.docker-compose.port-all-interfaces.port-all-interfaces \
               --metrics=off \
               --json-output=semgrep.json \
               --sarif-output=semgrep.sarif
