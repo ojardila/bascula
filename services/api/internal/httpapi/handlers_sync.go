@@ -214,13 +214,10 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	limit, err := int64Param(r, "limit", defaultPullLimit)
+	limit, err := pullLimitParam(r)
 	if err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if limit <= 0 || limit > defaultPullLimit {
-		limit = defaultPullLimit
 	}
 
 	tx, err := tenant.Tx(r.Context())
@@ -314,7 +311,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	changes, next, more, err := store.SyncChanges(r.Context(), tx, cursor, int(limit), p.Role)
+	changes, next, more, err := store.SyncChanges(r.Context(), tx, cursor, limit, p.Role)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -911,6 +908,25 @@ func decodePayload(raw json.RawMessage, v any) error {
 		return domain.BadRequest(decodeMessage(err)).WithCause(err)
 	}
 	return nil
+}
+
+// pullLimitParam reads ?limit= for the sync feed. It is parsed at 32 bits, so
+// the conversion to int can never truncate, and a number too large for that
+// is a 400 rather than a silently wrapped page size. Zero, or anything above
+// defaultPullLimit, means "the default page".
+func pullLimitParam(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return defaultPullLimit, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || n < 0 {
+		return 0, domain.BadRequest("limit must be a non-negative integer")
+	}
+	if n == 0 || n > defaultPullLimit {
+		return defaultPullLimit, nil
+	}
+	return int(n), nil
 }
 
 func int64Param(r *http.Request, name string, fallback int64) (int64, error) {

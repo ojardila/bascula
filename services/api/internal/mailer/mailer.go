@@ -134,11 +134,48 @@ func (s *SMTP) Describe() string {
 	return fmt.Sprintf("%s:%d tls=%s %s from=%s", s.cfg.Host, s.cfg.Port, s.cfg.TLS, auth, s.cfg.From.Address)
 }
 
-// Send delivers one message.
-func (s *SMTP) Send(ctx context.Context, m Message) error {
+// ErrHeaderInjection is returned for a recipient, sender or subject that
+// carries a line break (or a NUL): such a value could end its header early
+// and smuggle in another one (a Bcc, a second To, a forged body).
+var ErrHeaderInjection = errors.New("mailer: line break in a header value")
+
+// headerSafe reports whether v can be written into a single header line.
+func headerSafe(v string) bool {
+	return !strings.ContainsAny(v, "\r\n\x00")
+}
+
+// checkAddress refuses an address whose name or mailbox carries a line break.
+func checkAddress(a mail.Address) error {
+	if !headerSafe(a.Name) || !headerSafe(a.Address) {
+		return ErrHeaderInjection
+	}
+	return nil
+}
+
+// Validate parses the recipient and refuses a message that could not be
+// written without letting one of its values escape the header it belongs to.
+func (m Message) Validate() (*mail.Address, error) {
+	if !headerSafe(m.To) || !headerSafe(m.Subject) {
+		return nil, ErrHeaderInjection
+	}
 	to, err := mail.ParseAddress(m.To)
 	if err != nil {
-		return fmt.Errorf("mailer: recipient %q: %w", m.To, err)
+		return nil, fmt.Errorf("mailer: recipient %q: %w", m.To, err)
+	}
+	if err := checkAddress(*to); err != nil {
+		return nil, err
+	}
+	return to, nil
+}
+
+// Send delivers one message.
+func (s *SMTP) Send(ctx context.Context, m Message) error {
+	to, err := m.Validate()
+	if err != nil {
+		return err
+	}
+	if err := checkAddress(s.cfg.From); err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
 	defer cancel()
@@ -202,18 +239,41 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 	return c.Quit()
 }
 
+// stripBreaks removes CR, LF and NUL from a value bound for a header line.
+func stripBreaks(v string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n', 0:
+			return -1
+		}
+		return r
+	}, v)
+}
+
+// cleanAddress is a copy of a with every line break removed, so that its
+// String() form can only ever occupy one header line.
+func cleanAddress(a mail.Address) mail.Address {
+	return mail.Address{Name: stripBreaks(a.Name), Address: stripBreaks(a.Address)}
+}
+
 // Compose renders the RFC 5322 message: UTF-8 plain text, quoted-printable,
 // with the subject and names encoded so accents survive every mail client.
+//
+// No header value can carry a line break: Send refuses such a message before
+// it gets here, and Compose strips any that reach it anyway, so no value can
+// open a header of its own. The body is quoted-printable, and the end of DATA
+// is guarded by net/smtp's writer, which dot-stuffs every line.
 func Compose(from, to mail.Address, m Message, now time.Time) []byte {
+	from, to = cleanAddress(from), cleanAddress(to)
 	var b bytes.Buffer
 	domain := "localhost"
 	if at := strings.LastIndex(from.Address, "@"); at >= 0 {
 		domain = from.Address[at+1:]
 	}
-	hdr := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
+	hdr := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, stripBreaks(v)) }
 	hdr("From", from.String())
 	hdr("To", to.String())
-	hdr("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
+	hdr("Subject", mime.QEncoding.Encode("utf-8", stripBreaks(m.Subject)))
 	hdr("Date", now.Format(time.RFC1123Z))
 	hdr("Message-ID", fmt.Sprintf("<%d.%s@%s>", now.UnixNano(), strconv.Itoa(os.Getpid()), domain))
 	hdr("MIME-Version", "1.0")
