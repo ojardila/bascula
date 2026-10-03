@@ -58,6 +58,50 @@ const STATUS_LABEL: Record<FarmStatus, string> = {
   suspended: "Suspendida",
 };
 
+
+function createdOwnerNote(created: AdminFarmCreated | null) {
+  if (!created) return null;
+  if (created.temporaryPassword) {
+    return (
+      <Alert severity="warning">
+        Esta clave se muestra una sola vez. Entréguesela ahora: no se
+        puede volver a leer.
+        <Typography
+          sx={{
+            fontFamily: "ui-monospace, monospace",
+            mt: 1,
+            fontWeight: 700,
+          }}
+        >
+          {created.temporaryPassword}
+        </Typography>
+      </Alert>
+    );
+  }
+  if (created.ownerCreated) {
+    return (
+      <Typography
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        El dueño entra con la clave que usted escribió.
+      </Typography>
+    );
+  }
+  return (
+    <Typography
+      sx={{
+        color: "text.secondary",
+      }}
+    >
+      Esa cuenta ya existía: se le agregó esta finca como dueño, sin
+      cambiarle la clave.
+    </Typography>
+  );
+}
+
+
 export function SuperAdminPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -278,38 +322,7 @@ export function SuperAdminPage() {
             <strong>{created?.name}</strong> ya está activa. El dueño entra con{" "}
             <strong>{created?.ownerEmail}</strong>.
           </Typography>
-          {created?.temporaryPassword ? (
-            <Alert severity="warning">
-              Esta clave se muestra una sola vez. Entréguesela ahora: no se
-              puede volver a leer.
-              <Typography
-                sx={{
-                  fontFamily: "ui-monospace, monospace",
-                  mt: 1,
-                  fontWeight: 700,
-                }}
-              >
-                {created.temporaryPassword}
-              </Typography>
-            </Alert>
-          ) : created?.ownerCreated ? (
-            <Typography
-              sx={{
-                color: "text.secondary",
-              }}
-            >
-              El dueño entra con la clave que usted escribió.
-            </Typography>
-          ) : (
-            <Typography
-              sx={{
-                color: "text.secondary",
-              }}
-            >
-              Esa cuenta ya existía: se le agregó esta finca como dueño, sin
-              cambiarle la clave.
-            </Typography>
-          )}
+          {createdOwnerNote(created)}
           {created?.slug && (
             <Box sx={{ mt: 3 }}>
               <ProvisionProgress slug={created.slug} compact />

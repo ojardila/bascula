@@ -157,6 +157,9 @@ export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
     }
   }
 
+  const confirmingName = confirming ? getName(confirming.row) : "";
+  const deactivating = confirming?.kind === "off";
+
   return (
     <Box>
       <Stack
@@ -444,14 +447,14 @@ export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
          * — it is the one the person is looking at in the row.
          */
         title={
-          confirming ? confirmTitle(confirming.kind === "off", getName(confirming.row)) : ""
+          confirming ? confirmTitle(deactivating === true, confirmingName) : ""
         }
         body={
-          confirming?.kind === "off"
-            ? `«${confirming ? getName(confirming.row) : ""}» queda inactiva y deja de aparecer en las listas y en los formularios. No se borra nada: su historial se conserva y puede reactivarla cuando quiera.`
-            : `«${confirming ? getName(confirming.row) : ""}» vuelve a estar disponible en las listas y en los formularios.`
+          deactivating
+            ? `«${confirmingName}» queda inactiva y deja de aparecer en las listas y en los formularios. No se borra nada: su historial se conserva y puede reactivarla cuando quiera.`
+            : `«${confirmingName}» vuelve a estar disponible en las listas y en los formularios.`
         }
-        confirmLabel={confirming?.kind === "off" ? "Dar de baja" : "Reactivar"}
+        confirmLabel={deactivating ? "Dar de baja" : "Reactivar"}
         /**
          * ── RED WAS BEING SPENT ON THE REVERSIBLE THING ────────────────
          *
