@@ -110,27 +110,55 @@ func TestMCPListsToolsAndAnswersAsTheCaller(t *testing.T) {
 	names := map[string]bool{}
 	for _, tool := range tools.Tools {
 		names[tool.Name] = true
-		if tool.Annotations == nil {
-			t.Errorf("tool %q has no annotations", tool.Name)
-			continue
+		mcprCheckToolAnnotations(t, tool)
+	}
+	mcprCheckToolsListed(t, names)
+
+	// `me` through the tunnel and `me` on the wire are the same answer.
+	mcprCheckMeMatchesRoute(t, h, sess, f.OwnerToken)
+
+	// A filter reaches the route: a worker created, then found by name.
+	h.createWorker(t, f, "Rosa Tulcán", "1094000001")
+	res := callTool(t, sess, "list_workers", map[string]any{"q": "Tulcán"})
+	if res.IsError {
+		t.Fatalf("list_workers errored: %s", toolText(res))
+	}
+	if !strings.Contains(toolText(res), "Tulcán") {
+		t.Errorf("list_workers q=Tulcán did not find the worker:\n%s", toolText(res))
+	}
+}
+
+// mcprCheckToolAnnotations asserts a listed tool carries annotations that match
+// its kind: writes are not read-only and say whether they destroy, reads are
+// read-only, and money tools take a confirmationToken.
+func mcprCheckToolAnnotations(t *testing.T, tool *mcp.Tool) {
+	t.Helper()
+	if tool.Annotations == nil {
+		t.Errorf("tool %q has no annotations", tool.Name)
+		return
+	}
+	if mcpWriteToolNames[tool.Name] {
+		if tool.Annotations.ReadOnlyHint {
+			t.Errorf("write tool %q is marked read-only", tool.Name)
 		}
-		if mcpWriteToolNames[tool.Name] {
-			if tool.Annotations.ReadOnlyHint {
-				t.Errorf("write tool %q is marked read-only", tool.Name)
-			}
-			if tool.Annotations.DestructiveHint == nil {
-				t.Errorf("write tool %q does not say whether it is destructive", tool.Name)
-			}
-		} else if !tool.Annotations.ReadOnlyHint {
-			t.Errorf("read tool %q is not marked read-only", tool.Name)
+		if tool.Annotations.DestructiveHint == nil {
+			t.Errorf("write tool %q does not say whether it is destructive", tool.Name)
 		}
-		if mcpMoneyToolNames[tool.Name] {
-			raw, _ := json.Marshal(tool.InputSchema)
-			if !strings.Contains(string(raw), "confirmationToken") {
-				t.Errorf("money tool %q takes no confirmationToken", tool.Name)
-			}
+	} else if !tool.Annotations.ReadOnlyHint {
+		t.Errorf("read tool %q is not marked read-only", tool.Name)
+	}
+	if mcpMoneyToolNames[tool.Name] {
+		raw, _ := json.Marshal(tool.InputSchema)
+		if !strings.Contains(string(raw), "confirmationToken") {
+			t.Errorf("money tool %q takes no confirmationToken", tool.Name)
 		}
 	}
+}
+
+// mcprCheckToolsListed asserts every write tool and the core read tools are in
+// tools/list.
+func mcprCheckToolsListed(t *testing.T, names map[string]bool) {
+	t.Helper()
 	for name := range mcpWriteToolNames {
 		if !names[name] {
 			t.Errorf("write tool %q is missing from tools/list", name)
@@ -141,13 +169,17 @@ func TestMCPListsToolsAndAnswersAsTheCaller(t *testing.T) {
 			t.Errorf("tool %q is missing from tools/list", want)
 		}
 	}
+}
 
-	// `me` through the tunnel and `me` on the wire are the same answer.
+// mcprCheckMeMatchesRoute asserts `me` through the tunnel and `me` on the wire
+// are the same answer.
+func mcprCheckMeMatchesRoute(t *testing.T, h *harness, sess *mcp.ClientSession, token string) {
+	t.Helper()
 	viaMCP := callTool(t, sess, "me", nil)
 	if viaMCP.IsError {
 		t.Fatalf("me via mcp errored: %s", toolText(viaMCP))
 	}
-	direct := h.mustDo(t, http.MethodGet, "/v1/me", f.OwnerToken, nil, http.StatusOK)
+	direct := h.mustDo(t, http.MethodGet, "/v1/me", token, nil, http.StatusOK)
 	var got map[string]any
 	if err := json.Unmarshal([]byte(toolText(viaMCP)), &got); err != nil {
 		t.Fatalf("tool text is not JSON: %v\n%s", err, toolText(viaMCP))
@@ -157,16 +189,6 @@ func TestMCPListsToolsAndAnswersAsTheCaller(t *testing.T) {
 	}
 	if viaMCP.StructuredContent == nil {
 		t.Error("structured content is missing; an object answer should carry it")
-	}
-
-	// A filter reaches the route: a worker created, then found by name.
-	h.createWorker(t, f, "Rosa Tulcán", "1094000001")
-	res := callTool(t, sess, "list_workers", map[string]any{"q": "Tulcán"})
-	if res.IsError {
-		t.Fatalf("list_workers errored: %s", toolText(res))
-	}
-	if !strings.Contains(toolText(res), "Tulcán") {
-		t.Errorf("list_workers q=Tulcán did not find the worker:\n%s", toolText(res))
 	}
 }
 
