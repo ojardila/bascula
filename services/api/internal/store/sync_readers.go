@@ -200,6 +200,28 @@ func SyncReaderCheck(ctx context.Context, tx pgx.Tx, userID, deviceID string,
 	return order, nil
 }
 
+// ownReaderReplay is decideReplay for a reader that has a row of its own.
+func ownReaderReplay(own *readerRow, role domain.Role, requested int64) ReplayOrder {
+	order := ReplayOrder{PreviousRole: own.Role}
+	switch {
+	case own.Pending != nil:
+		// An order already stands and this reader has not complied. It is
+		// repeated verbatim rather than recomputed: the reason it was raised
+		// for is the reason it is still owed.
+		order.Reason, order.PurgeMoney = *own.Pending, own.Purge
+	case own.Role != role:
+		order.Reason = ReplayRoleChanged
+		// Only a role that LOSES sight of money has anything to drop.
+		order.PurgeMoney = roleSeesMoney(own.Role) && !roleSeesMoney(role)
+	}
+	// Otherwise: same reader, same role, nothing owed. A cursor above what
+	// this server has served is not policed here — the handshake hands out
+	// the head of the feed and a handset may adopt it, and the pull's own
+	// CURSOR_TOO_OLD check is what refuses a cursor that cannot have come
+	// from this server at all.
+	return withRequired(order, requested)
+}
+
 // decideReplay is the whole judgement, in one place, reading only rows.
 //
 // The question it answers is narrow: may this cursor be resumed, or does the
@@ -216,24 +238,7 @@ func decideReplay(ctx context.Context, tx pgx.Tx, rows []readerRow,
 	}
 
 	if own != nil {
-		order := ReplayOrder{PreviousRole: own.Role}
-		switch {
-		case own.Pending != nil:
-			// An order already stands and this reader has not complied. It is
-			// repeated verbatim rather than recomputed: the reason it was raised
-			// for is the reason it is still owed.
-			order.Reason, order.PurgeMoney = *own.Pending, own.Purge
-		case own.Role != role:
-			order.Reason = ReplayRoleChanged
-			// Only a role that LOSES sight of money has anything to drop.
-			order.PurgeMoney = roleSeesMoney(own.Role) && !roleSeesMoney(role)
-		}
-		// Otherwise: same reader, same role, nothing owed. A cursor above what
-		// this server has served is not policed here — the handshake hands out
-		// the head of the feed and a handset may adopt it, and the pull's own
-		// CURSOR_TOO_OLD check is what refuses a cursor that cannot have come
-		// from this server at all.
-		return withRequired(order, requested), nil
+		return ownReaderReplay(own, role, requested), nil
 	}
 
 	// A reader with no row of its own. At cursor 0 that is simply a new client,

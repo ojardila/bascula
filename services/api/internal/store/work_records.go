@@ -197,6 +197,36 @@ func GetWorkRecord(ctx context.Context, tx pgx.Tx, id string) (*WorkRecord, erro
 	return &out[0], nil
 }
 
+// weeklyPricedIDs lists the records priceWorkRecords has to look a kilo price
+// up for: unsettled, with no frozen amount, priced by the week.
+func weeklyPricedIDs(records []WorkRecord) []string {
+	var ids []string
+	for j := range records {
+		if records[j].settledAmount == nil && records[j].AmountMinor == nil &&
+			records[j].RateSource == domain.RateWeeklyPrice {
+			ids = append(ids, records[j].ID)
+		}
+	}
+	return ids
+}
+
+// estimateAtKiloPrice prices one such record at its kilo price. Without a
+// price (found false) the estimate is zero.
+func estimateAtKiloPrice(r *WorkRecord, kp KiloPrice, found bool) error {
+	if !found {
+		r.EffectiveMinor, r.AmountIsEstimate = 0, true
+		return nil
+	}
+	price := kp.PriceMinor
+	qty, ok := new(big.Rat).SetString(r.Quantity.String())
+	if !ok {
+		return fmt.Errorf("work record %s has an unreadable quantity %q", r.ID, r.Quantity)
+	}
+	r.EffectiveMinor = domain.AmountMinor(qty, price)
+	r.AmountIsEstimate = true
+	return nil
+}
+
 // priceWorkRecords fills in what each record is worth, so no screen has to
 // decide what a null amount means. A settled record is worth what its
 // settlement line paid; an unsettled one priced by the week is worth its
@@ -206,9 +236,35 @@ func GetWorkRecord(ctx context.Context, tx pgx.Tx, id string) (*WorkRecord, erro
 // Kilo prices are resolved in one query for the whole list, not once per
 // record: a season list is thousands of rows.
 func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) error {
+	weekly := weeklyPricer{ctx: ctx, tx: tx, records: records}
+	for i := range records {
+		r := &records[i]
+		switch {
+		case r.settledAmount != nil:
+			r.EffectiveMinor, r.AmountIsEstimate = *r.settledAmount, false
+		case r.AmountMinor != nil:
+			r.EffectiveMinor, r.AmountIsEstimate = *r.AmountMinor, false
+		case r.RateSource == domain.RateWeeklyPrice:
+			if err := weekly.price(r); err != nil {
+				return err
+			}
+		default:
+			// No frozen amount and no way to derive one. Zero here is the truth,
+			// not a stand-in for a value we failed to fetch.
+			r.EffectiveMinor, r.AmountIsEstimate = 0, true
+		}
+	}
+	return nil
+}
+
+// weeklyPricer estimates the unsettled weekly-priced records of one list.
+type weeklyPricer struct {
+	ctx     context.Context
+	tx      pgx.Tx
+	records []WorkRecord
 	// Kilo prices come from kilo_price() (persona > lote > semana > finca),
 	// fetched once for every record that needs one, and only if one does.
-	var kilo map[string]KiloPrice
+	kilo map[string]KiloPrice
 	// Whether the caller may read a price at all, asked once and only if some
 	// record actually needs one. Under migration 00022 the weigher's SELECT on
 	// week_prices returns no row, and WeekPrice COALESCEs a missing override to
@@ -222,55 +278,26 @@ func priceWorkRecords(ctx context.Context, tx pgx.Tx, records []WorkRecord) erro
 	// So it is not computed. Deriving nothing is also the cheaper answer: it is
 	// one round trip instead of one per distinct week, on the list the handset
 	// asks for all day.
-	readsMoney, roleKnown := false, false
-	for i := range records {
-		r := &records[i]
-		switch {
-		case r.settledAmount != nil:
-			r.EffectiveMinor, r.AmountIsEstimate = *r.settledAmount, false
-		case r.AmountMinor != nil:
-			r.EffectiveMinor, r.AmountIsEstimate = *r.AmountMinor, false
-		case r.RateSource == domain.RateWeeklyPrice:
-			if !roleKnown {
-				readsMoney, roleKnown = currentRoleIsMoney(ctx, tx), true
-			}
-			if !readsMoney {
-				r.EffectiveMinor, r.AmountIsEstimate, r.PriceWithheld = 0, true, true
-				continue
-			}
-			if kilo == nil {
-				var ids []string
-				for j := range records {
-					if records[j].settledAmount == nil && records[j].AmountMinor == nil &&
-						records[j].RateSource == domain.RateWeeklyPrice {
-						ids = append(ids, records[j].ID)
-					}
-				}
-				k, err := KiloPrices(ctx, tx, ids)
-				if err != nil {
-					return err
-				}
-				kilo = k
-			}
-			kp, ok := kilo[r.ID]
-			if !ok {
-				r.EffectiveMinor, r.AmountIsEstimate = 0, true
-				continue
-			}
-			price := kp.PriceMinor
-			qty, ok := new(big.Rat).SetString(r.Quantity.String())
-			if !ok {
-				return fmt.Errorf("work record %s has an unreadable quantity %q", r.ID, r.Quantity)
-			}
-			r.EffectiveMinor = domain.AmountMinor(qty, price)
-			r.AmountIsEstimate = true
-		default:
-			// No frozen amount and no way to derive one. Zero here is the truth,
-			// not a stand-in for a value we failed to fetch.
-			r.EffectiveMinor, r.AmountIsEstimate = 0, true
-		}
+	readsMoney, roleKnown bool
+}
+
+func (p *weeklyPricer) price(r *WorkRecord) error {
+	if !p.roleKnown {
+		p.readsMoney, p.roleKnown = currentRoleIsMoney(p.ctx, p.tx), true
 	}
-	return nil
+	if !p.readsMoney {
+		r.EffectiveMinor, r.AmountIsEstimate, r.PriceWithheld = 0, true, true
+		return nil
+	}
+	if p.kilo == nil {
+		k, err := KiloPrices(p.ctx, p.tx, weeklyPricedIDs(p.records))
+		if err != nil {
+			return err
+		}
+		p.kilo = k
+	}
+	kp, ok := p.kilo[r.ID]
+	return estimateAtKiloPrice(r, kp, ok)
 }
 
 func attachWorkRecordLinks(ctx context.Context, tx pgx.Tx, records []WorkRecord, ids []string) ([]WorkRecord, error) {
