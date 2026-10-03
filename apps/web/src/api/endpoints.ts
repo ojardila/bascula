@@ -1247,6 +1247,21 @@ export const api = {
     await http.del<void>(`/v1/me/passkeys/${encodeURIComponent(id)}`);
   },
 
+  /* -- open sessions («Sesiones abiertas») ----------------------------- */
+
+  /** The caller's own sign-ins on this farm, most recently used first. */
+  listSessions: async (): Promise<UserSession[]> =>
+    (await http.get<{ items: UserSession[] }>("/v1/me/sessions")).items,
+
+  /** Close one session: that browser or phone has to sign in again. */
+  closeSession: async (id: string): Promise<void> => {
+    await http.del<void>(`/v1/me/sessions/${encodeURIComponent(id)}`);
+  },
+
+  /** Close every session but this one. Answers how many were closed. */
+  closeOtherSessions: async (): Promise<number> =>
+    (await http.post<{ closed: number }>("/v1/me/sessions/close-others")).closed,
+
   /* -- MCP connections («Conexiones» in Configuración) ---------------- */
 
   listMcpConnections: async (): Promise<McpConnections> =>
@@ -2381,6 +2396,20 @@ export interface PasskeyItem {
   name: string;
   createdAt: string;
   lastUsedAt: string | null;
+}
+
+/** One of the caller's open sign-ins on this farm (a browser or a phone). */
+export interface UserSession {
+  id: string;
+  /** How the person got in; `unknown` for a session from before it was recorded. */
+  method: "password" | "passkey" | "unknown";
+  /** The browser or app that last used it; empty when unknown. */
+  userAgent: string;
+  createdAt: string;
+  /** Last refresh, so accurate to about 15 minutes. */
+  lastUsedAt: string;
+  /** The session this browser is using right now. */
+  current: boolean;
 }
 
 /** One OAuth grant an MCP client (ChatGPT, …) holds for the caller on this farm. */

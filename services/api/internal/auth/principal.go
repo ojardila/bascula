@@ -21,6 +21,9 @@ type Principal struct {
 	MCPOnly bool
 	// ReadOnly marks an assistant's token granted consultation only.
 	ReadOnly bool
+	// SessionID is the refresh-token family behind the token ("" when the
+	// token predates the claim).
+	SessionID string
 }
 
 type ctxKey int

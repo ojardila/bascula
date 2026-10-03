@@ -179,6 +179,12 @@ export interface MockRefreshToken {
   expiresAt: number;
   rotatedAt: number | null;
   revokedAt: number | null;
+  /** When it was minted (ms); a row without one counts as minted at 0. */
+  issuedAt?: number;
+  /** How the family was opened (migration 00043). */
+  method?: "password" | "passkey";
+  /** The User-Agent of the request that minted it. */
+  userAgent?: string;
 }
 
 export interface MockEmailVerification {

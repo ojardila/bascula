@@ -39,6 +39,10 @@ type Claims struct {
 	// Empty means full access for the role: every token from before scopes,
 	// and every ordinary session token.
 	Scope string `json:"scope,omitempty"`
+	// SessionID is the refresh-token family the token was minted for (the
+	// "sid" claim), so «Sesiones abiertas» can tell the caller which session
+	// is theirs. Empty on tokens from before it, and on assistants' tokens.
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -66,9 +70,15 @@ func (s *Signer) Issue(userID, farmID string, role domain.Role, deviceID string,
 // IssueFor is Issue with an audience; "" issues an ordinary session token.
 func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	if audience == "" {
-		return s.issue(nil, "", "", userID, farmID, role, deviceID, superadmin)
+		return s.issue(nil, "", "", "", userID, farmID, role, deviceID, superadmin)
 	}
-	return s.issue([]string{audience}, "", "", userID, farmID, role, deviceID, superadmin)
+	return s.issue([]string{audience}, "", "", "", userID, farmID, role, deviceID, superadmin)
+}
+
+// IssueSession is Issue for a token minted from a session: sessionID is the
+// refresh-token family, carried as the "sid" claim.
+func (s *Signer) IssueSession(sessionID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+	return s.issue(nil, "", "", sessionID, userID, farmID, role, deviceID, superadmin)
 }
 
 // IssueMCP mints an assistant's access token. Its audience is AudienceMCP
@@ -80,10 +90,10 @@ func (s *Signer) IssueMCP(resource, clientID, scope, userID, farmID string, role
 	if resource != "" {
 		aud = append(aud, resource)
 	}
-	return s.issue(aud, clientID, scope, userID, farmID, role, deviceID, superadmin)
+	return s.issue(aud, clientID, scope, "", userID, farmID, role, deviceID, superadmin)
 }
 
-func (s *Signer) issue(audience []string, clientID, scope, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
+func (s *Signer) issue(audience []string, clientID, scope, sessionID, userID, farmID string, role domain.Role, deviceID string, superadmin bool) (string, error) {
 	now := s.now()
 	c := Claims{
 		FarmID:     farmID,
@@ -92,6 +102,7 @@ func (s *Signer) issue(audience []string, clientID, scope, userID, farmID string
 		Superadmin: superadmin,
 		ClientID:   clientID,
 		Scope:      scope,
+		SessionID:  sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			Issuer:    s.issuer,
