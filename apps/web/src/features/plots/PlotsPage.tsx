@@ -25,6 +25,83 @@ function plotsFooter(plots: number, totalHa: number, undeclared: number): string
   return `${count(plots, PLOT.one, PLOT.many)} · ${formatArea(totalHa)} ha declaradas${missing}`;
 }
 
+function PlotAreaCell({ plot: p }: Readonly<{ plot: Plot }>) {
+  return (
+    <Stack
+      sx={{
+        alignItems: "flex-end",
+      }}
+    >
+      <span>
+        {p.areaHa === null ? "—" : `${formatArea(p.areaHa)} ha`}
+      </span>
+      {/* Declared and computed always disagree. Showing only one is
+          deciding for the owner which of them lies, so both are here. */}
+      {p.computedAreaHa === null ? (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.disabled",
+          }}
+        >
+          sin polígono
+        </Typography>
+      ) : (
+        <Tooltip
+          title={`Declarada ${declaredAreaText(p.areaHa)} · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
+        >
+          {/* No warning icon and no amber. The two figures differing is
+              the normal state of the world, not an incident: a deed says
+              one thing and a hillside traced with a mouse says another.
+              A yellow triangle on every row with a polygon teaches
+              people to ignore yellow triangles. */}
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            calculada {formatArea(p.computedAreaHa)} ha
+          </Typography>
+        </Tooltip>
+      )}
+    </Stack>
+  );
+}
+
+function PlotCropsCell({ plot: p }: Readonly<{ plot: Plot }>) {
+  return (
+    <Stack
+      direction="row"
+      sx={{
+        gap: 0.5,
+        flexWrap: "wrap",
+      }}
+    >
+      {p.crops.length === 0 && (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          sin cultivos
+        </Typography>
+      )}
+      {p.crops.map((c) => (
+        <Chip
+          key={c.id}
+          size="small"
+          variant="outlined"
+          label={[c.cropTypeName, c.varietyName]
+            .filter(Boolean)
+            .join(" ")}
+        />
+      ))}
+    </Stack>
+  );
+}
+
 export function PlotsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -68,81 +145,12 @@ export function PlotsPage() {
         key: "area",
         header: "Área",
         align: "right",
-        render: (p) => (
-          <Stack
-            sx={{
-              alignItems: "flex-end",
-            }}
-          >
-            <span>
-              {p.areaHa === null ? "—" : `${formatArea(p.areaHa)} ha`}
-            </span>
-            {/* Declared and computed always disagree. Showing only one is
-                deciding for the owner which of them lies, so both are here. */}
-            {p.computedAreaHa === null ? (
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "text.disabled",
-                }}
-              >
-                sin polígono
-              </Typography>
-            ) : (
-              <Tooltip
-                title={`Declarada ${declaredAreaText(p.areaHa)} · calculada del polígono ${formatArea(p.computedAreaHa)} ha`}
-              >
-                {/* No warning icon and no amber. The two figures differing is
-                    the normal state of the world, not an incident: a deed says
-                    one thing and a hillside traced with a mouse says another.
-                    A yellow triangle on every row with a polygon teaches
-                    people to ignore yellow triangles. */}
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  calculada {formatArea(p.computedAreaHa)} ha
-                </Typography>
-              </Tooltip>
-            )}
-          </Stack>
-        ),
+        render: (p) => <PlotAreaCell plot={p} />,
       },
       {
         key: "crops",
         header: "Cultivos",
-        render: (p) => (
-          <Stack
-            direction="row"
-            sx={{
-              gap: 0.5,
-              flexWrap: "wrap",
-            }}
-          >
-            {p.crops.length === 0 && (
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                sin cultivos
-              </Typography>
-            )}
-            {p.crops.map((c) => (
-              <Chip
-                key={c.id}
-                size="small"
-                variant="outlined"
-                label={[c.cropTypeName, c.varietyName]
-                  .filter(Boolean)
-                  .join(" ")}
-              />
-            ))}
-          </Stack>
-        ),
+        render: (p) => <PlotCropsCell plot={p} />,
       },
     ],
     [],

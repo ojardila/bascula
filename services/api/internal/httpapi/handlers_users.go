@@ -231,52 +231,19 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	email := strings.TrimSpace(strings.ToLower(body.Email))
-	if email == "" || !strings.Contains(email, "@") {
-		writeError(w, r, domain.BadRequest("email is required"))
-		return
-	}
-	role, err := parseRole(body.Role)
+	caller, _ := auth.PrincipalFrom(r.Context())
+	email, role, err := validInviteRequest(&body, caller)
 	if err != nil {
 		writeError(w, r, err)
-		return
-	}
-	caller, _ := auth.PrincipalFrom(r.Context())
-	if err := mayGrant(caller, role); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if body.Password != "" && len(body.Password) < 10 {
-		writeError(w, r, domain.BadRequest("password must be at least 10 characters"))
-		return
-	}
-	// The ceiling is here too even though this route is behind a token: an
-	// administrator is trusted to add somebody to their own farm, not to decide
-	// how much memory the server spends on a single request. See
-	// auth.MaxPasswordLength.
-	if len(body.Password) > auth.MaxPasswordLength {
-		writeError(w, r, domain.BadRequest("password is too long"))
 		return
 	}
 	name := strings.TrimSpace(body.Name)
 
 	// Both hashes before anything is looked up, whoever the address is, so
 	// the time the answer takes does not say it either.
-	password, minted := body.Password, body.Password == ""
-	if minted {
-		if password, err = newTemporaryPassword(); err != nil {
-			writeError(w, r, domain.Internal("could not mint a password").WithCause(err))
-			return
-		}
-	}
-	farmHash, err := auth.HashPassword(password)
+	secrets, err := newInviteSecrets(body.Password)
 	if err != nil {
-		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
-		return
-	}
-	unusable, err := newUnusablePasswordHash()
-	if err != nil {
-		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
+		writeError(w, r, err)
 		return
 	}
 
@@ -291,30 +258,14 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := store.FindUserByEmail(r.Context(), tx, email)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, r, err)
-		return
-	}
-	already := false
-	if user != nil {
-		if _, err := store.GetFarmUser(r.Context(), tx, user.ID); err == nil {
-			already = true
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, r, err)
-			return
-		}
-	} else if user, err = createInvitedUser(r.Context(), tx, email, name, unusable); err != nil {
+	user, already, err := findOrCreateInvitee(r.Context(), tx, email, name, secrets.unusable)
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
 	if !already {
-		if err := store.CreateMembership(r.Context(), tx, farmID, user.ID, role); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if err := store.SetFarmCredential(r.Context(), tx, farmID, user.ID, name, farmHash); err != nil {
+		if err := grantInvitedMembership(r.Context(), tx, farmID, user.ID, role, name, secrets.farmHash); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -333,16 +284,103 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 	if !already {
 		s.noticeRoleRaised(r, tx, member.Email, member.Name, member.Role)
 		s.noticeFarmAccessGranted(r, tx, member.Email, member.Name, member.Role)
-		if minted {
+		if secrets.minted {
 			// Returned once, here, and stored nowhere in readable form — the
 			// row keeps an argon2id hash like every other password. The
 			// administrator has to hand it over now; there is no second
 			// chance to read it and the message says so.
-			out["temporaryPassword"] = password
+			out["temporaryPassword"] = secrets.password
 			out["temporaryPasswordNote"] = "shown once: hand it over now, it cannot be read again"
 		}
 	}
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// validInviteRequest checks an invitation and returns the normalized address
+// and the role it grants, which the caller must be allowed to grant.
+func validInviteRequest(body *inviteUserRequest, caller *auth.Principal) (string, domain.Role, error) {
+	email := strings.TrimSpace(strings.ToLower(body.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		return "", "", domain.BadRequest("email is required")
+	}
+	role, err := parseRole(body.Role)
+	if err != nil {
+		return "", "", err
+	}
+	if err := mayGrant(caller, role); err != nil {
+		return "", "", err
+	}
+	if body.Password != "" && len(body.Password) < 10 {
+		return "", "", domain.BadRequest("password must be at least 10 characters")
+	}
+	// The ceiling is here too even though this route is behind a token: an
+	// administrator is trusted to add somebody to their own farm, not to decide
+	// how much memory the server spends on a single request. See
+	// auth.MaxPasswordLength.
+	if len(body.Password) > auth.MaxPasswordLength {
+		return "", "", domain.BadRequest("password is too long")
+	}
+	return email, role, nil
+}
+
+// inviteSecrets are the passwords an invitation needs: the farm password
+// (the one given, or a minted one) and its hash, and an unusable global hash
+// for an account created by the invitation.
+type inviteSecrets struct {
+	password string
+	minted   bool
+	farmHash string
+	unusable string
+}
+
+// newInviteSecrets mints (when none was given) and hashes the invitation's
+// passwords.
+func newInviteSecrets(given string) (*inviteSecrets, error) {
+	password, minted := given, given == ""
+	if minted {
+		var err error
+		if password, err = newTemporaryPassword(); err != nil {
+			return nil, domain.Internal("could not mint a password").WithCause(err)
+		}
+	}
+	farmHash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, domain.Internal("could not hash the password").WithCause(err)
+	}
+	unusable, err := newUnusablePasswordHash()
+	if err != nil {
+		return nil, domain.Internal("could not hash the password").WithCause(err)
+	}
+	return &inviteSecrets{password: password, minted: minted, farmHash: farmHash, unusable: unusable}, nil
+}
+
+// findOrCreateInvitee returns the account behind the invited address,
+// creating it when there is none, and whether it is already a member here.
+func findOrCreateInvitee(ctx context.Context, tx pgx.Tx, email, name, unusable string) (*store.User, bool, error) {
+	user, err := store.FindUserByEmail(ctx, tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, err
+	}
+	if user == nil {
+		user, err = createInvitedUser(ctx, tx, email, name, unusable)
+		return user, false, err
+	}
+	if _, err := store.GetFarmUser(ctx, tx, user.ID); err == nil {
+		return user, true, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, err
+	}
+	return user, false, nil
+}
+
+// grantInvitedMembership makes the invitee a member of this farm, with the
+// farm password the invitation carries.
+func grantInvitedMembership(ctx context.Context, tx pgx.Tx, farmID, userID string, role domain.Role,
+	name, farmHash string) error {
+	if err := store.CreateMembership(ctx, tx, farmID, userID, role); err != nil {
+		return err
+	}
+	return store.SetFarmCredential(ctx, tx, farmID, userID, name, farmHash)
 }
 
 // handleUpdateUserRole is rule 2 in one place.

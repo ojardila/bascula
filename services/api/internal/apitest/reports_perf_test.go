@@ -99,17 +99,7 @@ func TestReportsHoldUpOnASeason(t *testing.T) {
 		// owner refreshing a screen experiences.
 		h.mustDo(t, http.MethodGet, c.path, f.OwnerToken, nil, http.StatusOK)
 
-		// The best of three readings, not one. A shared CI runner can stall
-		// any single request for a second; a query that has gone back to the
-		// quadratic shape is slow every time.
-		var took time.Duration
-		for i := 0; i < 3; i++ {
-			start := time.Now()
-			h.mustDo(t, http.MethodGet, c.path, f.OwnerToken, nil, http.StatusOK)
-			if d := time.Since(start); i == 0 || d < took {
-				took = d
-			}
-		}
+		took := seasonBestOfThree(t, h, f, c.path)
 
 		t.Logf("%-28s %8s", c.name, took.Round(time.Millisecond))
 		if took > budget {
@@ -124,74 +114,93 @@ func TestReportsHoldUpOnASeason(t *testing.T) {
 	// as it was — every weighing joined against every other weighing of its
 	// plot-day — against the derived form that shipped.
 	t.Run("the quadratic crew rule against the one that replaced it", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				since := time.Now().AddDate(0, 0, -seasonDays)
-
-				start := time.Now()
-				var derived int
-				err := tx.QueryRow(ctx, `
-					WITH dayplot AS (
-					  SELECT l.id, l.employee_id, c.plot_crop_id, l.local_day,
-					         (l.quantity * u.kg_factor)::float8 AS kg
-					    FROM work_records l
-					    JOIN work_record_plot_crops c ON c.work_record_id = l.id
-					    JOIN work_units u ON u.id = l.unit_id
-					   WHERE l.deleted_at IS NULL AND l.local_day >= $1
-					),
-					agg AS (
-					  SELECT plot_crop_id, local_day, sum(kg) AS tot, count(*) AS n
-					    FROM dayplot GROUP BY 1, 2
-					)
-					SELECT count(*) FROM dayplot dp
-					  JOIN agg ON agg.plot_crop_id = dp.plot_crop_id
-					          AND agg.local_day = dp.local_day
-					 WHERE agg.n >= 5
-					   AND (agg.tot - dp.kg) / (agg.n - 1) > 0
-					   AND dp.kg >= 4 * ((agg.tot - dp.kg) / (agg.n - 1))`, since).Scan(&derived)
-				if err != nil {
-					t.Fatalf("derived form: %v", err)
-				}
-				derivedTook := time.Since(start)
-
-				start = time.Now()
-				var quadratic int
-				err = tx.QueryRow(ctx, `
-					WITH dayplot AS (
-					  SELECT l.id, l.employee_id, c.plot_crop_id, l.local_day,
-					         (l.quantity * u.kg_factor)::float8 AS kg
-					    FROM work_records l
-					    JOIN work_record_plot_crops c ON c.work_record_id = l.id
-					    JOIN work_units u ON u.id = l.unit_id
-					   WHERE l.deleted_at IS NULL AND l.local_day >= $1
-					)
-					SELECT count(*) FROM dayplot dp
-					 WHERE (SELECT count(*) FROM dayplot m
-					         WHERE m.plot_crop_id = dp.plot_crop_id
-					           AND m.local_day = dp.local_day) >= 5
-					   AND dp.kg >= 4 * (SELECT avg(m.kg) FROM dayplot m
-					                      WHERE m.plot_crop_id = dp.plot_crop_id
-					                        AND m.local_day = dp.local_day
-					                        AND m.id <> dp.id)`, since).Scan(&quadratic)
-				if err != nil {
-					t.Fatalf("quadratic form: %v", err)
-				}
-				quadraticTook := time.Since(start)
-
-				t.Logf("crew rule over %d weighings: derived %s, quadratic self-join %s (%.0fx)",
-					seasonWeighings, derivedTook.Round(time.Millisecond),
-					quadraticTook.Round(time.Millisecond),
-					float64(quadraticTook)/float64(derivedTook))
-
-				// The point of running both is that they agree. A rewrite that
-				// is faster and answers something else is not a rewrite.
-				if derived != quadratic {
-					t.Errorf("the two forms disagree: derived found %d, the self-join found %d.\n"+
-						"Speed is not the property that matters here — being the same rule is.",
-						derived, quadratic)
-				}
-			})
+		seasonCrewRuleFormsAgree(t, h, f)
 	})
+}
+
+// seasonBestOfThree is the best of three readings, not one. A shared CI
+// runner can stall any single request for a second; a query that has gone
+// back to the quadratic shape is slow every time.
+func seasonBestOfThree(t *testing.T, h *harness, f *farmFixture, path string) time.Duration {
+	var took time.Duration
+	for i := 0; i < 3; i++ {
+		start := time.Now()
+		h.mustDo(t, http.MethodGet, path, f.OwnerToken, nil, http.StatusOK)
+		if d := time.Since(start); i == 0 || d < took {
+			took = d
+		}
+	}
+	return took
+}
+
+func seasonCrewRuleFormsAgree(t *testing.T, h *harness, f *farmFixture) {
+	h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) {
+			since := time.Now().AddDate(0, 0, -seasonDays)
+
+			start := time.Now()
+			var derived int
+			err := tx.QueryRow(ctx, `
+				WITH dayplot AS (
+				  SELECT l.id, l.employee_id, c.plot_crop_id, l.local_day,
+				         (l.quantity * u.kg_factor)::float8 AS kg
+				    FROM work_records l
+				    JOIN work_record_plot_crops c ON c.work_record_id = l.id
+				    JOIN work_units u ON u.id = l.unit_id
+				   WHERE l.deleted_at IS NULL AND l.local_day >= $1
+				),
+				agg AS (
+				  SELECT plot_crop_id, local_day, sum(kg) AS tot, count(*) AS n
+				    FROM dayplot GROUP BY 1, 2
+				)
+				SELECT count(*) FROM dayplot dp
+				  JOIN agg ON agg.plot_crop_id = dp.plot_crop_id
+				          AND agg.local_day = dp.local_day
+				 WHERE agg.n >= 5
+				   AND (agg.tot - dp.kg) / (agg.n - 1) > 0
+				   AND dp.kg >= 4 * ((agg.tot - dp.kg) / (agg.n - 1))`, since).Scan(&derived)
+			if err != nil {
+				t.Fatalf("derived form: %v", err)
+			}
+			derivedTook := time.Since(start)
+
+			start = time.Now()
+			var quadratic int
+			err = tx.QueryRow(ctx, `
+				WITH dayplot AS (
+				  SELECT l.id, l.employee_id, c.plot_crop_id, l.local_day,
+				         (l.quantity * u.kg_factor)::float8 AS kg
+				    FROM work_records l
+				    JOIN work_record_plot_crops c ON c.work_record_id = l.id
+				    JOIN work_units u ON u.id = l.unit_id
+				   WHERE l.deleted_at IS NULL AND l.local_day >= $1
+				)
+				SELECT count(*) FROM dayplot dp
+				 WHERE (SELECT count(*) FROM dayplot m
+				         WHERE m.plot_crop_id = dp.plot_crop_id
+				           AND m.local_day = dp.local_day) >= 5
+				   AND dp.kg >= 4 * (SELECT avg(m.kg) FROM dayplot m
+				                      WHERE m.plot_crop_id = dp.plot_crop_id
+				                        AND m.local_day = dp.local_day
+				                        AND m.id <> dp.id)`, since).Scan(&quadratic)
+			if err != nil {
+				t.Fatalf("quadratic form: %v", err)
+			}
+			quadraticTook := time.Since(start)
+
+			t.Logf("crew rule over %d weighings: derived %s, quadratic self-join %s (%.0fx)",
+				seasonWeighings, derivedTook.Round(time.Millisecond),
+				quadraticTook.Round(time.Millisecond),
+				float64(quadraticTook)/float64(derivedTook))
+
+			// The point of running both is that they agree. A rewrite that
+			// is faster and answers something else is not a rewrite.
+			if derived != quadratic {
+				t.Errorf("the two forms disagree: derived found %d, the self-join found %d.\n"+
+					"Speed is not the property that matters here — being the same rule is.",
+					derived, quadratic)
+			}
+		})
 }
 
 // seedSeason writes a season straight in. Going through HTTP would measure the
@@ -202,6 +211,50 @@ func (h *harness) seedSeason(t *testing.T, f *farmFixture, crops []string) []str
 	t.Helper()
 	activityID := h.harvestActivityID(t, f)
 
+	workers := h.seedSeasonPickers(t, f)
+
+	var unitID string
+	var tz string
+	err := h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT a.unit_id::text, fm.timezone
+				  FROM activities a JOIN farms fm ON fm.id = a.farm_id
+				 WHERE a.id = $1`, activityID).Scan(&unitID, &tz)
+		})
+	if err != nil {
+		t.Fatalf("read the farm's unit and zone: %v", err)
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		t.Fatalf("load %s: %v", tz, err)
+	}
+
+	rows := seasonRowsFor(workers, crops, loc)
+
+	// COPY is refused on a table with row level security, which is the right
+	// refusal — RLS is the isolation boundary and COPY would step over it. So
+	// the season goes in as batched multi-row INSERTs through unnest, which
+	// the policy checks like any other write.
+	const batch = 3000
+	for lo := 0; lo < len(rows); lo += batch {
+		hi := min(lo+batch, len(rows))
+		if err := h.insertSeasonChunk(t, f, activityID, unitID, rows[lo:hi]); err != nil {
+			t.Fatalf("seed the season: %v", err)
+		}
+	}
+
+	// ANALYZE, because the planner has never seen this table with rows in it
+	// and a report timed against stale statistics measures the wrong thing.
+	if _, err := h.admin.Exec(context.Background(),
+		"ANALYZE work_records, work_record_plot_crops"); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	return workers
+}
+
+func (h *harness) seedSeasonPickers(t *testing.T, f *farmFixture) []string {
+	t.Helper()
 	workers := make([]string, 0, seasonPickers)
 	err := h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
 		func(ctx context.Context, tx pgx.Tx) error {
@@ -220,37 +273,26 @@ func (h *harness) seedSeason(t *testing.T, f *farmFixture, crops []string) []str
 	if err != nil {
 		t.Fatalf("seed pickers: %v", err)
 	}
+	return workers
+}
 
-	var unitID string
-	var tz string
-	err = h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-		func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `
-				SELECT a.unit_id::text, fm.timezone
-				  FROM activities a JOIN farms fm ON fm.id = a.farm_id
-				 WHERE a.id = $1`, activityID).Scan(&unitID, &tz)
-		})
-	if err != nil {
-		t.Fatalf("read the farm's unit and zone: %v", err)
-	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		t.Fatalf("load %s: %v", tz, err)
-	}
+// seasonRow is one weighing of the seeded season.
+type seasonRow struct {
+	id       string
+	employee string
+	crop     string
+	at       time.Time
+	day      time.Time
+	qty      float64
+}
 
-	// Deterministic, so a slow run can be reproduced exactly.
+// seasonRowsFor draws the season's weighings. Deterministic, so a slow run
+// can be reproduced exactly.
+func seasonRowsFor(workers, crops []string, loc *time.Location) []seasonRow {
 	rng := rand.New(rand.NewSource(20260829))
 	today := time.Now().In(loc)
 
-	type row struct {
-		id       string
-		employee string
-		crop     string
-		at       time.Time
-		day      time.Time
-		qty      float64
-	}
-	rows := make([]row, 0, seasonWeighings)
+	rows := make([]seasonRow, 0, seasonWeighings)
 	for i := 0; i < seasonWeighings; i++ {
 		back := rng.Intn(seasonDays)
 		day := time.Date(today.Year(), today.Month(), today.Day(), 12, 0, 0, 0, loc).
@@ -273,7 +315,7 @@ func (h *harness) seedSeason(t *testing.T, f *farmFixture, crops []string) []str
 		case i%3001 == 0:
 			qty = 260 // far above the crew that day
 		}
-		rows = append(rows, row{
+		rows = append(rows, seasonRow{
 			id:       uuid.NewString(),
 			employee: workers[rng.Intn(len(workers))],
 			crop:     crops[rng.Intn(len(crops))],
@@ -282,61 +324,41 @@ func (h *harness) seedSeason(t *testing.T, f *farmFixture, crops []string) []str
 			qty:      qty,
 		})
 	}
+	return rows
+}
 
-	// COPY is refused on a table with row level security, which is the right
-	// refusal — RLS is the isolation boundary and COPY would step over it. So
-	// the season goes in as batched multi-row INSERTs through unnest, which
-	// the policy checks like any other write.
-	const batch = 3000
-	for lo := 0; lo < len(rows); lo += batch {
-		hi := lo + batch
-		if hi > len(rows) {
-			hi = len(rows)
-		}
-		chunk := rows[lo:hi]
-		ids := make([]string, len(chunk))
-		emps := make([]string, len(chunk))
-		crps := make([]string, len(chunk))
-		ats := make([]time.Time, len(chunk))
-		days := make([]time.Time, len(chunk))
-		qtys := make([]float64, len(chunk))
-		for i, r := range chunk {
-			ids[i], emps[i], crps[i] = r.id, r.employee, r.crop
-			ats[i], days[i], qtys[i] = r.at, r.day, r.qty
-		}
-		err = h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `
-					INSERT INTO work_records
-					  (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
-					   started_at, ended_at, local_day, end_local_day,
-					   quantity, unit_id, created_by, created_at)
-					SELECT u.id, $1, u.employee, $2, 'unidad_trabajo', 'weekly_price',
-					       u.at, u.at, u.day, u.day, u.qty, $3, $4, u.at
-					  FROM unnest($5::uuid[], $6::uuid[], $7::timestamptz[],
-					              $8::date[], $9::numeric[])
-					       AS u(id, employee, at, day, qty)`,
-					f.FarmID, activityID, unitID, f.OwnerUserID,
-					ids, emps, ats, days, qtys); err != nil {
-					return err
-				}
-				_, err := tx.Exec(ctx, `
-					INSERT INTO work_record_plot_crops (work_record_id, plot_crop_id, farm_id)
-					SELECT u.id, u.crop, $1
-					  FROM unnest($2::uuid[], $3::uuid[]) AS u(id, crop)`,
-					f.FarmID, ids, crps)
+func (h *harness) insertSeasonChunk(t *testing.T, f *farmFixture, activityID, unitID string, chunk []seasonRow) error {
+	ids := make([]string, len(chunk))
+	emps := make([]string, len(chunk))
+	crps := make([]string, len(chunk))
+	ats := make([]time.Time, len(chunk))
+	days := make([]time.Time, len(chunk))
+	qtys := make([]float64, len(chunk))
+	for i, r := range chunk {
+		ids[i], emps[i], crps[i] = r.id, r.employee, r.crop
+		ats[i], days[i], qtys[i] = r.at, r.day, r.qty
+	}
+	return h.withTenantCommit(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO work_records
+				  (id, farm_id, employee_id, activity_id, pay_scheme, rate_source,
+				   started_at, ended_at, local_day, end_local_day,
+				   quantity, unit_id, created_by, created_at)
+				SELECT u.id, $1, u.employee, $2, 'unidad_trabajo', 'weekly_price',
+				       u.at, u.at, u.day, u.day, u.qty, $3, $4, u.at
+				  FROM unnest($5::uuid[], $6::uuid[], $7::timestamptz[],
+				              $8::date[], $9::numeric[])
+				       AS u(id, employee, at, day, qty)`,
+				f.FarmID, activityID, unitID, f.OwnerUserID,
+				ids, emps, ats, days, qtys); err != nil {
 				return err
-			})
-		if err != nil {
-			t.Fatalf("seed the season: %v", err)
-		}
-	}
-
-	// ANALYZE, because the planner has never seen this table with rows in it
-	// and a report timed against stale statistics measures the wrong thing.
-	if _, err := h.admin.Exec(context.Background(),
-		"ANALYZE work_records, work_record_plot_crops"); err != nil {
-		t.Fatalf("analyze: %v", err)
-	}
-	return workers
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO work_record_plot_crops (work_record_id, plot_crop_id, farm_id)
+				SELECT u.id, u.crop, $1
+				  FROM unnest($2::uuid[], $3::uuid[]) AS u(id, crop)`,
+				f.FarmID, ids, crps)
+			return err
+		})
 }

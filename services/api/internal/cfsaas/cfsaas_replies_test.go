@@ -13,6 +13,8 @@ func serve(t *testing.T, status int, body string) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
+		// Test stub standing in for the Cloudflare API; never served to a browser.
+		// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
@@ -29,18 +31,7 @@ func TestRepliesCloudflareDidNotMeanAsSuccess(t *testing.T) {
 		}
 	})
 
-	t.Run("a 200 that says success:false is an error with its messages", func(t *testing.T) {
-		_, err := serve(t, http.StatusOK,
-			`{"success":false,"errors":[{"code":1406,"message":"duplicate hostname"}],"result":null}`).
-			Create(ctx, "finca.example.com")
-		var apiErr *APIError
-		if !errors.As(err, &apiErr) || apiErr.Status != http.StatusOK {
-			t.Fatalf("got %v, want an *APIError", err)
-		}
-		if got := apiErr.Error(); got != "cloudflare: status 200: 1406 duplicate hostname" {
-			t.Errorf("message %q", got)
-		}
-	})
+	t.Run("a 200 that says success:false is an error with its messages", testSuccessFalseIsAPIError)
 
 	t.Run("an error with no messages still reads", func(t *testing.T) {
 		_, err := serve(t, http.StatusForbidden, `{"success":false}`).Revalidate(ctx, "id-1")
@@ -64,6 +55,19 @@ func TestRepliesCloudflareDidNotMeanAsSuccess(t *testing.T) {
 			t.Fatalf("got %+v, %v", h, err)
 		}
 	})
+}
+
+func testSuccessFalseIsAPIError(t *testing.T) {
+	_, err := serve(t, http.StatusOK,
+		`{"success":false,"errors":[{"code":1406,"message":"duplicate hostname"}],"result":null}`).
+		Create(context.Background(), "finca.example.com")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusOK {
+		t.Fatalf("got %v, want an *APIError", err)
+	}
+	if got := apiErr.Error(); got != "cloudflare: status 200: 1406 duplicate hostname" {
+		t.Errorf("message %q", got)
+	}
 }
 
 func TestSummaryAndFailedOnEdges(t *testing.T) {

@@ -365,8 +365,7 @@ export function StockMoveDialog({
               <strong>
                 {formatQuantity(stockAfter(available, signed))}{" "}
                 {unitLabel(stockAfter(available, signed), chosen.storageUnit)}
-              </strong>
-              .
+              </strong>.
             </Alert>
           )}
 

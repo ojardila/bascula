@@ -28,13 +28,42 @@ export function ChangePasswordCard() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const { hash } = useLocation();
+  const currentRef = useRef<HTMLInputElement>(null);
+  const { hash, key } = useLocation();
 
-  // «Cambiar clave» in the account menu lands here with #clave.
+  // «Cambiar clave» in the account menu lands here with #clave, and the card
+  // has to end up on screen with the first field ready. Two things used to
+  // stop that, so the menu item looked like it did nothing:
+  //   - the cards above this one load their own data and grow after it
+  //     mounts, so a single scroll on mount landed where the card USED to be,
+  //     below the fold on a phone;
+  //   - choosing the item again from Configuración keeps the same hash, so
+  //     an effect keyed on the hash alone never ran a second time.
+  // So it runs on every navigation (`key`), and keeps the card in view while
+  // the page above it settles, until the person scrolls or types themselves.
   useEffect(() => {
-    if (hash === "#clave")
-      ref.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-  }, [hash]);
+    if (hash !== "#clave") return;
+    const card = ref.current;
+    if (!card) return;
+    const bring = () => card.scrollIntoView?.({ block: "start" });
+    bring();
+    currentRef.current?.focus({ preventScroll: true });
+
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(bring);
+    observer?.observe(document.body);
+    const stopOn = ["wheel", "touchstart", "keydown"] as const;
+    const stop = () => {
+      observer?.disconnect();
+      for (const ev of stopOn) window.removeEventListener(ev, stop);
+    };
+    for (const ev of stopOn) window.addEventListener(ev, stop, { passive: true });
+    const timer = window.setTimeout(stop, 3000);
+    return () => {
+      window.clearTimeout(timer);
+      stop();
+    };
+  }, [hash, key]);
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -69,7 +98,8 @@ export function ChangePasswordCard() {
   }
 
   return (
-    <Card id="clave" ref={ref}>
+    // The margin keeps the title clear of the fixed app bar.
+    <Card id="clave" ref={ref} sx={{ scrollMarginTop: 80 }}>
       <CardContent>
         <Typography variant="h3" gutterBottom>
           Cambiar clave
@@ -97,6 +127,7 @@ export function ChangePasswordCard() {
             type="password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
+            inputRef={currentRef}
             autoComplete="current-password"
             fullWidth
           />

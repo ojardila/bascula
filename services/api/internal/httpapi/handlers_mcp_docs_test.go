@@ -59,24 +59,7 @@ func TestMCPToolsJSONMatchesTheRegistry(t *testing.T) {
 		t.Errorf("server identity or instructions differ from what the MCP server announces")
 	}
 
-	type want struct {
-		desc, method, path string
-		schema             []byte
-		kind               string
-		twoStep            bool
-	}
-	expected := map[string]want{}
-	var order []string
-	for _, tl := range mcpTools {
-		raw, _ := json.Marshal(tl.definition().InputSchema)
-		expected[tl.Name] = want{tl.Description, tl.Method, tl.Path, raw, "read", false}
-		order = append(order, tl.Name)
-	}
-	for _, tl := range mcpWriteTools {
-		raw, _ := json.Marshal(tl.definition().InputSchema)
-		expected[tl.Name] = want{tl.Description, tl.Method, tl.Pattern, raw, "write", tl.Money}
-		order = append(order, tl.Name)
-	}
+	expected, order := mcpDocsRegisteredTools()
 
 	if len(doc.Tools) != len(expected) {
 		t.Fatalf("tools.json lists %d tools, the registry has %d", len(doc.Tools), len(expected))
@@ -94,39 +77,78 @@ func TestMCPToolsJSONMatchesTheRegistry(t *testing.T) {
 		if order[i] != got.Name {
 			t.Errorf("tools.json[%d] = %q, want %q (registration order)", i, got.Name, order[i])
 		}
-		if got.Description != w.desc {
-			t.Errorf("%s: description differs from the registry", got.Name)
+		mcpDocsCheckToolEntry(t, got, w)
+		mcpDocsCheckToolPermission(t, got, w, routes)
+	}
+}
+
+// mcpDocsToolWant is what tools.json must say about one registered tool.
+type mcpDocsToolWant struct {
+	desc, method, path string
+	schema             []byte
+	kind               string
+	twoStep            bool
+}
+
+// mcpDocsRegisteredTools is every tool the MCP server registers, by name,
+// and the order they are registered in.
+func mcpDocsRegisteredTools() (map[string]mcpDocsToolWant, []string) {
+	expected := map[string]mcpDocsToolWant{}
+	var order []string
+	for _, tl := range mcpTools {
+		raw, _ := json.Marshal(tl.definition().InputSchema)
+		expected[tl.Name] = mcpDocsToolWant{tl.Description, tl.Method, tl.Path, raw, "read", false}
+		order = append(order, tl.Name)
+	}
+	for _, tl := range mcpWriteTools {
+		raw, _ := json.Marshal(tl.definition().InputSchema)
+		expected[tl.Name] = mcpDocsToolWant{tl.Description, tl.Method, tl.Pattern, raw, "write", tl.Money}
+		order = append(order, tl.Name)
+	}
+	return expected, order
+}
+
+// mcpDocsCheckToolEntry compares a listed tool with its registration.
+func mcpDocsCheckToolEntry(t *testing.T, got mcpCatalogTool, w mcpDocsToolWant) {
+	t.Helper()
+	if got.Description != w.desc {
+		t.Errorf("%s: description differs from the registry", got.Name)
+	}
+	raw, _ := json.Marshal(got.InputSchema)
+	if !jsonEqual(t, raw, w.schema) {
+		t.Errorf("%s: inputSchema differs from the registry:\n got %s\nwant %s", got.Name, raw, w.schema)
+	}
+	if got.Kind != w.kind || got.TwoStep != w.twoStep {
+		t.Errorf("%s: kind=%s twoStep=%v, want %s/%v", got.Name, got.Kind, got.TwoStep, w.kind, w.twoStep)
+	}
+	if got.Route.Method != w.method || got.Route.Path != w.path {
+		t.Errorf("%s: route %s %s, want %s %s", got.Name, got.Route.Method, got.Route.Path, w.method, w.path)
+	}
+}
+
+// mcpDocsCheckToolPermission checks a listed tool's action and roles against
+// the route it maps to and auth.Matrix.
+func mcpDocsCheckToolPermission(t *testing.T, got mcpCatalogTool, w mcpDocsToolWant, routes map[string]auth.Action) {
+	t.Helper()
+	action, mounted := routes[w.method+" "+w.path]
+	if !mounted {
+		t.Errorf("%s maps to %s %s, which is not a route", got.Name, w.method, w.path)
+		return
+	}
+	if got.Action != string(action) {
+		t.Errorf("%s: action %q, the route declares %q", got.Name, got.Action, action)
+	}
+	var roles []string
+	for _, r := range mcpCatalogRoles {
+		if auth.Allowed(r, action) {
+			roles = append(roles, string(r))
 		}
-		raw, _ := json.Marshal(got.InputSchema)
-		if !jsonEqual(t, raw, w.schema) {
-			t.Errorf("%s: inputSchema differs from the registry:\n got %s\nwant %s", got.Name, raw, w.schema)
-		}
-		if got.Kind != w.kind || got.TwoStep != w.twoStep {
-			t.Errorf("%s: kind=%s twoStep=%v, want %s/%v", got.Name, got.Kind, got.TwoStep, w.kind, w.twoStep)
-		}
-		if got.Route.Method != w.method || got.Route.Path != w.path {
-			t.Errorf("%s: route %s %s, want %s %s", got.Name, got.Route.Method, got.Route.Path, w.method, w.path)
-		}
-		action, mounted := routes[w.method+" "+w.path]
-		if !mounted {
-			t.Errorf("%s maps to %s %s, which is not a route", got.Name, w.method, w.path)
-			continue
-		}
-		if got.Action != string(action) {
-			t.Errorf("%s: action %q, the route declares %q", got.Name, got.Action, action)
-		}
-		var roles []string
-		for _, r := range mcpCatalogRoles {
-			if auth.Allowed(r, action) {
-				roles = append(roles, string(r))
-			}
-		}
-		if strings.Join(got.Roles, ",") != strings.Join(roles, ",") {
-			t.Errorf("%s: roles %v, auth.Matrix says %v", got.Name, got.Roles, roles)
-		}
-		if len(got.Roles) == 0 {
-			t.Errorf("%s: no farm role may call it", got.Name)
-		}
+	}
+	if strings.Join(got.Roles, ",") != strings.Join(roles, ",") {
+		t.Errorf("%s: roles %v, auth.Matrix says %v", got.Name, got.Roles, roles)
+	}
+	if len(got.Roles) == 0 {
+		t.Errorf("%s: no farm role may call it", got.Name)
 	}
 }
 

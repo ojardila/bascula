@@ -20,6 +20,13 @@ export interface SavedTour {
   status: WireTourStatus;
 }
 
+/**
+ * This device's copy. `pending` marks a save the server has not confirmed
+ * yet (no signal in the field): on the next load it wins over the server's
+ * older row and is handed over, instead of being thrown away.
+ */
+type LocalTour = SavedTour & { pending?: boolean };
+
 export interface TourSummary {
   owners: number;
   people: number;
@@ -43,9 +50,13 @@ export interface TourContextValue {
   resume: (tour: TourName) => void;
   goTo: (n: number) => void;
   pause: () => void;
-  /** «Saltar»: stop now, keep the place, offer it again on Cosecha. */
+  /**
+   * «Saltar» / «Ahora no»: stop now and keep the place. The first time, the
+   * resume card offers it again on Cosecha; a «no» to a tour the person had
+   * already been offered (or had declined, or finished) is final.
+   */
   later: () => void;
-  /** The × on the resume card: do not offer it again. */
+  /** «No, gracias» or the × on the resume card: do not offer it again. */
   dismiss: (tour: TourName) => void;
   finish: () => void;
   isAt: (tour: TourName, n: number) => boolean;
@@ -74,13 +85,34 @@ function storageKey(userId: string, farm: string) {
   return `bascula.tours.${userId}.${farm}`;
 }
 
-function readLocal(key: string): Partial<Record<TourName, SavedTour>> {
+function readLocal(key: string): Partial<Record<TourName, LocalTour>> {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as Partial<Record<TourName, SavedTour>>) : {};
+    return raw ? (JSON.parse(raw) as Partial<Record<TourName, LocalTour>>) : {};
   } catch {
     return {};
   }
+}
+
+function writeLocal(key: string, tour: TourName, row: LocalTour) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ ...readLocal(key), [tour]: row }));
+  } catch {
+    /* private mode: the server copy is enough */
+  }
+}
+
+/** The server took this save: this device's copy is no longer ahead of it. */
+function settleLocal(key: string, tour: TourName, step: number, status: WireTourStatus) {
+  const l = readLocal(key)[tour];
+  if (l?.pending && l.step === step && l.status === status) writeLocal(key, tour, { step, status });
+}
+
+/** What «Saltar» saves, given what was saved before this run of the tour. */
+function skipStatus(before: WireTourStatus | undefined): WireTourStatus {
+  if (before === undefined) return "later"; // the first «no»: the card offers it once
+  if (before === "done") return "done"; // watching it again after finishing
+  return "dismissed"; // the card was already offered (or declined): «no» means no
 }
 
 export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
@@ -95,6 +127,8 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
   currentRef.current = current;
   /** What this page load has saved itself, newest first over the server's copy. */
   const written = useRef<Partial<Record<TourName, SavedTour>>>({});
+  /** What was saved when the running tour was started, for «Saltar». */
+  const startedFrom = useRef<Partial<Record<TourName, SavedTour>>>({});
 
   const role = principal.role;
   const available: TourName | null = role === "owner" || role === "weigher" ? role : null;
@@ -103,20 +137,16 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
   const persist = useCallback(
     (tour: TourName, step: number, status: WireTourStatus) => {
       written.current = { ...written.current, [tour]: { step, status } };
-      setSaved((prev) => {
-        const next = { ...prev, [tour]: { step, status } };
-        if (key) {
-          try {
-            localStorage.setItem(key, JSON.stringify(next));
-          } catch {
-            /* private mode: the server copy is enough */
-          }
-        }
-        return next;
-      });
-      api.saveTour(tour, step, status).catch(() => {
-        /* offline: localStorage keeps the place until the next save */
-      });
+      setSaved((prev) => ({ ...prev, [tour]: { step, status } }));
+      if (key) writeLocal(key, tour, { step, status, pending: true });
+      api
+        .saveTour(tour, step, status)
+        .then(() => {
+          if (key) settleLocal(key, tour, step, status);
+        })
+        .catch(() => {
+          /* offline: localStorage keeps it, and the next load hands it over */
+        });
     },
     [key],
   );
@@ -160,15 +190,21 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
         if (it.tour === "owner" || it.tour === "weigher") rows[it.tour] = { step: it.step, status: it.status };
       }
       // A save that never reached the server is still the newest fact: keep
-      // it, and hand it to the server now so the next device knows too.
+      // it, and hand it to the server now so the next device knows too. That
+      // holds even when the server has an older row: a resume card closed
+      // with no signal must not come back on the next load or device.
       const local = readLocal(key);
       for (const t of ["owner", "weigher"] as TourName[]) {
         const l = local[t];
-        if (!rows[t] && l) {
-          rows[t] = l;
-          api.saveTour(t, l.step, l.status).catch(() => {
-            /* still offline: try again on the next load */
-          });
+        if (l && (l.pending || !rows[t])) {
+          const { step, status } = l;
+          rows[t] = { step, status };
+          api
+            .saveTour(t, step, status)
+            .then(() => settleLocal(key, t, step, status))
+            .catch(() => {
+              /* still offline: try again on the next load */
+            });
         }
       }
       // Whatever this page already wrote (a tour started by hand while the
@@ -180,6 +216,7 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
       if (currentRef.current || written.current[available]) return;
       const at = autoStartAt(available, rows[available]);
       if (at === null) return;
+      startedFrom.current[available] = undefined;
       setCurrent({ tour: available, n: at });
       // Mark it as shown the moment it shows: closing the page, a reload or
       // the next deploy must not bring it back by itself.
@@ -197,12 +234,14 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
     (tour: TourName, n?: number) => {
       const first = tour === "owner" ? 0 : 1;
       const at = n ?? first;
+      // A restart of the tour already running keeps where that run began.
+      if (currentRef.current?.tour !== tour) startedFrom.current[tour] = saved[tour];
       setPaused(false);
       setCurrent({ tour, n: at });
       if (tour === "owner" && at === 0) setSummary(EMPTY_SUMMARY);
       persist(tour, at, "active");
     },
-    [persist],
+    [persist, saved],
   );
 
   const resume = useCallback(
@@ -228,7 +267,11 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   const later = useCallback(() => {
     const c = currentRef.current;
-    if (c) persist(c.tour, c.n, "later");
+    if (c) {
+      const before = startedFrom.current[c.tour];
+      const status = skipStatus(before?.status);
+      persist(c.tour, status === "done" && before ? before.step : c.n, status);
+    }
     setCurrent(null);
     setPaused(false);
   }, [persist]);

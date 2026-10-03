@@ -409,6 +409,31 @@ func TestTakingSomebodyOffThePayrollDoesNotHideWhatTheyAreOwed(t *testing.T) {
 // The pull carries what the caller's role may see, and no more
 // ---------------------------------------------------------------------------
 
+// s7DrainPull pages through /v1/sync/pull as token until the feed has no
+// more, and returns the count of changes per entity and every row carried.
+func s7DrainPull(t *testing.T, h *harness, token string) (map[string]int, []any) {
+	t.Helper()
+	counts := map[string]int{}
+	rows := []any{}
+	var cursor int64
+	for {
+		res := h.mustDo(t, http.MethodGet,
+			"/v1/sync/pull?cursor="+strconv.FormatInt(cursor, 10)+"&limit=500",
+			token, nil, http.StatusOK)
+		changes, _ := res.Body["changes"].([]any)
+		for _, raw := range changes {
+			ch := raw.(map[string]any)
+			counts[ch["entity"].(string)]++
+			rows = append(rows, ch["row"])
+		}
+		cursor = mustInt(t, res.Body, "cursor")
+		if more, _ := res.Body["more"].(bool); !more {
+			break
+		}
+	}
+	return counts, rows
+}
+
 // TestTheWeighersPullCarriesNoPrices is fault 4.
 //
 // GET /v1/farm strips priceCents for a weigher and GET /v1/prices/weeks/*
@@ -423,29 +448,7 @@ func TestTheWeighersPullCarriesNoPrices(t *testing.T) {
 			map[string]any{"priceCents": 654321}, http.StatusOK)
 	}
 
-	drain := func(token string) (map[string]int, []any) {
-		counts := map[string]int{}
-		rows := []any{}
-		var cursor int64
-		for {
-			res := h.mustDo(t, http.MethodGet,
-				"/v1/sync/pull?cursor="+strconv.FormatInt(cursor, 10)+"&limit=500",
-				token, nil, http.StatusOK)
-			changes, _ := res.Body["changes"].([]any)
-			for _, raw := range changes {
-				ch := raw.(map[string]any)
-				counts[ch["entity"].(string)]++
-				rows = append(rows, ch["row"])
-			}
-			cursor = mustInt(t, res.Body, "cursor")
-			if more, _ := res.Body["more"].(bool); !more {
-				break
-			}
-		}
-		return counts, rows
-	}
-
-	counts, rows := drain(f.WeigherToken)
+	counts, rows := s7DrainPull(t, h, f.WeigherToken)
 	if counts["weekPrice"] != 0 {
 		t.Fatalf("the weigher's feed carried %d weekPrice rows", counts["weekPrice"])
 	}
@@ -463,7 +466,7 @@ func TestTheWeighersPullCarriesNoPrices(t *testing.T) {
 	}
 
 	// And the owner still gets everything, or the fix has broken the feed.
-	counts, _ = drain(f.OwnerToken)
+	counts, _ = s7DrainPull(t, h, f.OwnerToken)
 	if counts["weekPrice"] < 2 {
 		t.Fatalf("the owner's feed lost its week prices: %v", counts)
 	}
@@ -472,6 +475,25 @@ func TestTheWeighersPullCarriesNoPrices(t *testing.T) {
 // ---------------------------------------------------------------------------
 // The push keeps its own contract
 // ---------------------------------------------------------------------------
+
+// s7AssertMalformedOpIDBatch checks a push of one malformed-opId envelope
+// followed by one good one: the batch answers 200, one result per envelope,
+// the malformed one refused and the good one applied.
+func s7AssertMalformedOpIDBatch(t *testing.T, res response, rows []any) {
+	t.Helper()
+	if res.Status != http.StatusOK {
+		t.Fatalf("one malformed opId took the batch down: %d %s", res.Status, res.Raw)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want one result per envelope, got %d: %s", len(rows), res.Raw)
+	}
+	if rows[0].(map[string]any)["status"] != "rejected" {
+		t.Fatalf("the malformed envelope was not refused: %s", res.Raw)
+	}
+	if rows[1].(map[string]any)["status"] != "applied" {
+		t.Fatalf("the good envelope in the same batch was lost: %s", res.Raw)
+	}
+}
 
 // TestThePushContractHolds is fault 6, in its three parts. Each of them is a
 // promise the handler's own comment makes and did not keep.
@@ -535,19 +557,7 @@ func TestThePushContractHolds(t *testing.T) {
 			map[string]any{"opId": uuid.NewString(), "entity": "worker", "op": "upsert",
 				"payload": map[string]any{"id": good, "name": "Buena"}},
 		)
-		if res.Status != http.StatusOK {
-			t.Fatalf("one malformed opId took the batch down: %d %s", res.Status, res.Raw)
-		}
-		rows := results(res)
-		if len(rows) != 2 {
-			t.Fatalf("want one result per envelope, got %d: %s", len(rows), res.Raw)
-		}
-		if rows[0].(map[string]any)["status"] != "rejected" {
-			t.Fatalf("the malformed envelope was not refused: %s", res.Raw)
-		}
-		if rows[1].(map[string]any)["status"] != "applied" {
-			t.Fatalf("the good envelope in the same batch was lost: %s", res.Raw)
-		}
+		s7AssertMalformedOpIDBatch(t, res, results(res))
 		h.mustDo(t, http.MethodGet, "/v1/workers/"+good, f.OwnerToken, nil, http.StatusOK)
 	})
 }
@@ -640,6 +650,37 @@ func TestTheFarmsPerEmailCapMovedBehindASession(t *testing.T) {
 // A fixed-scale column is part of the contract, not a detail of storage
 // ---------------------------------------------------------------------------
 
+// s7AssertPushRefusedFourthDecimal checks that a push carrying a weighing with
+// a fourth decimal place still answers 200 with that envelope refused as a
+// BAD_REQUEST.
+func s7AssertPushRefusedFourthDecimal(t *testing.T, res response) {
+	t.Helper()
+	if res.Status != http.StatusOK {
+		t.Fatalf("the batch must still answer 200: %d %s", res.Status, res.Raw)
+	}
+	rows, _ := res.Body["results"].([]any)
+	row := rows[0].(map[string]any)
+	if row["status"] != "rejected" {
+		t.Fatalf("the push rounded a fourth decimal place: %s", res.Raw)
+	}
+	errObj, _ := row["error"].(map[string]any)
+	if errObj["code"] != string(domain.CodeBadRequest) {
+		t.Fatalf("want BAD_REQUEST — §4.3's never-retry — got %v", errObj["code"])
+	}
+}
+
+// s7AssertThreeDecimalsKept checks that a 1.001 kg work record was accepted
+// and stored unchanged.
+func s7AssertThreeDecimalsKept(t *testing.T, res response) {
+	t.Helper()
+	if res.Status != http.StatusCreated && res.Status != http.StatusOK {
+		t.Fatalf("1.001 kg is exactly representable: %d %s", res.Status, res.Raw)
+	}
+	if got, _ := res.Body["quantity"].(string); got != "" && !strings.HasPrefix(got, "1.001") {
+		t.Fatalf("a legal quantity came back as %q", got)
+	}
+}
+
 // TestAQuantityIsStoredAsItWasSentOrItIsRefused.
 //
 // work_records.quantity is numeric(12, 3), and Postgres does not REFUSE a
@@ -687,28 +728,11 @@ func TestAQuantityIsStoredAsItWasSentOrItIsRefused(t *testing.T) {
 					"id": uuid.NewString(), "workerId": worker, "quantity": 1.0005,
 					"occurredAt": "2026-08-25T14:00:00-05:00"}}},
 		})
-		if res.Status != http.StatusOK {
-			t.Fatalf("the batch must still answer 200: %d %s", res.Status, res.Raw)
-		}
-		rows, _ := res.Body["results"].([]any)
-		row := rows[0].(map[string]any)
-		if row["status"] != "rejected" {
-			t.Fatalf("the push rounded a fourth decimal place: %s", res.Raw)
-		}
-		errObj, _ := row["error"].(map[string]any)
-		if errObj["code"] != string(domain.CodeBadRequest) {
-			t.Fatalf("want BAD_REQUEST — §4.3's never-retry — got %v", errObj["code"])
-		}
+		s7AssertPushRefusedFourthDecimal(t, res)
 	})
 
 	t.Run("three decimal places still go in, unchanged", func(t *testing.T) {
-		res := post(f.OwnerToken, 1.001)
-		if res.Status != http.StatusCreated && res.Status != http.StatusOK {
-			t.Fatalf("1.001 kg is exactly representable: %d %s", res.Status, res.Raw)
-		}
-		if got, _ := res.Body["quantity"].(string); got != "" && !strings.HasPrefix(got, "1.001") {
-			t.Fatalf("a legal quantity came back as %q", got)
-		}
+		s7AssertThreeDecimalsKept(t, post(f.OwnerToken, 1.001))
 	})
 
 	t.Run("a number too large for the column is 400, not 500", func(t *testing.T) {

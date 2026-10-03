@@ -108,7 +108,26 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	f := h.signupFarm(t, "Finca MCP escritura", 250000)
 	sess := h.mcpClient(t, f.OwnerToken)
 
-	// Workers.
+	workerID := mcpwWorkers(t, sess)
+	plotID, cropID := mcpwPlot(t, sess)
+	mcpwWeighings(t, h, f, sess, workerID, plotID, cropID)
+	mcpwPrices(t, h, f, sess)
+	mcpwAdvance(t, h, f, sess, workerID)
+	settlementID := mcpwSettleAndPay(t, h, f, sess, workerID)
+	mcpwVoidSettlement(t, h, f, sess, settlementID)
+
+	// Deactivate.
+	mustTool(t, sess, "update_worker", map[string]any{"id": workerID, "status": "inactive"})
+	gw := h.mustDo(t, http.MethodGet, "/v1/workers/"+workerID, f.OwnerToken, nil, http.StatusOK)
+	if gw.Body["deletedAt"] == nil {
+		t.Errorf("update_worker status=inactive did not deactivate: %s", gw.Raw)
+	}
+}
+
+// mcpwWorkers creates and updates a worker through MCP, checks create_worker
+// is idempotent by id, and returns the first worker's id.
+func mcpwWorkers(t *testing.T, sess *mcp.ClientSession) string {
+	t.Helper()
 	w := resultOf(t, mustTool(t, sess, "create_worker", map[string]any{
 		"name": "Prueba", "lastName": "MCP", "documentType": "CC", "docId": "900000001", "tag": "77",
 	}))
@@ -124,8 +143,12 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if a["status"].(float64) != 201 || b["status"].(float64) != 200 {
 		t.Errorf("create_worker with the same id twice: %v then %v", a["status"], b["status"])
 	}
+	return workerID
+}
 
-	// Plot with its crop.
+// mcpwPlot creates a plot with its crop through MCP and returns both ids.
+func mcpwPlot(t *testing.T, sess *mcp.ClientSession) (plotID, cropID string) {
+	t.Helper()
 	plot := resultOf(t, mustTool(t, sess, "create_plot", map[string]any{
 		"name": "Lote MCP", "areaHa": 1.5, "cropType": "Café", "variety": "Castillo",
 	}))
@@ -133,9 +156,15 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if len(crops) != 1 {
 		t.Fatalf("create_plot did not create the crop: %v", plot)
 	}
-	plotID := plot["id"].(string)
-	cropID := crops[0].(map[string]any)["id"].(string)
+	plotID = plot["id"].(string)
+	cropID = crops[0].(map[string]any)["id"].(string)
+	return plotID, cropID
+}
 
+// mcpwWeighings registers a weighing and a harvest week through MCP, then
+// corrects and voids the weighing.
+func mcpwWeighings(t *testing.T, h *harness, f *farmFixture, sess *mcp.ClientSession, workerID, plotID, cropID string) {
+	t.Helper()
 	// One weighing.
 	wr := resultOf(t, mustTool(t, sess, "register_weighing", map[string]any{
 		"workerId": workerID, "kg": 12.5, "date": "2026-08-24", "plotId": plotID, "plotCropId": cropID,
@@ -173,7 +202,12 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if got.Body["deletedAt"] == nil {
 		t.Errorf("void_weighing left the record live: %s", got.Raw)
 	}
+}
 
+// mcpwPrices sets the week and base kilo prices through MCP's
+// preview-and-confirm flow, and checks a replayed confirmation is refused.
+func mcpwPrices(t *testing.T, h *harness, f *farmFixture, sess *mcp.ClientSession) {
+	t.Helper()
 	// Week price: preview, confirm.
 	priceArgs := map[string]any{"scope": "week", "monday": "2026-08-24", "priceCents": 300000}
 	tok, pv := previewToken(t, sess, "set_kilo_price", priceArgs)
@@ -206,11 +240,16 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	baseArgs := map[string]any{"scope": "base", "monday": "2026-08-31", "priceCents": 260000}
 	tok, _ = previewToken(t, sess, "set_kilo_price", baseArgs)
 	mustTool(t, sess, "set_kilo_price", withToken(baseArgs, tok))
+}
 
+// mcpwAdvance registers an advance: the preview writes nothing and the token
+// used twice writes once.
+func mcpwAdvance(t *testing.T, h *harness, f *farmFixture, sess *mcp.ClientSession, workerID string) {
+	t.Helper()
 	// Advance: preview writes nothing; the token used twice writes once.
 	before := ledgerLen(t, h, f, workerID)
 	advArgs := map[string]any{"workerId": workerID, "amountCents": 1000000, "method": "efectivo"}
-	tok, _ = previewToken(t, sess, "register_advance", advArgs)
+	tok, _ := previewToken(t, sess, "register_advance", advArgs)
 	if ledgerLen(t, h, f, workerID) != before {
 		t.Fatal("the advance preview wrote to the ledger")
 	}
@@ -222,10 +261,15 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if ledgerLen(t, h, f, workerID) != before+1 {
 		t.Fatalf("one confirmation, used twice, should write exactly one movement")
 	}
+}
 
+// mcpwSettleAndPay settles the week through MCP, pays against the balance, and
+// returns the settlement id.
+func mcpwSettleAndPay(t *testing.T, h *harness, f *farmFixture, sess *mcp.ClientSession, workerID string) string {
+	t.Helper()
 	// Settlement: 87.5 kg at $3.000 = $262.500.
 	setArgs := map[string]any{"workerId": workerID, "from": "2026-08-24", "to": "2026-08-30"}
-	tok, pv = previewToken(t, sess, "create_settlement", setArgs)
+	tok, pv := previewToken(t, sess, "create_settlement", setArgs)
 	facts := pv["preview"].(map[string]any)
 	if facts["grossCents"].(float64) != 26250000 {
 		t.Errorf("settlement preview gross: %v", facts["grossCents"])
@@ -249,10 +293,16 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	if bal := balanceOf(t, h, f, workerID); bal != 5250000 {
 		t.Fatalf("balance after one confirmed payment used twice: %d, want 5250000", bal)
 	}
+	return settlementID
+}
 
+// mcpwVoidSettlement voids the settlement through MCP; a retry is harmless and
+// previewing the void of a void settlement is refused.
+func mcpwVoidSettlement(t *testing.T, h *harness, f *farmFixture, sess *mcp.ClientSession, settlementID string) {
+	t.Helper()
 	// Void the settlement.
 	voidArgs := map[string]any{"id": settlementID}
-	tok, _ = previewToken(t, sess, "void_settlement", voidArgs)
+	tok, _ := previewToken(t, sess, "void_settlement", voidArgs)
 	mustTool(t, sess, "void_settlement", withToken(voidArgs, tok))
 	mustTool(t, sess, "void_settlement", withToken(voidArgs, tok)) // a retry is harmless
 	vs := h.mustDo(t, http.MethodGet, "/v1/settlements/"+settlementID, f.OwnerToken, nil, http.StatusOK)
@@ -262,13 +312,6 @@ func TestMCPWriteToolsEndToEnd(t *testing.T) {
 	res := callTool(t, sess, "void_settlement", voidArgs)
 	if !res.IsError || !strings.Contains(toolText(res), "ya está anulada") {
 		t.Errorf("previewing the void of a void settlement should refuse: %s", toolText(res))
-	}
-
-	// Deactivate.
-	mustTool(t, sess, "update_worker", map[string]any{"id": workerID, "status": "inactive"})
-	gw := h.mustDo(t, http.MethodGet, "/v1/workers/"+workerID, f.OwnerToken, nil, http.StatusOK)
-	if gw.Body["deletedAt"] == nil {
-		t.Errorf("update_worker status=inactive did not deactivate: %s", gw.Raw)
 	}
 }
 

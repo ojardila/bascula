@@ -62,42 +62,11 @@ func TestARevokedPlatformFlagDiesOnTheNextRequest(t *testing.T) {
 	})
 
 	t.Run("and so is the suspend button", func(t *testing.T) {
-		res := h.do(t, http.MethodPatch, "/v1/admin/farms/"+other.FarmID, forged,
-			map[string]any{"status": "suspended"})
-		if res.Status != http.StatusUnauthorized ||
-			res.code() != string(domain.CodePlatformRoleChanged) {
-			t.Fatalf("a dismissed administrator suspended somebody else's farm: "+
-				"got %d %s, want 401 PLATFORM_ROLE_CHANGED", res.Status, res.Raw)
-		}
-		// And the row, because a 4xx that still wrote would be the worse bug.
-		var suspended *string
-		if err := h.admin.QueryRow(context.Background(),
-			`SELECT suspended_at::text FROM farms WHERE id = $1`, other.FarmID).
-			Scan(&suspended); err != nil {
-			t.Fatalf("read the farm back: %v", err)
-		}
-		if suspended != nil {
-			t.Fatalf("the farm was suspended anyway, at %s", *suspended)
-		}
+		superadminRevokedCannotSuspend(t, h, other, forged)
 	})
 
 	t.Run("nor does the claim still buy an exemption", func(t *testing.T) {
-		// The flag exempts its holder from FARM_SUSPENDED, and a claim nobody
-		// checked was therefore a way to go on working through a suspension.
-		if _, err := h.admin.Exec(context.Background(),
-			`UPDATE farms SET suspended_at = now() WHERE id = $1`, mine.FarmID); err != nil {
-			t.Fatalf("suspend the farm: %v", err)
-		}
-		res := h.do(t, http.MethodGet, "/v1/workers", forged, nil)
-		if res.Status != http.StatusUnauthorized ||
-			res.code() != string(domain.CodePlatformRoleChanged) {
-			t.Fatalf("the claim carried its holder through a suspension: "+
-				"got %d %s, want 401 PLATFORM_ROLE_CHANGED", res.Status, res.Raw)
-		}
-		if _, err := h.admin.Exec(context.Background(),
-			`UPDATE farms SET suspended_at = NULL WHERE id = $1`, mine.FarmID); err != nil {
-			t.Fatalf("bring the farm back: %v", err)
-		}
+		superadminRevokedBuysNoExemption(t, h, mine, forged)
 	})
 
 	t.Run("the token without the claim goes on working", func(t *testing.T) {
@@ -122,6 +91,45 @@ func TestARevokedPlatformFlagDiesOnTheNextRequest(t *testing.T) {
 		real := h.superadminToken(t, mine.FarmID)
 		h.mustDo(t, http.MethodGet, "/v1/admin/farms", real, nil, http.StatusOK)
 	})
+}
+
+func superadminRevokedCannotSuspend(t *testing.T, h *harness, other *farmFixture, forged string) {
+	res := h.do(t, http.MethodPatch, "/v1/admin/farms/"+other.FarmID, forged,
+		map[string]any{"status": "suspended"})
+	if res.Status != http.StatusUnauthorized ||
+		res.code() != string(domain.CodePlatformRoleChanged) {
+		t.Fatalf("a dismissed administrator suspended somebody else's farm: "+
+			"got %d %s, want 401 PLATFORM_ROLE_CHANGED", res.Status, res.Raw)
+	}
+	// And the row, because a 4xx that still wrote would be the worse bug.
+	var suspended *string
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT suspended_at::text FROM farms WHERE id = $1`, other.FarmID).
+		Scan(&suspended); err != nil {
+		t.Fatalf("read the farm back: %v", err)
+	}
+	if suspended != nil {
+		t.Fatalf("the farm was suspended anyway, at %s", *suspended)
+	}
+}
+
+func superadminRevokedBuysNoExemption(t *testing.T, h *harness, mine *farmFixture, forged string) {
+	// The flag exempts its holder from FARM_SUSPENDED, and a claim nobody
+	// checked was therefore a way to go on working through a suspension.
+	if _, err := h.admin.Exec(context.Background(),
+		`UPDATE farms SET suspended_at = now() WHERE id = $1`, mine.FarmID); err != nil {
+		t.Fatalf("suspend the farm: %v", err)
+	}
+	res := h.do(t, http.MethodGet, "/v1/workers", forged, nil)
+	if res.Status != http.StatusUnauthorized ||
+		res.code() != string(domain.CodePlatformRoleChanged) {
+		t.Fatalf("the claim carried its holder through a suspension: "+
+			"got %d %s, want 401 PLATFORM_ROLE_CHANGED", res.Status, res.Raw)
+	}
+	if _, err := h.admin.Exec(context.Background(),
+		`UPDATE farms SET suspended_at = NULL WHERE id = $1`, mine.FarmID); err != nil {
+		t.Fatalf("bring the farm back: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

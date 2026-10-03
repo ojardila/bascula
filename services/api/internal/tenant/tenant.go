@@ -203,80 +203,101 @@ func withPlatformOnly(ctx context.Context) context.Context {
 func Middleware(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Request, error)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-
-			tx, err := pool.Begin(ctx)
-			if err != nil {
-				onError(w, r, domain.Internal("could not open a transaction").WithCause(err))
-				return
-			}
-			if testTxWrap != nil {
-				tx = testTxWrap(ctx, tx)
-			}
-			committed := false
-			defer func() {
-				if !committed {
-					_ = tx.Rollback(ctx)
-				}
-			}()
-
-			ctx = withTx(ctx, tx)
-			keep := &keepChanges{}
-			ctx = context.WithValue(ctx, keepKey, keep)
-			after := &afterRequest{}
-			ctx = context.WithValue(ctx, afterKey, after)
-
-			// The callbacks run on the way out of EVERY path through this
-			// middleware, including the ones that answer before the handler is
-			// reached. An audit row that only survives when the request got as
-			// far as the handler is not an audit row.
-			defer func() {
-				if len(after.fns) == 0 {
-					return
-				}
-				if !committed {
-					_ = tx.Rollback(ctx)
-					committed = true
-				}
-				bare := context.WithValue(r.Context(), afterKey, (*afterRequest)(nil))
-				for _, fn := range after.fns {
-					fn(bare)
-				}
-			}()
-
-			if p, ok := auth.PrincipalFrom(ctx); ok && p.FarmID != "" {
-				outside, err := setContext(ctx, tx, p, enforceMembership)
-				if err != nil {
-					onError(w, r, err)
-					return
-				}
-				ctx = withFarm(ctx, p.FarmID)
-				if outside {
-					ctx = withPlatformOnly(ctx)
-				}
-			}
-
-			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-			next.ServeHTTP(rec, r.WithContext(ctx))
-
-			// A write that answered 4xx or 5xx must not leave rows behind —
-			// unless the handler said otherwise with KeepChanges, which is how
-			// a deliberate side effect survives an error response without
-			// reaching for a second pool connection. See KeepChanges.
-			//
-			// And the mirror: DiscardChanges throws away a successful
-			// request's writes, which is how signup spends the same work on an
-			// address it will not create anything for. See DiscardChanges.
-			if (rec.status < 400 || keep.keep) && !keep.discard {
-				if err := tx.Commit(ctx); err != nil {
-					// Nothing useful can be written now: the handler already
-					// sent its status line.
-					_ = err
-				}
-				committed = true
-			}
+			serveInTx(pool, onError, next, w, r)
 		})
 	}
+}
+
+// serveInTx is one request through Middleware: open the transaction, pin it,
+// run the handler, and commit or roll back on the way out.
+func serveInTx(pool *pgxpool.Pool, onError func(http.ResponseWriter, *http.Request, error), next http.Handler, w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		onError(w, r, domain.Internal("could not open a transaction").WithCause(err))
+		return
+	}
+	if testTxWrap != nil {
+		tx = testTxWrap(ctx, tx)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	ctx = withTx(ctx, tx)
+	keep := &keepChanges{}
+	ctx = context.WithValue(ctx, keepKey, keep)
+	after := &afterRequest{}
+	ctx = context.WithValue(ctx, afterKey, after)
+
+	// The callbacks run on the way out of EVERY path through this
+	// middleware, including the ones that answer before the handler is
+	// reached. An audit row that only survives when the request got as
+	// far as the handler is not an audit row.
+	defer func() { runAfterRequest(ctx, r, tx, after, &committed) }()
+
+	ctx, err = pinFarm(ctx, tx)
+	if err != nil {
+		onError(w, r, err)
+		return
+	}
+
+	rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	next.ServeHTTP(rec, r.WithContext(ctx))
+
+	// A write that answered 4xx or 5xx must not leave rows behind —
+	// unless the handler said otherwise with KeepChanges, which is how
+	// a deliberate side effect survives an error response without
+	// reaching for a second pool connection. See KeepChanges.
+	//
+	// And the mirror: DiscardChanges throws away a successful
+	// request's writes, which is how signup spends the same work on an
+	// address it will not create anything for. See DiscardChanges.
+	if (rec.status < 400 || keep.keep) && !keep.discard {
+		if err := tx.Commit(ctx); err != nil {
+			// Nothing useful can be written now: the handler already
+			// sent its status line.
+			_ = err
+		}
+		committed = true
+	}
+}
+
+// runAfterRequest runs the AfterRequest callbacks once the request
+// transaction is finished, rolling it back first if nothing committed it.
+func runAfterRequest(ctx context.Context, r *http.Request, tx pgx.Tx, after *afterRequest, committed *bool) {
+	if len(after.fns) == 0 {
+		return
+	}
+	if !*committed {
+		_ = tx.Rollback(ctx)
+		*committed = true
+	}
+	bare := context.WithValue(r.Context(), afterKey, (*afterRequest)(nil))
+	for _, fn := range after.fns {
+		fn(bare)
+	}
+}
+
+// pinFarm pins the session to the caller's farm, when the caller carries one.
+func pinFarm(ctx context.Context, tx pgx.Tx) (context.Context, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok || p.FarmID == "" {
+		return ctx, nil
+	}
+	outside, err := setContext(ctx, tx, p, enforceMembership)
+	if err != nil {
+		return ctx, err
+	}
+	ctx = withFarm(ctx, p.FarmID)
+	if outside {
+		ctx = withPlatformOnly(ctx)
+	}
+	return ctx, nil
 }
 
 // membershipCheck says whether the caller's membership of this farm has to
@@ -485,13 +506,19 @@ func setContext(ctx context.Context, tx pgx.Tx, p *auth.Principal, check members
 	// belt-and-braces the money policies are written under — "denying it in
 	// the middleware is the message; denying it here is the guarantee".
 	if check == enforceMembership && !member {
-		if _, err := tx.Exec(ctx,
-			`SELECT set_config('app.role', $1, true)`, platformRole); err != nil {
-			return false, domain.Internal("could not narrow the tenant role").WithCause(err)
-		}
-		return true, nil
+		return narrowToPlatformRole(ctx, tx)
 	}
 	return false, nil
+}
+
+// narrowToPlatformRole drops the token's role claim for a platform
+// administrator with no membership row; see the end of setContext.
+func narrowToPlatformRole(ctx context.Context, tx pgx.Tx) (bool, error) {
+	if _, err := tx.Exec(ctx,
+		`SELECT set_config('app.role', $1, true)`, platformRole); err != nil {
+		return false, domain.Internal("could not narrow the tenant role").WithCause(err)
+	}
+	return true, nil
 }
 
 // SetForSignup pins the session to a farm that is being created in this very

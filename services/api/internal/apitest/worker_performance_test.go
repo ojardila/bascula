@@ -115,87 +115,11 @@ func TestWorkerPerformance(t *testing.T) {
 		if res.Status != http.StatusOK {
 			t.Fatalf("status %d: %s", res.Status, res.Raw)
 		}
-		r := decodeInto[perfReport](t, res)
-
-		if r.Scope != "harvest" || r.EmployeeID != ana || r.ThisWeek != thisMonday || r.Today != today {
-			t.Errorf("envelope: %+v", r)
-		}
-		if r.LastRecordOn == nil || *r.LastRecordOn != at(0, 0) {
-			t.Errorf("lastRecordOn = %v, want %s", r.LastRecordOn, at(0, 0))
-		}
-		if len(r.Weeks) != 12 {
-			t.Fatalf("weeks: got %d, want 12", len(r.Weeks))
-		}
-		for i, w := range r.Weeks {
-			if want := at(11-i, 0); w.WeekStart != want {
-				t.Errorf("week %d starts %s, want %s", i, w.WeekStart, want)
-			}
-			if w.Finished != (i < 11) {
-				t.Errorf("week %s finished=%v", w.WeekStart, w.Finished)
-			}
-		}
-
-		cur, last, three := r.Weeks[11], r.Weeks[10], r.Weeks[8]
-		wantKg(t, "this week", cur.Kg, 30)
-		if cur.Records != 2 || cur.RecordsNotInKg != 1 || cur.DaysWorked != 1 {
-			t.Errorf("this week counts: %+v", cur)
-		}
-		wantKg(t, "farm average this week", cur.FarmAvgKg, 30)
-		wantKg(t, "last week", last.Kg, 70)
-		if last.DaysWorked != 2 || last.FarmPickers != 2 {
-			t.Errorf("last week counts: %+v", last)
-		}
-		// (70 + 60) / 2 pickers — Carla, who picked nothing, is not in it.
-		wantKg(t, "farm average last week", last.FarmAvgKg, 65)
-		wantKg(t, "three weeks back", three.Kg, 40)
-		if empty := r.Weeks[9]; empty.Kg != nil || empty.Records != 0 || empty.FarmAvgKg != nil {
-			t.Errorf("an empty week must be records 0 and null kilos: %+v", empty)
-		}
-		if r.RecordsNotInKg != 1 {
-			t.Errorf("recordsNotInKg = %d, want 1", r.RecordsNotInKg)
-		}
-
-		wantKg(t, "summary this week", r.Summary.ThisWeekKg, 30)
-		wantKg(t, "summary last week", r.Summary.LastWeekKg, 70)
-		lastToDate := 20.0
-		if isSunday {
-			lastToDate += 50
-		}
-		wantKg(t, "last week to date", r.Summary.LastWeekToDateKg, lastToDate)
-		if r.Summary.RecentFrom != at(3, 0) {
-			t.Errorf("recentFrom = %s, want %s", r.Summary.RecentFrom, at(3, 0))
-		}
-		wantKg(t, "recent kilos", r.Summary.RecentKg, 140)
-		if r.Summary.RecentDaysWorked != 4 {
-			t.Errorf("recentDaysWorked = %d, want 4", r.Summary.RecentDaysWorked)
-		}
-		wantKg(t, "kilos per day worked", r.Summary.KgPerDayWorked, 35)
-
-		if len(r.Days) != 7 {
-			t.Fatalf("days: got %d, want 7", len(r.Days))
-		}
-		wantKg(t, "Monday", r.Days[0].Kg, 30)
-		for i, d := range r.Days {
-			if d.Day != at(0, i) {
-				t.Errorf("day %d is %s, want %s", i, d.Day, at(0, i))
-			}
-			if d.Future != (d.Day > today) {
-				t.Errorf("day %s future=%v with today %s", d.Day, d.Future, today)
-			}
-			if i > 0 && d.Kg != nil {
-				t.Errorf("day %s has kilos nobody picked: %v", d.Day, *d.Kg)
-			}
-		}
-
-		if len(r.Plots) != 2 || r.Plots[0].Name != "Lote Alto" || r.Plots[1].Name != "Lote Bajo" {
-			t.Fatalf("plots: %+v", r.Plots)
-		}
-		if r.Plots[0].Kg != 100 || r.Plots[0].Records != 3 || r.Plots[1].Kg != 40 {
-			t.Errorf("plots: %+v", r.Plots)
-		}
-		if r.UnattributedKg != nil {
-			t.Errorf("unattributedKg = %v, want null", *r.UnattributedKg)
-		}
+		perfTheFigures(t, perfFiguresCase{
+			r:   decodeInto[perfReport](t, res),
+			ana: ana, today: today, thisMonday: thisMonday,
+			isSunday: isSunday, at: at,
+		})
 	})
 
 	t.Run("weeks is bounded", func(t *testing.T) {
@@ -221,30 +145,142 @@ func TestWorkerPerformance(t *testing.T) {
 	})
 
 	t.Run("roles and tenancy", func(t *testing.T) {
-		if res := get(f.AdminToken, ana, ""); res.Status != http.StatusOK {
-			t.Errorf("admin: %d", res.Status)
-		}
-		if res := get(f.WeigherToken, ana, ""); res.Status != http.StatusForbidden {
-			t.Errorf("weigher: got %d, want 403", res.Status)
-		}
-		if res := get("", ana, ""); res.Status != http.StatusUnauthorized {
-			t.Errorf("no token: got %d, want 401", res.Status)
-		}
-		other := h.signupFarm(t, "Finca vecina", 80000)
-		if res := get(other.OwnerToken, ana, ""); res.Status != http.StatusNotFound {
-			t.Errorf("another farm's owner: got %d, want 404 — %s", res.Status, res.Raw)
-		}
-		if res := get(f.OwnerToken, uuid.NewString(), ""); res.Status != http.StatusNotFound {
-			t.Errorf("unknown worker: got %d, want 404", res.Status)
-		}
-		// The neighbour's own picker must not leak Ana's farm into its average.
-		pedro := h.createWorker(t, other, "Pedro", "30000001")
-		r := decodeInto[perfReport](t, h.mustDo(t, http.MethodGet,
-			"/v1/workers/"+pedro+"/performance", other.OwnerToken, nil, http.StatusOK))
-		for _, w := range r.Weeks {
-			if w.FarmAvgKg != nil || w.FarmPickers != 0 {
-				t.Errorf("another farm's weighings leaked into the average: %+v", w)
-			}
-		}
+		perfRolesAndTenancy(t, h, f, ana, get)
 	})
+}
+
+func perfTheFigures(t *testing.T, c perfFiguresCase) {
+	r := c.r
+	if r.Scope != "harvest" || r.EmployeeID != c.ana || r.ThisWeek != c.thisMonday || r.Today != c.today {
+		t.Errorf("envelope: %+v", r)
+	}
+	if r.LastRecordOn == nil || *r.LastRecordOn != c.at(0, 0) {
+		t.Errorf("lastRecordOn = %v, want %s", r.LastRecordOn, c.at(0, 0))
+	}
+	perfFiguresWeeks(t, c)
+	perfFiguresSummary(t, c)
+	perfFiguresDays(t, c)
+	perfFiguresPlots(t, r)
+}
+
+// perfFiguresCase is what TestWorkerPerformance's "the figures" checks the
+// report against.
+type perfFiguresCase struct {
+	r                      perfReport
+	ana, today, thisMonday string
+	isSunday               bool
+	at                     func(weeksBack, dayOfWeek int) string
+}
+
+func perfFiguresWeeks(t *testing.T, c perfFiguresCase) {
+	r := c.r
+	if len(r.Weeks) != 12 {
+		t.Fatalf("weeks: got %d, want 12", len(r.Weeks))
+	}
+	for i, w := range r.Weeks {
+		if want := c.at(11-i, 0); w.WeekStart != want {
+			t.Errorf("week %d starts %s, want %s", i, w.WeekStart, want)
+		}
+		if w.Finished != (i < 11) {
+			t.Errorf("week %s finished=%v", w.WeekStart, w.Finished)
+		}
+	}
+
+	cur, last, three := r.Weeks[11], r.Weeks[10], r.Weeks[8]
+	wantKg(t, "this week", cur.Kg, 30)
+	if cur.Records != 2 || cur.RecordsNotInKg != 1 || cur.DaysWorked != 1 {
+		t.Errorf("this week counts: %+v", cur)
+	}
+	wantKg(t, "farm average this week", cur.FarmAvgKg, 30)
+	wantKg(t, "last week", last.Kg, 70)
+	if last.DaysWorked != 2 || last.FarmPickers != 2 {
+		t.Errorf("last week counts: %+v", last)
+	}
+	// (70 + 60) / 2 pickers — Carla, who picked nothing, is not in it.
+	wantKg(t, "farm average last week", last.FarmAvgKg, 65)
+	wantKg(t, "three weeks back", three.Kg, 40)
+	if empty := r.Weeks[9]; empty.Kg != nil || empty.Records != 0 || empty.FarmAvgKg != nil {
+		t.Errorf("an empty week must be records 0 and null kilos: %+v", empty)
+	}
+	if r.RecordsNotInKg != 1 {
+		t.Errorf("recordsNotInKg = %d, want 1", r.RecordsNotInKg)
+	}
+}
+
+func perfFiguresSummary(t *testing.T, c perfFiguresCase) {
+	r := c.r
+	wantKg(t, "summary this week", r.Summary.ThisWeekKg, 30)
+	wantKg(t, "summary last week", r.Summary.LastWeekKg, 70)
+	lastToDate := 20.0
+	if c.isSunday {
+		lastToDate += 50
+	}
+	wantKg(t, "last week to date", r.Summary.LastWeekToDateKg, lastToDate)
+	if r.Summary.RecentFrom != c.at(3, 0) {
+		t.Errorf("recentFrom = %s, want %s", r.Summary.RecentFrom, c.at(3, 0))
+	}
+	wantKg(t, "recent kilos", r.Summary.RecentKg, 140)
+	if r.Summary.RecentDaysWorked != 4 {
+		t.Errorf("recentDaysWorked = %d, want 4", r.Summary.RecentDaysWorked)
+	}
+	wantKg(t, "kilos per day worked", r.Summary.KgPerDayWorked, 35)
+}
+
+func perfFiguresDays(t *testing.T, c perfFiguresCase) {
+	r := c.r
+	if len(r.Days) != 7 {
+		t.Fatalf("days: got %d, want 7", len(r.Days))
+	}
+	wantKg(t, "Monday", r.Days[0].Kg, 30)
+	for i, d := range r.Days {
+		if d.Day != c.at(0, i) {
+			t.Errorf("day %d is %s, want %s", i, d.Day, c.at(0, i))
+		}
+		if d.Future != (d.Day > c.today) {
+			t.Errorf("day %s future=%v with today %s", d.Day, d.Future, c.today)
+		}
+		if i > 0 && d.Kg != nil {
+			t.Errorf("day %s has kilos nobody picked: %v", d.Day, *d.Kg)
+		}
+	}
+}
+
+func perfFiguresPlots(t *testing.T, r perfReport) {
+	if len(r.Plots) != 2 || r.Plots[0].Name != "Lote Alto" || r.Plots[1].Name != "Lote Bajo" {
+		t.Fatalf("plots: %+v", r.Plots)
+	}
+	if r.Plots[0].Kg != 100 || r.Plots[0].Records != 3 || r.Plots[1].Kg != 40 {
+		t.Errorf("plots: %+v", r.Plots)
+	}
+	if r.UnattributedKg != nil {
+		t.Errorf("unattributedKg = %v, want null", *r.UnattributedKg)
+	}
+}
+
+func perfRolesAndTenancy(t *testing.T, h *harness, f *farmFixture, ana string, get func(token, id, query string) response) {
+	if res := get(f.AdminToken, ana, ""); res.Status != http.StatusOK {
+		t.Errorf("admin: %d", res.Status)
+	}
+	if res := get(f.WeigherToken, ana, ""); res.Status != http.StatusForbidden {
+		t.Errorf("weigher: got %d, want 403", res.Status)
+	}
+	if res := get("", ana, ""); res.Status != http.StatusUnauthorized {
+		t.Errorf("no token: got %d, want 401", res.Status)
+	}
+	other := h.signupFarm(t, "Finca vecina", 80000)
+	if res := get(other.OwnerToken, ana, ""); res.Status != http.StatusNotFound {
+		t.Errorf("another farm's owner: got %d, want 404 — %s", res.Status, res.Raw)
+	}
+	if res := get(f.OwnerToken, uuid.NewString(), ""); res.Status != http.StatusNotFound {
+		t.Errorf("unknown worker: got %d, want 404", res.Status)
+	}
+	// The neighbour's own picker must not leak Ana's farm into its average.
+	pedro := h.createWorker(t, other, "Pedro", "30000001")
+	r := decodeInto[perfReport](t, h.mustDo(t, http.MethodGet,
+		"/v1/workers/"+pedro+"/performance", other.OwnerToken, nil, http.StatusOK))
+	for _, w := range r.Weeks {
+		if w.FarmAvgKg != nil || w.FarmPickers != 0 {
+			t.Errorf("another farm's weighings leaked into the average: %+v", w)
+		}
+	}
 }

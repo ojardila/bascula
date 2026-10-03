@@ -260,116 +260,30 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// will. Each registration is a row that nothing prunes; the cap per address
 	// and the size limits below are what keep a loop from filling the disk.
 	if !s.oauthRegs.allow(clientIP(r), time.Now()) || !s.oauthRegistrationBudgetLeft(r) {
-		w.Header().Set("Retry-After", "3600")
-		w.Header().Set(headerContentType, contentTypeJSON)
-		w.WriteHeader(http.StatusTooManyRequests)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"error":             "invalid_client_metadata",
-			"error_description": "too many registrations from this address, try again later",
-		})
+		oauthRegTooMany(w)
 		return
 	}
-	var raw map[string]any
+	var raw oauthRegMeta
 	if err := json.NewDecoder(io.LimitReader(r.Body, oauthRegisterMaxBody)).Decode(&raw); err != nil || raw == nil {
 		slog.Warn("connector request register body", "error", "not a JSON object")
 		oauthRegisterError(w, "invalid_client_metadata", "the body is not a JSON client registration")
 		return
 	}
-	str := func(k string) string {
-		v, _ := raw[k].(string)
-		return strings.TrimSpace(v)
-	}
-	list := func(k string) []string {
-		var out []string
-		switch v := raw[k].(type) {
-		case []any:
-			for _, e := range v {
-				if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
-					out = append(out, strings.TrimSpace(s))
-				}
-			}
-		case string:
-			if strings.TrimSpace(v) != "" {
-				out = []string{strings.TrimSpace(v)}
-			}
-		}
-		return out
-	}
 
-	redirects := list("redirect_uris")
-	requestedMethod := str("token_endpoint_auth_method")
-	method := requestedMethod
-	switch method {
-	case "", "none":
-		method = "none"
-	case "client_secret_post", "client_secret_basic":
-	default:
-		// private_key_jwt, tls_client_auth, ...: not supported. RFC 7591 §2
-		// lets the server register a different method; PKCE public client is
-		// the one every MCP host can use.
-		method = "none"
-	}
-	var grants []string
-	for _, g := range list("grant_types") {
-		if (g == "authorization_code" || g == "refresh_token") && !containsString(grants, g) {
-			grants = append(grants, g)
-		}
-	}
-	if !containsString(grants, "authorization_code") {
-		grants = append([]string{"authorization_code"}, grants...)
-	}
-	if !containsString(grants, "refresh_token") {
-		grants = append(grants, "refresh_token")
-	}
-	scope := strings.Join(strings.Fields(str("scope")), " ")
+	redirects := raw.list("redirect_uris")
+	requestedMethod := raw.str("token_endpoint_auth_method")
+	method := oauthRegAuthMethod(requestedMethod)
+	grants := oauthRegGrants(raw.list("grant_types"))
+	scope := strings.Join(strings.Fields(raw.str("scope")), " ")
 	if scope == "" {
 		scope = strings.Join(oauthScopesSupported, " ")
 	}
 
-	// Temporary diagnostics: what the connector asked for. Keys and
-	// non-secret values only; a registration carries no secret, but a
-	// software_statement (a signed JWT) is left out anyway.
-	keys := make([]string, 0, len(raw))
-	for k := range raw {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	slog.Info("connector request register body",
-		"ua", logsafe.Str(r.UserAgent()),
-		"keys", logsafe.Strs(keys),
-		"client_name", logsafe.Str(str("client_name")),
-		"redirect_uris", logsafe.Strs(redirects),
-		"grant_types", logsafe.Strs(list("grant_types")),
-		"response_types", logsafe.Strs(list("response_types")),
-		"token_endpoint_auth_method", logsafe.Str(requestedMethod),
-		"granted_auth_method", logsafe.Str(method),
-		"scope", logsafe.Str(str("scope")),
-		"application_type", logsafe.Str(str("application_type")),
-	)
+	oauthRegLogBody(r, raw, redirects, requestedMethod, method)
 
-	if len(redirects) == 0 {
-		oauthRegisterError(w, "invalid_redirect_uri", "redirect_uris is required")
+	if code, desc := oauthRegCheckMetadata(redirects, raw.list("response_types")); code != "" {
+		oauthRegisterError(w, code, desc)
 		return
-	}
-	if len(redirects) > oauthMaxRedirects {
-		oauthRegisterError(w, "invalid_redirect_uri", "too many redirect_uris")
-		return
-	}
-	for _, u := range redirects {
-		if len(u) > oauthMaxRedirectLen {
-			oauthRegisterError(w, "invalid_redirect_uri", "redirect_uri is too long")
-			return
-		}
-		if err := oauthRedirectOK(u); err != nil {
-			oauthRegisterError(w, "invalid_redirect_uri", err.Error())
-			return
-		}
-	}
-	for _, rt := range list("response_types") {
-		if rt != "code" {
-			oauthRegisterError(w, "invalid_client_metadata", "only the code response type is supported")
-			return
-		}
 	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -384,7 +298,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// The name is shown on the sign-in page, so it is kept short and plain:
 	// no control or bidi-override characters that could make «ChatGPT» out
 	// of something else (it is HTML-escaped on the page as well).
-	name := sanitizeClientName(str("client_name"))
+	name := sanitizeClientName(raw.str("client_name"))
 	if name == "" {
 		name = "mcp-client"
 	}
@@ -399,18 +313,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		"token_endpoint_auth_method": method,
 		"scope":                      scope,
 	}
-	// Every other field the client registered is echoed verbatim (RFC 7591
-	// §3.2.1), except anything secret-shaped the server does not keep.
-	for k, v := range raw {
-		if _, set := resp[k]; set || v == nil {
-			continue
-		}
-		switch k {
-		case "client_secret", "client_secret_expires_at", "software_statement", "client_id", "client_id_issued_at":
-			continue
-		}
-		resp[k] = v
-	}
+	oauthRegEchoMetadata(resp, raw)
 	stored, err := json.Marshal(resp)
 	if err != nil {
 		writeError(w, r, domain.Internal("could not encode the registration").WithCause(err))
@@ -426,18 +329,10 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	var secretHash []byte
-	if method != "none" {
-		secret, err := randomToken(32)
-		if err != nil {
-			writeError(w, r, domain.Internal("could not mint a client secret").WithCause(err))
-			return
-		}
-		secretHash = auth.HashToken(secret)
-		resp["client_secret"] = secret
-		// 0: the secret does not expire. A connector whose secret lapsed
-		// would fail with invalid_client long after it was set up.
-		resp["client_secret_expires_at"] = 0
+	secretHash, err := oauthRegMintSecret(method, resp)
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
 	if err := store.InsertOAuthClientFrom(r.Context(), tx, store.OAuthClient{
 		ID: id, Name: name, RedirectURIs: redirects,
@@ -448,6 +343,164 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// oauthRegMintSecret mints the secret of a confidential client, adds it to
+// the registration response and returns its hash, the only form stored. A
+// public client ("none") gets no secret and a nil hash.
+func oauthRegMintSecret(method string, resp map[string]any) ([]byte, error) {
+	if method == "none" {
+		return nil, nil
+	}
+	secret, err := randomToken(32)
+	if err != nil {
+		return nil, domain.Internal("could not mint a client secret").WithCause(err)
+	}
+	resp["client_secret"] = secret
+	// 0: the secret does not expire. A connector whose secret lapsed
+	// would fail with invalid_client long after it was set up.
+	resp["client_secret_expires_at"] = 0
+	return auth.HashToken(secret), nil
+}
+
+// oauthRegTooMany is the registration endpoint's 429: an RFC 7591 error body
+// with a Retry-After, so a connector backs off instead of looping.
+func oauthRegTooMany(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "3600")
+	w.Header().Set(headerContentType, contentTypeJSON)
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":             "invalid_client_metadata",
+		"error_description": "too many registrations from this address, try again later",
+	})
+}
+
+// oauthRegMeta is a registration body decoded leniently: any JSON object.
+type oauthRegMeta map[string]any
+
+// str is the trimmed string value of k, or "" when it is absent or not a
+// string.
+func (m oauthRegMeta) str(k string) string {
+	v, _ := m[k].(string)
+	return strings.TrimSpace(v)
+}
+
+// list is the non-empty trimmed strings of k, which may be a JSON array or a
+// single string.
+func (m oauthRegMeta) list(k string) []string {
+	var out []string
+	switch v := m[k].(type) {
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+	case string:
+		if strings.TrimSpace(v) != "" {
+			out = []string{strings.TrimSpace(v)}
+		}
+	}
+	return out
+}
+
+// oauthRegAuthMethod is the token endpoint auth method the server registers
+// for the one the client asked for.
+func oauthRegAuthMethod(requested string) string {
+	switch requested {
+	case "", "none":
+		return "none"
+	case "client_secret_post", "client_secret_basic":
+		return requested
+	default:
+		// private_key_jwt, tls_client_auth, ...: not supported. RFC 7591 §2
+		// lets the server register a different method; PKCE public client is
+		// the one every MCP host can use.
+		return "none"
+	}
+}
+
+// oauthRegGrants keeps the supported grant types the client asked for, once
+// each, and always grants authorization_code (first) and refresh_token.
+func oauthRegGrants(requested []string) []string {
+	var grants []string
+	for _, g := range requested {
+		if (g == "authorization_code" || g == "refresh_token") && !containsString(grants, g) {
+			grants = append(grants, g)
+		}
+	}
+	if !containsString(grants, "authorization_code") {
+		grants = append([]string{"authorization_code"}, grants...)
+	}
+	if !containsString(grants, "refresh_token") {
+		grants = append(grants, "refresh_token")
+	}
+	return grants
+}
+
+// oauthRegLogBody logs what the connector asked for.
+func oauthRegLogBody(r *http.Request, raw oauthRegMeta, redirects []string, requestedMethod, method string) {
+	// Temporary diagnostics: what the connector asked for. Keys and
+	// non-secret values only; a registration carries no secret, but a
+	// software_statement (a signed JWT) is left out anyway.
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	slog.Info("connector request register body",
+		"ua", logsafe.Str(r.UserAgent()),
+		"keys", logsafe.Strs(keys),
+		"client_name", logsafe.Str(raw.str("client_name")),
+		"redirect_uris", logsafe.Strs(redirects),
+		"grant_types", logsafe.Strs(raw.list("grant_types")),
+		"response_types", logsafe.Strs(raw.list("response_types")),
+		"token_endpoint_auth_method", logsafe.Str(requestedMethod),
+		"granted_auth_method", logsafe.Str(method),
+		"scope", logsafe.Str(raw.str("scope")),
+		"application_type", logsafe.Str(raw.str("application_type")),
+	)
+}
+
+// oauthRegCheckMetadata validates the redirect URIs and response types. It
+// returns the RFC 7591 error code and description, or "" when they are fine.
+func oauthRegCheckMetadata(redirects, responseTypes []string) (code, desc string) {
+	if len(redirects) == 0 {
+		return "invalid_redirect_uri", "redirect_uris is required"
+	}
+	if len(redirects) > oauthMaxRedirects {
+		return "invalid_redirect_uri", "too many redirect_uris"
+	}
+	for _, u := range redirects {
+		if len(u) > oauthMaxRedirectLen {
+			return "invalid_redirect_uri", "redirect_uri is too long"
+		}
+		if err := oauthRedirectOK(u); err != nil {
+			return "invalid_redirect_uri", err.Error()
+		}
+	}
+	for _, rt := range responseTypes {
+		if rt != "code" {
+			return "invalid_client_metadata", "only the code response type is supported"
+		}
+	}
+	return "", ""
+}
+
+// oauthRegEchoMetadata copies every other field the client registered into
+// resp verbatim (RFC 7591 §3.2.1), except anything secret-shaped the server
+// does not keep.
+func oauthRegEchoMetadata(resp map[string]any, raw oauthRegMeta) {
+	for k, v := range raw {
+		if _, set := resp[k]; set || v == nil {
+			continue
+		}
+		switch k {
+		case "client_secret", "client_secret_expires_at", "software_statement", "client_id", "client_id_issued_at":
+			continue
+		}
+		resp[k] = v
+	}
 }
 
 func oauthRedirectOK(raw string) error {
@@ -500,57 +553,14 @@ func registeredRedirect(registered []string, requested string) (*url.URL, error)
 
 func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
-	q := r.URL.Query()
-	if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			writeError(w, r, domain.BadRequest(msgMalformedForm))
-			return
-		}
-		q = r.Form
+	q, err := oauthAuthzParams(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
-	clientID := strings.TrimSpace(q.Get("client_id"))
-	redirectURI := strings.TrimSpace(q.Get("redirect_uri"))
-	state := q.Get("state")
-	challenge := strings.TrimSpace(q.Get("code_challenge"))
-	method := strings.TrimSpace(q.Get("code_challenge_method"))
-	resource := strings.TrimSpace(q.Get("resource"))
-	// The granted scope: what the person chose on the page (consult and
-	// register, or consult only), plus offline_access if asked for. Unknown
-	// requested scopes grant nothing.
-	scope := oauthGrantedScope(q.Get("scope"), oauthAccessChoice(q))
-	// RFC 9207: every authorization response, success or error, names the
-	// issuer. The metadata advertises it, and ChatGPT checks it before it
-	// exchanges the code.
-	issuer := s.publicBase(r)
-	if method == "" {
-		method = oauthChallenge
-	}
+	a := s.newOAuthAuthzRequest(r, q)
 
-	// target is the client's registered redirect URI that the request's
-	// redirect_uri matched exactly. Redirects are built from it, never from
-	// the request, and it stays nil until the match below.
-	var target *url.URL
-	failToClient := func(code, desc string) {
-		s.oauthErrorSignal(clientID, code)
-		if target == nil {
-			s.oauthForm(w, r, q, desc, nil, nil)
-			return
-		}
-		u := *target
-		qq := u.Query()
-		qq.Set("error", code)
-		qq.Set("error_description", desc)
-		if state != "" {
-			qq.Set("state", state)
-		}
-		qq.Set("iss", issuer)
-		u.RawQuery = qq.Encode()
-		// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
-		// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
-		http.Redirect(w, r, u.String(), http.StatusFound)
-	}
-
-	if clientID == "" || redirectURI == "" {
+	if a.clientID == "" || a.redirectURI == "" {
 		s.oauthForm(w, r, q, "Faltan client_id o redirect_uri.", nil, nil)
 		return
 	}
@@ -563,29 +573,19 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	client, err := store.GetOAuthClient(r.Context(), tx, clientID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			s.oauthForm(w, r, q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil, nil)
-			return
-		}
-		writeError(w, r, err)
+	client, ok := s.oauthAuthzClient(w, r, tx, a)
+	if !ok {
 		return
 	}
-	target, err = registeredRedirect(client.RedirectURIs, redirectURI)
-	if err != nil {
-		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil, nil)
-		return
-	}
-	if challenge == "" || method != oauthChallenge {
-		failToClient("invalid_request", "PKCE S256 is required")
+	if a.challenge == "" || a.method != oauthChallenge {
+		s.oauthAuthzFailToClient(w, r, a, "invalid_request", "PKCE S256 is required")
 		return
 	}
 	// RFC 8707: a resource indicator must name this server's MCP endpoint.
 	// The token is bound to it (see issueSessionFor), so a code asked for on
 	// behalf of another resource is refused before anyone signs in.
-	if resource != "" && !s.resourceIsThisServer(r, resource) {
-		failToClient("invalid_target", "resource must be "+s.mcpResource(r))
+	if a.resource != "" && !s.resourceIsThisServer(r, a.resource) {
+		s.oauthAuthzFailToClient(w, r, a, "invalid_target", "resource must be "+s.mcpResource(r))
 		return
 	}
 
@@ -594,6 +594,133 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email, ip, ok := s.oauthAuthzLoginAllowed(w, r, tx, q, client)
+	if !ok {
+		return
+	}
+
+	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
+	if ferr != nil {
+		s.oauthAuthzSignInFailed(w, r, tx, q, client, ferr, ip, email)
+		return
+	}
+	if pick != nil {
+		// Several farms and nothing (host, choice) says which: second step.
+		s.oauthForm(w, r, q, "", pick, client)
+		return
+	}
+	s.oauthAuthzIssueCode(w, r, tx, a, user, chosen)
+}
+
+// oauthAuthzParams is the authorization request's parameters: the query, or
+// the form on a POST.
+func oauthAuthzParams(r *http.Request) (url.Values, error) {
+	if r.Method != http.MethodPost {
+		return r.URL.Query(), nil
+	}
+	if err := r.ParseForm(); err != nil {
+		return nil, domain.BadRequest(msgMalformedForm)
+	}
+	return r.Form, nil
+}
+
+// oauthAuthzRequest is an authorization request's parameters, read once.
+type oauthAuthzRequest struct {
+	q           url.Values
+	clientID    string
+	redirectURI string
+	state       string
+	challenge   string
+	method      string
+	resource    string
+	scope       string
+	issuer      string
+	// target is the client's registered redirect URI that the request's
+	// redirect_uri matched exactly. Redirects are built from it, never from
+	// the request, and it stays nil until the match in oauthAuthzClient.
+	target *url.URL
+}
+
+func (s *Server) newOAuthAuthzRequest(r *http.Request, q url.Values) *oauthAuthzRequest {
+	a := &oauthAuthzRequest{
+		q:           q,
+		clientID:    strings.TrimSpace(q.Get("client_id")),
+		redirectURI: strings.TrimSpace(q.Get("redirect_uri")),
+		state:       q.Get("state"),
+		challenge:   strings.TrimSpace(q.Get("code_challenge")),
+		method:      strings.TrimSpace(q.Get("code_challenge_method")),
+		resource:    strings.TrimSpace(q.Get("resource")),
+		// The granted scope: what the person chose on the page (consult and
+		// register, or consult only), plus offline_access if asked for. Unknown
+		// requested scopes grant nothing.
+		scope: oauthGrantedScope(q.Get("scope"), oauthAccessChoice(q)),
+		// RFC 9207: every authorization response, success or error, names the
+		// issuer. The metadata advertises it, and ChatGPT checks it before it
+		// exchanges the code.
+		issuer: s.publicBase(r),
+	}
+	if a.method == "" {
+		a.method = oauthChallenge
+	}
+	return a
+}
+
+// redirect sends the browser to the matched registered redirect URI with
+// params, the state and the issuer added to its query.
+func (a *oauthAuthzRequest) redirect(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	u := *a.target
+	qq := u.Query()
+	for _, k := range []string{"error", "error_description", "code"} {
+		if v, ok := params[k]; ok {
+			qq.Set(k, v)
+		}
+	}
+	if a.state != "" {
+		qq.Set("state", a.state)
+	}
+	qq.Set("iss", a.issuer)
+	u.RawQuery = qq.Encode()
+	// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
+	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+	http.Redirect(w, r, u.String(), http.StatusFound)
+}
+
+// oauthAuthzFailToClient reports an authorization error to the client's
+// registered redirect URI, or on the sign-in page while there is none.
+func (s *Server) oauthAuthzFailToClient(w http.ResponseWriter, r *http.Request, a *oauthAuthzRequest, code, desc string) {
+	s.oauthErrorSignal(a.clientID, code)
+	if a.target == nil {
+		s.oauthForm(w, r, a.q, desc, nil, nil)
+		return
+	}
+	a.redirect(w, r, map[string]string{"error": code, "error_description": desc})
+}
+
+// oauthAuthzClient loads the requesting client and matches the request's
+// redirect_uri against the ones it registered, setting a.target. On failure
+// it has already answered and returns false.
+func (s *Server) oauthAuthzClient(w http.ResponseWriter, r *http.Request, tx pgx.Tx, a *oauthAuthzRequest) (*store.OAuthClient, bool) {
+	client, err := store.GetOAuthClient(r.Context(), tx, a.clientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.oauthForm(w, r, a.q, "Cliente OAuth desconocido. Vuelva a registrar el conector.", nil, nil)
+			return nil, false
+		}
+		writeError(w, r, err)
+		return nil, false
+	}
+	a.target, err = registeredRedirect(client.RedirectURIs, a.redirectURI)
+	if err != nil {
+		s.oauthForm(w, r, a.q, "redirect_uri no coincide con el cliente registrado.", nil, nil)
+		return nil, false
+	}
+	return client, true
+}
+
+// oauthAuthzLoginAllowed applies the login limiter to a first-step sign-in
+// and returns the address and IP the attempt counts against. When the
+// attempt is refused it has already answered and returns false.
+func (s *Server) oauthAuthzLoginAllowed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient) (email, ip string, ok bool) {
 	// The same limiter as /v1/auth/login, on the same table: this form checks
 	// the same password, and without it the sign-in page was an unmetered
 	// way around the login limit. The second step (farm pick) carries a
@@ -603,44 +730,45 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	// /v1/auth/passkeys/login it is limited on the per-IP axis, and a failed
 	// one is recorded with no address.
 	usingPasskey := q.Get("ticket") == "" && q.Get("passkey_credential") != ""
-	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
+	email = strings.ToLower(strings.TrimSpace(q.Get("email")))
 	if usingPasskey {
 		email = ""
 	}
-	ip := clientIP(r)
-	if q.Get("ticket") == "" && (email != "" || usingPasskey) {
-		failedPair, failedIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
-		if err != nil {
-			writeError(w, r, err)
+	ip = clientIP(r)
+	if q.Get("ticket") != "" || (email == "" && !usingPasskey) {
+		return email, ip, true
+	}
+	failedPair, failedIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
+	if err != nil {
+		writeError(w, r, err)
+		return email, ip, false
+	}
+	if (!usingPasskey && failedPair >= s.cfg.LoginFailuresPerEmailPerIP) || failedIP >= s.cfg.LoginFailuresPerIP {
+		s.loginRefused(ip, email, "oauth")
+		s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
+		return email, ip, false
+	}
+	return email, ip, true
+}
+
+// oauthAuthzSignInFailed answers a sign-in that did not go through, counting
+// a wrong password or passkey against the login limiter.
+func (s *Server) oauthAuthzSignInFailed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient, ferr error, ip, email string) {
+	if errors.Is(ferr, errOAuthBadCredentials) || errors.Is(ferr, errOAuthBadPasskey) {
+		// The page is a 200, so the request transaction commits and the
+		// failure is counted; nothing else has been written by now.
+		s.loginRefused(ip, email, "oauth")
+		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
+			writeError(w, r, domain.Internal("could not record the failed sign-in").WithCause(err))
 			return
 		}
-		if (!usingPasskey && failedPair >= s.cfg.LoginFailuresPerEmailPerIP) || failedIP >= s.cfg.LoginFailuresPerIP {
-			s.loginRefused(ip, email, "oauth")
-			s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
-			return
-		}
 	}
+	s.oauthForm(w, r, q, ferr.Error(), nil, client)
+}
 
-	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
-	if ferr != nil {
-		if errors.Is(ferr, errOAuthBadCredentials) || errors.Is(ferr, errOAuthBadPasskey) {
-			// The page is a 200, so the request transaction commits and the
-			// failure is counted; nothing else has been written by now.
-			s.loginRefused(ip, email, "oauth")
-			if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
-				writeError(w, r, domain.Internal("could not record the failed sign-in").WithCause(err))
-				return
-			}
-		}
-		s.oauthForm(w, r, q, ferr.Error(), nil, client)
-		return
-	}
-	if pick != nil {
-		// Several farms and nothing (host, choice) says which: second step.
-		s.oauthForm(w, r, q, "", pick, client)
-		return
-	}
-
+// oauthAuthzIssueCode stores an authorization code for the person who signed
+// in and sends it to the client's registered redirect URI.
+func (s *Server) oauthAuthzIssueCode(w http.ResponseWriter, r *http.Request, tx pgx.Tx, a *oauthAuthzRequest, user *store.User, chosen *store.Membership) {
 	// The code row carries a signed, purpose-bound proof of who signed in
 	// and for which farm — not a bearer token: a dump of oauth_codes must not
 	// hand out sessions. The session proper (access and refresh token) is
@@ -655,30 +783,19 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	if err := store.InsertOAuthCode(r.Context(), tx, store.OAuthCode{
 		// Only the code's hash is stored, like every other secret here.
 		Code:                oauthCodeKey(code),
-		ClientID:            clientID,
-		RedirectURI:         redirectURI,
-		CodeChallenge:       challenge,
-		CodeChallengeMethod: method,
-		Resource:            resource,
-		Scope:               scope,
+		ClientID:            a.clientID,
+		RedirectURI:         a.redirectURI,
+		CodeChallenge:       a.challenge,
+		CodeChallengeMethod: a.method,
+		Resource:            a.resource,
+		Scope:               a.scope,
 		AccessToken:         proof,
 		ExpiresAt:           time.Now().Add(oauthCodeTTL),
 	}); err != nil {
 		writeError(w, r, err)
 		return
 	}
-
-	u := *target
-	qq := u.Query()
-	qq.Set("code", code)
-	if state != "" {
-		qq.Set("state", state)
-	}
-	qq.Set("iss", issuer)
-	u.RawQuery = qq.Encode()
-	// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
-	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
-	http.Redirect(w, r, u.String(), http.StatusFound)
+	a.redirect(w, r, map[string]string{"code": code})
 }
 
 const (
@@ -768,52 +885,11 @@ type oauthPick struct {
 //
 // Exactly one of (membership, pick, error) is meaningful.
 func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.User, *store.Membership, *oauthPick, error) {
-	var user *store.User
-	// The farms the password opened: carried by the ticket on the second step,
-	// computed from the password on the first. See farmsUnlockedBy.
-	var ticketFarms []string
-	password, globalOK := "", false
-	// The passkey that signed in, when one did; it decides the farms instead
-	// of the password (farmsUnlockedByPasskey).
-	var passkey *store.Passkey
-	if ticket := q.Get("ticket"); ticket != "" {
-		sub, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
-		uid, farms, found := strings.Cut(sub, "|")
-		if err != nil || !found || farms == "" {
-			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
-		}
-		ticketFarms = strings.Split(farms, ",")
-		u, err := store.FindUserByID(r.Context(), tx, uid)
-		if err != nil {
-			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
-		}
-		user = u
-	} else if q.Get("passkey_credential") != "" {
-		pk, u, err := s.oauthPasskeySignIn(r, tx, q)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		user, passkey = u, pk
-	} else {
-		email := strings.ToLower(strings.TrimSpace(q.Get("email")))
-		password = q.Get("password")
-		if email == "" || password == "" {
-			return nil, nil, nil, errors.New("Correo y contraseña son obligatorios.")
-		}
-		u, err := store.FindUserByEmail(r.Context(), tx, email)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, nil, err
-		}
-		hash := auth.DecoyHash()
-		if u != nil {
-			hash = u.PasswordHash
-		}
-		ok, err := auth.VerifyPassword(password, hash)
-		if err != nil || u == nil {
-			return nil, nil, nil, errOAuthBadCredentials
-		}
-		user, globalOK = u, ok
+	who, err := s.oauthSignInWho(r, tx, q)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	user := who.user
 	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
 		return nil, nil, nil, err
 	}
@@ -821,24 +897,11 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(all) == 0 && (ticketFarms != nil || globalOK || passkey != nil) {
+	if len(all) == 0 && (who.ticketFarms != nil || who.globalOK || who.passkey != nil) {
 		return nil, nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
 	}
-	var memberships []store.Membership
-	if ticketFarms != nil {
-		for _, m := range all {
-			if containsString(ticketFarms, m.FarmID) {
-				memberships = append(memberships, m)
-			}
-		}
-	} else if passkey != nil {
-		if memberships, err = farmsUnlockedByPasskey(r, tx, user.ID, passkey, all); err != nil {
-			return nil, nil, nil, err
-		}
-		if len(memberships) == 0 {
-			return nil, nil, nil, errors.New("Esa llave de acceso no abre ninguna finca. Entre con su correo y contraseña.")
-		}
-	} else if memberships, err = farmsUnlockedBy(r.Context(), tx, user.ID, password, globalOK, all); err != nil {
+	memberships, err := oauthSignInUnlocked(r, tx, who, all)
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	if len(memberships) == 0 {
@@ -846,14 +909,33 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		// password, and the login limiter counts it as one.
 		return nil, nil, nil, errOAuthBadCredentials
 	}
+	memberships, active, err := oauthSignInActive(r, tx, user, memberships)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	m, pick, err := s.oauthSignInChoose(r, tx, q, user, memberships, active)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if pick != nil {
+		return user, nil, pick, nil
+	}
+	return user, m, nil, nil
+}
+
+// oauthSignInActive narrows the unlocked memberships to the ones this sign-in
+// may connect, and returns those and the active (not suspended) ones among
+// them.
+func oauthSignInActive(r *http.Request, tx pgx.Tx, user *store.User, memberships []store.Membership) ([]store.Membership, []store.Membership, error) {
+	var err error
 	// An unproved address connects only the farms whose own password it was
 	// given (an invite); see onlyFarmScoped.
 	if user.EmailVerifiedAt == nil {
 		if memberships, err = onlyFarmScoped(r.Context(), tx, user.ID, memberships); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		if len(memberships) == 0 {
-			return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
+			return nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
 		}
 	}
 	var active []store.Membership
@@ -863,60 +945,169 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		}
 	}
 	if len(memberships) == 0 {
-		return nil, nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
+		return nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
 	}
 	if len(active) == 0 {
-		return nil, nil, nil, errors.New("Esa finca está suspendida.")
+		return nil, nil, errors.New("Esa finca está suspendida.")
 	}
-	find := func(farmID string) *store.Membership {
-		for i := range active {
-			if active[i].FarmID == farmID {
-				return &active[i]
-			}
-		}
-		return nil
-	}
+	return memberships, active, nil
+}
 
+// oauthSignInChoose picks the farm the code is for: the one the host names,
+// the one the person picked, the only one, or none yet (a farm pick, the
+// second step).
+func (s *Server) oauthSignInChoose(r *http.Request, tx pgx.Tx, q url.Values, user *store.User, memberships, active []store.Membership) (*store.Membership, *oauthPick, error) {
 	// A farm address names its farm: no question, and no other farm.
 	if slug := farmSlugFromHost(r); slug != "" {
-		for _, m := range memberships {
-			if m.FarmSlug == slug && m.SuspendedAt != nil {
-				return nil, nil, nil, errors.New("Esa finca está suspendida.")
-			}
-		}
-		for i := range active {
-			if active[i].FarmSlug == slug {
-				return user, &active[i], nil, nil
-			}
-		}
-		pinned, err := visibleFarmIDBySlug(r.Context(), tx, slug)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if m := find(pinned); pinned != "" && m != nil {
-			return user, m, nil, nil
-		}
-		// A dedicated farm stack holds only its own farm, so on its host
-		// the one active membership is that farm.
-		if len(active) == 1 {
-			return user, &active[0], nil, nil
-		}
-		return nil, nil, nil, errors.New("Esa cuenta no pertenece a esta finca.")
+		m, err := oauthSignInFarmHost(r, tx, slug, memberships, active)
+		return m, nil, err
 	}
 
 	if farmID := strings.TrimSpace(q.Get("farm_id")); farmID != "" {
-		if m := find(farmID); m != nil {
-			return user, m, nil, nil
+		if m := oauthSignInFind(active, farmID); m != nil {
+			return m, nil, nil
 		}
-		return nil, nil, nil, errors.New("Esa cuenta no pertenece a esa finca.")
+		return nil, nil, errors.New("Esa cuenta no pertenece a esa finca.")
 	}
 	if len(active) == 1 {
-		return user, &active[0], nil, nil
+		return &active[0], nil, nil
 	}
-	return user, nil, &oauthPick{
+	return nil, &oauthPick{
 		Ticket: s.signer.SignTicket(oauthPickTicketPurpose, user.ID+"|"+strings.Join(farmIDs(active), ","), oauthPickTicketTTL),
 		Farms:  active,
 	}, nil
+}
+
+// oauthSignInProof is who signed in on the sign-in page, and with what.
+type oauthSignInProof struct {
+	user *store.User
+	// The farms the password opened: carried by the ticket on the second step,
+	// computed from the password on the first. See farmsUnlockedBy.
+	ticketFarms []string
+	password    string
+	globalOK    bool
+	// The passkey that signed in, when one did; it decides the farms instead
+	// of the password (farmsUnlockedByPasskey).
+	passkey *store.Passkey
+}
+
+// oauthSignInWho checks the step's proof: a farm-pick ticket, a passkey
+// answer, or an email and password.
+func (s *Server) oauthSignInWho(r *http.Request, tx pgx.Tx, q url.Values) (oauthSignInProof, error) {
+	if ticket := q.Get("ticket"); ticket != "" {
+		return s.oauthSignInTicket(r, tx, ticket)
+	}
+	if q.Get("passkey_credential") != "" {
+		pk, u, err := s.oauthPasskeySignIn(r, tx, q)
+		if err != nil {
+			return oauthSignInProof{}, err
+		}
+		return oauthSignInProof{user: u, passkey: pk}, nil
+	}
+	return oauthSignInPassword(r, tx, q)
+}
+
+// oauthSignInTicket is the second step: a ticket proving the password was
+// already checked, and the farms it opened.
+func (s *Server) oauthSignInTicket(r *http.Request, tx pgx.Tx, ticket string) (oauthSignInProof, error) {
+	sub, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
+	uid, farms, found := strings.Cut(sub, "|")
+	if err != nil || !found || farms == "" {
+		return oauthSignInProof{}, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
+	}
+	ticketFarms := strings.Split(farms, ",")
+	u, err := store.FindUserByID(r.Context(), tx, uid)
+	if err != nil {
+		return oauthSignInProof{}, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
+	}
+	return oauthSignInProof{user: u, ticketFarms: ticketFarms}, nil
+}
+
+// oauthSignInPassword is the first step with an email and password. An
+// unknown address is checked against a decoy hash, so it costs the same.
+func oauthSignInPassword(r *http.Request, tx pgx.Tx, q url.Values) (oauthSignInProof, error) {
+	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
+	password := q.Get("password")
+	if email == "" || password == "" {
+		return oauthSignInProof{}, errors.New("Correo y contraseña son obligatorios.")
+	}
+	u, err := store.FindUserByEmail(r.Context(), tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return oauthSignInProof{}, err
+	}
+	hash := auth.DecoyHash()
+	if u != nil {
+		hash = u.PasswordHash
+	}
+	ok, err := auth.VerifyPassword(password, hash)
+	if err != nil || u == nil {
+		return oauthSignInProof{}, errOAuthBadCredentials
+	}
+	return oauthSignInProof{user: u, password: password, globalOK: ok}, nil
+}
+
+// oauthSignInUnlocked is the account's memberships that the step's proof
+// opens: the ticket's farms, the passkey's, or the password's.
+func oauthSignInUnlocked(r *http.Request, tx pgx.Tx, who oauthSignInProof, all []store.Membership) ([]store.Membership, error) {
+	if who.ticketFarms != nil {
+		var memberships []store.Membership
+		for _, m := range all {
+			if containsString(who.ticketFarms, m.FarmID) {
+				memberships = append(memberships, m)
+			}
+		}
+		return memberships, nil
+	}
+	if who.passkey != nil {
+		memberships, err := farmsUnlockedByPasskey(r, tx, who.user.ID, who.passkey, all)
+		if err != nil {
+			return nil, err
+		}
+		if len(memberships) == 0 {
+			return nil, errors.New("Esa llave de acceso no abre ninguna finca. Entre con su correo y contraseña.")
+		}
+		return memberships, nil
+	}
+	return farmsUnlockedBy(r.Context(), tx, who.user.ID, who.password, who.globalOK, all)
+}
+
+// oauthSignInFind is the active membership of farmID, or nil.
+func oauthSignInFind(active []store.Membership, farmID string) *store.Membership {
+	for i := range active {
+		if active[i].FarmID == farmID {
+			return &active[i]
+		}
+	}
+	return nil
+}
+
+// oauthSignInFarmHost picks the membership on a farm host
+// ({slug}.bascula.engp.io), which names its farm: no question, and no other
+// farm.
+func oauthSignInFarmHost(r *http.Request, tx pgx.Tx, slug string, memberships, active []store.Membership) (*store.Membership, error) {
+	for _, m := range memberships {
+		if m.FarmSlug == slug && m.SuspendedAt != nil {
+			return nil, errors.New("Esa finca está suspendida.")
+		}
+	}
+	for i := range active {
+		if active[i].FarmSlug == slug {
+			return &active[i], nil
+		}
+	}
+	pinned, err := visibleFarmIDBySlug(r.Context(), tx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if m := oauthSignInFind(active, pinned); pinned != "" && m != nil {
+		return m, nil
+	}
+	// A dedicated farm stack holds only its own farm, so on its host
+	// the one active membership is that farm.
+	if len(active) == 1 {
+		return &active[0], nil
+	}
+	return nil, errors.New("Esa cuenta no pertenece a esta finca.")
 }
 
 // oauthPasskeySignIn is the sign-in page's passkey door: the page's script
@@ -1340,47 +1531,21 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	data := oauthPageData{Nonce: nonce, Notice: notice, Pick: pick != nil}
-	// The request's OAuth parameters ride along as hidden fields. The access
-	// choice is its own field on the sign-in form, so the hidden copy of an
-	// earlier choice is only carried by the farm pick.
-	for _, name := range []string{"client_id", "redirect_uri", "state", "code_challenge",
-		"code_challenge_method", "resource", "scope", "response_type", "access"} {
-		if v := q.Get(name); v != "" && (pick != nil || name != "access") {
-			data.Hidden = append(data.Hidden, oauthPageField{Name: name, Value: v})
-		}
-	}
+	data.Hidden = oauthFormHidden(q, pick)
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
 		// (wrong password, unknown client, ...). Never the password itself.
 		slog.Warn("oauth sign-in page notice", "notice", logsafe.Str(notice), "client_id", logsafe.Str(q.Get("client_id")))
 	}
 	if client != nil {
-		dest := q.Get("redirect_uri")
-		if u, err := url.Parse(dest); err == nil && u.Host != "" {
-			dest = u.Host
-		}
-		data.Client = &oauthPageClient{Name: client.Name, Dest: dest}
+		data.Client = oauthFormClient(q, client)
 	}
 	if pick != nil {
 		data.Ticket = pick.Ticket
-		for i, m := range pick.Farms {
-			name := strings.TrimSpace(m.FarmName)
-			if name == "" {
-				name = m.FarmSlug
-			}
-			data.Farms = append(data.Farms, oauthPageFarm{ID: m.FarmID, Name: name, Slug: m.FarmSlug, Checked: i == 0})
-		}
+		data.Farms = oauthFormFarms(pick)
 	} else {
 		if slug := farmSlugFromHost(r); slug != "" {
-			data.FarmName = slug
-			if s.pool != nil {
-				var dn *string
-				// farm_display_name is a SECURITY DEFINER lookup by slug, before any tenant exists.
-				// nosemgrep: bascula-pool-query-outside-tenant-tx
-				if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
-					data.FarmName = *dn
-				}
-			}
+			data.FarmName = s.oauthFormFarmName(r, slug)
 		}
 		data.ReadOnly = oauthAccessChoice(q) == "read"
 		data.Email = q.Get("email")
@@ -1392,6 +1557,58 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	if err := oauthPageTmpl.Execute(w, data); err != nil {
 		slog.Warn("oauth sign-in page not fully written", "err", err)
 	}
+}
+
+// oauthFormHidden is the request's OAuth parameters, which ride along as
+// hidden fields. The access choice is its own field on the sign-in form, so
+// the hidden copy of an earlier choice is only carried by the farm pick.
+func oauthFormHidden(q url.Values, pick *oauthPick) []oauthPageField {
+	var hidden []oauthPageField
+	for _, name := range []string{"client_id", "redirect_uri", "state", "code_challenge",
+		"code_challenge_method", "resource", "scope", "response_type", "access"} {
+		if v := q.Get(name); v != "" && (pick != nil || name != "access") {
+			hidden = append(hidden, oauthPageField{Name: name, Value: v})
+		}
+	}
+	return hidden
+}
+
+// oauthFormClient names the application asking and the site the code goes
+// to (just its host when the redirect URI parses).
+func oauthFormClient(q url.Values, client *store.OAuthClient) *oauthPageClient {
+	dest := q.Get("redirect_uri")
+	if u, err := url.Parse(dest); err == nil && u.Host != "" {
+		dest = u.Host
+	}
+	return &oauthPageClient{Name: client.Name, Dest: dest}
+}
+
+// oauthFormFarms is the farm pick's list, the first one checked.
+func oauthFormFarms(pick *oauthPick) []oauthPageFarm {
+	var farms []oauthPageFarm
+	for i, m := range pick.Farms {
+		name := strings.TrimSpace(m.FarmName)
+		if name == "" {
+			name = m.FarmSlug
+		}
+		farms = append(farms, oauthPageFarm{ID: m.FarmID, Name: name, Slug: m.FarmSlug, Checked: i == 0})
+	}
+	return farms
+}
+
+// oauthFormFarmName is the farm host's display name, or its slug when there
+// is none.
+func (s *Server) oauthFormFarmName(r *http.Request, slug string) string {
+	if s.pool == nil {
+		return slug
+	}
+	var dn *string
+	// farm_display_name is a SECURITY DEFINER lookup by slug, before any tenant exists.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
+	if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
+		return *dn
+	}
+	return slug
 }
 
 func farmIDs(ms []store.Membership) []string {

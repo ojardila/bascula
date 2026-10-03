@@ -77,56 +77,10 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
-	if email == "" || !strings.Contains(email, "@") {
-		writeError(w, r, domain.BadRequest("owner.email is required"))
-		return
-	}
-	// These four leave the service in the provision-tenant dispatch; see
-	// signup_fields.go.
-	if err := validEmail("owner.email", email); err != nil {
+	email, priceChosen, err := normalizeSignupRequest(&req)
+	if err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := validPhone("owner.phone", req.Owner.Phone); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := validFarmName("farm.name", req.Farm.Name); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if len(req.Owner.Password) < 10 {
-		writeError(w, r, domain.BadRequest("owner.password must be at least 10 characters"))
-		return
-	}
-	// And a ceiling, which is not a strength rule: the hash below is paid for
-	// by the server and priced by the caller. See auth.MaxPasswordLength.
-	if len(req.Owner.Password) > auth.MaxPasswordLength {
-		writeError(w, r, domain.BadRequest("owner.password is too long"))
-		return
-	}
-	if strings.TrimSpace(req.Farm.Name) == "" {
-		writeError(w, r, domain.BadRequest("farm.name is required"))
-		return
-	}
-	priceChosen := req.Farm.PriceCents > 0
-	if !priceChosen {
-		// Not asked on the landing. Seed Recolección at a standing peso-per-kilo
-		// so the farm can weigh on day one, but leave it UNCONFIRMED: the
-		// onboarding tour's first step asks the owner to confirm or change it,
-		// instead of silently paying $800 a kilo.
-		req.Farm.PriceCents = 80000
-	}
-	if req.Farm.Timezone == "" {
-		req.Farm.Timezone = "America/Bogota"
-	}
-	if req.Farm.Currency == "" {
-		req.Farm.Currency = "COP"
 	}
 
 	ip := clientIP(r)
@@ -162,57 +116,9 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// create something", and only the position of this registration records
 	// that. handleLogin's limiter is the same shape and got it right by not
 	// recording an attempt it had already refused; this is that, here.
-	n, err := store.CountSignupAttempts(r.Context(), tx, ip, time.Hour)
-	if err != nil {
+	if err := s.signupCheckLimits(w, r, tx, ip, attempted); err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if n >= s.cfg.SignupsPerIPPerHour {
-		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
-			"too many signups from this address, try again later"))
-		return
-	}
-
-	// And the same limit along the other axis, which is the one that still
-	// holds when the first is cheap to evade — a botnet, a carrier NAT pool,
-	// or a trusted-proxy range an operator wrote one CIDR too wide. The index
-	// this rides on, ix_signup_attempts_email, was created in migration 00002
-	// and until now nothing queried it.
-	//
-	// It counts attempts, never accounts, which is what keeps it out of the
-	// long argument below: an address with an account and an address without
-	// one hit this cap after exactly the same number of tries, so the 429
-	// discloses only that somebody has been hammering that address — which the
-	// person hammering it already knows.
-	byEmail, err := store.CountSignupAttemptsByEmail(r.Context(), tx, attempted, time.Hour)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if byEmail >= s.cfg.SignupsPerEmailPerHour {
-		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
-			"too many signups for this address, try again later"))
-		return
-	}
-
-	// And a ceiling for the whole platform. Every farm that gets past here is
-	// a dedicated stack (namespace, Postgres, pods, a Cloudflare hostname),
-	// and the two caps above are both axes a caller can multiply: a pool of
-	// addresses times a pool of IPs. This one they cannot. It answers the
-	// same for everybody, so it says nothing about any account.
-	if s.cfg.SignupsPerHour > 0 {
-		recent, err := store.CountSuccessfulSignups(r.Context(), tx, time.Hour)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if recent >= s.cfg.SignupsPerHour {
-			slog.Warn("platform signup ceiling reached", "farmsLastHour", recent, "cap", s.cfg.SignupsPerHour)
-			w.Header().Set("Retry-After", "900")
-			writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
-				"many farms are being registered right now; try again in a few minutes"))
-			return
-		}
 	}
 
 	// Past both caps, so this request is going to TRY to create something, and
@@ -234,14 +140,8 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// green. tenant.AfterRequest runs the write once the connection is back.
 	succeeded := false
 	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
-		// signup_attempts is platform-wide, written after the request tx is released (tenant.AfterRequest).
-		// nosemgrep: bascula-pool-query-outside-tenant-tx
-		if _, err := s.pool.Exec(ctx,
-			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
-			uuid.NewString(), ip, attempted, succeeded); err != nil {
-			slog.ErrorContext(ctx, "could not record the signup attempt",
-				"err", err, "ip", ip)
-		}
+		// succeeded is read when the callback runs, not when it is registered.
+		s.recordSignupAttempt(ctx, ip, attempted, succeeded)
 	})
 
 	// An address that already has an account is not a reason to stop.
@@ -280,89 +180,30 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// password, so neither side can finish it alone.
 	claim := byMail && existing && user.EmailVerifiedAt == nil
 
-	passwordHash, err := auth.HashPassword(req.Owner.Password)
-	if err != nil {
-		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
-		return
-	}
 	phone := strings.TrimSpace(req.Owner.Phone)
-	if claim {
-		if err := store.ReplaceUnverifiedClaim(r.Context(), tx, user.ID,
-			req.Owner.Name, phone, passwordHash); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	}
-	if !existing {
-		user = &store.User{
-			ID: newID(), Email: email, Name: req.Owner.Name,
-			Phone: phone, PasswordHash: passwordHash,
-		}
-		if err := store.CreateUser(r.Context(), tx, *user); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	}
-
-	farmID := newID()
-	// The farm becomes the tenant of this transaction the moment its id
-	// exists, which is what lets the farms and memberships rows satisfy their
-	// own RLS policies without any bypass.
-	ctx, err := tenant.SetForSignup(r.Context(), tx, farmID, user.ID)
+	user, passwordHash, err := signupOwnerAccount(r.Context(), tx, user, claim, &req, email, phone)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
+	farmID := newID()
 	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Farm.Name, Timezone: req.Farm.Timezone,
 		Currency: req.Farm.Currency, PriceMinor: req.Farm.PriceCents,
 		PriceConfirmed: priceChosen,
 	}
-	if err := createFarmRecord(ctx, tx, &newFarm, req.Farm.Slug); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := store.CreateMembership(ctx, tx, farmID, user.ID, domain.RoleOwner); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if existing && !claim {
-		if err := store.InsertFarmOwnerCredentials(ctx, tx, farmID, user.ID,
-			strings.TrimSpace(req.Owner.Name), phone, passwordHash); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	}
-	if err := seedFarm(ctx, tx, farmID, req.Farm.PriceCents); err != nil {
+	ctx, err := signupBuildFarm(r.Context(), tx, &newFarm, &req, user.ID,
+		existing && !claim, phone, passwordHash)
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	secret, hash, err := auth.NewOpaqueToken()
+	secret, err := signupVerificationToken(r.Context(), ctx, tx, user.ID, farmID, existing, claim, byMail)
 	if err != nil {
-		writeError(w, r, domain.Internal("could not mint a verification token").WithCause(err))
+		writeError(w, r, err)
 		return
-	}
-	// An existing account is already somebody's verified address, and the
-	// token development echoes must not become a way to verify it on their
-	// behalf; so for that branch the token is minted (same work, same answer)
-	// and not stored, and verifies nothing.
-	if !existing || claim {
-		if err := store.InsertEmailVerification(ctx, tx, newID(), user.ID, farmID, hash,
-			time.Now().Add(48*time.Hour)); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	}
-	// Without a mail sender the password they just typed is the proof that
-	// they meant this address; waiting for a mailbox that never arrives would
-	// strand every farm on the landing. With one, the mailed link does it.
-	if !existing && !byMail {
-		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
-			writeError(w, r, err)
-			return
-		}
 	}
 
 	// The body says what happened to the REQUEST, and nothing about the
@@ -377,23 +218,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// (handleVerifyEmail). An address nobody confirms costs the cluster
 	// nothing.
 	pending := byMail && (!existing || claim)
-	if !pending {
-		s.kickTenantProvision(tenantProvision{
-			Slug: newFarm.Slug, FarmName: newFarm.Name,
-			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
-		})
-	}
-	if byMail {
-		// Both branches send one email, so the inbox is the only place the
-		// two differ. A verified account gets a notice instead of a link: its
-		// owner learns a farm was registered with their address.
-		if pending {
-			link := s.passwordResetBase(r) + "/confirmar-correo#" + secret
-			s.mailLater(r, verifyEmailMessage(email, req.Owner.Name, newFarm.Name, link))
-		} else {
-			s.mailLater(r, farmRegisteredNoticeMessage(email, user.Name, newFarm.Name))
-		}
-	}
+	s.signupDispatch(r, &req, email, user, &newFarm, secret, byMail, pending)
 
 	// The provision ticket lets this browser, and only it, watch the new
 	// farm's own address come up (provision-status is closed to everybody
@@ -415,6 +240,238 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		body["verificationToken"] = secret
 	}
 	writeJSON(w, http.StatusCreated, body)
+}
+
+// normalizeSignupRequest validates the signup body and fills in the farm's
+// defaults. It returns the normalized owner address and whether the caller
+// chose a price (an unchosen one is seeded and left unconfirmed).
+func normalizeSignupRequest(req *signupRequest) (string, bool, error) {
+	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		return "", false, domain.BadRequest("owner.email is required")
+	}
+	// These four leave the service in the provision-tenant dispatch; see
+	// signup_fields.go.
+	if err := validEmail("owner.email", email); err != nil {
+		return "", false, err
+	}
+	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
+		return "", false, err
+	}
+	if err := validPhone("owner.phone", req.Owner.Phone); err != nil {
+		return "", false, err
+	}
+	if err := validFarmName("farm.name", req.Farm.Name); err != nil {
+		return "", false, err
+	}
+	if len(req.Owner.Password) < 10 {
+		return "", false, domain.BadRequest("owner.password must be at least 10 characters")
+	}
+	// And a ceiling, which is not a strength rule: the hash below is paid for
+	// by the server and priced by the caller. See auth.MaxPasswordLength.
+	if len(req.Owner.Password) > auth.MaxPasswordLength {
+		return "", false, domain.BadRequest("owner.password is too long")
+	}
+	if strings.TrimSpace(req.Farm.Name) == "" {
+		return "", false, domain.BadRequest("farm.name is required")
+	}
+	priceChosen := req.Farm.PriceCents > 0
+	if !priceChosen {
+		// Not asked on the landing. Seed Recolección at a standing peso-per-kilo
+		// so the farm can weigh on day one, but leave it UNCONFIRMED: the
+		// onboarding tour's first step asks the owner to confirm or change it,
+		// instead of silently paying $800 a kilo.
+		req.Farm.PriceCents = 80000
+	}
+	if req.Farm.Timezone == "" {
+		req.Farm.Timezone = "America/Bogota"
+	}
+	if req.Farm.Currency == "" {
+		req.Farm.Currency = "COP"
+	}
+	return email, priceChosen, nil
+}
+
+// signupCheckLimits applies signup's three caps — per IP, per address and
+// platform-wide — and returns the error to answer with when one is reached.
+// Nothing is recorded here; see the note in handleSignup on why the attempt
+// row is registered only after these pass.
+func (s *Server) signupCheckLimits(w http.ResponseWriter, r *http.Request, tx pgx.Tx, ip, attempted string) error {
+	n, err := store.CountSignupAttempts(r.Context(), tx, ip, time.Hour)
+	if err != nil {
+		return err
+	}
+	if n >= s.cfg.SignupsPerIPPerHour {
+		return domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many signups from this address, try again later")
+	}
+
+	// And the same limit along the other axis, which is the one that still
+	// holds when the first is cheap to evade — a botnet, a carrier NAT pool,
+	// or a trusted-proxy range an operator wrote one CIDR too wide. The index
+	// this rides on, ix_signup_attempts_email, was created in migration 00002
+	// and until now nothing queried it.
+	//
+	// It counts attempts, never accounts, which is what keeps it out of the
+	// long argument below: an address with an account and an address without
+	// one hit this cap after exactly the same number of tries, so the 429
+	// discloses only that somebody has been hammering that address — which the
+	// person hammering it already knows.
+	byEmail, err := store.CountSignupAttemptsByEmail(r.Context(), tx, attempted, time.Hour)
+	if err != nil {
+		return err
+	}
+	if byEmail >= s.cfg.SignupsPerEmailPerHour {
+		return domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many signups for this address, try again later")
+	}
+
+	// And a ceiling for the whole platform. Every farm that gets past here is
+	// a dedicated stack (namespace, Postgres, pods, a Cloudflare hostname),
+	// and the two caps above are both axes a caller can multiply: a pool of
+	// addresses times a pool of IPs. This one they cannot. It answers the
+	// same for everybody, so it says nothing about any account.
+	if s.cfg.SignupsPerHour <= 0 {
+		return nil
+	}
+	recent, err := store.CountSuccessfulSignups(r.Context(), tx, time.Hour)
+	if err != nil {
+		return err
+	}
+	if recent >= s.cfg.SignupsPerHour {
+		slog.Warn("platform signup ceiling reached", "farmsLastHour", recent, "cap", s.cfg.SignupsPerHour)
+		w.Header().Set("Retry-After", "900")
+		return domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"many farms are being registered right now; try again in a few minutes")
+	}
+	return nil
+}
+
+// recordSignupAttempt writes the signup_attempts row. It runs from
+// tenant.AfterRequest, once the request's connection is back in the pool.
+func (s *Server) recordSignupAttempt(ctx context.Context, ip, attempted string, succeeded bool) {
+	// signup_attempts is platform-wide, written after the request tx is released (tenant.AfterRequest).
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
+	if _, err := s.pool.Exec(ctx,
+		`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
+		uuid.NewString(), ip, attempted, succeeded); err != nil {
+		slog.ErrorContext(ctx, "could not record the signup attempt",
+			"err", err, "ip", ip)
+	}
+}
+
+// signupOwnerAccount hashes the password the caller typed and settles the
+// account that will own the new farm: an unverified claim is replaced, a
+// missing account is created, and a verified one is left untouched. It
+// returns that account and the hash.
+func signupOwnerAccount(ctx context.Context, tx pgx.Tx, user *store.User, claim bool,
+	req *signupRequest, email, phone string) (*store.User, string, error) {
+	passwordHash, err := auth.HashPassword(req.Owner.Password)
+	if err != nil {
+		return nil, "", domain.Internal("could not hash the password").WithCause(err)
+	}
+	if claim {
+		if err := store.ReplaceUnverifiedClaim(ctx, tx, user.ID,
+			req.Owner.Name, phone, passwordHash); err != nil {
+			return nil, "", err
+		}
+	}
+	if user == nil {
+		user = &store.User{
+			ID: newID(), Email: email, Name: req.Owner.Name,
+			Phone: phone, PasswordHash: passwordHash,
+		}
+		if err := store.CreateUser(ctx, tx, *user); err != nil {
+			return nil, "", err
+		}
+	}
+	return user, passwordHash, nil
+}
+
+// signupBuildFarm creates the farm, its owner membership, the owner's
+// farm-scoped credentials when the account already existed (ownCredentials),
+// and the farm's seed. It returns the context that carries the new tenant.
+func signupBuildFarm(ctx context.Context, tx pgx.Tx, newFarm *store.NewFarm, req *signupRequest,
+	userID string, ownCredentials bool, phone, passwordHash string) (context.Context, error) {
+	farmID := newFarm.ID
+	// The farm becomes the tenant of this transaction the moment its id
+	// exists, which is what lets the farms and memberships rows satisfy their
+	// own RLS policies without any bypass.
+	ctx, err := tenant.SetForSignup(ctx, tx, farmID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := createFarmRecord(ctx, tx, newFarm, req.Farm.Slug); err != nil {
+		return nil, err
+	}
+	if err := store.CreateMembership(ctx, tx, farmID, userID, domain.RoleOwner); err != nil {
+		return nil, err
+	}
+	if ownCredentials {
+		if err := store.InsertFarmOwnerCredentials(ctx, tx, farmID, userID,
+			strings.TrimSpace(req.Owner.Name), phone, passwordHash); err != nil {
+			return nil, err
+		}
+	}
+	if err := seedFarm(ctx, tx, farmID, req.Farm.PriceCents); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
+
+// signupVerificationToken mints the email-verification token, stores it when
+// it should verify something, and marks the address verified when there is no
+// mailer to prove it with. reqCtx is the request's own context and farmCtx the
+// one signupBuildFarm returned.
+func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, userID, farmID string,
+	existing, claim, byMail bool) (string, error) {
+	secret, hash, err := auth.NewOpaqueToken()
+	if err != nil {
+		return "", domain.Internal("could not mint a verification token").WithCause(err)
+	}
+	// An existing account is already somebody's verified address, and the
+	// token development echoes must not become a way to verify it on their
+	// behalf; so for that branch the token is minted (same work, same answer)
+	// and not stored, and verifies nothing.
+	if !existing || claim {
+		if err := store.InsertEmailVerification(farmCtx, tx, newID(), userID, farmID, hash,
+			time.Now().Add(48*time.Hour)); err != nil {
+			return "", err
+		}
+	}
+	// Without a mail sender the password they just typed is the proof that
+	// they meant this address; waiting for a mailbox that never arrives would
+	// strand every farm on the landing. With one, the mailed link does it.
+	if !existing && !byMail {
+		if err := store.VerifyUserEmail(reqCtx, tx, userID); err != nil {
+			return "", err
+		}
+	}
+	return secret, nil
+}
+
+// signupDispatch starts the farm's own stack when nothing is pending, and
+// sends the one email each branch sends.
+func (s *Server) signupDispatch(r *http.Request, req *signupRequest, email string, user *store.User,
+	newFarm *store.NewFarm, secret string, byMail, pending bool) {
+	if !pending {
+		s.kickTenantProvision(tenantProvision{
+			Slug: newFarm.Slug, FarmName: newFarm.Name,
+			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
+		})
+	}
+	if !byMail {
+		return
+	}
+	// Both branches send one email, so the inbox is the only place the
+	// two differ. A verified account gets a notice instead of a link: its
+	// owner learns a farm was registered with their address.
+	if pending {
+		link := s.passwordResetBase(r) + "/confirmar-correo#" + secret
+		s.mailLater(r, verifyEmailMessage(email, req.Owner.Name, newFarm.Name, link))
+	} else {
+		s.mailLater(r, farmRegisteredNoticeMessage(email, user.Name, newFarm.Name))
+	}
 }
 
 // handleCreateFarm used to add another farm to the account that is signed in.
@@ -542,38 +599,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	ip := clientIP(r)
 
-	// The limit is consulted BEFORE the account is looked up, which is what
-	// keeps it from becoming the oracle the decoy hash below exists to close:
-	// a 429 that only ever arrived for real addresses would say exactly what a
-	// fast 401 used to say.
-	failedForThisPair, failedForIP, err := store.CountLoginFailures(
-		r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
-	if err != nil {
+	if err := s.loginCheckLimit(r.Context(), tx, email, ip); err != nil {
 		writeError(w, r, err)
-		return
-	}
-	if failedForThisPair >= s.cfg.LoginFailuresPerEmailPerIP || failedForIP >= s.cfg.LoginFailuresPerIP {
-		// Nothing is recorded here, and that is the difference between a
-		// lockout that ends and one that does not. If a refused attempt also
-		// counted, an attacker could hold somebody's address locked for ever by
-		// going on knocking after the door had already been shut to them — the
-		// lock would be renewed by the very traffic it was refusing. The window
-		// only drains if the refusals stop being written, so they are not.
-		//
-		// The correct password gets this answer too. That is deliberate: the
-		// limit is a property of the door, not of the guess, and a lockout that
-		// stepped aside for the right password would tell whoever tripped it
-		// that they had just found the right password.
-		//
-		// It is only safe to say that because BOTH axes are bounded by the
-		// caller's own address. A stranger who fills the (victim's address,
-		// stranger's IP) bucket has refused themselves and nobody else; the
-		// victim's own pair, from their own office, is at zero. See
-		// store.CountLoginFailures for why counting an address alone made this
-		// same line a way to hold a farm's owner out of their own payroll.
-		s.loginRefused(ip, email, "password")
-		writeError(w, r, domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
-			"too many failed sign-in attempts; try again later"))
 		return
 	}
 
@@ -606,10 +633,90 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, invalid)
 	}
 
-	user, err := store.FindUserByEmail(r.Context(), tx, email)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	who, refused, err := loginAuthenticate(r.Context(), tx, email, req.Password)
+	if err != nil {
 		writeError(w, r, err)
 		return
+	}
+	if refused {
+		refuse()
+		return
+	}
+
+	chosen, refused, err := loginChooseMembership(r, tx, &req, who)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if refused {
+		refuse()
+		return
+	}
+
+	session, err := s.issueSession(r, tx, who.user, chosen, req.DeviceID, newID(), store.SignInPassword)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+// loginCheckLimit consults the failed sign-in counters and returns the 429 to
+// answer with when either is full.
+//
+// The limit is consulted BEFORE the account is looked up, which is what
+// keeps it from becoming the oracle the decoy hash below exists to close:
+// a 429 that only ever arrived for real addresses would say exactly what a
+// fast 401 used to say.
+func (s *Server) loginCheckLimit(ctx context.Context, tx pgx.Tx, email, ip string) error {
+	failedForThisPair, failedForIP, err := store.CountLoginFailures(
+		ctx, tx, email, ip, s.cfg.LoginFailureWindow)
+	if err != nil {
+		return err
+	}
+	if failedForThisPair >= s.cfg.LoginFailuresPerEmailPerIP || failedForIP >= s.cfg.LoginFailuresPerIP {
+		// Nothing is recorded here, and that is the difference between a
+		// lockout that ends and one that does not. If a refused attempt also
+		// counted, an attacker could hold somebody's address locked for ever by
+		// going on knocking after the door had already been shut to them — the
+		// lock would be renewed by the very traffic it was refusing. The window
+		// only drains if the refusals stop being written, so they are not.
+		//
+		// The correct password gets this answer too. That is deliberate: the
+		// limit is a property of the door, not of the guess, and a lockout that
+		// stepped aside for the right password would tell whoever tripped it
+		// that they had just found the right password.
+		//
+		// It is only safe to say that because BOTH axes are bounded by the
+		// caller's own address. A stranger who fills the (victim's address,
+		// stranger's IP) bucket has refused themselves and nobody else; the
+		// victim's own pair, from their own office, is at zero. See
+		// store.CountLoginFailures for why counting an address alone made this
+		// same line a way to hold a farm's owner out of their own payroll.
+		s.loginRefused(ip, email, "password")
+		return domain.Coded(http.StatusTooManyRequests, domain.CodeRateLimited,
+			"too many failed sign-in attempts; try again later")
+	}
+	return nil
+}
+
+// loginAuth is what loginAuthenticate learned: the account (nil for an
+// unknown address), the id the reads ran under, the farms this password
+// opens and every farm the account belongs to.
+type loginAuth struct {
+	user        *store.User
+	uid         string
+	memberships []store.Membership
+	all         []store.Membership
+}
+
+// loginAuthenticate checks the password and lists the farms it opens.
+// refused reports a wrong password (or an unknown address), which the caller
+// answers and counts; err is anything else.
+func loginAuthenticate(ctx context.Context, tx pgx.Tx, email, password string) (*loginAuth, bool, error) {
+	user, err := store.FindUserByEmail(ctx, tx, email)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, err
 	}
 	// The hash to check against, which is a real one either way. Reading it out
 	// of the user when there is one and out of the decoy when there is not is
@@ -619,13 +726,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if user != nil {
 		hash = user.PasswordHash
 	}
-	ok, err := auth.VerifyPassword(req.Password, hash)
+	ok, err := auth.VerifyPassword(password, hash)
 	// The verification above runs whether or not the user exists: the work is
 	// the point, and an early return placed before it puts the millisecond gap
 	// straight back.
 	if err != nil {
-		refuse()
-		return
+		return nil, true, nil
 	}
 
 	// The memberships policy lets a user read their own rows once app.user_id
@@ -638,80 +744,93 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if user != nil {
 		uid = user.ID
 	}
-	if err := tenant.SetUser(r.Context(), tx, uid); err != nil {
-		writeError(w, r, err)
-		return
+	if err := tenant.SetUser(ctx, tx, uid); err != nil {
+		return nil, false, err
 	}
-	all, err := store.ListMemberships(r.Context(), tx, uid)
+	all, err := store.ListMemberships(ctx, tx, uid)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, false, err
 	}
 	// A farm with its own owner password opens only with that password; the
 	// rest open with the account's. See farmsUnlockedBy.
-	memberships, err := farmsUnlockedBy(r.Context(), tx, uid, req.Password, ok, all)
+	memberships, err := farmsUnlockedBy(ctx, tx, uid, password, ok, all)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return nil, false, err
 	}
 	if user == nil || (len(memberships) == 0 && !(ok && len(all) == 0)) {
-		refuse()
-		return
+		return nil, true, nil
 	}
+	return &loginAuth{user: user, uid: uid, memberships: memberships, all: all}, false, nil
+}
+
+// loginChooseMembership picks the farm the session opens. refused reports a
+// farm the account belongs to but this password does not open, which the
+// caller answers and counts like any wrong password.
+func loginChooseMembership(r *http.Request, tx pgx.Tx, req *loginRequest, a *loginAuth) (*store.Membership, bool, error) {
+	memberships := a.memberships
 	// An address nobody has proved opens only the farms whose own password
 	// was typed: an invited weigher's, handed over in person. See
 	// onlyFarmScoped.
-	if user.EmailVerifiedAt == nil {
-		if memberships, err = onlyFarmScoped(r.Context(), tx, uid, memberships); err != nil {
-			writeError(w, r, err)
-			return
+	if a.user.EmailVerifiedAt == nil {
+		var err error
+		if memberships, err = onlyFarmScoped(r.Context(), tx, a.uid, memberships); err != nil {
+			return nil, false, err
 		}
 		if len(memberships) == 0 {
-			writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
-				"verify the email address before opening a session"))
-			return
+			return nil, false, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
+				"verify the email address before opening a session")
 		}
 	}
 	if len(memberships) == 0 {
-		writeError(w, r, domain.Forbidden("that account belongs to no farm"))
-		return
+		return nil, false, domain.Forbidden("that account belongs to no farm")
 	}
 
-	// Host (and X-Forwarded-Host) may pin a farm the caller already belongs
-	// to. A slug they cannot see is ignored — same answer as no pin — so a
-	// stranger's host does not leak whether that farm exists. JWT farm_id is
-	// still the tenant after this; the pin only chooses which membership to
-	// open.
+	if err := loginApplyFarmPin(r, tx, req); err != nil {
+		return nil, false, err
+	}
+	// A farm the account belongs to but this password does not open is a
+	// wrong password for that farm, counted like any other.
+	if req.FarmID != "" && !hasFarm(memberships, req.FarmID) && hasFarm(a.all, req.FarmID) {
+		return nil, true, nil
+	}
+	chosen, err := loginPickMembership(memberships, req.FarmID)
+	return chosen, false, err
+}
+
+// loginApplyFarmPin lets the host pin the farm to open.
+//
+// Host (and X-Forwarded-Host) may pin a farm the caller already belongs
+// to. A slug they cannot see is ignored — same answer as no pin — so a
+// stranger's host does not leak whether that farm exists. JWT farm_id is
+// still the tenant after this; the pin only chooses which membership to
+// open.
+func loginApplyFarmPin(r *http.Request, tx pgx.Tx, req *loginRequest) error {
 	pinnedID, err := loginFarmPin(r.Context(), tx, r, req.FarmSlug)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return err
 	}
 	if pinnedID != "" && req.FarmID != "" && pinnedID != req.FarmID {
-		writeError(w, r, domain.BadRequest("farmId does not match the host"))
-		return
+		return domain.BadRequest("farmId does not match the host")
 	}
 	if pinnedID != "" {
 		req.FarmID = pinnedID
 	}
-	// A farm the account belongs to but this password does not open is a
-	// wrong password for that farm, counted like any other.
-	if req.FarmID != "" && !hasFarm(memberships, req.FarmID) && hasFarm(all, req.FarmID) {
-		refuse()
-		return
-	}
+	return nil
+}
 
+// loginPickMembership chooses among the farms this password opens: the one
+// asked for, the only one, or a 400 listing them. A suspended farm is refused.
+func loginPickMembership(memberships []store.Membership, farmID string) (*store.Membership, error) {
 	var chosen *store.Membership
 	switch {
-	case req.FarmID != "":
+	case farmID != "":
 		for i := range memberships {
-			if memberships[i].FarmID == req.FarmID {
+			if memberships[i].FarmID == farmID {
 				chosen = &memberships[i]
 			}
 		}
 		if chosen == nil {
-			writeError(w, r, domain.Forbidden("that account does not belong to that farm"))
-			return
+			return nil, domain.Forbidden("that account does not belong to that farm")
 		}
 	case len(memberships) == 1:
 		chosen = &memberships[0]
@@ -722,22 +841,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				"id": m.FarmID, "name": m.FarmName, "slug": m.FarmSlug, "role": m.Role,
 			})
 		}
-		writeError(w, r, domain.BadRequest("choose a farm").
-			WithDetails(map[string]any{"farms": farms}))
-		return
+		return nil, domain.BadRequest("choose a farm").
+			WithDetails(map[string]any{"farms": farms})
 	}
 	if chosen.SuspendedAt != nil {
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
-			"that farm is suspended"))
-		return
+		return nil, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
+			"that farm is suspended")
 	}
-
-	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID(), store.SignInPassword)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, session)
+	return chosen, nil
 }
 
 // issueSession mints the pair: a short access token carrying sub, farm_id and
@@ -1089,34 +1200,45 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	slug := ""
 	if err := tenant.SetUser(r.Context(), tx, userID); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	if ms, err := store.ListMemberships(r.Context(), tx, userID); err == nil {
-		for _, m := range ms {
-			if m.FarmID == farmID {
-				slug = m.FarmSlug
-				// The waiting screen polls; let its next look see the change.
-				s.prov.mu.Lock()
-				delete(s.prov.cache, m.FarmSlug)
-				s.prov.mu.Unlock()
-				if pending && s.emailVerificationAvailable() {
-					// Signup held the farm's own stack back for this.
-					s.kickTenantProvision(tenantProvision{
-						Slug: m.FarmSlug, FarmName: m.FarmName,
-						Email: user.Email, OwnerName: user.Name, Phone: user.Phone,
-					})
-				}
-			}
-		}
-	}
+	slug := s.verifiedFarmSlug(r.Context(), tx, userID, user, farmID, pending)
 	// farmId is here and not on the signup response, and the difference is the
 	// whole of finding 12's second half: this caller has proved the address is
 	// theirs by presenting something that was sent to it. See handleSignup.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"userId": userID, "farmId": farmID, "slug": slug, "verified": true})
+}
+
+// verifiedFarmSlug finds the slug of the farm a verification link was for,
+// clears its cached provision status, and starts its stack when signup held it
+// back for this. A failure to list the memberships leaves the slug empty.
+func (s *Server) verifiedFarmSlug(ctx context.Context, tx pgx.Tx, userID string, user *store.User, farmID string, pending bool) string {
+	slug := ""
+	ms, err := store.ListMemberships(ctx, tx, userID)
+	if err != nil {
+		return slug
+	}
+	for _, m := range ms {
+		if m.FarmID != farmID {
+			continue
+		}
+		slug = m.FarmSlug
+		// The waiting screen polls; let its next look see the change.
+		s.prov.mu.Lock()
+		delete(s.prov.cache, m.FarmSlug)
+		s.prov.mu.Unlock()
+		if pending && s.emailVerificationAvailable() {
+			// Signup held the farm's own stack back for this.
+			s.kickTenantProvision(tenantProvision{
+				Slug: m.FarmSlug, FarmName: m.FarmName,
+				Email: user.Email, OwnerName: user.Name, Phone: user.Phone,
+			})
+		}
+	}
+	return slug
 }
 
 // emailVerificationAvailable: signup asks for a mailed link exactly when the

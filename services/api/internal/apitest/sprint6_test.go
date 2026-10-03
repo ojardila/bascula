@@ -66,33 +66,7 @@ func TestDeactivatedWorkerWithNewWorkComesBackOn(t *testing.T) {
 	})
 
 	t.Run("and it is recorded, with what caused it and from where", func(t *testing.T) {
-		list := h.mustDo(t, http.MethodGet, "/v1/reactivations", f.OwnerToken, nil, http.StatusOK)
-		items, _ := list.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("want exactly one reactivation on the audit, got %d: %s", len(items), list.Raw)
-		}
-		row := items[0].(map[string]any)
-		if row["workerId"] != worker {
-			t.Errorf("the audit names %v, want %s", row["workerId"], worker)
-		}
-		// The two things the owner's condition asks for by name.
-		if row["workRecordId"] != record {
-			t.Errorf("the audit does not name the labour that caused it: %s", list.Raw)
-		}
-		if row["deviceId"] != device {
-			t.Errorf("the audit does not name the handset: %s", list.Raw)
-		}
-		if row["source"] != "sync" {
-			t.Errorf("source is %v, want sync", row["source"])
-		}
-		// And the half that makes it addressed to somebody: whose decision was
-		// undone.
-		if row["deactivatedBy"] != f.OwnerUserID {
-			t.Errorf("the audit does not say whose decision was undone: %s", list.Raw)
-		}
-		if row["deactivatedAt"] == nil {
-			t.Errorf("the audit does not say which deactivation was undone: %s", list.Raw)
-		}
+		s6CheckReactivationAudit(t, h, f, worker, record, device)
 	})
 
 	t.Run("the worker profile carries it too", func(t *testing.T) {
@@ -103,6 +77,36 @@ func TestDeactivatedWorkerWithNewWorkComesBackOn(t *testing.T) {
 			t.Fatalf("the RSP-007 screen does not show the reactivation: %s", prof.Raw)
 		}
 	})
+}
+
+func s6CheckReactivationAudit(t *testing.T, h *harness, f *farmFixture, worker, record, device string) {
+	list := h.mustDo(t, http.MethodGet, "/v1/reactivations", f.OwnerToken, nil, http.StatusOK)
+	items, _ := list.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("want exactly one reactivation on the audit, got %d: %s", len(items), list.Raw)
+	}
+	row := items[0].(map[string]any)
+	if row["workerId"] != worker {
+		t.Errorf("the audit names %v, want %s", row["workerId"], worker)
+	}
+	// The two things the owner's condition asks for by name.
+	if row["workRecordId"] != record {
+		t.Errorf("the audit does not name the labour that caused it: %s", list.Raw)
+	}
+	if row["deviceId"] != device {
+		t.Errorf("the audit does not name the handset: %s", list.Raw)
+	}
+	if row["source"] != "sync" {
+		t.Errorf("source is %v, want sync", row["source"])
+	}
+	// And the half that makes it addressed to somebody: whose decision was
+	// undone.
+	if row["deactivatedBy"] != f.OwnerUserID {
+		t.Errorf("the audit does not say whose decision was undone: %s", list.Raw)
+	}
+	if row["deactivatedAt"] == nil {
+		t.Errorf("the audit does not say which deactivation was undone: %s", list.Raw)
+	}
 }
 
 // TestWorkOlderThanTheDeactivationDoesNotUndoIt is the boundary the team drew
@@ -193,100 +197,23 @@ func TestListSettlements(t *testing.T) {
 		map[string]any{"id": uuid.NewString()}, http.StatusOK)
 
 	t.Run("everything, newest first, with the worker's name on the row", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/settlements", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 3 {
-			t.Fatalf("want 3 settlements, got %d: %s", len(items), res.Raw)
-		}
-		if total := mustInt(t, res.Body, "total"); total != 3 {
-			t.Errorf("total is %d, want 3", total)
-		}
-		row := items[0].(map[string]any)
-		if row["workerName"] == nil || row["workerName"] == "" {
-			t.Errorf("the row carries no worker name, so the console needs a "+
-				"second request per row: %s", res.Raw)
-		}
-		if _, ok := row["itemCount"]; !ok {
-			t.Errorf("the row carries no itemCount: %s", res.Raw)
-		}
+		s6CheckSettlementsAll(t, h, f)
 	})
 
 	t.Run("by worker", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/settlements?workerId="+ana,
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("want Ana's 2, got %d: %s", len(items), res.Raw)
-		}
-		for _, raw := range items {
-			if raw.(map[string]any)["workerId"] != ana {
-				t.Fatalf("somebody else's settlement came back: %s", res.Raw)
-			}
-		}
+		s6CheckSettlementsByWorker(t, h, f, ana)
 	})
 
 	t.Run("by status", func(t *testing.T) {
-		voided := h.mustDo(t, http.MethodGet, "/v1/settlements?status=void",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := voided.Body["items"].([]any)
-		if len(items) != 1 || items[0].(map[string]any)["id"] != betoOne {
-			t.Fatalf("want only the voided one: %s", voided.Raw)
-		}
-		// A voided settlement's lines keep their rows. Counting them would say
-		// a cancelled document still claims a weighing.
-		if n := mustInt(t, items[0].(map[string]any), "itemCount"); n != 0 {
-			t.Errorf("a void settlement reports %d live lines, want 0", n)
-		}
-
-		open := h.mustDo(t, http.MethodGet, "/v1/settlements?status=open",
-			f.OwnerToken, nil, http.StatusOK)
-		if items, _ := open.Body["items"].([]any); len(items) != 2 {
-			t.Fatalf("want the 2 open ones, got %d: %s", len(items), open.Raw)
-		}
+		s6CheckSettlementsByStatus(t, h, f, betoOne)
 	})
 
 	t.Run("by the period covered", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet,
-			"/v1/settlements?from=2026-08-24&to=2026-08-30", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("want the 2 settlements of that week, got %d: %s", len(items), res.Raw)
-		}
-		for _, raw := range items {
-			if raw.(map[string]any)["id"] == anaSecond {
-				t.Fatalf("a settlement of the following week is in range: %s", res.Raw)
-			}
-		}
+		s6CheckSettlementsByPeriod(t, h, f, anaSecond)
 	})
 
 	t.Run("paged, and the total is the whole filtered set", func(t *testing.T) {
-		first := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := first.Body["items"].([]any)
-		if len(items) != 2 || mustInt(t, first.Body, "total") != 3 {
-			t.Fatalf("page 1 should be 2 rows of 3: %s", first.Raw)
-		}
-		second := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2&offset=2",
-			f.OwnerToken, nil, http.StatusOK)
-		rest, _ := second.Body["items"].([]any)
-		if len(rest) != 1 {
-			t.Fatalf("page 2 should be the last row: %s", second.Raw)
-		}
-		if mustInt(t, second.Body, "total") != 3 {
-			t.Errorf("the total changed between pages: %s", second.Raw)
-		}
-
-		// The page past the end. The total must still be the truth, not the
-		// zero that an empty page would otherwise imply.
-		past := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2&offset=10",
-			f.OwnerToken, nil, http.StatusOK)
-		if items, _ := past.Body["items"].([]any); len(items) != 0 {
-			t.Fatalf("page 6 of a 2-page result is not empty: %s", past.Raw)
-		}
-		if total := mustInt(t, past.Body, "total"); total != 3 {
-			t.Errorf("an empty page reports total %d; that is a guess, and it is "+
-				"wrong: %s", total, past.Raw)
-		}
+		s6CheckSettlementsPaged(t, h, f)
 	})
 
 	t.Run("an unrecognised status is a 400, not an empty list", func(t *testing.T) {
@@ -318,6 +245,103 @@ func TestListSettlements(t *testing.T) {
 	_ = anaFirst
 }
 
+func s6CheckSettlementsAll(t *testing.T, h *harness, f *farmFixture) {
+	res := h.mustDo(t, http.MethodGet, "/v1/settlements", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("want 3 settlements, got %d: %s", len(items), res.Raw)
+	}
+	if total := mustInt(t, res.Body, "total"); total != 3 {
+		t.Errorf("total is %d, want 3", total)
+	}
+	row := items[0].(map[string]any)
+	if row["workerName"] == nil || row["workerName"] == "" {
+		t.Errorf("the row carries no worker name, so the console needs a "+
+			"second request per row: %s", res.Raw)
+	}
+	if _, ok := row["itemCount"]; !ok {
+		t.Errorf("the row carries no itemCount: %s", res.Raw)
+	}
+}
+
+func s6CheckSettlementsByWorker(t *testing.T, h *harness, f *farmFixture, ana string) {
+	res := h.mustDo(t, http.MethodGet, "/v1/settlements?workerId="+ana,
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("want Ana's 2, got %d: %s", len(items), res.Raw)
+	}
+	for _, raw := range items {
+		if raw.(map[string]any)["workerId"] != ana {
+			t.Fatalf("somebody else's settlement came back: %s", res.Raw)
+		}
+	}
+}
+
+func s6CheckSettlementsByStatus(t *testing.T, h *harness, f *farmFixture, betoOne string) {
+	voided := h.mustDo(t, http.MethodGet, "/v1/settlements?status=void",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := voided.Body["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["id"] != betoOne {
+		t.Fatalf("want only the voided one: %s", voided.Raw)
+	}
+	// A voided settlement's lines keep their rows. Counting them would say
+	// a cancelled document still claims a weighing.
+	if n := mustInt(t, items[0].(map[string]any), "itemCount"); n != 0 {
+		t.Errorf("a void settlement reports %d live lines, want 0", n)
+	}
+
+	open := h.mustDo(t, http.MethodGet, "/v1/settlements?status=open",
+		f.OwnerToken, nil, http.StatusOK)
+	if items, _ := open.Body["items"].([]any); len(items) != 2 {
+		t.Fatalf("want the 2 open ones, got %d: %s", len(items), open.Raw)
+	}
+}
+
+func s6CheckSettlementsByPeriod(t *testing.T, h *harness, f *farmFixture, anaSecond string) {
+	res := h.mustDo(t, http.MethodGet,
+		"/v1/settlements?from=2026-08-24&to=2026-08-30", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("want the 2 settlements of that week, got %d: %s", len(items), res.Raw)
+	}
+	for _, raw := range items {
+		if raw.(map[string]any)["id"] == anaSecond {
+			t.Fatalf("a settlement of the following week is in range: %s", res.Raw)
+		}
+	}
+}
+
+func s6CheckSettlementsPaged(t *testing.T, h *harness, f *farmFixture) {
+	first := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := first.Body["items"].([]any)
+	if len(items) != 2 || mustInt(t, first.Body, "total") != 3 {
+		t.Fatalf("page 1 should be 2 rows of 3: %s", first.Raw)
+	}
+	second := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2&offset=2",
+		f.OwnerToken, nil, http.StatusOK)
+	rest, _ := second.Body["items"].([]any)
+	if len(rest) != 1 {
+		t.Fatalf("page 2 should be the last row: %s", second.Raw)
+	}
+	if mustInt(t, second.Body, "total") != 3 {
+		t.Errorf("the total changed between pages: %s", second.Raw)
+	}
+
+	// The page past the end. The total must still be the truth, not the
+	// zero that an empty page would otherwise imply.
+	past := h.mustDo(t, http.MethodGet, "/v1/settlements?limit=2&offset=10",
+		f.OwnerToken, nil, http.StatusOK)
+	if items, _ := past.Body["items"].([]any); len(items) != 0 {
+		t.Fatalf("page 6 of a 2-page result is not empty: %s", past.Raw)
+	}
+	if total := mustInt(t, past.Body, "total"); total != 3 {
+		t.Errorf("an empty page reports total %d; that is a guess, and it is "+
+			"wrong: %s", total, past.Raw)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 3. /v1/users
 // ---------------------------------------------------------------------------
@@ -337,31 +361,11 @@ func TestUserManagement(t *testing.T) {
 	var invitedID, invitedEmail, invitedPassword string
 
 	t.Run("inviting somebody hands back a password once", func(t *testing.T) {
-		invitedEmail = fmt.Sprintf("pesador-%s@example.com", uuid.NewString()[:8])
-		res := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
-			"email": invitedEmail, "name": "Pesador nuevo", "role": "weigher",
-		}, http.StatusCreated)
-		invitedID = mustString(t, res.Body, "id")
-		invitedPassword, _ = res.Body["temporaryPassword"].(string)
-		if invitedPassword == "" {
-			t.Fatalf("no password came back, so the administrator has nothing to "+
-				"hand over and there is no mail sender: %s", res.Raw)
-		}
-		if res.Body["role"] != "weigher" {
-			t.Errorf("role is %v, want weigher", res.Body["role"])
-		}
+		invitedID, invitedEmail, invitedPassword = s6InviteWeigher(t, h, f)
 	})
 
 	t.Run("and that password opens a session on this farm", func(t *testing.T) {
-		login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": invitedEmail, "password": invitedPassword,
-		}, http.StatusOK)
-		if login.Body["farmId"] != f.FarmID {
-			t.Fatalf("logged in somewhere else: %s", login.Raw)
-		}
-		if login.Body["role"] != "weigher" {
-			t.Fatalf("logged in as %v: %s", login.Body["role"], login.Raw)
-		}
+		s6CheckInvitedLogin(t, h, f, invitedEmail, invitedPassword)
 	})
 
 	t.Run("inviting the same address again is a retry, not a re-role", func(t *testing.T) {
@@ -416,79 +420,15 @@ func TestUserManagement(t *testing.T) {
 	})
 
 	t.Run("the farm keeps at least one owner", func(t *testing.T) {
-		demote := h.do(t, http.MethodPatch, "/v1/users/"+f.OwnerUserID, f.OwnerToken,
-			map[string]any{"role": "admin"})
-		if demote.Status != http.StatusConflict || demote.code() != string(domain.CodeLastOwner) {
-			t.Fatalf("demoting the last owner: got %d %s, want 409 LAST_OWNER",
-				demote.Status, demote.Raw)
-		}
-		// Same outcome on the other door, by a different rule. The
-		// administrator asking this used to be answered LAST_OWNER; rule 2
-		// now stops him one line earlier, for being junior to the person he
-		// is removing, and the owner count is never read. LAST_OWNER on the
-		// DELETE door is left unreachable on purpose — the only caller who
-		// could pass the rank check against the last owner is that owner
-		// herself, and she is refused for removing her own access.
-		remove := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.AdminToken, nil)
-		if remove.Status != http.StatusForbidden {
-			t.Fatalf("removing the last owner as an administrator: got %d, want "+
-				"403: %s", remove.Status, remove.Raw)
-		}
-		self := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.OwnerToken, nil)
-		if self.Status != http.StatusConflict {
-			t.Fatalf("the last owner removing herself: got %d, want 409: %s",
-				self.Status, self.Raw)
-		}
+		s6CheckLastOwnerKept(t, h, f)
 	})
 
 	t.Run("with a second owner named, the first may step down", func(t *testing.T) {
-		second := fmt.Sprintf("duena-%s@example.com", uuid.NewString()[:8])
-		res := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
-			"email": second, "name": "Segunda", "role": "owner",
-		}, http.StatusCreated)
-		if _, err := uuid.Parse(mustString(t, res.Body, "id")); err != nil {
-			t.Fatalf("no id came back: %s", res.Raw)
-		}
-		down := h.mustDo(t, http.MethodPatch, "/v1/users/"+f.OwnerUserID, f.OwnerToken,
-			map[string]any{"role": "admin"}, http.StatusOK)
-		if down.Body["role"] != "admin" {
-			t.Fatalf("role is %v: %s", down.Body["role"], down.Raw)
-		}
-
-		// The token in this test's hand still says `owner`; the database now
-		// says `admin`. That token is refused from here on — see
-		// tenant.setContext — so the fixture does what a client does with a
-		// 401: gets a new one. The rest of this test runs as an administrator,
-		// which is what this person now is.
-		stale := h.do(t, http.MethodGet, "/v1/users", f.OwnerToken, nil)
-		if stale.Status != http.StatusUnauthorized ||
-			stale.code() != string(domain.CodeRoleChanged) {
-			t.Fatalf("a token that outlived its role: got %d %s, want 401 ROLE_CHANGED",
-				stale.Status, stale.Raw)
-		}
-		h.relogin(t, f)
+		s6CheckOwnerStepsDown(t, h, f)
 	})
 
 	t.Run("removing access also ends the sessions it had", func(t *testing.T) {
-		// The invited account has a live refresh token from the login above.
-		login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": invitedEmail, "password": invitedPassword,
-		}, http.StatusOK)
-		refresh := mustString(t, login.Body, "refreshToken")
-
-		h.mustDo(t, http.MethodDelete, "/v1/users/"+invitedID, f.OwnerToken, nil,
-			http.StatusNoContent)
-
-		after := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
-			map[string]any{"refreshToken": refresh})
-		if after.Status == http.StatusOK {
-			t.Fatalf("access was removed and the handset kept refreshing; that is "+
-				"\"removed eventually\", not removed: %s", after.Raw)
-		}
-		list := h.mustDo(t, http.MethodGet, "/v1/users", f.OwnerToken, nil, http.StatusOK)
-		if strings.Contains(list.Raw, invitedEmail) {
-			t.Fatalf("the removed member is still listed: %s", list.Raw)
-		}
+		s6CheckRemovalEndsSessions(t, h, f, invitedID, invitedEmail, invitedPassword)
 	})
 
 	t.Run("nobody removes their own access", func(t *testing.T) {
@@ -502,22 +442,133 @@ func TestUserManagement(t *testing.T) {
 	})
 
 	t.Run("the weigher reaches none of it", func(t *testing.T) {
-		for _, call := range []struct {
-			method, path string
-			body         any
-		}{
-			{http.MethodGet, "/v1/users", nil},
-			{http.MethodPost, "/v1/users", map[string]any{"email": "x@y.z", "role": "owner"}},
-			{http.MethodPatch, "/v1/users/" + f.OwnerUserID, map[string]any{"role": "weigher"}},
-			{http.MethodDelete, "/v1/users/" + f.OwnerUserID, nil},
-		} {
-			res := h.do(t, call.method, call.path, f.WeigherToken, call.body)
-			if res.Status != http.StatusForbidden {
-				t.Errorf("%s %s as a weigher: got %d, want 403: %s",
-					call.method, call.path, res.Status, res.Raw)
-			}
-		}
+		s6CheckWeigherLockedOut(t, h, f)
 	})
+}
+
+// s6InviteWeigher invites a fresh weigher and returns its id, address and the
+// one-time password handed back.
+func s6InviteWeigher(t *testing.T, h *harness, f *farmFixture) (id, email, password string) {
+	email = fmt.Sprintf("pesador-%s@example.com", uuid.NewString()[:8])
+	res := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
+		"email": email, "name": "Pesador nuevo", "role": "weigher",
+	}, http.StatusCreated)
+	id = mustString(t, res.Body, "id")
+	password, _ = res.Body["temporaryPassword"].(string)
+	if password == "" {
+		t.Fatalf("no password came back, so the administrator has nothing to "+
+			"hand over and there is no mail sender: %s", res.Raw)
+	}
+	if res.Body["role"] != "weigher" {
+		t.Errorf("role is %v, want weigher", res.Body["role"])
+	}
+	return id, email, password
+}
+
+func s6CheckInvitedLogin(t *testing.T, h *harness, f *farmFixture, invitedEmail, invitedPassword string) {
+	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": invitedEmail, "password": invitedPassword,
+	}, http.StatusOK)
+	if login.Body["farmId"] != f.FarmID {
+		t.Fatalf("logged in somewhere else: %s", login.Raw)
+	}
+	if login.Body["role"] != "weigher" {
+		t.Fatalf("logged in as %v: %s", login.Body["role"], login.Raw)
+	}
+}
+
+func s6CheckLastOwnerKept(t *testing.T, h *harness, f *farmFixture) {
+	demote := h.do(t, http.MethodPatch, "/v1/users/"+f.OwnerUserID, f.OwnerToken,
+		map[string]any{"role": "admin"})
+	if demote.Status != http.StatusConflict || demote.code() != string(domain.CodeLastOwner) {
+		t.Fatalf("demoting the last owner: got %d %s, want 409 LAST_OWNER",
+			demote.Status, demote.Raw)
+	}
+	// Same outcome on the other door, by a different rule. The
+	// administrator asking this used to be answered LAST_OWNER; rule 2
+	// now stops him one line earlier, for being junior to the person he
+	// is removing, and the owner count is never read. LAST_OWNER on the
+	// DELETE door is left unreachable on purpose — the only caller who
+	// could pass the rank check against the last owner is that owner
+	// herself, and she is refused for removing her own access.
+	remove := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.AdminToken, nil)
+	if remove.Status != http.StatusForbidden {
+		t.Fatalf("removing the last owner as an administrator: got %d, want "+
+			"403: %s", remove.Status, remove.Raw)
+	}
+	self := h.do(t, http.MethodDelete, "/v1/users/"+f.OwnerUserID, f.OwnerToken, nil)
+	if self.Status != http.StatusConflict {
+		t.Fatalf("the last owner removing herself: got %d, want 409: %s",
+			self.Status, self.Raw)
+	}
+}
+
+func s6CheckOwnerStepsDown(t *testing.T, h *harness, f *farmFixture) {
+	second := fmt.Sprintf("duena-%s@example.com", uuid.NewString()[:8])
+	res := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
+		"email": second, "name": "Segunda", "role": "owner",
+	}, http.StatusCreated)
+	if _, err := uuid.Parse(mustString(t, res.Body, "id")); err != nil {
+		t.Fatalf("no id came back: %s", res.Raw)
+	}
+	down := h.mustDo(t, http.MethodPatch, "/v1/users/"+f.OwnerUserID, f.OwnerToken,
+		map[string]any{"role": "admin"}, http.StatusOK)
+	if down.Body["role"] != "admin" {
+		t.Fatalf("role is %v: %s", down.Body["role"], down.Raw)
+	}
+
+	// The token in this test's hand still says `owner`; the database now
+	// says `admin`. That token is refused from here on — see
+	// tenant.setContext — so the fixture does what a client does with a
+	// 401: gets a new one. The rest of this test runs as an administrator,
+	// which is what this person now is.
+	stale := h.do(t, http.MethodGet, "/v1/users", f.OwnerToken, nil)
+	if stale.Status != http.StatusUnauthorized ||
+		stale.code() != string(domain.CodeRoleChanged) {
+		t.Fatalf("a token that outlived its role: got %d %s, want 401 ROLE_CHANGED",
+			stale.Status, stale.Raw)
+	}
+	h.relogin(t, f)
+}
+
+func s6CheckRemovalEndsSessions(t *testing.T, h *harness, f *farmFixture, invitedID, invitedEmail, invitedPassword string) {
+	// The invited account has a live refresh token from the login above.
+	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": invitedEmail, "password": invitedPassword,
+	}, http.StatusOK)
+	refresh := mustString(t, login.Body, "refreshToken")
+
+	h.mustDo(t, http.MethodDelete, "/v1/users/"+invitedID, f.OwnerToken, nil,
+		http.StatusNoContent)
+
+	after := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
+		map[string]any{"refreshToken": refresh})
+	if after.Status == http.StatusOK {
+		t.Fatalf("access was removed and the handset kept refreshing; that is "+
+			"\"removed eventually\", not removed: %s", after.Raw)
+	}
+	list := h.mustDo(t, http.MethodGet, "/v1/users", f.OwnerToken, nil, http.StatusOK)
+	if strings.Contains(list.Raw, invitedEmail) {
+		t.Fatalf("the removed member is still listed: %s", list.Raw)
+	}
+}
+
+func s6CheckWeigherLockedOut(t *testing.T, h *harness, f *farmFixture) {
+	for _, call := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/v1/users", nil},
+		{http.MethodPost, "/v1/users", map[string]any{"email": "x@y.z", "role": "owner"}},
+		{http.MethodPatch, "/v1/users/" + f.OwnerUserID, map[string]any{"role": "weigher"}},
+		{http.MethodDelete, "/v1/users/" + f.OwnerUserID, nil},
+	} {
+		res := h.do(t, call.method, call.path, f.WeigherToken, call.body)
+		if res.Status != http.StatusForbidden {
+			t.Errorf("%s %s as a weigher: got %d, want 403: %s",
+				call.method, call.path, res.Status, res.Raw)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

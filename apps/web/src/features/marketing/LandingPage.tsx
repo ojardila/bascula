@@ -46,6 +46,7 @@ import { GREEN, GREEN_DARK } from "../../theme";
 import { useAuth } from "../../auth/AuthContext";
 import { DemoVideos } from "./DemoVideos";
 import { checkContactPhone, phoneProblem } from "../../lib/phone";
+import { looksLikeEmail } from "../../lib/email";
 
 const DISPLAY = '"Fraunces", Georgia, serif';
 const SANS = '"Outfit", "Roboto", sans-serif';
@@ -1504,7 +1505,7 @@ export function validateDemo(v: Values): Partial<Record<Field, string>> {
   if (!v.name.trim()) errors.name = "Escriba su nombre.";
   const phone = checkContactPhone(v.phone);
   if (!phone.ok) errors.phone = phoneProblem(phone.reason);
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim()))
+  if (!looksLikeEmail(v.email.trim()))
     errors.email = "Revise el correo electrónico. Ejemplo: nombre@correo.com.";
   if (!v.farm.trim()) errors.farm = "Escriba el nombre de su finca.";
   return errors;

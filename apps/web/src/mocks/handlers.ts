@@ -702,7 +702,7 @@ function openSessionsOf(p: Principal) {
   const out = [];
   for (const [id, rows] of families) {
     const sorted = [...rows].sort((a, b) => (a.issuedAt ?? 0) - (b.issuedAt ?? 0));
-    const latest = sorted[sorted.length - 1]!;
+    const latest = sorted.at(-1)!;
     if (latest.revokedAt !== null || latest.expiresAt <= Date.now()) continue;
     out.push({
       id,
@@ -744,6 +744,438 @@ const readyEmailAsked = new Set<string>();
  * reset is offered; the secret comes back in the 202 like DEV_ECHO does.
  */
 const passwordResets = new Map<string, string>();
+
+/** A provisioning stage is done, the first one not done is active, the rest wait. */
+function stageState(done: boolean, activeSeen: boolean): "done" | "pending" | "active" {
+  if (done) return "done";
+  return activeSeen ? "pending" : "active";
+}
+
+/**
+ * `local@domain.tld` with no whitespace and exactly one `@`, and a dot in the
+ * domain with something on both sides. Same acceptance as the old
+ * `/^[^@\s]+@[^@\s]+\.[^@\s]+$/`, without its backtracking.
+ */
+function looksLikeEmail(s: string): boolean {
+  if (/\s/.test(s)) return false;
+  const at = s.indexOf("@");
+  if (at <= 0 || s.includes("@", at + 1)) return false;
+  const domain = s.slice(at + 1);
+  return domain.slice(1, -1).includes(".");
+}
+
+/**
+ * Which of the memberships the credentials opened this login is for: the farm
+ * the host pins, the one the body names, the only one there is — or a 400
+ * that lists them so the client can ask.
+ */
+function chooseLoginFarm(
+  request: Request,
+  body: LoginRequestBody,
+  owned: db.MockMembership[],
+): db.MockMembership | Response {
+  const pinned = pinnedFarm(request);
+  if (pinned || body.farmId) {
+    const wantedId = pinned ? pinned.id : body.farmId;
+    const chosen = owned.find((m) => m.farmId === wantedId);
+    return chosen ?? fail(403, "FORBIDDEN", "that account does not belong to that farm");
+  }
+  if (owned.length === 1) return owned[0];
+  // An error envelope, not a success body: the client has to catch it,
+  // which is why the farm choice cannot be a union arm of the response.
+  return badRequest("choose a farm", {
+    farms: owned.map((m) => ({
+      id: m.farmId,
+      name: db.farmOf(m.farmId)?.name ?? "",
+      role: m.role,
+    })),
+  });
+}
+
+/** A slug the superadmin asked for must be a valid label nobody holds yet. */
+function checkRequestedSlug(slug: string | undefined): Response | null {
+  if (!slug) return null;
+  if (!isFarmSlug(slug)) return badRequest("slug is not a valid farm label");
+  if (db.farmOfSlug(slug)) return conflict("CONFLICT", "that slug is already in use");
+  return null;
+}
+
+/**
+ * The owner of a farm the superadmin creates: the account with that address,
+ * verified on the spot, or a new one with the password given (or a temporary
+ * one the response shows once).
+ */
+function provisionFarmOwner(
+  email: string,
+  owner: { name?: string; password?: string } | undefined,
+): { user: db.MockUser; ownerCreated: boolean; temporary: string | undefined } {
+  const existing = db.users.find((u) => u.email === email);
+  if (existing) {
+    existing.emailVerified = true;
+    return { user: existing, ownerCreated: false, temporary: undefined };
+  }
+  const temporary = owner?.password || "temporary-clave-1";
+  const user: db.MockUser = {
+    id: crypto.randomUUID(),
+    email,
+    password: temporary,
+    name: owner?.name ?? "",
+    superadmin: false,
+    emailVerified: true,
+    role: "owner",
+  };
+  db.users.push(user);
+  return { user, ownerCreated: true, temporary };
+}
+
+/**
+ * The tag half of a worker PATCH. A tag sent is trimmed in place on `body`; a
+ * blank one is dropped from it (a worker from before the rule stays without)
+ * or refused (one that has a tag keeps one). A reactivation that keeps the old
+ * tag still has to find it free.
+ */
+function checkWorkerTag(
+  workers: WireEmployee[],
+  worker: WireEmployee,
+  body: { tag?: string | null; status?: string },
+): Response | null {
+  if (body.tag !== undefined) {
+    const next = (body.tag ?? "").trim();
+    if (!next) {
+      // Can be changed, not removed; a worker from before the rule stays without.
+      if (worker.tag) return tagRequired();
+      delete body.tag;
+    } else {
+      const holder = tagHolder(workers, next, worker.id);
+      if (holder) return duplicateTag(holder, next);
+      body.tag = next;
+    }
+  }
+  if (body.status === "active" && worker.deletedAt != null && body.tag === undefined && worker.tag) {
+    const holder = tagHolder(workers, worker.tag, worker.id);
+    if (holder) return duplicateTag(holder, worker.tag);
+  }
+  return null;
+}
+
+/**
+ * The rest of what `handleCreateActivity` refuses before it looks at the
+ * store, once the name and the pay scheme are known to be there.
+ */
+function validateNewActivity(body: ActivityRequestBody): Response | null {
+  if (!body.category && !body.categoryId) return badRequest("categoryId or category is required");
+  const rateSource = body.rateSource ?? "activity_dated";
+  if (rateSource === "weekly_price" && body.payScheme !== "unidad_trabajo") {
+    return badRequest("only a work-unit activity can be priced by the week");
+  }
+  if (rateSource === "explicit") {
+    return badRequest("an activity is priced by date or by the week; 'explicit' belongs to a task");
+  }
+  const rateCents = body.rate?.rateCents ?? 0;
+  if (rateCents <= 0) return badRequest("rate.rateCents must be positive");
+  if (body.payScheme === "unidad_trabajo" && !body.unitId) {
+    return badRequest("a work-unit activity needs unitId");
+  }
+  if (body.payScheme !== "unidad_trabajo" && body.unitId) {
+    return badRequest("only a work-unit activity has a unit");
+  }
+  if (body.rate?.validFrom && !DAY.test(body.rate.validFrom)) {
+    return badRequest("rate.validFrom must be a date, YYYY-MM-DD");
+  }
+  return null;
+}
+
+/** `dateFrom`..`dateTo` of a new work record, both plain days, in order. */
+function workRecordSpan(body: WireWorkRecordRequest): { from: string; to: string } | Response {
+  if (!body.activityId || !body.workerId) {
+    return badRequest("activityId and workerId are required");
+  }
+  if (!body.dateFrom) return badRequest("dateFrom is required, YYYY-MM-DD");
+  if (!DAY.test(body.dateFrom)) return badRequest("dateFrom must be YYYY-MM-DD");
+  const from = body.dateFrom;
+  const to = body.dateTo ?? from;
+  if (!DAY.test(to)) return badRequest("dateTo must be YYYY-MM-DD");
+  if (to < from) return badRequest("dateTo cannot be before dateFrom");
+  return { from, to };
+}
+
+/** A weigher records work priced by the week, and never names a rate. */
+function weigherMayRecord(
+  role: WireRole,
+  activity: db.MockActivity,
+  body: WireWorkRecordRequest,
+): Response | null {
+  if (role !== "weigher") return null;
+  if (activity.rateSource !== "weekly_price") {
+    return fail(403, "FORBIDDEN", "a weigher may only record work priced by the week");
+  }
+  if (body.rateCents != null) return fail(403, "FORBIDDEN", "a weigher may not set a rate");
+  return null;
+}
+
+/**
+ * Which price a new work record carries and whether it froze: the one the
+ * caller named, the week's (left open until settlement), or the activity's
+ * rate in force on the day.
+ */
+function workRecordPrice(
+  activity: db.MockActivity,
+  named: number | null | undefined,
+  from: string,
+): { rateSource: db.MockActivity["rateSource"]; rateCents: number | null } | Response {
+  if (named != null) {
+    // The caller named the price, so it freezes here and a date range is
+    // perfectly legal.
+    if (named <= 0) return badRequest("rateCents must be positive");
+    return { rateSource: "explicit", rateCents: named };
+  }
+  if (activity.rateSource === "weekly_price") {
+    // Left open: the week's price is looked up when the settlement runs.
+    return { rateSource: "weekly_price", rateCents: null };
+  }
+  const inForce = db.rateInForce(activity, from);
+  if (!inForce) {
+    return conflict("NO_RATE_IN_FORCE", "that activity has no rate in force on that date");
+  }
+  return { rateSource: "activity_dated", rateCents: inForce.rateCents };
+}
+
+/**
+ * The week a work record falls in when a special price on `target` from
+ * `monday` (until the next one, `until`) would reprice it; null when it would
+ * not — deleted, not priced by the week, outside the span, or someone else's.
+ */
+function specialPriceWeekOf(
+  r: db.MockWorkRecord,
+  target: { kind: "lote" | "persona"; id: string },
+  monday: string,
+  until: string | null,
+): string | null {
+  if (r.deletedAt || r.rateSource !== "weekly_price") return null;
+  const week = mondayOf(r.dateFrom.slice(0, 10));
+  if (week < monday || (until !== null && week >= until)) return null;
+  const covered = target.kind === "persona" ? r.workerId === target.id : (r.plotIds ?? []).includes(target.id);
+  return covered ? week : null;
+}
+
+/** The `GROSS_CHANGED` 409 of a settlement, described at its call site. */
+function grossChanged(
+  t: db.Tenant,
+  payableIds: string[] | undefined,
+  all: { payableId: string }[],
+  chosen: { weekStart: string }[],
+  expected: number,
+  grossOfChosen: number,
+): Response {
+  const asked = new Set(payableIds ?? []);
+  const pendingIds = new Set(all.map((p) => p.payableId));
+  const provided = asked.size > 0;
+  const weeks = [...new Set(chosen.map((p) => p.weekStart.slice(0, 10)))].map((weekStart) => ({
+    weekStart,
+    priceCents: db.weekPriceOf(t, weekStart),
+  }));
+  return conflict("GROSS_CHANGED", "the gross changed since it was approved", {
+    expectedCents: expected,
+    actualCents: grossOfChosen,
+    addedPayableIds: provided
+      ? all.filter((p) => !asked.has(p.payableId)).map((p) => p.payableId)
+      : [],
+    removedPayableIds: provided
+      ? [...asked].filter((id) => !pendingIds.has(id))
+      : [],
+    payableIdsProvided: provided,
+    weeksInSettlement: weeks,
+  });
+}
+
+/**
+ * Walks a worker's ledger, oldest first, up to and including the movement
+ * `id`: the live balance at that point, the last live payment before it, and
+ * where it sits (-1 when it is not there).
+ */
+function ledgerUpTo(all: WireLedgerEntry[], id: string, live: (e: WireLedgerEntry) => boolean) {
+  let remaining = 0;
+  let prevPagoId = "";
+  let pagoIndex = -1;
+  for (let i = 0; i < all.length; i++) {
+    const e = all[i];
+    if (live(e)) remaining += e.amountCents;
+    if (e.id === id) {
+      pagoIndex = i;
+      break;
+    }
+    if (live(e) && e.kind === "pago") prevPagoId = e.id;
+  }
+  return { remaining, prevPagoId, pagoIndex };
+}
+
+/**
+ * What a payment receipt itemises: the accruals (`devengo`) and the discounts
+ * (`deduccion`) written since the previous live payment, oldest first.
+ */
+function paidSincePrevious(entries: WireLedgerEntry[]) {
+  let week = 0;
+  const deductions: { concept: string; amountCents: number; date: string }[] = [];
+  let settlementId: string | null = null;
+  const settlementIds: string[] = [];
+  for (const e of entries) {
+    if (e.kind === "devengo") {
+      week += e.amountCents;
+      settlementId = e.settlementId;
+      if (e.settlementId) settlementIds.push(e.settlementId);
+    }
+    if (e.kind === "deduccion") {
+      deductions.push({
+        concept: (e.note ?? "").trim() || "Descuento",
+        amountCents: Math.abs(e.amountCents),
+        date: e.date.slice(0, 10),
+      });
+    }
+  }
+  return { week, deductions, settlementId, settlementIds };
+}
+
+/** What `handleCreateStockMove` refuses before it reads the store. */
+function validateStockMoveBody(
+  body: StockMoveBody,
+): { productId: string; warehouseId: string; reason: WireStockReason } | Response {
+  // Both ids are required and neither may be a name: `StockMoveInput` has no
+  // `warehouse` field, and the server decodes with DisallowUnknownFields.
+  if (!body.productId || !body.warehouseId) {
+    return badRequest("productId and warehouseId are required");
+  }
+  if (body.qty === 0) return badRequest("qty cannot be zero");
+  if (!body.reason || !STOCK_REASONS.includes(body.reason)) {
+    return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
+  }
+  // A 'venta' movement is the shadow of a sale and is written by the sales
+  // handler, in the same transaction as the sale. Letting one in here would
+  // be the one way to get stock and sales to disagree.
+  if (body.reason === "venta") {
+    return badRequest("record the sale at POST /v1/sales; it writes its own stock movement");
+  }
+  const labels = body.labels ?? 0;
+  if (!Number.isInteger(labels) || labels < 0 || labels > 500) {
+    return badRequest("labels must be between 0 and 500");
+  }
+  return { productId: body.productId, warehouseId: body.warehouseId, reason: body.reason };
+}
+
+/** The live customer with that name, created on the spot when there is none. */
+function customerNamed(t: db.Tenant, name: string): string {
+  const existing = t.customers.find((c) => c.deletedAt === null && sameName(c.name, name));
+  if (existing) return existing.id;
+  const created: WireCustomer = {
+    id: crypto.randomUUID(),
+    name: name.trim(),
+    documentType: null,
+    docId: null,
+    phone: null,
+    createdAt: nowInstant(),
+    deletedAt: null,
+  };
+  t.customers.push(created);
+  return created.id;
+}
+
+/**
+ * A resent ledger movement: the row already written under that id (200), or
+ * a 409 when the id names a different movement. Null for a new one.
+ */
+function ledgerReplay(t: db.Tenant, kind: WireLedgerKind, body: WireLedgerRequest): Response | null {
+  if (!body.id) return null;
+  const existing = t.ledger.find((e) => e.id === body.id);
+  if (!existing) return null;
+  if (existing.kind !== kind || existing.workerId !== body.workerId) {
+    return conflict(
+      "IDEMPOTENCY_KEY_REUSED",
+      "that id already names a different movement",
+      { existing },
+    );
+  }
+  return HttpResponse.json(existing, { status: 200 });
+}
+
+/**
+ * The signed amount a ledger movement is written with. Everything but an
+ * `ajuste` goes in negative whichever convention the client used, and only a
+ * payment or an advance may name a method.
+ */
+function ledgerAmount(kind: WireLedgerKind, body: WireLedgerRequest): number | Response {
+  if (kind === "ajuste") return body.amountCents;
+  // Accept either convention from the client and normalise; the database
+  // would reject the wrong sign anyway.
+  const amount = -Math.abs(body.amountCents);
+  if (body.method != null && !["efectivo", "transferencia", "otro"].includes(body.method)) {
+    return badRequest("method must be efectivo, transferencia or otro");
+  }
+  if (kind === "deduccion" && body.method != null) {
+    return badRequest("a deduction has no payment method");
+  }
+  return amount;
+}
+
+/**
+ * The quantity with the sign its reason implies: out for venta, consumo and
+ * merma, in for cosecha and compra, as given for traslado and ajuste.
+ */
+function signedStockQty(reason: WireStockReason, raw: number | undefined): number | Response {
+  let qty = raw;
+  if (typeof qty !== "number" || !Number.isFinite(qty) || qty === 0) {
+    return badRequest("qty cannot be zero");
+  }
+  if (OUTGOING_REASONS.has(reason) && qty > 0) qty = -qty;
+  if (INCOMING_REASONS.has(reason) && qty < 0) qty = -qty;
+
+  // stock_sign, for the pair the handler could not infer.
+  if ((INCOMING_REASONS.has(reason) && qty < 0) || (OUTGOING_REASONS.has(reason) && qty > 0)) {
+    return badRequest(
+      "the sign of the quantity does not match the reason: cosecha and compra come in, venta, consumo and merma go out",
+    );
+  }
+  return qty;
+}
+
+/**
+ * stock_crop_needs_plot, then check_stock_move_crop(): a movement that said
+ * "lote 3, café del lote 7" would make every per-plot report quietly wrong.
+ */
+function checkStockMoveCrop(t: db.Tenant, body: StockMoveRequestBody): Response | null {
+  if (body.plotCropId && !body.plotId) {
+    return badRequest("plotCropId needs the plotId it is planted in");
+  }
+  if (body.plotId && body.plotCropId) {
+    const plot = t.plots.find((p) => p.id === body.plotId);
+    if (!plot?.crops.some((c) => c.id === body.plotCropId)) {
+      return badRequest(`crop ${body.plotCropId} is not planted in plot ${body.plotId}`);
+    }
+  }
+  return null;
+}
+
+/** check_stock_reverso(): once, and never a reversal of a reversal. */
+function checkStockReversal(
+  t: db.Tenant,
+  body: StockMoveRequestBody,
+  reversesId: string,
+  qty: number,
+): Response | null {
+  const origin = t.stockMoves.find((m) => m.id === reversesId);
+  if (!origin) return badRequest("reversal without origin");
+  if (origin.reversesId) {
+    return conflict("ALREADY_REVERSED", "a reversal cannot be reversed");
+  }
+  if (t.stockMoves.some((m) => m.reversesId === origin.id)) {
+    return conflict("ALREADY_REVERSED", "that movement has already been reversed");
+  }
+  if (origin.productId !== body.productId || origin.warehouseId !== body.warehouseId) {
+    return badRequest("reversal crosses product or warehouse");
+  }
+  if (db.round3(qty) !== db.round3(-origin.qty)) {
+    return badRequest("the reversal does not cancel its origin");
+  }
+  return null;
+}
 
 export const handlers = [
   http.get("*/health", () => HttpResponse.json({ status: "ok" })),
@@ -892,7 +1324,7 @@ export const handlers = [
     let active = false;
     const stages = defs.map(([key, label, weight, at]) => {
       const done = ready || elapsed >= at;
-      const state = done ? "done" : active ? "pending" : "active";
+      const state = stageState(done, active);
       if (!done) active = true;
       return { key, label, weight, state };
     });
@@ -966,27 +1398,8 @@ export const handlers = [
     const owned = user.emailVerified ? [...byFarm, ...byAccount] : byFarm;
     if (owned.length === 0) return fail(403, "FORBIDDEN", "that account belongs to no farm");
 
-    let chosen: db.MockMembership | undefined;
-    const pinned = pinnedFarm(request);
-    if (pinned) {
-      chosen = owned.find((m) => m.farmId === pinned.id);
-      if (!chosen) return fail(403, "FORBIDDEN", "that account does not belong to that farm");
-    } else if (body.farmId) {
-      chosen = owned.find((m) => m.farmId === body.farmId);
-      if (!chosen) return fail(403, "FORBIDDEN", "that account does not belong to that farm");
-    } else if (owned.length === 1) {
-      chosen = owned[0];
-    } else {
-      // An error envelope, not a success body: the client has to catch it,
-      // which is why the farm choice cannot be a union arm of the response.
-      return badRequest("choose a farm", {
-        farms: owned.map((m) => ({
-          id: m.farmId,
-          name: db.farmOf(m.farmId)?.name ?? "",
-          role: m.role,
-        })),
-      });
-    }
+    const chosen = chooseLoginFarm(request, body, owned);
+    if (chosen instanceof Response) return chosen;
     if (db.farmOf(chosen.farmId)?.suspendedAt) {
       return fail(403, "FARM_SUSPENDED", "that farm is suspended");
     }
@@ -1202,7 +1615,7 @@ export const handlers = [
     const email = (body.email ?? "").trim().toLowerCase();
     const name = (body.name ?? "").trim();
     const fields: Record<string, string> = {};
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fields.email = "invalid";
+    if (!looksLikeEmail(email)) fields.email = "invalid";
     if (name === "") fields.name = "required";
     // Same rule as `handleInviteUser`: nobody hands out a role above their
     // own, so only an owner may invite another owner (a partner).
@@ -1425,10 +1838,8 @@ export const handlers = [
     if (!body.name?.trim()) return badRequest("name is required");
     if (!body.priceCents || body.priceCents <= 0) return badRequest("priceCents must be positive");
     const requestedSlug = body.slug?.trim().toLowerCase();
-    if (requestedSlug) {
-      if (!isFarmSlug(requestedSlug)) return badRequest("slug is not a valid farm label");
-      if (db.farmOfSlug(requestedSlug)) return conflict("CONFLICT", "that slug is already in use");
-    }
+    const slugRefused = checkRequestedSlug(requestedSlug);
+    if (slugRefused) return slugRefused;
     const email = body.owner?.email?.trim().toLowerCase() ?? "";
     if (!email?.includes("@")) return badRequest("owner.email is required");
     if (body.owner?.password && body.owner.password.length < 10) {
@@ -1438,25 +1849,7 @@ export const handlers = [
       const existing = db.farms.find((f) => f.id === body.id);
       if (existing) return HttpResponse.json(adminFarm(existing));
     }
-    let user = db.users.find((u) => u.email === email);
-    let ownerCreated = false;
-    let temporary: string | undefined;
-    if (!user) {
-      temporary = body.owner?.password || "temporary-clave-1";
-      user = {
-        id: crypto.randomUUID(),
-        email,
-        password: temporary,
-        name: body.owner?.name ?? "",
-        superadmin: false,
-        emailVerified: true,
-        role: "owner",
-      };
-      db.users.push(user);
-      ownerCreated = true;
-    } else {
-      user.emailVerified = true;
-    }
+    const { user, ownerCreated, temporary } = provisionFarmOwner(email, body.owner);
     const farmId = body.id || crypto.randomUUID();
     const farm = {
       id: farmId,
@@ -1831,22 +2224,8 @@ export const handlers = [
     if (bad) return bad;
     const worker = g.p.tenant.workers.find((w) => w.id === params.id);
     if (!worker) return notFound();
-    if (body.tag !== undefined) {
-      const next = (body.tag ?? "").trim();
-      if (!next) {
-        // Can be changed, not removed; a worker from before the rule stays without.
-        if (worker.tag) return tagRequired();
-        delete body.tag;
-      } else {
-        const holder = tagHolder(g.p.tenant.workers, next, worker.id);
-        if (holder) return duplicateTag(holder, next);
-        body.tag = next;
-      }
-    }
-    if (body.status === "active" && worker.deletedAt != null && body.tag === undefined && worker.tag) {
-      const holder = tagHolder(g.p.tenant.workers, worker.tag, worker.id);
-      if (holder) return duplicateTag(holder, worker.tag);
-    }
+    const tagRefused = checkWorkerTag(g.p.tenant.workers, worker, body);
+    if (tagRefused) return tagRefused;
     if (body.status === "inactive" && worker.deletedAt == null) worker.deletedAt = nowInstant();
     if (body.status === "active") {
       worker.deletedAt = null;
@@ -2109,25 +2488,9 @@ export const handlers = [
     if (!body.payScheme || !["contrato", "tiempo", "unidad_trabajo"].includes(body.payScheme)) {
       return badRequest("payScheme must be contrato, tiempo or unidad_trabajo");
     }
-    if (!body.category && !body.categoryId) return badRequest("categoryId or category is required");
+    const invalid = validateNewActivity(body);
+    if (invalid) return invalid;
     const rateSource = body.rateSource ?? "activity_dated";
-    if (rateSource === "weekly_price" && body.payScheme !== "unidad_trabajo") {
-      return badRequest("only a work-unit activity can be priced by the week");
-    }
-    if (rateSource === "explicit") {
-      return badRequest("an activity is priced by date or by the week; 'explicit' belongs to a task");
-    }
-    const rateCents = body.rate?.rateCents ?? 0;
-    if (rateCents <= 0) return badRequest("rate.rateCents must be positive");
-    if (body.payScheme === "unidad_trabajo" && !body.unitId) {
-      return badRequest("a work-unit activity needs unitId");
-    }
-    if (body.payScheme !== "unidad_trabajo" && body.unitId) {
-      return badRequest("only a work-unit activity has a unit");
-    }
-    if (body.rate?.validFrom && !DAY.test(body.rate.validFrom)) {
-      return badRequest("rate.validFrom must be a date, YYYY-MM-DD");
-    }
 
     const id = body.id ?? crypto.randomUUID();
     const already = t.activities.find((a) => a.id === id);
@@ -2187,11 +2550,12 @@ export const handlers = [
       }
       activity.name = body.name;
     }
-    const category = body.categoryId
-      ? t.activityCategories.find((c) => c.id === body.categoryId)
-      : body.category
-        ? ensureCatalogItem(t.activityCategories, body.category)
-        : undefined;
+    let category: WireCatalogItem | undefined;
+    if (body.categoryId) {
+      category = t.activityCategories.find((c) => c.id === body.categoryId);
+    } else if (body.category) {
+      category = ensureCatalogItem(t.activityCategories, body.category);
+    }
     if (category) {
       activity.categoryId = category.id;
       activity.category = category.name;
@@ -2305,15 +2669,9 @@ export const handlers = [
     const body = (await request.json()) as WireWorkRecordRequest;
     const t = g.p.tenant;
 
-    if (!body.activityId || !body.workerId) {
-      return badRequest("activityId and workerId are required");
-    }
-    if (!body.dateFrom) return badRequest("dateFrom is required, YYYY-MM-DD");
-    if (!DAY.test(body.dateFrom)) return badRequest("dateFrom must be YYYY-MM-DD");
-    const from = body.dateFrom;
-    const to = body.dateTo ?? from;
-    if (!DAY.test(to)) return badRequest("dateTo must be YYYY-MM-DD");
-    if (to < from) return badRequest("dateTo cannot be before dateFrom");
+    const span = workRecordSpan(body);
+    if (span instanceof Response) return span;
+    const { from, to } = span;
 
     const id = body.id ?? crypto.randomUUID();
     const already = t.workRecords.find((r) => r.id === id);
@@ -2326,12 +2684,8 @@ export const handlers = [
     // priced by the week, which means he never sees a rate, never sets one and
     // never needs to. Refusing here makes it a clear 403 instead of an
     // unexplained NO_RATE_IN_FORCE.
-    if (g.p.role === "weigher") {
-      if (activity.rateSource !== "weekly_price") {
-        return fail(403, "FORBIDDEN", "a weigher may only record work priced by the week");
-      }
-      if (body.rateCents != null) return fail(403, "FORBIDDEN", "a weigher may not set a rate");
-    }
+    const refused = weigherMayRecord(g.p.role, activity, body);
+    if (refused) return refused;
 
     // A contract is one thing done once: amount = round(1 * total).
     // `decode` runs with UseNumber and a JSON string will not unmarshal into a
@@ -2339,25 +2693,9 @@ export const handlers = [
     const quantity = activity.payScheme === "contrato" ? 1 : body.quantity;
     if (!db.isPositiveQuantity(quantity)) return badRequest("quantity must be a positive number");
 
-    let rateSource: typeof activity.rateSource;
-    let rateCents: number | null = null;
-    if (body.rateCents != null) {
-      // The caller named the price, so it freezes here and a date range is
-      // perfectly legal.
-      if (body.rateCents <= 0) return badRequest("rateCents must be positive");
-      rateSource = "explicit";
-      rateCents = body.rateCents;
-    } else if (activity.rateSource === "weekly_price") {
-      // Left open: the week's price is looked up when the settlement runs.
-      rateSource = "weekly_price";
-    } else {
-      rateSource = "activity_dated";
-      const inForce = db.rateInForce(activity, from);
-      if (!inForce) {
-        return conflict("NO_RATE_IN_FORCE", "that activity has no rate in force on that date");
-      }
-      rateCents = inForce.rateCents;
-    }
+    const price = workRecordPrice(activity, body.rateCents, from);
+    if (price instanceof Response) return price;
+    const { rateSource, rateCents } = price;
 
     // Decision 4: a record whose price is derived from a date must be a single
     // day. A wage from Tuesday to Tuesday has no single validity period and no
@@ -2601,10 +2939,8 @@ export const handlers = [
     let settled = 0;
     let byPerson = 0;
     for (const r of t.workRecords) {
-      if (r.deletedAt || r.rateSource !== "weekly_price") continue;
-      const week = mondayOf(r.dateFrom.slice(0, 10));
-      if (week < monday || (until !== null && week >= until)) continue;
-      if (target.kind === "persona" ? r.workerId !== target.id : !(r.plotIds ?? []).includes(target.id)) continue;
+      const week = specialPriceWeekOf(r, target, monday, until);
+      if (week === null) continue;
       if (db.isSettled(t, r.id)) settled++;
       else if (target.kind === "lote" && (db.specialOn(t, "persona", r.workerId, week)?.priceCents ?? null) !== null) byPerson++;
       else unsettled++;
@@ -2939,25 +3275,7 @@ export const handlers = [
        * named the set it saw. `payableIdsProvided` is what lets a screen tell
        * "nothing moved" apart from "we were not told what you saw".
        */
-      const asked = new Set(body.payableIds ?? []);
-      const pendingIds = new Set(all.map((p) => p.payableId));
-      const provided = asked.size > 0;
-      const weeks = [...new Set(chosen.map((p) => p.weekStart.slice(0, 10)))].map((weekStart) => ({
-        weekStart,
-        priceCents: db.weekPriceOf(t, weekStart),
-      }));
-      return conflict("GROSS_CHANGED", "the gross changed since it was approved", {
-        expectedCents: expected,
-        actualCents: grossOfChosen,
-        addedPayableIds: provided
-          ? all.filter((p) => !asked.has(p.payableId)).map((p) => p.payableId)
-          : [],
-        removedPayableIds: provided
-          ? [...asked].filter((id) => !pendingIds.has(id))
-          : [],
-        payableIdsProvided: provided,
-        weeksInSettlement: weeks,
-      });
+      return grossChanged(t, body.payableIds, all, chosen, expected, grossOfChosen);
     }
 
     const grossCents = grossOfChosen;
@@ -3120,41 +3438,11 @@ export const handlers = [
     const reversedEver = new Set(all.filter((l) => l.reversesId).map((l) => l.reversesId as string));
     const reversed = new Set(all.slice(0, at).filter((l) => l.reversesId).map((l) => l.reversesId as string));
     const live = (e: typeof pago) => !e.reversesId && !reversed.has(e.id);
-    let remaining = 0;
-    let prevPagoId = "";
-    let pagoIndex = -1;
-    for (let i = 0; i < all.length; i++) {
-      const e = all[i];
-      if (live(e)) remaining += e.amountCents;
-      if (e.id === pago.id) {
-        pagoIndex = i;
-        break;
-      }
-      if (live(e) && e.kind === "pago") prevPagoId = e.id;
-    }
+    const { remaining, prevPagoId, pagoIndex } = ledgerUpTo(all, pago.id, live);
     if (pagoIndex < 0) return notFound();
     const afterPrev = prevPagoId ? all.findIndex((e) => e.id === prevPagoId) : -1;
-    let week = 0;
-    const deductions: { concept: string; amountCents: number; date: string }[] = [];
-    let settlementId: string | null = null;
-    const settlementIds: string[] = [];
-    for (let i = afterPrev + 1; i < pagoIndex && pago.kind === "pago"; i++) {
-      const e = all[i];
-      if (!live(e)) continue;
-      if (e.kind === "devengo") {
-        week += e.amountCents;
-        settlementId = e.settlementId;
-        if (e.settlementId) settlementIds.push(e.settlementId);
-      }
-      if (e.kind === "deduccion") {
-        const amt = Math.abs(e.amountCents);
-        deductions.push({
-          concept: (e.note ?? "").trim() || "Descuento",
-          amountCents: amt,
-          date: e.date.slice(0, 10),
-        });
-      }
-    }
+    const since = pago.kind === "pago" ? all.slice(afterPrev + 1, pagoIndex).filter(live) : [];
+    const { week, deductions, settlementId, settlementIds } = paidSincePrevious(since);
     const disc = deductions.reduce((a, d) => a + d.amountCents, 0);
     const paid = Math.abs(pago.amountCents);
     return HttpResponse.json({
@@ -3465,25 +3753,10 @@ export const handlers = [
     const body = (await request.json()) as StockMoveBody;
     const t = g.p.tenant;
 
-    // Both ids are required and neither may be a name: `StockMoveInput` has no
-    // `warehouse` field, and the server decodes with DisallowUnknownFields.
-    if (!body.productId || !body.warehouseId) {
-      return badRequest("productId and warehouseId are required");
-    }
-    if (body.qty === 0) return badRequest("qty cannot be zero");
-    if (!body.reason || !STOCK_REASONS.includes(body.reason)) {
-      return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
-    }
-    // A 'venta' movement is the shadow of a sale and is written by the sales
-    // handler, in the same transaction as the sale. Letting one in here would
-    // be the one way to get stock and sales to disagree.
-    if (body.reason === "venta") {
-      return badRequest("record the sale at POST /v1/sales; it writes its own stock movement");
-    }
+    const valid = validateStockMoveBody(body);
+    if (valid instanceof Response) return valid;
+    const { productId, warehouseId, reason } = valid;
     const labels = body.labels ?? 0;
-    if (!Number.isInteger(labels) || labels < 0 || labels > 500) {
-      return badRequest("labels must be between 0 and 500");
-    }
 
     const foreign = confirmOurs(t, {
       product: body.productId,
@@ -3503,9 +3776,9 @@ export const handlers = [
 
     // The guard only runs on the way out, and only when it was not waived.
     const signed =
-      OUTGOING_REASONS.has(body.reason) && (body.qty ?? 0) > 0 ? -(body.qty ?? 0) : (body.qty ?? 0);
+      OUTGOING_REASONS.has(reason) && (body.qty ?? 0) > 0 ? -(body.qty ?? 0) : (body.qty ?? 0);
     if (signed < 0 && !body.allowNegative) {
-      const short = guardStock(t, body.productId, body.warehouseId, signed);
+      const short = guardStock(t, productId, warehouseId, signed);
       if (short) return short;
     }
 
@@ -3609,7 +3882,7 @@ export const handlers = [
     if (!body.warehouseId) {
       return badRequest("warehouseId is required: a sale takes the product out of somewhere");
     }
-    if (typeof body.qty !== "number" || !(body.qty > 0)) return badRequest("qty must be positive");
+    if (typeof body.qty !== "number" || body.qty <= 0) return badRequest("qty must be positive");
     if (
       typeof body.amountCents !== "number" ||
       !Number.isInteger(body.amountCents) ||
@@ -3621,26 +3894,7 @@ export const handlers = [
     // The customer picker resolves a NAME into a row, so the sales screen can
     // offer "add it if it is not there" like every other picker here.
     let customerId = body.customerId ?? null;
-    if (!customerId && body.customer) {
-      const existing = t.customers.find(
-        (c) => c.deletedAt === null && sameName(c.name, body.customer!),
-      );
-      if (existing) {
-        customerId = existing.id;
-      } else {
-        const created: WireCustomer = {
-          id: crypto.randomUUID(),
-          name: body.customer.trim(),
-          documentType: null,
-          docId: null,
-          phone: null,
-          createdAt: nowInstant(),
-          deletedAt: null,
-        };
-        t.customers.push(created);
-        customerId = created.id;
-      }
-    }
+    if (!customerId && body.customer) customerId = customerNamed(t, body.customer);
 
     const foreign = confirmOurs(t, {
       product: body.productId,
@@ -4406,32 +4660,11 @@ function ledgerHandler(kind: WireLedgerKind, checkBalance: boolean) {
      * that already emptied the balance must answer with that payment, not with
      * AMOUNT_EXCEEDS_BALANCE.
      */
-    if (body.id) {
-      const existing = t.ledger.find((e) => e.id === body.id);
-      if (existing) {
-        if (existing.kind !== kind || existing.workerId !== body.workerId) {
-          return conflict(
-            "IDEMPOTENCY_KEY_REUSED",
-            "that id already names a different movement",
-            { existing },
-          );
-        }
-        return HttpResponse.json(existing, { status: 200 });
-      }
-    }
+    const replay = ledgerReplay(t, kind, body);
+    if (replay) return replay;
 
-    let amount = body.amountCents;
-    if (kind !== "ajuste") {
-      // Accept either convention from the client and normalise; the database
-      // would reject the wrong sign anyway.
-      amount = -Math.abs(amount);
-      if (body.method != null && !["efectivo", "transferencia", "otro"].includes(body.method)) {
-        return badRequest("method must be efectivo, transferencia or otro");
-      }
-      if (kind === "deduccion" && body.method != null) {
-        return badRequest("a deduction has no payment method");
-      }
-    }
+    const amount = ledgerAmount(kind, body);
+    if (amount instanceof Response) return amount;
     if (body.date && !DAY.test(body.date)) return badRequest("date must be YYYY-MM-DD");
 
     // The server leans on the foreign key here and a bad workerId is a 500.
@@ -4793,48 +5026,14 @@ function insertStockMove(
   if (!reason || !STOCK_REASONS.includes(reason)) {
     return badRequest(`reason must be one of ${STOCK_REASONS.join(", ")}`);
   }
-  let qty = body.qty;
-  if (typeof qty !== "number" || !Number.isFinite(qty) || qty === 0) {
-    return badRequest("qty cannot be zero");
-  }
-  if (OUTGOING_REASONS.has(reason) && qty > 0) qty = -qty;
-  if (INCOMING_REASONS.has(reason) && qty < 0) qty = -qty;
+  const qty = signedStockQty(reason, body.qty);
+  if (qty instanceof Response) return qty;
 
-  // stock_sign, for the pair the handler could not infer.
-  if ((INCOMING_REASONS.has(reason) && qty < 0) || (OUTGOING_REASONS.has(reason) && qty > 0)) {
-    return badRequest(
-      "the sign of the quantity does not match the reason: cosecha and compra come in, venta, consumo and merma go out",
-    );
-  }
-
-  // stock_crop_needs_plot, then check_stock_move_crop(): a movement that said
-  // "lote 3, café del lote 7" would make every per-plot report quietly wrong.
-  if (body.plotCropId && !body.plotId) {
-    return badRequest("plotCropId needs the plotId it is planted in");
-  }
-  if (body.plotId && body.plotCropId) {
-    const plot = t.plots.find((p) => p.id === body.plotId);
-    if (!plot?.crops.some((c) => c.id === body.plotCropId)) {
-      return badRequest(`crop ${body.plotCropId} is not planted in plot ${body.plotId}`);
-    }
-  }
-
-  // check_stock_reverso(): once, and never a reversal of a reversal.
+  const misplaced = checkStockMoveCrop(t, body);
+  if (misplaced) return misplaced;
   if (body.reversesId) {
-    const origin = t.stockMoves.find((m) => m.id === body.reversesId);
-    if (!origin) return badRequest("reversal without origin");
-    if (origin.reversesId) {
-      return conflict("ALREADY_REVERSED", "a reversal cannot be reversed");
-    }
-    if (t.stockMoves.some((m) => m.reversesId === origin.id)) {
-      return conflict("ALREADY_REVERSED", "that movement has already been reversed");
-    }
-    if (origin.productId !== body.productId || origin.warehouseId !== body.warehouseId) {
-      return badRequest("reversal crosses product or warehouse");
-    }
-    if (db.round3(qty) !== db.round3(-origin.qty)) {
-      return badRequest("the reversal does not cancel its origin");
-    }
+    const badReversal = checkStockReversal(t, body, body.reversesId, qty);
+    if (badReversal) return badReversal;
   }
 
   const created: db.MockStockMove = {
@@ -4882,6 +5081,13 @@ function insertStockMove(
  */
 const revokedMemberships = new Set<string>();
 
+function farmUserStatus(m: db.MockMembership, user: db.MockUser): "revoked" | "active" | "invited" {
+  const key = `${m.farmId}:${m.userId}`;
+  if (revokedMemberships.has(key)) return "revoked";
+  if (user.emailVerified || db.farmPasswords.has(key)) return "active";
+  return "invited";
+}
+
 function projectFarmUser(m: db.MockMembership): WireFarmUser | null {
   const user = db.users.find((u) => u.id === m.userId);
   if (!user) return null;
@@ -4890,11 +5096,7 @@ function projectFarmUser(m: db.MockMembership): WireFarmUser | null {
     email: user.email,
     name: user.name,
     role: m.role,
-    status: revokedMemberships.has(`${m.farmId}:${m.userId}`)
-      ? "revoked"
-      : user.emailVerified || db.farmPasswords.has(`${m.farmId}:${m.userId}`)
-        ? "active"
-        : "invited",
+    status: farmUserStatus(m, user),
     // NO `lastLoginAt`. `store.ListFarmUsers` does not select one — the column
     // is not in the query — so the key never reaches a browser. Sending `null`
     // here made the mock kinder than the server and hid the bug it caused: the
@@ -5014,11 +5216,9 @@ function buildCrop(t: db.Tenant, plotId: string, c: PlotCropRequestBody): WirePl
   const cropType = c.cropTypeId
     ? t.cropTypes.find((x) => x.id === c.cropTypeId)
     : ensureCatalogItem(t.cropTypes, c.cropType!);
-  const variety = c.varietyId
-    ? t.varieties.find((x) => x.id === c.varietyId)
-    : c.variety
-      ? ensureCatalogItem(t.varieties, c.variety)
-      : undefined;
+  let variety: WireCatalogItem | undefined;
+  if (c.varietyId) variety = t.varieties.find((x) => x.id === c.varietyId);
+  else if (c.variety) variety = ensureCatalogItem(t.varieties, c.variety);
   return {
     id: c.id ?? crypto.randomUUID(),
     plotId,
@@ -5067,7 +5267,9 @@ function basePriceState(t: db.Tenant) {
 }
 
 function specialTarget(t: db.Tenant, rawKind: string, id: string): { kind: "lote" | "persona"; id: string; name: string } | Response {
-  const kind = rawKind === "lotes" ? "lote" : rawKind === "personas" ? "persona" : null;
+  let kind: "lote" | "persona" | null = null;
+  if (rawKind === "lotes") kind = "lote";
+  else if (rawKind === "personas") kind = "persona";
   if (!kind) return badRequest('kind must be "lotes" or "personas"');
   if (kind === "lote") {
     const p = t.plots.find((x) => x.id === id);
@@ -5096,9 +5298,11 @@ function specialPricesState(t: db.Tenant) {
   }
   const items = [...groups.values()];
   for (const it of items) it.history.sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1));
-  return items.sort((a, b) =>
-    a.kind !== b.kind ? (a.kind === "lote" ? -1 : 1) : a.targetName.localeCompare(b.targetName, "es"),
-  );
+  // Lotes first, then people; by name within each.
+  return items.sort((a, b) => {
+    if (a.kind === b.kind) return a.targetName.localeCompare(b.targetName, "es");
+    return a.kind === "lote" ? -1 : 1;
+  });
 }
 
 function checkMonday(raw: string): Response | null {
@@ -5222,9 +5426,10 @@ function gridOf(t: db.Tenant, rows: db.MockWorkRecord[], axis: "day" | "crop") {
     });
 
   const unattributedRows = rows.filter((r) => colKey(r) === null);
+  cellRows.sort((a, b) => (b.total.kg ?? 0) - (a.total.kg ?? 0));
   const grid: Record<string, unknown> = {
     columns,
-    rows: cellRows.sort((a, b) => (b.total.kg ?? 0) - (a.total.kg ?? 0)),
+    rows: cellRows,
     total: totalsOf(t, rows),
   };
   if (axis === "crop" && unattributedRows.length > 0) {
@@ -5286,7 +5491,7 @@ function performanceOf(t: db.Tenant, rows: db.MockWorkRecord[]) {
     const b = base.get(`${c.crop}|${c.day}`)!;
     if (b.n < MIN_CREW_ON_CROP_DAY) continue;
     const matesMean = (b.tot - c.kg) / (b.n - 1);
-    if (!(matesMean > 0)) continue;
+    if (matesMean <= 0) continue;
     const list = ratios.get(c.workerId) ?? [];
     list.push({ day: c.day, ratio: c.kg / matesMean });
     ratios.set(c.workerId, list);
@@ -5338,6 +5543,42 @@ function performanceOf(t: db.Tenant, rows: db.MockWorkRecord[]) {
  * `future`, where there is nothing to compare against — a 0 there would read
  * as "compared against nothing".
  */
+type FlagAnomaly = (r: db.MockWorkRecord, rule: string, reference: number | null) => void;
+
+/** Same worker, crop and quantity written again within three minutes. */
+function flagDuplicates(list: db.MockWorkRecord[], push: FlagAnomaly) {
+  if (list.length < 2) return;
+  const sorted = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = Date.parse(sorted[i].createdAt) - Date.parse(sorted[i - 1].createdAt);
+    if (Number.isFinite(gap) && gap >= 0 && gap <= 3 * 60_000) {
+      push(sorted[i], "duplicate", sorted[i].quantity);
+    }
+  }
+}
+
+/**
+ * A weighing at least four times the mean of the OTHER weighings in its
+ * group, once the group has `minKgs` of them in kilos.
+ */
+function flagAboveMates(
+  list: db.MockWorkRecord[],
+  kgOf: (r: db.MockWorkRecord) => number | null,
+  minKgs: number,
+  rule: string,
+  push: FlagAnomaly,
+) {
+  const kgs = list.map(kgOf).filter((k): k is number => k !== null);
+  if (kgs.length < minKgs) return;
+  const sum = kgs.reduce((a, b) => a + b, 0);
+  for (const r of list) {
+    const kg = kgOf(r);
+    if (kg === null) continue;
+    const reference = (sum - kg) / (kgs.length - 1);
+    if (reference > 0 && kg >= 4 * reference) push(r, rule, reference);
+  }
+}
+
 function anomaliesOf(t: db.Tenant, rows: db.MockWorkRecord[], maxKg: number) {
   const kgOf = (r: db.MockWorkRecord): number | null => {
     const unit = t.workUnits.find((u) => u.id === r.unitId);
@@ -5374,36 +5615,20 @@ function anomaliesOf(t: db.Tenant, rows: db.MockWorkRecord[], maxKg: number) {
 
   for (const r of rows) {
     const kg = kgOf(r);
-    if (r.quantity <= 0) push(r, "impossible", maxKg);
-    else if (kg !== null && kg > maxKg) push(r, "impossible", maxKg);
+    if (r.quantity <= 0 || (kg !== null && kg > maxKg)) push(r, "impossible", maxKg);
   }
 
   for (const list of groupBy(
     rows,
     (r) => `${r.workerId}|${(r.plotCropIds ?? [])[0] ?? "—"}|${r.quantity}`,
   ).values()) {
-    if (list.length < 2) continue;
-    const sorted = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    for (let i = 1; i < sorted.length; i++) {
-      const gap = Date.parse(sorted[i].createdAt) - Date.parse(sorted[i - 1].createdAt);
-      if (Number.isFinite(gap) && gap >= 0 && gap <= 3 * 60_000) {
-        push(sorted[i], "duplicate", sorted[i].quantity);
-      }
-    }
+    flagDuplicates(list, push);
   }
 
   // The reference EXCLUDES the suspect row: including it makes the rule
   // algebraically unable to fire, which the phone shipped with for versions.
   for (const [, list] of groupBy(rows, (r) => r.workerId)) {
-    const kgs = list.map(kgOf).filter((k): k is number => k !== null);
-    if (kgs.length < 2) continue;
-    const sum = kgs.reduce((a, b) => a + b, 0);
-    for (const r of list) {
-      const kg = kgOf(r);
-      if (kg === null) continue;
-      const reference = (sum - kg) / (kgs.length - 1);
-      if (reference > 0 && kg >= 4 * reference) push(r, "digit", reference);
-    }
+    flagAboveMates(list, kgOf, 2, "digit", push);
   }
 
   for (const [, list] of groupBy(
@@ -5411,15 +5636,7 @@ function anomaliesOf(t: db.Tenant, rows: db.MockWorkRecord[], maxKg: number) {
     (r) => `${(r.plotCropIds ?? [])[0] ?? "—"}|${db.dayOf(r.dateFrom)}`,
   )) {
     if (list.length < 5) continue;
-    const kgs = list.map(kgOf).filter((k): k is number => k !== null);
-    if (kgs.length < 5) continue;
-    const sum = kgs.reduce((a, b) => a + b, 0);
-    for (const r of list) {
-      const kg = kgOf(r);
-      if (kg === null) continue;
-      const reference = (sum - kg) / (kgs.length - 1);
-      if (reference > 0 && kg >= 4 * reference) push(r, "outlier", reference);
-    }
+    flagAboveMates(list, kgOf, 5, "outlier", push);
   }
 
   for (const r of rows) if (db.dayOf(r.dateFrom) > today()) push(r, "future", null);

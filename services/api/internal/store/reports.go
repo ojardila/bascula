@@ -640,8 +640,7 @@ func gridFromCells(ctx context.Context, tx pgx.Tx, sql string,
 	defer rows.Close()
 
 	grid := &Grid{Columns: []GridColumn{}, Rows: []GridRow{}}
-	rowIndex := map[string]int{}
-	colIndex := map[string]int{}
+	b := gridBuilder{grid: grid, rowIndex: map[string]int{}, colIndex: map[string]int{}, labels: labels}
 	var un Unattributed
 	sawUnattributed := false
 
@@ -666,38 +665,8 @@ func gridFromCells(ctx context.Context, tx pgx.Tx, sql string,
 			un.SharedAcrossCrops += shared
 		}
 
-		// The row.
-		ri, ok := rowIndex[workerID]
-		if !ok {
-			ri = len(grid.Rows)
-			rowIndex[workerID] = ri
-			grid.Rows = append(grid.Rows, GridRow{WorkerID: workerID, Name: name, Cells: []GridCell{}})
-		}
-		grid.Rows[ri].Cells = append(grid.Rows[ri].Cells, cell)
-		grid.Rows[ri].Total.add(cell.Totals)
-
-		// The column. A nil key sorts last and is keyed apart from any id.
-		key := "\x00unattributed"
-		if col != nil {
-			key = *col
-		}
-		ci, ok := colIndex[key]
-		if !ok {
-			ci = len(grid.Columns)
-			colIndex[key] = ci
-			label := "Sin cultivo"
-			if col != nil {
-				label = *col
-				if labels != nil {
-					if l, found := labels[*col]; found {
-						label = l
-					}
-				}
-			}
-			grid.Columns = append(grid.Columns, GridColumn{Key: col, Label: label})
-		}
-		grid.Columns[ci].Total.add(cell.Totals)
-
+		b.addToRow(workerID, name, cell)
+		b.addToColumn(col, cell)
 		grid.Total.add(cell.Totals)
 	}
 	if err := rows.Err(); err != nil {
@@ -709,6 +678,56 @@ func gridFromCells(ctx context.Context, tx pgx.Tx, sql string,
 		grid.Unattributed = &un
 	}
 	return grid, nil
+}
+
+// gridBuilder folds cells into a Grid's rows and columns, keeping the
+// first-seen order of each.
+type gridBuilder struct {
+	grid     *Grid
+	rowIndex map[string]int
+	colIndex map[string]int
+	labels   map[string]string
+}
+
+// addToRow adds a cell to its worker's row, opening the row on first sight.
+func (b *gridBuilder) addToRow(workerID, name string, cell GridCell) {
+	ri, ok := b.rowIndex[workerID]
+	if !ok {
+		ri = len(b.grid.Rows)
+		b.rowIndex[workerID] = ri
+		b.grid.Rows = append(b.grid.Rows, GridRow{WorkerID: workerID, Name: name, Cells: []GridCell{}})
+	}
+	b.grid.Rows[ri].Cells = append(b.grid.Rows[ri].Cells, cell)
+	b.grid.Rows[ri].Total.add(cell.Totals)
+}
+
+// addToColumn adds a cell to its column. A nil key sorts last and is keyed
+// apart from any id.
+func (b *gridBuilder) addToColumn(col *string, cell GridCell) {
+	key := "\x00unattributed"
+	if col != nil {
+		key = *col
+	}
+	ci, ok := b.colIndex[key]
+	if !ok {
+		ci = len(b.grid.Columns)
+		b.colIndex[key] = ci
+		b.grid.Columns = append(b.grid.Columns, GridColumn{Key: col, Label: columnLabel(col, b.labels)})
+	}
+	b.grid.Columns[ci].Total.add(cell.Totals)
+}
+
+// columnLabel is a column's header: the crop's label when `labels` knows it,
+// the key itself otherwise (the day grid), and "Sin cultivo" for the
+// unattributed column. A nil `labels` map reads as "knows nothing".
+func columnLabel(col *string, labels map[string]string) string {
+	if col == nil {
+		return "Sin cultivo"
+	}
+	if l, found := labels[*col]; found {
+		return l
+	}
+	return *col
 }
 
 // sortColumns puts the columns in a reading order: by key, with the
@@ -1035,9 +1054,31 @@ func ReportPerformance(ctx context.Context, tx pgx.Tx, days int) ([]WorkerPerfor
 		return nil, since, err
 	}
 
-	rows, err := tx.Query(ctx, performanceCrewSQL, since, nil)
+	out, index, err := performanceCrew(ctx, tx, since)
 	if err != nil {
 		return nil, since, err
+	}
+	if err := applyPerformanceIndex(ctx, tx, since, half, out, index); err != nil {
+		return nil, since, err
+	}
+
+	// Best index first, and everybody without one after them — never
+	// interleaved, because a missing index is not a low one.
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && performanceLess(out[j], out[j-1]); j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out, since, nil
+}
+
+// performanceCrew lists everybody who worked since `since`, each with their
+// kilos per day and the reason they have no index yet, plus where each worker
+// sits in that list.
+func performanceCrew(ctx context.Context, tx pgx.Tx, since time.Time) ([]WorkerPerformance, map[string]int, error) {
+	rows, err := tx.Query(ctx, performanceCrewSQL, since, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -1049,7 +1090,7 @@ func ReportPerformance(ctx context.Context, tx pgx.Tx, days int) ([]WorkerPerfor
 		t = append(t, p.Totals.scanTargets()...)
 		t = append(t, &p.Days)
 		if err := rows.Scan(t...); err != nil {
-			return nil, since, err
+			return nil, nil, err
 		}
 		if p.Kg != nil && p.Days > 0 {
 			v := *p.Kg / float64(p.Days)
@@ -1063,12 +1104,20 @@ func ReportPerformance(ctx context.Context, tx pgx.Tx, days int) ([]WorkerPerfor
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, since, err
+		return nil, nil, err
 	}
+	return out, index, nil
+}
+
+// applyPerformanceIndex fills in the index and trend of each worker in `out`
+// the index query has an answer for. Anybody it names who is not in the crew
+// list is skipped.
+func applyPerformanceIndex(ctx context.Context, tx pgx.Tx, since, half time.Time,
+	out []WorkerPerformance, index map[string]int) error {
 
 	idx, err := tx.Query(ctx, performanceIndexSQL, since, nil, half)
 	if err != nil {
-		return nil, since, err
+		return err
 	}
 	defer idx.Close()
 	for idx.Next() {
@@ -1076,7 +1125,7 @@ func ReportPerformance(ctx context.Context, tx pgx.Tx, days int) ([]WorkerPerfor
 		var irl, recent, earlier *float64
 		var comparable, recentDays, earlierDays int
 		if err := idx.Scan(&id, &irl, &comparable, &recent, &earlier, &recentDays, &earlierDays); err != nil {
-			return nil, since, err
+			return err
 		}
 		i, ok := index[id]
 		if !ok {
@@ -1095,18 +1144,7 @@ func ReportPerformance(ctx context.Context, tx pgx.Tx, days int) ([]WorkerPerfor
 			p.Trend = &t
 		}
 	}
-	if err := idx.Err(); err != nil {
-		return nil, since, err
-	}
-
-	// Best index first, and everybody without one after them — never
-	// interleaved, because a missing index is not a low one.
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && performanceLess(out[j], out[j-1]); j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out, since, nil
+	return idx.Err()
 }
 
 func performanceLess(a, b WorkerPerformance) bool {

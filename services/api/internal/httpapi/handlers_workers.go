@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
@@ -265,63 +267,18 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The basket number can be changed but not taken away: a worker who has
-	// one keeps one. Somebody who never had one (rows from before the rule)
-	// may stay without it, so an explicit null on them is a no-op.
-	if cleared["tag"] || (body.Tag != nil && store.NormalizeTag(body.Tag) == nil) {
-		current, err := store.GetEmployee(r.Context(), tx, id)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if current.Tag != nil {
-			writeError(w, r, errTagRequired())
-			return
-		}
-		delete(cleared, "tag")
-	}
-	body.Tag = store.NormalizeTag(body.Tag)
-	if body.Tag != nil {
-		if err := store.CheckTagFree(r.Context(), tx, body.Tag, id); err != nil {
-			writeError(w, r, err)
-			return
-		}
+	if err := checkWorkerTagUpdate(r.Context(), tx, id, &body, cleared); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	p, _ := auth.PrincipalFrom(r.Context())
 
 	// The status transition runs first, so a body that both reactivates and
 	// renames works: UpdateEmployee only touches rows that are not deleted.
-	switch body.Status {
-	case "inactive":
-		if err := store.SoftDeleteEmployee(r.Context(), tx, id, principalUserID(p)); err != nil && !errors.Is(err, store.NoRows) {
-			writeError(w, r, err)
-			return
-		}
-		if err := closeMembershipsToday(r, id); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	case "active":
-		// Coming back with the old number only works if nobody active was
-		// given it meanwhile; say who has it rather than a bare 409.
-		if body.Tag == nil {
-			current, err := store.GetEmployee(r.Context(), tx, id)
-			if err != nil {
-				writeError(w, r, err)
-				return
-			}
-			if current.DeletedAt != nil {
-				if err := store.CheckTagFree(r.Context(), tx, current.Tag, id); err != nil {
-					writeError(w, r, err)
-					return
-				}
-			}
-		}
-		if _, err := store.RestoreEmployee(r.Context(), tx, id, body.Tag); err != nil {
-			writeError(w, r, err)
-			return
-		}
+	if err := applyWorkerStatus(r, tx, id, &body, p); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	if body.Kind != "" {
@@ -337,45 +294,115 @@ func (s *Server) handleUpdateWorker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		if body.Status == "inactive" {
-			// Deactivating and nothing else: UpdateEmployee skips deleted
-			// rows by design, so read the row back instead of 404-ing on a
-			// change that did happen.
-			e, getErr := store.GetEmployee(r.Context(), tx, id)
-			if getErr == nil {
-				if err := store.AttachTeam(r.Context(), tx, e); err != nil {
-					writeError(w, r, err)
-					return
-				}
-				writeJSON(w, http.StatusOK, e)
-				return
-			}
-		}
-		writeError(w, r, err)
+		writeWorkerUpdateFailure(w, r, tx, id, body.Status, err)
 		return
 	}
-	if body.MemberIDs != nil {
-		from, err := parseMembersFrom(r, body.MembersFrom)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		farmID, err := tenant.FarmID(r.Context())
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if err := store.SetTeamMembers(r.Context(), tx, farmID, id, *body.MemberIDs, from,
-			principalUserID(p)); err != nil {
-			writeError(w, r, err)
-			return
-		}
+	if err := setUpdatedWorkerMembers(r, tx, id, &body, p); err != nil {
+		writeError(w, r, err)
+		return
 	}
 	if err := store.AttachTeam(r.Context(), tx, updated); err != nil {
 		writeError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// checkWorkerTagUpdate normalizes the basket number of an update and refuses
+// one that is being taken away or is already carried by somebody else.
+func checkWorkerTagUpdate(ctx context.Context, tx pgx.Tx, id string, body *updateWorkerRequest,
+	cleared map[string]bool) error {
+	// The basket number can be changed but not taken away: a worker who has
+	// one keeps one. Somebody who never had one (rows from before the rule)
+	// may stay without it, so an explicit null on them is a no-op.
+	if cleared["tag"] || (body.Tag != nil && store.NormalizeTag(body.Tag) == nil) {
+		current, err := store.GetEmployee(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if current.Tag != nil {
+			return errTagRequired()
+		}
+		delete(cleared, "tag")
+	}
+	body.Tag = store.NormalizeTag(body.Tag)
+	if body.Tag == nil {
+		return nil
+	}
+	return store.CheckTagFree(ctx, tx, body.Tag, id)
+}
+
+// applyWorkerStatus takes a worker off the payroll or puts them back on, as
+// the update's status asks.
+func applyWorkerStatus(r *http.Request, tx pgx.Tx, id string, body *updateWorkerRequest, p *auth.Principal) error {
+	switch body.Status {
+	case "inactive":
+		if err := store.SoftDeleteEmployee(r.Context(), tx, id, principalUserID(p)); err != nil && !errors.Is(err, store.NoRows) {
+			return err
+		}
+		return closeMembershipsToday(r, id)
+	case "active":
+		// Coming back with the old number only works if nobody active was
+		// given it meanwhile; say who has it rather than a bare 409.
+		if body.Tag == nil {
+			if err := checkRestoredTagFree(r.Context(), tx, id); err != nil {
+				return err
+			}
+		}
+		_, err := store.RestoreEmployee(r.Context(), tx, id, body.Tag)
+		return err
+	}
+	return nil
+}
+
+// checkRestoredTagFree checks that a deleted worker's old basket number is
+// still free before they come back with it.
+func checkRestoredTagFree(ctx context.Context, tx pgx.Tx, id string) error {
+	current, err := store.GetEmployee(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if current.DeletedAt == nil {
+		return nil
+	}
+	return store.CheckTagFree(ctx, tx, current.Tag, id)
+}
+
+// writeWorkerUpdateFailure answers an update UpdateEmployee refused.
+func writeWorkerUpdateFailure(w http.ResponseWriter, r *http.Request, tx pgx.Tx, id, status string, err error) {
+	if status == "inactive" {
+		// Deactivating and nothing else: UpdateEmployee skips deleted
+		// rows by design, so read the row back instead of 404-ing on a
+		// change that did happen.
+		e, getErr := store.GetEmployee(r.Context(), tx, id)
+		if getErr == nil {
+			if err := store.AttachTeam(r.Context(), tx, e); err != nil {
+				writeError(w, r, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, e)
+			return
+		}
+	}
+	writeError(w, r, err)
+}
+
+// setUpdatedWorkerMembers replaces a team's member list when the update
+// names one.
+func setUpdatedWorkerMembers(r *http.Request, tx pgx.Tx, id string, body *updateWorkerRequest, p *auth.Principal) error {
+	if body.MemberIDs == nil {
+		return nil
+	}
+	from, err := parseMembersFrom(r, body.MembersFrom)
+	if err != nil {
+		return err
+	}
+	farmID, err := tenant.FarmID(r.Context())
+	if err != nil {
+		return err
+	}
+	return store.SetTeamMembers(r.Context(), tx, farmID, id, *body.MemberIDs, from,
+		principalUserID(p))
 }
 
 // errTagRequired is the 400 for a missing basket number, with the field

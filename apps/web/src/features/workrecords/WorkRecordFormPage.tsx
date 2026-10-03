@@ -77,26 +77,14 @@ function latestDay(a: string, b: string): string {
   return a < b ? b : a;
 }
 
-export function WorkRecordFormPage() {
-  const navigate = useNavigate();
-  const { can, user } = useAuth();
-  const timezone = user?.farm?.timezone ?? "America/Bogota";
-  const today = todayInFarm(timezone);
-
+/**
+ * The three lists the form picks from. With no signal, the copies the
+ * weighing screen keeps on this device stand in, so the form still opens.
+ */
+function useFormReferences(farmId: string) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [plots, setPlots] = useState<Plot[]>([]);
-  const [priceBook, setPriceBook] = useState<KiloPriceBook | null>(null);
-  const farmId = user?.farm?.id ?? "";
-  const readsPrices = can("money.read");
-
-  const [category, setCategory] = useState<string>("");
-  const [draft, setDraft] = useState<WorkRecordDraft>(() => emptyDraft(today));
-  const [rateText, setRateText] = useState("");
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [error, setError] = useState<string | null>(null);
-  const { busy, run: runOnce } = useWriteOnce();
-  const [saved, setSaved] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
 
@@ -133,6 +121,29 @@ export function WorkRecordFormPage() {
         }
       });
   }, [farmId]);
+
+  return { activities, workers, plots, loadError, denied };
+}
+
+export function WorkRecordFormPage() {
+  const navigate = useNavigate();
+  const { can, user } = useAuth();
+  const timezone = user?.farm?.timezone ?? "America/Bogota";
+  const today = todayInFarm(timezone);
+
+  const [priceBook, setPriceBook] = useState<KiloPriceBook | null>(null);
+  const farmId = user?.farm?.id ?? "";
+  const readsPrices = can("money.read");
+
+  const [category, setCategory] = useState<string>("");
+  const [draft, setDraft] = useState<WorkRecordDraft>(() => emptyDraft(today));
+  const [rateText, setRateText] = useState("");
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [error, setError] = useState<string | null>(null);
+  const { busy, run: runOnce } = useWriteOnce();
+  const [saved, setSaved] = useState<string | null>(null);
+  const { activities, workers, plots, loadError, denied } =
+    useFormReferences(farmId);
 
   // The kilo price rules (special prices per person and per lote, base price
   // history, recent week prices), fresh when online and kept on the device

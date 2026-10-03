@@ -561,8 +561,6 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	invalid := domain.Coded(http.StatusUnauthorized, domain.CodeInvalidCredentials,
-		"the passkey was not accepted")
 	ip := clientIP(r)
 
 	// The same limiter as the password door, on its per-IP axis: there is no
@@ -578,20 +576,10 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 			"too many failed sign-in attempts; try again later"))
 		return
 	}
-	refuse := func() {
-		s.loginRefused(ip, "", "passkey")
-		if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, ""); err != nil {
-			writeError(w, r, domain.Internal(
-				"could not record the failed sign-in").WithCause(err))
-			return
-		}
-		tenant.KeepChanges(r.Context())
-		writeError(w, r, invalid)
-	}
 
 	found, user, cred, err := s.verifyPasskeyAnswer(r, tx, rp, req.Challenge, req.Credential)
 	if errors.Is(err, errPasskeyRefused) {
-		refuse()
+		s.passkeyLoginRefuse(w, r, tx, ip)
 		return
 	}
 	if err != nil {
@@ -599,79 +587,14 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	all, err := store.ListMemberships(r.Context(), tx, user.ID)
+	memberships, err := passkeyLoginMemberships(r, tx, user, found)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	memberships, err := farmsUnlockedByPasskey(r, tx, user.ID, found, all)
+	chosen, err := passkeyLoginChooseFarm(r, tx, &req, memberships)
 	if err != nil {
 		writeError(w, r, err)
-		return
-	}
-	// The same rule as the password: an unproved address opens only farms of
-	// its own password, which is where a passkey pinned to a farm came from.
-	if user.EmailVerifiedAt == nil {
-		if memberships, err = onlyFarmScoped(r.Context(), tx, user.ID, memberships); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if len(memberships) == 0 {
-			writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
-				"verify the email address before opening a session"))
-			return
-		}
-	}
-	if len(memberships) == 0 {
-		writeError(w, r, domain.Forbidden("this passkey opens no farm; sign in with the password"))
-		return
-	}
-
-	pinnedID, err := loginFarmPin(r.Context(), tx, r, req.FarmSlug)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if pinnedID != "" && req.FarmID != "" && pinnedID != req.FarmID {
-		writeError(w, r, domain.BadRequest("farmId does not match the host"))
-		return
-	}
-	if pinnedID != "" {
-		req.FarmID = pinnedID
-	}
-
-	var chosen *store.Membership
-	switch {
-	case req.FarmID != "":
-		for i := range memberships {
-			if memberships[i].FarmID == req.FarmID {
-				chosen = &memberships[i]
-			}
-		}
-		if chosen == nil {
-			writeError(w, r, domain.Forbidden("this passkey does not open that farm"))
-			return
-		}
-	case len(memberships) == 1:
-		chosen = &memberships[0]
-	default:
-		farms := make([]map[string]any, 0, len(memberships))
-		for _, m := range memberships {
-			farms = append(farms, map[string]any{
-				"id": m.FarmID, "name": m.FarmName, "slug": m.FarmSlug, "role": m.Role,
-			})
-		}
-		writeError(w, r, domain.BadRequest("choose a farm").
-			WithDetails(map[string]any{"farms": farms}))
-		return
-	}
-	if chosen.SuspendedAt != nil {
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
-			"that farm is suspended"))
 		return
 	}
 
@@ -692,6 +615,111 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
+}
+
+// passkeyLoginRefuse answers a passkey that was not accepted, and records the
+// failure (with no email) for the limiter. The failure row must survive the
+// error response, hence KeepChanges.
+func (s *Server) passkeyLoginRefuse(w http.ResponseWriter, r *http.Request, tx pgx.Tx, ip string) {
+	s.loginRefused(ip, "", "passkey")
+	if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, ""); err != nil {
+		writeError(w, r, domain.Internal(
+			"could not record the failed sign-in").WithCause(err))
+		return
+	}
+	tenant.KeepChanges(r.Context())
+	writeError(w, r, domain.Coded(http.StatusUnauthorized, domain.CodeInvalidCredentials,
+		"the passkey was not accepted"))
+}
+
+// passkeyLoginMemberships is the memberships the passkey opens for user. It
+// sets the transaction's user first, as handleLogin does.
+func passkeyLoginMemberships(r *http.Request, tx pgx.Tx, user *store.User, found *store.Passkey) ([]store.Membership, error) {
+	if err := tenant.SetUser(r.Context(), tx, user.ID); err != nil {
+		return nil, err
+	}
+	all, err := store.ListMemberships(r.Context(), tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := farmsUnlockedByPasskey(r, tx, user.ID, found, all)
+	if err != nil {
+		return nil, err
+	}
+	// The same rule as the password: an unproved address opens only farms of
+	// its own password, which is where a passkey pinned to a farm came from.
+	if user.EmailVerifiedAt == nil {
+		if memberships, err = onlyFarmScoped(r.Context(), tx, user.ID, memberships); err != nil {
+			return nil, err
+		}
+		if len(memberships) == 0 {
+			return nil, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
+				"verify the email address before opening a session")
+		}
+	}
+	if len(memberships) == 0 {
+		return nil, domain.Forbidden("this passkey opens no farm; sign in with the password")
+	}
+	return memberships, nil
+}
+
+// passkeyLoginChooseFarm picks the farm to sign in to: the one the host pins,
+// the one asked for, or the only one. It refuses a suspended farm. req.FarmID
+// is set to the host's farm when the host pins one.
+func passkeyLoginChooseFarm(r *http.Request, tx pgx.Tx, req *passkeyLoginRequest, memberships []store.Membership) (*store.Membership, error) {
+	pinnedID, err := loginFarmPin(r.Context(), tx, r, req.FarmSlug)
+	if err != nil {
+		return nil, err
+	}
+	if pinnedID != "" && req.FarmID != "" && pinnedID != req.FarmID {
+		return nil, domain.BadRequest("farmId does not match the host")
+	}
+	if pinnedID != "" {
+		req.FarmID = pinnedID
+	}
+
+	var chosen *store.Membership
+	switch {
+	case req.FarmID != "":
+		chosen = passkeyLoginFindFarm(memberships, req.FarmID)
+		if chosen == nil {
+			return nil, domain.Forbidden("this passkey does not open that farm")
+		}
+	case len(memberships) == 1:
+		chosen = &memberships[0]
+	default:
+		return nil, passkeyLoginChooseAFarm(memberships)
+	}
+	if chosen.SuspendedAt != nil {
+		return nil, domain.Coded(http.StatusForbidden, domain.CodeFarmSuspended,
+			"that farm is suspended")
+	}
+	return chosen, nil
+}
+
+// passkeyLoginFindFarm is the membership of farmID (the last one, should
+// there be more), or nil.
+func passkeyLoginFindFarm(memberships []store.Membership, farmID string) *store.Membership {
+	var chosen *store.Membership
+	for i := range memberships {
+		if memberships[i].FarmID == farmID {
+			chosen = &memberships[i]
+		}
+	}
+	return chosen
+}
+
+// passkeyLoginChooseAFarm is the error that asks the client to choose one of
+// the farms the passkey opens, listed in its details.
+func passkeyLoginChooseAFarm(memberships []store.Membership) error {
+	farms := make([]map[string]any, 0, len(memberships))
+	for _, m := range memberships {
+		farms = append(farms, map[string]any{
+			"id": m.FarmID, "name": m.FarmName, "slug": m.FarmSlug, "role": m.Role,
+		})
+	}
+	return domain.BadRequest("choose a farm").
+		WithDetails(map[string]any{"farms": farms})
 }
 
 // farmsUnlockedByPasskey is farmsUnlockedBy for a passkey: a passkey pinned
