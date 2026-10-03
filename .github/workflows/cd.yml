@@ -280,10 +280,26 @@ jobs:
         env:
           V: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ github.token }}
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # master is protected by the ruleset "master: require semgrep": a
+          # commit must have a passing `semgrep` check before it lands. The
+          # release commit is pushed straight to master, so it goes through
+          # the repo's write deploy key, the ruleset's only bypass actor
+          # (GITHUB_TOKEN cannot bypass on a personal-account repo). Reads
+          # (fetch, pull) still use the checkout's token on origin.
+          if [ -z "${RELEASE_DEPLOY_KEY}" ]; then
+            echo "RELEASE_DEPLOY_KEY is empty" >&2
+            exit 1
+          fi
+          install -m 600 /dev/null /tmp/release_key
+          printenv RELEASE_DEPLOY_KEY > /tmp/release_key
+          export GIT_SSH_COMMAND='ssh -i /tmp/release_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+          push_url="git@github.com:${GITHUB_REPOSITORY}.git"
 
           # Re-apply the release stamp after a rebase conflict. This is
           # needed when master moved by a release commit while this run was
@@ -315,7 +331,10 @@ jobs:
 
           commit_release() {
             git add VERSION manifests/base/
-            git commit -m "Release ${V}"
+            # Unlike GITHUB_TOKEN pushes, a deploy-key push starts workflows.
+            # [skip ci] keeps the release commit (VERSION and manifests only)
+            # from re-running CD, Semgrep and SonarQube on itself.
+            git commit -m "Release ${V}" -m "[skip ci]"
           }
           tag_release() {
             # The parent is the exact master HEAD being released, even after
@@ -327,7 +346,7 @@ jobs:
           tag_release
           pushed=false
           for attempt in 1 2 3; do
-            if git push origin HEAD:master && git push origin "${V}"; then
+            if git push "${push_url}" HEAD:master && git push "${push_url}" "${V}"; then
               pushed=true
               break
             fi
