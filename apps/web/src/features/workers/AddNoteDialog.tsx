@@ -27,13 +27,13 @@ import { useAuth } from "../../auth/AuthContext";
  */
 export function AddNoteDialog({
   open, workerId, workerName, onClose, onSaved,
-}: {
+}: Readonly<{
   open: boolean;
   workerId: string;
   workerName?: string;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const theme = useTheme();
   const phone = useMediaQuery(theme.breakpoints.down("sm"));
   const { user } = useAuth();

@@ -30,7 +30,7 @@ const CHIP_COLOR: Record<
   Ajuste: "default",
 };
 
-function RowBody({ r }: { r: HistoryRow }) {
+function RowBody({ r }: Readonly<{ r: HistoryRow }>) {
   return (
     <Stack
       direction="row"
@@ -103,10 +103,10 @@ function RowBody({ r }: { r: HistoryRow }) {
 export function WorkerHistory({
   workerId,
   ledger,
-}: {
+}: Readonly<{
   workerId: string;
   ledger: LedgerEntry[];
-}) {
+}>) {
   const navigate = useNavigate();
   const rows = historyRows(ledger);
   if (rows.length === 0) {

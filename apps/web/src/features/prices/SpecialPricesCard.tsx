@@ -63,7 +63,7 @@ interface Editing {
   ending: boolean;
 }
 
-export function SpecialPricesCard({ canEdit }: { canEdit: boolean }) {
+export function SpecialPricesCard({ canEdit }: Readonly<{ canEdit: boolean }>) {
   const [tick, setTick] = useState(0);
   const { data, error } = useAsync(() => api.listSpecialPrices(), [tick]);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -221,12 +221,12 @@ function SpecialRow({
   canEdit,
   onChange,
   onEnd,
-}: {
+}: Readonly<{
   item: WireSpecialPrice;
   canEdit: boolean;
   onChange: () => void;
   onEnd: () => void;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const latest = item.history[0];
   return (
@@ -335,12 +335,12 @@ function SpecialPriceDialog({
   existing,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   editing: Editing;
   existing: WireSpecialPrice[];
   onClose: () => void;
   onSaved: (msg: string) => void;
-}) {
+}>) {
   const theme = useTheme();
   const phone = useMediaQuery(theme.breakpoints.down("sm"));
   const [kind, setKind] = useState<WireSpecialPriceKind>(editing.kind);

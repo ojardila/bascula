@@ -70,7 +70,7 @@ export function ProvisionProgress({
   pollMs = POLL_MS,
   compact = false,
   redirectWhenReady = false,
-}: {
+}: Readonly<{
   slug: string;
   pollMs?: number;
   /** Inside a dialog: smaller headings, no page chrome. */
@@ -81,7 +81,7 @@ export function ProvisionProgress({
    * the person there may be creating the farm for somebody else.
    */
   redirectWhenReady?: boolean;
-}) {
+}>) {
   const [status, setStatus] = useState<ProvisionStatus | null>(null);
   const [missing, setMissing] = useState(false);
   const [asked, setAsked] = useState(false);
@@ -508,12 +508,12 @@ function ReadyEmail({
   busy,
   failed,
   onAsk,
-}: {
+}: Readonly<{
   requested: boolean;
   busy: boolean;
   failed: boolean;
   onAsk: () => void;
-}) {
+}>) {
   if (requested) {
     return (
       <Alert

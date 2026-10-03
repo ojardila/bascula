@@ -23,10 +23,10 @@ export function looksLikeTwoPeople(name: string): boolean {
 export function TeamMembersCard({
   team,
   canEdit,
-}: {
+}: Readonly<{
   team: Worker;
   canEdit: boolean;
-}) {
+}>) {
   const navigate = useNavigate();
   const members = team.members ?? [];
   return (
@@ -85,7 +85,7 @@ export function TeamMembersCard({
   );
 }
 
-export function MemberBanner({ team }: { team: TeamRef }) {
+export function MemberBanner({ team }: Readonly<{ team: TeamRef }>) {
   const navigate = useNavigate();
   return (
     <Alert
@@ -110,7 +110,7 @@ export function MemberBanner({ team }: { team: TeamRef }) {
 }
 
 /** On a payroll row: «Equipo de 2 · Yorman, Sergio». Nothing for a person. */
-export function TeamChip({ worker }: { worker: Worker | undefined | null }) {
+export function TeamChip({ worker }: Readonly<{ worker: Worker | undefined | null }>) {
   if (!worker || worker.kind !== "equipo") return null;
   const n = worker.members?.length ?? 0;
   const names = (worker.members ?? []).map((m) => m.name).join(", ");
