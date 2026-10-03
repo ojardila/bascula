@@ -180,7 +180,9 @@ func TestOAuthRegisterIsBounded(t *testing.T) {
 		srv.ServeHTTP(rec, req)
 		return rec.Code
 	}
-	if reg("10.9.0.6") != http.StatusCreated || reg("10.9.0.6") != http.StatusCreated {
+	// Two calls on purpose: each one is a registration.
+	first, second := reg("10.9.0.6"), reg("10.9.0.6")
+	if first != http.StatusCreated || second != http.StatusCreated {
 		t.Fatal("the first two registrations must pass")
 	}
 	if got := reg("10.9.0.6"); got != http.StatusTooManyRequests {

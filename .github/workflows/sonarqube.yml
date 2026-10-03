@@ -122,9 +122,11 @@ jobs:
           npm ci
           # Same version as vitest, not saved: no lockfile churn for a report.
           V=$(node -p "require('vitest/package.json').version")
+          # reportOnFailure: one failing test must not drop the whole web
+          # coverage (master once reported 0% new coverage that way).
           npm install --no-save --workspace apps/web "@vitest/coverage-v8@${V}"
           npx --workspace apps/web vitest run --coverage.enabled \
-            --coverage.provider=v8 --coverage.reporter=lcov --coverage.reportsDirectory=coverage
+            --coverage.provider=v8 --coverage.reportOnFailure --coverage.reporter=lcov --coverage.reportsDirectory=coverage
 
       - name: shared tests with coverage
         if: steps.secrets.outputs.ok == 'true'

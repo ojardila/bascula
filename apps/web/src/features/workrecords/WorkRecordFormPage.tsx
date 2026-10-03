@@ -220,8 +220,8 @@ export function WorkRecordFormPage() {
       draft.dateFrom,
       draft.dateTo,
       draft.rateCents,
-      [...draft.plotIds].sort().join("+"),
-      [...draft.plotCropIds].sort().join("+"),
+      [...draft.plotIds].sort((a, b) => a.localeCompare(b)).join("+"),
+      [...draft.plotCropIds].sort((a, b) => a.localeCompare(b)).join("+"),
     ].join("|");
 
     const outcome = await runOnce(intent, async (mint) => {

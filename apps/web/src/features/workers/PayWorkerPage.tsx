@@ -214,7 +214,7 @@ export function PayWorkerPage() {
       alsoAdvance,
       method,
       receivedBy,
-      [...checked].sort().join("+"),
+      [...checked].sort((a, b) => a.localeCompare(b)).join("+"),
     ].join("|");
 
     const outcome = await runOnce(intent, async (mint) => {

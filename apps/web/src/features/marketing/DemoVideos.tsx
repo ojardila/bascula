@@ -115,11 +115,11 @@ export const DemoPlayer = forwardRef<
     v.muted = false;
     v.volume = 1;
     // Called from the click itself: that is what lets the browser play sound.
-    const p = v.play();
-    if (p && typeof p.catch === "function")
-      p.catch(() => {
-        /* the native controls stay available */
-      });
+    // Old engines return undefined instead of a promise.
+    const p: Promise<void> | undefined = v.play();
+    p?.catch(() => {
+      /* the native controls stay available */
+    });
   };
   useImperativeHandle(ref, () => ({ start }));
   return (

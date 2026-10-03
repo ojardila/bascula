@@ -176,7 +176,9 @@ func TestOAuthRegistrationLimitSurvivesRestart(t *testing.T) {
 		return h.serverWithSigner(t, func(cfg *httpapi.Config) { cfg.OAuthRegistrationsPerIPPerHour = 2 })
 	}
 	a := mk()
-	if reg(a) != http.StatusCreated || reg(a) != http.StatusCreated {
+	// Two calls on purpose: each one is a registration.
+	first, second := reg(a), reg(a)
+	if first != http.StatusCreated || second != http.StatusCreated {
 		t.Fatal("the first two registrations must pass")
 	}
 	if got := reg(mk()); got != http.StatusTooManyRequests {
