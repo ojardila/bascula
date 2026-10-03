@@ -373,7 +373,9 @@ func TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust(t *testing.T) {
 	})
 
 	t.Run("the same batch sent again applies nothing twice", func(t *testing.T) {
-		a3PushResendAppliesNothing(t, h, f, device, workerID, opWorker, opRecordA, recordA)
+		a3PushResendAppliesNothing(t, h, f, a3PushIDs{
+			device: device, workerID: workerID, opWorker: opWorker, opRecordA: opRecordA, recordA: recordA,
+		})
 	})
 
 	t.Run("a new opId for a row that is already here is a duplicate, not a second row", func(t *testing.T) {
@@ -422,7 +424,13 @@ func a3PushSurvivorsLanded(t *testing.T, h *harness, f *farmFixture, workerID st
 	}
 }
 
-func a3PushResendAppliesNothing(t *testing.T, h *harness, f *farmFixture, device, workerID, opWorker, opRecordA, recordA string) {
+// a3PushIDs are the identifiers of the first push batch that the resend repeats.
+type a3PushIDs struct {
+	device, workerID, opWorker, opRecordA, recordA string
+}
+
+func a3PushResendAppliesNothing(t *testing.T, h *harness, f *farmFixture, ids a3PushIDs) {
+	device, workerID, opWorker, opRecordA, recordA := ids.device, ids.workerID, ids.opWorker, ids.opRecordA, ids.recordA
 	again := h.mustDo(t, http.MethodPost, "/v1/sync/push", f.OwnerToken, map[string]any{
 		"deviceId": device,
 		"ops": []map[string]any{

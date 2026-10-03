@@ -78,7 +78,9 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 	afterFirst := balanceOf(t)
 
 	t.Run("a resent settlement returns the same one, not a second earning", func(t *testing.T) {
-		a3ResentSettlementSame(t, h, f, settleBody, settlementID, gross, afterFirst, balanceOf)
+		a3ResentSettlementSame(t, h, f, a3FirstSettlement{
+			body: settleBody, id: settlementID, gross: gross, afterFirst: afterFirst,
+		}, balanceOf)
 	})
 
 	t.Run("the same settlement id for another worker is refused", func(t *testing.T) {
@@ -145,7 +147,17 @@ func TestEveryMoneyWriteIsIdempotent(t *testing.T) {
 	})
 }
 
-func a3ResentSettlementSame(t *testing.T, h *harness, f *farmFixture, settleBody map[string]any, settlementID string, gross, afterFirst int64, balanceOf func(*testing.T) int64) {
+// a3FirstSettlement is what the first settlement sent and got back, which a
+// resend has to reproduce exactly.
+type a3FirstSettlement struct {
+	body       map[string]any
+	id         string
+	gross      int64
+	afterFirst int64 // the balance right after it
+}
+
+func a3ResentSettlementSame(t *testing.T, h *harness, f *farmFixture, first a3FirstSettlement, balanceOf func(*testing.T) int64) {
+	settleBody, settlementID, gross, afterFirst := first.body, first.id, first.gross, first.afterFirst
 	again := h.mustSettle(t, f.OwnerToken,
 		settleBody, http.StatusOK)
 	if mustString(t, again.Body, "id") != settlementID {

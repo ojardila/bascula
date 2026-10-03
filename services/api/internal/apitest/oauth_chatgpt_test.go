@@ -123,7 +123,10 @@ func a3ConfidentialClientFlow(t *testing.T, h *harness, f *farmFixture, redirect
 	code := loc.Query().Get("code")
 
 	tokenReq := func(withSecret bool) *httptest.ResponseRecorder {
-		return a3TokenRequest(h, method, clientID, secret, code, redirect, verifier, withSecret)
+		return a3TokenRequest(h, a3TokenExchange{
+			method: method, clientID: clientID, secret: secret,
+			code: code, redirect: redirect, verifier: verifier,
+		}, withSecret)
 	}
 	if rr := tokenReq(false); rr.Code != http.StatusUnauthorized || !strings.Contains(rr.Body.String(), "invalid_client") {
 		t.Fatalf("%s without the secret: %d %s", method, rr.Code, rr.Body.String())
@@ -152,9 +155,16 @@ func a3ConfidentialClientFlow(t *testing.T, h *harness, f *farmFixture, redirect
 	}
 }
 
+// a3TokenExchange is one authorization-code exchange: the client, how it
+// authenticates, and the code with its PKCE verifier.
+type a3TokenExchange struct {
+	method, clientID, secret, code, redirect, verifier string
+}
+
 // a3TokenRequest exchanges code at /oauth/token, authenticating the client
 // the way method says, with or without the real secret.
-func a3TokenRequest(h *harness, method, clientID, secret, code, redirect, verifier string, withSecret bool) *httptest.ResponseRecorder {
+func a3TokenRequest(h *harness, x a3TokenExchange, withSecret bool) *httptest.ResponseRecorder {
+	method, clientID, secret, code, redirect, verifier := x.method, x.clientID, x.secret, x.code, x.redirect, x.verifier
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code},
 		"redirect_uri": {redirect}, "code_verifier": {verifier}}
 	if method == "client_secret_post" {
