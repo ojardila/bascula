@@ -1,0 +1,20 @@
+# See backup-s3-keys.yaml: a farm's copy of bascula-backup-s3 uses the AWS_*
+# field names.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bascula-uploads-backup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: rclone
+              env:
+                - name: RCLONE_CONFIG_SPACES_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef: {name: bascula-backup-s3, key: AWS_ACCESS_KEY_ID}
+                - name: RCLONE_CONFIG_SPACES_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef: {name: bascula-backup-s3, key: AWS_SECRET_ACCESS_KEY}

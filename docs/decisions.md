@@ -279,8 +279,9 @@ unchanged — WAL archived continuously, a base backup every Sunday,
   `bascula/`, a farm is `bascula-{slug}/`. The tenant overlay derives it from
   the namespace with a kustomize replacement, so nothing per farm is committed.
   The slug is the namespace and the hostname, and it never changes for a farm.
-- **Credentials: the bucket key, cloned by Kyverno** from ns `bascula`
-  (`manifests/cluster/backup-s3-clone.yaml`), not a key per farm. Spaces cannot
+- **Credentials: the bucket key, cloned by Kyverno** (the k8 repo's
+  `sync-backup-s3`, from `longhorn-system/longhorn-backup-secret`), not a key
+  per farm. Spaces cannot
   scope a key to a prefix, and minting keys in-cluster would put a DigitalOcean
   API token in every farm. Rotation is one Secret; revocation is per cluster,
   not per farm.

@@ -186,17 +186,17 @@ off the cluster. Dev (`bascula-dev`) has no backups at all, on purpose.
 
 ### Credentials: one Secret, made once
 
-Both read Secret **`bascula-backup-s3`** (keys `ACCESS_KEY_ID`,
-`ACCESS_SECRET_KEY`). In namespace `bascula` it already exists (production's
-ObjectStore has used it for months). Farms get a copy from Kyverno:
+Both read Secret **`bascula-backup-s3`**. In namespace `bascula` it already
+exists (production's ObjectStore has used it for months), with keys
+`ACCESS_KEY_ID` / `ACCESS_SECRET_KEY`. Farms get their copy from the **k8
+repo's** Kyverno policy `sync-backup-s3` (rule `clone-backup-s3-bascula-farms`,
+source `longhorn-system/longhorn-backup-secret`, the same bucket key), whose
+fields are `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`; the tenant overlay
+reads those names (`overlays/tenant/backup-s3-keys.yaml`,
+`uploads-backup-keys.yaml`). Nothing in this repo creates the farm copies.
 
 ```bash
-# MANUAL, once per cluster. harbor-pull-clone.yaml carries the RBAC both
-# policies need, so apply it first if it is not there yet.
-kubectl apply -f manifests/cluster/harbor-pull-clone.yaml
-kubectl apply -f manifests/cluster/backup-s3-clone.yaml
-
-# Check: every bascula-<slug> namespace has the Secret.
+# Check: every bascula-<slug> farm namespace has the Secret.
 kubectl get secret -A --field-selector metadata.name=bascula-backup-s3
 ```
 

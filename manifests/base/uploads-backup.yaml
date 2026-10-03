@@ -22,8 +22,9 @@
 # activeDeadlineSeconds reaps it instead of leaving it Pending.
 #
 # Credentials: Secret bascula-backup-s3, the same one the ObjectStore in
-# postgres.yaml uses. Tenants get it from Kyverno
-# (manifests/cluster/backup-s3-clone.yaml); see manifests/README.md, "Backups".
+# postgres.yaml uses. Farms get a copy from the k8 repo's Kyverno policy
+# sync-backup-s3, with AWS_* field names (the tenant overlay reads those); see
+# manifests/README.md, "Backups".
 apiVersion: batch/v1
 kind: CronJob
 metadata:

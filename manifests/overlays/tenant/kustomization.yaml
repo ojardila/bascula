@@ -4,9 +4,11 @@
 # Secrets are minted in-cluster by bootstrap-secrets (PreSync). harbor-pull
 # is cloned in by Kyverno (manifests/cluster/harbor-pull-clone.yaml). The farm
 # itself arrives from the platform API on the internal port (tenant-mode.yaml).
-# Backups: bascula-backup-s3 is cloned in by Kyverno too
-# (manifests/cluster/backup-s3-clone.yaml); the replacement at the bottom
-# points the ObjectStore at this farm's own prefix.
+# Backups: bascula-backup-s3 is cloned in by Kyverno from the k8 repo
+# (policy sync-backup-s3, rule clone-backup-s3-bascula-farms, source
+# longhorn-system/longhorn-backup-secret), so its fields are AWS_* named;
+# backup-s3-keys.yaml and uploads-backup-keys.yaml read those. The replacement
+# at the bottom points the ObjectStore at this farm's own prefix.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # Fail safe. Base hardcodes `namespace: bascula` (production). Without this
@@ -46,6 +48,18 @@ patches:
       version: v1
       kind: Deployment
       name: bascula-api
+  - path: backup-s3-keys.yaml
+    target:
+      group: barmancloud.cnpg.io
+      version: v1
+      kind: ObjectStore
+      name: bascula-backups
+  - path: uploads-backup-keys.yaml
+    target:
+      group: batch
+      version: v1
+      kind: CronJob
+      name: bascula-uploads-backup
 
 # Each farm backs up to its own prefix in the production bucket,
 # s3://k8-longhorn-backups/bascula-{slug}, the same <bucket>/<namespace>
