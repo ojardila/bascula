@@ -1,0 +1,19 @@
+# gitleaks configuration (.github/workflows/gitleaks.yml). The default rules,
+# plus an allowlist for values that look like keys but are not secrets. Keep
+# every entry narrow and say why; a real secret is rotated, never allowlisted.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures: MSW mock handlers and end-to-end tests use made-up passwords"
+paths = [
+  '''^apps/web/src/mocks/''',
+  '''\.e2e\.ts$''',
+]
+
+[[allowlists]]
+description = "localStorage key names (bascula.<feature>.v<n>), not credentials"
+regexTarget = "match"
+regexes = [
+  '''KEY\s*=\s*"bascula\.[A-Za-z0-9.]+\.v[0-9]+"''',
+]
