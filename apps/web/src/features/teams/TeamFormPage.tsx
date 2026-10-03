@@ -7,7 +7,7 @@
  * an old combined record («Yorman y Sergio» as one person) into a team: it
  * keeps the id, the tag, the weighings and the account.
  */
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type SubmitEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
@@ -123,7 +123,7 @@ export function TeamFormPage() {
     });
   }
 
-  async function onSubmit(ev: FormEvent) {
+  async function onSubmit(ev: SubmitEvent) {
     ev.preventDefault();
     setError(null);
     const missingName = !name.trim();
