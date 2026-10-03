@@ -20,7 +20,10 @@ export function safeReturnPath(from: unknown): string | null {
   // Browsers read "\" as "/" in URLs, and strip tabs and newlines.
   if (from.includes("\\")) return null;
   for (const ch of from) {
-    const code = ch.charCodeAt(0);
+    // `ch` is one whole code point, so `codePointAt(0)` is always a number;
+    // the fallback only satisfies the type and, being a control code, fails
+    // closed.
+    const code = ch.codePointAt(0) ?? 0;
     if (code < 0x20 || code === 0x7f) return null;
   }
   let url: URL;

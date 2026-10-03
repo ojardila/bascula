@@ -506,7 +506,11 @@ export function fitView(b: Bbox, vp: Viewport, marginPx = 40): MapView {
   return { center, mPerPx: Math.max(widthM / usableW, heightM / usableH, 0.02) };
 }
 
-const NICE_METRES = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10_000];
+/** The largest step: beyond it the bar and the grid stop growing. */
+const LARGEST_NICE_METRES = 10_000;
+const NICE_METRES = [
+  1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000, LARGEST_NICE_METRES,
+];
 
 /**
  * A round number of metres whose pixel width lands near `targetPx`.
@@ -518,5 +522,5 @@ const NICE_METRES = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 50
 export function niceDistance(mPerPx: number, targetPx: number): number {
   const wanted = mPerPx * targetPx;
   for (const candidate of NICE_METRES) if (candidate >= wanted) return candidate;
-  return NICE_METRES[NICE_METRES.length - 1];
+  return LARGEST_NICE_METRES;
 }
