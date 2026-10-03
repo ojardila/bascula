@@ -49,8 +49,27 @@ function slugShapeOk(value: string): boolean {
   return value.length >= 2 && value.length <= 63 && SLUG_RE.test(value);
 }
 
+/**
+ * The bare hostname, lowercased, without port or trailing dot. Parsed with
+ * `URL` rather than cut by hand, so anything that is not a plain host
+ * (`evil.com?.bascula.engp.io`, `evil.com/.bascula.engp.io`) resolves to the
+ * host a browser would actually go to.
+ */
 function normalizeHostname(hostname: string): string {
-  return hostname.trim().toLowerCase().replace(/\.$/, "").split(":")[0] ?? "";
+  const raw = hostname.trim();
+  if (!raw) return "";
+  try {
+    return new URL(`https://${raw}`).hostname.replace(/\.$/, "");
+  } catch {
+    return "";
+  }
+}
+
+/** The single DNS label in front of `suffix` (which starts with "."), or null. */
+function labelBefore(host: string, suffix: string): string | null {
+  if (!host.endsWith(suffix)) return null;
+  const rest = host.slice(0, -suffix.length);
+  return rest && !rest.includes(".") ? rest : null;
 }
 
 /**
@@ -65,14 +84,7 @@ export function farmSlugFromHost(hostname: string): string | null {
   const host = normalizeHostname(hostname);
   if (!host || APEX.has(host)) return null;
 
-  let label: string | null = null;
-  if (host.endsWith(PROD_SUFFIX)) {
-    const rest = host.slice(0, -PROD_SUFFIX.length);
-    if (rest && !rest.includes(".")) label = rest;
-  } else if (host.endsWith(DEV_SUFFIX)) {
-    const rest = host.slice(0, -DEV_SUFFIX.length);
-    if (rest && !rest.includes(".")) label = rest;
-  }
+  const label = labelBefore(host, PROD_SUFFIX) ?? labelBefore(host, DEV_SUFFIX);
   if (!label || RESERVED.has(label) || !slugShapeOk(label)) return null;
   return label;
 }
@@ -146,15 +158,18 @@ export function farmHostForHere(slug: string, hostname?: string): string {
 
 /** The URL this browser should advertise for a new farm. */
 export function farmUrlForHere(slug: string, hostname?: string): string {
-  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
-  if (
-    host.endsWith("int.dev.engp.io") ||
+  const host = normalizeHostname(
+    hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""),
+  );
+  // Dev is the dev apex, one label under the dev suffix, or this machine.
+  // Exact comparisons only: a suffix match on the raw string would let
+  // `evil.com?.int.dev.engp.io` or `xint.dev.engp.io` pass for dev.
+  const isDev =
+    host === "bascula.int.dev.engp.io" ||
     host === "localhost" ||
-    host === "127.0.0.1"
-  ) {
-    return farmDevUrl(slug);
-  }
-  return farmProdUrl(slug);
+    host === "127.0.0.1" ||
+    labelBefore(host, DEV_SUFFIX) !== null;
+  return isDev ? farmDevUrl(slug) : farmProdUrl(slug);
 }
 
 /**

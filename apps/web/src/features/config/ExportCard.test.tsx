@@ -57,12 +57,11 @@ describe("each button", () => {
       renderCard();
       await user.click(await screen.findByRole("button", { name: label }));
       const done = await screen.findByText(
-        new RegExp(
-          `Se descargó bascula-.*-${kind}-\\d{4}-\\d{2}-\\d{2}\\.csv\\.`,
-        ),
+        /Se descargó bascula-.*-[a-z]+-\d{4}-\d{2}-\d{2}\.csv\./,
       );
+      expect(done.textContent).toContain(`-${kind}-`);
       expect(download).toHaveBeenCalledTimes(1);
-      expect(download.mock.calls[0][0]).toMatch(new RegExp(`-${kind}-`));
+      expect(download.mock.calls[0][0]).toContain(`-${kind}-`);
       await user.click(
         within(done.closest(".MuiAlert-root") as HTMLElement).getByRole(
           "button",

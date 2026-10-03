@@ -80,6 +80,46 @@ describe("isFarmSlug and slugifyFarmName", () => {
     expect(farmUrlForHere("lapalma", "bascula.engp.io")).toBe(
       "https://lapalma.bascula.engp.io",
     );
+    expect(farmUrlForHere("lapalma", "sanjose.int.dev.engp.io")).toBe(
+      "https://lapalma.int.dev.engp.io",
+    );
+    expect(farmUrlForHere("lapalma", "localhost")).toBe("https://lapalma.int.dev.engp.io");
+    expect(farmUrlForHere("lapalma", "127.0.0.1")).toBe("https://lapalma.int.dev.engp.io");
+    expect(farmUrlForHere("lapalma", "BASCULA.INT.DEV.ENGP.IO.")).toBe(
+      "https://lapalma.int.dev.engp.io",
+    );
+  });
+
+  it("does not take a look-alike host for dev", () => {
+    for (const host of [
+      "evil.com?.int.dev.engp.io",
+      "evil.com/.int.dev.engp.io",
+      "evil.com#.int.dev.engp.io",
+      "xint.dev.engp.io",
+      "int.dev.engp.io.evil.com",
+      "a.b.int.dev.engp.io",
+      "localhost.evil.com",
+    ]) {
+      expect(farmUrlForHere("lapalma", host)).toBe("https://lapalma.bascula.engp.io");
+    }
+  });
+});
+
+describe("look-alike hosts", () => {
+  it("never pins a farm on a host that only contains a Báscula suffix", () => {
+    for (const host of [
+      "evil.com?.bascula.engp.io",
+      "evil.com/.bascula.engp.io",
+      "evil.com#.bascula.engp.io",
+      "bascula.engp.io.evil.com",
+      "sanjose.bascula.engp.io.evil.com",
+      "sanjosebascula.engp.io",
+      "evil.com?.int.dev.engp.io",
+      "sanjose.int.dev.engp.io.evil.com",
+    ]) {
+      expect(farmSlugFromHost(host)).toBeNull();
+      expect(isFarmHost(host)).toBe(false);
+    }
   });
 });
 

@@ -91,7 +91,7 @@ describe("the public landing", () => {
       "/landing/app/cuenta.jpg",
       "/landing/app/lotes.jpg",
     ]));
-    expect(shots.some((src) => /phone|\.png$/.test(src))).toBe(false);
+    expect(shots.some((src) => src.includes("phone") || src.endsWith(".png"))).toBe(false);
     for (const img of document.querySelectorAll("img[src^='/landing/app/']")) {
       expect(img.getAttribute("alt")).toMatch(/^Báscula .*navegador/);
     }

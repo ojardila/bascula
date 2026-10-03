@@ -58,7 +58,7 @@ describe("the support console", () => {
     expect(screen.getByText(/ana.roble@example.com/)).toBeInTheDocument();
     // The dialog follows the farm's own address while it is prepared.
     expect(await screen.findByText("Preparando su finca…")).toBeInTheDocument();
-    expect(screen.getAllByText(/el-roble\.bascula\.engp\.io/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("el-roble.bascula.engp.io").length).toBeGreaterThan(0);
     expect(screen.getAllByText("El Roble").length).toBeGreaterThan(0);
   }, 20000);
 });
