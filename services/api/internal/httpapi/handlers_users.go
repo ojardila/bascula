@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -137,6 +138,39 @@ type inviteUserRequest struct {
 	Password string `json:"password"`
 }
 
+// createInvitedUser creates the account an invite names when the address is
+// new to the platform, verified (the administrator vouches for it), with the
+// password given or a temporary one it returns.
+func createInvitedUser(ctx context.Context, tx pgx.Tx, email, name, password string) (*store.User, string, error) {
+	var err error
+	temporary := password
+	if temporary == "" {
+		temporary, err = newTemporaryPassword()
+		if err != nil {
+			return nil, "", domain.Internal("could not mint a password").WithCause(err)
+		}
+	}
+	hash, hashErr := auth.HashPassword(temporary)
+	if hashErr != nil {
+		return nil, "", domain.Internal("could not hash the password").WithCause(hashErr)
+	}
+	user := &store.User{ID: newID(), Email: email, Name: name, PasswordHash: hash}
+	if err := store.CreateUser(ctx, tx, *user); err != nil {
+		if store.IsUniqueViolation(err, "ux_users_email") {
+			// Two invites for the same new address raced. The loser reads
+			// the winner's row rather than failing: both administrators
+			// meant the same thing.
+			return nil, "", domain.Coded(http.StatusConflict, domain.CodeEmailTaken,
+				"that address was just registered; invite it again to add it here")
+		}
+		return nil, "", err
+	}
+	if err := store.VerifyUserEmail(ctx, tx, user.ID); err != nil {
+		return nil, "", err
+	}
+	return user, temporary, nil
+}
+
 // handleInviteUser adds somebody to the farm.
 //
 // # Why this is not an emailed invitation
@@ -230,33 +264,8 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		// farm resetting the password of an account that belongs to another
 		// would be a takeover with an invite button on it.
 	} else {
-		temporary = body.Password
-		if temporary == "" {
-			temporary, err = newTemporaryPassword()
-			if err != nil {
-				writeError(w, r, domain.Internal("could not mint a password").WithCause(err))
-				return
-			}
-		}
-		hash, hashErr := auth.HashPassword(temporary)
-		if hashErr != nil {
-			writeError(w, r, domain.Internal("could not hash the password").WithCause(hashErr))
-			return
-		}
-		user = &store.User{ID: newID(), Email: email, Name: body.Name, PasswordHash: hash}
-		if err := store.CreateUser(r.Context(), tx, *user); err != nil {
-			if store.IsUniqueViolation(err, "ux_users_email") {
-				// Two invites for the same new address raced. The loser reads
-				// the winner's row rather than failing: both administrators
-				// meant the same thing.
-				writeError(w, r, domain.Coded(http.StatusConflict, domain.CodeEmailTaken,
-					"that address was just registered; invite it again to add it here"))
-				return
-			}
-			writeError(w, r, err)
-			return
-		}
-		if err := store.VerifyUserEmail(r.Context(), tx, user.ID); err != nil {
+		user, temporary, err = createInvitedUser(r.Context(), tx, email, body.Name, body.Password)
+		if err != nil {
 			writeError(w, r, err)
 			return
 		}
