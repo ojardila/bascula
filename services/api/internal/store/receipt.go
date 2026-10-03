@@ -64,24 +64,8 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 		return nil, pgx.ErrNoRows
 	}
 
-	rows, err := tx.Query(ctx, `
-		SELECT `+ledgerCols+`
-		  FROM ledger WHERE employee_id = $1
-		 ORDER BY created_at ASC, id ASC`, pago.EmployeeID)
+	all, err := employeeLedgerInOrder(ctx, tx, pago.EmployeeID)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var all []LedgerEntry
-	for rows.Next() {
-		e, err := scanLedgerEntry(rows)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, *e)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
@@ -104,32 +88,103 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 	if pagoAt < 0 {
 		return nil, pgx.ErrNoRows
 	}
-	reversed := map[string]bool{}
-	reversedBefore := map[string]bool{}
-	for i, e := range all {
-		if e.ReversesID != nil {
-			reversed[*e.ReversesID] = true
-			if i < pagoAt {
-				reversedBefore[*e.ReversesID] = true
-			}
-		}
-	}
+	reversed, reversedBefore := receiptReversals(all, pagoAt)
 	live := func(e LedgerEntry) bool {
 		return e.ReversesID == nil && !reversedBefore[e.ID]
 	}
 
-	var remaining int64
-	var prevPagoAt time.Time
-	var prevPagoID string
-	var found bool
-	var pagoIndex int
+	// all[pagoAt] is the first entry with pago's id, so the running balance
+	// stops there, and the previous payment is the last live one before it.
+	remaining, prevPagoAt, prevPagoID := receiptBalance(all[:pagoAt+1], live)
+
+	w := receiptWeek{deductions: []ReceiptDeduction{}, settlementIDs: []string{}}
+	// An advance or a deduction is its own amount and nothing else.
+	if pago.Kind == domain.KindPayment {
+		for _, e := range all[:pagoAt] {
+			if !live(e) {
+				continue
+			}
+			if prevPagoID != "" && (e.CreatedAt.Before(prevPagoAt) || (e.CreatedAt.Equal(prevPagoAt) && e.ID <= prevPagoID)) {
+				continue
+			}
+			w.add(e)
+		}
+	}
+
+	weekFrom, weekTo, err := settlementsSpan(ctx, tx, w.settlementIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	paid := absMinor(pago.AmountMinor)
+	return &PaymentReceipt{
+		Entry:                *pago,
+		PreviousBalanceCents: remaining - w.week + w.disc + paid,
+		CurrentWeekCents:     w.week,
+		CurrentWeekFrom:      weekFrom,
+		CurrentWeekTo:        weekTo,
+		Deductions:           w.deductions,
+		DeductionsCents:      w.disc,
+		PaidCents:            paid,
+		RemainingCents:       remaining,
+		SettlementID:         w.settlementID,
+		SettlementIDs:        w.settlementIDs,
+		Reversed:             reversed[pago.ID],
+	}, nil
+}
+
+// employeeLedgerInOrder reads every ledger entry of one worker in the order
+// it was written.
+func employeeLedgerInOrder(ctx context.Context, tx pgx.Tx, employeeID string) ([]LedgerEntry, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT `+ledgerCols+`
+		  FROM ledger WHERE employee_id = $1
+		 ORDER BY created_at ASC, id ASC`, employeeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var all []LedgerEntry
+	for rows.Next() {
+		e, err := scanLedgerEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, *e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// receiptReversals returns the ids cancelled at any time (reversed) and those
+// cancelled by an entry written before index pagoAt (reversedBefore).
+func receiptReversals(all []LedgerEntry, pagoAt int) (reversed, reversedBefore map[string]bool) {
+	reversed = map[string]bool{}
+	reversedBefore = map[string]bool{}
 	for i, e := range all {
+		if e.ReversesID == nil {
+			continue
+		}
+		reversed[*e.ReversesID] = true
+		if i < pagoAt {
+			reversedBefore[*e.ReversesID] = true
+		}
+	}
+	return reversed, reversedBefore
+}
+
+// receiptBalance sums the live entries of upTo (which ends at the receipt's
+// own movement) and finds the last live payment before that movement.
+func receiptBalance(upTo []LedgerEntry, live func(LedgerEntry) bool) (remaining int64, prevPagoAt time.Time, prevPagoID string) {
+	last := len(upTo) - 1
+	for i, e := range upTo {
 		if live(e) {
 			remaining += e.AmountMinor
 		}
-		if e.ID == pago.ID {
-			found = true
-			pagoIndex = i
+		if i == last {
 			break
 		}
 		if live(e) && e.Kind == domain.KindPayment {
@@ -137,58 +192,50 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 			prevPagoID = e.ID
 		}
 	}
-	if !found {
-		return nil, pgx.ErrNoRows
-	}
+	return remaining, prevPagoAt, prevPagoID
+}
 
-	var week int64
-	deductions := []ReceiptDeduction{}
-	settlementIDs := []string{}
-	var disc int64
-	var settlementID *string
-	var weekFrom, weekTo *time.Time
-	for i := 0; i < pagoIndex; i++ {
-		if pago.Kind != domain.KindPayment {
-			// An advance or a deduction is its own amount and nothing else.
-			break
-		}
-		e := all[i]
-		if !live(e) {
-			continue
-		}
-		if prevPagoID != "" && (e.CreatedAt.Before(prevPagoAt) || (e.CreatedAt.Equal(prevPagoAt) && e.ID <= prevPagoID)) {
-			continue
-		}
-		switch e.Kind {
-		case domain.KindEarning:
-			week += e.AmountMinor
-			if e.SettlementID != nil {
-				settlementID = e.SettlementID
-				settlementIDs = append(settlementIDs, *e.SettlementID)
-			}
-		case domain.KindDeduction:
-			amt := -e.AmountMinor
-			if amt < 0 {
-				amt = -amt
-			}
-			concept := "Descuento"
-			if e.Note != nil && *e.Note != "" {
-				concept = *e.Note
-			}
-			deductions = append(deductions, ReceiptDeduction{
-				Concept: concept, AmountCents: amt, Date: e.LocalDay,
-			})
-			disc += amt
-		}
-	}
+// receiptWeek accumulates what a payment's slip names between the previous
+// payment and this one.
+type receiptWeek struct {
+	week          int64
+	disc          int64
+	deductions    []ReceiptDeduction
+	settlementID  *string
+	settlementIDs []string
+}
 
-	for _, id := range settlementIDs {
+func (w *receiptWeek) add(e LedgerEntry) {
+	switch e.Kind {
+	case domain.KindEarning:
+		w.week += e.AmountMinor
+		if e.SettlementID != nil {
+			w.settlementID = e.SettlementID
+			w.settlementIDs = append(w.settlementIDs, *e.SettlementID)
+		}
+	case domain.KindDeduction:
+		amt := absMinor(e.AmountMinor)
+		concept := "Descuento"
+		if e.Note != nil && *e.Note != "" {
+			concept = *e.Note
+		}
+		w.deductions = append(w.deductions, ReceiptDeduction{
+			Concept: concept, AmountCents: amt, Date: e.LocalDay,
+		})
+		w.disc += amt
+	}
+}
+
+// settlementsSpan is the earliest start and latest end across the given
+// settlements. One that no longer exists is skipped.
+func settlementsSpan(ctx context.Context, tx pgx.Tx, ids []string) (weekFrom, weekTo *time.Time, err error) {
+	for _, id := range ids {
 		st, err := GetSettlement(ctx, tx, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if weekFrom == nil || st.PeriodStart.Before(*weekFrom) {
 			from := st.PeriodStart
@@ -199,23 +246,13 @@ func PaymentReceiptOf(ctx context.Context, tx pgx.Tx, paymentID string) (*Paymen
 			weekTo = &to
 		}
 	}
+	return weekFrom, weekTo, nil
+}
 
-	paid := -pago.AmountMinor
-	if paid < 0 {
-		paid = -paid
+// absMinor is |amount|: payments and deductions are stored negative.
+func absMinor(amount int64) int64 {
+	if amount < 0 {
+		return -amount
 	}
-	return &PaymentReceipt{
-		Entry:                *pago,
-		PreviousBalanceCents: remaining - week + disc + paid,
-		CurrentWeekCents:     week,
-		CurrentWeekFrom:      weekFrom,
-		CurrentWeekTo:        weekTo,
-		Deductions:           deductions,
-		DeductionsCents:      disc,
-		PaidCents:            paid,
-		RemainingCents:       remaining,
-		SettlementID:         settlementID,
-		SettlementIDs:        settlementIDs,
-		Reversed:             reversed[pago.ID],
-	}, nil
+	return amount
 }

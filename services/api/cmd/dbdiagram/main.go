@@ -153,59 +153,16 @@ func render(ctx context.Context, conn *pgx.Conn) ([]byte, error) {
 
 	w("```mermaid\nerDiagram\n")
 	for _, t := range tables {
-		if !isTable(t) {
-			continue
+		if isTable(t) {
+			writeEntity(w, t)
 		}
-		if t.schema == "public" {
-			w("    %s {\n", t.id())
-		} else {
-			w("    %s[\"%s\"] {\n", t.id(), t.qualified())
-		}
-		for _, c := range t.columns {
-			short, exact := mermaidType(c.typ)
-			var keys []string
-			if c.pk {
-				keys = append(keys, "PK")
-			}
-			if c.fk {
-				keys = append(keys, "FK")
-			}
-			if c.unique && !c.pk {
-				keys = append(keys, "UK")
-			}
-			var notes []string
-			if exact {
-				notes = append(notes, c.typ)
-			}
-			if !c.notNull {
-				notes = append(notes, "null")
-			}
-			line := fmt.Sprintf("        %s %s", short, c.name)
-			if len(keys) > 0 {
-				line += " " + strings.Join(keys, ", ")
-			}
-			if len(notes) > 0 {
-				line += fmt.Sprintf(" \"%s\"", strings.Join(notes, ", "))
-			}
-			w("%s\n", line)
-		}
-		w("    }\n")
 	}
 	byName := map[string]*table{}
 	for _, t := range tables {
 		byName[t.qualified()] = t
 	}
 	for _, fk := range fks {
-		parent, child := byName[fk.parent], byName[fk.child]
-		left := "||"
-		if fk.nullable {
-			left = "|o"
-		}
-		right := "o{"
-		if fk.oneToOne {
-			right = "o|"
-		}
-		w("    %s %s--%s %s : \"%s\"\n", parent.id(), left, right, child.id(), fkLabel(fk.childCols))
+		w("%s\n", relationLine(byName[fk.parent], byName[fk.child], fk))
 	}
 	w("```\n\n")
 
@@ -217,24 +174,91 @@ func render(ctx context.Context, conn *pgx.Conn) ([]byte, error) {
 		}
 		w("| `%s` | %d | %s |\n", t.qualified(), len(t.columns), mdCell(t.comment))
 	}
+	writeViews(w, tables)
+	return b.Bytes(), nil
+}
+
+// writer is the formatted append render builds the document with.
+type writer func(format string, a ...any)
+
+// writeEntity writes one table as a Mermaid entity block.
+func writeEntity(w writer, t *table) {
+	if t.schema == "public" {
+		w("    %s {\n", t.id())
+	} else {
+		w("    %s[\"%s\"] {\n", t.id(), t.qualified())
+	}
+	for _, c := range t.columns {
+		w("%s\n", columnLine(c))
+	}
+	w("    }\n")
+}
+
+// columnLine is one attribute line of a Mermaid entity: type, name, keys and
+// the quoted note.
+func columnLine(c *column) string {
+	short, exact := mermaidType(c.typ)
+	var keys []string
+	if c.pk {
+		keys = append(keys, "PK")
+	}
+	if c.fk {
+		keys = append(keys, "FK")
+	}
+	if c.unique && !c.pk {
+		keys = append(keys, "UK")
+	}
+	var notes []string
+	if exact {
+		notes = append(notes, c.typ)
+	}
+	if !c.notNull {
+		notes = append(notes, "null")
+	}
+	line := fmt.Sprintf("        %s %s", short, c.name)
+	if len(keys) > 0 {
+		line += " " + strings.Join(keys, ", ")
+	}
+	if len(notes) > 0 {
+		line += fmt.Sprintf(" \"%s\"", strings.Join(notes, ", "))
+	}
+	return line
+}
+
+// relationLine is the Mermaid relation for one foreign key, from the
+// referenced table to the one holding the key.
+func relationLine(parent, child *table, fk foreignKey) string {
+	left := "||"
+	if fk.nullable {
+		left = "|o"
+	}
+	right := "o{"
+	if fk.oneToOne {
+		right = "o|"
+	}
+	return fmt.Sprintf("    %s %s--%s %s : \"%s\"", parent.id(), left, right, child.id(), fkLabel(fk.childCols))
+}
+
+// writeViews writes the Views section, when there are any.
+func writeViews(w writer, tables []*table) {
 	var views []*table
 	for _, t := range tables {
 		if !isTable(t) {
 			views = append(views, t)
 		}
 	}
-	if len(views) > 0 {
-		w("\n## Views\n\n")
-		w("| View | Columns | Description |\n|---|---|---|\n")
-		for _, v := range views {
-			names := make([]string, len(v.columns))
-			for i, c := range v.columns {
-				names[i] = c.name
-			}
-			w("| `%s` | %s | %s |\n", v.qualified(), mdCell(strings.Join(names, ", ")), mdCell(v.comment))
-		}
+	if len(views) == 0 {
+		return
 	}
-	return b.Bytes(), nil
+	w("\n## Views\n\n")
+	w("| View | Columns | Description |\n|---|---|---|\n")
+	for _, v := range views {
+		names := make([]string, len(v.columns))
+		for i, c := range v.columns {
+			names[i] = c.name
+		}
+		w("| `%s` | %s | %s |\n", v.qualified(), mdCell(strings.Join(names, ", ")), mdCell(v.comment))
+	}
 }
 
 // fkLabel names the foreign-key columns. Most references inside a farm are

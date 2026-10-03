@@ -176,6 +176,33 @@ func employeeKind(ctx context.Context, tx pgx.Tx, id string) (kind string, activ
 // not already a member joins on `from`. History before `from` is untouched.
 func SetTeamMembers(ctx context.Context, tx pgx.Tx, farmID, teamID string, memberIDs []string,
 	from time.Time, by string) error {
+	if err := checkSettableTeam(ctx, tx, teamID); err != nil {
+		return err
+	}
+	want, err := wantedMembers(ctx, tx, teamID, memberIDs)
+	if err != nil {
+		return err
+	}
+
+	// Close or drop memberships that are no longer wanted.
+	have, err := closeUnwantedMembers(ctx, tx, teamID, from, want)
+	if err != nil {
+		return err
+	}
+
+	for id := range want {
+		if have[id] {
+			continue
+		}
+		if err := addTeamMember(ctx, tx, farmID, teamID, id, from, by); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkSettableTeam refuses a team id that is not a live team.
+func checkSettableTeam(ctx context.Context, tx pgx.Tx, teamID string) error {
 	kind, active, err := employeeKind(ctx, tx, teamID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NoRows
@@ -189,36 +216,57 @@ func SetTeamMembers(ctx context.Context, tx pgx.Tx, farmID, teamID string, membe
 	if !active {
 		return domain.BadRequest("the team is inactive: reactivate it first")
 	}
+	return nil
+}
+
+// wantedMembers validates the requested members — live people of this farm,
+// never the team itself — and returns them as a set.
+func wantedMembers(ctx context.Context, tx pgx.Tx, teamID string, memberIDs []string) (map[string]bool, error) {
 	want := map[string]bool{}
 	for _, id := range memberIDs {
 		if id == teamID {
-			return domain.BadRequest("a team cannot be a member of itself")
+			return nil, domain.BadRequest("a team cannot be a member of itself")
 		}
 		if want[id] {
 			continue
 		}
-		mk, mActive, err := employeeKind(ctx, tx, id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.BadRequest("member " + id + " is not a worker of this farm")
-		}
-		if err != nil {
-			return err
-		}
-		if mk != KindPersona {
-			return domain.BadRequest("a team's members must be people, not teams")
-		}
-		if !mActive {
-			return domain.BadRequest("member " + id + " is inactive: reactivate them first")
+		if err := checkMemberCandidate(ctx, tx, id); err != nil {
+			return nil, err
 		}
 		want[id] = true
 	}
+	return want, nil
+}
 
-	// Close or drop memberships that are no longer wanted.
+// checkMemberCandidate refuses an id that is not a live person of this farm.
+func checkMemberCandidate(ctx context.Context, tx pgx.Tx, id string) error {
+	mk, mActive, err := employeeKind(ctx, tx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.BadRequest("member " + id + " is not a worker of this farm")
+	}
+	if err != nil {
+		return err
+	}
+	if mk != KindPersona {
+		return domain.BadRequest("a team's members must be people, not teams")
+	}
+	if !mActive {
+		return domain.BadRequest("member " + id + " is inactive: reactivate them first")
+	}
+	return nil
+}
+
+// closeUnwantedMembers ends, the day before `from`, every membership live on
+// or after `from` whose member is not wanted, and drops the ones that had not
+// started yet. It returns the wanted members who are already in the team.
+func closeUnwantedMembers(ctx context.Context, tx pgx.Tx, teamID string, from time.Time,
+	want map[string]bool) (map[string]bool, error) {
+
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, employee_id::text, from_day FROM team_members
 		 WHERE team_id = $1 AND (to_day IS NULL OR to_day >= $2::date)`, teamID, from)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	type live struct {
 		id, member string
@@ -229,13 +277,13 @@ func SetTeamMembers(ctx context.Context, tx pgx.Tx, farmID, teamID string, membe
 		var l live
 		if err := rows.Scan(&l.id, &l.member, &l.from); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		current = append(current, l)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	have := map[string]bool{}
 	for _, l := range current {
@@ -245,45 +293,44 @@ func SetTeamMembers(ctx context.Context, tx pgx.Tx, farmID, teamID string, membe
 		}
 		if !l.from.Before(from) {
 			if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE id = $1`, l.id); err != nil {
-				return err
+				return nil, err
 			}
 			continue
 		}
 		if _, err := tx.Exec(ctx, `UPDATE team_members SET to_day = $2::date - 1 WHERE id = $1`,
 			l.id, from); err != nil {
-			return err
+			return nil, err
 		}
 	}
+	return have, nil
+}
 
-	for id := range want {
-		if have[id] {
-			continue
+// addTeamMember opens a membership of `id` in the team from `from` on.
+func addTeamMember(ctx context.Context, tx pgx.Tx, farmID, teamID, id string, from time.Time, by string) error {
+	// One team per person per day: say which team, before the trigger
+	// says it in SQL.
+	var otherID, otherName string
+	err := tx.QueryRow(ctx, `
+		SELECT t.id::text, t.name FROM team_members tm JOIN employees t ON t.id = tm.team_id
+		 WHERE tm.employee_id = $1 AND tm.team_id <> $2
+		   AND (tm.to_day IS NULL OR tm.to_day >= $3::date)
+		 LIMIT 1`, id, teamID, from).Scan(&otherID, &otherName)
+	if err == nil {
+		return WorkerInTeam(&TeamRef{ID: otherID, Name: otherName},
+			"that person already belongs to the team «"+otherName+"»: take them out of it first")
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO team_members (id, farm_id, team_id, employee_id, from_day, created_by)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4::date, $5)`,
+		farmID, teamID, id, from, nilUUID(by)); err != nil {
+		if pe, ok := PgErr(err); ok && pe.ConstraintName == "team_members_one_team" {
+			return domain.Conflict(domain.CodeWorkerInTeam,
+				"that person already belongs to another team on those days")
 		}
-		// One team per person per day: say which team, before the trigger
-		// says it in SQL.
-		var otherID, otherName string
-		err := tx.QueryRow(ctx, `
-			SELECT t.id::text, t.name FROM team_members tm JOIN employees t ON t.id = tm.team_id
-			 WHERE tm.employee_id = $1 AND tm.team_id <> $2
-			   AND (tm.to_day IS NULL OR tm.to_day >= $3::date)
-			 LIMIT 1`, id, teamID, from).Scan(&otherID, &otherName)
-		if err == nil {
-			return WorkerInTeam(&TeamRef{ID: otherID, Name: otherName},
-				"that person already belongs to the team «"+otherName+"»: take them out of it first")
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO team_members (id, farm_id, team_id, employee_id, from_day, created_by)
-			VALUES (gen_random_uuid(), $1, $2, $3, $4::date, $5)`,
-			farmID, teamID, id, from, nilUUID(by)); err != nil {
-			if pe, ok := PgErr(err); ok && pe.ConstraintName == "team_members_one_team" {
-				return domain.Conflict(domain.CodeWorkerInTeam,
-					"that person already belongs to another team on those days")
-			}
-			return err
-		}
+		return err
 	}
 	return nil
 }
