@@ -10,6 +10,7 @@ lives in the gitops repo, `apps/sonarqube`).
 | Config | [`sonar-project.properties`](../sonar-project.properties) — sources, tests, exclusions, coverage paths |
 | Summary | [`scripts/sonar-report.py`](../scripts/sonar-report.py) — quality gate + measures via the Web API |
 | Secrets | `SONAR_TOKEN` (token of the SonarQube user `github-ci`: Browse + Execute Analysis on `bascula` and `bascula-pr` only), `SONAR_HOST_URL`, and the existing `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` |
+| Uncovered code | [`docs/coverage.md`](coverage.md) — every line and branch left uncovered on `master`, and why |
 
 ## How it runs
 
