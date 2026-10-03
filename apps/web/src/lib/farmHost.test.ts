@@ -81,6 +81,15 @@ describe("isFarmSlug and slugifyFarmName", () => {
       "https://lapalma.bascula.engp.io",
     );
   });
+
+  it("does not treat a look-alike of the dev zone as dev", () => {
+    expect(farmUrlForHere("lapalma", "int.dev.engp.io")).toBe(
+      "https://lapalma.int.dev.engp.io",
+    );
+    expect(farmUrlForHere("lapalma", "evilint.dev.engp.io")).toBe(
+      "https://lapalma.bascula.engp.io",
+    );
+  });
 });
 
 describe("isFarmHost", () => {
