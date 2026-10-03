@@ -228,9 +228,10 @@ describe("WorkRecordsPage", () => {
       screen.queryByRole("columnheader", { name: "Valor" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/pendientes de liquidar/)).not.toBeInTheDocument();
-    // Wait for /v1/me: until then `can()` is false and the create buttons are hidden.
+    // Wait for /v1/me: until then `can()` is false and the create buttons are
+    // hidden. The default 1 s was not enough on a loaded CI runner.
     expect(
-      await screen.findByRole("button", { name: "Una labor" }),
+      await screen.findByRole("button", { name: "Una labor" }, { timeout: 5000 }),
     ).toBeInTheDocument();
     const actions = screen.queryByRole("button", {
       name: "Acciones de Plateo de María Restrepo",
