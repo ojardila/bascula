@@ -818,7 +818,7 @@ export function resetDb(): void {
   users.length = 0;
   memberships.length = 0;
   refreshTokens.length = 0;
-  farmPasswords.clear();
+  farmPasswords.clear(); // NOSONAR S4158 false positive: setFarmPassword() fills it from the handlers
   passkeys.length = 0;
   verifications.length = 0;
   tenants.clear();
