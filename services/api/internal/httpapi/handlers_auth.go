@@ -82,6 +82,24 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("owner.email is required"))
 		return
 	}
+	// These four leave the service in the provision-tenant dispatch; see
+	// signup_fields.go.
+	if err := validEmail("owner.email", email); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validPhone("owner.phone", req.Owner.Phone); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validFarmName("farm.name", req.Farm.Name); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if len(req.Owner.Password) < 10 {
 		writeError(w, r, domain.BadRequest("owner.password must be at least 10 characters"))
 		return

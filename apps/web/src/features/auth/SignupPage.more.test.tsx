@@ -136,6 +136,52 @@ describe("refused by the server", () => {
     expect(await screen.findByText("Ese nombre no sirve.")).toBeInTheDocument();
     expect(document.querySelector(".MuiAlert-colorError")).not.toBeNull();
   });
+
+  it("puts a 400 on the farm name under the farm name", async () => {
+    server.use(
+      http.post("*/v1/signup", () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: "BAD_REQUEST",
+              message: "farm.name contains control characters",
+              details: {
+                fields: {
+                  "farm.name":
+                    "Tiene caracteres no permitidos. Escríbalo en una sola línea.",
+                },
+              },
+            },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderSignup();
+    await fillAll(user);
+    await user.click(create());
+    expect(
+      await screen.findByText(
+        "Tiene caracteres no permitidos. Escríbalo en una sola línea.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Faltan datos o hay un dato mal escrito. Revise el formulario."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("lengths the server accepts", () => {
+  it("caps names at 80 characters and the address at 254", async () => {
+    renderSignup();
+    expect(await screen.findByLabelText(/Nombre de la finca/)).toHaveAttribute(
+      "maxlength",
+      "80",
+    );
+    expect(screen.getByLabelText(/Su nombre/)).toHaveAttribute("maxlength", "80");
+    expect(screen.getByLabelText(/^Correo/)).toHaveAttribute("maxlength", "254");
+  });
 });
 
 describe("the password field", () => {

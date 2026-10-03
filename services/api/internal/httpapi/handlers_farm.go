@@ -188,6 +188,15 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("name is required"))
 		return
 	}
+	// Like signup: these leave the service in the provision-tenant dispatch.
+	if err := validFarmName("name", req.Name); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := validOwnerName("owner.name", req.Owner.Name); err != nil {
+		writeError(w, r, err)
+		return
+	}
 	if req.PriceCents <= 0 {
 		writeError(w, r, domain.BadRequest("priceCents must be positive"))
 		return
@@ -195,6 +204,10 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(strings.ToLower(req.Owner.Email))
 	if email == "" || !strings.Contains(email, "@") {
 		writeError(w, r, domain.BadRequest("owner.email is required"))
+		return
+	}
+	if err := validEmail("owner.email", email); err != nil {
+		writeError(w, r, err)
 		return
 	}
 	if req.Owner.Password != "" && len(req.Owner.Password) < 10 {
