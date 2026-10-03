@@ -97,6 +97,16 @@ jobs:
       HARBOR_ROBOT_NAME: ${{ secrets.HARBOR_ROBOT_NAME }}
       HARBOR_ROBOT_SECRET: ${{ secrets.HARBOR_ROBOT_SECRET }}
 
+  # Every source file carries "// SPDX-License-Identifier: MIT" on line 1
+  # (#386). Seconds, no install; a new file without it fails here.
+  spdx:
+    name: spdx headers (no install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/check-spdx.sh
+
   migrations:
     name: migration order (no install)
     runs-on: ubuntu-latest

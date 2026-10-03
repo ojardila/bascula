@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Box, Button, Chip, Stack, Typography } from "@mui/material";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Arithmetic of the harvest sheet: people × days, kilos in the cells.
  *

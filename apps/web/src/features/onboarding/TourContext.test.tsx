@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The tour starts by itself once per user and farm, and only on the
  * server's word. A deploy restarts the API while every open page reloads

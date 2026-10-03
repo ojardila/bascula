@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Passkeys in the browser: the two WebAuthn calls, with the JSON the API
  * speaks on both sides.

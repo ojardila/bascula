@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The plot form, the paths `PlotFormPage.test.tsx` leaves out: a name that is
  * too long, the server pointing at a field, and editing a plot whose crop has

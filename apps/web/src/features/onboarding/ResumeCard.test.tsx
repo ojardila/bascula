@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Termine de preparar su finca»: once the owner says no, it stays gone —
  * after a reload, on another device, at the next sign-in, and even when the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Plain ascending order for strings that sort by code unit, like ISO days
  * and instants: "2026-08-29" < "2026-09-01". Not for names — those want

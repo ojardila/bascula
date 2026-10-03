@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-015, as rules rather than as `if`s scattered through a form.
  *

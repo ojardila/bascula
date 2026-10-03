@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The kilo price rules kept on the device (offline/priceBook.ts).
  *

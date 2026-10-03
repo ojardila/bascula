@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Weighings worth a second look.
  *

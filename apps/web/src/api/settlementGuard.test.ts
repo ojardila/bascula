@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * CAN A STALE APPROVAL EVER REACH `POST /v1/settlements`?
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Registrar labor» with signal: saving one, saving one and staying for the
  * next, filtering the activities, and what it says when the server refuses.

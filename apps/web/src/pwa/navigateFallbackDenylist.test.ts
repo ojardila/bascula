@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { navigateFallbackDenylist } from "./navigateFallbackDenylist";
 
 const denied = (path: string) => navigateFallbackDenylist.some((re) => re.test(path));

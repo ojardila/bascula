@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-025: "al guardar, el sistema imprime los stickers de identificación".
  *

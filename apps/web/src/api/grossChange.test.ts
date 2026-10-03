@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The join behind the difference screen.
  *

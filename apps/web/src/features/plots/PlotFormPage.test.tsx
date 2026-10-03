@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The plot form: two steps, the default coffee row, typed-in catalogue
  * entries, editing an existing plot, and the errors on the way.

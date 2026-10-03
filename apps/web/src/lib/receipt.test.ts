@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The payment receipt was headed by a 36-character UUID, which is exactly the
  * number the owner would read out over the phone if somebody disputes it.

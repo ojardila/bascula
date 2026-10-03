@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The less travelled corners of «Conexiones»: an expired, read-only grant
  * managed while not connected, a revocation the server refuses, copying the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The calendar's navigation and limits: months that cross a year, "Hoy",
  * closing without picking, days outside min/max, and emptying the field.

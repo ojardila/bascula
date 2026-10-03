@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The expenses module, with `expense_target` under test from the interface side.
  *

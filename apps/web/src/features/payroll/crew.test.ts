@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE ARITHMETIC OF CREW PAYROLL, with no screen.
  *

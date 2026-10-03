@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The field that replaced 1,822 lines of polygon drawing.
  *

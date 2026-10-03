@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Passkey autofill on the login screen (WebAuthn conditional mediation).
  *

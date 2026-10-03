@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Sending a receipt to the worker's WhatsApp.
  *

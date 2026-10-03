@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadReceiptPdf, pdfText, receiptPdfBytes } from "./receiptPdf";
 import type { ReceiptDoc } from "./receiptDoc";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Where the plot is, captured by standing in it.
  *

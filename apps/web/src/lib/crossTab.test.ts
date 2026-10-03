@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The tab-to-tab mutation channel.
  *

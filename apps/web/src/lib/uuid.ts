@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * UUIDv7 generated on the client.
  *

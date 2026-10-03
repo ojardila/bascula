@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { Box, Stack, Typography } from "@mui/material";
 import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";

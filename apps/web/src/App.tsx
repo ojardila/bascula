@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { UpdateBanner } from "./components/UpdateBanner";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";

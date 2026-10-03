@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Business dates live in the farm's timezone, not the browser's.
  *

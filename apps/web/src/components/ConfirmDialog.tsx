@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import {
   Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
 } from "@mui/material";

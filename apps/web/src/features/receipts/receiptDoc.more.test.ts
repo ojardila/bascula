@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Receipt documents for the kinds and gaps the main suite does not reach: a
  * discount, a payment with no new work, a worker with no name or document,

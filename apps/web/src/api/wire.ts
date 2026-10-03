@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The REAL shapes `services/api` puts on the wire. Nothing here is invented.
  *

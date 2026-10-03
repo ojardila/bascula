@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * CREW PAYROLL, without the screen.
  *

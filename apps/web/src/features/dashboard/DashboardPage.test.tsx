@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE DASHBOARD, WHEN IT DOES NOT KNOW.
  *

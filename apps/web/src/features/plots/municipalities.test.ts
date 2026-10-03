@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "Caldas · Pitalito". Pitalito is in Huila, and the form accepted it without
  * a word because the department came prefilled from the factory.
