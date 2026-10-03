@@ -230,14 +230,7 @@ func ownReaderReplay(own *readerRow, role domain.Role, requested int64) ReplayOr
 func decideReplay(ctx context.Context, tx pgx.Tx, rows []readerRow,
 	userID, deviceID string, role domain.Role, requested int64) (ReplayOrder, error) {
 
-	var own *readerRow
-	for i := range rows {
-		if rows[i].DeviceID == deviceID {
-			own = &rows[i]
-		}
-	}
-
-	if own != nil {
+	if own := findOwnReader(rows, deviceID); own != nil {
 		return ownReaderReplay(own, role, requested), nil
 	}
 
@@ -277,6 +270,25 @@ func decideReplay(ctx context.Context, tx pgx.Tx, rows []readerRow,
 	// a toll on the ordinary case. But whatever its siblings owe, it owes: an
 	// order raised against the account has to reach the client that had not
 	// arrived yet when it was raised.
+	return withRequired(siblingReplay(rows, role), requested), nil
+}
+
+// findOwnReader is the row registered for this device, if any (the last one,
+// should there be several).
+func findOwnReader(rows []readerRow, deviceID string) *readerRow {
+	var own *readerRow
+	for i := range rows {
+		if rows[i].DeviceID == deviceID {
+			own = &rows[i]
+		}
+	}
+	return own
+}
+
+// siblingReplay is what a new client owes because of the account's other
+// registered readers (rows is not empty): whatever they owe, and a role
+// change any of them has seen.
+func siblingReplay(rows []readerRow, role domain.Role) ReplayOrder {
 	order := ReplayOrder{PreviousRole: rows[0].Role}
 	for _, peer := range rows {
 		if peer.Pending != nil {
@@ -289,7 +301,7 @@ func decideReplay(ctx context.Context, tx pgx.Tx, rows []readerRow,
 				(roleSeesMoney(peer.Role) && !roleSeesMoney(role))
 		}
 	}
-	return withRequired(order, requested), nil
+	return order
 }
 
 func withRequired(order ReplayOrder, requested int64) ReplayOrder {
