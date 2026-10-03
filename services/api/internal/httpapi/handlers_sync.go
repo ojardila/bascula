@@ -596,7 +596,7 @@ func pushWorker(ctx context.Context, tx pgx.Tx, farmID string, p *auth.Principal
 	// The status transition. A deletion is logical on both sides, so this is a
 	// flag and never a DELETE.
 	if payload.DeletedAt != nil && e.DeletedAt == nil {
-		if err := store.SoftDeleteEmployee(ctx, tx, e.ID, principalUserID(p)); err != nil && err != store.NoRows {
+		if err := store.SoftDeleteEmployee(ctx, tx, e.ID, principalUserID(p)); err != nil && !errors.Is(err, store.NoRows) {
 			return rejected(op.OpID, err)
 		}
 	}

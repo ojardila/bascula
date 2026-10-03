@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,7 @@ func FarmOwnerCredentialHash(ctx context.Context, tx pgx.Tx, farmID, userID stri
 	err = tx.QueryRow(ctx, `
 		SELECT password_hash FROM farm_owner_credentials
 		 WHERE farm_id = $1 AND user_id = $2`, farmID, userID).Scan(&hash)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
 	return hash, err == nil, err

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -193,7 +194,7 @@ func setActivityStatus(ctx context.Context, tx pgx.Tx, id, status string) error 
 	case "active":
 		err = store.RestoreActivity(ctx, tx, id)
 	}
-	if err != nil && err != store.NoRows {
+	if err != nil && !errors.Is(err, store.NoRows) {
 		return err
 	}
 	return nil

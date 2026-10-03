@@ -8,8 +8,11 @@ API for the quality gate of *that* analysis and the project's measures.
 Community Build has no PR analysis, so a PR is scanned into the scratch
 project `bascula-pr` and compared here against `bascula` (master): measure
 deltas, and the open issues in the files the PR touches that master does not
-have. It is advisory: this script always exits 0 unless the API is
-unreachable, and the workflow does not gate on it either.
+have. The script itself exits 0; it writes `verdict=pass|fail` to
+$GITHUB_OUTPUT and the workflow's Gate step fails the job on `fail`:
+master fails on its quality gate, a PR on a regression against master or a
+new issue in its changed files. When SonarQube cannot be read back the
+verdict is `pass` (an unreachable server must not block a PR).
 
 Environment: SONAR_HOST_URL, SONAR_TOKEN, SONAR_PROJECT (analysed key),
 SONAR_BASE_PROJECT (PR mode only: the master project), CHANGED_FILES (PR mode
@@ -148,6 +151,7 @@ def main():
             lines.append("Failing conditions: " + ", ".join(
                 f"`{c['metricKey']}` {c.get('actualValue')} (threshold {c.get('errorThreshold')})" for c in failed))
         write(lines)
+        verdict(status != "ERROR")
         print(f"quality gate: {status}")
         return
 
@@ -179,8 +183,8 @@ def main():
                 else:
                     new_issues.append(it)
 
-    verdict = "⚠️ Worse than master: " + ", ".join(regressions) if regressions else "✅ No regression against master"
-    lines.append(f"**{verdict}** · advisory, does not block the PR")
+    verdict_line = "⚠️ Worse than master: " + ", ".join(regressions) if regressions else "✅ No regression against master"
+    lines.append(f"**{verdict_line}**")
     lines.append("")
     lines.append(f"Quality gate on this PR's code (`{PROJECT}`): **{GATE_ICON.get(status, status)}** · "
                  f"[PR scan]({dash}) · [master]({HOST}/dashboard?id={urllib.parse.quote(BASE)})")
@@ -208,8 +212,24 @@ def main():
     lines.append("")
     lines.append("<sub>Community Build has no PR analysis: this PR was scanned into the scratch project "
                  "and compared with master's last analysis. sonarqube.int.engp.io is tailnet only.</sub>")
+    if raced:
+        # The scratch project holds another PR's numbers: do not fail on them.
+        lines.append("")
+        lines.append("<sub>Not gating this run: the measures may belong to another PR's scan.</sub>")
+    else:
+        lines.append("")
+        lines.append("<sub>The job fails on a regression or on an issue in the changed files that master "
+                     "does not have. It is not a required check.</sub>")
     write(lines)
+    verdict(raced or (not regressions and not new_issues))
     print(f"quality gate: {status}; regressions: {regressions or 'none'}; new issues: {len(new_issues)}")
+
+
+def verdict(ok):
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(f"verdict={'pass' if ok else 'fail'}\n")
 
 
 def write(lines):

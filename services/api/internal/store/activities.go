@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -192,7 +193,7 @@ func ListActivities(ctx context.Context, tx pgx.Tx, withRates bool, on time.Time
 	}
 	for i := range out {
 		rate, err := RateInForce(ctx, tx, out[i].ID, on)
-		if err != nil && err != NoRows {
+		if err != nil && !errors.Is(err, NoRows) {
 			return nil, err
 		}
 		out[i].Rate = rate
@@ -258,7 +259,7 @@ func HarvestActivityID(ctx context.Context, tx pgx.Tx) (string, error) {
 		   AND a.rate_source = 'weekly_price'
 		 ORDER BY a.id
 		 LIMIT 1`).Scan(&id)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", domain.Conflict(domain.CodeNoRateInForce,
 			"this farm has no activity priced by the week; send activityId explicitly")
 	}

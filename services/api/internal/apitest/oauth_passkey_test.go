@@ -47,35 +47,10 @@ func TestOAuthSignInWithPasskey(t *testing.T) {
 		"code_challenge":        {base64.RawURLEncoding.EncodeToString(sum[:])},
 		"code_challenge_method": {"S256"}, "access": {"read"}, "state": {"s1"},
 	}
-	answer := func(ip string) url.Values {
-		opts := h.passkeyOptions(t, ip)
-		cred, err := json.Marshal(key.get(t, opts, passkeyOrigin))
-		if err != nil {
-			t.Fatal(err)
-		}
-		form := url.Values{}
-		for k, v := range base {
-			form[k] = v
-		}
-		form.Set("passkey_challenge", opts["challenge"].(string))
-		form.Set("passkey_credential", string(cred))
-		return form
-	}
+	answer := func(ip string) url.Values { return h.passkeyAnswer(t, key, base, ip) }
 
 	t.Run("the page offers the passkey under a nonce-only script policy", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+base.Encode(), nil)
-		rec := httptest.NewRecorder()
-		h.server.ServeHTTP(rec, req)
-		csp := rec.Header().Get("Content-Security-Policy")
-		body := rec.Body.String()
-		if !strings.Contains(csp, "script-src 'nonce-") || !strings.Contains(csp, "frame-ancestors 'none'") {
-			t.Fatalf("csp: %s", csp)
-		}
-		nonce := csp[strings.Index(csp, "'nonce-")+7:]
-		nonce = nonce[:strings.Index(nonce, "'")]
-		if !strings.Contains(body, `<script nonce="`+nonce+`">`) || !strings.Contains(body, "Entrar con llave de acceso") {
-			t.Fatalf("page has no passkey button under the nonce")
-		}
+		h.checkPasskeyPageNonce(t, base)
 	})
 
 	t.Run("a passkey answer from another site's page is refused", func(t *testing.T) {
@@ -87,16 +62,9 @@ func TestOAuthSignInWithPasskey(t *testing.T) {
 
 	form := answer("10.31.0.2")
 	t.Run("a passkey signs in and the code becomes a read-only connection", func(t *testing.T) {
-		rec := h.oauthPostOrigin(t, "10.31.0.2", passkeyOrigin, "/oauth/authorize", form)
-		if rec.Code != http.StatusFound {
-			t.Fatalf("authorize with passkey: %d %s", rec.Code, rec.Body.String())
-		}
-		loc, _ := rec.Result().Location()
-		if loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
-			t.Fatalf("redirect: %s", loc)
-		}
+		code := h.passkeyAuthorizeCode(t, "10.31.0.2", form)
 		tok := h.oauthPost(t, "/oauth/token", url.Values{
-			"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")},
+			"grant_type": {"authorization_code"}, "code": {code},
 			"redirect_uri": {redirect}, "client_id": {clientID}, "code_verifier": {verifier},
 		})
 		if tok.Code != http.StatusOK || !strings.Contains(tok.Body.String(), "mcp:read") {
@@ -114,13 +82,71 @@ func TestOAuthSignInWithPasskey(t *testing.T) {
 	t.Run("refusals count against the address and then stop it", func(t *testing.T) {
 		bad := answer("10.31.0.4")
 		bad.Set("passkey_challenge", "forged")
-		var last *httptest.ResponseRecorder
-		for i := 0; i < 40; i++ {
-			last = h.oauthPostOrigin(t, "10.31.0.4", passkeyOrigin, "/oauth/authorize", bad)
-			if strings.Contains(last.Body.String(), "Demasiados intentos") {
-				return
-			}
-		}
-		t.Fatalf("never limited: %s", last.Body.String())
+		h.expectOAuthRateLimited(t, "10.31.0.4", bad)
 	})
+}
+
+// passkeyAnswer is the sign-in form with a fresh passkey assertion for ip.
+func (h *harness) passkeyAnswer(t *testing.T, key *softPasskey, base url.Values, ip string) url.Values {
+	t.Helper()
+	opts := h.passkeyOptions(t, ip)
+	cred, err := json.Marshal(key.get(t, opts, passkeyOrigin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{}
+	for k, v := range base {
+		form[k] = v
+	}
+	form.Set("passkey_challenge", opts["challenge"].(string))
+	form.Set("passkey_credential", string(cred))
+	return form
+}
+
+// checkPasskeyPageNonce: the authorize page carries the passkey button inside
+// the one script its nonce-only CSP allows.
+func (h *harness) checkPasskeyPageNonce(t *testing.T, base url.Values) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+base.Encode(), nil)
+	rec := httptest.NewRecorder()
+	h.server.ServeHTTP(rec, req)
+	csp := rec.Header().Get("Content-Security-Policy")
+	body := rec.Body.String()
+	if !strings.Contains(csp, "script-src 'nonce-") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Fatalf("csp: %s", csp)
+	}
+	nonce := csp[strings.Index(csp, "'nonce-")+7:]
+	nonce = nonce[:strings.Index(nonce, "'")]
+	if !strings.Contains(body, `<script nonce="`+nonce+`">`) || !strings.Contains(body, "Entrar con llave de acceso") {
+		t.Fatalf("page has no passkey button under the nonce")
+	}
+}
+
+// passkeyAuthorizeCode posts the passkey form and returns the code from the
+// redirect, checking that the state came back.
+func (h *harness) passkeyAuthorizeCode(t *testing.T, ip string, form url.Values) string {
+	t.Helper()
+	rec := h.oauthPostOrigin(t, ip, passkeyOrigin, "/oauth/authorize", form)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("authorize with passkey: %d %s", rec.Code, rec.Body.String())
+	}
+	loc, _ := rec.Result().Location()
+	if loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
+		t.Fatalf("redirect: %s", loc)
+	}
+	return loc.Query().Get("code")
+}
+
+// expectOAuthRateLimited repeats a refused sign-in from ip until the address
+// is told to wait, and fails if that never happens.
+func (h *harness) expectOAuthRateLimited(t *testing.T, ip string, form url.Values) {
+	t.Helper()
+	var last *httptest.ResponseRecorder
+	for i := 0; i < 40; i++ {
+		last = h.oauthPostOrigin(t, ip, passkeyOrigin, "/oauth/authorize", form)
+		if strings.Contains(last.Body.String(), "Demasiados intentos") {
+			return
+		}
+	}
+	t.Fatalf("never limited: %s", last.Body.String())
 }
