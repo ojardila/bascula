@@ -24,6 +24,7 @@ import {
 import { messageFor } from "../../api/errors";
 import { useAuth } from "../../auth/AuthContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { trimTrailing } from "../../lib/trimTrailing";
 
 /**
  * Where «Conectar con ChatGPT» sends the owner: ChatGPT's Plugins page, where
@@ -50,7 +51,7 @@ export const CHECK_RETRY_MS = [800, 2000, 5000];
 
 /** This farm's MCP address: the host the owner is on, which is the farm's. */
 export function farmMcpUrl(origin: string = window.location.origin): string {
-  return `${origin.replace(/\/+$/, "")}/mcp`;
+  return `${trimTrailing(origin, "/")}/mcp`;
 }
 
 /**

@@ -95,6 +95,7 @@ import type {
   WorkerRequestBody,
   WorkUnitRequestBody,
 } from "./types";
+import { trimTrailing } from "../lib/trimTrailing";
 
 /* -- the error envelope ---------------------------------------------- */
 
@@ -476,7 +477,7 @@ const seesPrivateData = (p: Principal) => p.role === "owner" || p.role === "admi
 /** 32 random bytes, base64url, as a WebAuthn challenge is sent. */
 function mockChallenge(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCodePoint(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  return trimTrailing(btoa(String.fromCodePoint(...bytes)).replaceAll("+", "-").replaceAll("/", "_"), "=");
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

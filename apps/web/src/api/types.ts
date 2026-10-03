@@ -381,7 +381,7 @@ export interface Plot {
    * the one door in: it either hands back a geometry or a null, and the map
    * draws nothing rather than drawing `undefined`.
    */
-  boundary: unknown | null;
+  boundary: unknown;
   /**
    * Where the plot IS: a GeoJSON Point, or null until somebody stood in it.
    * Independent of `boundary`; a farm that drew a polygon keeps both.

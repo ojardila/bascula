@@ -449,7 +449,7 @@ export interface WirePlot {
    * is deliberate: no PostGIS type ever crosses the wire, so the web and the
    * phone never learn the storage engine and swapping it stays possible.
    */
-  boundary: unknown | null;
+  boundary: unknown;
   /**
    * Where the plot IS: a GeoJSON Point, or null until somebody has stood in it.
    *
