@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 import {
   Link as RouterLink,
   Navigate,
@@ -128,7 +128,7 @@ export function LoginPage() {
     }
   }
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     await attempt();
   }

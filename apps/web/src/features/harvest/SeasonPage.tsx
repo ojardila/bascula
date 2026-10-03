@@ -527,8 +527,8 @@ function Verdict({
   lastFinished,
 }: Readonly<{
   curve: Awaited<ReturnType<typeof reportHarvestCurve>>;
-  current?: { kg: number | null } | undefined;
-  lastFinished?: { kg: number | null } | undefined;
+  current?: { kg: number | null };
+  lastFinished?: { kg: number | null };
 }>) {
   const { shape } = curve;
 

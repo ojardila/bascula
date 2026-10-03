@@ -11,7 +11,7 @@
  * who can help instead. That used to send people to Configuración → Usuarios,
  * which cannot change a password; it now says what the owner actually can do.
  */
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
@@ -73,7 +73,7 @@ export function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (!email.includes("@")) {
       setError("Escriba el correo con el que entra a la finca.");
