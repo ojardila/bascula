@@ -143,6 +143,13 @@ func (h *harness) replayWithFaults(req *http.Request, raw string) {
 	if !faultReplayOn() || sideEffectful(req.URL.Path) {
 		return
 	}
+	h.replayAll(req, raw)
+}
+
+// replayAll is the replay itself, for any route. replayWithFaults calls it
+// for the routes without side effects; serveReplayed for one chosen request
+// on the others.
+func (h *harness) replayAll(req *http.Request, raw string) {
 	for n := 1; n <= 60; n++ {
 		plan := &faultPlan{failAt: n}
 		twin := req.Clone(context.WithValue(req.Context(), faultKey{}, plan))
