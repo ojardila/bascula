@@ -1352,7 +1352,7 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
 		// (wrong password, unknown client, ...). Never the password itself.
-		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
+		slog.Warn("oauth sign-in page notice", "notice", logsafe.Str(notice), "client_id", logsafe.Str(q.Get("client_id")))
 	}
 	if client != nil {
 		dest := q.Get("redirect_uri")
