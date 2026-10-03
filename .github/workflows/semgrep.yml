@@ -34,7 +34,10 @@ concurrency:
 
 env:
   SEMGREP_IMAGE: semgrep/semgrep:1.178.0
-  FAIL_ON: ""
+  # Findings were triaged to zero (fixed or nosemgrep with a reason), so the
+  # job now fails on any new ERROR-severity finding. WARNING and INFO stay
+  # advisory: they show in the PR comment and code scanning.
+  FAIL_ON: ERROR
   # Forks and Dependabot get a read-only token: no comment, no SARIF upload.
   CAN_WRITE: >-
     ${{ github.event_name != 'pull_request' || (
