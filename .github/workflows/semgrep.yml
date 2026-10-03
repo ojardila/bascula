@@ -1,0 +1,181 @@
+# Semgrep Community Edition: static security analysis on every PR and every
+# push to master. No Semgrep cloud login or token, only the public OSS
+# rulesets below, run from the semgrep/semgrep image (pinned).
+#
+# Results go to three places:
+#   - GitHub code scanning (SARIF), the Security tab and PR annotations;
+#   - the job summary and one PR comment, updated in place (like SonarQube);
+#   - DefectDojo, on push to master only, when its secrets exist
+#     (DEFECTDOJO_URL, DEFECTDOJO_TOKEN; the server is on the tailnet).
+#
+# FAIL_ON below decides the gate: empty = advisory, ERROR = the job fails
+# when a finding of severity ERROR is left. Generated code and fixtures are in
+# .semgrepignore; a false positive gets `// nosemgrep: <rule-id>` + a reason.
+#
+# Semgrep does not execute the code it reads, so scanning a PR is safe; the
+# tailnet is joined only on master, after the scan, for the DefectDojo upload.
+
+name: Semgrep
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SEMGREP_IMAGE: semgrep/semgrep:1.178.0
+  FAIL_ON: ""
+  # Forks and Dependabot get a read-only token: no comment, no SARIF upload.
+  CAN_WRITE: >-
+    ${{ github.event_name != 'pull_request' || (
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]') }}
+
+jobs:
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Scan
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE" \
+            semgrep scan \
+              --config p/default \
+              --config p/golang \
+              --config p/typescript \
+              --config p/react \
+              --config p/secrets \
+              --config p/owasp-top-ten \
+              --config p/dockerfile \
+              --config p/kubernetes \
+              --config p/github-actions \
+              --metrics=off \
+              --json-output=semgrep.json \
+              --sarif-output=semgrep.sarif
+
+      - name: Changed files
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" \
+            --jq '.[] | select(.status != "removed") | .filename' > changed-files.txt
+
+      - name: Report
+        id: report
+        env:
+          CHANGED_FILES: ${{ github.event_name == 'pull_request' && 'changed-files.txt' || '' }}
+          REPORT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/semgrep-report.py
+          cat semgrep-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SARIF to code scanning
+        if: env.CAN_WRITE == 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Comment on the PR
+        if: github.event_name == 'pull_request' && env.CAN_WRITE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- semgrep-report -->"))) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@semgrep-report.md >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@semgrep-report.md >/dev/null
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: semgrep
+          path: |
+            semgrep.json
+            semgrep.sarif
+          retention-days: 14
+
+      # DefectDojo: master only (PRs would pile up engagements), and only
+      # once the server's secrets exist. Same tailnet join as sonarqube.yml.
+      - name: DefectDojo secrets present
+        id: dojo
+        if: github.event_name == 'push'
+        env:
+          DD_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DD_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+          TS_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        run: |
+          if [ -z "$DD_URL" ] || [ -z "$DD_TOKEN" ] || [ -z "$TS_ID" ]; then
+            echo "DefectDojo secrets are not set; skipping the upload." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Join the tailnet
+        if: steps.dojo.outputs.ok == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          hostname: bascula-semgrep-${{ github.run_id }}-${{ github.run_attempt }}
+          timeout: 5m
+
+      - name: Upload to DefectDojo
+        if: steps.dojo.outputs.ok == 'true'
+        continue-on-error: true
+        env:
+          DD_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DD_TOKEN: ${{ secrets.DEFECTDOJO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # reimport-scan into one test per engagement: findings fixed since
+          # the last master scan are closed, new ones are added.
+          curl -sS --fail-with-body --max-time 120 -X POST "${DD_URL%/}/api/v2/reimport-scan/" \
+            -H "Authorization: Token ${DD_TOKEN}" \
+            -F scan_type="Semgrep JSON Report" \
+            -F file=@semgrep.json \
+            -F auto_create_context=true \
+            -F product_type_name=bascula \
+            -F product_name=bascula \
+            -F engagement_name="CI master" \
+            -F test_title=semgrep \
+            -F close_old_findings=true \
+            -F deduplication_on_engagement=true \
+            -F version="$(cat VERSION)" \
+            -F commit_hash="${GITHUB_SHA}" \
+            -F branch_tag=master \
+            -F minimum_severity=Info \
+            -F active=true -F verified=false \
+            -o dojo.json
+          python3 -c 'import json; d=json.load(open("dojo.json")); print("DefectDojo test", d.get("test_id") or d.get("test"))'
+
+      - name: Gate
+        if: env.FAIL_ON == 'ERROR'
+        env:
+          ERRORS: ${{ steps.report.outputs.error }}
+        run: |
+          if [ "${ERRORS:-0}" != "0" ]; then
+            echo "::error::Semgrep found ${ERRORS} ERROR-severity findings."
+            exit 1
+          fi

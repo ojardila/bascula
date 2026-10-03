@@ -1,0 +1,17 @@
+# Paths Semgrep skips (.github/workflows/semgrep.yml and the local run).
+# A .semgrepignore replaces Semgrep's built-in ignore list, so the usual
+# suspects are listed here again.
+:include .gitignore
+
+.git/
+node_modules/
+dist/
+coverage/
+*.min.js
+
+# Generated from the OpenAPI spec (npm run gen:api); fixed at the source.
+apps/web/src/api/schema.ts
+
+# Fixtures and binary media, not code that runs.
+testdata/
+apps/web/src/features/marketing/media/
