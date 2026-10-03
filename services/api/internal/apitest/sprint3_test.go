@@ -84,103 +84,25 @@ func TestStockOnHandIsDerivedFromMovements(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca de bodega", 80000)
 	inv := h.seedInventory(t, f, "Cafe pergamino", "Bodega principal")
+	s := stockOnHandFixture{h: h, f: f, inv: inv}
 
 	t.Run("a harvest comes in and a merma goes out", func(t *testing.T) {
-		h.move(t, f, inv, "cosecha", 100, nil)
-		if got := h.stockOf(t, f, inv.ProductID); got != 100 {
-			t.Fatalf("stock is %v after a harvest of 100, want 100", got)
-		}
-		// Sent unsigned; the sign follows from the reason, and the database
-		// refuses the pair if the two disagree.
-		h.move(t, f, inv, "merma", 12, nil)
-		if got := h.stockOf(t, f, inv.ProductID); got != 88 {
-			t.Fatalf("stock is %v after a merma of 12, want 88", got)
-		}
+		stockOnHandHarvestAndMerma(t, s)
 	})
-
 	t.Run("the product list carries the same derived number", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/products", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("want 1 product, got %d: %s", len(items), res.Raw)
-		}
-		row := items[0].(map[string]any)
-		if row["stock"] != 88.0 {
-			t.Fatalf("the list says %v, the per-product read says 88: %s", row["stock"], res.Raw)
-		}
+		stockOnHandProductListMatches(t, s)
 	})
-
 	t.Run("a harvest that increases nothing is refused by the database", func(t *testing.T) {
-		// The sign belongs to the reason. A client that insists otherwise is
-		// refused by stock_sign, not by a validation somebody remembered.
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `
-					INSERT INTO stock_moves (id, farm_id, product_id, warehouse_id, qty, reason, local_day)
-					VALUES ($1, $2, $3, $4, -5, 'cosecha', current_date)`,
-					uuid.NewString(), f.FarmID, inv.ProductID, inv.WarehouseID)
-				if err == nil {
-					t.Error("a 'cosecha' of -5 was accepted; stock_sign is not doing its job")
-				}
-			})
+		stockOnHandNegativeHarvestRefused(t, s)
 	})
-
 	t.Run("movements cannot be edited or deleted at all", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `UPDATE stock_moves SET qty = 1 WHERE farm_id = $1`, f.FarmID)
-				if err == nil {
-					t.Error("the API role was allowed to UPDATE a stock movement")
-				}
-			})
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `DELETE FROM stock_moves WHERE farm_id = $1`, f.FarmID)
-				if err == nil {
-					t.Error("the API role was allowed to DELETE a stock movement")
-				}
-			})
+		stockOnHandMovesImmutable(t, s)
 	})
-
 	t.Run("a mistake is corrected with its opposite, once", func(t *testing.T) {
-		body := h.move(t, f, inv, "compra", 30, nil)
-		moveID := body["move"].(map[string]any)["id"].(string)
-		if got := h.stockOf(t, f, inv.ProductID); got != 118 {
-			t.Fatalf("stock is %v, want 118", got)
-		}
-
-		h.mustDo(t, http.MethodPost, "/v1/stock/moves/"+moveID+"/reverse",
-			f.OwnerToken, map[string]any{"note": "mal contado"}, http.StatusCreated)
-		if got := h.stockOf(t, f, inv.ProductID); got != 88 {
-			t.Fatalf("stock is %v after the reversal, want 88 again", got)
-		}
-
-		second := h.do(t, http.MethodPost, "/v1/stock/moves/"+moveID+"/reverse", f.OwnerToken, nil)
-		if second.code() != string(domain.CodeAlreadyReversed) {
-			t.Fatalf("second reversal: got %d %s, want ALREADY_REVERSED", second.Status, second.Raw)
-		}
-		if got := h.stockOf(t, f, inv.ProductID); got != 88 {
-			t.Fatalf("the refused reversal still moved the stock: %v", got)
-		}
+		stockOnHandReversalOnce(t, s)
 	})
-
 	t.Run("taking out more than there is needs saying so", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/stock/moves", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"reason": "consumo", "qty": 1000,
-		})
-		if res.code() != string(domain.CodeInsufficientStock) {
-			t.Fatalf("consuming 1000 of 88: got %d %s, want INSUFFICIENT_STOCK", res.Status, res.Raw)
-		}
-		// And the override, which exists because a warehouse whose opening
-		// balance was never entered is ordinary.
-		h.mustDo(t, http.MethodPost, "/v1/stock/moves", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"reason": "consumo", "qty": 1000, "allowNegative": true,
-		}, http.StatusCreated)
-		if got := h.stockOf(t, f, inv.ProductID); got != -912 {
-			t.Fatalf("stock is %v, want -912: the override did not take", got)
-		}
+		stockOnHandInsufficientNeedsOverride(t, s)
 	})
 }
 
@@ -266,106 +188,26 @@ func TestASaleMovesStockInTheSameTransaction(t *testing.T) {
 	f := h.signupFarm(t, "Finca de ventas", 80000)
 	inv := h.seedInventory(t, f, "Cafe seco", "Bodega venta")
 	h.move(t, f, inv, "cosecha", 500, nil)
-
 	var saleID string
+	s := saleStockFixture{h: h, f: f, inv: inv, saleID: &saleID}
+
 	t.Run("selling takes the coffee out of the warehouse", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/sales", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"qty": 120, "amountCents": 96_000_00, "customer": "Cooperativa del Sur",
-		}, http.StatusCreated)
-		saleID = mustString(t, res.Body, "id")
-
-		if res.Body["stockMoveId"] == nil {
-			t.Fatalf("the sale wrote no stock movement: %s", res.Raw)
-		}
-		if got := h.stockOf(t, f, inv.ProductID); got != 380 {
-			t.Fatalf("stock is %v after selling 120 of 500, want 380", got)
-		}
-		// The customer picker created the row rather than refusing the name.
-		cs := h.mustDo(t, http.MethodGet, "/v1/customers", f.OwnerToken, nil, http.StatusOK)
-		items, _ := cs.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("want 1 customer, got %d: %s", len(items), cs.Raw)
-		}
+		saleStockSellingTakesCoffeeOut(t, s)
 	})
-
 	t.Run("a 'venta' movement cannot be written by hand", func(t *testing.T) {
-		// The one way to get the two lists to disagree, closed at the door and
-		// again in the database by stock_venta_has_sale.
-		res := h.do(t, http.MethodPost, "/v1/stock/moves", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"reason": "venta", "qty": 10,
-		})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("a hand-written venta movement: got %d %s, want 400", res.Status, res.Raw)
-		}
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `
-					INSERT INTO stock_moves (id, farm_id, product_id, warehouse_id, qty, reason, local_day)
-					VALUES ($1, $2, $3, $4, -10, 'venta', current_date)`,
-					uuid.NewString(), f.FarmID, inv.ProductID, inv.WarehouseID)
-				if err == nil {
-					t.Error("a venta movement without a sale was accepted")
-				}
-			})
+		saleStockHandWrittenVentaRefused(t, s)
 	})
-
 	t.Run("the quantity of a sale cannot be edited", func(t *testing.T) {
-		res := h.do(t, http.MethodPatch, "/v1/sales/"+saleID, f.OwnerToken,
-			map[string]any{"qty": 5})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("editing qty: got %d %s, want 400 telling us to void and re-record",
-				res.Status, res.Raw)
-		}
-		if got := h.stockOf(t, f, inv.ProductID); got != 380 {
-			t.Fatalf("the refused patch moved the stock: %v", got)
-		}
-		// What CAN move, moves.
-		h.mustDo(t, http.MethodPatch, "/v1/sales/"+saleID, f.OwnerToken,
-			map[string]any{"amountCents": 97_000_00}, http.StatusOK)
+		saleStockQtyCannotBeEdited(t, s)
 	})
-
 	t.Run("voiding a sale puts the coffee back", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodDelete, "/v1/sales/"+saleID, f.OwnerToken, nil, http.StatusOK)
-		if res.Body["voidedAt"] == nil {
-			t.Fatalf("the sale is not marked void: %s", res.Raw)
-		}
-		if res.Body["reversalMoveId"] == nil {
-			t.Fatalf("voiding wrote no reversing movement: %s", res.Raw)
-		}
-		if got := h.stockOf(t, f, inv.ProductID); got != 500 {
-			t.Fatalf("stock is %v after voiding, want 500. A void that only flags "+
-				"the row leaves the coffee sold in one list and gone from the other.", got)
-		}
-
-		second := h.do(t, http.MethodDelete, "/v1/sales/"+saleID, f.OwnerToken, nil)
-		if second.code() != string(domain.CodeSaleAlreadyVoid) {
-			t.Fatalf("second void: got %d %s, want SALE_ALREADY_VOID", second.Status, second.Raw)
-		}
-		if got := h.stockOf(t, f, inv.ProductID); got != 500 {
-			t.Fatalf("the refused void moved the stock again: %v", got)
-		}
+		saleStockVoidPutsCoffeeBack(t, s)
 	})
-
 	t.Run("a voided sale is not restored", func(t *testing.T) {
-		res := h.do(t, http.MethodPatch, "/v1/sales/"+saleID, f.OwnerToken,
-			map[string]any{"status": "active"})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("un-voiding: got %d %s, want 400", res.Status, res.Raw)
-		}
+		saleStockVoidedNotRestored(t, s)
 	})
-
 	t.Run("the totals count the live sales only", func(t *testing.T) {
-		h.mustDo(t, http.MethodPost, "/v1/sales", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"qty": 10, "amountCents": 8_000_00,
-		}, http.StatusCreated)
-
-		res := h.mustDo(t, http.MethodGet, "/v1/sales?status=all", f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, res.Body, "totalCents"); got != 8_000_00 {
-			t.Fatalf("totalCents is %d, want only the live sale's 800000: %s", got, res.Raw)
-		}
+		saleStockTotalsCountLiveOnly(t, s)
 	})
 }
 
@@ -482,81 +324,18 @@ func TestAnExpenseIsChargedToExactlyOneThing(t *testing.T) {
 	f := h.signupFarm(t, "Finca de imputacion", 80000)
 	plot := h.createPlot(t, f, "Lote imputado")
 	activity := h.harvestActivityID(t, f)
+	e := expenseTargetFixture{h: h, f: f, plot: plot, activity: activity}
 
-	t.Run("to neither is refused", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/expenses", f.OwnerToken, map[string]any{
-			"concept": "Sin imputar", "amountCents": 1000,
-		})
-		if res.code() != string(domain.CodeExpenseTargetInvalid) {
-			t.Fatalf("got %d %s, want EXPENSE_TARGET_INVALID.\n"+
-				"An expense charged to nothing appears in the total and in no "+
-				"breakdown, and the gap is what nobody can explain in March.",
-				res.Status, res.Raw)
-		}
-	})
-
-	t.Run("to both is refused", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/expenses", f.OwnerToken, map[string]any{
-			"concept": "Doble", "amountCents": 1000,
-			"plotId": plot, "activityId": activity,
-		})
-		if res.code() != string(domain.CodeExpenseTargetInvalid) {
-			t.Fatalf("got %d %s, want EXPENSE_TARGET_INVALID", res.Status, res.Raw)
-		}
-	})
-
+	t.Run("to neither is refused", func(t *testing.T) { expenseTargetNeitherRefused(t, e) })
+	t.Run("to both is refused", func(t *testing.T) { expenseTargetBothRefused(t, e) })
 	t.Run("the database refuses it too, not only the handler", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `
-					INSERT INTO expenses (id, farm_id, concept, amount_minor, local_day)
-					VALUES ($1, $2, 'sin imputar', 1000, current_date)`,
-					uuid.NewString(), f.FarmID)
-				if err == nil {
-					t.Error("an expense charged to nothing went straight into the table")
-				}
-			})
+		expenseTargetDBRefusesToo(t, e)
 	})
-
 	t.Run("the imputation can move from an activity to a plot", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/expenses", f.OwnerToken, map[string]any{
-			"concept": "Jornales extra", "amountCents": 50_000, "activityId": activity,
-		}, http.StatusCreated)
-		id := mustString(t, res.Body, "id")
-		if res.Body["target"] != "activity" {
-			t.Fatalf("target is %v, want activity", res.Body["target"])
-		}
-
-		// Field by field this would be impossible: the old activityId would
-		// survive the patch and expense_target would refuse the result.
-		moved := h.mustDo(t, http.MethodPatch, "/v1/expenses/"+id, f.OwnerToken,
-			map[string]any{"plotId": plot}, http.StatusOK)
-		if moved.Body["target"] != "plot" {
-			t.Fatalf("target is %v after retargeting, want plot: %s",
-				moved.Body["target"], moved.Raw)
-		}
-		if moved.Body["activityId"] != nil {
-			t.Fatalf("the old activity survived the retarget: %s", moved.Raw)
-		}
+		expenseTargetRetargetActivityToPlot(t, e)
 	})
-
 	t.Run("deleting leaves the expense inactive, and it comes back", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/expenses", f.OwnerToken, map[string]any{
-			"concept": "Borrable", "amountCents": 7000, "plotId": plot,
-		}, http.StatusCreated)
-		id := mustString(t, res.Body, "id")
-
-		h.mustDo(t, http.MethodDelete, "/v1/expenses/"+id, f.OwnerToken, nil, http.StatusNoContent)
-		live := h.mustDo(t, http.MethodGet, "/v1/expenses", f.OwnerToken, nil, http.StatusOK)
-		if strings.Contains(live.Raw, id) {
-			t.Fatalf("a deleted expense is still in the live list: %s", live.Raw)
-		}
-		all := h.mustDo(t, http.MethodGet, "/v1/expenses?status=all", f.OwnerToken, nil, http.StatusOK)
-		if !strings.Contains(all.Raw, id) {
-			t.Fatalf("the row was really deleted; it should only be inactive: %s", all.Raw)
-		}
-		h.mustDo(t, http.MethodPatch, "/v1/expenses/"+id, f.OwnerToken,
-			map[string]any{"status": "active"}, http.StatusOK)
+		expenseTargetDeleteLeavesInactive(t, e)
 	})
 }
 
@@ -582,8 +361,6 @@ func TestInventoryEndpointsThatAddUpConfirmTheResourceFirst(t *testing.T) {
 	theirInv := h.seedInventory(t, theirs, "Su cafe", "Su bodega")
 	ghost := uuid.NewString()
 
-	// Their warehouse really does have coffee in it, so a zero here would be a
-	// lie about a real stock and not merely about an empty row.
 	h.move(t, theirs, theirInv, "cosecha", 900, nil)
 	h.mustDo(t, http.MethodPost, "/v1/sales", theirs.OwnerToken, map[string]any{
 		"productId": theirInv.ProductID, "warehouseId": theirInv.WarehouseID,
@@ -604,90 +381,19 @@ func TestInventoryEndpointsThatAddUpConfirmTheResourceFirst(t *testing.T) {
 		{"movements by product", func(id string) string { return "/v1/stock/moves?productId=" + id }},
 		{"sales by product", func(id string) string { return "/v1/sales?productId=" + id }},
 	}
-	for _, r := range reads {
-		for _, subject := range []struct{ label, id string }{
-			{"another farm's product", theirInv.ProductID},
-			{"a product that never existed", ghost},
-		} {
-			t.Run(r.name+" of "+subject.label, func(t *testing.T) {
-				res := h.do(t, http.MethodGet, r.path(subject.id), mine.OwnerToken, nil)
-				if res.Status != http.StatusNotFound {
-					t.Fatalf("got %d, want 404. A zero or an empty list here is a "+
-						"credible answer and a false one: %s", res.Status, res.Raw)
-				}
-			})
-		}
+	fx := invConfirmFixture{
+		h: h, mine: mine, theirs: theirs, myInv: myInv, theirInv: theirInv,
+		ghost: ghost, theirPlot: theirPlot, reads: reads,
 	}
 
-	t.Run("warehouse of another farm", func(t *testing.T) {
-		res := h.do(t, http.MethodGet, "/v1/stock?warehouseId="+theirInv.WarehouseID,
-			mine.OwnerToken, nil)
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("got %d %s, want 404", res.Status, res.Raw)
-		}
-	})
-
-	t.Run("expenses filtered by another farm's plot", func(t *testing.T) {
-		res := h.do(t, http.MethodGet, "/v1/expenses?plotId="+theirPlot, mine.OwnerToken, nil)
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("got %d %s, want 404 rather than an empty list totalling zero",
-				res.Status, res.Raw)
-		}
-	})
-
-	t.Run("a sale of another farm's product", func(t *testing.T) {
-		// The write has the same shape: it confirms before it derives. Without
-		// the guard this answers INSUFFICIENT_STOCK, which looks like a
-		// business rule and is really a tenant leak wearing a hat.
-		res := h.do(t, http.MethodPost, "/v1/sales", mine.OwnerToken, map[string]any{
-			"productId": theirInv.ProductID, "warehouseId": theirInv.WarehouseID,
-			"qty": 1, "amountCents": 1000,
-		})
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("got %d %s, want 404", res.Status, res.Raw)
-		}
-	})
-
-	t.Run("a movement into another farm's warehouse", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/stock/moves", mine.OwnerToken, map[string]any{
-			"productId": myInv.ProductID, "warehouseId": theirInv.WarehouseID,
-			"reason": "cosecha", "qty": 1,
-		})
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("got %d %s, want 404", res.Status, res.Raw)
-		}
-	})
-
-	t.Run("an expense charged to another farm's plot", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/expenses", mine.OwnerToken, map[string]any{
-			"concept": "Ajeno", "amountCents": 1000, "plotId": theirPlot,
-		})
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("got %d %s, want 404", res.Status, res.Raw)
-		}
-	})
-
-	t.Run("our own still answers", func(t *testing.T) {
-		for _, r := range reads {
-			h.mustDo(t, http.MethodGet, r.path(myInv.ProductID), mine.OwnerToken, nil, http.StatusOK)
-		}
-	})
-
-	t.Run("the database refuses across the border too", func(t *testing.T) {
-		h.withTenant(t, mine.FarmID, mine.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				for _, table := range []string{"products", "stock_moves", "sales", "expenses"} {
-					var n int
-					if err := tx.QueryRow(ctx,
-						`SELECT count(*) FROM `+table+` WHERE farm_id = $1`, theirs.FarmID).Scan(&n); err != nil {
-						t.Fatalf("count %s: %v", table, err)
-					}
-					if n != 0 {
-						t.Errorf("RLS let our farm count %d rows of theirs in %s", n, table)
-					}
-				}
-			})
-	})
+	invConfirmCrossFarmReads404(t, fx)
+	t.Run("warehouse of another farm", func(t *testing.T) { invConfirmWarehouseOfOtherFarm(t, fx) })
+	t.Run("expenses filtered by another farm's plot", func(t *testing.T) { invConfirmExpensesOtherPlot(t, fx) })
+	t.Run("a sale of another farm's product", func(t *testing.T) { invConfirmSaleOtherProduct(t, fx) })
+	t.Run("a movement into another farm's warehouse", func(t *testing.T) { invConfirmMoveOtherWarehouse(t, fx) })
+	t.Run("an expense charged to another farm's plot", func(t *testing.T) { invConfirmExpenseOtherPlot(t, fx) })
+	t.Run("our own still answers", func(t *testing.T) { invConfirmOwnStillAnswers(t, fx) })
+	t.Run("the database refuses across the border too", func(t *testing.T) { invConfirmDBRefusesAcrossBorder(t, fx) })
 }
 
 // TestWeigherSeesNoSalesExpensesOrStock is the sprint's half of the rule that
@@ -710,35 +416,10 @@ func TestWeigherSeesNoSalesExpensesOrStock(t *testing.T) {
 		"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
 		"qty": 1, "amountCents": 1000,
 	}, http.StatusCreated)
+	w := weigherMoneyFixture{h: h, f: f}
 
-	t.Run("the routes refuse him", func(t *testing.T) {
-		for _, path := range []string{
-			"/v1/products", "/v1/stock", "/v1/stock/moves", "/v1/sales",
-			"/v1/expenses", "/v1/warehouses", "/v1/customers",
-			"/v1/catalogs/product-categories", "/v1/catalogs/storage-units",
-		} {
-			res := h.do(t, http.MethodGet, path, f.WeigherToken, nil)
-			if res.Status != http.StatusForbidden {
-				t.Errorf("weigher on GET %s: got %d, want 403: %s", path, res.Status, res.Raw)
-			}
-		}
-	})
-
-	t.Run("and so does the database, one layer down", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.WeigherID, domain.RoleWeigher,
-			func(ctx context.Context, tx pgx.Tx) {
-				for _, table := range []string{"products", "stock_moves", "sales", "expenses", "customers"} {
-					var n int
-					if err := tx.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
-						t.Fatalf("count %s as the weigher: %v", table, err)
-					}
-					if n != 0 {
-						t.Errorf("the weigher's own transaction can read %d rows of %s. "+
-							"The middleware says no; the RLS policy has to say it too.", n, table)
-					}
-				}
-			})
-	})
+	t.Run("the routes refuse him", func(t *testing.T) { weigherMoneyRoutesRefuse(t, w) })
+	t.Run("and so does the database, one layer down", func(t *testing.T) { weigherMoneyDBRefuses(t, w) })
 }
 
 // ---------------------------------------------------------------------------
@@ -783,141 +464,26 @@ func pngOf(size int) []byte {
 func TestUploadLimitIsEnforcedOnTheBytesThatArrive(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca de fotos", 80000)
+	u := uploadLimitFixture{h: h, f: f}
 
-	newTicket := func(t *testing.T, declared int64) (string, string) {
-		t.Helper()
-		res := h.mustDo(t, http.MethodPost, "/v1/uploads", f.OwnerToken, map[string]any{
-			"purpose": "sale-receipt", "filename": "recibo.png",
-			"contentType": "image/png", "bytes": declared,
-		}, http.StatusCreated)
-		a, _ := res.Body["attachment"].(map[string]any)
-		return mustString(t, a, "id"), mustString(t, res.Body, "uploadUrl")
-	}
-
-	t.Run("a small honest file goes through", func(t *testing.T) {
-		id, url := newTicket(t, 2048)
-		res := h.putBytes(t, url, f.OwnerToken, pngOf(2048))
-		if res.Status != http.StatusOK {
-			t.Fatalf("upload: got %d %s, want 200", res.Status, res.Raw)
-		}
-		if res.Body["status"] != "ready" {
-			t.Fatalf("status is %v, want ready: %s", res.Body["status"], res.Raw)
-		}
-		if res.Body["bytes"] != 2048.0 {
-			t.Fatalf("bytes is %v, want the 2048 the server counted", res.Body["bytes"])
-		}
-		if res.Body["contentType"] != "image/png" {
-			t.Fatalf("contentType is %v, want the sniffed image/png", res.Body["contentType"])
-		}
-		got := h.mustDo(t, http.MethodGet, "/v1/uploads/"+id, f.OwnerToken, nil, http.StatusOK)
-		if got.Body["status"] != "ready" {
-			t.Fatalf("the stored row is %v: %s", got.Body["status"], got.Raw)
-		}
-	})
-
+	t.Run("a small honest file goes through", func(t *testing.T) { uploadLimitSmallHonest(t, u) })
 	t.Run("a file that LIES about its size is refused when it arrives", func(t *testing.T) {
-		// This is the case the whole design exists for: the ticket was asked
-		// for with an honest-looking 1 KB, and six megabytes turn up.
-		_, url := newTicket(t, 1024)
-		res := h.putBytes(t, url, f.OwnerToken, pngOf(6*1024*1024))
-		if res.Status != http.StatusRequestEntityTooLarge {
-			t.Fatalf("6 MB after declaring 1 KB: got %d %s, want 413.\n"+
-				"The limit that counts is the one applied to the bytes that arrived.",
-				res.Status, res.Raw)
-		}
-		if res.code() != string(domain.CodeUploadTooLarge) {
-			t.Fatalf("got code %q, want UPLOAD_TOO_LARGE: %s", res.code(), res.Raw)
-		}
+		uploadLimitLieAboutSize(t, u)
 	})
-
 	t.Run("exactly at the limit is accepted, one byte over is not", func(t *testing.T) {
-		_, url := newTicket(t, 0)
-		if res := h.putBytes(t, url, f.OwnerToken, pngOf(5*1024*1024)); res.Status != http.StatusOK {
-			t.Fatalf("exactly 5 MB: got %d %s, want 200", res.Status, res.Raw)
-		}
-		_, url2 := newTicket(t, 0)
-		res := h.putBytes(t, url2, f.OwnerToken, pngOf(5*1024*1024+1))
-		if res.Status != http.StatusRequestEntityTooLarge {
-			t.Fatalf("5 MB plus one byte: got %d %s, want 413.\n"+
-				"Reading exactly the limit and stopping would store a truncated file "+
-				"with no error anywhere.", res.Status, res.Raw)
-		}
+		uploadLimitExactBoundary(t, u)
 	})
-
 	t.Run("the media type is what the bytes say, not what the header claimed", func(t *testing.T) {
-		_, url := newTicket(t, 16)
-		res := h.putBytes(t, url, f.OwnerToken, []byte("MZ\x90\x00 not a photograph at all"))
-		if res.Status != http.StatusUnsupportedMediaType {
-			t.Fatalf("an executable declared as image/png: got %d %s, want 415",
-				res.Status, res.Raw)
-		}
+		uploadLimitMediaTypeFromBytes(t, u)
 	})
-
 	t.Run("a pending attachment cannot be hung on a sale", func(t *testing.T) {
-		id, _ := newTicket(t, 1024) // no bytes ever sent
-		inv := h.seedInventory(t, f, "Cafe con recibo", "Bodega recibo")
-		h.move(t, f, inv, "cosecha", 10, nil)
-
-		res := h.do(t, http.MethodPost, "/v1/sales", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"qty": 1, "amountCents": 1000, "receiptId": id,
-		})
-		if res.code() != string(domain.CodeUploadNotReady) {
-			t.Fatalf("a sale pointing at an empty upload: got %d %s, want UPLOAD_NOT_READY.\n"+
-				"Otherwise the screen shows a broken image and nobody can tell "+
-				"whether the photo was lost or never taken.", res.Status, res.Raw)
-		}
+		uploadLimitPendingCannotHangOnSale(t, u)
 	})
-
 	t.Run("a ready one can, and comes back", func(t *testing.T) {
-		id, url := newTicket(t, 1024)
-		h.putBytes(t, url, f.OwnerToken, pngOf(1024))
-
-		inv := h.seedInventory(t, f, "Cafe con foto", "Bodega foto")
-		h.move(t, f, inv, "cosecha", 10, nil)
-		sale := h.mustDo(t, http.MethodPost, "/v1/sales", f.OwnerToken, map[string]any{
-			"productId": inv.ProductID, "warehouseId": inv.WarehouseID,
-			"qty": 1, "amountCents": 1000, "receiptId": id,
-		}, http.StatusCreated)
-		if mustString(t, sale.Body, "receiptId") != id {
-			t.Fatalf("the receipt did not stick: %s", sale.Raw)
-		}
-
-		req := httptest.NewRequest(http.MethodGet, "/v1/uploads/"+id+"/content", nil)
-		req.Header.Set("Authorization", "Bearer "+f.OwnerToken)
-		rec := httptest.NewRecorder()
-		h.server.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("fetching the bytes: got %d %s", rec.Code, rec.Body.String())
-		}
-		if rec.Body.Len() != 1024 {
-			t.Fatalf("got %d bytes back, want 1024", rec.Body.Len())
-		}
-		if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
-			t.Fatalf("Content-Type is %q, want image/png", ct)
-		}
-		// Opened directly, an upload renders sandboxed: a PDF's script gets
-		// no access to this origin.
-		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") {
-			t.Fatalf("an upload is served without a sandbox: %q", csp)
-		}
+		uploadLimitReadyHangsAndComesBack(t, u)
 	})
-
 	t.Run("another farm's attachment is 404 before the disk is touched", func(t *testing.T) {
-		other := h.signupFarm(t, "Finca ajena fotos", 80000)
-		id, url := newTicket(t, 1024)
-		h.putBytes(t, url, f.OwnerToken, pngOf(1024))
-
-		for _, path := range []string{"/v1/uploads/" + id, "/v1/uploads/" + id + "/content"} {
-			res := h.do(t, http.MethodGet, path, other.OwnerToken, nil)
-			if res.Status != http.StatusNotFound {
-				t.Fatalf("another farm reading %s: got %d %s, want 404", path, res.Status, res.Raw)
-			}
-		}
-		res := h.putBytes(t, url, other.OwnerToken, pngOf(16))
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("another farm writing the bytes: got %d %s, want 404", res.Status, res.Raw)
-		}
+		uploadLimitOtherFarm404(t, u)
 	})
 }
 
