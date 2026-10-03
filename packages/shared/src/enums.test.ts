@@ -22,6 +22,8 @@ const ROLES_SQL = readFileSync(
 
 /** Pulls 'a','b','c' out of `CREATE TYPE <name> AS ENUM ('a','b','c')`. */
 function enumValues(sql: string, type: string): string[] {
+  // Test-only: the pattern is built from fixtures in this file, never from user input.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const m = new RegExp(`CREATE TYPE\\s+${type}\\s+AS ENUM\\s*\\(([^)]*)\\)`).exec(sql);
   assert.ok(m, `no CREATE TYPE ${type} AS ENUM (...) found`);
   return [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]);

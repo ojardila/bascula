@@ -38,6 +38,8 @@ func (s *Server) mcpBrowserPage(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		s.writeMCPChallenge(w, r, "")
 		w.WriteHeader(http.StatusUnauthorized)
+		// Hand-built HTML where every interpolated value goes through html.EscapeString.
+		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter
 		_, _ = fmt.Fprintf(w, `<!doctype html>
 <html lang="es">
 <meta charset="utf-8">

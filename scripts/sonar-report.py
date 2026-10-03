@@ -54,6 +54,8 @@ def api(path, **params):
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Authorization": AUTH})
+    # The URL is SONAR_HOST_URL (a repo secret, https) plus a fixed API path; nothing user-controlled.
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 

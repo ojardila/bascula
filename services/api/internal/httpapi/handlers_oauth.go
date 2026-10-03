@@ -520,6 +520,8 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 		qq.Set("iss", issuer)
 		u.RawQuery = qq.Encode()
+		// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
+		// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
 		http.Redirect(w, r, u.String(), http.StatusFound)
 	}
 
@@ -642,6 +644,8 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	qq.Set("iss", issuer)
 	u.RawQuery = qq.Encode()
+	// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
+	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
@@ -1263,6 +1267,8 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 			fmt.Fprintf(&opts, `<label class="opt"><input type="radio" name="farm_id" value="%s"%s><span>%s%s</span></label>
 `, esc(m.FarmID), checked, esc(name), slug)
 		}
+		// Hand-built HTML where every interpolated value goes through html.EscapeString.
+		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter
 		_, _ = fmt.Fprintf(w, `%s<p>Su cuenta tiene varias fincas. Elija cuál va a usar el asistente.</p>
 %s
 <form method="post" action="/oauth/authorize">
@@ -1295,6 +1301,8 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	// The access choice is its own field, so the hidden copy of an earlier
 	// choice is left out of this form.
 	params := strings.Replace(oauthParams, hidden("access"), "", 1)
+	// Hand-built HTML where every interpolated value goes through html.EscapeString.
+	// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter
 	_, _ = fmt.Fprintf(w, `%s<p>Entre con la misma cuenta de la finca. El asistente trabaja con los permisos de su rol.</p>
 %s%s
 <form method="post" action="/oauth/authorize">

@@ -3,6 +3,8 @@ package apitest
 import (
 	"context"
 	"fmt"
+	// Seeded math/rand on purpose: a reproducible synthetic dataset for a perf test, not anything secret.
+	// nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
 	"math/rand"
 	"net/http"
 	"os"

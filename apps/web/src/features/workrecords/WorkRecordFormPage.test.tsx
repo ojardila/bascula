@@ -75,6 +75,8 @@ async function fill(user: ReturnType<typeof userEvent.setup>, who: string, lote:
   await user.click(await screen.findByLabelText(/^Actividad/));
   await user.click(await screen.findByRole("option", { name: "Recolección de café" }));
   await user.click(screen.getByLabelText(/^Empleado/));
+  // Test-only: the pattern is built from fixtures in this file, never from user input.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   await user.click(await screen.findByRole("option", { name: new RegExp(who) }));
   await user.click(screen.getByLabelText(/^Lotes/));
   await user.click(await screen.findByRole("option", { name: lote }));

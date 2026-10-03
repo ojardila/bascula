@@ -85,6 +85,8 @@ function hits(files: string[], pattern: RegExp): Hit[] {
   for (const file of files) {
     const code = stripComments(readFileSync(file, "utf8"));
     code.split("\n").forEach((text, n) => {
+      // Test-only: the pattern is built from fixtures in this file, never from user input.
+      // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
       if (new RegExp(pattern.source, pattern.flags.replace("g", "")).test(text)) {
         found.push({ file: relative(SRC, file), line: n + 1, text: text.trim() });
       }
