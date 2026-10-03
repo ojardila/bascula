@@ -17,9 +17,9 @@ import (
 // says whether the password matched it. The caller must have pinned the user
 // with tenant.SetUser.
 //
-// Why: signup does not prove the address (there is no mail link yet), so
-// the global password of an account belongs to whoever registered the address
-// FIRST. When the address's real owner later registers their own farm, the
+// Why: signup does not always prove the address (a deployment with no mailer
+// verifies on the typed password alone), so the global password of an
+// account belongs to whoever registered the address FIRST. When the address's real owner later registers their own farm, the
 // farm is attached to that account. Letting the global password open it gave
 // the first registrant owner access to a stranger's farm.
 //

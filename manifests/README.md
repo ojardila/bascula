@@ -261,8 +261,20 @@ API sends:
   refused sign-ins, failing assistant writes, 5xx or OAuth errors
   ([docs/detections.md](../docs/detections.md)).
 
-Dedicated farm stacks send the last two as well, so each `bascula-<slug>`
-namespace needs its own `bascula-mail` ConfigMap (and Secret, with auth).
+Dedicated farm stacks send the last two as well, and nobody has to set them up
+by hand: the `bascula-mail` ConfigMap is kept in the private gitops repo
+(`apps/bascula-mail`, namespace `bascula-shared`), and a Kyverno policy there
+clones it into `bascula`, `bascula-dev` and every `bascula-<slug>` namespace
+(see PR #351). That policy is not in this repo, unlike
+[cluster/harbor-pull-clone.yaml](cluster/harbor-pull-clone.yaml). Operator check
+for a new farm, or after rotating SMTP credentials: confirm the ConfigMap (and
+the `bascula-mail` Secret, when the relay needs auth) is present in the farm's
+namespace, and look for `mail on` in its API log:
+
+```
+kubectl -n bascula-<slug> get configmap,secret bascula-mail
+kubectl -n bascula-<slug> logs deploy/bascula-api | grep 'mail on'
+```
 
 | Variable | ConfigMap / Secret key | Default |
 |:--|:--|:--|

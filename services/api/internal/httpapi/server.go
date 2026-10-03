@@ -26,8 +26,9 @@ import (
 // Config is what the server needs from the environment.
 type Config struct {
 	// DevEcho makes signup and verification return the email token in the
-	// response body, because there is no mail sender in sprint 1. It must be
-	// off in production and the server refuses to start otherwise.
+	// response body, for when this deployment has no mailer (development) and
+	// the token cannot arrive by mail. It must be off in production and the
+	// server refuses to start otherwise.
 	DevEcho bool
 	// SignupsPerIPPerHour caps the most exposed surface in the system.
 	SignupsPerIPPerHour int

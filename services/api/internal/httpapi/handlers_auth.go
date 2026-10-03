@@ -64,7 +64,7 @@ type signupRequest struct {
 //
 //	201 {"verificationRequired": false}
 //
-// and in development, where there is no mail sender, the token that would have
+// and in development (DevEcho, typically with no mailer), the token that would have
 // been mailed. That is the WHOLE response, for every address, and the two
 // identifiers it used to carry — farmId and userId — moved to
 // POST /v1/auth/verify-email, which is the first point at which the caller has
@@ -403,8 +403,8 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// whether this deployment sends mail), so it says nothing about accounts.
 	body := map[string]any{"verificationRequired": byMail, "provisionTicket": s.provisionTicket(newFarm.Slug)}
 	if s.cfg.DevEcho {
-		// There is no mail sender in sprint 1. Echoing the token is a
-		// development affordance and the server refuses to start with it on
+		// When this deployment has no mailer, e.g. development, the token
+		// cannot arrive by mail. Echoing it is a development affordance and the server refuses to start with it on
 		// outside development.
 		//
 		// The discarded branch echoes its discarded token, so development

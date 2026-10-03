@@ -3949,8 +3949,9 @@ export interface components {
              */
             verificationRequired: boolean;
             /**
-             * @description Present only when the server runs with DevEcho on, because there is
-             *     no mail sender yet. The server refuses to start with it on outside
+             * @description Present only when the server runs with DevEcho on, for when this
+             *     deployment has no mailer (e.g. development) and the token cannot
+             *     arrive by mail. The server refuses to start with it on outside
              *     development.
              *
              *     It is echoed for a registered address too, and for that address it
