@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SubmitEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
@@ -126,7 +126,7 @@ export function WorkerFormPage() {
     return Object.keys(e).length === 0;
   }
 
-  async function onSubmit(ev: FormEvent) {
+  async function onSubmit(ev: SubmitEvent) {
     ev.preventDefault();
     setError(null);
     if (!validate()) return;

@@ -9,7 +9,7 @@
  * soon as they submit, and the next screen is the waiting page that follows
  * the farm's own address until it answers.
  */
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -73,7 +73,7 @@ export function SignupPage() {
     return e;
   }
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     setError(null);
     setSlugError(null);

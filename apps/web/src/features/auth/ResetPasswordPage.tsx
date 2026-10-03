@@ -7,7 +7,7 @@
  * goes to the login screen and types the new password, which is also how
  * they find out it works.
  */
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Button, Stack, TextField, Typography } from "@mui/material";
 import { AuthLayout } from "./AuthLayout";
@@ -32,7 +32,7 @@ export function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(!secret);
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (password.length < 10) {
       setError("La clave nueva debe tener al menos 10 caracteres.");

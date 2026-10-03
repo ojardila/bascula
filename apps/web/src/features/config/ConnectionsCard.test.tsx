@@ -208,6 +208,30 @@ describe("Conectar con ChatGPT on a computer", () => {
 describe("the «already connected?» check", () => {
   beforeEach(() => asDevice(IPHONE_UA, 5));
 
+  /**
+   * The CI flake «ReferenceError: window is not defined»: ConfigPage's tests
+   * finished while this check was still in flight, the request failed during
+   * teardown, and the failure handler scheduled a retry on a `window` that no
+   * longer existed. A check that fails after the card is gone retries nothing.
+   */
+  it("does not schedule a retry when the answer lands after the card is gone", async () => {
+    let fail!: (e: unknown) => void;
+    const spy = vi.spyOn(api, "listMcpConnections").mockImplementation(
+      () => new Promise((_, reject) => (fail = reject)),
+    );
+    const { unmount } = renderCard();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    unmount();
+    const timeout = vi.spyOn(window, "setTimeout");
+    fail(new ApiError(0, { error: { code: "NETWORK", message: "network" } }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const retries = timeout.mock.calls.filter(([, ms]) => ms === CHECK_RETRY_MS[0]);
+    expect(retries).toHaveLength(0);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it("retries a failed check quietly and succeeds", async () => {
     const real = api.listMcpConnections;
     const spy = vi

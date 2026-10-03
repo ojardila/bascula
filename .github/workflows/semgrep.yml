@@ -47,8 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Excluded rule: header-redefinition is a generic (text) rule that
+      # pairs any two add_header lines in apps/web/nginx.conf. That file has
+      # no server-level add_header (every location includes
+      # security-headers.conf), and nosemgrep comments do not work in
+      # generic mode: the rule matches the comment text itself.
       - name: Scan
         run: |
           docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE" \
@@ -62,6 +67,7 @@ jobs:
               --config p/dockerfile \
               --config p/kubernetes \
               --config p/github-actions \
+              --exclude-rule generic.nginx.security.header-redefinition.header-redefinition \
               --metrics=off \
               --json-output=semgrep.json \
               --sarif-output=semgrep.sarif
@@ -86,7 +92,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: env.CAN_WRITE == 'true'
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -106,7 +112,7 @@ jobs:
             gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@semgrep-report.md >/dev/null
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: semgrep
           path: |
@@ -133,7 +139,7 @@ jobs:
 
       - name: Join the tailnet
         if: steps.dojo.outputs.ok == 'true'
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}

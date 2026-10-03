@@ -6,7 +6,7 @@
  * new one for this device, which `api.changePassword` installs, so nothing
  * here signs the person out.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Alert,
@@ -36,7 +36,7 @@ export function ChangePasswordCard() {
       ref.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }, [hash]);
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     setDone(false);
     if (!current) {

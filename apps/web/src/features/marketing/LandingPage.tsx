@@ -17,7 +17,7 @@
  * with no signal (they upload on their own). Regenerate the screens with the
  * scripts described in docs/screenshots/README.md.
  */
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type SubmitEvent, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Accordion,
@@ -251,7 +251,7 @@ export function LandingPage() {
         <ForWhom />
         <DemoPreview />
         <Faq />
-        <Closing signedIn={signedIn} landing={landing} />
+        <Closing signedIn={signedIn} />
       </Box>
       <Footer signedIn={signedIn} landing={landing} />
     </Box>
@@ -1416,7 +1416,7 @@ function Faq() {
 
 /* --------------------------------------------------- 11. closing + form -- */
 
-function Closing(props: Readonly<{ signedIn: boolean; landing: string }>) {
+function Closing(props: Readonly<{ signedIn: boolean }>) {
   const { signedIn } = props;
   return (
     <Box
@@ -1508,7 +1508,7 @@ function DemoForm() {
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
   }
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     const found = validateDemo(values);
     setErrors(found);
