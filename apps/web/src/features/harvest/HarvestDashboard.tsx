@@ -52,6 +52,7 @@ import { EMPLOYEE, PLOT } from "../../lib/vocab";
 import { Kg, Value } from "./Figures";
 import { belowAverageText, lastSeenText, plotTrend } from "./dashboardText";
 import { BasketTile } from "../workers/Basket";
+import { affix } from "../../lib/affix";
 
 /** How many people are listed before «Ver todas». */
 const TOP_PEOPLE = 10;
@@ -215,7 +216,7 @@ function Body({
                 component={RouterLink}
                 to={`${EMPLOYEE.path}/${p.employeeId}`}
                 clickable
-                label={`${p.tag ? `${p.tag} · ` : ""}${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
+                label={`${affix(p.tag, "", " · ")}${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
                 sx={{ fontSize: "1rem", height: 40, borderRadius: 20 }}
               />
             ))}
@@ -364,7 +365,9 @@ function PersonRow({
   const team = p.kind === "equipo";
   const n = Math.round(p.members);
   const main = team ? p.kgEach : p.kg;
-  const label = `${rank}. ${p.name}${p.tag ? ` (canasto ${p.tag})` : ""}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
+  const mainText = main === null ? "sin kilos" : kgText(main);
+  const together = team && p.kg !== null ? kgText(p.kg) : null;
+  const label = `${rank}. ${p.name}${affix(p.tag, " (canasto ", ")")}: ${mainText}${affix(together, " cada uno, ", " juntos")}`;
   return (
     <RowLink
       to={`${EMPLOYEE.path}/${p.employeeId}`}

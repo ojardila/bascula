@@ -69,6 +69,7 @@ import {
   type StockMove,
   type StockReason,
 } from "../../api/types";
+import { affix } from "../../lib/affix";
 
 /** Every reason except `venta`, which belongs to a sale and not to this form. */
 const REASONS: StockReason[] = [
@@ -340,7 +341,7 @@ export function StockMoveDialog({
           />
 
           <TextField
-            label={`Cantidad${chosen ? ` (${chosen.storageUnit})` : ""}`}
+            label={`Cantidad${affix(chosen?.storageUnit, " (", ")")}`}
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             error={!!fields.qty}

@@ -24,6 +24,7 @@
  */
 import type { StockReason } from "../api/types";
 import { STOCK_REASON_SIGN } from "../api/types";
+import { affix } from "./affix";
 
 /**
  * A positive number the person typed -> the signed quantity the wire wants.
@@ -62,7 +63,7 @@ export const reasonNeedsDirection = (reason: StockReason): boolean =>
 export function formatSignedQty(qty: number, unit?: string | null): string {
   const size = Math.abs(qty);
   const grouped = size.toLocaleString("es-CO", { maximumFractionDigits: 3 });
-  return `${qty < 0 ? "−" : "+"} ${grouped}${unit ? ` ${unit}` : ""}`;
+  return `${qty < 0 ? "−" : "+"} ${grouped}${affix(unit, " ")}`;
 }
 
 /**

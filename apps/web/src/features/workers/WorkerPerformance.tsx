@@ -54,6 +54,7 @@ import {
   kgText,
   weekChange,
 } from "./performance";
+import { affix } from "../../lib/affix";
 
 const WEEKS = 12;
 const TOP_PLOTS = 5;
@@ -608,7 +609,7 @@ function WeeklyChart({
           <Typography sx={{ fontSize: 17 }}>
             {sel.kg === null
               ? "No recogió en esta semana."
-              : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${teamMembers > 1 ? `, juntos: ${kgText(sel.kg / teamMembers)} c/u` : ""}.`}
+              : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${affix(teamMembers > 1 ? kgText(sel.kg / teamMembers) : null, ", juntos: ", " c/u")}.`}
           </Typography>
           {sel.farmAvgKg !== null && (
             <Typography sx={{ fontSize: 16, color: INK_MUTED }}>

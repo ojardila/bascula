@@ -14,6 +14,7 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import type { TeamRef, Worker } from "../../api/types";
 import { formatDate } from "../../lib/dates";
 import { BasketTile } from "../workers/Basket";
+import { affix } from "../../lib/affix";
 
 /** «Yorman y Sergio», «Ana & Luis»: a name that is probably two people. */
 export function looksLikeTwoPeople(name: string): boolean {
@@ -52,7 +53,7 @@ export function TeamMembersCard({
                 <BasketTile tag={m.tag} size={44} sx={{ mr: 1.5 }} />
                 <ListItemText
                   primary={`${m.name} ${m.lastName ?? ""}`.trim()}
-                  secondary={`Desde ${formatDate(m.from)}${m.to ? ` hasta ${formatDate(m.to)}` : ""}${m.tag ? ` · canasto ${m.tag}` : " · sin canasto"}`}
+                  secondary={`Desde ${formatDate(m.from)}${affix(m.to && formatDate(m.to), " hasta ")}${affix(m.tag, " · canasto ") || " · sin canasto"}`}
                   slotProps={{
                     primary: { sx: { fontWeight: 700, fontSize: "1.1rem" } },
                     secondary: { sx: { fontSize: "0.95rem" } },
