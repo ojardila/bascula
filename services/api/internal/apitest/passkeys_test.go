@@ -151,15 +151,15 @@ func (p *softPasskey) get(t *testing.T, options map[string]any, origin string) m
 // the relying party.
 func (h *harness) doOrigin(t *testing.T, ip, origin, method, path, token string, body any) response {
 	t.Helper()
-	reader := strings.NewReader("")
+	raw := ""
 	if body != nil {
-		raw, err := json.Marshal(body)
+		b, err := json.Marshal(body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		reader = strings.NewReader(string(raw))
+		raw = string(b)
 	}
-	req := httptest.NewRequest(method, path, reader)
+	req := httptest.NewRequest(method, path, strings.NewReader(raw))
 	req.RemoteAddr = ip + ":12345"
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -170,6 +170,7 @@ func (h *harness) doOrigin(t *testing.T, ip, origin, method, path, token string,
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	h.replayWithFaults(req, raw)
 	rec := httptest.NewRecorder()
 	h.server.ServeHTTP(rec, req)
 	out := response{Status: rec.Code, Raw: rec.Body.String()}
