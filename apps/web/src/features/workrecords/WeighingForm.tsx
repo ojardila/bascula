@@ -111,6 +111,23 @@ const chosen = {
   },
 } as const;
 
+/** The line under a name in the picker: the team, who it weighs with, or a warning. */
+function WorkerSubline({ worker: w }: { readonly worker: Worker }) {
+  const muted = { color: "text.secondary", fontSize: "0.95rem" } as const;
+  if (isTeam(w)) return <Typography sx={muted}>{teamLine(w)}</Typography>;
+  if (w.team) {
+    return <Typography sx={muted}>Pesa con el equipo {w.team.name}</Typography>;
+  }
+  if (!w.tag) {
+    return (
+      <Typography sx={{ color: "warning.dark", fontSize: "0.95rem" }}>
+        Sin canasto
+      </Typography>
+    );
+  }
+  return null;
+}
+
 export function WeighingForm() {
   const { user, can } = useAuth();
   const today = todayInFarm(user?.farm?.timezone ?? "America/Bogota");
@@ -391,34 +408,7 @@ export function WeighingForm() {
                       >
                         {workerLabel(w)}
                       </Typography>
-                      {isTeam(w) ? (
-                        <Typography
-                          sx={{
-                            color: "text.secondary",
-                            fontSize: "0.95rem",
-                          }}
-                        >
-                          {teamLine(w)}
-                        </Typography>
-                      ) : w.team ? (
-                        <Typography
-                          sx={{
-                            color: "text.secondary",
-                            fontSize: "0.95rem",
-                          }}
-                        >
-                          Pesa con el equipo {w.team.name}
-                        </Typography>
-                      ) : !w.tag ? (
-                        <Typography
-                          sx={{
-                            color: "warning.dark",
-                            fontSize: "0.95rem",
-                          }}
-                        >
-                          Sin canasto
-                        </Typography>
-                      ) : null}
+                      <WorkerSubline worker={w} />
                     </Box>
                   </li>
                 );

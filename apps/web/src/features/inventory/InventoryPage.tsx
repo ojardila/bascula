@@ -13,7 +13,7 @@
  * the argument; the short version is that this app treats a warehouse the way
  * it treats a wage: a total you can only reach by adding up what happened.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Alert,
   Box,
@@ -60,8 +60,421 @@ import {
   STOCK_REASON_LABEL,
   type LabelBatch,
   type Product,
+  type StockLevel,
   type StockMove,
 } from "../../api/types";
+
+const COLUMNS: Column<Product>[] = [
+  {
+    key: "name",
+    header: "Producto",
+    render: (p) => (
+      <Stack>
+        <Typography sx={{ fontWeight: 600 }}>{p.name}</Typography>
+        {p.note && (
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            {p.note}
+          </Typography>
+        )}
+      </Stack>
+    ),
+  },
+  {
+    key: "category",
+    header: "Categoría",
+    render: (p) => p.categoryName ?? "—",
+    secondary: true,
+  },
+  {
+    key: "unit",
+    header: "Unidad",
+    render: (p) => p.storageUnit,
+    secondary: true,
+  },
+  {
+    key: "stock",
+    header: "Existencias",
+    align: "right",
+    render: (p) => (
+      <Tooltip title="Suma de las entradas y salidas registradas. No se escribe a mano.">
+        <Stack
+          sx={{
+            alignItems: "flex-end",
+          }}
+        >
+          <Typography sx={{ fontWeight: 600 }}>
+            {/* "16 Bulto" was the catalogue value as-is, capitalised and
+                singular. See `lib/plural.ts`. */}
+            {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+            }}
+          >
+            de las entradas y salidas
+          </Typography>
+        </Stack>
+      </Tooltip>
+    ),
+  },
+];
+
+/**
+ * The list has been cut off at `STOCK_MOVES_PAGE` since it existed, and the
+ * screen never said so: a warehouse with more than two hundred entries showed
+ * the last two hundred as though they were all of them. `/cosecha` already
+ * says this properly; this is the same thing, here.
+ */
+function TruncationNote({ moves }: { readonly moves: StockMove[] | null }) {
+  if ((moves ?? []).length < STOCK_MOVES_PAGE) return null;
+  return (
+    <Typography
+      variant="caption"
+      component="div"
+      sx={{
+        color: "warning.dark",
+        mt: 1,
+      }}
+    >
+      Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber más atrás.
+    </Typography>
+  );
+}
+
+interface LevelsCardProps {
+  readonly levels: StockLevel[] | null;
+  readonly error: string | null;
+  readonly denied: boolean;
+  readonly moves: StockMove[] | null;
+}
+
+function StockLevelsCard({ levels, error, denied, moves }: LevelsCardProps) {
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h3" gutterBottom>
+          Existencias por bodega
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Cada línea es una suma de entradas y salidas, calculada al momento de
+          consultar.
+        </Typography>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Producto</TableCell>
+              <TableCell>Bodega</TableCell>
+              <TableCell align="right">Cantidad</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {(levels ?? []).map((l) => (
+              <TableRow key={`${l.productId}-${l.warehouseId}`}>
+                <TableCell>{l.productName}</TableCell>
+                <TableCell>{l.warehouseName}</TableCell>
+                <TableCell align="right">
+                  <Typography
+                    component="span"
+                    sx={{ fontWeight: 600 }}
+                    color={l.qty < 0 ? "error.main" : undefined}
+                  >
+                    {formatQuantity(l.qty)} {unitLabel(l.qty, l.storageUnit)}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            ))}
+            <TableState
+              colSpan={3}
+              rows={levels}
+              error={error}
+              denied={denied}
+              subject="las existencias"
+              emptyText="Ninguna bodega tiene existencias todavía."
+            />
+          </TableBody>
+        </Table>
+        <TruncationNote moves={moves} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Only an ordinary movement can be corrected: not a correction, not a sale's. */
+function canReverse(m: StockMove, writable: boolean): boolean {
+  return writable && !m.reversedById && !m.reversesId && !m.saleId;
+}
+
+interface MoveRowProps {
+  readonly move: StockMove;
+  readonly writable: boolean;
+  readonly onShowLabels: (batchId: string) => void;
+  readonly onReverse: (move: StockMove) => void;
+}
+
+function MoveRow({ move: m, writable, onShowLabels, onReverse }: MoveRowProps) {
+  return (
+    <TableRow sx={{ opacity: m.reversedById ? 0.5 : 1 }}>
+      <TableCell>{formatDate(m.date)}</TableCell>
+      <TableCell>
+        <Stack>
+          {m.productName}
+          {m.plotName && (
+            <Typography
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              {m.plotName}
+            </Typography>
+          )}
+        </Stack>
+      </TableCell>
+      <TableCell>
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{
+            alignItems: "center",
+          }}
+        >
+          <Chip size="small" label={STOCK_REASON_LABEL[m.reason]} />
+          {m.reversesId && (
+            <Chip size="small" label="corrección" color="warning" />
+          )}
+          {m.reversedById && <Chip size="small" label="corregido" />}
+          {m.saleId && <Chip size="small" label="de una venta" />}
+        </Stack>
+      </TableCell>
+      <TableCell>{m.warehouseName}</TableCell>
+      <TableCell align="right">
+        <Typography
+          component="span"
+          sx={{ fontWeight: 600 }}
+          color={m.qty < 0 ? "error.main" : "success.main"}
+        >
+          {formatSignedQty(m.qty)}
+        </Typography>
+      </TableCell>
+      <TableCell align="right">
+        {m.labelBatchId && (
+          <Tooltip title="Ver los stickers de esta entrada">
+            <IconButton
+              size="small"
+              aria-label={`Stickers de la entrada de ${m.productName}`}
+              onClick={() => onShowLabels(m.labelBatchId!)}
+            >
+              <LabelIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        {canReverse(m, writable) && (
+          <Tooltip title="Corregir esto con una entrada o salida contraria">
+            <IconButton
+              size="small"
+              aria-label={`Corregir la entrada o salida de ${m.productName}`}
+              onClick={() => onReverse(m)}
+            >
+              <UndoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+interface MovesCardProps {
+  readonly moves: StockMove[] | null;
+  readonly error: string | null;
+  readonly denied: boolean;
+  readonly writable: boolean;
+  readonly onShowLabels: (batchId: string) => void;
+  readonly onReverse: (move: StockMove) => void;
+  readonly onCreate: () => void;
+}
+
+function StockMovesCard({
+  moves,
+  error,
+  denied,
+  writable,
+  onShowLabels,
+  onReverse,
+  onCreate,
+}: MovesCardProps) {
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h3" gutterBottom>
+          {STOCK_MOVE.Many}
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mb: 2,
+          }}
+        >
+          Lo que entró o salió no se modifica ni se borra: es un hecho. Si quedó
+          mal, se registra una corrección, que es una salida igual a la entrada
+          (o al revés) y la cancela exactamente.
+        </Typography>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Fecha</TableCell>
+              <TableCell>Producto</TableCell>
+              <TableCell>Motivo</TableCell>
+              <TableCell>Bodega</TableCell>
+              <TableCell align="right">Cantidad</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {(moves ?? []).map((m) => (
+              <MoveRow
+                key={m.id}
+                move={m}
+                writable={writable}
+                onShowLabels={onShowLabels}
+                onReverse={onReverse}
+              />
+            ))}
+            <TableState
+              colSpan={6}
+              rows={moves}
+              error={error}
+              denied={denied}
+              subject={STOCK_MOVE.ofThem}
+              emptyText="Todavía no ha entrado ni salido nada."
+              emptyAction={
+                writable ? (
+                  <Button
+                    startIcon={<AddIcon />}
+                    sx={{ ml: 1 }}
+                    onClick={onCreate}
+                  >
+                    Registrar el primero
+                  </Button>
+                ) : undefined
+              }
+            />
+          </TableBody>
+        </Table>
+        <TruncationNote moves={moves} />
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ProductsTabProps {
+  readonly products: Product[] | null;
+  readonly error: string | null;
+  readonly search: string;
+  readonly onSearchChange: (q: string) => void;
+  readonly status: StatusFilter;
+  readonly onStatusChange: (s: StatusFilter) => void;
+  readonly canEdit: boolean;
+  readonly writable: boolean;
+  readonly onEdit: (p: Product | null) => void;
+  readonly onMove: (p: Product | null) => void;
+  /**
+   * Caught by the caller, not left to reject: `ModuleList` awaits these
+   * inside a try/finally with no catch, so an unhandled rejection would close
+   * the dialog and say nothing.
+   */
+  readonly onAction: (action: () => Promise<unknown>) => Promise<void>;
+}
+
+function ProductsTab({
+  products,
+  error,
+  search,
+  onSearchChange,
+  status,
+  onStatusChange,
+  canEdit,
+  writable,
+  onEdit,
+  onMove,
+  onAction,
+}: ProductsTabProps) {
+  return (
+    <ModuleList<Product>
+      title="Inventario"
+      singular="producto"
+      plural="productos"
+      rows={products}
+      error={error}
+      columns={COLUMNS}
+      getId={(p) => p.id}
+      getName={(p) => p.name}
+      isInactive={(p) => p.status === "inactive"}
+      search={search}
+      onSearchChange={onSearchChange}
+      searchPlaceholder="Buscar por nombre de producto"
+      statusFilter={status}
+      onStatusFilterChange={onStatusChange}
+      onCreate={canEdit ? () => onEdit(null) : undefined}
+      createLabel="Nuevo producto"
+      /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
+       The same action, with a target twenty times bigger. */
+      onRowClick={canEdit ? onEdit : undefined}
+      onEdit={canEdit ? onEdit : undefined}
+      extraActions={
+        writable
+          ? (p) => [
+              {
+                label: `Registrar ${STOCK_MOVE.one}`,
+                onClick: () => onMove(p),
+              },
+            ]
+          : undefined
+      }
+      onDeactivate={
+        canEdit ? (p) => onAction(() => api.deactivateProduct(p.id)) : undefined
+      }
+      onReactivate={
+        canEdit ? (p) => onAction(() => api.reactivateProduct(p.id)) : undefined
+      }
+      toolbarExtra={
+        writable ? (
+          <Button
+            variant="outlined"
+            startIcon={<SwapVertIcon />}
+            onClick={() => onMove(null)}
+          >
+            Registrar entrada o salida
+          </Button>
+        ) : undefined
+      }
+      emptyTitle="Todavía no hay productos"
+      emptyBody="Registre el primero: café pergamino, abono, fungicida… Después registre de dónde salió lo que hay en bodega."
+      footer={
+        <>
+          Las existencias no son un dato que se escriba: son la suma de lo que
+          ha entrado y salido de cada producto. Para cambiarlas, registre lo que
+          pasó —una cosecha, una compra, un consumo, una merma o un ajuste con
+          su explicación.
+        </>
+      }
+    />
+  );
+}
 
 export function InventoryPage() {
   const { can } = useAuth();
@@ -127,71 +540,6 @@ export function InventoryPage() {
     [levels],
   );
 
-  const columns: Column<Product>[] = useMemo(
-    () => [
-      {
-        key: "name",
-        header: "Producto",
-        render: (p) => (
-          <Stack>
-            <Typography sx={{ fontWeight: 600 }}>{p.name}</Typography>
-            {p.note && (
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                {p.note}
-              </Typography>
-            )}
-          </Stack>
-        ),
-      },
-      {
-        key: "category",
-        header: "Categoría",
-        render: (p) => p.categoryName ?? "—",
-        secondary: true,
-      },
-      {
-        key: "unit",
-        header: "Unidad",
-        render: (p) => p.storageUnit,
-        secondary: true,
-      },
-      {
-        key: "stock",
-        header: "Existencias",
-        align: "right",
-        render: (p) => (
-          <Tooltip title="Suma de las entradas y salidas registradas. No se escribe a mano.">
-            <Stack
-              sx={{
-                alignItems: "flex-end",
-              }}
-            >
-              <Typography sx={{ fontWeight: 600 }}>
-                {/* "16 Bulto" was the catalogue value as-is, capitalised and
-                    singular. See `lib/plural.ts`. */}
-                {formatQuantity(p.stock)} {unitLabel(p.stock, p.storageUnit)}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                de las entradas y salidas
-              </Typography>
-            </Stack>
-          </Tooltip>
-        ),
-      },
-    ],
-    [],
-  );
-
   if (denied) return <PermissionDenied moduleName="ver el inventario" />;
 
   const writable = can("stock.write");
@@ -207,11 +555,27 @@ export function InventoryPage() {
     if (labelBatch) setBatch(labelBatch);
   }
 
-  async function reverseMove(move: StockMove) {
-    setActionError(null);
+  async function runAction(action: () => Promise<unknown>) {
     try {
-      await api.reverseStockMove(move.id, "Corrección desde la consola");
+      await action();
       reload();
+    } catch (e) {
+      setActionError(messageFor(e));
+    }
+  }
+
+  function reverseMove(move: StockMove) {
+    setActionError(null);
+    return runAction(() =>
+      api.reverseStockMove(move.id, "Corrección desde la consola"),
+    );
+  }
+
+  async function showLabels(batchId: string) {
+    try {
+      // The batch that already exists, not a new one: reprinting must not
+      // change the codes on the sacks.
+      setBatch(await api.getLabelBatch(batchId));
     } catch (e) {
       setActionError(messageFor(e));
     }
@@ -236,327 +600,40 @@ export function InventoryPage() {
       </Tabs>
 
       {tab === 0 && (
-        <ModuleList<Product>
-          title="Inventario"
-          singular="producto"
-          plural="productos"
-          rows={products}
+        <ProductsTab
+          products={products}
           error={error}
-          columns={columns}
-          getId={(p) => p.id}
-          getName={(p) => p.name}
-          isInactive={(p) => p.status === "inactive"}
           search={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Buscar por nombre de producto"
-          statusFilter={status}
-          onStatusFilterChange={setStatus}
-          onCreate={can("products.write") ? () => setEditing(null) : undefined}
-          createLabel="Nuevo producto"
-          /* The whole row, not just the unlabelled 30 px ⋮ you had to hit.
-             The same action, with a target twenty times bigger. */
-          onRowClick={can("products.write") ? (p) => setEditing(p) : undefined}
-          onEdit={can("products.write") ? (p) => setEditing(p) : undefined}
-          extraActions={
-            writable
-              ? (p) => [
-                  {
-                    label: `Registrar ${STOCK_MOVE.one}`,
-                    onClick: () => setMovingFor(p),
-                  },
-                ]
-              : undefined
-          }
-          onDeactivate={
-            can("products.write")
-              ? async (p) => {
-                  // Caught here, not left to reject: `ModuleList` awaits this
-                  // inside a try/finally with no catch, so an unhandled
-                  // rejection would close the dialog and say nothing.
-                  try {
-                    await api.deactivateProduct(p.id);
-                    reload();
-                  } catch (e) {
-                    setActionError(messageFor(e));
-                  }
-                }
-              : undefined
-          }
-          onReactivate={
-            can("products.write")
-              ? async (p) => {
-                  try {
-                    await api.reactivateProduct(p.id);
-                    reload();
-                  } catch (e) {
-                    setActionError(messageFor(e));
-                  }
-                }
-              : undefined
-          }
-          toolbarExtra={
-            writable ? (
-              <Button
-                variant="outlined"
-                startIcon={<SwapVertIcon />}
-                onClick={() => setMovingFor(null)}
-              >
-                Registrar entrada o salida
-              </Button>
-            ) : undefined
-          }
-          emptyTitle="Todavía no hay productos"
-          emptyBody="Registre el primero: café pergamino, abono, fungicida… Después registre de dónde salió lo que hay en bodega."
-          footer={
-            <>
-              Las existencias no son un dato que se escriba: son la suma de lo
-              que ha entrado y salido de cada producto. Para cambiarlas,
-              registre lo que pasó —una cosecha, una compra, un consumo, una
-              merma o un ajuste con su explicación.
-            </>
-          }
+          status={status}
+          onStatusChange={setStatus}
+          canEdit={can("products.write")}
+          writable={writable}
+          onEdit={setEditing}
+          onMove={setMovingFor}
+          onAction={runAction}
         />
       )}
 
       {tab === 1 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h3" gutterBottom>
-              Existencias por bodega
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: "text.secondary",
-                mb: 2,
-              }}
-            >
-              Cada línea es una suma de entradas y salidas, calculada al momento
-              de consultar.
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Producto</TableCell>
-                  <TableCell>Bodega</TableCell>
-                  <TableCell align="right">Cantidad</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(levels ?? []).map((l) => (
-                  <TableRow key={`${l.productId}-${l.warehouseId}`}>
-                    <TableCell>{l.productName}</TableCell>
-                    <TableCell>{l.warehouseName}</TableCell>
-                    <TableCell align="right">
-                      <Typography
-                        component="span"
-                        sx={{ fontWeight: 600 }}
-                        color={l.qty < 0 ? "error.main" : undefined}
-                      >
-                        {formatQuantity(l.qty)}{" "}
-                        {unitLabel(l.qty, l.storageUnit)}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableState
-                  colSpan={3}
-                  rows={levels}
-                  error={levelsError}
-                  denied={levelsDenied}
-                  subject="las existencias"
-                  emptyText="Ninguna bodega tiene existencias todavía."
-                />
-              </TableBody>
-            </Table>
-            {/* The list has been cut off at `STOCK_MOVES_PAGE` since it
-                existed, and the screen never said so: a warehouse with more
-                than two hundred entries showed the last two hundred as though
-                they were all of them. `/cosecha` already says this properly;
-                this is the same thing, here. */}
-            {(moves ?? []).length >= STOCK_MOVES_PAGE && (
-              <Typography
-                variant="caption"
-                component="div"
-                sx={{
-                  color: "warning.dark",
-                  mt: 1,
-                }}
-              >
-                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber
-                más atrás.
-              </Typography>
-            )}
-          </CardContent>
-        </Card>
+        <StockLevelsCard
+          levels={levels}
+          error={levelsError}
+          denied={levelsDenied}
+          moves={moves}
+        />
       )}
 
       {tab === 2 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h3" gutterBottom>
-              {STOCK_MOVE.Many}
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: "text.secondary",
-                mb: 2,
-              }}
-            >
-              Lo que entró o salió no se modifica ni se borra: es un hecho. Si
-              quedó mal, se registra una corrección, que es una salida igual a
-              la entrada (o al revés) y la cancela exactamente.
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Fecha</TableCell>
-                  <TableCell>Producto</TableCell>
-                  <TableCell>Motivo</TableCell>
-                  <TableCell>Bodega</TableCell>
-                  <TableCell align="right">Cantidad</TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(moves ?? []).map((m) => (
-                  <TableRow
-                    key={m.id}
-                    sx={{ opacity: m.reversedById ? 0.5 : 1 }}
-                  >
-                    <TableCell>{formatDate(m.date)}</TableCell>
-                    <TableCell>
-                      <Stack>
-                        {m.productName}
-                        {m.plotName && (
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              color: "text.secondary",
-                            }}
-                          >
-                            {m.plotName}
-                          </Typography>
-                        )}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Stack
-                        direction="row"
-                        spacing={0.5}
-                        sx={{
-                          alignItems: "center",
-                        }}
-                      >
-                        <Chip
-                          size="small"
-                          label={STOCK_REASON_LABEL[m.reason]}
-                        />
-                        {m.reversesId && (
-                          <Chip
-                            size="small"
-                            label="corrección"
-                            color="warning"
-                          />
-                        )}
-                        {m.reversedById && (
-                          <Chip size="small" label="corregido" />
-                        )}
-                        {m.saleId && <Chip size="small" label="de una venta" />}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{m.warehouseName}</TableCell>
-                    <TableCell align="right">
-                      <Typography
-                        component="span"
-                        sx={{ fontWeight: 600 }}
-                        color={m.qty < 0 ? "error.main" : "success.main"}
-                      >
-                        {formatSignedQty(m.qty)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      {m.labelBatchId && (
-                        <Tooltip title="Ver los stickers de esta entrada">
-                          <IconButton
-                            size="small"
-                            aria-label={`Stickers de la entrada de ${m.productName}`}
-                            onClick={async () => {
-                              try {
-                                // The batch that already exists, not a new one:
-                                // reprinting must not change the codes on the
-                                // sacks.
-                                setBatch(
-                                  await api.getLabelBatch(m.labelBatchId!),
-                                );
-                              } catch (e) {
-                                setActionError(messageFor(e));
-                              }
-                            }}
-                          >
-                            <LabelIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {writable &&
-                        !m.reversedById &&
-                        !m.reversesId &&
-                        !m.saleId && (
-                          <Tooltip title="Corregir esto con una entrada o salida contraria">
-                            <IconButton
-                              size="small"
-                              aria-label={`Corregir la entrada o salida de ${m.productName}`}
-                              onClick={() => reverseMove(m)}
-                            >
-                              <UndoIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableState
-                  colSpan={6}
-                  rows={moves}
-                  error={movesError}
-                  denied={movesDenied}
-                  subject={STOCK_MOVE.ofThem}
-                  emptyText="Todavía no ha entrado ni salido nada."
-                  emptyAction={
-                    writable ? (
-                      <Button
-                        startIcon={<AddIcon />}
-                        sx={{ ml: 1 }}
-                        onClick={() => setMovingFor(null)}
-                      >
-                        Registrar el primero
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              </TableBody>
-            </Table>
-            {/* The list has been cut off at `STOCK_MOVES_PAGE` since it
-                existed, and the screen never said so: a warehouse with more
-                than two hundred entries showed the last two hundred as though
-                they were all of them. `/cosecha` already says this properly;
-                this is the same thing, here. */}
-            {(moves ?? []).length >= STOCK_MOVES_PAGE && (
-              <Typography
-                variant="caption"
-                component="div"
-                sx={{
-                  color: "warning.dark",
-                  mt: 1,
-                }}
-              >
-                Se muestran las {STOCK_MOVES_PAGE} más recientes. Puede haber
-                más atrás.
-              </Typography>
-            )}
-          </CardContent>
-        </Card>
+        <StockMovesCard
+          moves={moves}
+          error={movesError}
+          denied={movesDenied}
+          writable={writable}
+          onShowLabels={showLabels}
+          onReverse={reverseMove}
+          onCreate={() => setMovingFor(null)}
+        />
       )}
 
       {editing !== undefined && (

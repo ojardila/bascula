@@ -87,6 +87,391 @@ const WEEKS_BACK = 8;
 const sundayOf = (monday: string) =>
   addDays(parseDay(monday), 6).toISOString().slice(0, 10);
 
+/** The price the week is being paid at, or why there is no figure yet. */
+function CurrentPrice({
+  loaded,
+  currentCents,
+}: {
+  readonly loaded: boolean;
+  readonly currentCents: number | null;
+}) {
+  if (!loaded) {
+    return (
+      <Typography
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        Cargando…
+      </Typography>
+    );
+  }
+  if (currentCents === null) {
+    return (
+      <Typography
+        variant="h1"
+        sx={{ fontSize: "1.9rem", color: "text.disabled" }}
+      >
+        —
+      </Typography>
+    );
+  }
+  return (
+    <Stack
+      direction="row"
+      spacing={0.75}
+      sx={{
+        alignItems: "baseline",
+      }}
+    >
+      <Money cents={currentCents} variant="big" />
+      <Typography
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        por kilo
+      </Typography>
+    </Stack>
+  );
+}
+
+function frozenSentence(frozen: number): string {
+  if (frozen === 0) return "Nada de esa semana está liquidado todavía.";
+  if (frozen === 1)
+    return "1 labor de esa semana ya está liquidada y no se toca: su precio quedó congelado.";
+  return `${frozen} labores de esa semana ya están liquidadas y no se tocan: su precio quedó congelado.`;
+}
+
+interface MovablePreviewProps {
+  readonly loaded: boolean;
+  readonly recordsFailed: boolean;
+  readonly movableCount: number;
+  readonly movableKg: number;
+  readonly beforeCents: number;
+  readonly frozen: number;
+}
+
+/** What changing the price would move in the chosen week. */
+function MovablePreview({
+  loaded,
+  recordsFailed,
+  movableCount,
+  movableKg,
+  beforeCents,
+  frozen,
+}: MovablePreviewProps) {
+  if (!loaded) {
+    return (
+      <Typography
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        Cargando…
+      </Typography>
+    );
+  }
+  if (recordsFailed) {
+    return (
+      <Alert severity="warning" variant="outlined">
+        No se pudieron consultar las labores de esta semana, así que no se puede
+        decir cuánta recolección movería el cambio.{" "}
+        <strong>No es ninguna.</strong> Puede fijar el precio igual: el servidor
+        reprecia lo que corresponda.
+      </Alert>
+    );
+  }
+  return (
+    <Stack spacing={1}>
+      <Typography>
+        <strong>{movableCount}</strong>{" "}
+        {movableCount === 1 ? "labor de recolección" : "labores de recolección"}{" "}
+        sin liquidar
+        {movableKg > 0 ? ` · ${formatQuantity(movableKg)} kg` : ""} — hoy valen{" "}
+        <Money cents={beforeCents} variant="small" />.
+      </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+        }}
+      >
+        {frozenSentence(frozen)}
+      </Typography>
+    </Stack>
+  );
+}
+
+interface WeekHistoryRowProps {
+  readonly monday: string;
+  readonly cents: number | null;
+  readonly selected: boolean;
+  readonly today: string;
+  readonly onPick: (monday: string) => void;
+}
+
+function WeekHistoryRow({
+  monday,
+  cents,
+  selected,
+  today,
+  onPick,
+}: WeekHistoryRowProps) {
+  const tag = weekTag(monday, today);
+  return (
+    <TableRow
+      hover
+      selected={selected}
+      onClick={() => onPick(monday)}
+      sx={{ cursor: "pointer" }}
+    >
+      <TableCell>
+        {formatWeekRange(monday)}
+        {tag && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={tag}
+            sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
+          />
+        )}
+      </TableCell>
+      <TableCell align="right">
+        {/* A dash, not a zero: "$0 por kilo" is a week in which
+            the farm paid nothing, which does not exist. */}
+        {cents === null ? (
+          <Box
+            component="span"
+            sx={{ color: "text.disabled", fontWeight: 600 }}
+          >
+            —
+          </Box>
+        ) : (
+          <Money cents={cents} variant="small" />
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+interface ConfirmPriceDialogProps {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly onConfirm: () => void;
+  readonly busy: boolean;
+  readonly monday: string;
+  readonly isPastWeek: boolean;
+  readonly currentCents: number | null;
+  readonly newCents: number;
+  /** Null when the week's work items could not be read. */
+  readonly movableCount: number | null;
+  readonly beforeCents: number;
+  readonly afterCents: number;
+}
+
+/**
+ * ── LOOK BEFORE YOU SIGN ─────────────────────────────────────────
+ * The payroll's pattern again: the confirmation shows the old figure,
+ * the new one, the difference, and how much picking it re-values.
+ */
+function ConfirmPriceDialog({
+  open,
+  onClose,
+  onConfirm,
+  busy,
+  monday,
+  isPastWeek,
+  currentCents,
+  newCents,
+  movableCount,
+  beforeCents,
+  afterCents,
+}: ConfirmPriceDialogProps) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        Fijar el kilo de la semana del {formatWeekRange(monday)} en{" "}
+        {formatMoney(newCents)}
+      </DialogTitle>
+      <DialogContent dividers>
+        <DialogContentText component="div">
+          Esto cambia lo que vale la recolección de esa semana que todavía{" "}
+          <strong>no se ha liquidado</strong>. Lo que ya se liquidó conserva el
+          precio que congeló: esa es la razón de liquidar.
+        </DialogContentText>
+
+        <Stack
+          direction="row"
+          spacing={2}
+          sx={{ mt: 2.5 }}
+          divider={<Divider orientation="vertical" flexItem />}
+        >
+          <Box>
+            <Typography
+              variant="overline"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Estaba en
+            </Typography>
+            {currentCents === null ? (
+              <Typography>—</Typography>
+            ) : (
+              <Money cents={currentCents} />
+            )}
+          </Box>
+          <Box>
+            <Typography
+              variant="overline"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Queda en
+            </Typography>
+            <Money cents={newCents} variant="big" />
+          </Box>
+        </Stack>
+
+        {movableCount !== null && movableCount > 0 && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Stack spacing={0.5}>
+              <Stack
+                direction="row"
+                sx={{
+                  justifyContent: "space-between",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  {movableCount}{" "}
+                  {movableCount === 1
+                    ? "labor sin liquidar"
+                    : "labores sin liquidar"}
+                  , hoy
+                </Typography>
+                <Money cents={beforeCents} variant="small" />
+              </Stack>
+              <Stack
+                direction="row"
+                sx={{
+                  justifyContent: "space-between",
+                }}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Con el precio nuevo
+                </Typography>
+                <Money cents={afterCents} variant="small" />
+              </Stack>
+              <Stack
+                direction="row"
+                sx={{
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                }}
+              >
+                <Typography variant="h3">Diferencia</Typography>
+                <Money cents={afterCents - beforeCents} signed colored />
+              </Stack>
+            </Stack>
+          </>
+        )}
+
+        {movableCount === 0 && (
+          <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+            No hay recolección sin liquidar en esa semana, así que hoy no cambia
+            ninguna cifra. El precio queda puesto para lo que se registre
+            después.
+          </Alert>
+        )}
+
+        {isPastWeek && (
+          <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
+            Es una semana pasada. Fijar su precio ahora mueve lo que quedó sin
+            liquidar de esa semana, no lo de esta.
+          </Alert>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button color="inherit" onClick={onClose}>
+          Ahora no
+        </Button>
+        <Button variant="contained" disabled={busy} onClick={onConfirm}>
+          {busy ? "Guardando…" : `Fijar en ${formatMoney(newCents)}`}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * That week's picking that is still paid at the week's price.
+ *
+ * `estimatedAmountCents !== null` is in the predicate rather than assumed:
+ * the server withholds every figure of money from a session that may not
+ * read prices, and this screen adds those figures up to show what changing
+ * the price would cost. A row whose amount we cannot see cannot be part of
+ * that arithmetic — and it never is in practice, because reaching this
+ * screen at all requires `money.read`. Saying it in the type is what keeps
+ * the next reader from having to know that.
+ */
+function isMovable(
+  r: WorkRecord,
+): r is WorkRecord & { estimatedAmountCents: number } {
+  return (
+    !r.settled &&
+    r.amountIsEstimate === true &&
+    r.unitLabel !== null &&
+    r.estimatedAmountCents !== null
+  );
+}
+
+/** The figures the preview and the confirmation show for one week. */
+function summarizeWeek(records: WorkRecord[], newCents: number | null) {
+  const movable = records.filter(isMovable);
+  const frozen = records.filter((r) => r.settled).length;
+  const beforeCents = movable.reduce((a, r) => a + r.estimatedAmountCents, 0);
+  const afterCents =
+    newCents === null
+      ? 0
+      : movable.reduce((a, r) => a + amountCents(r.quantity, newCents), 0);
+  const movableKg = movable
+    .filter((r) => r.unitLabel === "kg")
+    .reduce((a, r) => a + r.quantity, 0);
+  return {
+    movableCount: movable.length,
+    frozen,
+    beforeCents,
+    afterCents,
+    movableKg,
+  };
+}
+
+/** Why the typed price cannot be set, or null when it can. */
+function priceProblem(cents: number | null): string | null {
+  if (cents === null) return "Escriba el precio en pesos. Por ejemplo: 900";
+  if (cents <= 0) return "El precio tiene que ser mayor que cero.";
+  return null;
+}
+
+/** The week's range, followed by its tag (lower-cased) when it has one. */
+function weekOptionLabel(monday: string, today: string): string {
+  const tag = weekTag(monday, today);
+  return `${formatWeekRange(monday)}${tag ? ` · ${tag.toLowerCase()}` : ""}`;
+}
+
 export function WeekPricePage() {
   const { user, can, principal, readOnly } = useAuth();
   const timezone = user?.farm?.timezone ?? "America/Bogota";
@@ -170,47 +555,13 @@ export function WeekPricePage() {
     currentCents === basePriceCents;
 
   const newCents = parseMoneyInput(draft);
-
-  /**
-   * That week's picking that is still paid at the week's price.
-   *
-   * `estimatedAmountCents !== null` is in the predicate rather than assumed:
-   * the server withholds every figure of money from a session that may not
-   * read prices, and this screen adds those figures up to show what changing
-   * the price would cost. A row whose amount we cannot see cannot be part of
-   * that arithmetic — and it never is in practice, because reaching this
-   * screen at all requires `money.read`. Saying it in the type is what keeps
-   * the next reader from having to know that.
-   */
-  const movable = (data?.records ?? []).filter(
-    (r): r is WorkRecord & { estimatedAmountCents: number } =>
-      !r.settled &&
-      r.amountIsEstimate === true &&
-      r.unitLabel !== null &&
-      r.estimatedAmountCents !== null,
-  );
-  const frozen = (data?.records ?? []).filter((r) => r.settled).length;
-  const beforeCents = movable.reduce((a, r) => a + r.estimatedAmountCents, 0);
-  const afterCents =
-    newCents === null
-      ? 0
-      : movable.reduce((a, r) => a + amountCents(r.quantity, newCents), 0);
-  const movableKg = movable
-    .filter((r) => r.unitLabel === "kg")
-    .reduce((a, r) => a + r.quantity, 0);
-
+  const { movableCount, frozen, beforeCents, afterCents, movableKg } =
+    summarizeWeek(data?.records ?? [], newCents);
   function review() {
     setSaveError(null);
-    if (newCents === null) {
-      setFieldError("Escriba el precio en pesos. Por ejemplo: 900");
-      return;
-    }
-    if (newCents <= 0) {
-      setFieldError("El precio tiene que ser mayor que cero.");
-      return;
-    }
-    setFieldError(null);
-    setConfirming(true);
+    const problem = priceProblem(newCents);
+    setFieldError(problem);
+    if (problem === null) setConfirming(true);
   }
 
   async function save() {
@@ -226,6 +577,12 @@ export function WeekPricePage() {
     setSaved({ monday, cents: outcome.value.costPerUnitCents });
     setDraft("");
     setTick((t) => t + 1);
+  }
+
+  function pickWeek(m: string) {
+    setMonday(m);
+    setDraft("");
+    setSaved(null);
   }
 
   return (
@@ -314,10 +671,7 @@ export function WeekPricePage() {
             >
               {mondays.map((m) => (
                 <MenuItem key={m} value={m}>
-                  {formatWeekRange(m)}
-                  {weekTag(m, today)
-                    ? ` · ${weekTag(m, today)!.toLowerCase()}`
-                    : ""}
+                  {weekOptionLabel(m, today)}
                 </MenuItem>
               ))}
             </TextField>
@@ -347,39 +701,10 @@ export function WeekPricePage() {
               >
                 Se está pagando
               </Typography>
-              {data === null ? (
-                <Typography
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  Cargando…
-                </Typography>
-              ) : currentCents === null ? (
-                <Typography
-                  variant="h1"
-                  sx={{ fontSize: "1.9rem", color: "text.disabled" }}
-                >
-                  —
-                </Typography>
-              ) : (
-                <Stack
-                  direction="row"
-                  spacing={0.75}
-                  sx={{
-                    alignItems: "baseline",
-                  }}
-                >
-                  <Money cents={currentCents} variant="big" />
-                  <Typography
-                    sx={{
-                      color: "text.secondary",
-                    }}
-                  >
-                    por kilo
-                  </Typography>
-                </Stack>
-              )}
+              <CurrentPrice
+                loaded={data !== null}
+                currentCents={currentCents}
+              />
               {sameAsBase && (
                 <Typography
                   variant="caption"
@@ -435,46 +760,14 @@ export function WeekPricePage() {
           <Typography variant="h3" gutterBottom>
             Qué se movería en la semana del {formatWeekRange(monday)}
           </Typography>
-          {data === null ? (
-            <Typography
-              sx={{
-                color: "text.secondary",
-              }}
-            >
-              Cargando…
-            </Typography>
-          ) : data.records === null ? (
-            <Alert severity="warning" variant="outlined">
-              No se pudieron consultar las labores de esta semana, así que no se
-              puede decir cuánta recolección movería el cambio.{" "}
-              <strong>No es ninguna.</strong> Puede fijar el precio igual: el
-              servidor reprecia lo que corresponda.
-            </Alert>
-          ) : (
-            <Stack spacing={1}>
-              <Typography>
-                <strong>{movable.length}</strong>{" "}
-                {movable.length === 1
-                  ? "labor de recolección"
-                  : "labores de recolección"}{" "}
-                sin liquidar
-                {movableKg > 0 ? ` · ${formatQuantity(movableKg)} kg` : ""} —
-                hoy valen <Money cents={beforeCents} variant="small" />.
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                {frozen === 0
-                  ? "Nada de esa semana está liquidado todavía."
-                  : frozen === 1
-                    ? "1 labor de esa semana ya está liquidada y no se toca: su precio quedó congelado."
-                    : `${frozen} labores de esa semana ya están liquidadas y no se tocan: su precio quedó congelado.`}
-              </Typography>
-            </Stack>
-          )}
+          <MovablePreview
+            loaded={data !== null}
+            recordsFailed={data?.records === null}
+            movableCount={movableCount}
+            movableKg={movableKg}
+            beforeCents={beforeCents}
+            frozen={frozen}
+          />
         </CardContent>
       </Card>
 
@@ -499,43 +792,14 @@ export function WeekPricePage() {
                 </TableRow>
               )}
               {history?.map((h) => (
-                <TableRow
+                <WeekHistoryRow
                   key={h.monday}
-                  hover
+                  monday={h.monday}
+                  cents={h.cents}
                   selected={h.monday === monday}
-                  onClick={() => {
-                    setMonday(h.monday);
-                    setDraft("");
-                    setSaved(null);
-                  }}
-                  sx={{ cursor: "pointer" }}
-                >
-                  <TableCell>
-                    {formatWeekRange(h.monday)}
-                    {weekTag(h.monday, today) && (
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={weekTag(h.monday, today)}
-                        sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell align="right">
-                    {/* A dash, not a zero: "$0 por kilo" is a week in which
-                        the farm paid nothing, which does not exist. */}
-                    {h.cents === null ? (
-                      <Box
-                        component="span"
-                        sx={{ color: "text.disabled", fontWeight: 600 }}
-                      >
-                        —
-                      </Box>
-                    ) : (
-                      <Money cents={h.cents} variant="small" />
-                    )}
-                  </TableCell>
-                </TableRow>
+                  today={today}
+                  onPick={pickWeek}
+                />
               ))}
             </TableBody>
           </Table>
@@ -556,138 +820,19 @@ export function WeekPricePage() {
         </CardContent>
       </Card>
 
-      {/* ── LOOK BEFORE YOU SIGN ─────────────────────────────────────────
-          The payroll's pattern again: the confirmation shows the old figure,
-          the new one, the difference, and how much picking it re-values. */}
-      <Dialog
+      <ConfirmPriceDialog
         open={confirming}
         onClose={() => setConfirming(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          Fijar el kilo de la semana del {formatWeekRange(monday)} en{" "}
-          {formatMoney(newCents ?? 0)}
-        </DialogTitle>
-        <DialogContent dividers>
-          <DialogContentText component="div">
-            Esto cambia lo que vale la recolección de esa semana que todavía{" "}
-            <strong>no se ha liquidado</strong>. Lo que ya se liquidó conserva
-            el precio que congeló: esa es la razón de liquidar.
-          </DialogContentText>
-
-          <Stack
-            direction="row"
-            spacing={2}
-            sx={{ mt: 2.5 }}
-            divider={<Divider orientation="vertical" flexItem />}
-          >
-            <Box>
-              <Typography
-                variant="overline"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                Estaba en
-              </Typography>
-              {currentCents === null ? (
-                <Typography>—</Typography>
-              ) : (
-                <Money cents={currentCents} />
-              )}
-            </Box>
-            <Box>
-              <Typography
-                variant="overline"
-                sx={{
-                  color: "text.secondary",
-                }}
-              >
-                Queda en
-              </Typography>
-              <Money cents={newCents ?? 0} variant="big" />
-            </Box>
-          </Stack>
-
-          {data?.records !== null && movable.length > 0 && (
-            <>
-              <Divider sx={{ my: 2 }} />
-              <Stack spacing={0.5}>
-                <Stack
-                  direction="row"
-                  sx={{
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: "text.secondary",
-                    }}
-                  >
-                    {movable.length}{" "}
-                    {movable.length === 1
-                      ? "labor sin liquidar"
-                      : "labores sin liquidar"}
-                    , hoy
-                  </Typography>
-                  <Money cents={beforeCents} variant="small" />
-                </Stack>
-                <Stack
-                  direction="row"
-                  sx={{
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color: "text.secondary",
-                    }}
-                  >
-                    Con el precio nuevo
-                  </Typography>
-                  <Money cents={afterCents} variant="small" />
-                </Stack>
-                <Stack
-                  direction="row"
-                  sx={{
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                  }}
-                >
-                  <Typography variant="h3">Diferencia</Typography>
-                  <Money cents={afterCents - beforeCents} signed colored />
-                </Stack>
-              </Stack>
-            </>
-          )}
-
-          {data?.records !== null && movable.length === 0 && (
-            <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-              No hay recolección sin liquidar en esa semana, así que hoy no
-              cambia ninguna cifra. El precio queda puesto para lo que se
-              registre después.
-            </Alert>
-          )}
-
-          {monday !== thisMonday && (
-            <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              Es una semana pasada. Fijar su precio ahora mueve lo que quedó sin
-              liquidar de esa semana, no lo de esta.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button color="inherit" onClick={() => setConfirming(false)}>
-            Ahora no
-          </Button>
-          <Button variant="contained" disabled={busy} onClick={save}>
-            {busy ? "Guardando…" : `Fijar en ${formatMoney(newCents ?? 0)}`}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={save}
+        busy={busy}
+        monday={monday}
+        isPastWeek={monday !== thisMonday}
+        currentCents={currentCents}
+        newCents={newCents ?? 0}
+        movableCount={data?.records === null ? null : movableCount}
+        beforeCents={beforeCents}
+        afterCents={afterCents}
+      />
     </Box>
   );
 }

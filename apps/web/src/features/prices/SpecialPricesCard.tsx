@@ -49,7 +49,13 @@ import { formatMondayLong } from "./BasePriceCard";
 
 function groupPesos(digits: string): string {
   const clean = digits.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  // Thousands separators by slicing from the right; a lookahead regex here
+  // backtracks super-linearly on long input.
+  const groups: string[] = [];
+  for (let end = clean.length; end > 0; end -= 3) {
+    groups.unshift(clean.slice(Math.max(0, end - 3), end));
+  }
+  return groups.join(".");
 }
 
 const KIND_WORD: Record<WireSpecialPriceKind, string> = {
