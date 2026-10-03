@@ -1,5 +1,7 @@
-# Contrato de encargo del tratamiento de datos personales
+# Contrato de encargo del tratamiento de datos personales (plantilla)
 
+> **PLANTILLA — NO FIRMAR SIN REVISIÓN DE UN ABOGADO.**
+>
 > **ESTO ES UN BORRADOR TÉCNICO.** Está construido sobre la Ley 1581 de
 > 2012 y el Decreto 1377 de 2013, pero no es asesoría legal y no
 > reemplaza la revisión de un abogado colombiano. Antes de que una
@@ -171,8 +173,10 @@ g. Inscribir sus bases de datos en el Registro Nacional de Bases de
 ## 6. Subencargados
 
 La base de datos y los archivos adjuntos (fotos) se alojan en un
-clúster Kubernetes propio del Operador, ubicado en [CIUDAD], Colombia;
-no hay un proveedor externo de almacenamiento de adjuntos. El Operador
+clúster Kubernetes propio del Operador: tres servidores físicos que el
+Operador administra directamente, sin un proveedor de nube de por
+medio, ubicados en [CIUDAD], [PAÍS — confirmar antes de firmar]. No hay
+un proveedor externo de almacenamiento de adjuntos. El Operador
 se apoya en los siguientes proveedores, cuyo uso la Finca autoriza al
 firmar este contrato:
 
@@ -180,11 +184,11 @@ firmar este contrato:
   de entrada y certificados por finca. Todo el tráfico entre el
   navegador y el servicio pasa por su red.
 - **DigitalOcean, LLC** (Spaces, región NYC3, Estados Unidos): copias
-  de respaldo de la base de datos de producción
-  compartida (30 días, con recuperación a un punto en el tiempo) y de
-  las fotos de todas las fincas (14 respaldos diarios). Las bases de
-  datos de las fincas con instalación dedicada **no tienen respaldo
-  hoy [pendiente / to be implemented]**.
+  de respaldo de la instalación compartida: su base de datos (30 días,
+  con recuperación a un punto en el tiempo) y sus fotos (14 respaldos
+  diarios). Las fincas con instalación dedicada **no tienen hoy
+  respaldo ni de su base de datos ni de sus fotos [pendiente / to be
+  implemented]**.
 - **Resend** (relay SMTP; [UBICACIÓN DE DATOS — confirmar con el
   proveedor]): correo transaccional (verificación de correo,
   recuperación de contraseña, avisos de seguridad); recibe la dirección
@@ -193,6 +197,11 @@ firmar este contrato:
   de reportes de [`SECURITY.md`](../../SECURITY.md), que hoy es también
   el canal de solicitudes de usuarios al Operador; no aloja la base de
   datos de la Finca.
+- **Google LLC** (Google Fonts; Estados Unidos): la consola web carga
+  sus tipografías desde `fonts.googleapis.com` y `fonts.gstatic.com`,
+  por lo que Google recibe la dirección IP y los datos del navegador
+  de los usuarios de la Finca que abren la consola. No recibe datos de
+  los trabajadores.
 
 El Operador mantendrá esta lista actualizada. Un cambio de subencargado se le notifica a la Finca con al
 menos quince (15) días de antelación; la Finca podrá oponerse por
@@ -270,8 +279,9 @@ niveles adecuados de protección en los términos del artículo 26 de la
 Ley 1581, salvo autorización expresa y escrita de la Finca o
 cumplimiento de alguno de los supuestos de los literales del artículo
 26. La ubicación de los datos y de cada subencargado se declara en el
-numeral 6: hoy los respaldos se guardan en Estados Unidos y el tráfico
-pasa por la red de Cloudflare, lo que constituye una transmisión
+numeral 6: hoy los respaldos se guardan en Estados Unidos, el tráfico
+pasa por la red de Cloudflare y la consola carga sus tipografías desde
+Google, lo que constituye una transmisión
 internacional en los términos de los artículos 24 y 25 del Decreto
 1377 de 2013. El abogado que revise esta plantilla debe confirmar el
 nivel adecuado de protección de esos países según la lista vigente de
@@ -295,7 +305,8 @@ b. Vencido ese plazo, el Operador suprimirá los datos personales de
    implemented]**: el Operador ejecuta la supresión manualmente.
 c. Las copias de respaldo con datos personales expiran según su
    retención (30 días para la base de datos compartida; 14 respaldos
-   diarios para las fotos). Los respaldos de una finca eliminada no se
+   diarios para sus fotos; hoy las instalaciones dedicadas no tienen
+   respaldos, ver numeral 6). Los respaldos de una finca eliminada no se
    borran solos: el Operador los elimina manualmente, en un plazo
    máximo de **ciento ochenta (180) días** desde la terminación.
 
