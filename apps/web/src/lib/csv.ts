@@ -14,7 +14,7 @@ const SEP = ";";
 function cell(v: Cell): string {
   if (v === null || v === undefined) return "";
   const s = typeof v === "number" ? formatNumber(v) : v;
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[";\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
 /** `1234.5` -> `1234,5`. No grouping: a thousands dot would turn it into text. */

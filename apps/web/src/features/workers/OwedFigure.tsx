@@ -19,7 +19,7 @@ import { owedState, type Owed } from "./owed";
 import { PROVISIONAL_INCLUDES } from "../../lib/vocab";
 
 /** A dash that says why. The same one as in `harvest/Figures.tsx`. */
-function Unknown({ reason, big }: { reason: string; big?: boolean }) {
+function Unknown({ reason, big }: Readonly<{ reason: string; big?: boolean }>) {
   return (
     <Tooltip title={reason}>
       <Box
@@ -48,11 +48,11 @@ export function OwedFigure({
   owed,
   variant = "inherit",
   align = "flex-end",
-}: {
+}: Readonly<{
   owed: Owed;
   variant?: "inherit" | "big" | "small";
   align?: "flex-start" | "flex-end";
-}) {
+}>) {
   const state = owedState(owed);
 
   if (state.kind === "unknown") {

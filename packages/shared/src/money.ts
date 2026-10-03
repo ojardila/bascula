@@ -99,7 +99,7 @@ function exactDecimal(value: number | string): { units: bigint; scale: number } 
  */
 export function amountCents(quantity: number | string, rateCents: number): number {
   const q = exactDecimal(quantity);
-  if (q === null || !Number.isFinite(rateCents)) return NaN;
+  if (q === null || !Number.isFinite(rateCents)) return Number.NaN;
 
   // The rate is integer cents by construction (`toCents`); rounding it here
   // rather than truncating keeps a rate that arrived through a float from

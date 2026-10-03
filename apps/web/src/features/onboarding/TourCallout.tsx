@@ -12,11 +12,11 @@ export function TourCallout({
   tour,
   n,
   onPrimary,
-}: {
+}: Readonly<{
   tour: TourName;
   n: number;
   onPrimary?: () => boolean | Promise<boolean>;
-}) {
+}>) {
   const t = useTour();
   const def = stepOf(tour, n);
   if (!def || !t.isAt(tour, n)) return null;

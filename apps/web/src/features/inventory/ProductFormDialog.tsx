@@ -47,7 +47,7 @@ export function ProductFormDialog({
   storageUnits,
   onClose,
   onSaved,
-}: ProductFormDialogProps) {
+}: Readonly<ProductFormDialogProps>) {
   const [name, setName] = useState(product?.name ?? "");
   const [category, setCategory] = useState<CatalogValue | null>(
     product?.categoryId

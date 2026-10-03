@@ -34,12 +34,12 @@ export function BasketTile({
   team = false,
   size = 48,
   sx,
-}: {
+}: Readonly<{
   tag: string | null | undefined;
   team?: boolean;
   size?: number;
   sx?: SxProps<Theme>;
-}) {
+}>) {
   const b = basketOf(tag);
   const len = b?.length ?? 1;
   const font = len <= 2 ? size * 0.46 : len <= 3 ? size * 0.38 : len <= 5 ? size * 0.28 : size * 0.22;
@@ -76,7 +76,7 @@ export function BasketTile({
 }
 
 /** The small warning badge for a worker without a number. */
-export function NoBasketChip({ onClick }: { onClick?: () => void }) {
+export function NoBasketChip({ onClick }: Readonly<{ onClick?: () => void }>) {
   return (
     <Chip
       size="small"
@@ -90,7 +90,7 @@ export function NoBasketChip({ onClick }: { onClick?: () => void }) {
 }
 
 /** «Canasto 46» as a big inline chip, or the «Sin canasto» badge. */
-export function BasketChip({ tag, big = false }: { tag: string | null | undefined; big?: boolean }) {
+export function BasketChip({ tag, big = false }: Readonly<{ tag: string | null | undefined; big?: boolean }>) {
   const b = basketOf(tag);
   if (!b) return <NoBasketChip />;
   return (

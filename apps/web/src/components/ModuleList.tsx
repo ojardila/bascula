@@ -45,6 +45,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import { visuallyHidden } from "@mui/utils";
 import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -98,7 +99,7 @@ export interface ModuleListProps<T> {
   toolbarExtra?: ReactNode;
 }
 
-export function ModuleList<T>(props: ModuleListProps<T>) {
+export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
   const {
     title,
     singular,
@@ -246,7 +247,11 @@ export function ModuleList<T>(props: ModuleListProps<T>) {
                     {c.header}
                   </TableCell>
                 ))}
-                <TableCell width={56} />
+                <TableCell width={56}>
+                  <Box component="span" sx={visuallyHidden}>
+                    Acciones
+                  </Box>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

@@ -76,7 +76,7 @@ type Props = {
   onChange: (p: PlotPoint | null) => void;
 };
 
-export function PlotLocationField({ value, onChange }: Props) {
+export function PlotLocationField({ value, onChange }: Readonly<Props>) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);

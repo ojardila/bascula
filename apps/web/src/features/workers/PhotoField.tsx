@@ -42,7 +42,7 @@ interface Props {
   fallback: string;
 }
 
-export function PhotoField({ value, onChange, fallback }: Props) {
+export function PhotoField({ value, onChange, fallback }: Readonly<Props>) {
   const input = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);

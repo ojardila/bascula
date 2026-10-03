@@ -311,7 +311,7 @@ export function sentenceFor(change: GrossChange, fmt: Formatters): string {
   const because =
     reasons.length === 1
       ? reasons[0]
-      : `${reasons.slice(0, -1).join(", ")} y ${reasons[reasons.length - 1]}`;
+      : `${reasons.slice(0, -1).join(", ")} y ${reasons.at(-1)}`;
   return (
     `Cuando abrió esta pantalla eran ${fmt.money(change.beforeCents)}; ` +
     `ahora son ${fmt.money(change.afterCents)} porque ${because}.`

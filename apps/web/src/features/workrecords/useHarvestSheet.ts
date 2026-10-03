@@ -66,7 +66,7 @@ export function useHarvestSheet({
   const { busy, run: runOnce } = useWriteOnce();
 
   const from = days[0];
-  const to = days[days.length - 1];
+  const to = days.at(-1);
   const plot = plots?.find((p) => p.id === plotId) ?? null;
 
   useEffect(() => {

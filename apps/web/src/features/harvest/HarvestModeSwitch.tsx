@@ -11,10 +11,10 @@ import type { HarvestModeState } from "./harvestMode";
 export function HarvestModeSwitch({
   mode,
   compact,
-}: {
+}: Readonly<{
   mode: HarvestModeState;
   compact?: boolean;
-}) {
+}>) {
   const on = mode.on === true;
   const id = "modo-cosecha-switch";
   return (

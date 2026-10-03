@@ -80,7 +80,7 @@ export function ExpenseFormDialog({
   plots,
   onClose,
   onSaved,
-}: ExpenseFormDialogProps) {
+}: Readonly<ExpenseFormDialogProps>) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 

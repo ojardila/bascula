@@ -107,7 +107,7 @@ export function SeasonPage() {
   const season = foldTotals(weeks);
   const finished = weeks.filter((w) => w.finished);
   const current = weeks.find((w) => !w.finished);
-  const lastFinished = finished[finished.length - 1];
+  const lastFinished = finished.at(-1);
 
   // A week whose kilos could not be established is a GAP in the curve, not a
   // dip to the floor. `weeksWithoutKilos` is the server counting exactly these.
@@ -525,11 +525,11 @@ function Verdict({
   curve,
   current,
   lastFinished,
-}: {
+}: Readonly<{
   curve: Awaited<ReturnType<typeof reportHarvestCurve>>;
   current?: { kg: number | null } | undefined;
   lastFinished?: { kg: number | null } | undefined;
-}) {
+}>) {
   const { shape } = curve;
 
   if (shape.reason === "no_finished_weeks" || !shape.peak) {

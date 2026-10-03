@@ -112,7 +112,7 @@ export const sumGroups = (groups: ReceiptLineGroup[]): number =>
 export function coveredWeeks(groups: ReceiptLineGroup[]): { from: string; to: string } | null {
   if (!groups.length) return null;
   const mondays = groups.map((g) => g.weekStart).sort((a, b) => a.localeCompare(b));
-  const last = new Date(`${mondays[mondays.length - 1]}T00:00:00Z`);
+  const last = new Date(`${mondays.at(-1)}T00:00:00Z`);
   last.setUTCDate(last.getUTCDate() + 6);
   return { from: mondays[0], to: last.toISOString().slice(0, 10) };
 }

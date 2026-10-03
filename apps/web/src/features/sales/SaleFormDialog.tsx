@@ -94,7 +94,7 @@ export function SaleFormDialog({
   levels,
   onClose,
   onSaved,
-}: SaleFormDialogProps) {
+}: Readonly<SaleFormDialogProps>) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
