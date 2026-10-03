@@ -28,11 +28,13 @@ before merging; see [README.md](README.md#ci-and-deploy) for what it runs.
 
 ## Code owners
 
-Some paths need a review from [@ojardila](https://github.com/ojardila)
-before they can merge: migrations, auth, tenant, the HTTP mux, every
-`manifests/` file, every workflow under `.github/`, and the security policy
-(`SECURITY.md`, `docs/mcp/security.md`, `docs/audits.md`, `docs/decisions.md`).
-[`.github/CODEOWNERS`](.github/CODEOWNERS) is the authoritative list; branch
-protection on `master` is what enforces it. A reviewer who sees "Code owners
-have not reviewed yet" at the bottom of the PR should wait for Oscar even
-if they have otherwise approved the change.
+Some paths should get a review from [@ojardila](https://github.com/ojardila)
+before they merge: migrations, auth, tenant, the HTTP mux, every
+`manifests/` file, every workflow and action under `.github/`, and the
+security policy (`SECURITY.md`, `docs/mcp/security.md`, `docs/audits.md`,
+`docs/decisions.md`). [`.github/CODEOWNERS`](.github/CODEOWNERS) is the
+authoritative list, and GitHub requests that review automatically. It is a
+convention, not a gate: no branch protection or ruleset on `master` requires a
+code-owner approval (the only required check is `semgrep`). A reviewer who
+sees "Code owners have not reviewed yet" on such a PR should still wait for
+Oscar even if they have otherwise approved the change.
