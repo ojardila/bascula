@@ -19,4 +19,3 @@ Security: if this change touches auth, tenant boundary, money, PII or the
 rate-limit axes, read docs/incident-response.md once before merging; it is
 short, and it is what the on-call reads first when something goes wrong.
 -->
-
