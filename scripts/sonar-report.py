@@ -218,8 +218,8 @@ def main():
         lines.append("<sub>Not gating this run: the measures may belong to another PR's scan.</sub>")
     else:
         lines.append("")
-        lines.append("<sub>The job fails on a regression or on an issue in the changed files that master "
-                     "does not have. It is not a required check.</sub>")
+        lines.append("<sub>`sonarqube` is a required check on master: it fails on a regression against "
+                     "master or on a new issue in the changed files that master does not have.</sub>")
     write(lines)
     verdict(raced or (not regressions and not new_issues))
     print(f"quality gate: {status}; regressions: {regressions or 'none'}; new issues: {len(new_issues)}")

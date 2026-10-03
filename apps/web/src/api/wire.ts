@@ -42,12 +42,12 @@
  * the entire point of routing every field access through `adapters.ts`.
  */
 
-export type Uuid = string;
+export type Uuid = string; // NOSONAR: names the wire format at ~380 field sites; openapi-typescript will regenerate it
 /** `YYYY-MM-DD`, a business day in the farm's timezone. */
-export type DayISO = string;
+export type DayISO = string; // NOSONAR: documents the YYYY-MM-DD format at every use site
 /** A full ISO 8601 instant with an offset. The server sends these for dates
  *  that are really `date` columns too, so adapters slice, never parse. */
-export type Instant = string;
+export type Instant = string; // NOSONAR: documents the ISO instant format at every use site
 
 /* -- enums, in the server's own spelling ----------------------------- */
 

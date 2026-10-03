@@ -71,10 +71,9 @@ export type RateSource = "fixed" | "weekly_price";
 /**
  * NOT a closed enum. Activity categories are a per-farm catalogue: RSP-011
  * says the selector comes "con opción de crear una nueva", and a farm that
- * also grows cacao will invent categories nobody planned for. The three below
- * are only what `seedFarm` puts in a new farm.
+ * also grows cacao will invent categories nobody planned for, so `category` fields are a
+ * plain `string`. The three below are only what `seedFarm` puts in a new farm.
  */
-export type ActivityCategory = string;
 export const SEED_ACTIVITY_CATEGORIES = ["siembra", "mantenimiento", "cosecha"];
 
 export type TimeUnit = "jornal" | "semanal" | "quincenal" | "mensual" | "custom";
@@ -597,7 +596,7 @@ export interface ActivityRate {
 export interface Activity {
   id: Uuid;
   name: string;
-  category: ActivityCategory;
+  category: string;
   payMode: PayMode;
   /** work_unit only: kg, arroba, canasta... Resolved from `unitId`. */
   workUnit: string | null;
@@ -620,7 +619,7 @@ export interface Activity {
 export interface ActivityInput {
   id: Uuid;
   name: string;
-  category: ActivityCategory;
+  category: string;
   payMode: PayMode;
   workUnit?: string | null;
   timeUnit?: TimeUnit | null;
@@ -643,7 +642,7 @@ export interface WorkRecord {
   workerName: string;
   activityId: Uuid;
   activityName: string;
-  category: ActivityCategory;
+  category: string;
   payMode: PayMode;
   unitLabel: string | null;
   plotIds: Uuid[];
