@@ -138,6 +138,8 @@ func PruneSync(ctx context.Context, admin *pgxpool.Pool, logDays, opsDays, login
 		loginDays = LoginFailureRetentionDays
 	}
 
+	// The prune job runs on the admin URL across every farm, by design.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	tx, err := admin.Begin(ctx)
 	if err != nil {
 		return rep, err

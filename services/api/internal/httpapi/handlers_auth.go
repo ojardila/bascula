@@ -216,6 +216,8 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// green. tenant.AfterRequest runs the write once the connection is back.
 	succeeded := false
 	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
+		// signup_attempts is platform-wide, written after the request tx is released (tenant.AfterRequest).
+		// nosemgrep: bascula-pool-query-outside-tenant-tx
 		if _, err := s.pool.Exec(ctx,
 			`INSERT INTO signup_attempts (id, ip, email, succeeded) VALUES ($1, $2::inet, $3, $4)`,
 			uuid.NewString(), ip, attempted, succeeded); err != nil {

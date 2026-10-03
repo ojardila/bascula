@@ -15,3 +15,6 @@ apps/web/src/api/schema.ts
 # Fixtures and binary media, not code that runs.
 testdata/
 apps/web/src/features/marketing/media/
+
+# Semgrep rule fixtures: they contain the patterns the rules flag, on purpose.
+.semgrep/

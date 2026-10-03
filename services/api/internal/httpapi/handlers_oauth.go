@@ -1387,6 +1387,8 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		name := slug
 		if s.pool != nil {
 			var dn *string
+			// farm_display_name is a SECURITY DEFINER lookup by slug, before any tenant exists.
+			// nosemgrep: bascula-pool-query-outside-tenant-tx
 			if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
 				name = *dn
 			}

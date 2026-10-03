@@ -27,7 +27,11 @@ import (
 // is not there yet, so a second push is a no-op and never an overwrite.
 func (s *Server) InternalHandler() http.Handler {
 	mux := http.NewServeMux()
+	// Internal listener, reachable only from the platform API pods (CiliumNetworkPolicy).
+	// nosemgrep: bascula-route-outside-auth-chain
 	mux.HandleFunc("GET /internal/tenant", s.handleInternalTenant)
+	// Internal listener, reachable only from the platform API pods (CiliumNetworkPolicy).
+	// nosemgrep: bascula-route-outside-auth-chain
 	mux.HandleFunc("POST /internal/tenant/seed", s.handleInternalSeed)
 	return mux
 }
@@ -76,6 +80,8 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	// The seed runs before the farm exists; see the comment on InternalHandler.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		writeError(w, r, err)
