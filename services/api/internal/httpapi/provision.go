@@ -309,6 +309,17 @@ func farmBySlug(ctx context.Context, q interface {
 	return
 }
 
+// farmAwaitingOwnerEmail is the token-less yes/no behind migration 00044:
+// whether the farm's owner has yet to confirm their address. Like
+// farm_by_slug and farm_display_name it is a SECURITY DEFINER function, so
+// the public waiting screen can ask it before any tenant exists.
+func farmAwaitingOwnerEmail(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, slug string) (awaiting bool, err error) {
+	err = q.QueryRow(ctx, `SELECT farm_awaiting_owner_email($1)`, slug).Scan(&awaiting)
+	return
+}
+
 func (s *Server) buildTenantSeed(ctx context.Context, slug string) (*tenantSeed, error) {
 	// This tx pins itself to the farm with set_config below.
 	// nosemgrep: bascula-pool-query-outside-tenant-tx
@@ -527,8 +538,8 @@ func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provision
 	}
 	// Until its owner confirms the address there is nothing being built:
 	// say so rather than show progress that is not coming.
-	var awaiting bool
-	if err := s.pool.QueryRow(ctx, `SELECT farm_awaiting_owner_email($1)`, slug).Scan(&awaiting); err != nil {
+	awaiting, err := farmAwaitingOwnerEmail(ctx, s.pool, slug)
+	if err != nil {
 		return provisionStatus{}, err
 	}
 	if awaiting {
