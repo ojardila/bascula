@@ -528,6 +528,10 @@ func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provision
 	// Until its owner confirms the address there is nothing being built:
 	// say so rather than show progress that is not coming.
 	var awaiting bool
+	// Pre-tenant: the public waiting screen has no farm tx yet, and
+	// farm_awaiting_owner_email is a SECURITY DEFINER lookup by slug that
+	// returns only a boolean.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	if err := s.pool.QueryRow(ctx, `SELECT farm_awaiting_owner_email($1)`, slug).Scan(&awaiting); err != nil {
 		return provisionStatus{}, err
 	}
