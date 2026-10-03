@@ -1,0 +1,81 @@
+# CodeQL on PR, push to master, and a weekly schedule. Advisory for one
+# month after merge: nothing here fails a PR; the Security tab is the
+# surface. After one quiet month, enable fail-on and add this job to the
+# required-checks list on master.
+#
+# Different gate from Semgrep (semantic rules, PR comment) and govulncheck
+# (CVEs via module graph): CodeQL does taint analysis on the code we write.
+# Three gates, three signals, no overlap in what each catches.
+
+name: CodeQL
+
+on:
+  pull_request:
+    paths:
+      - 'services/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - '.github/workflows/codeql.yml'
+  push:
+    branches: [master]
+  schedule:
+    # Mondays 05:00 UTC = 00:00 America/Bogota, so new rule packs are
+    # evaluated before the first PR of the week.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - '**/*_test.go'
+              - 'apps/web/e2e/**'
+              - 'docs/**'
+              - 'manifests/**'
+              - 'scripts/**'
+
+      # Autobuild on Go runs `go build ./...` from the module root; go.mod
+      # lives in services/api so no extra config needed.
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+          upload: always
+          # Advisory for one month: analyze does not fail on findings, so
+          # the job passes and results show only in the Security tab. After
+          # one quiet month on master, gate via a ruleset `code_scanning`
+          # rule (CodeQL, high_or_higher) and/or require this job.
