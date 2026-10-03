@@ -156,34 +156,46 @@ func TestC2hbMCPRefusalAuditArguments(t *testing.T) {
 
 	got := h.mustDo(t, http.MethodGet, "/v1/mcp/activity?limit=500", f.OwnerToken, nil, http.StatusOK)
 	var body struct {
-		Items []struct {
-			Tool, Outcome string
-			Args          map[string]any
-		} `json:"items"`
+		Items []c2hbAuditRow `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(got.Raw), &body); err != nil {
 		t.Fatal(err)
 	}
 	var sawTruncated, sawPrice bool
 	for _, it := range body.Items {
-		if strings.Contains(got.Raw, "c2hb-token") {
-			t.Fatalf("the confirmation token was stored: %s", got.Raw)
-		}
-		switch it.Tool + "/" + it.Outcome {
-		case "create_worker/refused":
-			keys, _ := it.Args["keys"].([]any)
-			if it.Args["truncated"] != true || len(keys) != 2 || strings.Contains(got.Raw, huge) {
-				t.Fatalf("oversized arguments: %v", it.Args)
-			}
-			sawTruncated = true
-		case "set_kilo_price/refused":
-			if _, ok := it.Args["confirmationToken"]; ok || it.Args["priceCents"] == nil {
-				t.Fatalf("refused price arguments: %v", it.Args)
-			}
-			sawPrice = true
-		}
+		truncated, price := c2hbCheckAuditRow(t, it, got.Raw, huge)
+		sawTruncated = sawTruncated || truncated
+		sawPrice = sawPrice || price
 	}
 	if !sawTruncated || !sawPrice {
 		t.Fatalf("audit rows: %s", got.Raw)
 	}
+}
+
+type c2hbAuditRow struct {
+	Tool, Outcome string
+	Args          map[string]any
+}
+
+// c2hbCheckAuditRow checks one audited refusal and reports whether it was
+// the oversized create_worker row or the set_kilo_price row.
+func c2hbCheckAuditRow(t *testing.T, it c2hbAuditRow, raw, huge string) (truncated, price bool) {
+	t.Helper()
+	if strings.Contains(raw, "c2hb-token") {
+		t.Fatalf("the confirmation token was stored: %s", raw)
+	}
+	switch it.Tool + "/" + it.Outcome {
+	case "create_worker/refused":
+		keys, _ := it.Args["keys"].([]any)
+		if it.Args["truncated"] != true || len(keys) != 2 || strings.Contains(raw, huge) {
+			t.Fatalf("oversized arguments: %v", it.Args)
+		}
+		return true, false
+	case "set_kilo_price/refused":
+		if _, ok := it.Args["confirmationToken"]; ok || it.Args["priceCents"] == nil {
+			t.Fatalf("refused price arguments: %v", it.Args)
+		}
+		return false, true
+	}
+	return false, false
 }
