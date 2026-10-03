@@ -52,6 +52,11 @@ import { NOT_ENOUGH_SEASON } from "./text";
 import { foldTotals, kgForDrawing } from "./totals";
 import { PICKER } from "../../lib/vocab";
 
+function trendWords(up: boolean, down: boolean): string {
+  if (up) return "por encima";
+  return down ? "por debajo" : "parecida a";
+}
+
 export function SeasonPage() {
   const { today, weeks: windowWeeks, canSeeMoney, rangeKey } = useHarvest();
   const { can } = useAuth();
@@ -570,7 +575,7 @@ function Verdict({
       {change !== null ? (
         <>
           La semana en curso va{" "}
-          {up ? "por encima" : down ? "por debajo" : "parecida a"} de la
+          {trendWords(up, down)} de la
           anterior ({change > 0 ? "+" : "−"}
           {Math.round(Math.abs(change) * 100)} %). Todavía no ha terminado, así
           que la comparación es parcial.

@@ -79,6 +79,13 @@ const fold = (s: string) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
+function emptyListText(filteredOut: boolean, incomplete: boolean): string {
+  if (filteredOut) return "Ninguna liquidación coincide con el filtro.";
+  return incomplete
+    ? "No se encontró ninguna liquidación en lo que sí se pudo leer. No quiere decir que no las haya: parte de la consulta falló."
+    : "Todavía no se ha liquidado nada en esta finca.";
+}
+
 export function SettlementsPage() {
   const navigate = useNavigate();
   const { user, can } = useAuth();
@@ -385,11 +392,7 @@ export function SettlementsPage() {
             {rows?.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} sx={{ color: "text.secondary" }}>
-                  {data?.length !== 0
-                    ? "Ninguna liquidación coincide con el filtro."
-                    : incomplete
-                      ? "No se encontró ninguna liquidación en lo que sí se pudo leer. No quiere decir que no las haya: parte de la consulta falló."
-                      : "Todavía no se ha liquidado nada en esta finca."}
+                  {emptyListText(data?.length !== 0, incomplete)}
                 </TableCell>
               </TableRow>
             )}

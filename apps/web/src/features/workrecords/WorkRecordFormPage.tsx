@@ -66,6 +66,17 @@ interface CachedRefs {
   activities: Activity[];
 }
 
+function payModeChipLabel(activity: Pick<Activity, "payMode" | "workUnit" | "timeUnit">): string {
+  if (activity.payMode === "work_unit") return `${PAY_MODE_LABEL.work_unit} · ${activity.workUnit}`;
+  if (activity.payMode === "time_unit") return `${PAY_MODE_LABEL.time_unit} · ${activity.timeUnit}`;
+  return PAY_MODE_LABEL.contract;
+}
+
+/** The later of two ISO days. */
+function latestDay(a: string, b: string): string {
+  return a < b ? b : a;
+}
+
 export function WorkRecordFormPage() {
   const navigate = useNavigate();
   const { can, user } = useAuth();
@@ -357,13 +368,7 @@ export function WorkRecordFormPage() {
                   size="small"
                   /* This used to read "pago por unidad de trabajo", which is
                      a column name. See `lib/vocab.ts`. */
-                  label={
-                    activity.payMode === "work_unit"
-                      ? `${PAY_MODE_LABEL.work_unit} · ${activity.workUnit}`
-                      : activity.payMode === "time_unit"
-                        ? `${PAY_MODE_LABEL.time_unit} · ${activity.timeUnit}`
-                        : PAY_MODE_LABEL.contract
-                  }
+                  label={payModeChipLabel(activity)}
                 />
               </Stack>
               {activity.rateSource === "weekly_price" ? (
@@ -577,11 +582,7 @@ export function WorkRecordFormPage() {
                     ...d,
                     dateFrom: iso,
                     dateTo:
-                      activity && forcesSingleDay(activity)
-                        ? iso
-                        : d.dateTo < iso
-                          ? iso
-                          : d.dateTo,
+                      activity && forcesSingleDay(activity) ? iso : latestDay(d.dateTo, iso),
                   }))
                 }
                 error={!!errors.dateFrom}

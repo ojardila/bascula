@@ -56,7 +56,7 @@ export function useSlugCheck(slug: string): SlugCheck {
         const res = await api.slugAvailability(slug);
         if (!live) return;
         if (res.available) setState("free");
-        else setState(res.reason === "reserved" ? "reserved" : res.reason === "invalid" ? "invalid" : "taken");
+        else setState(res.reason === "reserved" || res.reason === "invalid" ? res.reason : "taken");
       } catch {
         // An older server without the check, or no network: say nothing and
         // let the create call be the judge.

@@ -33,6 +33,11 @@ import {
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 import type { Membership, Role } from "../../api/types";
 
+function loginSubtitle(pinned: boolean, farmName: string | null | undefined): string {
+  if (!pinned) return "Escriba el correo y la contraseña de su finca.";
+  return `Escriba el correo y la contraseña de ${farmName ? farmGreeting(farmName) : "esta finca"}.`;
+}
+
 /** What to say when a passkey sign-in fails; a closed prompt says nothing. */
 function passkeyMessage(err: unknown): string | null {
   if (passkeyCancelled(err)) return null;
@@ -184,11 +189,7 @@ export function LoginPage() {
     <AuthLayout
       title="Entrar"
       subtitle={
-        pinnedSlug
-          ? farmName
-            ? `Escriba el correo y la contraseña de ${farmGreeting(farmName)}.`
-            : "Escriba el correo y la contraseña de esta finca."
-          : "Escriba el correo y la contraseña de su finca."
+        loginSubtitle(Boolean(pinnedSlug), farmName)
       }
     >
       <Box component="form" onSubmit={onSubmit} noValidate>

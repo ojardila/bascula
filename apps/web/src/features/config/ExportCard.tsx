@@ -19,6 +19,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { downloadCsv, pesos, toCsv } from "../../lib/csv";
 import { LEDGER_KIND_LABEL } from "../../lib/vocab";
 import type { Worker } from "../../api/types";
+import { compareAsc } from "../../lib/compare";
 
 type Kind = "pesadas" | "movimientos" | "saldos";
 
@@ -35,9 +36,7 @@ export async function weighingsCsv(): Promise<string> {
   const records = await api.listWorkRecords({ status: "active" });
   const rows = records
     .filter((r) => r.unitLabel !== null)
-    .sort((a, b) =>
-      a.dateFrom < b.dateFrom ? -1 : a.dateFrom > b.dateFrom ? 1 : 0,
-    )
+    .sort((a, b) => compareAsc(a.dateFrom, b.dateFrom))
     .map((r) => [
       r.dateFrom,
       r.workerName,
@@ -47,11 +46,7 @@ export async function weighingsCsv(): Promise<string> {
       r.unitLabel,
       pesos(r.rateCents),
       pesos(r.estimatedAmountCents),
-      r.amountIsEstimate === null
-        ? null
-        : r.amountIsEstimate
-          ? "Provisional"
-          : "Fijo",
+      estimateWord(r.amountIsEstimate),
     ]);
   return toCsv(
     [
@@ -126,6 +121,11 @@ const BUILD: Record<Kind, () => Promise<string>> = {
   movimientos: movementsCsv,
   saldos: balancesCsv,
 };
+
+function estimateWord(isEstimate: boolean | null): string | null {
+  if (isEstimate === null) return null;
+  return isEstimate ? "Provisional" : "Fijo";
+}
 
 export function ExportCard() {
   const { can, user } = useAuth();

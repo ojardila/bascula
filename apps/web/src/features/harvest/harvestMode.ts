@@ -18,7 +18,9 @@ function readCache(farmId: string | undefined): boolean | null {
   if (!farmId) return null;
   try {
     const v = window.localStorage.getItem(key(farmId));
-    return v === "1" ? true : v === "0" ? false : null;
+    if (v === "1") return true;
+    if (v === "0") return false;
+    return null;
   } catch {
     return null;
   }

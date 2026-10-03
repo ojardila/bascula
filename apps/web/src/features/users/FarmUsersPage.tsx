@@ -123,6 +123,10 @@ const ROLE_LABEL: Record<Role, string> = {
   weigher: "Pesador",
 };
 
+function inviteLabel(owner: boolean): string {
+  return owner ? "Invitar como dueño" : "Enviar la invitación";
+}
+
 export function FarmUsersPage() {
   const navigate = useNavigate();
   const { user, can } = useAuth();
@@ -953,11 +957,7 @@ function InviteDialog({
           disabled={busy || !ready}
           sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}
         >
-          {busy
-            ? "Invitando…"
-            : owner
-              ? "Invitar como dueño"
-              : "Enviar la invitación"}
+          {busy ? "Invitando…" : inviteLabel(owner)}
         </Button>
       </DialogActions>
     </Dialog>

@@ -12,6 +12,16 @@ interface Props {
   sx?: SxProps<Theme>;
 }
 
+const FONT_SIZE: Record<NonNullable<Props["variant"]>, string | undefined> = {
+  big: "1.9rem",
+  small: "0.8125rem",
+  inherit: undefined,
+};
+
+function signColor(cents: number): string {
+  return cents < 0 ? "error.main" : "success.dark";
+}
+
 /**
  * Every peso figure on screen goes through here.
  *
@@ -28,9 +38,9 @@ export function Money({ cents, signed, colored, variant = "inherit", sx }: Reado
         ...moneyFont,
         whiteSpace: "nowrap",
         fontWeight: variant === "big" ? 700 : 600,
-        fontSize: variant === "big" ? "1.9rem" : variant === "small" ? "0.8125rem" : undefined,
+        fontSize: FONT_SIZE[variant],
         lineHeight: variant === "big" ? 1.1 : undefined,
-        color: colored ? (cents < 0 ? "error.main" : "success.dark") : undefined,
+        color: colored ? signColor(cents) : undefined,
         ...sx,
       }}
     >

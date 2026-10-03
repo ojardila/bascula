@@ -47,6 +47,10 @@ import { isTeam } from "./team";
 
 const big = { fontSize: "1.15rem" } as const;
 
+function basketWords(tag: string | null | undefined): string {
+  return tag ? `Canasto ${tag}` : "Sin canasto";
+}
+
 export function TeamFormPage() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -163,11 +167,9 @@ export function TeamFormPage() {
     navigate(`/empleados/${outcome.value.id}`, { replace: true });
   }
 
-  const title = !editing
-    ? "Nuevo equipo"
-    : wasPerson
-      ? "Convertir en equipo"
-      : "Cambiar integrantes";
+  let title = "Cambiar integrantes";
+  if (!editing) title = "Nuevo equipo";
+  else if (wasPerson) title = "Convertir en equipo";
 
   return (
     <Box component="form" onSubmit={onSubmit} noValidate sx={{ maxWidth: 640 }}>
@@ -306,11 +308,7 @@ export function TeamFormPage() {
                       <ListItemText
                         primary={label}
                         secondary={
-                          other
-                            ? `Ya está en el equipo ${other.name}`
-                            : p.tag
-                              ? `Canasto ${p.tag}`
-                              : "Sin canasto"
+                          other ? `Ya está en el equipo ${other.name}` : basketWords(p.tag)
                         }
                         slotProps={{
                           primary: {

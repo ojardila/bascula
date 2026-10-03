@@ -33,6 +33,12 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Paper, Stack, Typography } from "@mui/material";
 import { GREEN, GREEN_DARK, moneyFont } from "../../theme";
 
+/** A running week is faint; the bar under the pointer is solid. */
+function barOpacity(partial: boolean | undefined, hovered: boolean): number {
+  if (partial) return 0.45;
+  return hovered ? 1 : 0.88;
+}
+
 /** Measure the container, so the SVG is drawn at real pixels and stays crisp. */
 export function useWidth<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
@@ -519,7 +525,7 @@ export function WeekBars({
                 height={h}
                 rx={3}
                 fill={color}
-                opacity={p.partial ? 0.45 : hover === i ? 1 : 0.88}
+                opacity={barOpacity(p.partial, hover === i)}
                 stroke={p.partial ? color : "none"}
                 strokeWidth={p.partial ? 1.5 : 0}
                 style={{ cursor: onSelect ? "pointer" : "default" }}
