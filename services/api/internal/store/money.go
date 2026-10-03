@@ -608,47 +608,10 @@ func filterPayables(all []Payable, ids []string) []Payable {
 func grossChangedDetails(ctx context.Context, tx pgx.Tx, expected, actual int64,
 	pending, chosen []Payable, askedFor []string) (map[string]any, error) {
 
-	added := []string{}
-	removed := []string{}
-	if len(askedFor) > 0 {
-		inPending := map[string]bool{}
-		for _, p := range pending {
-			inPending[p.PayableID] = true
-		}
-		asked := map[string]bool{}
-		for _, id := range askedFor {
-			asked[id] = true
-			if !inPending[id] {
-				// Named by the caller and no longer settleable: deleted, or
-				// claimed by a settlement that got there first.
-				removed = append(removed, id)
-			}
-		}
-		for _, p := range pending {
-			if !asked[p.PayableID] {
-				added = append(added, p.PayableID)
-			}
-		}
-	}
-
-	// Every week this settlement spans, with the price standing NOW. It is not
-	// a list of weeks that changed, and it must not be presented as one: the
-	// caller never told us what price it was shown, so we cannot know. It was
-	// called changedWeeks once and a screen built on it would have blamed a
-	// reprice for a late weighing.
-	weeks := []map[string]any{}
-	seen := map[string]bool{}
-	for _, p := range chosen {
-		key := p.WeekStart.Format(time.DateOnly)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		price, err := WeekPrice(ctx, tx, p.WeekStart)
-		if err != nil {
-			return nil, err
-		}
-		weeks = append(weeks, map[string]any{"weekStart": key, "priceCents": price})
+	added, removed := payableSetDiff(pending, askedFor)
+	weeks, err := weeksAtPriceNow(ctx, tx, chosen)
+	if err != nil {
+		return nil, err
 	}
 
 	return map[string]any{
@@ -663,6 +626,58 @@ func grossChangedDetails(ctx context.Context, tx pgx.Tx, expected, actual int64,
 		// apart will explain the difference wrongly.
 		"payableIdsProvided": len(askedFor) > 0,
 	}, nil
+}
+
+// payableSetDiff compares the ids the caller asked to settle with what is
+// pending now. Both lists are empty when the caller named no ids.
+func payableSetDiff(pending []Payable, askedFor []string) (added, removed []string) {
+	added = []string{}
+	removed = []string{}
+	if len(askedFor) == 0 {
+		return added, removed
+	}
+	inPending := map[string]bool{}
+	for _, p := range pending {
+		inPending[p.PayableID] = true
+	}
+	asked := map[string]bool{}
+	for _, id := range askedFor {
+		asked[id] = true
+		if !inPending[id] {
+			// Named by the caller and no longer settleable: deleted, or
+			// claimed by a settlement that got there first.
+			removed = append(removed, id)
+		}
+	}
+	for _, p := range pending {
+		if !asked[p.PayableID] {
+			added = append(added, p.PayableID)
+		}
+	}
+	return added, removed
+}
+
+// weeksAtPriceNow is every week this settlement spans, with the price standing
+// NOW. It is not a list of weeks that changed, and it must not be presented as
+// one: the caller never told us what price it was shown, so we cannot know. It
+// was called changedWeeks once and a screen built on it would have blamed a
+// reprice for a late weighing.
+func weeksAtPriceNow(ctx context.Context, tx pgx.Tx, chosen []Payable) ([]map[string]any, error) {
+	weeks := []map[string]any{}
+	seen := map[string]bool{}
+	for _, p := range chosen {
+		key := p.WeekStart.Format(time.DateOnly)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		price, err := WeekPrice(ctx, tx, p.WeekStart)
+		if err != nil {
+			return nil, err
+		}
+		weeks = append(weeks, map[string]any{"weekStart": key, "priceCents": price})
+	}
+	return weeks, nil
 }
 
 func winningSettlement(ctx context.Context, tx pgx.Tx, payableID string) (map[string]any, error) {
@@ -876,6 +891,50 @@ func FindSettlementRelease(ctx context.Context, tx pgx.Tx, id string) (*Settleme
 	return out, err
 }
 
+// priorRelease is the replay check for ReleaseSettlement: the release
+// releaseID already names, or nil when it names nothing yet (or is empty).
+// An id that names the release of another settlement is a conflict.
+func priorRelease(ctx context.Context, tx pgx.Tx, releaseID, settlementID string) (*SettlementRelease, error) {
+	if releaseID == "" {
+		return nil, nil
+	}
+	existing, err := FindSettlementRelease(ctx, tx, releaseID)
+	if err != nil || existing == nil {
+		return nil, err
+	}
+	if existing.SettlementID != settlementID {
+		return nil, domain.Conflict(domain.CodeIdempotencyKeyReused,
+			"that id already names the release of a different settlement")
+	}
+	return existing, nil
+}
+
+// voidLiveItems voids the settlement's live lines and returns the payables
+// they held, which are free to be settled again.
+func voidLiveItems(ctx context.Context, tx pgx.Tx, settlementID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE settlement_items SET voided_at = now()
+		 WHERE settlement_id = $1 AND voided_at IS NULL
+		 RETURNING payable_id::text`, settlementID)
+	if err != nil {
+		return nil, err
+	}
+	freed := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		freed = append(freed, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return freed, nil
+}
+
 // ReleaseSettlement frees the payables a VOID settlement is still holding, and
 // finishes the void that left them held.
 //
@@ -914,18 +973,8 @@ func ReleaseSettlement(ctx context.Context, tx pgx.Tx, args ReleaseParams) (*Set
 	// same reason as in Settle — a retry finds the work already done, and a
 	// check that ran later would answer NOTHING_TO_RELEASE to a caller whose
 	// first attempt succeeded and whose connection dropped.
-	if releaseID != "" {
-		existing, err := FindSettlementRelease(ctx, tx, releaseID)
-		if err != nil {
-			return nil, false, err
-		}
-		if existing != nil {
-			if existing.SettlementID != settlementID {
-				return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
-					"that id already names the release of a different settlement")
-			}
-			return existing, false, nil
-		}
+	if existing, err := priorRelease(ctx, tx, releaseID, settlementID); err != nil || existing != nil {
+		return existing, false, err
 	}
 
 	var status, employeeID string
@@ -949,24 +998,8 @@ func ReleaseSettlement(ctx context.Context, tx pgx.Tx, args ReleaseParams) (*Set
 		return nil, false, err
 	}
 
-	rows, err := tx.Query(ctx, `
-		UPDATE settlement_items SET voided_at = now()
-		 WHERE settlement_id = $1 AND voided_at IS NULL
-		 RETURNING payable_id::text`, settlementID)
+	freed, err := voidLiveItems(ctx, tx, settlementID)
 	if err != nil {
-		return nil, false, err
-	}
-	freed := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, false, err
-		}
-		freed = append(freed, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return nil, false, err
 	}
 
@@ -1233,6 +1266,24 @@ func AddLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string, e NewLedgerEn
 	return existing, false, nil
 }
 
+// priorReversal is the replay check for ReverseLedgerEntry: the reversal
+// reversalID already names, or nil when it names nothing yet (or is empty).
+// An id that names some other movement is a conflict.
+func priorReversal(ctx context.Context, tx pgx.Tx, reversalID, entryID string) (*LedgerEntry, error) {
+	if reversalID == "" {
+		return nil, nil
+	}
+	existing, err := FindLedgerEntry(ctx, tx, reversalID)
+	if err != nil || existing == nil {
+		return nil, err
+	}
+	if existing.ReversesID == nil || *existing.ReversesID != entryID {
+		return nil, domain.Conflict(domain.CodeIdempotencyKeyReused,
+			"that id already names a different movement")
+	}
+	return existing, nil
+}
+
 // ReverseLedgerEntry cancels a movement with its exact opposite. The unique
 // partial index on reverses_id is what makes it happen once and only once.
 //
@@ -1261,18 +1312,8 @@ type ReverseParams struct {
 func ReverseLedgerEntry(ctx context.Context, tx pgx.Tx, args ReverseParams) (*LedgerEntry, bool, error) {
 	farmID, entryID, reversalID, createdBy := args.FarmID, args.EntryID, args.ReversalID, args.CreatedBy
 	note, on := args.Note, args.On
-	if reversalID != "" {
-		existing, err := FindLedgerEntry(ctx, tx, reversalID)
-		if err != nil {
-			return nil, false, err
-		}
-		if existing != nil {
-			if existing.ReversesID == nil || *existing.ReversesID != entryID {
-				return nil, false, domain.Conflict(domain.CodeIdempotencyKeyReused,
-					"that id already names a different movement")
-			}
-			return existing, false, nil
-		}
+	if existing, err := priorReversal(ctx, tx, reversalID, entryID); err != nil || existing != nil {
+		return existing, false, err
 	}
 
 	var employeeID string
