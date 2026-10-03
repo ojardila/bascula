@@ -11,7 +11,7 @@
  * who can help instead. That used to send people to Configuración → Usuarios,
  * which cannot change a password; it now says what the owner actually can do.
  */
-import { useState, type SubmitEvent } from "react";
+import { useState, type SubmitEvent, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
@@ -91,60 +91,65 @@ export function ForgotPasswordPage() {
     }
   }
 
-  return (
-    <AuthLayout title="¿Olvidó su clave?">
-      {loading ? (
-        <Stack
-          sx={{
-            alignItems: "center",
-            py: 4,
-          }}
+  let content: ReactNode;
+  if (loading) {
+    content = (
+      <Stack
+        sx={{
+          alignItems: "center",
+          py: 4,
+        }}
+      >
+        <CircularProgress aria-label="Cargando" />
+      </Stack>
+    );
+  } else if (!available) {
+    content = <NoEmailHelp />;
+  } else if (sent) {
+    content = (
+      <Stack spacing={2.5}>
+        <Alert severity="success" sx={{ fontSize: "1.1rem" }}>
+          Si ese correo está registrado, le enviamos un enlace para poner una
+          clave nueva.
+        </Alert>
+        <Typography sx={TEXT}>
+          Ábralo en los próximos 30 minutos. Si no le llega, revise la carpeta
+          de correo no deseado.
+        </Typography>
+        <BackButton />
+      </Stack>
+    );
+  } else {
+    content = (
+      <Stack component="form" spacing={2.5} onSubmit={onSubmit} noValidate>
+        <Typography sx={TEXT}>
+          Escriba el correo con el que entra a la finca. Le enviaremos un enlace
+          para poner una clave nueva.
+        </Typography>
+        {error && <Alert severity="error">{error}</Alert>}
+        <TextField
+          label="Correo"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="username"
+          autoFocus
+          fullWidth
+          required
+        />
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          disabled={busy}
+          sx={{ minHeight: 56, fontSize: "1.15rem" }}
         >
-          <CircularProgress aria-label="Cargando" />
-        </Stack>
-      ) : !available ? (
-        <NoEmailHelp />
-      ) : sent ? (
-        <Stack spacing={2.5}>
-          <Alert severity="success" sx={{ fontSize: "1.1rem" }}>
-            Si ese correo está registrado, le enviamos un enlace para poner una
-            clave nueva.
-          </Alert>
-          <Typography sx={TEXT}>
-            Ábralo en los próximos 30 minutos. Si no le llega, revise la carpeta
-            de correo no deseado.
-          </Typography>
-          <BackButton />
-        </Stack>
-      ) : (
-        <Stack component="form" spacing={2.5} onSubmit={onSubmit} noValidate>
-          <Typography sx={TEXT}>
-            Escriba el correo con el que entra a la finca. Le enviaremos un
-            enlace para poner una clave nueva.
-          </Typography>
-          {error && <Alert severity="error">{error}</Alert>}
-          <TextField
-            label="Correo"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
-            autoFocus
-            fullWidth
-            required
-          />
-          <Button
-            type="submit"
-            variant="contained"
-            size="large"
-            disabled={busy}
-            sx={{ minHeight: 56, fontSize: "1.15rem" }}
-          >
-            {busy ? "Enviando…" : "Enviarme el enlace"}
-          </Button>
-          <BackButton />
-        </Stack>
-      )}
-    </AuthLayout>
-  );
+          {busy ? "Enviando…" : "Enviarme el enlace"}
+        </Button>
+        <BackButton />
+      </Stack>
+    );
+  }
+
+  return <AuthLayout title="¿Olvidó su clave?">{content}</AuthLayout>;
 }

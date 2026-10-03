@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 /**
  * Who is picking more and who less — presented so the answer is usable and the
  * comparison is defensible.
@@ -116,6 +117,41 @@ export function YieldPage() {
   const hi = Math.max(1.6, ...ranked.map((r) => r.index!));
   const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
 
+  let content: ReactNode;
+  if (!data.items.length) {
+    content = (
+      <Alert severity="info">
+        Nadie registró recolección en esta ventana, así que no hay a quién
+        comparar.
+      </Alert>
+    );
+  } else if (ranked.length === 0) {
+    content = (
+      <Alert severity="info">
+        Todavía no se puede comparar a nadie. {NO_INDEX_SECTION_BODY}
+      </Alert>
+    );
+  } else {
+    content = (
+      <Card>
+        <CardContent>
+          <Typography variant="h3">Cómo se reparte el rendimiento</Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: "text.secondary",
+              mb: 3,
+            }}
+          >
+            Cada punto es una persona. Mientras más juntos estén, más parecido
+            rinde la cuadrilla — que es lo normal en una finca.
+          </Typography>
+          <Distribution rows={ranked} lo={lo} hi={hi} pos={pos} />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Stack spacing={3}>
       <Card sx={{ bgcolor: "#f6f9f4" }}>
@@ -146,33 +182,7 @@ export function YieldPage() {
         </CardContent>
       </Card>
 
-      {!data.items.length ? (
-        <Alert severity="info">
-          Nadie registró recolección en esta ventana, así que no hay a quién
-          comparar.
-        </Alert>
-      ) : ranked.length === 0 ? (
-        <Alert severity="info">
-          Todavía no se puede comparar a nadie. {NO_INDEX_SECTION_BODY}
-        </Alert>
-      ) : (
-        <Card>
-          <CardContent>
-            <Typography variant="h3">Cómo se reparte el rendimiento</Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: "text.secondary",
-                mb: 3,
-              }}
-            >
-              Cada punto es una persona. Mientras más juntos estén, más parecido
-              rinde la cuadrilla — que es lo normal en una finca.
-            </Typography>
-            <Distribution rows={ranked} lo={lo} hi={hi} pos={pos} />
-          </CardContent>
-        </Card>
-      )}
+      {content}
 
       {ranked.map((r) => {
         const b = band(r.index!);

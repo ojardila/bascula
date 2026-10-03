@@ -150,11 +150,9 @@ export function RegistroMasivoPage() {
   // `?dia=` names the day; an old `?lunes=` link opens that week on its Monday.
   const diaParam = params.get("dia") ?? "";
   const lunesParam = params.get("lunes") ?? "";
-  const asked = isIsoDay(diaParam)
-    ? diaParam
-    : isIsoDay(lunesParam)
-      ? lunesParam
-      : today;
+  let asked = today;
+  if (isIsoDay(diaParam)) asked = diaParam;
+  else if (isIsoDay(lunesParam)) asked = lunesParam;
   const day = asked > today ? today : asked;
   const plotId = params.get("lote") ?? "";
   const week = daysOfWeek(mondayOf(day));
