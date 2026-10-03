@@ -942,14 +942,28 @@ export const handlers = [
 
     // One answer whether the address exists or not: telling them apart is a
     // free account-enumeration oracle.
-    if (!user || user.password !== body.password) {
+    if (!user) {
       return fail(401, "INVALID_CREDENTIALS", "email or password is not correct");
     }
-    if (!user.emailVerified) {
+    // `farmsUnlockedBy` + `onlyFarmScoped`: a farm with its own password for
+    // this member opens with that one only; the rest open with the account's,
+    // and only once the address is verified.
+    const all = db.membershipsOf(user.id);
+    const globalOK = user.password === body.password;
+    const byFarm = all.filter(
+      (m) => db.farmPasswords.get(`${m.farmId}:${m.userId}`) === body.password,
+    );
+    const byAccount = globalOK
+      ? all.filter((m) => !db.farmPasswords.has(`${m.farmId}:${m.userId}`))
+      : [];
+    if (byFarm.length === 0 && !(globalOK && (byAccount.length > 0 || all.length === 0))) {
+      return fail(401, "INVALID_CREDENTIALS", "email or password is not correct");
+    }
+    if (!user.emailVerified && byFarm.length === 0) {
       return fail(403, "EMAIL_NOT_VERIFIED", "verify the email address before opening a session");
     }
 
-    const owned = db.membershipsOf(user.id);
+    const owned = user.emailVerified ? [...byFarm, ...byAccount] : byFarm;
     if (owned.length === 0) return fail(403, "FORBIDDEN", "that account belongs to no farm");
 
     let chosen: db.MockMembership | undefined;
@@ -1203,39 +1217,43 @@ export const handlers = [
     }
 
     const existing = db.users.find((u) => u.email === email);
-    if (existing && db.memberships.some((m) => m.farmId === g.p.farmId && m.userId === existing.id)) {
-      return conflict("EMAIL_TAKEN", "that address already belongs to this farm");
+    const member = existing
+      ? db.memberships.find((m) => m.farmId === g.p.farmId && m.userId === existing.id)
+      : undefined;
+    if (member) {
+      // Already here: a retry. Same status as a new member, nothing changed —
+      // not the role, not the password — and so no password to show.
+      return HttpResponse.json(projectFarmUser(member), { status: 201 });
     }
 
     const userId = existing?.id ?? body.id ?? crypto.randomUUID();
     /**
-     * THE SERVER MINTS THE PASSWORD AND RETURNS IT ONCE.
+     * THE SERVER MINTS A PASSWORD FOR THIS FARM AND RETURNS IT ONCE.
      *
-     * The old comment here said the invited person "sets their own from the
-     * mail". There is no mail sender in `services/api` and there never was —
-     * `handleInviteUser` says so in as many words — so it mints a password,
-     * hashes it, marks the address verified because an administrator vouched
-     * for it, and puts the plaintext in THIS response and nowhere else. A mock
-     * that modelled the imaginary email is what let the console ship a screen
-     * promising a letter nobody sends.
+     * It is the farm's password, never the account's (`handleInviteUser`):
+     * a new address gets an account with a password nobody knows and an
+     * address NOT verified — an administrator vouches for nothing about
+     * somebody's email — and an address that already has an account gets the
+     * same farm password, so the answer does not say which it was.
      */
-    const temporary = existing ? "" : `temporal-${crypto.randomUUID().slice(0, 8)}`;
+    const chosen = (body as { password?: string }).password ?? "";
+    const temporary = chosen ? "" : `temporal-${crypto.randomUUID().slice(0, 8)}`;
     if (!existing) {
       db.users.push({
         id: userId,
         email,
-        password: temporary,
+        password: `sin-clave-${crypto.randomUUID()}`,
         name,
         superadmin: false,
-        // Verified: somebody with a session on this farm vouched for the
-        // address, which is what `store.VerifyUserEmail` does on the server.
-        emailVerified: true,
+        emailVerified: false,
         role,
       });
     }
     db.memberships.push({ farmId: g.p.farmId, userId, role });
+    db.farmPasswords.set(`${g.p.farmId}:${userId}`, chosen || temporary);
     return HttpResponse.json({
       ...projectFarmUser({ farmId: g.p.farmId, userId, role }),
+      name,
       ...(temporary
         ? {
             temporaryPassword: temporary,
@@ -4874,7 +4892,7 @@ function projectFarmUser(m: db.MockMembership): WireFarmUser | null {
     role: m.role,
     status: revokedMemberships.has(`${m.farmId}:${m.userId}`)
       ? "revoked"
-      : user.emailVerified
+      : user.emailVerified || db.farmPasswords.has(`${m.farmId}:${m.userId}`)
         ? "active"
         : "invited",
     // NO `lastLoginAt`. `store.ListFarmUsers` does not select one — the column

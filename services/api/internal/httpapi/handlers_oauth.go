@@ -843,8 +843,15 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		// password, and the login limiter counts it as one.
 		return nil, nil, nil, errOAuthBadCredentials
 	}
+	// An unproved address connects only the farms whose own password it was
+	// given (an invite); see onlyFarmScoped.
 	if user.EmailVerifiedAt == nil {
-		return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
+		if memberships, err = onlyFarmScoped(r.Context(), tx, user.ID, memberships); err != nil {
+			return nil, nil, nil, err
+		}
+		if len(memberships) == 0 {
+			return nil, nil, nil, errors.New("Verifique el correo antes de conectar un asistente.")
+		}
 	}
 	var active []store.Membership
 	for _, m := range memberships {

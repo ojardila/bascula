@@ -174,15 +174,15 @@ describe("inviting somebody", () => {
     expect(within(done).getByText(/temporal-/)).toBeInTheDocument();
     // And it says, in as many words, that it will not be readable again.
     expect(within(done).getByText(/única vez que se puede ver/)).toBeInTheDocument();
-    expect(within(done).getByText(/No se envía ningún correo/)).toBeInTheDocument();
+    expect(within(done).getByText(/Sirve solo para entrar a esta/)).toBeInTheDocument();
+    expect(within(done).getByText(/no se envía por correo/)).toBeInTheDocument();
 
     await user.click(within(done).getByRole("button", { name: "Ya la apunté" }));
 
     const row = (await screen.findByText("Elena Zapata")).closest("tr")!;
-    // `active`: the administrator vouched for the address, so the server marks
-    // it verified — `store.VerifyUserEmail` — and hands over a password that
-    // works now. "Invitado, sin confirmar" would describe a flow this system
-    // does not have.
+    // `active`: the password handed over opens this farm now. The address is
+    // NOT verified — an administrator vouches for nothing about somebody's
+    // email — but the farm's own password does not wait for that.
     expect(within(row).getByText("Activo")).toBeInTheDocument();
   }, 20000);
 
@@ -195,7 +195,7 @@ describe("inviting somebody", () => {
     const dialog = await screen.findByRole("dialog");
     // The form no longer promises an email that nobody sends.
     expect(within(dialog).queryByText(/Le llega un correo/)).not.toBeInTheDocument();
-    expect(within(dialog).getByText(/No se manda ningún correo/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/La contraseña no se manda por correo/)).toBeInTheDocument();
 
     await user.type(within(dialog).getByLabelText("Correo"), "otra@laesperanza.co");
     await user.type(within(dialog).getByLabelText("Nombre"), "Otra Persona");

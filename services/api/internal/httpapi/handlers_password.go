@@ -273,10 +273,14 @@ type passwordResetSpend struct {
 // the address is the caller's, which is the one thing signup never had, so
 // this also:
 //
-//   - drops the farm-specific owner passwords (farm_owner_credentials). They
-//     exist only because an unproven address could have been registered by
-//     somebody else first; after a reset, the new password opens all of the
-//     person's farms.
+//   - drops the farm-specific passwords (farm_owner_credentials). They exist
+//     only because an unproven address could have been registered by somebody
+//     else first, or was handed a farm password by an administrator with an
+//     invite; after a reset, the new password opens all of the person's
+//     farms, the invited ones included — the farm was given to the address,
+//     and the address has just been proved. Whoever held the handed-over
+//     password without owning the mailbox loses that farm, which is the point
+//     (see handleInviteUser).
 //   - marks the address verified.
 //   - closes every session of the account, on every farm. The request has no
 //     farm pinned, so the row policy reaches all of them.
