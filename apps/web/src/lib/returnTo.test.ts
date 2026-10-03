@@ -26,6 +26,29 @@ describe("safeReturnPath", () => {
     }
   });
 
+  it("refuses every control character, wherever it sits", () => {
+    for (const bad of [
+      "/\u0000//evil.example",
+      "/\u001f/evil.example",
+      "/\u007f/evil.example",
+      "/\r//evil.example",
+      "/configuracion\u0000",
+      "\u0000//evil.example",
+    ]) {
+      expect(safeReturnPath(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it("keeps characters outside the BMP inside the app", () => {
+    // A surrogate pair is one code point well above the control range: it is
+    // percent-encoded into the path, never read as a way out.
+    expect(safeReturnPath("/campo/\u{1F33E}")).toBe("/campo/%F0%9F%8C%BE");
+    expect(safeReturnPath("/\u{1F33E}//evil.example")).toBe("/%F0%9F%8C%BE//evil.example");
+    for (const bad of ["\u{1F33E}//evil.example", "//\u{1F33E}.example", "/\\\u{1F33E}.example"]) {
+      expect(safeReturnPath(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
   it("refuses what is not a string, the front door and the login page", () => {
     expect(safeReturnPath(undefined)).toBeNull();
     expect(safeReturnPath(null)).toBeNull();

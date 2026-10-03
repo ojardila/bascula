@@ -311,8 +311,8 @@ function DoneDialog() {
           </Button>
         </Stack>
         <Typography sx={{ fontSize: 15, color: "text.secondary", mt: 2.5 }}>
-          ¿Quiere ver este recorrido otra vez? Está en el menú, en «
-          <strong>Ayuda y recorrido</strong>».
+          ¿Quiere ver este recorrido otra vez? Está en el menú, en{" "}
+          «<strong>Ayuda y recorrido</strong>».
         </Typography>
       </DialogContent>
     </Dialog>

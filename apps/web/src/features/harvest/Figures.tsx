@@ -56,7 +56,7 @@ export function Unknown({ reason }: Readonly<{ reason: string }>) {
 }
 
 /** The small note that rides beside a provisional or partial figure. */
-function Note({ children, title }: { children: ReactNode; title: string }) {
+function Note({ children, title }: Readonly<{ children: ReactNode; title: string }>) {
   const text = (
     <Typography
       variant="caption"
