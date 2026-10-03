@@ -60,23 +60,9 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("seed is not valid JSON"))
 		return
 	}
-	if seed.Farm.Slug != s.cfg.TenantSlug || s.cfg.TenantSlug == "" {
-		writeError(w, r, domain.Forbidden("this stack serves another farm"))
-		return
-	}
-	if seed.Farm.ID == "" || len(seed.Members) == 0 {
-		writeError(w, r, domain.BadRequest("seed needs a farm id and at least one member"))
-		return
-	}
-	var owner *tenantSeedMember
-	for i := range seed.Members {
-		if seed.Members[i].Role == string(domain.RoleOwner) {
-			owner = &seed.Members[i]
-			break
-		}
-	}
-	if owner == nil {
-		writeError(w, r, domain.BadRequest("seed needs an owner"))
+	owner, err := s.validTenantSeed(&seed)
+	if err != nil {
+		writeError(w, r, err)
 		return
 	}
 
@@ -98,11 +84,46 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, m := range seed.Members {
+	if err := seedTenantUsers(ctx, tx, seed.Members); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := seedTenantFarm(ctx, tx, &seed, owner.ID); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	slog.Info("tenant seeded from platform", "slug", logsafe.Str(seed.Farm.Slug), "members", len(seed.Members))
+	writeJSON(w, http.StatusCreated, map[string]any{"seeded": true, "created": true})
+}
+
+// validTenantSeed checks that the seed is for this stack's farm and names
+// its owner, and returns that owner.
+func (s *Server) validTenantSeed(seed *tenantSeed) (*tenantSeedMember, error) {
+	if seed.Farm.Slug != s.cfg.TenantSlug || s.cfg.TenantSlug == "" {
+		return nil, domain.Forbidden("this stack serves another farm")
+	}
+	if seed.Farm.ID == "" || len(seed.Members) == 0 {
+		return nil, domain.BadRequest("seed needs a farm id and at least one member")
+	}
+	for i := range seed.Members {
+		if seed.Members[i].Role == string(domain.RoleOwner) {
+			return &seed.Members[i], nil
+		}
+	}
+	return nil, domain.BadRequest("seed needs an owner")
+}
+
+// seedTenantUsers creates the seed's members that this stack does not know
+// yet, verified when the platform had verified them.
+func seedTenantUsers(ctx context.Context, tx pgx.Tx, members []tenantSeedMember) error {
+	for _, m := range members {
 		existing, err := store.FindUserByEmail(ctx, tx, m.Email)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, r, err)
-			return
+			return err
 		}
 		if existing != nil {
 			continue
@@ -110,21 +131,24 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		if err := store.CreateUser(ctx, tx, store.User{
 			ID: m.ID, Email: m.Email, Name: m.Name, Phone: m.Phone, PasswordHash: m.PasswordHash,
 		}); err != nil {
-			writeError(w, r, err)
-			return
+			return err
 		}
-		if m.EmailVerifiedAt != nil {
-			if err := store.VerifyUserEmail(ctx, tx, m.ID); err != nil {
-				writeError(w, r, err)
-				return
-			}
+		if m.EmailVerifiedAt == nil {
+			continue
+		}
+		if err := store.VerifyUserEmail(ctx, tx, m.ID); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	fctx, err := tenant.SetForSignup(ctx, tx, seed.Farm.ID, owner.ID)
+// seedTenantFarm creates the farm as the tenant of the transaction, its
+// memberships and its seed data.
+func seedTenantFarm(ctx context.Context, tx pgx.Tx, seed *tenantSeed, ownerID string) error {
+	fctx, err := tenant.SetForSignup(ctx, tx, seed.Farm.ID, ownerID)
 	if err != nil {
-		writeError(w, r, err)
-		return
+		return err
 	}
 	price := seed.Farm.PriceMinor
 	confirmed := price > 0 && (seed.Farm.PriceConfirmed == nil || *seed.Farm.PriceConfirmed)
@@ -139,28 +163,16 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		Timezone: seed.Farm.Timezone, Currency: seed.Farm.Currency, PriceMinor: price,
 		PriceConfirmed: confirmed,
 	}); err != nil {
-		writeError(w, r, err)
-		return
+		return err
 	}
 	for _, m := range seed.Members {
 		u, err := store.FindUserByEmail(fctx, tx, m.Email)
 		if err != nil {
-			writeError(w, r, err)
-			return
+			return err
 		}
 		if err := store.CreateMembership(fctx, tx, seed.Farm.ID, u.ID, domain.Role(m.Role)); err != nil {
-			writeError(w, r, err)
-			return
+			return err
 		}
 	}
-	if err := seedFarm(fctx, tx, seed.Farm.ID, price); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	if err := tx.Commit(ctx); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	slog.Info("tenant seeded from platform", "slug", logsafe.Str(seed.Farm.Slug), "members", len(seed.Members))
-	writeJSON(w, http.StatusCreated, map[string]any{"seeded": true, "created": true})
+	return seedFarm(fctx, tx, seed.Farm.ID, price)
 }

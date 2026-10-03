@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
@@ -583,57 +585,12 @@ func (s *Server) handleAdjustment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind domain.LedgerKind, checkBalance bool) {
-	var body ledgerRequest
-	if err := decode(r, &body); err != nil {
+	in, err := readLedgerRequest(r, kind)
+	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	if body.WorkerID == "" {
-		writeError(w, r, domain.BadRequest(msgWorkerIDRequired))
-		return
-	}
-	if body.AmountCents == 0 {
-		writeError(w, r, domain.BadRequest("amountCents cannot be zero"))
-		return
-	}
-	// Whether the CLIENT chose the id is the whole question. An id we
-	// generated here is new by construction and cannot be a retry of
-	// anything; an id the client chose is the promise openapi.yaml makes at
-	// the top of the file, and the only thing that makes resending a payment
-	// safe.
-	clientChoseID := body.ID != ""
-	if body.ID == "" {
-		body.ID = newID()
-	}
-
-	amount := body.AmountCents
-	switch kind {
-	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction:
-		if amount < 0 {
-			// Accept either convention from the client and normalise; the
-			// database would reject the wrong sign anyway.
-			amount = -amount
-		}
-		if body.Method != nil && !domain.PayMethod(*body.Method).Valid() {
-			writeError(w, r, domain.BadRequest("method must be efectivo, transferencia or otro"))
-			return
-		}
-		if kind == domain.KindDeduction && body.Method != nil {
-			writeError(w, r, domain.BadRequest("a deduction has no payment method"))
-			return
-		}
-		amount = -amount
-	}
-
-	var day *time.Time
-	if body.Date != "" {
-		d, err := time.Parse(time.DateOnly, body.Date)
-		if err != nil {
-			writeError(w, r, domain.BadRequest("date must be YYYY-MM-DD"))
-			return
-		}
-		day = &d
-	}
+	body, amount, day := &in.body, in.amount, in.day
 
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -647,11 +604,8 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	}
 	p, _ := auth.PrincipalFrom(r.Context())
 
-	if body.ReceivedBy != nil && *body.ReceivedBy == "" {
-		body.ReceivedBy = nil
-	}
-	if body.ReceivedBy != nil && kind != domain.KindPayment && kind != domain.KindAdvance {
-		writeError(w, r, domain.BadRequest("receivedBy is only for a payment or an advance"))
+	if err := ledgerNormalizeReceivedBy(kind, body); err != nil {
+		writeError(w, r, err)
 		return
 	}
 
@@ -667,22 +621,14 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	// AMOUNT_EXCEEDS_BALANCE — a business rule refusing a payment that has
 	// already been made, which is exactly the answer that tells the foreman
 	// nothing about whether the money went in.
-	if clientChoseID {
-		existing, err := store.FindLedgerEntry(r.Context(), tx, body.ID)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if existing != nil {
-			if !existing.Matches(want, kind) {
-				writeError(w, r, domain.Conflict(domain.CodeIdempotencyKeyReused,
-					"that id already names a different movement").
-					WithDetails(map[string]any{"existing": existing}))
-				return
-			}
-			writeJSON(w, http.StatusOK, existing)
-			return
-		}
+	existing, err := ledgerExistingEntry(r.Context(), tx, in.clientChoseID, want, kind)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if existing != nil {
+		writeJSON(w, http.StatusOK, existing)
+		return
 	}
 
 	// Confirm the worker is ours before deriving anything from their ledger.
@@ -695,39 +641,9 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		return
 	}
 
-	// «Equipos»: the team is the account. A member of a team gets no personal
-	// advance or deduction while in it (it would open a second balance beside
-	// the team's), and «¿Quién recibe la plata?» must name a member of the
-	// team being paid.
-	entryDay := day
-	if entryDay == nil {
-		today, err := store.LocalToday(r.Context(), tx)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		entryDay = &today
-	}
-	if kind == domain.KindAdvance || kind == domain.KindDeduction {
-		if err := store.EnsureNotInTeam(r.Context(), tx, worker.ID, *entryDay, *entryDay); err != nil {
-			writeError(w, r, err)
-			return
-		}
-	}
-	if body.ReceivedBy != nil {
-		if worker.Kind != store.KindEquipo {
-			writeError(w, r, domain.BadRequest("receivedBy is only for a payment or advance to a team"))
-			return
-		}
-		t, err := store.TeamOn(r.Context(), tx, *body.ReceivedBy, *entryDay, *entryDay)
-		if err != nil {
-			writeError(w, r, err)
-			return
-		}
-		if t == nil || t.ID != worker.ID {
-			writeError(w, r, domain.BadRequest("receivedBy must be a member of this team on that day"))
-			return
-		}
+	if err := ledgerCheckTeam(r.Context(), tx, kind, worker, day, body.ReceivedBy); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	// Serialise every decision about this person's money, per person, for the
@@ -749,18 +665,8 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 	}
 
 	if checkBalance && !body.AllowOverpayment {
-		balance, err := store.Balance(r.Context(), tx, body.WorkerID)
-		if err != nil {
+		if err := ledgerCheckBalance(r.Context(), tx, body.WorkerID, amount); err != nil {
 			writeError(w, r, err)
-			return
-		}
-		// Partial and full payment need no flag of their own: a payment is
-		// partial when it is less than the balance. The check runs against the
-		// derived balance, never against a stored total.
-		if -amount > balance.BalanceMinor {
-			writeError(w, r, domain.Conflict(domain.CodeAmountExceedsBalance,
-				"the payment is larger than what is owed").
-				WithDetails(map[string]any{"balanceCents": balance.BalanceMinor}))
 			return
 		}
 	}
@@ -771,6 +677,170 @@ func (s *Server) addLedgerEntry(w http.ResponseWriter, r *http.Request, kind dom
 		return
 	}
 	writeJSON(w, createdStatus(created), entry)
+}
+
+// ledgerInput is a validated ledger request: the body (with its id filled
+// in), whether the client chose that id, the signed amount and the optional
+// day.
+type ledgerInput struct {
+	body          ledgerRequest
+	clientChoseID bool
+	amount        int64
+	day           *time.Time
+}
+
+// readLedgerRequest decodes and validates the body of a ledger movement.
+func readLedgerRequest(r *http.Request, kind domain.LedgerKind) (*ledgerInput, error) {
+	var body ledgerRequest
+	if err := decode(r, &body); err != nil {
+		return nil, err
+	}
+	if body.WorkerID == "" {
+		return nil, domain.BadRequest(msgWorkerIDRequired)
+	}
+	if body.AmountCents == 0 {
+		return nil, domain.BadRequest("amountCents cannot be zero")
+	}
+	// Whether the CLIENT chose the id is the whole question. An id we
+	// generated here is new by construction and cannot be a retry of
+	// anything; an id the client chose is the promise openapi.yaml makes at
+	// the top of the file, and the only thing that makes resending a payment
+	// safe.
+	clientChoseID := body.ID != ""
+	if body.ID == "" {
+		body.ID = newID()
+	}
+
+	amount, err := ledgerSignedAmount(kind, &body)
+	if err != nil {
+		return nil, err
+	}
+	day, err := ledgerRequestDay(body.Date)
+	if err != nil {
+		return nil, err
+	}
+	return &ledgerInput{body: body, clientChoseID: clientChoseID, amount: amount, day: day}, nil
+}
+
+// ledgerNormalizeReceivedBy treats an empty receivedBy as absent and refuses
+// it on a movement that hands no money over.
+func ledgerNormalizeReceivedBy(kind domain.LedgerKind, body *ledgerRequest) error {
+	if body.ReceivedBy != nil && *body.ReceivedBy == "" {
+		body.ReceivedBy = nil
+	}
+	if body.ReceivedBy != nil && kind != domain.KindPayment && kind != domain.KindAdvance {
+		return domain.BadRequest("receivedBy is only for a payment or an advance")
+	}
+	return nil
+}
+
+// ledgerSignedAmount validates the method for a movement that takes money
+// off the balance and returns the amount with the sign the ledger stores.
+func ledgerSignedAmount(kind domain.LedgerKind, body *ledgerRequest) (int64, error) {
+	amount := body.AmountCents
+	switch kind {
+	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction:
+		if amount < 0 {
+			// Accept either convention from the client and normalise; the
+			// database would reject the wrong sign anyway.
+			amount = -amount
+		}
+		if body.Method != nil && !domain.PayMethod(*body.Method).Valid() {
+			return 0, domain.BadRequest("method must be efectivo, transferencia or otro")
+		}
+		if kind == domain.KindDeduction && body.Method != nil {
+			return 0, domain.BadRequest("a deduction has no payment method")
+		}
+		amount = -amount
+	}
+	return amount, nil
+}
+
+// ledgerRequestDay parses the optional date of a movement; nil means today.
+func ledgerRequestDay(date string) (*time.Time, error) {
+	if date == "" {
+		return nil, nil
+	}
+	d, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return nil, domain.BadRequest("date must be YYYY-MM-DD")
+	}
+	return &d, nil
+}
+
+// ledgerExistingEntry answers a resent movement: the entry that already has
+// this id when it is the same movement, a 409 when the id names a different
+// one, and nil when the id is new or was not chosen by the client.
+func ledgerExistingEntry(ctx context.Context, tx pgx.Tx, clientChoseID bool, want store.NewLedgerEntry,
+	kind domain.LedgerKind) (*store.LedgerEntry, error) {
+	// An id generated here cannot name anything yet.
+	if !clientChoseID {
+		return nil, nil
+	}
+	existing, err := store.FindLedgerEntry(ctx, tx, want.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && !existing.Matches(want, kind) {
+		return nil, domain.Conflict(domain.CodeIdempotencyKeyReused,
+			"that id already names a different movement").
+			WithDetails(map[string]any{"existing": existing})
+	}
+	return existing, nil
+}
+
+// ledgerCheckTeam applies the team rules to a movement.
+//
+// «Equipos»: the team is the account. A member of a team gets no personal
+// advance or deduction while in it (it would open a second balance beside
+// the team's), and «¿Quién recibe la plata?» must name a member of the
+// team being paid.
+func ledgerCheckTeam(ctx context.Context, tx pgx.Tx, kind domain.LedgerKind, worker *store.Employee,
+	day *time.Time, receivedBy *string) error {
+	entryDay := day
+	if entryDay == nil {
+		today, err := store.LocalToday(ctx, tx)
+		if err != nil {
+			return err
+		}
+		entryDay = &today
+	}
+	if kind == domain.KindAdvance || kind == domain.KindDeduction {
+		if err := store.EnsureNotInTeam(ctx, tx, worker.ID, *entryDay, *entryDay); err != nil {
+			return err
+		}
+	}
+	if receivedBy == nil {
+		return nil
+	}
+	if worker.Kind != store.KindEquipo {
+		return domain.BadRequest("receivedBy is only for a payment or advance to a team")
+	}
+	t, err := store.TeamOn(ctx, tx, *receivedBy, *entryDay, *entryDay)
+	if err != nil {
+		return err
+	}
+	if t == nil || t.ID != worker.ID {
+		return domain.BadRequest("receivedBy must be a member of this team on that day")
+	}
+	return nil
+}
+
+// ledgerCheckBalance refuses a payment larger than what is owed.
+func ledgerCheckBalance(ctx context.Context, tx pgx.Tx, workerID string, amount int64) error {
+	balance, err := store.Balance(ctx, tx, workerID)
+	if err != nil {
+		return err
+	}
+	// Partial and full payment need no flag of their own: a payment is
+	// partial when it is less than the balance. The check runs against the
+	// derived balance, never against a stored total.
+	if -amount > balance.BalanceMinor {
+		return domain.Conflict(domain.CodeAmountExceedsBalance,
+			"the payment is larger than what is owed").
+			WithDetails(map[string]any{"balanceCents": balance.BalanceMinor})
+	}
+	return nil
 }
 
 // handleReverseLedger is how a mistake is undone. Nothing in the ledger is

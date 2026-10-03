@@ -48,68 +48,25 @@ func (s *Server) handleCreateWorkRecordBatch(w http.ResponseWriter, r *http.Requ
 		writeError(w, r, err)
 		return
 	}
-	if len(body.Items) == 0 {
-		writeError(w, r, domain.BadRequest("items is required and cannot be empty"))
+	monday, sunday, err := validateWorkRecordBatch(&body)
+	if err != nil {
+		writeError(w, r, err)
 		return
-	}
-	if len(body.Items) > maxBatchWorkRecords {
-		writeError(w, r, domain.BadRequest(fmt.Sprintf("at most %d items per batch", maxBatchWorkRecords)))
-		return
-	}
-	var monday, sunday time.Time
-	if body.WeekStart != "" {
-		d, err := time.Parse(time.DateOnly, body.WeekStart)
-		if err != nil || d.Weekday() != time.Monday {
-			writeError(w, r, domain.BadRequest("weekStart must be a Monday, YYYY-MM-DD"))
-			return
-		}
-		monday, sunday = d, d.AddDate(0, 0, 6)
-	}
-	if body.ID != "" {
-		if _, err := uuid.Parse(body.ID); err != nil {
-			writeError(w, r, domain.BadRequest("id must be a UUID"))
-			return
-		}
 	}
 
-	defaultActivity := body.ActivityID
-	if defaultActivity == "" {
-		for _, it := range body.Items {
-			if it.ActivityID == "" {
-				tx, err := tenant.Tx(r.Context())
-				if err != nil {
-					writeError(w, r, err)
-					return
-				}
-				if defaultActivity, err = store.HarvestActivityID(r.Context(), tx); err != nil {
-					writeError(w, r, err)
-					return
-				}
-				break
-			}
-		}
+	defaultActivity, err := batchDefaultActivity(r, &body)
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	out := make([]any, 0, len(body.Items))
 	created := 0
 	for i, it := range body.Items {
-		if it.ActivityID == "" {
-			it.ActivityID = defaultActivity
-		}
-		if it.ID == "" && body.ID != "" {
-			it.ID = uuid.NewSHA1(batchIDSpace, []byte(fmt.Sprintf("%s:%d", body.ID, i))).String()
-		}
-		if !monday.IsZero() {
-			from, to, err := parseWorkRecordDates(it)
-			if err != nil {
-				writeError(w, r, batchLineError(i, err))
-				return
-			}
-			if from.Before(monday) || to.After(sunday) {
-				writeError(w, r, batchLineError(i, domain.BadRequest(
-					"the date is outside the week that starts on "+body.WeekStart)))
-				return
-			}
+		prepareBatchLine(&it, i, body.ID, defaultActivity)
+		if err := batchLineInWeek(it, monday, sunday, body.WeekStart); err != nil {
+			writeError(w, r, batchLineError(i, err))
+			return
 		}
 		rec, status, err := s.createWorkRecord(r, it)
 		if err != nil {
@@ -130,6 +87,80 @@ func (s *Server) handleCreateWorkRecordBatch(w http.ResponseWriter, r *http.Requ
 		"created":  created,
 		"existing": len(out) - created,
 	})
+}
+
+// prepareBatchLine fills a line's defaults: the batch's activity, and an id
+// derived from (batch id, line number) when the batch has one and the line
+// names none.
+func prepareBatchLine(it *workRecordRequest, i int, batchID, defaultActivity string) {
+	if it.ActivityID == "" {
+		it.ActivityID = defaultActivity
+	}
+	if it.ID == "" && batchID != "" {
+		it.ID = uuid.NewSHA1(batchIDSpace, []byte(fmt.Sprintf("%s:%d", batchID, i))).String()
+	}
+}
+
+// validateWorkRecordBatch checks the batch's shape and returns the week its
+// lines must fall in (both zero when weekStart is absent).
+func validateWorkRecordBatch(body *workRecordBatchRequest) (time.Time, time.Time, error) {
+	var monday, sunday time.Time
+	if len(body.Items) == 0 {
+		return monday, sunday, domain.BadRequest("items is required and cannot be empty")
+	}
+	if len(body.Items) > maxBatchWorkRecords {
+		return monday, sunday, domain.BadRequest(fmt.Sprintf("at most %d items per batch", maxBatchWorkRecords))
+	}
+	if body.WeekStart != "" {
+		d, err := time.Parse(time.DateOnly, body.WeekStart)
+		if err != nil || d.Weekday() != time.Monday {
+			return monday, sunday, domain.BadRequest("weekStart must be a Monday, YYYY-MM-DD")
+		}
+		monday, sunday = d, d.AddDate(0, 0, 6)
+	}
+	if body.ID != "" {
+		if _, err := uuid.Parse(body.ID); err != nil {
+			return monday, sunday, domain.BadRequest("id must be a UUID")
+		}
+	}
+	return monday, sunday, nil
+}
+
+// batchDefaultActivity is the activity for lines that name none: the
+// batch's own, or the farm's harvest activity — looked up only when some
+// line needs it.
+func batchDefaultActivity(r *http.Request, body *workRecordBatchRequest) (string, error) {
+	if body.ActivityID != "" {
+		return body.ActivityID, nil
+	}
+	for _, it := range body.Items {
+		if it.ActivityID != "" {
+			continue
+		}
+		tx, err := tenant.Tx(r.Context())
+		if err != nil {
+			return "", err
+		}
+		return store.HarvestActivityID(r.Context(), tx)
+	}
+	return "", nil
+}
+
+// batchLineInWeek refuses a line whose dates fall outside the batch's week.
+// A zero monday means the batch named no week.
+func batchLineInWeek(it workRecordRequest, monday, sunday time.Time, weekStart string) error {
+	if monday.IsZero() {
+		return nil
+	}
+	from, to, err := parseWorkRecordDates(it)
+	if err != nil {
+		return err
+	}
+	if from.Before(monday) || to.After(sunday) {
+		return domain.BadRequest(
+			"the date is outside the week that starts on " + weekStart)
+	}
+	return nil
 }
 
 // batchLineError says which line was refused, keeping the route's own code.
