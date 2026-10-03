@@ -290,46 +290,11 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	development := getenv("APP_ENV") == appEnvDevelopment
 	rc := resolved{port: or("PORT", "8080"), http: httpapi.DefaultConfig()}
 
-	secret := getenv("JWT_SECRET")
-	switch {
-	case secret == leakedDevSigningKey:
-		return resolved{}, errors.New(
-			"JWT_SECRET is the old built-in development key, which is public: " +
-				"generate one with `openssl rand -base64 48`")
-	case secret == "":
-		if !development {
-			return resolved{}, errors.New(
-				"JWT_SECRET is required unless APP_ENV=development: " +
-					"generate one with `openssl rand -base64 48`")
-		}
-		// Development gets a key, but a DIFFERENT key on every boot.
-		//
-		// A constant here was worse than the missing environment variable it
-		// covered for: it made one forged token work against every laptop,
-		// every branch deployment and every machine that ever started without
-		// APP_ENV set, forever, because a value that ships in the source can
-		// never be rotated. Random-per-boot is the same convenience with none
-		// of that — no key to configure, and the tokens it signs are worth
-		// nothing anywhere but the process that minted them.
-		//
-		// The cost is that a restart invalidates the access tokens handed out
-		// before it. That is 15 minutes of them (auth.AccessTTL), and both
-		// clients answer a 401 by refreshing exactly once: refresh tokens are
-		// rows in Postgres hashed with sha256, not signatures, so a session
-		// survives the restart even though the access token does not.
-		buf := make([]byte, minSecretBytes)
-		if _, err := rand.Read(buf); err != nil {
-			return resolved{}, fmt.Errorf("generate a development signing key: %w", err)
-		}
-		secret = string(buf)
-		rc.warnings = append(rc.warnings,
-			"development mode: signing key generated at random for this process only; "+
-				"tokens issued before a restart stop working after it")
-	case len(secret) < minSecretBytes:
-		return resolved{}, fmt.Errorf(
-			"JWT_SECRET is %d bytes; HS256 needs at least %d (RFC 7518 §3.2)",
-			len(secret), minSecretBytes)
+	secret, secretWarnings, err := resolveSecret(getenv, development)
+	if err != nil {
+		return resolved{}, err
 	}
+	rc.warnings = append(rc.warnings, secretWarnings...)
 	rc.secret = []byte(secret)
 
 	rc.http.DevEcho = development
@@ -371,20 +336,9 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// (or TENANT_SLUG). It opens the internal port that receives that farm
 	// from the platform, and it never launches stacks of its own.
 	if getenv("TENANT_MODE") == "dedicated" {
-		slug := getenv("TENANT_SLUG")
-		if slug == "" {
-			slug = httpapi.FarmSlugFromURL(rc.http.PublicBaseURL)
+		if err := applyDedicated(getenv, &rc.http); err != nil {
+			return resolved{}, err
 		}
-		if slug == "" {
-			return resolved{}, errors.New(
-				"TENANT_MODE=dedicated needs TENANT_SLUG or a PUBLIC_BASE_URL like https://{slug}.bascula.engp.io")
-		}
-		rc.http.TenantSlug = slug
-		rc.http.GitHubDispatchToken = ""
-		rc.http.CloudflareSaaSToken = ""
-		// The farm's own stack keeps the mailer: its people reset their
-		// password and get security notices there. The ready notice stays
-		// the platform's (readyEmailAvailable).
 	}
 	// Security alerts (issue #312): an email to the operator when a signal
 	// crosses its threshold, through the mailer above. Off unless
@@ -410,41 +364,7 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 			"UPLOAD_DIR is required unless APP_ENV=development: " +
 				"uploads go to a directory, and the default one is temporary")
 	}
-	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
-		rc.http.SignupsPerIPPerHour = n
-	}
-	// The login limiter's two axes. They are tunable because the right number
-	// for a farm office behind one router and the right number for a platform
-	// serving a hundred of them are not the same number, and the operator who
-	// finds that out at four in the morning should not need a build to act on
-	// it. A zero or a negative value keeps the default rather than disabling
-	// the limit: "0" in an environment file is far more often a mistake than a
-	// decision to turn the front door's lock off.
-	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_EMAIL_PER_IP")); err == nil && n > 0 {
-		rc.http.LoginFailuresPerEmailPerIP = n
-	}
-	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_IP")); err == nil && n > 0 {
-		rc.http.LoginFailuresPerIP = n
-	}
-	if d, err := time.ParseDuration(getenv("LOGIN_FAILURE_WINDOW")); err == nil && d > 0 {
-		rc.http.LoginFailureWindow = d
-	}
-	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_EMAIL_PER_HOUR")); err == nil && n > 0 {
-		rc.http.SignupsPerEmailPerHour = n
-	}
-	// Farms created by public signup across the platform per hour. Each one
-	// is a dedicated stack, so this is the ceiling on what strangers can make
-	// the cluster build. Raise it for a launch; a zero or negative value keeps
-	// the default, for the same reason as the login limits above.
-	rc.http.SignupsPerHour = 30
-	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_HOUR")); err == nil && n > 0 {
-		rc.http.SignupsPerHour = n
-	}
-	// Public slug lookups (signup availability, farm name) per address per
-	// hour; see httpapi/farm_lookup.go. Zero or negative keeps the default.
-	if n, err := strconv.Atoi(getenv("FARM_LOOKUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
-		rc.http.FarmLookupsPerIPPerHour = n
-	}
+	applyRateLimits(getenv, &rc.http)
 
 	// TRUSTED_PROXY_CIDRS names the reverse proxies this service will believe
 	// an X-Forwarded-For from, comma separated, e.g.
@@ -467,22 +387,139 @@ func resolveConfig(getenv func(string) string) (resolved, error) {
 	// symmetric: refusing to start is an outage an operator sees in the first
 	// second, and silently dropping a range is a rate limit that looks fine
 	// and bounds nothing.
-	for _, part := range strings.Split(getenv("TRUSTED_PROXY_CIDRS"), ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if _, err := netip.ParsePrefix(part); err != nil {
-			return resolved{}, fmt.Errorf(
-				"TRUSTED_PROXY_CIDRS: %q is not a CIDR prefix "+
-					"(want a form like 10.0.0.0/8): %w", part, err)
-		}
-		rc.http.TrustedProxyCIDRs = append(rc.http.TrustedProxyCIDRs, part)
+	cidrs, err := parseTrustedProxyCIDRs(getenv("TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return resolved{}, err
 	}
+	rc.http.TrustedProxyCIDRs = append(rc.http.TrustedProxyCIDRs, cidrs...)
 	if len(rc.http.TrustedProxyCIDRs) > 0 {
 		rc.warnings = append(rc.warnings, fmt.Sprintf(
 			"trusting X-Forwarded-For from %v, and from nothing else",
 			rc.http.TrustedProxyCIDRs))
 	}
 	return rc, nil
+}
+
+// resolveSecret decides the JWT signing key, or refuses to boot. It returns
+// the warnings the choice deserves in the startup log.
+func resolveSecret(getenv func(string) string, development bool) (string, []string, error) {
+	var warnings []string
+	secret := getenv("JWT_SECRET")
+	switch {
+	case secret == leakedDevSigningKey:
+		return "", nil, errors.New(
+			"JWT_SECRET is the old built-in development key, which is public: " +
+				"generate one with `openssl rand -base64 48`")
+	case secret == "":
+		if !development {
+			return "", nil, errors.New(
+				"JWT_SECRET is required unless APP_ENV=development: " +
+					"generate one with `openssl rand -base64 48`")
+		}
+		// Development gets a key, but a DIFFERENT key on every boot.
+		//
+		// A constant here was worse than the missing environment variable it
+		// covered for: it made one forged token work against every laptop,
+		// every branch deployment and every machine that ever started without
+		// APP_ENV set, forever, because a value that ships in the source can
+		// never be rotated. Random-per-boot is the same convenience with none
+		// of that — no key to configure, and the tokens it signs are worth
+		// nothing anywhere but the process that minted them.
+		//
+		// The cost is that a restart invalidates the access tokens handed out
+		// before it. That is 15 minutes of them (auth.AccessTTL), and both
+		// clients answer a 401 by refreshing exactly once: refresh tokens are
+		// rows in Postgres hashed with sha256, not signatures, so a session
+		// survives the restart even though the access token does not.
+		buf := make([]byte, minSecretBytes)
+		if _, err := rand.Read(buf); err != nil {
+			return "", nil, fmt.Errorf("generate a development signing key: %w", err)
+		}
+		secret = string(buf)
+		warnings = append(warnings,
+			"development mode: signing key generated at random for this process only; "+
+				"tokens issued before a restart stop working after it")
+	case len(secret) < minSecretBytes:
+		return "", nil, fmt.Errorf(
+			"JWT_SECRET is %d bytes; HS256 needs at least %d (RFC 7518 §3.2)",
+			len(secret), minSecretBytes)
+	}
+	return secret, warnings, nil
+}
+
+// applyDedicated narrows cfg to a DEDICATED stack serving one farm.
+func applyDedicated(getenv func(string) string, cfg *httpapi.Config) error {
+	slug := getenv("TENANT_SLUG")
+	if slug == "" {
+		slug = httpapi.FarmSlugFromURL(cfg.PublicBaseURL)
+	}
+	if slug == "" {
+		return errors.New(
+			"TENANT_MODE=dedicated needs TENANT_SLUG or a PUBLIC_BASE_URL like https://{slug}.bascula.engp.io")
+	}
+	cfg.TenantSlug = slug
+	cfg.GitHubDispatchToken = ""
+	cfg.CloudflareSaaSToken = ""
+	// The farm's own stack keeps the mailer: its people reset their
+	// password and get security notices there. The ready notice stays
+	// the platform's (readyEmailAvailable).
+	return nil
+}
+
+// applyRateLimits reads the tunable limits into cfg. Anything unset, zero,
+// negative or malformed keeps the default.
+func applyRateLimits(getenv func(string) string, cfg *httpapi.Config) {
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
+		cfg.SignupsPerIPPerHour = n
+	}
+	// The login limiter's two axes. They are tunable because the right number
+	// for a farm office behind one router and the right number for a platform
+	// serving a hundred of them are not the same number, and the operator who
+	// finds that out at four in the morning should not need a build to act on
+	// it. A zero or a negative value keeps the default rather than disabling
+	// the limit: "0" in an environment file is far more often a mistake than a
+	// decision to turn the front door's lock off.
+	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_EMAIL_PER_IP")); err == nil && n > 0 {
+		cfg.LoginFailuresPerEmailPerIP = n
+	}
+	if n, err := strconv.Atoi(getenv("LOGIN_FAILURES_PER_IP")); err == nil && n > 0 {
+		cfg.LoginFailuresPerIP = n
+	}
+	if d, err := time.ParseDuration(getenv("LOGIN_FAILURE_WINDOW")); err == nil && d > 0 {
+		cfg.LoginFailureWindow = d
+	}
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_EMAIL_PER_HOUR")); err == nil && n > 0 {
+		cfg.SignupsPerEmailPerHour = n
+	}
+	// Farms created by public signup across the platform per hour. Each one
+	// is a dedicated stack, so this is the ceiling on what strangers can make
+	// the cluster build. Raise it for a launch; a zero or negative value keeps
+	// the default, for the same reason as the login limits above.
+	cfg.SignupsPerHour = 30
+	if n, err := strconv.Atoi(getenv("SIGNUPS_PER_HOUR")); err == nil && n > 0 {
+		cfg.SignupsPerHour = n
+	}
+	// Public slug lookups (signup availability, farm name) per address per
+	// hour; see httpapi/farm_lookup.go. Zero or negative keeps the default.
+	if n, err := strconv.Atoi(getenv("FARM_LOOKUPS_PER_IP_PER_HOUR")); err == nil && n > 0 {
+		cfg.FarmLookupsPerIPPerHour = n
+	}
+}
+
+// parseTrustedProxyCIDRs splits TRUSTED_PROXY_CIDRS; see resolveConfig.
+func parseTrustedProxyCIDRs(raw string) ([]string, error) {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := netip.ParsePrefix(part); err != nil {
+			return nil, fmt.Errorf(
+				"TRUSTED_PROXY_CIDRS: %q is not a CIDR prefix "+
+					"(want a form like 10.0.0.0/8): %w", part, err)
+		}
+		out = append(out, part)
+	}
+	return out, nil
 }

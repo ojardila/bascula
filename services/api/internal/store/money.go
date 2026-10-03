@@ -120,33 +120,8 @@ type Payable struct {
 //   - everything else: the price was frozen when the record was written, and
 //     this function only reads it back.
 func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Time) ([]Payable, error) {
-	rows, err := tx.Query(ctx, pendingSQL, employeeID, from, to)
+	pending, err := scanPending(ctx, tx, employeeID, from, to)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type raw struct {
-		Payable
-		frozenPrice  *int64
-		frozenAmount *int64
-	}
-	var pending []raw
-	for rows.Next() {
-		var r raw
-		var qty string
-		if err := rows.Scan(&r.PayableID, &r.ActivityID, &r.ActivityName, &r.PayScheme,
-			&r.RateSource, &qty, &r.UnitID, &r.frozenPrice, &r.frozenAmount,
-			&r.LocalDay, &r.WeekStart, &r.PlotNames); err != nil {
-			return nil, err
-		}
-		r.Quantity = json.Number(qty)
-		if r.PlotNames == nil {
-			r.PlotNames = []string{}
-		}
-		pending = append(pending, r)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
@@ -165,31 +140,77 @@ func Pending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Ti
 
 	out := []Payable{}
 	for _, r := range pending {
-		p := r.Payable
-		switch r.RateSource {
-		case domain.RateWeeklyPrice:
-			kp, ok := kilo[r.PayableID]
-			if !ok {
-				return nil, domain.Internal("work record " + r.PayableID + " has no kilo price")
-			}
-			price := kp.PriceMinor
-			p.PriceSource = kp.Source
-			qty, ok := new(big.Rat).SetString(string(r.Quantity))
-			if !ok {
-				return nil, domain.Internal("unparsable quantity on work record " + r.PayableID)
-			}
-			p.PriceMinor = price
-			p.AmountMinor = domain.AmountMinor(qty, price)
-		default:
-			if r.frozenPrice == nil || r.frozenAmount == nil {
-				return nil, domain.Internal("work record " + r.PayableID + " has no frozen price")
-			}
-			p.PriceMinor = *r.frozenPrice
-			p.AmountMinor = *r.frozenAmount
+		p, err := pricePending(r, kilo)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// pendingRow is a Payable as read by pendingSQL, before it is priced: the
+// frozen price and amount are nil for a kilo weighing, which is priced now.
+type pendingRow struct {
+	Payable
+	frozenPrice  *int64
+	frozenAmount *int64
+}
+
+// scanPending runs pendingSQL and reads the rows back unpriced.
+func scanPending(ctx context.Context, tx pgx.Tx, employeeID string, from, to time.Time) ([]pendingRow, error) {
+	rows, err := tx.Query(ctx, pendingSQL, employeeID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pending []pendingRow
+	for rows.Next() {
+		var r pendingRow
+		var qty string
+		if err := rows.Scan(&r.PayableID, &r.ActivityID, &r.ActivityName, &r.PayScheme,
+			&r.RateSource, &qty, &r.UnitID, &r.frozenPrice, &r.frozenAmount,
+			&r.LocalDay, &r.WeekStart, &r.PlotNames); err != nil {
+			return nil, err
+		}
+		r.Quantity = json.Number(qty)
+		if r.PlotNames == nil {
+			r.PlotNames = []string{}
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return pending, nil
+}
+
+// pricePending prices one pending row: a kilo weighing from the price
+// resolved now by kilo_price(), everything else from its frozen price.
+func pricePending(r pendingRow, kilo map[string]KiloPrice) (Payable, error) {
+	p := r.Payable
+	if r.RateSource != domain.RateWeeklyPrice {
+		if r.frozenPrice == nil || r.frozenAmount == nil {
+			return Payable{}, domain.Internal("work record " + r.PayableID + " has no frozen price")
+		}
+		p.PriceMinor = *r.frozenPrice
+		p.AmountMinor = *r.frozenAmount
+		return p, nil
+	}
+	kp, ok := kilo[r.PayableID]
+	if !ok {
+		return Payable{}, domain.Internal("work record " + r.PayableID + " has no kilo price")
+	}
+	price := kp.PriceMinor
+	p.PriceSource = kp.Source
+	qty, ok := new(big.Rat).SetString(string(r.Quantity))
+	if !ok {
+		return Payable{}, domain.Internal("unparsable quantity on work record " + r.PayableID)
+	}
+	p.PriceMinor = price
+	p.AmountMinor = domain.AmountMinor(qty, price)
+	return p, nil
 }
 
 // Debts lists what the worker owes the farm and what the farm has already
@@ -441,7 +462,6 @@ func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, boo
 			"there is nothing to settle in that period")
 	}
 
-	var gross int64
 	// The two ends of the period mean DIFFERENT things, and that asymmetry is
 	// deliberate. openapi.yaml carries the contract; this is why.
 	//
@@ -460,13 +480,7 @@ func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, boo
 	// The migration only checks period_end >= period_start, which is all that
 	// holds between two facts of different kinds. The season import fills both
 	// ends from the handset, which decided the same way.
-	periodStart := to
-	for _, p := range chosen {
-		gross += p.AmountMinor
-		if p.WeekStart.Before(periodStart) {
-			periodStart = p.WeekStart
-		}
-	}
+	gross, periodStart := grossAndPeriodStart(chosen, to)
 	if gross <= 0 {
 		return nil, false, domain.Conflict(domain.CodeNothingToSettle,
 			"the settlement adds up to nothing")
@@ -516,25 +530,8 @@ func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, boo
 		return nil, false, err
 	}
 
-	for _, p := range chosen {
-		_, err := tx.Exec(ctx, `
-			INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id, week_start,
-			                              quantity, price_minor, amount_minor)
-			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8)`,
-			uuid.NewString(), farmID, settlementID, p.PayableID, p.WeekStart,
-			p.Quantity.String(), p.PriceMinor, p.AmountMinor)
-		if err != nil {
-			if IsUniqueViolation(err, "ux_items_payable_live") {
-				winner, _ := winningSettlement(ctx, tx, p.PayableID)
-				return nil, false, domain.Conflict(domain.CodePayableAlreadyClaimed,
-					"a payable is already part of a live settlement").
-					WithDetails(map[string]any{
-						"payableId":         p.PayableID,
-						"winningSettlement": winner,
-					}).WithCause(err)
-			}
-			return nil, false, err
-		}
+	if err := insertSettlementItems(ctx, tx, farmID, settlementID, chosen); err != nil {
+		return nil, false, err
 	}
 
 	day, err := dayOrToday(ctx, tx, on)
@@ -549,6 +546,50 @@ func Settle(ctx context.Context, tx pgx.Tx, args SettleParams) (*Settlement, boo
 		return nil, false, err
 	}
 	return &s, true, nil
+}
+
+// grossAndPeriodStart adds up the chosen payables and finds the period they
+// actually cover: the Monday of the earliest one, or `to` when none is
+// earlier. See Settle for why the two ends of the period differ.
+func grossAndPeriodStart(chosen []Payable, to time.Time) (int64, time.Time) {
+	var gross int64
+	periodStart := to
+	for _, p := range chosen {
+		gross += p.AmountMinor
+		if p.WeekStart.Before(periodStart) {
+			periodStart = p.WeekStart
+		}
+	}
+	return gross, periodStart
+}
+
+// insertSettlementItems writes one settlement_items row per chosen payable.
+// ux_items_payable_live is what makes a payable belong to one live
+// settlement; losing that race is 409 PAYABLE_ALREADY_CLAIMED with the
+// winner in the details.
+func insertSettlementItems(ctx context.Context, tx pgx.Tx, farmID, settlementID string, chosen []Payable) error {
+	for _, p := range chosen {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id, week_start,
+			                              quantity, price_minor, amount_minor)
+			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8)`,
+			uuid.NewString(), farmID, settlementID, p.PayableID, p.WeekStart,
+			p.Quantity.String(), p.PriceMinor, p.AmountMinor)
+		if err == nil {
+			continue
+		}
+		if IsUniqueViolation(err, "ux_items_payable_live") {
+			winner, _ := winningSettlement(ctx, tx, p.PayableID)
+			return domain.Conflict(domain.CodePayableAlreadyClaimed,
+				"a payable is already part of a live settlement").
+				WithDetails(map[string]any{
+					"payableId":         p.PayableID,
+					"winningSettlement": winner,
+				}).WithCause(err)
+		}
+		return err
+	}
+	return nil
 }
 
 // findSettlement is GetSettlement with "not there" as a value rather than an
@@ -763,20 +804,7 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, revers
 		return nil, false, err
 	}
 	if status == "void" {
-		if reversalID != "" {
-			existing, err := FindLedgerEntry(ctx, tx, reversalID)
-			if err != nil {
-				return nil, false, err
-			}
-			// The reversal this very request wrote the first time round.
-			if existing != nil && existing.SettlementID != nil &&
-				*existing.SettlementID == settlementID && existing.Kind == domain.KindReversal {
-				out, err := GetSettlement(ctx, tx, settlementID)
-				return out, false, err
-			}
-		}
-		return nil, false, domain.Conflict(domain.CodeSettlementAlreadyVoid,
-			"the settlement is already void")
+		return voidRetry(ctx, tx, settlementID, reversalID)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -789,29 +817,8 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, revers
 		return nil, false, err
 	}
 
-	rows, err := tx.Query(ctx, `
-		SELECT id::text, employee_id::text, amount_minor
-		  FROM ledger
-		 WHERE settlement_id = $1 AND kind = 'devengo'
-		   AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = ledger.id)`, settlementID)
+	toReverse, err := liveDevengos(ctx, tx, settlementID)
 	if err != nil {
-		return nil, false, err
-	}
-	type entry struct {
-		id, employeeID string
-		amount         int64
-	}
-	var toReverse []entry
-	for rows.Next() {
-		var e entry
-		if err := rows.Scan(&e.id, &e.employeeID, &e.amount); err != nil {
-			rows.Close()
-			return nil, false, err
-		}
-		toReverse = append(toReverse, e)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return nil, false, err
 	}
 
@@ -838,6 +845,58 @@ func VoidSettlement(ctx context.Context, tx pgx.Tx, farmID, settlementID, revers
 	}
 	out, err := GetSettlement(ctx, tx, settlementID)
 	return out, true, err
+}
+
+// voidRetry answers a void of a settlement that is already void: a resent
+// request carrying the id of the reversal it wrote the first time round gets
+// the settlement back; anything else is 409 SETTLEMENT_ALREADY_VOID.
+func voidRetry(ctx context.Context, tx pgx.Tx, settlementID, reversalID string) (*Settlement, bool, error) {
+	if reversalID != "" {
+		existing, err := FindLedgerEntry(ctx, tx, reversalID)
+		if err != nil {
+			return nil, false, err
+		}
+		// The reversal this very request wrote the first time round.
+		if existing != nil && existing.SettlementID != nil &&
+			*existing.SettlementID == settlementID && existing.Kind == domain.KindReversal {
+			out, err := GetSettlement(ctx, tx, settlementID)
+			return out, false, err
+		}
+	}
+	return nil, false, domain.Conflict(domain.CodeSettlementAlreadyVoid,
+		"the settlement is already void")
+}
+
+// devengoToReverse is one unreversed devengo of a settlement being voided.
+type devengoToReverse struct {
+	id, employeeID string
+	amount         int64
+}
+
+// liveDevengos reads the settlement's devengos that have not been reversed.
+func liveDevengos(ctx context.Context, tx pgx.Tx, settlementID string) ([]devengoToReverse, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, employee_id::text, amount_minor
+		  FROM ledger
+		 WHERE settlement_id = $1 AND kind = 'devengo'
+		   AND NOT EXISTS (SELECT 1 FROM ledger r WHERE r.reverses_id = ledger.id)`, settlementID)
+	if err != nil {
+		return nil, err
+	}
+	var toReverse []devengoToReverse
+	for rows.Next() {
+		var e devengoToReverse
+		if err := rows.Scan(&e.id, &e.employeeID, &e.amount); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		toReverse = append(toReverse, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return toReverse, nil
 }
 
 // ---------------------------------------------------------------------------

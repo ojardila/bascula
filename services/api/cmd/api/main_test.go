@@ -214,27 +214,39 @@ func TestResolveConfigTrustedProxyCIDRs(t *testing.T) {
 				"TRUSTED_PROXY_CIDRS": tc.raw,
 			})))
 			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("booted with TRUSTED_PROXY_CIDRS=%q and trusted %v",
-						tc.raw, rc.http.TrustedProxyCIDRs)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Fatalf("refused with %q, want something about %q", err, tc.wantErr)
-				}
+				assertCIDRsRefused(t, tc.raw, rc.http.TrustedProxyCIDRs, err, tc.wantErr)
 				return
 			}
 			if err != nil {
 				t.Fatalf("refused a valid TRUSTED_PROXY_CIDRS=%q: %v", tc.raw, err)
 			}
-			if len(rc.http.TrustedProxyCIDRs) != len(tc.want) {
-				t.Fatalf("trusts %v, want %v", rc.http.TrustedProxyCIDRs, tc.want)
-			}
-			for i, want := range tc.want {
-				if rc.http.TrustedProxyCIDRs[i] != want {
-					t.Fatalf("trusts %v, want %v", rc.http.TrustedProxyCIDRs, tc.want)
-				}
-			}
+			assertTrusts(t, rc.http.TrustedProxyCIDRs, tc.want)
 		})
+	}
+}
+
+// assertCIDRsRefused fails unless resolveConfig refused TRUSTED_PROXY_CIDRS
+// with an error mentioning wantErr.
+func assertCIDRsRefused(t *testing.T, raw string, trusted []string, err error, wantErr string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("booted with TRUSTED_PROXY_CIDRS=%q and trusted %v", raw, trusted)
+	}
+	if !strings.Contains(err.Error(), wantErr) {
+		t.Fatalf("refused with %q, want something about %q", err, wantErr)
+	}
+}
+
+// assertTrusts fails unless the trusted ranges are exactly want, in order.
+func assertTrusts(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("trusts %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("trusts %v, want %v", got, want)
+		}
 	}
 }
 
