@@ -28,3 +28,16 @@ func Str(s string) string {
 	s = strings.ReplaceAll(s, "\r", `\r`)
 	return strings.ReplaceAll(s, "\n", `\n`)
 }
+
+// Strs applies Str to every element of v and returns a new slice (nil for
+// nil), for list-valued log attributes such as a client's redirect URIs.
+func Strs(v []string) []string {
+	if v == nil {
+		return nil
+	}
+	out := make([]string, len(v))
+	for i, s := range v {
+		out[i] = Str(s)
+	}
+	return out
+}
