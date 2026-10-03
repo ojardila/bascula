@@ -155,7 +155,8 @@ describe("the tour controls", () => {
     expect(text("paused")).toBe("false");
     click("later");
     expect(text("current")).toBe("none");
-    expect(text("owner")).toBe("later:5");
+    // Watching a finished tour again: skipping keeps it finished.
+    expect(text("owner")).toBe("done:12");
     click("resume owner");
     expect(text("current")).not.toBe("none");
     click("finish");
