@@ -519,6 +519,19 @@ func (im *seasonImporter) settlementItem(st ImportSettlement, subject string, it
 	return nil
 }
 
+// refuseLiveLines refuses the lines of a void settlement unless every one of
+// them is void too (see settlement).
+func refuseLiveLines(subject string, items []ImportSettlementItem) error {
+	for _, it := range items {
+		if it.VoidedAt == nil {
+			return domain.BadRequest(subject +
+				": a void settlement cannot carry a live line — payable " + it.PayableID +
+				" would stay claimed by a settlement no route can void again")
+		}
+	}
+	return nil
+}
+
 // Step 5. The settlements, with their lines. The lines are what the anti
 // double-pay index acts on, and payable_id is the handset's own uuid:
 // the money is not remapped.
@@ -567,12 +580,8 @@ func (im *seasonImporter) settlement(st ImportSettlement) error {
 	// frees it. It is refused here because here is the only place it can
 	// still be refused.
 	if status == "void" {
-		for _, it := range st.Items {
-			if it.VoidedAt == nil {
-				return domain.BadRequest(subject +
-					": a void settlement cannot carry a live line — payable " + it.PayableID +
-					" would stay claimed by a settlement no route can void again")
-			}
+		if err := refuseLiveLines(subject, st.Items); err != nil {
+			return err
 		}
 	}
 	tag, err := tx.Exec(ctx, `
