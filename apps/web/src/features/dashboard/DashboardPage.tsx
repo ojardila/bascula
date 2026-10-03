@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -24,6 +25,7 @@ import { Value } from "../harvest/Figures";
 import { totalsOfRecords } from "../harvest/totals";
 import { owedByWorker, sumOwedToFarmWorkers } from "../workers/owed";
 import { PLOT, PROVISIONAL_INCLUDES } from "../../lib/vocab";
+import { count } from "../../lib/plural";
 
 /**
  * The farm at a glance. Deliberately four figures and not twelve: the useful
@@ -66,6 +68,20 @@ function Unknown() {
  */
 function Loading() {
   return <Skeleton variant="text" width="60%" sx={{ fontSize: "1.9rem" }} />;
+}
+
+/** A tile's figure: still asking, could not ask, or the figure itself. */
+function tileValue(loading: boolean, failed: boolean, known: () => ReactNode): ReactNode {
+  if (loading) return <Loading />;
+  if (failed) return <Unknown />;
+  return known();
+}
+
+/** A tile's hint, with the same three states as its figure. */
+function tileHint(loading: boolean, failed: boolean, known: () => string): string {
+  if (loading) return "consultando…";
+  if (failed) return "no se pudo consultar";
+  return known();
 }
 
 export function DashboardPage() {
@@ -138,39 +154,30 @@ export function DashboardPage() {
        * to it. A dash there would hide a figure we do know; a clean total
        * would lie. We print the floor and say that is what it is.
        */
-      value:
-        balancesLoading || recordsLoading ? (
-          <Loading />
-        ) : shownOwedCents === null ? (
-          <Unknown />
-        ) : (
-          <Money cents={shownOwedCents} variant="big" />
-        ),
-      hint:
-        balancesLoading || recordsLoading
-          ? "consultando…"
-          : shownOwedCents === null
-            ? "no se pudo consultar"
-            : farmOwes.cents === null
-              ? "al menos: sólo lo ya liquidado, lo pendiente no se pudo consultar"
-              : "lo ya liquidado más lo que falta liquidar" +
-                (farmOwes.isEstimate ? ` · ${PROVISIONAL_INCLUDES}` : ""),
+      value: tileValue(
+        balancesLoading || recordsLoading,
+        shownOwedCents === null,
+        () => <Money cents={shownOwedCents ?? 0} variant="big" />,
+      ),
+      hint: tileHint(balancesLoading || recordsLoading, shownOwedCents === null, () => {
+        if (farmOwes.cents === null) {
+          return "al menos: sólo lo ya liquidado, lo pendiente no se pudo consultar";
+        }
+        return (
+          "lo ya liquidado más lo que falta liquidar" +
+          (farmOwes.isEstimate ? ` · ${PROVISIONAL_INCLUDES}` : "")
+        );
+      }),
       to: "/empleados",
     },
     {
       label: "Pendiente de liquidar",
-      value: recordsLoading ? (
-        <Loading />
-      ) : recordsError ? (
-        <Unknown />
-      ) : (
+      value: tileValue(recordsLoading, Boolean(recordsError), () => (
         <Value total={pendingTotals} variant="big" align="flex-start" />
+      )),
+      hint: tileHint(recordsLoading, Boolean(recordsError), () =>
+        count(pending.length, "labor sin liquidar", "labores sin liquidar"),
       ),
-      hint: recordsLoading
-        ? "consultando…"
-        : recordsError
-          ? "no se pudo consultar"
-          : `${pending.length} ${pending.length === 1 ? "labor sin liquidar" : "labores sin liquidar"}`,
       to: "/labores",
     },
     {
@@ -178,41 +185,34 @@ export function DashboardPage() {
       // SAME REQUEST as the tile above. When `/v1/work-records` fails, the
       // money tile said "—" and this one said "0 kg" — out of the identical
       // failure, side by side on one screen.
-      value: recordsLoading ? (
-        <Loading />
-      ) : recordsError ? (
-        <Unknown />
-      ) : (
+      value: tileValue(recordsLoading, Boolean(recordsError), () => (
         <Typography variant="h1" sx={{ fontSize: "1.9rem" }}>
           {formatQuantity(kgThisWeek)} kg
         </Typography>
+      )),
+      hint: tileHint(
+        recordsLoading,
+        Boolean(recordsError),
+        () => "solo actividades pagadas por kilo",
       ),
-      hint: recordsLoading
-        ? "consultando…"
-        : recordsError
-          ? "no se pudo consultar"
-          : "solo actividades pagadas por kilo",
       to: "/labores",
     },
     {
       label: `${PLOT.Many} activos`,
       // "0 lotes activos" is a statement about a farm, and a farm with no
       // lots does not exist. `plots?.length ?? 0` made it out of a failed GET.
-      value: plotsLoading ? (
-        <Loading />
-      ) : plotsError ? (
-        <Unknown />
-      ) : (
+      value: tileValue(plotsLoading, Boolean(plotsError), () => (
         <Typography variant="h1" sx={{ fontSize: "1.9rem" }}>
           {plots?.length ?? 0}
         </Typography>
+      )),
+      hint: tileHint(
+        plotsLoading,
+        Boolean(plotsError),
+        () =>
+          `${formatArea(totalHa)} ha declaradas` +
+          (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
       ),
-      hint: plotsLoading
-        ? "consultando…"
-        : plotsError
-          ? "no se pudo consultar"
-          : `${formatArea(totalHa)} ha declaradas` +
-            (undeclaredPlots > 0 ? ` · ${undeclaredPlots} sin declarar` : ""),
       to: PLOT.path,
     },
   ];

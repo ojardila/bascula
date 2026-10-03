@@ -39,6 +39,7 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { addDays, parseDay } from "../../lib/dates";
 import { formatMoney, parseMoneyInput } from "../../lib/money";
+import { count } from "../../lib/plural";
 import type {
   WireSpecialPrice,
   WireSpecialPriceImpact,
@@ -323,6 +324,27 @@ function SpecialRow({
   );
 }
 
+/** What saving the special price does to the records already on the books. */
+function specialImpactSentence(impact: WireSpecialPriceImpact): string {
+  if (
+    impact.unsettledRecords === 0 &&
+    impact.settledRecords === 0 &&
+    impact.overriddenByPerson === 0
+  ) {
+    return "Todavía no hay pesadas desde ese lunes: cuenta con las próximas.";
+  }
+  const unsettled = `Desde ese lunes, ${count(impact.unsettledRecords, "pesada sin liquidar cambia", "pesadas sin liquidar cambian")}. `;
+  const settled =
+    impact.settledRecords > 0
+      ? `${count(impact.settledRecords, "pesada ya liquidada no cambia", "pesadas ya liquidadas no cambian")}. `
+      : "Lo ya liquidado no cambia. ";
+  const overridden =
+    impact.overriddenByPerson > 0
+      ? `${count(impact.overriddenByPerson, "pesada es", "pesadas son")} de personas con precio propio, que manda.`
+      : "";
+  return unsettled + settled + overridden;
+}
+
 function todayMonday(): string {
   const d = new Date();
   const local = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -404,19 +426,7 @@ function SpecialPriceDialog({
   }, [kind, targetId, monday]);
 
   const cents = parseMoneyInput(text);
-  const impactText = impact
-    ? impact.unsettledRecords === 0 &&
-      impact.settledRecords === 0 &&
-      impact.overriddenByPerson === 0
-      ? "Todavía no hay pesadas desde ese lunes: cuenta con las próximas."
-      : `Desde ese lunes, ${impact.unsettledRecords} ${impact.unsettledRecords === 1 ? "pesada sin liquidar cambia" : "pesadas sin liquidar cambian"}. ` +
-        (impact.settledRecords > 0
-          ? `${impact.settledRecords} ${impact.settledRecords === 1 ? "pesada ya liquidada no cambia" : "pesadas ya liquidadas no cambian"}. `
-          : "Lo ya liquidado no cambia. ") +
-        (impact.overriddenByPerson > 0
-          ? `${impact.overriddenByPerson} ${impact.overriddenByPerson === 1 ? "pesada es" : "pesadas son"} de personas con precio propio, que manda.`
-          : "")
-    : null;
+  const impactText = impact ? specialImpactSentence(impact) : null;
 
   async function save() {
     setSaveError(null);
@@ -452,11 +462,9 @@ function SpecialPriceDialog({
     }
   }
 
-  const title = ending
-    ? `Quitar el precio especial de ${targetName}`
-    : editing.targetId
-      ? `Cambiar el precio de ${targetName}`
-      : "Nuevo precio especial";
+  let title = "Nuevo precio especial";
+  if (ending) title = `Quitar el precio especial de ${targetName}`;
+  else if (editing.targetId) title = `Cambiar el precio de ${targetName}`;
 
   return (
     <Dialog open onClose={onClose} fullScreen={phone} fullWidth maxWidth="sm">

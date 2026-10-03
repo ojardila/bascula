@@ -65,6 +65,12 @@ export const goTo = {
   assign: (href: string) => window.location.assign(href),
 };
 
+/** One of three looks for a row: finished, in progress, or still waiting. */
+function byState<T>(done: boolean, active: boolean, ifDone: T, ifActive: T, ifWaiting: T): T {
+  if (done) return ifDone;
+  return active ? ifActive : ifWaiting;
+}
+
 export function ProvisionProgress({
   slug,
   pollMs = POLL_MS,
@@ -321,16 +327,14 @@ export function ProvisionProgress({
                   py: 1.5,
                   borderRadius: 2,
                   border: 1,
-                  borderColor: done
-                    ? "success.light"
-                    : active
-                      ? "primary.main"
-                      : "divider",
-                  bgcolor: done
-                    ? "rgba(46,125,50,.06)"
-                    : active
-                      ? "rgba(25,118,210,.06)"
-                      : "transparent",
+                  borderColor: byState(done, active, "success.light", "primary.main", "divider"),
+                  bgcolor: byState(
+                    done,
+                    active,
+                    "rgba(46,125,50,.06)",
+                    "rgba(25,118,210,.06)",
+                    "transparent",
+                  ),
                 }}
               >
                 <Box
@@ -341,11 +345,11 @@ export function ProvisionProgress({
                     flexShrink: 0,
                   }}
                 >
-                  {done ? (
-                    <CheckCircle color="success" sx={{ fontSize: 32 }} />
-                  ) : active ? (
-                    <HourglassTop color="primary" sx={{ fontSize: 30 }} />
-                  ) : (
+                  {byState(
+                    done,
+                    active,
+                    <CheckCircle color="success" sx={{ fontSize: 32 }} />,
+                    <HourglassTop color="primary" sx={{ fontSize: 30 }} />,
                     <Box
                       sx={{
                         width: 14,
@@ -354,7 +358,7 @@ export function ProvisionProgress({
                         border: 2,
                         borderColor: "text.disabled",
                       }}
-                    />
+                    />,
                   )}
                 </Box>
                 <Typography
@@ -365,7 +369,7 @@ export function ProvisionProgress({
                   }}
                 >
                   {stage.label}
-                  {done ? " — listo" : active ? " — en curso" : ""}
+                  {byState(done, active, " — listo", " — en curso", "")}
                 </Typography>
               </Stack>
             );
@@ -394,22 +398,18 @@ export function ProvisionProgress({
                   p: 2,
                   borderRadius: 2,
                   border: 1,
-                  borderColor: done
-                    ? "success.light"
-                    : current
-                      ? "primary.light"
-                      : "divider",
+                  borderColor: byState(done, current, "success.light", "primary.light", "divider"),
                   bgcolor: done ? "rgba(46,125,50,.06)" : "transparent",
                 }}
               >
                 <Box
                   sx={{ width: 40, display: "flex", justifyContent: "center" }}
                 >
-                  {done ? (
-                    <CheckCircle color="success" sx={{ fontSize: 36 }} />
-                  ) : current ? (
-                    <CircularProgress size={30} />
-                  ) : (
+                  {byState(
+                    done,
+                    current,
+                    <CheckCircle color="success" sx={{ fontSize: 36 }} />,
+                    <CircularProgress size={30} />,
                     <Typography
                       sx={{
                         fontSize: "1.3rem",
@@ -418,7 +418,7 @@ export function ProvisionProgress({
                       }}
                     >
                       {i + 1}
-                    </Typography>
+                    </Typography>,
                   )}
                 </Box>
                 <Box>
