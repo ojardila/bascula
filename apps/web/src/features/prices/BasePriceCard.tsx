@@ -31,6 +31,7 @@ import { api } from "../../api/endpoints";
 import { messageFor } from "../../api/errors";
 import { addDays, parseDay } from "../../lib/dates";
 import { formatMoney, parseMoneyInput } from "../../lib/money";
+import { count } from "../../lib/plural";
 import type { WireBasePriceImpact, WireBasePriceState } from "../../api/wire";
 import { useTour, useTourAction } from "../onboarding/TourContext";
 
@@ -62,6 +63,27 @@ function ownPriceWeeksText(weeks: number): string {
   return weeks === 1
     ? " Una semana tiene su propio precio y lo conserva."
     : ` ${weeks} semanas tienen su propio precio y lo conservan.`;
+}
+
+/** What saving the new price does to the records already on the books. */
+function impactSentence(impact: WireBasePriceImpact): string {
+  if (impact.unsettledRecords === 0 && impact.settledRecords === 0) {
+    return "Todavía no hay pesadas desde ese día: el precio empieza a contar con las próximas.";
+  }
+  const unsettled = `Desde ese lunes, ${count(impact.unsettledRecords, "pesada sin liquidar toma", "pesadas sin liquidar toman")} este precio. `;
+  const settled =
+    impact.settledRecords > 0
+      ? `${count(impact.settledRecords, "pesada ya liquidada no cambia", "pesadas ya liquidadas no cambian")}.`
+      : "Lo ya liquidado no cambia.";
+  const ownWeeks =
+    impact.weeksWithOwnPrice > 0 ? ownPriceWeeksText(impact.weeksWithOwnPrice) : "";
+  return unsettled + settled + ownWeeks;
+}
+
+/** «Desde el principio» · «Empieza el lunes …» · «Desde el lunes …». */
+function validFromText(validFrom: string, future: boolean): string {
+  if (validFrom === SINCE_ALWAYS) return "Desde el principio";
+  return `${future ? "Empieza el" : "Desde el"} ${formatMondayLong(validFrom)}`;
 }
 
 function groupPesos(digits: string): string {
@@ -173,17 +195,7 @@ export function BasePriceCard({ onSaved }: Readonly<{ onSaved?: () => void }>) {
     return save();
   });
 
-  const impactText = impact
-    ? impact.unsettledRecords === 0 && impact.settledRecords === 0
-      ? "Todavía no hay pesadas desde ese día: el precio empieza a contar con las próximas."
-      : `Desde ese lunes, ${impact.unsettledRecords} ${impact.unsettledRecords === 1 ? "pesada sin liquidar toma" : "pesadas sin liquidar toman"} este precio. ` +
-        (impact.settledRecords > 0
-          ? `${impact.settledRecords} ${impact.settledRecords === 1 ? "pesada ya liquidada no cambia" : "pesadas ya liquidadas no cambian"}.`
-          : "Lo ya liquidado no cambia.") +
-        (impact.weeksWithOwnPrice > 0
-          ? ownPriceWeeksText(impact.weeksWithOwnPrice)
-          : "")
-    : null;
+  const impactText = impact ? impactSentence(impact) : null;
 
   return (
     <Card sx={{ mb: 3, borderRadius: 4 }}>
@@ -400,9 +412,7 @@ export function BasePriceCard({ onSaved }: Readonly<{ onSaved?: () => void }>) {
                       {formatMoney(p.priceCents)}
                     </Typography>
                     <Typography sx={{ fontSize: 16, flex: 1 }}>
-                      {p.validFrom === SINCE_ALWAYS
-                        ? "Desde el principio"
-                        : `${future ? "Empieza el" : "Desde el"} ${formatMondayLong(p.validFrom)}`}
+                      {validFromText(p.validFrom, future)}
                     </Typography>
                     {inForce && (
                       <Chip size="small" color="primary" label="Se paga hoy" />
