@@ -512,6 +512,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			ClientID:   claims.ClientID,
 			MCPOnly:    claims.ForMCPOnly(),
 			ReadOnly:   claims.ForMCPOnly() && claims.ReadOnly(),
+			SessionID:  claims.SessionID,
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})

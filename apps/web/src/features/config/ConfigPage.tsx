@@ -22,6 +22,7 @@ import { api } from "../../api/endpoints";
 import { ConnectionsCard } from "./ConnectionsCard";
 import { McpActivityCard } from "./McpActivityCard";
 import { PasskeysCard } from "./PasskeysCard";
+import { SessionsCard } from "./SessionsCard";
 import { DemoDataCard } from "./DemoDataCard";
 import { ExportCard } from "./ExportCard";
 import { ChangePasswordCard } from "./ChangePasswordCard";
@@ -112,6 +113,9 @@ export function ConfigPage() {
         )}
         <Grid size={{ xs: 12 }}>
           <PasskeysCard />
+        </Grid>
+        <Grid size={{ xs: 12 }}>
+          <SessionsCard />
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
@@ -310,7 +314,6 @@ export function ConfigPage() {
               <Stack spacing={1.5} sx={{ mt: 2 }}>
                 {[
                   ["Precios por actividad con historial", "en Actividades"],
-                  ["Dispositivos y sesiones", "más adelante"],
                   ["Bitácora de auditoría", "más adelante"],
                 ].map(([k, v]) => (
                   <Stack

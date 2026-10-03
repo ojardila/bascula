@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -666,7 +667,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID())
+	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID(), store.SignInPassword)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -676,16 +677,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // issueSession mints the pair: a short access token carrying sub, farm_id and
 // role, and an opaque refresh token whose sha256 is all Postgres keeps.
+//
+// method is how the person got in (store.SignInPassword, …); it is recorded
+// on the family so «Sesiones abiertas» can show it.
 func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string) (*sessionResponse, error) {
-	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, nil, nil)
+	m *store.Membership, deviceID, familyID, method string) (*sessionResponse, error) {
+	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, &method, nil, nil)
 }
 
 // issueSessionFor is issueSession for a family an OAuth client (an MCP
 // connector) holds: oauthClientID tags every token in it, which is what the
 // «Conexiones» block in Configuración lists and revokes.
+//
+// method is nil only on a rotation of a family from before methods were
+// recorded; rotation passes the family's own forward.
 func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string, oauthClientID, scope *string) (*sessionResponse, error) {
+	m *store.Membership, deviceID, familyID string, method, oauthClientID, scope *string) (*sessionResponse, error) {
 
 	// A family an assistant holds gets tokens for /mcp only; see
 	// auth.AudienceMCP. The refresh grant keeps the family, so it keeps this.
@@ -698,7 +705,7 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		}
 		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, granted, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	} else {
-		access, err = s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+		access, err = s.signer.IssueSession(familyID, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	}
 	if err != nil {
 		return nil, domain.Internal("could not issue the access token").WithCause(err)
@@ -715,6 +722,7 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ID: newID(), FamilyID: familyID, UserID: user.ID, FarmID: m.FarmID,
 		DeviceID: device, ExpiresAt: time.Now().Add(auth.RefreshTTL),
 		OAuthClientID: oauthClientID, Scope: scope,
+		SignInMethod: method, UserAgent: requestUserAgent(r),
 	}, hash); err != nil {
 		return nil, err
 	}
@@ -723,6 +731,26 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ExpiresIn: int(auth.AccessTTL.Seconds()),
 		FarmID:    m.FarmID, FarmName: m.FarmName, Slug: m.FarmSlug, Role: m.Role,
 	}, nil
+}
+
+// maxUserAgent is what is kept of a User-Agent header (migration 00043).
+const maxUserAgent = 300
+
+// requestUserAgent is the request's User-Agent, cut to maxUserAgent bytes on
+// a rune boundary, or nil when there is none.
+func requestUserAgent(r *http.Request) *string {
+	ua := strings.TrimSpace(r.UserAgent())
+	if ua == "" {
+		return nil
+	}
+	if len(ua) > maxUserAgent {
+		cut := maxUserAgent
+		for cut > 0 && !utf8.RuneStart(ua[cut]) {
+			cut--
+		}
+		ua = ua[:cut]
+	}
+	return &ua
 }
 
 // loginFarmPin resolves a farm from the request Host (or farmSlug) if that
@@ -884,7 +912,7 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, tok.OAuthClientID, tok.Scope)
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, tok.SignInMethod, tok.OAuthClientID, tok.Scope)
 	if err != nil {
 		return nil, err
 	}

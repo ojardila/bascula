@@ -666,6 +666,80 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/me/sessions:
+    get:
+      tags: [auth]
+      operationId: listSessions
+      summary: The caller's open sessions on this farm
+      description: |
+        Every live sign-in of the caller on this farm (a refresh-token
+        family opened on a browser or a phone), most recently used first.
+        `current` marks the session of the token making the request.
+        Sessions an assistant holds are not listed here; see
+        `listMcpConnections`. Another member's sessions are never listed.
+      x-action: me.sessions.read
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: Most recently used first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me/sessions/close-others:
+    post:
+      tags: [auth]
+      operationId: closeOtherSessions
+      summary: Close every other session of the caller on this farm
+      description: |
+        Revokes every open session of the caller on this farm except the one
+        making the request. Assistants' connections are left alone. A token
+        minted before sessions were named answers TOKEN_EXPIRED, so the
+        client refreshes and asks again.
+      x-action: me.sessions.write
+      x-roles: [owner, admin, weigher]
+      responses:
+        "200":
+          description: Closed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [closed]
+                properties:
+                  closed: { type: integer, minimum: 0, description: How many sessions were closed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/me/sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [auth]
+      operationId: closeSession
+      summary: Close one of the caller's sessions
+      description: |
+        The refresh token stops working at once; an access token already
+        handed out expires on its own within 15 minutes.
+      x-action: me.sessions.write
+      x-roles: [owner, admin, weigher]
+      responses:
+        "204": { description: Closed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/me/password:
     post:
       tags: [auth]
@@ -8061,6 +8135,24 @@ components:
     TourStatus:
       type: string
       enum: [active, later, dismissed, done]
+
+    UserSession:
+      type: object
+      required: [id, method, userAgent, createdAt, lastUsedAt, current]
+      properties:
+        id: { type: string, format: uuid }
+        method:
+          type: string
+          enum: [password, passkey, unknown]
+          description: |
+            How the person signed in. `unknown` for a session opened before
+            the method was recorded.
+        userAgent:
+          type: string
+          description: The browser or app that last used the session; empty when unknown.
+        createdAt: { type: string, format: date-time, description: When the person signed in. }
+        lastUsedAt: { type: string, format: date-time, description: Last refresh, so accurate to about 15 minutes. }
+        current: { type: boolean, description: The session of the token making the request. }
 
     McpConnection:
       type: object

@@ -125,7 +125,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	session, err := s.issueSession(r, tx, user, m, req.DeviceID, newID())
+	session, err := s.issueSession(r, tx, user, m, req.DeviceID, newID(), store.SignInPassword)
 	if err != nil {
 		writeError(w, r, err)
 		return

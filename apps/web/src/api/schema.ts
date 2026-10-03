@@ -377,6 +377,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's open sessions on this farm
+         * @description Every live sign-in of the caller on this farm (a refresh-token
+         *     family opened on a browser or a phone), most recently used first.
+         *     `current` marks the session of the token making the request.
+         *     Sessions an assistant holds are not listed here; see
+         *     `listMcpConnections`. Another member's sessions are never listed.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/sessions/close-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close every other session of the caller on this farm
+         * @description Revokes every open session of the caller on this farm except the one
+         *     making the request. Assistants' connections are left alone. A token
+         *     minted before sessions were named answers TOKEN_EXPIRED, so the
+         *     client refreshes and asks again.
+         */
+        post: operations["closeOtherSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Close one of the caller's sessions
+         * @description The refresh token stops working at once; an access token already
+         *     handed out expires on its own within 15 minutes.
+         */
+        delete: operations["closeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/password": {
         parameters: {
             query?: never;
@@ -5327,6 +5397,30 @@ export interface components {
         };
         /** @enum {string} */
         TourStatus: "active" | "later" | "dismissed" | "done";
+        UserSession: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description How the person signed in. `unknown` for a session opened before
+             *     the method was recorded.
+             * @enum {string}
+             */
+            method: "password" | "passkey" | "unknown";
+            /** @description The browser or app that last used the session; empty when unknown. */
+            userAgent: string;
+            /**
+             * Format: date-time
+             * @description When the person signed in.
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description Last refresh
+             */
+            lastUsedAt: string;
+            /** @description The session of the token making the request. */
+            current: boolean;
+        };
         McpConnection: {
             /** Format: uuid */
             id: string;
@@ -7673,6 +7767,78 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Most recently used first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["UserSession"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    closeOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Closed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description How many sessions were closed. */
+                        closed: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    closeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Closed. */
             204: {
                 headers: {
                     [name: string]: unknown;
