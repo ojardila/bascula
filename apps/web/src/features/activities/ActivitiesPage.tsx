@@ -92,8 +92,8 @@ export function ActivitiesPage() {
         key: "rate",
         header: "Precio vigente",
         align: "right",
-        render: (a) =>
-          a.rateSource === "weekly_price" ? (
+        render: (a) => {
+          if (a.rateSource === "weekly_price") {
             // Not a price of the activity at all: it comes from the week, and
             // it is frozen at settlement. Saying "$800" here would be a lie
             // with a number in it. Now it also says where the price DOES live,
@@ -104,20 +104,22 @@ export function ActivitiesPage() {
                already in print wins. The week's price still exists — it is
                what the owner sets on Mondays — but that is the name of the
                PRICE, not of the state. */
-            <Tooltip
-              title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}
-            >
-              <Chip
-                size="small"
-                color="warning"
-                variant="outlined"
-                label={PROVISIONAL}
-                sx={{ cursor: "help" }}
-              />
-            </Tooltip>
-          ) : a.defaultRateCents === undefined ? (
-            "—"
-          ) : (
+            return (
+              <Tooltip
+                title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}
+              >
+                <Chip
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  label={PROVISIONAL}
+                  sx={{ cursor: "help" }}
+                />
+              </Tooltip>
+            );
+          }
+          if (a.defaultRateCents === undefined) return "—";
+          return (
             <Stack
               sx={{
                 alignItems: "flex-end",
@@ -135,7 +137,8 @@ export function ActivitiesPage() {
                 </Typography>
               )}
             </Stack>
-          ),
+          );
+        },
       });
     }
     return cols;
