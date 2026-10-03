@@ -531,9 +531,16 @@ export function PlotFormPage() {
                     <Autocomplete
                       value={row.variety}
                       disabled={!row.cropType}
+                      // The server's variety catalogue is flat (`{id, name}`,
+                      // no crop type), so `cropTypeId` is never set and every
+                      // variety is offered. Requiring a match here hid every
+                      // existing variety. The day the server scopes them, the
+                      // ones tagged with another crop type drop out.
                       options={varieties.filter(
                         (v) =>
-                          !row.cropType || v.cropTypeId === row.cropType.id,
+                          !row.cropType ||
+                          v.cropTypeId === undefined ||
+                          v.cropTypeId === row.cropType.id,
                       )}
                       getOptionLabel={(o) => o.name}
                       isOptionEqualToValue={(a, b) => a.id === b.id}

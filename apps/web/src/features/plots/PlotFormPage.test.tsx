@@ -139,14 +139,36 @@ describe("creating a plot", () => {
     await user.type(types[1], "Aguacate Hass");
     await user.click(await screen.findByRole("option", { name: "Agregar «Aguacate Hass»" }));
     const varieties = screen.getAllByLabelText(/Variedad/);
-    await user.type(varieties[1], "Lorena");
-    await user.click(await screen.findByRole("option", { name: "Agregar «Lorena»" }));
+    await user.type(varieties[1], "Méndez");
+    await user.click(await screen.findByRole("option", { name: "Agregar «Méndez»" }));
     const areas = screen.getAllByLabelText(/Área \(ha\)/);
     await user.type(areas[1], "1,5");
     await user.click(screen.getByRole("button", { name: `Guardar ${PLOT.one}` }));
     expect(await screen.findByText("detalle del lote")).toBeInTheDocument();
     expect(tenant().cropTypes.some((c) => c.name === "Aguacate Hass")).toBe(true);
-    expect(tenant().varieties.some((v) => v.name === "Lorena")).toBe(true);
+    expect(tenant().varieties.some((v) => v.name === "Méndez")).toBe(true);
+  }, 30000);
+
+  it("offers the varieties already in the catalogue", async () => {
+    // The server's variety catalogue carries no crop type, and the picker
+    // used to require one, so no existing variety was ever offered.
+    const user = userEvent.setup();
+    const before = tenant().varieties.length;
+    renderForm();
+    await fillStep1(user, "Varietal");
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByDisplayValue("Café");
+    const variety = screen.getAllByLabelText(/Variedad/)[0];
+    await user.click(variety);
+    await user.type(variety, "Casti");
+    await user.click(await screen.findByRole("option", { name: "Castillo" }));
+    expect(screen.queryByRole("option", { name: /Agregar/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `Guardar ${PLOT.one}` }));
+    expect(await screen.findByText("detalle del lote")).toBeInTheDocument();
+    // Picked, not typed in again: the catalogue did not grow.
+    expect(tenant().varieties).toHaveLength(before);
+    const saved = tenant().plots.find((p) => p.name === "Varietal")!;
+    expect(JSON.stringify(saved)).toContain("0192f3a0-0003-7000-8000-000000000001");
   }, 30000);
 
   it("shows the server's error and stays on the form", async () => {
