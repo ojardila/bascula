@@ -5,6 +5,8 @@ metadata:
   namespace: bascula
 spec:
   template:
+    # Strategic-merge patch that only sets an env var; the securityContext (runAsNonRoot) is in manifests/base/api.yaml.
+    # nosemgrep: yaml.kubernetes.security.run-as-non-root.run-as-non-root
     spec:
       containers:
         - name: api

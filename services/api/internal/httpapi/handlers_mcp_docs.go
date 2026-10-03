@@ -160,5 +160,7 @@ func (s *Server) handleMCPDocsPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
+	// Static page; the only dynamic part is json.Marshal output, which escapes <, > and &.
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 	_, _ = w.Write([]byte(page))
 }

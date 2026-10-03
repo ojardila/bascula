@@ -358,6 +358,8 @@ func TestMCPToolCallsDoNotStarveThePool(t *testing.T) {
 	f := h.signupFarm(t, "Finca pool MCP", 250000)
 	srv := h.serverWithSigner(t, func(cfg *httpapi.Config) { cfg.MCPCallsPerUserPerMinute = 0 })
 	const n = 40
+	// wg.Add and wg.Wait run in the same goroutine, Add before each spawn, so Wait counts every call.
+	// nosemgrep: trailofbits.go.waitgroup-add-called-inside-goroutine.waitgroup-add-called-inside-goroutine
 	var wg sync.WaitGroup
 	errs := make(chan string, n)
 	done := make(chan struct{})

@@ -70,6 +70,8 @@ export function announceApiMode(): void {
     ? "background:#8a6d00;color:#fff;padding:2px 6px;border-radius:3px"
     : "background:#1b5e20;color:#fff;padding:2px 6px;border-radius:3px";
 
+  // mode.label and mode.target come from build-time config, not user input; %c is the intended style format.
+  // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
   console.info(`%cBáscula · ${mode.label}%c → ${mode.target}`, style, "");
 
   if (USE_MOCKS && import.meta.env.VITE_API_URL) {

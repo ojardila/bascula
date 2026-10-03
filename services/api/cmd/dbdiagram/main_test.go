@@ -31,6 +31,8 @@ func scratchDSN(t *testing.T) string {
 		t.Fatalf("connect: %v", err)
 	}
 	defer boot.Close(ctx)
+	// Test-only DDL: CREATE/DROP DATABASE cannot take bind parameters, and the name is a generated uuid prefix.
+	// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
 	if _, err := boot.Exec(ctx, "CREATE DATABASE "+name); err != nil {
 		t.Fatalf("create database: %v", err)
 	}
@@ -40,6 +42,8 @@ func scratchDSN(t *testing.T) string {
 			return
 		}
 		defer c.Close(context.Background())
+		// Test-only DDL: CREATE/DROP DATABASE cannot take bind parameters, and the name is a generated uuid prefix.
+		// nosemgrep: go.lang.security.audit.sqli.pgx-sqli.pgx-sqli
 		_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
 	})
 	u, err := url.Parse(base)

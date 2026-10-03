@@ -49,6 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Excluded rule: header-redefinition is a generic (text) rule that
+      # pairs any two add_header lines in apps/web/nginx.conf. That file has
+      # no server-level add_header (every location includes
+      # security-headers.conf), and nosemgrep comments do not work in
+      # generic mode: the rule matches the comment text itself.
       - name: Scan
         run: |
           docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE" \
@@ -62,6 +67,7 @@ jobs:
               --config p/dockerfile \
               --config p/kubernetes \
               --config p/github-actions \
+              --exclude-rule generic.nginx.security.header-redefinition.header-redefinition \
               --metrics=off \
               --json-output=semgrep.json \
               --sarif-output=semgrep.sarif
