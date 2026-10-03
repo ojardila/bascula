@@ -18,7 +18,8 @@
 # layer cache of `deps` alone (images.yml), because it is the only stage a
 # later build can reuse: the sources (apps/web carries ~60 MB of marketing
 # video) and the bundle are new on every source key, and an image is built
-# once per key.
+# once per key. Keep `deps` free of anything but the package manifests and
+# the lockfile, or that cache stops being reused.
 FROM node:26-alpine AS deps
 WORKDIR /src
 
