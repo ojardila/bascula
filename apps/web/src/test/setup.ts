@@ -3,8 +3,12 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { resetStoreForTests } from "../offline/store";
 import { afterAll, afterEach, beforeAll } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { server } from "../mocks/node";
+
+// findBy* waits 1s by default. The coverage run (SonarQube workflow) is several
+// times slower, and long flows like the crew payroll ran out of time there.
+configure({ asyncUtilTimeout: 5000 });
 
 // The same handlers the browser uses, so a test cannot pass against a mock the
 // app never sees.

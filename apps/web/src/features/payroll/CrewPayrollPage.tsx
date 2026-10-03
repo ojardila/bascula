@@ -245,7 +245,7 @@ export function CrewPayrollPage() {
       "payroll-settle",
       approvals
         .map((a) => `${a.workerId}:${a.grossCents}`)
-        .sort()
+        .sort((x, y) => x.localeCompare(y))
         .join("+"),
     ].join("|");
 
@@ -337,7 +337,7 @@ export function CrewPayrollPage() {
       method,
       approvals
         .map((a) => `${a.workerId}:${a.amountCents}`)
-        .sort()
+        .sort((x, y) => x.localeCompare(y))
         .join("+"),
     ].join("|");
 

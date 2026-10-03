@@ -483,7 +483,7 @@ export function balanceOf(t: Tenant, workerId: string): WireBalance {
   const rows = t.ledger.filter((l) => l.workerId === workerId);
   const sum = (pred: (l: WireLedgerEntry) => boolean) =>
     rows.filter(pred).reduce((a, l) => a + l.amountCents, 0);
-  const days = rows.map((l) => l.date).sort();
+  const days = rows.map((l) => l.date).sort((a, b) => a.localeCompare(b));
   return {
     workerId,
     earnedCents: sum((l) => l.kind === "devengo" || (l.kind === "reverso" && l.amountCents < 0)),

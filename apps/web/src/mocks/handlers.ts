@@ -1165,7 +1165,7 @@ export const handlers = [
      * that modelled the imaginary email is what let the console ship a screen
      * promising a letter nobody sends.
      */
-    const temporary = existing ? "" : `temporal-${Math.random().toString(36).slice(2, 10)}`;
+    const temporary = existing ? "" : `temporal-${crypto.randomUUID().slice(0, 8)}`;
     if (!existing) {
       db.users.push({
         id: userId,
@@ -2459,7 +2459,7 @@ export const handlers = [
     const bad = checkMonday(monday);
     if (bad) return bad;
     const t = g.p.tenant;
-    const until = db.basePricesOf(t).map((p) => p.validFrom).filter((d) => d > monday).sort()[0] ?? null;
+    const until = db.basePricesOf(t).map((p) => p.validFrom).filter((d) => d > monday).sort((a, b) => a.localeCompare(b))[0] ?? null;
     const inRange = (w: string) => w >= monday && (until === null || w < until);
     const own = new Set(t.weekPrices.map((p) => p.weekStart));
     let unsettled = 0;
@@ -2524,7 +2524,7 @@ export const handlers = [
     const t = g.p.tenant;
     const until = (t.specialPrices ?? [])
       .filter((p) => p.kind === target.kind && p.targetId === target.id && p.validFrom > monday)
-      .map((p) => p.validFrom).sort()[0] ?? null;
+      .map((p) => p.validFrom).sort((a, b) => a.localeCompare(b))[0] ?? null;
     let unsettled = 0;
     let settled = 0;
     let byPerson = 0;
@@ -3925,7 +3925,7 @@ export const handlers = [
       .map(([plotId, v]) => ({ plotId, name: t.plots.find((p) => p.id === plotId)?.name ?? "", ...v }))
       .sort((a, b) => b.kg - a.kg || a.name.localeCompare(b.name));
 
-    const lastDay = mine.map((r) => db.dayOf(r.dateFrom)).sort().pop() ?? null;
+    const lastDay = mine.map((r) => db.dayOf(r.dateFrom)).sort((a, b) => a.localeCompare(b)).pop() ?? null;
     const n = weekRows.length;
     return HttpResponse.json({
       scope: "harvest",
@@ -4046,7 +4046,7 @@ export const handlers = [
         employeeId,
         name: nameOf(employeeId),
         tag: tagOf(employeeId),
-        lastRecordOn: rows.filter((r) => r.workerId === employeeId).map(dayOfR).sort().pop() as string,
+        lastRecordOn: rows.filter((r) => r.workerId === employeeId).map(dayOfR).sort((a, b) => a.localeCompare(b)).pop() as string,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -4136,7 +4136,7 @@ export const handlers = [
     if (!plot || !crop) return notFound();
 
     const rows = harvestOf(t).filter((r) => (r.plotCropIds ?? []).includes(id));
-    const days = rows.map((r) => db.dayOf(r.dateFrom)).sort();
+    const days = rows.map((r) => db.dayOf(r.dateFrom)).sort((a, b) => a.localeCompare(b));
     const totals = totalsOf(t, rows);
     const byWeek = [...groupBy(rows, (r) => db.dayOf(r.weekStart)).entries()]
       .map(([weekStart, list]) => ({
