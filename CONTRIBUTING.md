@@ -25,3 +25,14 @@ before merging; see [README.md](README.md#ci-and-deploy) for what it runs.
   (`applications/bascula-tenants.yaml` in the gitops repo), so a migration runs
   on **every farm** when the release is approved, not only on
   `bascula.engp.io`. Write it to be safe on all of them.
+
+## Code owners
+
+Some paths need a review from [@ojardila](https://github.com/ojardila)
+before they can merge: migrations, auth, tenant, the HTTP mux, every
+`manifests/` file, every workflow under `.github/`, and the security policy
+(`SECURITY.md`, `docs/mcp/security.md`, `docs/audits.md`, `docs/decisions.md`).
+[`.github/CODEOWNERS`](.github/CODEOWNERS) is the authoritative list; branch
+protection on `master` is what enforces it. A reviewer who sees "Code owners
+have not reviewed yet" at the bottom of the PR should wait for Oscar even
+if they have otherwise approved the change.
