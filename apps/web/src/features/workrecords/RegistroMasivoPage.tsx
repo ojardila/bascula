@@ -336,7 +336,7 @@ export function RegistroMasivoPage() {
 
   const plot = plots.find((p) => p.id === plotId) ?? null;
   const loadedWeek =
-    weekRecords && weekRecords.monday === monday ? weekRecords.records : null;
+    weekRecords?.monday === monday ? weekRecords.records : null;
   const dayRecords = loadedWeek ? recordsOn(loadedWeek, day) : null;
   const { settledWorkers, weekSettled } = weekLocks(loadedWeek ?? []);
   const locked = (workerId: string) =>

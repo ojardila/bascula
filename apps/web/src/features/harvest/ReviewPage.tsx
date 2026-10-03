@@ -104,7 +104,7 @@ export function ReviewPage() {
         </Stack>
       )}
 
-      {data && data.items.length === 0 && (
+      {data?.items.length === 0 && (
         <Alert severity="success" icon={<CheckCircleOutlineIcon />}>
           Ninguna pesada del periodo levanta sospecha con estas cinco reglas.
           Eso no garantiza que todas sean exactas — solo que ninguna se sale de

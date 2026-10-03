@@ -58,7 +58,7 @@ export function invalidateRefs(): void {
  * same reason.
  */
 export function loadRefs(): Promise<Refs> {
-  if (!cache) cache = fetchRefs();
+  cache ??= fetchRefs();
   return cache;
 }
 

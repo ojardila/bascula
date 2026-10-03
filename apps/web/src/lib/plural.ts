@@ -48,6 +48,6 @@ export function unitLabel(n: number, unit: string | null | undefined): string {
   if (SYMBOLS.has(lower)) return lower;
   if (n === 1 || n === -1) return lower;
   if (/[aeiouáéíóú]$/.test(lower)) return `${lower}s`;
-  if (/z$/.test(lower)) return `${lower.slice(0, -1)}ces`;
+  if (lower.endsWith("z")) return `${lower.slice(0, -1)}ces`;
   return `${lower}es`;
 }

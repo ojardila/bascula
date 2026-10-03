@@ -93,7 +93,7 @@ export function WorkerPerformance({ workerId }: Readonly<{ workerId: string }>) 
           </Alert>
         )}
         {!error && !data && <Loading />}
-        {data && data.lastRecordOn === null && <Empty />}
+        {data?.lastRecordOn === null && <Empty />}
         {data && data.lastRecordOn !== null && (
           <Body
             today={data.today}

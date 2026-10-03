@@ -455,14 +455,14 @@ export function WorkRecordFormPage() {
               onChange={(_, v) =>
                 setDraft((d) => {
                   const ids = v.map((p) => p.id);
-                  const stillValid = v.flatMap((p) => p.crops.map((c) => c.id));
+                  const stillValid = new Set(v.flatMap((p) => p.crops.map((c) => c.id)));
                   return {
                     ...d,
                     plotIds: ids,
                     // Dropping a plot has to drop its crops, or the record
                     // ends up pointing at a crop of a plot it does not touch.
                     plotCropIds: d.plotCropIds.filter((c) =>
-                      stillValid.includes(c),
+                      stillValid.has(c),
                     ),
                   };
                 })

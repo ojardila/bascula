@@ -192,7 +192,7 @@ export function PasskeysCard() {
             ))}
           </Stack>
         )}
-        {data && data.length === 0 && (
+        {data?.length === 0 && (
           <Typography
             sx={{
               color: "text.secondary",

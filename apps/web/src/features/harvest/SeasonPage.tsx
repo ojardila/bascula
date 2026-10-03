@@ -49,7 +49,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Kg, Stat, Value } from "./Figures";
 import { Curve, RowBar, WeekBars, type CurvePoint } from "./charts";
 import { NOT_ENOUGH_SEASON } from "./text";
-import { foldTotals, kgForDrawing, valueState } from "./totals";
+import { foldTotals, kgForDrawing } from "./totals";
 import { PICKER } from "../../lib/vocab";
 
 export function SeasonPage() {
@@ -583,4 +583,4 @@ function Verdict({
 }
 
 /** Kept so a caller can reason about a value without importing the module. */
-export { valueState };
+export { valueState } from "./totals";
