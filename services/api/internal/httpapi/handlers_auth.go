@@ -678,14 +678,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // role, and an opaque refresh token whose sha256 is all Postgres keeps.
 func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 	m *store.Membership, deviceID, familyID string) (*sessionResponse, error) {
-	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, nil, nil)
+	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, oauthGrant{})
+}
+
+// oauthGrant is the OAuth client (an MCP connector) that holds a refresh
+// family, and the scope it was granted. Both nil for an ordinary session.
+type oauthGrant struct {
+	ClientID *string
+	Scope    *string
 }
 
 // issueSessionFor is issueSession for a family an OAuth client (an MCP
-// connector) holds: oauthClientID tags every token in it, which is what the
+// connector) holds: grant.ClientID tags every token in it, which is what the
 // «Conexiones» block in Configuración lists and revokes.
 func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string, oauthClientID, scope *string) (*sessionResponse, error) {
+	m *store.Membership, deviceID, familyID string, grant oauthGrant) (*sessionResponse, error) {
+	oauthClientID, scope := grant.ClientID, grant.Scope
 
 	// A family an assistant holds gets tokens for /mcp only; see
 	// auth.AudienceMCP. The refresh grant keeps the family, so it keeps this.
@@ -696,7 +704,9 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		if scope != nil {
 			granted = *scope
 		}
-		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, granted, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, granted, auth.TokenSubject{
+			UserID: user.ID, FarmID: m.FarmID, Role: m.Role, DeviceID: deviceID, Superadmin: user.IsSuperadmin,
+		})
 	} else {
 		access, err = s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
 	}
@@ -884,7 +894,7 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, tok.OAuthClientID, tok.Scope)
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, oauthGrant{ClientID: tok.OAuthClientID, Scope: tok.Scope})
 	if err != nil {
 		return nil, err
 	}
