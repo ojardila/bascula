@@ -121,6 +121,7 @@ import {
   type SettleApproval,
   type UndoResult,
 } from "./crew";
+import { count } from "../../lib/plural";
 
 /** How the difference explanation writes its figures and dates. */
 const FMT = { money: formatMoney, week: formatDayLong };
@@ -132,6 +133,10 @@ const fold = (s: string) =>
     .replace(/\p{Diacritic}/gu, "");
 
 type Step = "settle" | "pay";
+
+function confirmButtonLabel(settle: boolean, payTotal: number): string {
+  return settle ? "Liquidar" : `Pagar ${formatMoney(payTotal)}`;
+}
 
 export function CrewPayrollPage() {
   const navigate = useNavigate();
@@ -1088,8 +1093,8 @@ export function CrewPayrollPage() {
       >
         <DialogTitle>
           {confirm === "settle"
-            ? `Liquidar a ${pickedSettle.length} ${pickedSettle.length === 1 ? "persona" : "personas"}`
-            : `Entregar ${formatMoney(payTotal)} a ${pickedPay.length} ${pickedPay.length === 1 ? "persona" : "personas"}`}
+            ? `Liquidar a ${count(pickedSettle.length, "persona", "personas")}`
+            : `Entregar ${formatMoney(payTotal)} a ${count(pickedPay.length, "persona", "personas")}`}
         </DialogTitle>
         <DialogContent dividers>
           <DialogContentText component="div" sx={{ mb: 2 }}>
@@ -1181,9 +1186,7 @@ export function CrewPayrollPage() {
           >
             {phase === "checking"
               ? "Comprobando que nada se movió…"
-              : confirm === "settle"
-                ? "Liquidar"
-                : `Pagar ${formatMoney(payTotal)}`}
+              : confirmButtonLabel(confirm === "settle", payTotal)}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1274,6 +1277,12 @@ const STATUS_LABEL: Record<RunRow["status"], string> = {
   done: "entró",
   refused: "no entró",
   skipped: "sin intentar",
+};
+
+const STATUS_COLOR: Record<RunRow["status"], "success" | "error" | "default"> = {
+  done: "success",
+  refused: "error",
+  skipped: "default",
 };
 
 function RunReport({
@@ -1402,13 +1411,7 @@ function RunReport({
                   <Chip
                     size="small"
                     variant="outlined"
-                    color={
-                      r.status === "done"
-                        ? "success"
-                        : r.status === "refused"
-                          ? "error"
-                          : "default"
-                    }
+                    color={STATUS_COLOR[r.status]}
                     label={STATUS_LABEL[r.status]}
                   />
                   {r.reason && (

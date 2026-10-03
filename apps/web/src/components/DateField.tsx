@@ -81,6 +81,18 @@ export interface DateFieldProps {
   name?: string;
 }
 
+/** What the field says under itself when the screen has nothing more urgent. */
+function dateEcho(invalid: boolean, outOfRange: boolean, typed: string | null): string {
+  if (invalid) return "No entendimos esa fecha. Escríbala como 29/08/2026 — el día primero.";
+  if (outOfRange) return "Esa fecha queda fuera de lo que este campo admite.";
+  return typed ? formatDayFull(typed) : "Día, mes y año: 29/08/2026";
+}
+
+function dayColor(isSelected: boolean, inMonth: boolean): string {
+  if (isSelected) return "primary.contrastText";
+  return inMonth ? "text.primary" : "text.disabled";
+}
+
 export function DateField({
   label,
   value,
@@ -147,15 +159,7 @@ export function DateField({
    * It takes the `helperText` slot only when the screen has nothing more
    * urgent to say: a form error outranks the echo.
    */
-  const echo = helperText
-    ? helperText
-    : invalid
-      ? "No entendimos esa fecha. Escríbala como 29/08/2026 — el día primero."
-      : outOfRange
-        ? "Esa fecha queda fuera de lo que este campo admite."
-        : typed
-          ? formatDayFull(typed)
-          : "Día, mes y año: 29/08/2026";
+  const echo = helperText || dateEcho(invalid, outOfRange, typed);
 
   return (
     <>
@@ -333,11 +337,7 @@ function Calendar({
                   // Days outside the month still show, but dimmed: the grid
                   // always keeps six weeks, so the button somebody is about
                   // to press does not move when the month changes.
-                  color: isSelected
-                    ? "primary.contrastText"
-                    : inMonth
-                      ? "text.primary"
-                      : "text.disabled",
+                  color: dayColor(isSelected, inMonth),
                   bgcolor: isSelected ? "primary.main" : "transparent",
                   border: !isSelected && isToday ? 1 : 0,
                   borderColor: "primary.main",

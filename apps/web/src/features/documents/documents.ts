@@ -42,6 +42,7 @@ import {
   type ReceiptBreakdown,
   type ReceiptDeduction,
 } from "./receiptBreakdown";
+import { count } from "../../lib/plural";
 
 export type { ReceiptBreakdown, ReceiptDeduction };
 
@@ -51,6 +52,31 @@ interface Header {
   farmName: string;
   /** The document's own date, already a business day in the farm's zone. */
   date: string;
+}
+
+/** The receipt's last line, in HTML: settled, still owed, or an advance. */
+function balanceAfterHtml(after: number): string {
+  if (after === 0) return `<div class="sub">Después de este pago queda a paz y salvo.</div>`;
+  if (after > 0) {
+    return `<div class="sub">Queda pendiente a favor del empleado: <strong>${esc(money(after))}</strong>.</div>`;
+  }
+  return `<div class="sub">Queda un anticipo a favor de la finca: <strong>${esc(money(-after))}</strong>.</div>`;
+}
+
+/** The same last line, as plain text for a chat message. */
+function balanceAfterText(after: number): string {
+  if (after === 0) return "Después de este pago queda a paz y salvo.";
+  if (after > 0) return `Queda pendiente a favor del empleado: ${money(after)}.`;
+  return `Queda un anticipo a favor de la finca: ${money(-after)}.`;
+}
+
+function paidCell(paidCents: number | null | undefined): string {
+  return `<td class="n amt">${paidCents == null ? "—" : esc(money(paidCents))}</td>`;
+}
+
+/** « · 2 anuladas», or nothing when none was voided. */
+function voidedText(voided: number): string {
+  return voided > 0 ? ` · ${count(voided, "anulada", "anuladas")}` : "";
 }
 
 function headerHtml(h: Header, subtitle: string): string {
@@ -183,16 +209,7 @@ export function paymentReceiptHtml(r: ReceiptInput): string {
     : "";
 
   const after = breakdown.remainingCents;
-  const balanceLine =
-    after === 0
-      ? `<div class="sub">Después de este pago queda a paz y salvo.</div>`
-      : after > 0
-        ? `<div class="sub">Queda pendiente a favor del empleado: <strong>${esc(
-            money(after),
-          )}</strong>.</div>`
-        : `<div class="sub">Queda un anticipo a favor de la finca: <strong>${esc(
-            money(-after),
-          )}</strong>.</div>`;
+  const balanceLine = balanceAfterHtml(after);
 
   /**
    * THE NUMBER, AT THE TOP AND READABLE.
@@ -271,13 +288,7 @@ export function paymentReceiptText(r: ReceiptInput): string {
   for (const d of b.deductions) L.push(`Descuento · ${d.concept}: − ${money(d.amountCents)}`);
   L.push(`*Pagado: ${money(payment.amountCents)}*`);
   const after = b.remainingCents;
-  L.push(
-    after === 0
-      ? "Después de este pago queda a paz y salvo."
-      : after > 0
-        ? `Queda pendiente a favor del empleado: ${money(after)}.`
-        : `Queda un anticipo a favor de la finca: ${money(-after)}.`,
-  );
+  L.push(balanceAfterText(after));
   if (hasProvisionalLines(r.lines)) {
     L.push("", "PROVISIONAL: las líneas marcadas se pagan al precio de la semana, que todavía no está fijado.");
   }
@@ -480,7 +491,7 @@ export function payrollHtml(input: PayrollInput): string {
         }</td>
         <td class="n">${r.quantity === null ? "—" : esc(formatQuantity(r.quantity))}</td>
         <td class="n amt">${esc(money(r.grossCents))}</td>
-        ${anyPaid ? `<td class="n amt">${r.paidCents == null ? "—" : esc(money(r.paidCents))}</td>` : ""}
+        ${anyPaid ? paidCell(r.paidCents) : ""}
         <td class="n cred">${r.balanceCents == null ? "—" : esc(money(r.balanceCents))}</td>
         <td class="sig">${isVoid ? "anulada" : ""}</td>
       </tr>`;
@@ -531,13 +542,9 @@ export function payrollHtml(input: PayrollInput): string {
        </tfoot>
      </table>
      <div class="foot">
-       <span>${live.length === 1 ? "1 liquidación" : `${live.length} liquidaciones`}${
-         input.rows.length > live.length
-           ? ` · ${input.rows.length - live.length} anulada${
-               input.rows.length - live.length === 1 ? "" : "s"
-             }`
-           : ""
-       }</span>
+       <span>${count(live.length, "liquidación", "liquidaciones")}${voidedText(
+         input.rows.length - live.length,
+       )}</span>
        ${scope ? `<span>PARCIAL · ${esc(scope.filters.join("; "))}</span>` : ""}
        <span>Firma por la finca</span>
      </div>`,
