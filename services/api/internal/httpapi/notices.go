@@ -230,6 +230,50 @@ func (s *Server) noticeRoleRaised(r *http.Request, tx pgx.Tx, who, whoName strin
 	}
 }
 
+// farmAccessGrantedMessage goes to an address an administrator just added to
+// a farm. It carries no secret: the password for that farm is handed over in
+// person, which is the only channel that works for a weigher with no usable
+// mailbox, and a mailed password would turn whoever reads the mailbox into
+// that weigher. What it does carry is the way out for the address's real
+// owner, who may never have heard of this farm.
+func farmAccessGrantedMessage(to, name, farmName string, role domain.Role) mailer.Message {
+	label := "pesador"
+	switch role {
+	case domain.RoleOwner:
+		label = "dueño"
+	case domain.RoleAdmin:
+		label = "administrador"
+	}
+	body := fmt.Sprintf(`%s
+
+Le dieron acceso a la finca «%s» en Báscula, como %s. Su clave para entrar a esa finca se la entrega el administrador; no se envía por correo.
+
+Esa clave sirve solo para esa finca.
+
+Si no conoce esa finca, no tiene que hacer nada: nadie puede entrar con ella a su cuenta ni a otras fincas. Si quiere ser usted quien maneje este correo en Báscula, en la pantalla de entrada use «¿Olvidó su clave?».
+%s`, greeting(name), farmName, label, noticeSignature)
+	return mailer.Message{To: to, Subject: "Le dieron acceso a la finca " + farmName, Body: body}
+}
+
+// noticeFarmAccessGranted mails farmAccessGrantedMessage where mail is
+// available. Like noticeRoleRaised, a failure to read what it needs is logged
+// and never answered: the access was already given.
+func (s *Server) noticeFarmAccessGranted(r *http.Request, tx pgx.Tx, to, name string, role domain.Role) {
+	if !s.emailVerificationAvailable() {
+		return
+	}
+	caller, _ := auth.PrincipalFrom(r.Context())
+	if caller == nil {
+		return
+	}
+	m, err := store.GetMembership(r.Context(), tx, caller.FarmID, caller.UserID)
+	if err != nil {
+		slog.Warn("access notice: farm", "err", err)
+		return
+	}
+	s.mailLater(r, farmAccessGrantedMessage(to, name, m.FarmName, role))
+}
+
 // passkeyAddedMessage: a passkey opens the account without the password and
 // survives a password change, so a new one is worth hearing about.
 func passkeyAddedMessage(to, name, passkeyName string) mailer.Message {

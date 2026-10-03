@@ -367,7 +367,7 @@ func TestUserManagement(t *testing.T) {
 	t.Run("inviting the same address again is a retry, not a re-role", func(t *testing.T) {
 		res := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
 			"email": invitedEmail, "name": "Pesador nuevo", "role": "admin",
-		}, http.StatusOK)
+		}, http.StatusCreated)
 		if res.Body["role"] != "weigher" {
 			t.Fatalf("a repeated invite silently changed the role to %v; that is a "+
 				"promotion nobody asked for: %s", res.Body["role"], res.Raw)

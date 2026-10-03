@@ -1511,42 +1511,44 @@ paths:
       operationId: inviteUser
       summary: Add somebody to this farm, with a role
       description: |
-        ## Why this is not an emailed invitation
+        ## The password is for this farm, never for the account
 
-        There is no mail sender in this service. Signup works around that by
-        echoing the verification token in development; an "invitation" that
-        minted a token nothing could deliver would be a screen that appears to
-        work and never does. So the administrator creates the account and hands
-        the password over — which is how the farm already works, since the
-        person who buys the weighing app is the person setting up the weigher's
-        phone, standing next to them.
+        Mail is optional, and weighers often have no mailbox they can use, so
+        the administrator hands the password over in person. Omit `password`
+        and the server mints one and returns it as `temporaryPassword`, ONCE,
+        in this response and nowhere else: the row keeps an argon2id hash like
+        every other password and there is no way to read it again. Send
+        `password` (10 characters or more) to choose it yourself, and nothing
+        is echoed. Where mail is configured, the invitee also gets a notice
+        that names the farm and carries no secret.
 
-        Omit `password` and the server mints one and returns it as
-        `temporaryPassword`, ONCE, in this response and nowhere else: the row
-        keeps an argon2id hash like every other password and there is no way to
-        read it again. Send `password` (10 characters or more) to choose it
-        yourself, and nothing is echoed.
+        Either way the password opens THIS farm and nothing else. An address
+        new to the platform gets an account with a password nobody knows and
+        an address that is NOT verified: an administrator vouches for nothing
+        about somebody's email. That account signs in only to the farms whose
+        own password it types; its owner takes the account itself by proving
+        the mailbox (signup's mailed link, or a password reset, which also lets
+        the new password open this farm and retires the handed-over one).
 
-        The address is marked verified, because somebody holding a session on
-        this farm vouched for it. That is a different act from the open signup,
-        where the token in the mailbox is the only thing stopping a stranger
-        from registering farms against an address they do not own.
+        ## One answer, whoever the address belongs to
 
-        ## An address that already has an account
-
-        It joins this farm with the role given, and its password is NOT
-        touched: an administrator of one farm resetting the password of an
-        account belonging to another would be a takeover with an invite button
-        on it.
+        An address that already has an account elsewhere joins this farm the
+        same way — a farm password, minted or chosen — and its own password,
+        other farms and passkeys are untouched. Its own password does not open
+        this farm until a reset. The answer is identical in status and shape
+        for both, and shows the member as this farm knows them (the name typed
+        here, no verified date), so it does not say whether the address had an
+        account.
 
         ## Idempotency
 
         The key is the address, because a user is global and a farm cannot mint
         ids in somebody else's namespace. Inviting an address that is already a
-        member answers 200 with the membership it already has and does NOT
-        change its role — a repeated invite is a retry, and a retry that
-        silently re-roled somebody would be a demotion nobody asked for.
-        Changing a role is PATCH, which is a different sentence.
+        member answers 201 with the membership it already has and changes
+        nothing: not its role — a retry that silently re-roled somebody would
+        be a demotion nobody asked for; that is PATCH — and not its password,
+        so there is no `temporaryPassword`. That says nothing the member list
+        does not already say.
       x-action: users.write
       x-roles: [owner, admin]
       requestBody:
@@ -1555,15 +1557,11 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/UserInvite" }
       responses:
-        "200":
-          description: That address is already a member here; nothing changed.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/FarmUser" }
         "201":
           description: |
-            Added. `temporaryPassword` is present only when the server minted
-            one, and only in this response.
+            Added, or already a member (nothing changed). `temporaryPassword`
+            is present only when the server minted one for a new member, and
+            only in this response.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InvitedUser" }
@@ -6961,9 +6959,13 @@ components:
           format: date-time
           nullable: true
           description: |
-            Null means the address has never been proven and the account cannot
-            open a session. An account created by an invite is verified on the
-            spot, because a member of the farm vouched for it.
+            Null means the address has never been proven, or that this member
+            signs in to this farm with a password of the farm's own (an invite,
+            or a farm registered with an address that already had an account).
+            Such a member is shown as this farm knows them — the name typed
+            here, `createdAt` the day the access was given — so the list never
+            says whether the address belonged to somebody before. An invite
+            never verifies an address.
         createdAt: { type: string, format: date-time }
 
     UserInvite:
@@ -6978,7 +6980,9 @@ components:
           minLength: 10
           description: |
             Optional. Omit it and the server mints one and returns it once.
-            Ignored entirely when the address already has an account.
+            Either way it is a password for THIS farm only: it never becomes
+            the account's password and opens no other farm. Ignored when the
+            address is already a member here.
 
     InvitedUser:
       allOf:
@@ -6988,9 +6992,12 @@ components:
             temporaryPassword:
               type: string
               description: |
-                Present only when the server minted the password. Shown once:
-                the row keeps an argon2id hash and there is no way to read it
-                again.
+                Present whenever the server minted the password for a new
+                member — whether or not the address already had an account, so
+                its presence says nothing about the address. Absent when the
+                caller chose `password`, and when the address was already a
+                member here. Shown once: the row keeps an argon2id hash and
+                there is no way to read it again. It opens this farm only.
             temporaryPasswordNote: { type: string }
 
     Reactivation:

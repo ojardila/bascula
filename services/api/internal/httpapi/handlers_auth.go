@@ -638,10 +638,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		refuse()
 		return
 	}
+	// An address nobody has proved opens only the farms whose own password
+	// was typed: an invited weigher's, handed over in person. See
+	// onlyFarmScoped.
 	if user.EmailVerifiedAt == nil {
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
-			"verify the email address before opening a session"))
-		return
+		if memberships, err = onlyFarmScoped(r.Context(), tx, uid, memberships); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if len(memberships) == 0 {
+			writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
+				"verify the email address before opening a session"))
+			return
+		}
 	}
 	if len(memberships) == 0 {
 		writeError(w, r, domain.Forbidden("that account belongs to no farm"))

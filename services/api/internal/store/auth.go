@@ -121,6 +121,24 @@ func InsertFarmOwnerCredentials(ctx context.Context, tx pgx.Tx, farmID, userID, 
 	return err
 }
 
+// SetFarmCredential gives the user a password of their own for this farm
+// (farm_owner_credentials), replacing one an earlier membership left behind.
+// It is what an invite writes: the password an administrator hands over in
+// person opens this farm and nothing else — never the account's other farms,
+// and never the account itself. The table is named for its first use (a farm
+// registered with an address that already had an account) but every rule that
+// reads it is about the membership, not the role: see farmsUnlockedBy. The row
+// policy only lets it be written from inside that farm.
+func SetFarmCredential(ctx context.Context, tx pgx.Tx, farmID, userID, name, passwordHash string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO farm_owner_credentials (farm_id, user_id, name, password_hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (farm_id, user_id) DO UPDATE
+		   SET name = excluded.name, phone = '', password_hash = excluded.password_hash,
+		       created_at = now()`, farmID, userID, name, passwordHash)
+	return err
+}
+
 // OwnerCredentialHashes maps farm id to the owner password recorded for that
 // farm (farm_owner_credentials), for the user pinned with tenant.SetUser.
 func OwnerCredentialHashes(ctx context.Context, tx pgx.Tx, userID string) (map[string]string, error) {
@@ -189,6 +207,14 @@ func GetMembership(ctx context.Context, tx pgx.Tx, farmID, userID string) (*Memb
 // ---------------------------------------------------------------------------
 
 // FarmUser is one member of the farm as the console lists them.
+//
+// A member who signs in to this farm with a password of its own
+// (farm_owner_credentials: an invite, or a farm registered with an address
+// that already had an account) is shown as THIS farm knows them: the name
+// typed here, the day the access was given, and no verified address. The
+// account behind the row may be somebody's older, verified account, and a farm
+// whose administrator only typed the address must not learn that from the
+// list — it would be the invite's enumeration answer, one request later.
 type FarmUser struct {
 	ID              string      `json:"id"`
 	Email           string      `json:"email"`
@@ -205,11 +231,16 @@ type FarmUser struct {
 	IsSuperadmin bool `json:"-"`
 }
 
+// farmUserFrom is the select list and join behind FarmUser; see the note there.
+const farmUserFrom = `
+	SELECT u.id::text, u.email, coalesce(c.name, u.name), m.role,
+	       CASE WHEN c.user_id IS NULL THEN u.email_verified_at END,
+	       coalesce(c.created_at, u.created_at), u.is_superadmin
+	  FROM memberships m JOIN users u ON u.id = m.user_id
+	  LEFT JOIN farm_owner_credentials c ON c.farm_id = m.farm_id AND c.user_id = m.user_id`
+
 func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at,
-		       u.is_superadmin
-		  FROM memberships m JOIN users u ON u.id = m.user_id
+	rows, err := tx.Query(ctx, farmUserFrom+`
 		 WHERE m.farm_id = current_farm()
 		 ORDER BY m.role, lower(u.email)`)
 	if err != nil {
@@ -234,10 +265,7 @@ func ListFarmUsers(ctx context.Context, tx pgx.Tx) ([]FarmUser, error) {
 // addressed at somebody else's account must be a 404 and never a role change.
 func GetFarmUser(ctx context.Context, tx pgx.Tx, userID string) (*FarmUser, error) {
 	var u FarmUser
-	err := tx.QueryRow(ctx, `
-		SELECT u.id::text, u.email, u.name, m.role, u.email_verified_at, u.created_at,
-		       u.is_superadmin
-		  FROM memberships m JOIN users u ON u.id = m.user_id
+	err := tx.QueryRow(ctx, farmUserFrom+`
 		 WHERE m.farm_id = current_farm() AND m.user_id = $1`, userID).
 		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.EmailVerifiedAt, &u.CreatedAt,
 			&u.IsSuperadmin)

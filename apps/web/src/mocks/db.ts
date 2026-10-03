@@ -343,6 +343,13 @@ export const farms: MockFarm[] = [];
 export const users: MockUser[] = [];
 export const memberships: MockMembership[] = [];
 export const refreshTokens: MockRefreshToken[] = [];
+/**
+ * A farm's own password for one member (`farm_owner_credentials` on the
+ * server), keyed `${farmId}:${userId}`. An invite writes one: the password the
+ * administrator hands over opens that farm and nothing else, never the
+ * account. Plain text, like `MockUser.password`.
+ */
+export const farmPasswords = new Map<string, string>();
 
 /** A passkey, as the mock keeps it: the credential id is all a sign-in names. */
 export interface MockPasskey {
@@ -806,6 +813,7 @@ export function resetDb(): void {
   users.length = 0;
   memberships.length = 0;
   refreshTokens.length = 0;
+  farmPasswords.clear();
   passkeys.length = 0;
   verifications.length = 0;
   tenants.clear();

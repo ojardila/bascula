@@ -135,69 +135,96 @@ type inviteUserRequest struct {
 	Role  string `json:"role"`
 	// Password is optional. When it is absent the server mints one and returns
 	// it ONCE, in this response and nowhere else — see the note in the handler.
+	// Either way it is a password for THIS farm only.
 	Password string `json:"password"`
 }
 
 // createInvitedUser creates the account an invite names when the address is
-// new to the platform, verified (the administrator vouches for it), with the
-// password given or a temporary one it returns.
-func createInvitedUser(ctx context.Context, tx pgx.Tx, email, name, password string) (*store.User, string, error) {
-	var err error
-	temporary := password
-	if temporary == "" {
-		temporary, err = newTemporaryPassword()
-		if err != nil {
-			return nil, "", domain.Internal("could not mint a password").WithCause(err)
-		}
-	}
-	hash, hashErr := auth.HashPassword(temporary)
-	if hashErr != nil {
-		return nil, "", domain.Internal("could not hash the password").WithCause(hashErr)
-	}
-	user := &store.User{ID: newID(), Email: email, Name: name, PasswordHash: hash}
+// new to the platform: with a password nobody knows (unusableHash) and the
+// address NOT verified. The administrator's password goes on the farm, not
+// here; see handleInviteUser.
+func createInvitedUser(ctx context.Context, tx pgx.Tx, email, name, unusableHash string) (*store.User, error) {
+	user := &store.User{ID: newID(), Email: email, Name: name, PasswordHash: unusableHash}
 	if err := store.CreateUser(ctx, tx, *user); err != nil {
 		if store.IsUniqueViolation(err, "ux_users_email") {
-			// Two invites for the same new address raced. The loser reads
-			// the winner's row rather than failing: both administrators
-			// meant the same thing.
-			return nil, "", domain.Coded(http.StatusConflict, domain.CodeEmailTaken,
+			// Two invites for the same new address raced. Both
+			// administrators meant the same thing; the loser tries again.
+			return nil, domain.Coded(http.StatusConflict, domain.CodeEmailTaken,
 				"that address was just registered; invite it again to add it here")
 		}
-		return nil, "", err
+		return nil, err
 	}
-	if err := store.VerifyUserEmail(ctx, tx, user.ID); err != nil {
-		return nil, "", err
+	return user, nil
+}
+
+// newUnusablePasswordHash is a real argon2id hash of 32 random bytes nobody
+// keeps. It is what an invited account's global password is until somebody
+// proves the mailbox: a real hash, so the login check runs exactly as for any
+// other account, of a secret that exists nowhere.
+func newUnusablePasswordHash() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
 	}
-	return user, temporary, nil
+	return auth.HashPassword(base64.RawURLEncoding.EncodeToString(raw))
 }
 
 // handleInviteUser adds somebody to the farm.
 //
 // # Why this is not an emailed invitation
 //
-// A mailer is optional (Config.Mailer), and an "invitation" that mints a token
-// nothing can deliver would be a screen that appears to work and never does.
-// So the administrator creates the account and hands over the password, which
-// is how the farm already works: the person who buys the weighing app is the
-// person who sets up the weigher's phone, standing next to them. Where there is
-// a mailer, the person can change that password later with "olvidé mi clave",
-// and the farm's other owners hear about a new owner or administrator
+// A mailer is optional (Config.Mailer), and weighers often have no mailbox
+// they can use, so the farm works the way it always has: the person who buys
+// the weighing app sets up the weigher's phone, standing next to them, and
+// hands the password over in person. Where there is a mailer, the invitee also
+// gets a notice that carries no secret (noticeFarmAccessGranted), and the
+// farm's other owners hear about a new owner or administrator
 // (noticeRoleRaised).
 //
-// The address is marked verified because somebody with a session on this farm
-// vouched for it. That is a different act from the open signup, where
-// verification is what stops a stranger from registering farms against an
-// address they do not own; here the account can only ever reach ONE farm — the
-// one whose administrator created it — and that administrator is identified.
+// # The password is the farm's, never the account's
 //
-// # Idempotency
+// An administrator vouches for nothing about an address. Until this change an
+// invite to a new address created a global account, verified, with the
+// administrator's password — so a farm administrator owned a verified account
+// for somebody else's email, and every farm that later invited the same
+// address joined that account. Now:
 //
-// The key is the address, not a client id, because a user is global and a farm
-// cannot mint ids in somebody else's namespace. Inviting an address that is
-// already a member answers 200 with the membership it already has, and does NOT
-// change their role: a repeated invite is a retry, and a retry that silently
-// re-roled somebody would be a demotion nobody asked for. Changing a role is
-// PATCH, which is a different sentence.
+//   - A new address gets an account with a password nobody knows and an
+//     unverified address. The password typed or minted here is stored as this
+//     farm's credential (store.SetFarmCredential, the table farm-scoped owner
+//     passwords already used), and login lets an unverified account open
+//     exactly the farms whose own password it typed (onlyFarmScoped). It does
+//     not open the main domain's account, any other farm, or the address.
+//   - The address's real owner takes the account by proving the mailbox: a
+//     signup replaces an unverified claim (store.ReplaceUnverifiedClaim) and
+//     the mailed link verifies it; or a password reset, which verifies the
+//     address, sets the global password and drops every farm credential —
+//     after which this farm opens with that global password, because the
+//     address it was given to has now been proved. The weigher who held the
+//     handed-over password loses this farm in that case, which is right: the
+//     administrator gave the farm to that ADDRESS, and the address turned out
+//     to be somebody's. The administrator removes and re-invites with the
+//     right address.
+//
+// # One answer, whoever the address belongs to
+//
+// The administrator learns nothing about the address. "New to the platform"
+// and "has an account elsewhere" do the same work (two argon2id hashes, one
+// membership, one farm credential) and answer the same thing: 201, the
+// membership as this farm sees it (store.FarmUser: the name typed here, no
+// verified date), and the password when the server minted it. An existing
+// account therefore also gets a farm password for this farm, and its own
+// global password does not open this farm until a reset — the price of not
+// telling the administrator that the account existed. Its password, other
+// farms and passkeys are untouched, and a session opened with the farm's
+// password reaches only farm-pinned passkeys (passkeysThisSessionReaches).
+//
+// An address that is ALREADY A MEMBER here answers 201 with the membership it
+// has and changes nothing — not the role (a retry that silently re-roled
+// somebody would be a demotion nobody asked for; that is PATCH) and not the
+// password (an administrator re-inviting an owner must not get a password
+// that signs in as that owner). It carries no temporaryPassword; that says
+// nothing the member list does not already say.
 func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 	var body inviteUserRequest
 	if err := decode(r, &body); err != nil {
@@ -231,6 +258,27 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.BadRequest("password is too long"))
 		return
 	}
+	name := strings.TrimSpace(body.Name)
+
+	// Both hashes before anything is looked up, whoever the address is, so
+	// the time the answer takes does not say it either.
+	password, minted := body.Password, body.Password == ""
+	if minted {
+		if password, err = newTemporaryPassword(); err != nil {
+			writeError(w, r, domain.Internal("could not mint a password").WithCause(err))
+			return
+		}
+	}
+	farmHash, err := auth.HashPassword(password)
+	if err != nil {
+		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
+		return
+	}
+	unusable, err := newUnusablePasswordHash()
+	if err != nil {
+		writeError(w, r, domain.Internal("could not hash the password").WithCause(err))
+		return
+	}
 
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -248,52 +296,51 @@ func (s *Server) handleInviteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-
-	var temporary string
+	already := false
 	if user != nil {
-		// The account exists. If it is already here, this is a retry.
-		if existing, err := store.GetFarmUser(r.Context(), tx, user.ID); err == nil {
-			writeJSON(w, http.StatusOK, existing)
-			return
+		if _, err := store.GetFarmUser(r.Context(), tx, user.ID); err == nil {
+			already = true
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, r, err)
 			return
 		}
-		// It exists elsewhere on the platform. It joins this farm with the
-		// role given, and its password is NOT touched: an administrator of one
-		// farm resetting the password of an account that belongs to another
-		// would be a takeover with an invite button on it.
-	} else {
-		user, temporary, err = createInvitedUser(r.Context(), tx, email, body.Name, body.Password)
-		if err != nil {
+	} else if user, err = createInvitedUser(r.Context(), tx, email, name, unusable); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	if !already {
+		if err := store.CreateMembership(r.Context(), tx, farmID, user.ID, role); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if err := store.SetFarmCredential(r.Context(), tx, farmID, user.ID, name, farmHash); err != nil {
 			writeError(w, r, err)
 			return
 		}
 	}
-
-	if err := store.CreateMembership(r.Context(), tx, farmID, user.ID, role); err != nil {
-		writeError(w, r, err)
-		return
-	}
-	created, err := store.GetFarmUser(r.Context(), tx, user.ID)
+	member, err := store.GetFarmUser(r.Context(), tx, user.ID)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
 	out := map[string]any{
-		"id": created.ID, "email": created.Email, "name": created.Name,
-		"role": created.Role, "emailVerifiedAt": created.EmailVerifiedAt,
-		"createdAt": created.CreatedAt,
+		"id": member.ID, "email": member.Email, "name": member.Name,
+		"role": member.Role, "emailVerifiedAt": member.EmailVerifiedAt,
+		"createdAt": member.CreatedAt,
 	}
-	s.noticeRoleRaised(r, tx, created.Email, created.Name, created.Role)
-	if temporary != "" && body.Password == "" {
-		// Returned once, here, and stored nowhere in readable form — the row
-		// keeps an argon2id hash like every other password. The administrator
-		// has to hand it over now; there is no second chance to read it and
-		// the message says so.
-		out["temporaryPassword"] = temporary
-		out["temporaryPasswordNote"] = "shown once: hand it over now, it cannot be read again"
+	if !already {
+		s.noticeRoleRaised(r, tx, member.Email, member.Name, member.Role)
+		s.noticeFarmAccessGranted(r, tx, member.Email, member.Name, member.Role)
+		if minted {
+			// Returned once, here, and stored nowhere in readable form — the
+			// row keeps an argon2id hash like every other password. The
+			// administrator has to hand it over now; there is no second
+			// chance to read it and the message says so.
+			out["temporaryPassword"] = password
+			out["temporaryPasswordNote"] = "shown once: hand it over now, it cannot be read again"
+		}
 	}
 	writeJSON(w, http.StatusCreated, out)
 }

@@ -782,18 +782,17 @@ function InviteDialog({
                   }}
                 >
                   Entréguesela en persona o por donde usted ya se comunica con
-                  {first ? ` ${first}` : " ella"}. No se envía ningún correo:
-                  esta aplicación no manda correos.
+                  {first ? ` ${first}` : " ella"}. Sirve solo para entrar a esta
+                  finca, y no se envía por correo.
                 </Typography>
               </>
             ) : (
-              /* An address that already had an account keeps the password it
-                 already has; the server mints nothing and says nothing, and
-                 inventing reassurance here would be the same lie in a nicer
-                 tone. */
+              /* No password comes back for somebody who was already a member
+                 of this farm: a repeated invite changes nothing, their
+                 password included. */
               <Alert severity="info">
-                Esa persona ya tenía una cuenta, así que entra con la contraseña
-                que ya usaba. No se generó ninguna nueva.
+                Esa persona ya tenía acceso a esta finca, así que entra con la
+                contraseña que ya usaba. No se generó ninguna nueva.
               </Alert>
             )}
             {!owner && (
@@ -857,8 +856,8 @@ function InviteDialog({
             error={!!fields.email}
             helperText={
               fields.email ??
-              "No se manda ningún correo: al terminar verá aquí una contraseña " +
-                "temporal para entregársela."
+              "La contraseña no se manda por correo: al terminar verá aquí una " +
+                "contraseña temporal para entregársela."
             }
           />
           <TextField

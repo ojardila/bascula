@@ -2,7 +2,6 @@ package apitest
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,10 +48,9 @@ func TestADemotedAdministratorLosesTheMoneyOnTheNextRequest(t *testing.T) {
 	email := fmt.Sprintf("degradado-%s@example.com", uuid.NewString()[:8])
 	const password = "una-clave-larga-1"
 	created := h.mustDo(t, http.MethodPost, "/v1/users", f.OwnerToken, map[string]any{
-		"email": email, "name": "Ascendido", "role": "admin",
+		"email": email, "name": "Ascendido", "role": "admin", "password": password,
 	}, http.StatusCreated)
 	userID := mustString(t, created.Body, "id")
-	setPassword(t, h, userID, password)
 
 	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
 		"email": email, "password": password,
@@ -157,21 +155,6 @@ func TestARoleForgedIntoATokenIsRefusedByTheRow(t *testing.T) {
 	if res.Status != http.StatusUnauthorized || res.code() != string(domain.CodeRoleChanged) {
 		t.Fatalf("a weigher wearing an owner's claim reached the balances: %d %s",
 			res.Status, res.Raw)
-	}
-}
-
-// setPassword gives an invited account a password it can log in with. The
-// invitation flow mints one and mails it, and there is no mail sender.
-func setPassword(t *testing.T, h *harness, userID, password string) {
-	t.Helper()
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	if _, err := h.admin.Exec(context.Background(),
-		`UPDATE users SET password_hash = $2, email_verified_at = coalesce(email_verified_at, now())
-		  WHERE id = $1`, userID, hash); err != nil {
-		t.Fatalf("set password: %v", err)
 	}
 }
 

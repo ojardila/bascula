@@ -230,7 +230,7 @@ func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	list, err := store.ListAllPasskeys(r.Context(), tx, p.UserID)
+	list, err := passkeysThisSessionReaches(r, tx, p)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -430,6 +430,29 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
+// passkeysThisSessionReaches is every passkey on the account, unless the
+// session was opened with this farm's own password (farmScopedSession). That
+// password may have been handed over by the farm's administrator with an
+// invite, so such a session sees and removes only the passkeys pinned to this
+// farm — the ones a session like it made — and never the account's others.
+func passkeysThisSessionReaches(r *http.Request, tx pgx.Tx, p *auth.Principal) ([]store.Passkey, error) {
+	list, err := store.ListAllPasskeys(r.Context(), tx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := farmScopedSession(r.Context(), tx, p)
+	if err != nil || !scoped {
+		return list, err
+	}
+	out := make([]store.Passkey, 0, len(list))
+	for _, pk := range list {
+		if pk.OnlyFarmID != nil && *pk.OnlyFarmID == p.FarmID {
+			out = append(out, pk)
+		}
+	}
+	return out, nil
+}
+
 // handleDeletePasskey removes one of the caller's passkeys. Somebody else's
 // id answers 404, the same as an id that does not exist.
 func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +467,20 @@ func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	ok, err := store.DeletePasskey(r.Context(), tx, p.UserID, id)
+	reach, err := passkeysThisSessionReaches(r, tx, p)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	ok := false
+	for _, pk := range reach {
+		if pk.ID == id {
+			ok = true
+		}
+	}
+	if ok {
+		ok, err = store.DeletePasskey(r.Context(), tx, p.UserID, id)
+	}
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -570,10 +606,18 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
+	// The same rule as the password: an unproved address opens only farms of
+	// its own password, which is where a passkey pinned to a farm came from.
 	if user.EmailVerifiedAt == nil {
-		writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
-			"verify the email address before opening a session"))
-		return
+		if memberships, err = onlyFarmScoped(r.Context(), tx, user.ID, memberships); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		if len(memberships) == 0 {
+			writeError(w, r, domain.Coded(http.StatusForbidden, domain.CodeEmailNotVerified,
+				"verify the email address before opening a session"))
+			return
+		}
 	}
 	if len(memberships) == 0 {
 		writeError(w, r, domain.Forbidden("this passkey opens no farm; sign in with the password"))
