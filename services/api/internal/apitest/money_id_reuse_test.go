@@ -32,15 +32,8 @@ func TestMovementIDsAreNeverReusedForSomethingElse(t *testing.T) {
 	}, http.StatusCreated)
 	advanceID := mustString(t, advance.Body, "id")
 
-	reused := func(t *testing.T, what string, res response) {
-		t.Helper()
-		if res.Status != http.StatusConflict || res.code() != string(domain.CodeIdempotencyKeyReused) {
-			t.Fatalf("%s: got %d %s, want 409 IDEMPOTENCY_KEY_REUSED", what, res.Status, res.Raw)
-		}
-	}
-
 	t.Run("another farm's movement id, for an advance", func(t *testing.T) {
-		reused(t, "advance", h.do(t, http.MethodPost, "/v1/advances", b.OwnerToken, map[string]any{
+		wantIDReused(t, "advance", h.do(t, http.MethodPost, "/v1/advances", b.OwnerToken, map[string]any{
 			"id": deductionID, "workerId": workerB, "amountCents": 70_000,
 		}))
 	})
@@ -49,12 +42,12 @@ func TestMovementIDsAreNeverReusedForSomethingElse(t *testing.T) {
 		own := h.mustDo(t, http.MethodPost, "/v1/deductions", b.OwnerToken, map[string]any{
 			"id": uuid.NewString(), "workerId": workerB, "amountCents": 10_000,
 		}, http.StatusCreated)
-		reused(t, "reversal", h.do(t, http.MethodPost, "/v1/ledger/"+mustString(t, own.Body, "id")+"/reverse",
+		wantIDReused(t, "reversal", h.do(t, http.MethodPost, "/v1/ledger/"+mustString(t, own.Body, "id")+"/reverse",
 			b.OwnerToken, map[string]any{"id": deductionID}))
 	})
 
 	t.Run("a reversal id that already names an advance", func(t *testing.T) {
-		reused(t, "reversal", h.do(t, http.MethodPost, "/v1/ledger/"+deductionID+"/reverse",
+		wantIDReused(t, "reversal", h.do(t, http.MethodPost, "/v1/ledger/"+deductionID+"/reverse",
 			a.OwnerToken, map[string]any{"id": advanceID}))
 	})
 
@@ -70,34 +63,50 @@ func TestMovementIDsAreNeverReusedForSomethingElse(t *testing.T) {
 	})
 
 	t.Run("the store holds the line when the handler's check is bypassed", func(t *testing.T) {
-		// The race the handler cannot see: two identical requests both past
-		// its pre-check. The insert itself must sort them out.
-		h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner, func(ctx context.Context, tx pgx.Tx) {
-			same := store.NewLedgerEntry{ID: advanceID, EmployeeID: workerA, Kind: domain.KindAdvance,
-				AmountMinor: -70_000, CreatedBy: a.OwnerUserID}
-			got, created, err := store.AddLedgerEntry(ctx, tx, a.FarmID, same)
-			if err != nil || created || got == nil || got.ID != advanceID {
-				t.Fatalf("the identical twin: got %v created=%v err=%v, want the existing row", got, created, err)
-			}
-			other := same
-			other.AmountMinor = -80_000
-			_, _, err = store.AddLedgerEntry(ctx, tx, a.FarmID, other)
-			var de *domain.Error
-			if !errors.As(err, &de) || de.Code != domain.CodeIdempotencyKeyReused {
-				t.Fatalf("a different movement under the same id: got %v, want IDEMPOTENCY_KEY_REUSED", err)
-			}
-		})
+		storeRefusesAReusedLedgerID(t, h, a, workerA, advanceID)
 	})
 
 	t.Run("listings fall back to their default page size", func(t *testing.T) {
-		h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner, func(ctx context.Context, tx pgx.Tx) {
-			rows, err := store.ListLedger(ctx, tx, workerA, 0)
-			if err != nil || len(rows) < 3 {
-				t.Fatalf("ListLedger(limit 0): %d rows, %v", len(rows), err)
-			}
-			if _, _, err := store.ListSettlements(ctx, tx, store.SettlementFilter{}); err != nil {
-				t.Fatalf("ListSettlements(no limit): %v", err)
-			}
-		})
+		storeListsWithDefaultPageSize(t, h, a, workerA)
+	})
+}
+
+func wantIDReused(t *testing.T, what string, res response) {
+	t.Helper()
+	if res.Status != http.StatusConflict || res.code() != string(domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("%s: got %d %s, want 409 IDEMPOTENCY_KEY_REUSED", what, res.Status, res.Raw)
+	}
+}
+
+// storeRefusesAReusedLedgerID is the race the handler cannot see: two
+// identical requests both past its pre-check. The insert itself must sort
+// them out.
+func storeRefusesAReusedLedgerID(t *testing.T, h *harness, a *farmFixture, workerA, advanceID string) {
+	h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner, func(ctx context.Context, tx pgx.Tx) {
+		same := store.NewLedgerEntry{ID: advanceID, EmployeeID: workerA, Kind: domain.KindAdvance,
+			AmountMinor: -70_000, CreatedBy: a.OwnerUserID}
+		got, created, err := store.AddLedgerEntry(ctx, tx, a.FarmID, same)
+		if err != nil || created || got == nil || got.ID != advanceID {
+			t.Fatalf("the identical twin: got %v created=%v err=%v, want the existing row", got, created, err)
+		}
+		other := same
+		other.AmountMinor = -80_000
+		_, _, err = store.AddLedgerEntry(ctx, tx, a.FarmID, other)
+		var de *domain.Error
+		if !errors.As(err, &de) || de.Code != domain.CodeIdempotencyKeyReused {
+			t.Fatalf("a different movement under the same id: got %v, want IDEMPOTENCY_KEY_REUSED", err)
+		}
+	})
+}
+
+func storeListsWithDefaultPageSize(t *testing.T, h *harness, a *farmFixture, workerA string) {
+	h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner, func(ctx context.Context, tx pgx.Tx) {
+		rows, err := store.ListLedger(ctx, tx, workerA, 0)
+		if err != nil || len(rows) < 3 {
+			t.Fatalf("ListLedger(limit 0): %d rows, %v", len(rows), err)
+		}
+		if _, _, err := store.ListSettlements(ctx, tx, store.SettlementFilter{}); err != nil {
+			t.Fatalf("ListSettlements(no limit): %v", err)
+		}
 	})
 }

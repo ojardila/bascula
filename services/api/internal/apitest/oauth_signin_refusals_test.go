@@ -77,15 +77,6 @@ func signedIn(t *testing.T, what string, rec *httptest.ResponseRecorder) {
 	}
 }
 
-func (h *harness) slugOf(t *testing.T, farmID string) string {
-	t.Helper()
-	var slug string
-	if err := h.admin.QueryRow(context.Background(), `SELECT slug FROM farms WHERE id = $1`, farmID).Scan(&slug); err != nil {
-		t.Fatal(err)
-	}
-	return slug
-}
-
 // TestOAuthSignInRefusals covers what the connector sign-in says to a correct
 // password that still cannot connect an assistant.
 func TestOAuthSignInRefusals(t *testing.T) {
@@ -126,7 +117,7 @@ func TestOAuthSignInRefusals(t *testing.T) {
 		f := h.signupFarm(t, "Finca OAuth anfitriona", 250000)
 		g := h.signupFarm(t, "Finca OAuth vecina", 250000)
 		stranger := h.signupFarm(t, "Finca OAuth extraña", 250000)
-		strangerHost := h.slugOf(t, stranger.FarmID) + ".bascula.engp.io"
+		strangerHost := h.farmSlug(t, stranger.FarmID) + ".bascula.engp.io"
 
 		// One farm, someone else's host: a dedicated stack holds only its own
 		// farm, so the one active membership is the one opened.
@@ -143,7 +134,7 @@ func TestOAuthSignInRefusals(t *testing.T) {
 			t.Fatal(err)
 		}
 		refused(t, "suspended host farm",
-			o.post(h.slugOf(t, g.FarmID)+".bascula.engp.io", "email", f.OwnerEmail, "password", f.loginSecret()), "suspendida")
+			o.post(h.farmSlug(t, g.FarmID)+".bascula.engp.io", "email", f.OwnerEmail, "password", f.loginSecret()), "suspendida")
 	})
 
 	t.Run("a farm-pick ticket for an account deleted since", func(t *testing.T) {
