@@ -31,6 +31,11 @@ import {
   offersSignup,
 } from "../../lib/farmHost";
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
+import {
+  markPasskeyOfferSeen,
+  shouldOfferPasskey,
+} from "../../lib/passkeyOffer";
+import { PasskeyOffer } from "./PasskeyOffer";
 import type { Membership, Role } from "../../api/types";
 
 function loginSubtitle(pinned: boolean, farmName: string | null | undefined): string {
@@ -86,6 +91,18 @@ export function LoginPage() {
   );
   const canUsePasskey = passkeysSupported();
   /**
+   * True while «¿Quiere entrar más rápido la próxima vez?» is on screen,
+   * after a password sign-in and before the app. The session is already
+   * open; this only holds the redirect back.
+   */
+  const [offering, setOffering] = useState(false);
+  /**
+   * True from a password attempt until it is decided where to go: the
+   * session opens before the offer is decided, and the redirect below must
+   * wait for that answer.
+   */
+  const [holding, setHolding] = useState(false);
+  /**
    * A pinned host is the farm. Login still sends email and password only —
    * the browser already puts the host on `/v1/auth/login`. If the API has not
    * started pinning yet and still answers 400, the chooser below is the same
@@ -94,20 +111,38 @@ export function LoginPage() {
   const pinnedSlug = farmSlugFromHost(window.location.hostname);
   const { name: farmName } = useFarmDisplayName(pinnedSlug);
 
-  if (status === "authenticated") return <Navigate to={landing} replace />;
+  function goIn() {
+    // The password is not needed past this point; do not keep it around.
+    setPassword("");
+    setOffering(false);
+    setHolding(false);
+    const next = location.state?.from;
+    navigate(next && next !== "/" ? next : landing, { replace: true });
+  }
+
+  if (offering) return <PasskeyOffer password={password} onDone={goIn} />;
+  if (status === "authenticated" && !holding)
+    return <Navigate to={landing} replace />;
 
   async function attempt(farmId?: string) {
     setError(null);
     setBusy(true);
+    setHolding(true);
     try {
       const res = await login(email, password, farmId);
       if ("choose" in res) {
+        setHolding(false);
         setChoices(res.memberships);
         return;
       }
-      const next = location.state?.from;
-      navigate(next && next !== "/" ? next : landing, { replace: true });
+      if (await shouldOfferPasskey(email)) {
+        markPasskeyOfferSeen(email);
+        setOffering(true);
+        return;
+      }
+      goIn();
     } catch (err) {
+      setHolding(false);
       setError(messageFor(err));
     } finally {
       setBusy(false);

@@ -185,3 +185,118 @@ describe("passkey sign-in (optional)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+describe("offering a passkey after a password sign-in", () => {
+  function stubPlatform(available: boolean) {
+    const create = vi.fn(async () => ({
+      toJSON: () => ({ id: "cred-new", type: "public-key", response: {} }),
+    }));
+    const PKC = Object.assign(function PublicKeyCredential() {}, {
+      isUserVerifyingPlatformAuthenticatorAvailable: async () => available,
+    });
+    vi.stubGlobal("PublicKeyCredential", PKC);
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36",
+      credentials: { create, get: vi.fn() },
+    });
+    return create;
+  }
+
+  async function signIn(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(await screen.findByLabelText(/^Correo/), "oscar@laesperanza.co");
+    await user.type(screen.getByLabelText(/^Contraseña/), "esperanza");
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+  }
+
+  const OFFER = "¿Quiere entrar más rápido la próxima vez?";
+
+  it("offers once and saves a passkey with the password just typed", async () => {
+    const create = stubPlatform(true);
+    const user = userEvent.setup();
+    renderApp();
+    await signIn(user);
+
+    expect(await screen.findByText(OFFER)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Sí, activarlo/ }));
+    expect(await screen.findByText(/La próxima vez toque «Entrar con llave de acceso»/)).toBeInTheDocument();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(passkeys).toHaveLength(1);
+    expect(passkeys[0]).toMatchObject({ credentialId: "cred-new", name: "Chrome en Android" });
+
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+  }, 20000);
+
+  it("remembers «Ahora no» and does not ask again on this device", async () => {
+    stubPlatform(true);
+    const user = userEvent.setup();
+    const first = renderApp();
+    await signIn(user);
+    expect(await screen.findByText(OFFER)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ahora no" }));
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(passkeys).toHaveLength(0);
+    first.unmount();
+
+    setTokens(null);
+    renderApp();
+    await signIn(user);
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText(OFFER)).toBeNull();
+  }, 30000);
+
+  it("is not offered to somebody who already has a passkey here", async () => {
+    stubPlatform(true);
+    const oscar = users.find((u) => u.email === "oscar@laesperanza.co")!;
+    passkeys.push({
+      id: crypto.randomUUID(),
+      userId: oscar.id,
+      credentialId: "cred-old",
+      name: "Mi celular",
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    });
+    const user = userEvent.setup();
+    renderApp();
+    await signIn(user);
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText(OFFER)).toBeNull();
+  }, 20000);
+
+  it("is not offered on a device without fingerprint or face", async () => {
+    stubPlatform(false);
+    const user = userEvent.setup();
+    renderApp();
+    await signIn(user);
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByText(OFFER)).toBeNull();
+  }, 20000);
+
+  it("goes straight on when the person closes the phone's prompt", async () => {
+    const create = stubPlatform(true);
+    create.mockImplementation(async () => {
+      throw new DOMException("closed", "NotAllowedError");
+    });
+    const user = userEvent.setup();
+    renderApp();
+    await signIn(user);
+    await user.click(await screen.findByRole("button", { name: /Sí, activarlo/ }));
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+  }, 20000);
+  it("says so when the device already holds one, then lets the person in", async () => {
+    const create = stubPlatform(true);
+    create.mockImplementation(async () => {
+      throw new DOMException("exists", "InvalidStateError");
+    });
+    const user = userEvent.setup();
+    renderApp();
+    await signIn(user);
+    await user.click(await screen.findByRole("button", { name: /Sí, activarlo/ }));
+    expect(await screen.findByText("No se pudo activar")).toBeInTheDocument();
+    expect(screen.getByText(/ya tiene una llave de acceso/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+  }, 20000);
+});
