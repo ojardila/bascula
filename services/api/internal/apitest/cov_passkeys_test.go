@@ -367,20 +367,19 @@ func TestCpkPasskeyRegistrationRefusals(t *testing.T) {
 	}
 }
 
-// An Origin that passes the address checks but is not a valid relying party
-// id (an empty DNS label) reaches go-webauthn's own configuration check. The
-// server answers 500 «passkeys misconfigured» on every door, not 400: see the
-// PR for the note. What matters here is that it opens nothing and stores
-// nothing.
+// An Origin whose host is not a well-formed DNS name (an empty label) is a
+// bad Origin like any other: 400 on every door since #405, before it can
+// reach go-webauthn as a relying party id (where it used to surface as a
+// 500). It opens nothing and stores nothing.
 func TestCpkPasskeyInvalidRelyingPartyID(t *testing.T) {
 	h := requireDB(t)
 	f := h.signupFarm(t, "Finca de dominio invalido", 80000)
 	const rpID = "a..localhost"
 
 	cpkExpectCode(t, "login options", h.doOrigin(t, "10.74.4.1", cpkBadDomainOrigin, http.MethodPost,
-		cpkLoginOptions, "", nil), http.StatusInternalServerError, "")
+		cpkLoginOptions, "", nil), http.StatusBadRequest, "BAD_REQUEST")
 	cpkExpectCode(t, "register options", h.doOrigin(t, "10.74.4.1", cpkBadDomainOrigin, http.MethodPost,
-		cpkRegisterOptions, f.OwnerToken, reauth), http.StatusInternalServerError, "")
+		cpkRegisterOptions, f.OwnerToken, reauth), http.StatusBadRequest, "BAD_REQUEST")
 
 	reg := webauthn.SessionData{Challenge: cpkChallenge(), RelyingPartyID: rpID, Origin: cpkBadDomainOrigin,
 		UserID: cpkUserHandle(t, f.OwnerUserID), Expires: time.Now().Add(time.Minute)}
@@ -388,7 +387,7 @@ func TestCpkPasskeyInvalidRelyingPartyID(t *testing.T) {
 		f.OwnerToken, map[string]any{
 			"challenge":  cpkSeal(t, "passkey-register", reg),
 			"credential": newSoftPasskey(t).create(t, cpkOptionsFor(reg), cpkBadDomainOrigin),
-		}), http.StatusInternalServerError, "")
+		}), http.StatusBadRequest, "BAD_REQUEST")
 	if n := h.cpkPasskeyCount(t, f.OwnerUserID); n != 0 {
 		t.Fatalf("an invalid relying party stored %d passkeys", n)
 	}
@@ -399,7 +398,7 @@ func TestCpkPasskeyInvalidRelyingPartyID(t *testing.T) {
 	res := h.doOrigin(t, "10.74.4.2", cpkBadDomainOrigin, http.MethodPost, cpkLogin, "", map[string]any{
 		"challenge": cpkSeal(t, "passkey-login", login), "credential": key.get(t, cpkOptionsFor(login), cpkBadDomainOrigin),
 	})
-	cpkExpectCode(t, "sign-in", res, http.StatusInternalServerError, "")
+	cpkExpectCode(t, "sign-in", res, http.StatusBadRequest, "BAD_REQUEST")
 	if _, ok := res.Body["accessToken"]; ok {
 		t.Fatalf("an invalid relying party opened a session: %s", res.Raw)
 	}
