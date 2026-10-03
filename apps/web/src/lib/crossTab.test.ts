@@ -25,9 +25,12 @@ describe("crossTab mutations", () => {
     const unsubA = subscribeMutations(a);
     const unsubB = subscribeMutations(b);
     broadcastMutation();
-    await flushMessages();
-    expect(a).toHaveBeenCalledTimes(1);
-    expect(b).toHaveBeenCalledTimes(1);
+    // BroadcastChannel delivers asynchronously, with no promise of doing so
+    // within one macrotask; on a loaded CI runner it did not. Wait for it.
+    await vi.waitFor(() => {
+      expect(a).toHaveBeenCalledTimes(1);
+      expect(b).toHaveBeenCalledTimes(1);
+    });
     unsubA();
     unsubB();
   });
