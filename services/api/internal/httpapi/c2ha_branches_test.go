@@ -485,7 +485,7 @@ func (f *c2haCloudflare) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":1,"message":"no"}]}`))
 	default:
-		_, _ = w.Write([]byte(`{"success":true,"result":` + host + `}`))
+		_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{"success": json.RawMessage(`true`), "result": json.RawMessage(host)})
 	}
 }
 

@@ -45,10 +45,11 @@ func c3gCaptureLog(t *testing.T) *c3gLog {
 	return l
 }
 
-// c3gHold takes a port on every interface and keeps it for the test.
+// c3gHold takes a loopback port and keeps it for the test: the API's own
+// listen on that port (every interface) then fails with "address in use".
 func c3gHold(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
