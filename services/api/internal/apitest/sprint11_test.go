@@ -193,104 +193,15 @@ func TestEveryWeeklyRouteSaysWhichWindowItCovers(t *testing.T) {
 	})
 
 	t.Run("the list says when limit stopped it short", func(t *testing.T) {
-		all := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from=2026-07-27&to=2026-08-30", f.OwnerToken, nil, http.StatusOK)
-		if all.Body["partialWindow"] != false {
-			t.Errorf("a complete answer flagged as partial: %s", all.Raw)
-		}
-		if all.Body["coveredFrom"] != "2026-07-27" || all.Body["coveredTo"] != "2026-08-30" {
-			t.Errorf("the list's window is wrong: %s", all.Raw)
-		}
-
-		cut := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from=2026-07-27&to=2026-08-30&limit=2",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := cut.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("limit=2 returned %d rows: %s", len(items), cut.Raw)
-		}
-		if cut.Body["partialWindow"] != true {
-			t.Fatalf("three weeks were cut off the oldest end and the answer "+
-				"looked like a two-week season: %s", cut.Raw)
-		}
-		// The oldest weeks are the ones that went, so the covered window starts
-		// later than the question did — which is exactly the thing to say.
-		if cut.Body["coveredFrom"] == "2026-07-27" {
-			t.Errorf("the cut list still claims to start where the question did: %s", cut.Raw)
-		}
+		s11CheckListSaysWhenLimitCut(t, h, f)
 	})
 
 	t.Run("a truncated row still says which days it summed", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from=2026-08-03&to=2026-08-05", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("want one row: %s", res.Raw)
-		}
-		row, _ := items[0].(map[string]any)
-		if row["partialWindow"] != true || row["coveredTo"] != "2026-08-05" {
-			t.Errorf("the row lost its window: %s", res.Raw)
-		}
-		// And the envelope agrees with the row it is made of.
-		if res.Body["partialWindow"] != true || res.Body["coveredTo"] != "2026-08-05" {
-			t.Errorf("the envelope and its one row disagree: %s", res.Raw)
-		}
+		s11CheckTruncatedRowWindow(t, h, f)
 	})
 
 	t.Run("the curve says when its own window cut the season", func(t *testing.T) {
-		var whole struct {
-			PartialWindow bool    `json:"partialWindow"`
-			CoveredFrom   *string `json:"coveredFrom"`
-			CoveredTo     *string `json:"coveredTo"`
-			Weeks         []struct {
-				WeekStart string `json:"weekStart"`
-			} `json:"weeks"`
-			Shape struct {
-				ContiguousWeeks int `json:"contiguousWeeks"`
-				Peak            *struct {
-					Kg float64 `json:"kg"`
-				} `json:"peak"`
-			} `json:"shape"`
-		}
-		res := h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=26",
-			f.OwnerToken, nil, http.StatusOK)
-		if err := json.Unmarshal([]byte(res.Raw), &whole); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if whole.PartialWindow {
-			t.Errorf("the whole season reported as a cut one: %s", res.Raw)
-		}
-		if whole.CoveredFrom == nil || *whole.CoveredFrom != "2026-07-27" {
-			t.Errorf("coveredFrom = %v, want the first week worked: %s",
-				whole.CoveredFrom, res.Raw)
-		}
-		if whole.CoveredTo == nil || *whole.CoveredTo != "2026-08-30" {
-			t.Errorf("coveredTo = %v, want the Sunday of the last week: %s",
-				whole.CoveredTo, res.Raw)
-		}
-
-		var cut = whole
-		res = h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=2",
-			f.OwnerToken, nil, http.StatusOK)
-		if err := json.Unmarshal([]byte(res.Raw), &cut); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if len(cut.Weeks) != 2 {
-			t.Fatalf("weeks=2 returned %d weeks: %s", len(cut.Weeks), res.Raw)
-		}
-		if !cut.PartialWindow {
-			t.Fatalf("the season was cut at the oldest end and the reading "+
-				"could not see past the cut, and nothing said so: %s", res.Raw)
-		}
-		if cut.CoveredFrom == nil || *cut.CoveredFrom != "2026-08-17" {
-			t.Errorf("coveredFrom = %v, want the oldest week SHOWN: %s",
-				cut.CoveredFrom, res.Raw)
-		}
-		// And the reading is honest about how much it read: the peak of a
-		// two-week window is the peak of two weeks.
-		if cut.Shape.ContiguousWeeks > 2 {
-			t.Errorf("the reading claims more weeks than it was given: %s", res.Raw)
-		}
+		s11CheckCurveWindow(t, h, f)
 	})
 }
 
@@ -478,4 +389,121 @@ func TestTheLastEndpointsThatNarrowByAnIdConfirmItFirst(t *testing.T) {
 	h.mustDo(t, http.MethodGet,
 		"/v1/activities/"+h.harvestActivityID(t, mine)+"/rates",
 		mine.OwnerToken, nil, http.StatusOK)
+}
+
+func s11CheckListSaysWhenLimitCut(t *testing.T, h *harness, f *farmFixture) {
+	t.Helper()
+	all := h.mustDo(t, http.MethodGet,
+		"/v1/reports/weeks?from=2026-07-27&to=2026-08-30", f.OwnerToken, nil, http.StatusOK)
+	if all.Body["partialWindow"] != false {
+		t.Errorf("a complete answer flagged as partial: %s", all.Raw)
+	}
+	if all.Body["coveredFrom"] != "2026-07-27" || all.Body["coveredTo"] != "2026-08-30" {
+		t.Errorf("the list's window is wrong: %s", all.Raw)
+	}
+
+	cut := h.mustDo(t, http.MethodGet,
+		"/v1/reports/weeks?from=2026-07-27&to=2026-08-30&limit=2",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := cut.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("limit=2 returned %d rows: %s", len(items), cut.Raw)
+	}
+	if cut.Body["partialWindow"] != true {
+		t.Fatalf("three weeks were cut off the oldest end and the answer "+
+			"looked like a two-week season: %s", cut.Raw)
+	}
+	// The oldest weeks are the ones that went, so the covered window starts
+	// later than the question did — which is exactly the thing to say.
+	if cut.Body["coveredFrom"] == "2026-07-27" {
+		t.Errorf("the cut list still claims to start where the question did: %s", cut.Raw)
+	}
+}
+
+func s11CheckTruncatedRowWindow(t *testing.T, h *harness, f *farmFixture) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodGet,
+		"/v1/reports/weeks?from=2026-08-03&to=2026-08-05", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("want one row: %s", res.Raw)
+	}
+	row, _ := items[0].(map[string]any)
+	if row["partialWindow"] != true || row["coveredTo"] != "2026-08-05" {
+		t.Errorf("the row lost its window: %s", res.Raw)
+	}
+	// And the envelope agrees with the row it is made of.
+	if res.Body["partialWindow"] != true || res.Body["coveredTo"] != "2026-08-05" {
+		t.Errorf("the envelope and its one row disagree: %s", res.Raw)
+	}
+}
+
+// s11HarvestCurve is the part of /v1/reports/harvest-curve the window checks read.
+type s11HarvestCurve struct {
+	PartialWindow bool    `json:"partialWindow"`
+	CoveredFrom   *string `json:"coveredFrom"`
+	CoveredTo     *string `json:"coveredTo"`
+	Weeks         []struct {
+		WeekStart string `json:"weekStart"`
+	} `json:"weeks"`
+	Shape struct {
+		ContiguousWeeks int `json:"contiguousWeeks"`
+		Peak            *struct {
+			Kg float64 `json:"kg"`
+		} `json:"peak"`
+	} `json:"shape"`
+}
+
+func s11CheckCurveWindow(t *testing.T, h *harness, f *farmFixture) {
+	t.Helper()
+	var whole s11HarvestCurve
+	res := h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=26",
+		f.OwnerToken, nil, http.StatusOK)
+	if err := json.Unmarshal([]byte(res.Raw), &whole); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	s11CheckWholeCurve(t, whole, res.Raw)
+
+	var cut = whole
+	res = h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=2",
+		f.OwnerToken, nil, http.StatusOK)
+	if err := json.Unmarshal([]byte(res.Raw), &cut); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	s11CheckCutCurve(t, cut, res.Raw)
+}
+
+func s11CheckWholeCurve(t *testing.T, whole s11HarvestCurve, raw string) {
+	t.Helper()
+	if whole.PartialWindow {
+		t.Errorf("the whole season reported as a cut one: %s", raw)
+	}
+	if whole.CoveredFrom == nil || *whole.CoveredFrom != "2026-07-27" {
+		t.Errorf("coveredFrom = %v, want the first week worked: %s",
+			whole.CoveredFrom, raw)
+	}
+	if whole.CoveredTo == nil || *whole.CoveredTo != "2026-08-30" {
+		t.Errorf("coveredTo = %v, want the Sunday of the last week: %s",
+			whole.CoveredTo, raw)
+	}
+}
+
+func s11CheckCutCurve(t *testing.T, cut s11HarvestCurve, raw string) {
+	t.Helper()
+	if len(cut.Weeks) != 2 {
+		t.Fatalf("weeks=2 returned %d weeks: %s", len(cut.Weeks), raw)
+	}
+	if !cut.PartialWindow {
+		t.Fatalf("the season was cut at the oldest end and the reading "+
+			"could not see past the cut, and nothing said so: %s", raw)
+	}
+	if cut.CoveredFrom == nil || *cut.CoveredFrom != "2026-08-17" {
+		t.Errorf("coveredFrom = %v, want the oldest week SHOWN: %s",
+			cut.CoveredFrom, raw)
+	}
+	// And the reading is honest about how much it read: the peak of a
+	// two-week window is the peak of two weeks.
+	if cut.Shape.ContiguousWeeks > 2 {
+		t.Errorf("the reading claims more weeks than it was given: %s", raw)
+	}
 }

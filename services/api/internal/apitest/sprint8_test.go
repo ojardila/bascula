@@ -82,80 +82,21 @@ func TestAVoidSettlementCannotTrapAWeighingForEver(t *testing.T) {
 	}
 
 	t.Run("the weighing really is trapped before the release exists", func(t *testing.T) {
-		// Voiding is the route that would free it, and it leaves without
-		// looking at a line.
-		res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/void", f.OwnerToken, nil)
-		if res.code() != string(domain.CodeSettlementAlreadyVoid) {
-			t.Fatalf("void of a void settlement: got %d %s, want SETTLEMENT_ALREADY_VOID",
-				res.Status, res.Raw)
-		}
-		// And the payable is claimed, so nothing can pay it.
-		pending := h.mustDo(t, http.MethodGet,
-			"/v1/pending?workerId="+worker+"&from=2026-08-24&to=2026-08-30",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := pending.Body["items"].([]any)
-		if len(items) != 0 {
-			t.Fatalf("the payable should still be claimed by the void settlement: %s", pending.Raw)
-		}
+		s8AssertWeighingTrapped(t, h, f, settlement, worker)
 	})
 
 	var releaseID string
 	t.Run("the owner releases it, and it is recorded", func(t *testing.T) {
 		releaseID = uuid.NewString()
-		res := h.mustDo(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
-			f.OwnerToken, map[string]any{
-				"id":     releaseID,
-				"reason": "importada anulada con linea viva (auditoria API, hallazgo 3)",
-			}, http.StatusCreated)
-
-		release, _ := res.Body["release"].(map[string]any)
-		if release == nil {
-			t.Fatalf("no release record in the answer: %s", res.Raw)
-		}
-		if n, _ := release["itemsReleased"].(float64); n != 1 {
-			t.Errorf("itemsReleased = %v, want 1: %s", release["itemsReleased"], res.Raw)
-		}
-		freed, _ := release["payableIds"].([]any)
-		if len(freed) != 1 || freed[0] != record {
-			t.Errorf("the record freed is not the one that was trapped: %s", res.Raw)
-		}
-		// The devengo the original void never reversed is reversed now: the
-		// release is the second half of a void that stopped early.
-		if got, _ := release["reversedCents"].(float64); int64(got) != 50*100000 {
-			t.Errorf("reversedCents = %v, want %d: %s", release["reversedCents"], 50*100000, res.Raw)
-		}
-		if release["reason"] == "" || release["reason"] == nil {
-			t.Errorf("the reason is the point of the record: %s", res.Raw)
-		}
+		s8AssertReleaseRecorded(t, h, f, settlement, record, releaseID)
 	})
 
 	t.Run("the weighing can be paid again", func(t *testing.T) {
-		pending := h.mustDo(t, http.MethodGet,
-			"/v1/pending?workerId="+worker+"&from=2026-08-24&to=2026-08-30",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := pending.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("the freed weighing is not payable again: %s", pending.Raw)
-		}
-		// And it settles, which is the whole point of freeing it.
-		h.mustSettle(t, f.OwnerToken, map[string]any{
-			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
-		}, http.StatusCreated)
+		s8AssertWeighingPayableAgain(t, h, f, worker)
 	})
 
 	t.Run("a resend with the same id changes nothing", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
-			f.OwnerToken, map[string]any{"id": releaseID, "reason": "reintento"},
-			http.StatusOK)
-		release, _ := res.Body["release"].(map[string]any)
-		if n, _ := release["itemsReleased"].(float64); n != 1 {
-			t.Errorf("a resend re-released: %s", res.Raw)
-		}
-		// The record kept its ORIGINAL reason. A resend is the same act, not a
-		// second one that gets to rewrite the audit.
-		if reason, _ := release["reason"].(string); reason == "reintento" {
-			t.Errorf("the resend overwrote the recorded reason: %s", res.Raw)
-		}
+		s8AssertReleaseResendIsNoop(t, h, f, settlement, releaseID)
 	})
 
 	t.Run("releasing a live settlement is refused", func(t *testing.T) {
@@ -185,22 +126,116 @@ func TestAVoidSettlementCannotTrapAWeighingForEver(t *testing.T) {
 	})
 
 	t.Run("reason is required, and the administrator is not the owner", func(t *testing.T) {
-		res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
-			f.OwnerToken, map[string]any{"id": uuid.NewString(), "reason": "   "})
-		if res.Status != http.StatusBadRequest {
-			t.Errorf("a blank reason: got %d %s, want 400", res.Status, res.Raw)
-		}
-		for name, token := range map[string]string{
-			"admin": f.AdminToken, "weigher": f.WeigherToken,
-		} {
-			res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
-				token, map[string]any{"id": uuid.NewString(), "reason": "x"})
-			if res.Status != http.StatusForbidden {
-				t.Errorf("%s releasing: got %d %s, want 403 — this puts money back "+
-					"into circulation and is the owner's", name, res.Status, res.Raw)
-			}
-		}
+		s8AssertReleaseNeedsReasonAndOwner(t, h, f, settlement)
 	})
+}
+
+// s8AssertWeighingTrapped checks that, before any release, voiding again is
+// refused and the payable stays claimed by the void settlement.
+func s8AssertWeighingTrapped(t *testing.T, h *harness, f *farmFixture, settlement, worker string) {
+	t.Helper()
+	// Voiding is the route that would free it, and it leaves without
+	// looking at a line.
+	res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/void", f.OwnerToken, nil)
+	if res.code() != string(domain.CodeSettlementAlreadyVoid) {
+		t.Fatalf("void of a void settlement: got %d %s, want SETTLEMENT_ALREADY_VOID",
+			res.Status, res.Raw)
+	}
+	// And the payable is claimed, so nothing can pay it.
+	pending := h.mustDo(t, http.MethodGet,
+		"/v1/pending?workerId="+worker+"&from=2026-08-24&to=2026-08-30",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := pending.Body["items"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("the payable should still be claimed by the void settlement: %s", pending.Raw)
+	}
+}
+
+// s8AssertReleaseRecorded releases the trapped settlement and checks the
+// release record it answers with.
+func s8AssertReleaseRecorded(t *testing.T, h *harness, f *farmFixture, settlement, record, releaseID string) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
+		f.OwnerToken, map[string]any{
+			"id":     releaseID,
+			"reason": "importada anulada con linea viva (auditoria API, hallazgo 3)",
+		}, http.StatusCreated)
+
+	release, _ := res.Body["release"].(map[string]any)
+	if release == nil {
+		t.Fatalf("no release record in the answer: %s", res.Raw)
+	}
+	if n, _ := release["itemsReleased"].(float64); n != 1 {
+		t.Errorf("itemsReleased = %v, want 1: %s", release["itemsReleased"], res.Raw)
+	}
+	freed, _ := release["payableIds"].([]any)
+	if len(freed) != 1 || freed[0] != record {
+		t.Errorf("the record freed is not the one that was trapped: %s", res.Raw)
+	}
+	// The devengo the original void never reversed is reversed now: the
+	// release is the second half of a void that stopped early.
+	if got, _ := release["reversedCents"].(float64); int64(got) != 50*100000 {
+		t.Errorf("reversedCents = %v, want %d: %s", release["reversedCents"], 50*100000, res.Raw)
+	}
+	if release["reason"] == "" || release["reason"] == nil {
+		t.Errorf("the reason is the point of the record: %s", res.Raw)
+	}
+}
+
+// s8AssertWeighingPayableAgain checks the freed weighing is pending again and
+// settles.
+func s8AssertWeighingPayableAgain(t *testing.T, h *harness, f *farmFixture, worker string) {
+	t.Helper()
+	pending := h.mustDo(t, http.MethodGet,
+		"/v1/pending?workerId="+worker+"&from=2026-08-24&to=2026-08-30",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := pending.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("the freed weighing is not payable again: %s", pending.Raw)
+	}
+	// And it settles, which is the whole point of freeing it.
+	h.mustSettle(t, f.OwnerToken, map[string]any{
+		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
+	}, http.StatusCreated)
+}
+
+// s8AssertReleaseResendIsNoop resends a release with the same id and checks
+// nothing changed, including the recorded reason.
+func s8AssertReleaseResendIsNoop(t *testing.T, h *harness, f *farmFixture, settlement, releaseID string) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
+		f.OwnerToken, map[string]any{"id": releaseID, "reason": "reintento"},
+		http.StatusOK)
+	release, _ := res.Body["release"].(map[string]any)
+	if n, _ := release["itemsReleased"].(float64); n != 1 {
+		t.Errorf("a resend re-released: %s", res.Raw)
+	}
+	// The record kept its ORIGINAL reason. A resend is the same act, not a
+	// second one that gets to rewrite the audit.
+	if reason, _ := release["reason"].(string); reason == "reintento" {
+		t.Errorf("the resend overwrote the recorded reason: %s", res.Raw)
+	}
+}
+
+// s8AssertReleaseNeedsReasonAndOwner checks a blank reason is refused and
+// that only the owner may release.
+func s8AssertReleaseNeedsReasonAndOwner(t *testing.T, h *harness, f *farmFixture, settlement string) {
+	t.Helper()
+	res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
+		f.OwnerToken, map[string]any{"id": uuid.NewString(), "reason": "   "})
+	if res.Status != http.StatusBadRequest {
+		t.Errorf("a blank reason: got %d %s, want 400", res.Status, res.Raw)
+	}
+	for name, token := range map[string]string{
+		"admin": f.AdminToken, "weigher": f.WeigherToken,
+	} {
+		res := h.do(t, http.MethodPost, "/v1/settlements/"+settlement+"/release",
+			token, map[string]any{"id": uuid.NewString(), "reason": "x"})
+		if res.Status != http.StatusForbidden {
+			t.Errorf("%s releasing: got %d %s, want 403 — this puts money back "+
+				"into circulation and is the owner's", name, res.Status, res.Raw)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -228,21 +263,7 @@ func TestAPromotedWeigherIsSentBackForWhatHisRoleWasNeverShown(t *testing.T) {
 
 	device := uuid.NewString()
 	drain := func(token string, from int64) (int64, map[string]int) {
-		counts := map[string]int{}
-		cursor := from
-		for {
-			res := h.mustDo(t, http.MethodGet,
-				"/v1/sync/pull?deviceId="+device+"&cursor="+strconv.FormatInt(cursor, 10),
-				token, nil, http.StatusOK)
-			changes, _ := res.Body["changes"].([]any)
-			for _, raw := range changes {
-				counts[raw.(map[string]any)["entity"].(string)]++
-			}
-			cursor = mustInt(t, res.Body, "cursor")
-			if more, _ := res.Body["more"].(bool); !more {
-				return cursor, counts
-			}
-		}
+		return s8DrainPull(t, h, device, token, from)
 	}
 
 	// The weigher catches up. He is sent no settlement and no ledger movement,
@@ -267,42 +288,11 @@ func TestAPromotedWeigherIsSentBackForWhatHisRoleWasNeverShown(t *testing.T) {
 	}
 
 	t.Run("his old cursor is refused instead of answered with silence", func(t *testing.T) {
-		res := h.do(t, http.MethodGet,
-			"/v1/sync/pull?deviceId="+device+"&cursor="+strconv.FormatInt(cursor, 10),
-			promoted, nil)
-		if res.code() != string(domain.CodeReplayRequired) {
-			t.Fatalf("a cursor served to a weigher, resumed by an administrator: "+
-				"got %d %s, want REPLAY_REQUIRED", res.Status, res.Raw)
-		}
-		details, _ := res.Body["error"].(map[string]any)
-		d, _ := details["details"].(map[string]any)
-		if d["reason"] != store.ReplayRoleChanged {
-			t.Errorf("reason = %v, want role_changed: %s", d["reason"], res.Raw)
-		}
-		if from, _ := d["replayFrom"].(float64); from != 0 {
-			t.Errorf("replayFrom = %v, want 0: %s", d["replayFrom"], res.Raw)
-		}
-		// A promotion is not a reason to throw anything away: everything this
-		// handset holds, the new role may still see.
-		if purge, _ := d["purgeMoney"].(bool); purge {
-			t.Errorf("a promotion asked the handset to drop rows it may keep: %s", res.Raw)
-		}
+		s8AssertPromotionReplayRequired(t, h, device, promoted, cursor)
 	})
 
 	t.Run("the handshake says the same thing, and behind is counted from 0", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/sync/handshake", promoted, map[string]any{
-			"deviceId": device, "schemaVersion": 6, "cursor": cursor,
-		}, http.StatusOK)
-		replay, _ := res.Body["replay"].(map[string]any)
-		if replay == nil || replay["required"] != true {
-			t.Fatalf("the handshake reported nothing to do: %s", res.Raw)
-		}
-		// This is the half that made the fault invisible. `behind: 0` beside a
-		// book with holes in it is the status chip telling somebody they are up
-		// to date.
-		if behind := mustInt(t, res.Body, "behind"); behind <= 0 {
-			t.Fatalf("behind = %d for a handset that owes a full replay: %s", behind, res.Raw)
-		}
+		s8AssertHandshakeOwesReplay(t, h, device, promoted, cursor)
 	})
 
 	t.Run("the replay delivers the money he never got", func(t *testing.T) {
@@ -322,6 +312,72 @@ func TestAPromotedWeigherIsSentBackForWhatHisRoleWasNeverShown(t *testing.T) {
 			t.Fatalf("nothing changed and the feed returned %d rows: %s", len(changes), res.Raw)
 		}
 	})
+}
+
+// s8DrainPull pulls from the given cursor until the feed says there is no
+// more, counting the changes by entity.
+func s8DrainPull(t *testing.T, h *harness, device, token string, from int64) (int64, map[string]int) {
+	t.Helper()
+	counts := map[string]int{}
+	cursor := from
+	for {
+		res := h.mustDo(t, http.MethodGet,
+			"/v1/sync/pull?deviceId="+device+"&cursor="+strconv.FormatInt(cursor, 10),
+			token, nil, http.StatusOK)
+		changes, _ := res.Body["changes"].([]any)
+		for _, raw := range changes {
+			counts[raw.(map[string]any)["entity"].(string)]++
+		}
+		cursor = mustInt(t, res.Body, "cursor")
+		if more, _ := res.Body["more"].(bool); !more {
+			return cursor, counts
+		}
+	}
+}
+
+// s8AssertPromotionReplayRequired checks a promoted session's old cursor is
+// refused with a role_changed replay from 0 that keeps the handset's rows.
+func s8AssertPromotionReplayRequired(t *testing.T, h *harness, device, promoted string, cursor int64) {
+	t.Helper()
+	res := h.do(t, http.MethodGet,
+		"/v1/sync/pull?deviceId="+device+"&cursor="+strconv.FormatInt(cursor, 10),
+		promoted, nil)
+	if res.code() != string(domain.CodeReplayRequired) {
+		t.Fatalf("a cursor served to a weigher, resumed by an administrator: "+
+			"got %d %s, want REPLAY_REQUIRED", res.Status, res.Raw)
+	}
+	details, _ := res.Body["error"].(map[string]any)
+	d, _ := details["details"].(map[string]any)
+	if d["reason"] != store.ReplayRoleChanged {
+		t.Errorf("reason = %v, want role_changed: %s", d["reason"], res.Raw)
+	}
+	if from, _ := d["replayFrom"].(float64); from != 0 {
+		t.Errorf("replayFrom = %v, want 0: %s", d["replayFrom"], res.Raw)
+	}
+	// A promotion is not a reason to throw anything away: everything this
+	// handset holds, the new role may still see.
+	if purge, _ := d["purgeMoney"].(bool); purge {
+		t.Errorf("a promotion asked the handset to drop rows it may keep: %s", res.Raw)
+	}
+}
+
+// s8AssertHandshakeOwesReplay checks the handshake reports the replay and a
+// non-zero behind count.
+func s8AssertHandshakeOwesReplay(t *testing.T, h *harness, device, promoted string, cursor int64) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodPost, "/v1/sync/handshake", promoted, map[string]any{
+		"deviceId": device, "schemaVersion": 6, "cursor": cursor,
+	}, http.StatusOK)
+	replay, _ := res.Body["replay"].(map[string]any)
+	if replay == nil || replay["required"] != true {
+		t.Fatalf("the handshake reported nothing to do: %s", res.Raw)
+	}
+	// This is the half that made the fault invisible. `behind: 0` beside a
+	// book with holes in it is the status chip telling somebody they are up
+	// to date.
+	if behind := mustInt(t, res.Body, "behind"); behind <= 0 {
+		t.Fatalf("behind = %d for a handset that owes a full replay: %s", behind, res.Raw)
+	}
 }
 
 // TestAHandsetThatChangesHandsDoesNotInheritACursor is the other half of
@@ -568,34 +624,7 @@ func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 	taken := signup("Finca dos", slugTwo, second)
 
 	t.Run("the registered address gets a farm and the same answer", func(t *testing.T) {
-		if taken.Status != http.StatusCreated || fresh.Status != http.StatusCreated {
-			t.Fatalf("signup answered %d / %d: %s", taken.Status, fresh.Status, taken.Raw)
-		}
-		if got, want := keysOf(taken.Body), keysOf(fresh.Body); !reflect.DeepEqual(got, want) {
-			t.Fatalf("the two answers have different shapes: %v vs %v", got, want)
-		}
-		if taken.Body["verificationRequired"] != false {
-			t.Fatalf("a registered address was still turned away: %s", taken.Raw)
-		}
-		var owners int
-		if err := h.admin.QueryRow(context.Background(), `
-			SELECT count(*)::int FROM memberships m
-			  JOIN users u ON u.id = m.user_id JOIN farms f ON f.id = m.farm_id
-			 WHERE lower(u.email) = lower($1) AND m.role = 'owner'
-			   AND f.slug IN ($2, $3)`, email, slugOne, slugTwo).Scan(&owners); err != nil {
-			t.Fatalf("count: %v", err)
-		}
-		if owners != 2 {
-			t.Fatalf("the account owns %d of the two farms, want 2", owners)
-		}
-		var users int
-		if err := h.admin.QueryRow(context.Background(),
-			`SELECT count(*)::int FROM users WHERE lower(email) = lower($1)`, email).Scan(&users); err != nil {
-			t.Fatalf("count users: %v", err)
-		}
-		if users != 1 {
-			t.Fatalf("%d users rows for one address on the shared platform, want 1", users)
-		}
+		s8AssertRegisteredAddressGetsFarm(t, h, taken, fresh, email, slugOne, slugTwo)
 	})
 
 	t.Run("the account's own password is untouched", func(t *testing.T) {
@@ -611,17 +640,7 @@ func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 	})
 
 	t.Run("the echoed token verifies nothing for an existing account", func(t *testing.T) {
-		tok, _ := taken.Body["verificationToken"].(string)
-		if tok == "" {
-			t.Fatal("development stopped echoing a token for a registered address, " +
-				"which is the difference an attacker reads")
-		}
-		bad := h.do(t, http.MethodPost, "/v1/auth/verify-email", "",
-			map[string]any{"token": tok})
-		if bad.Status != http.StatusBadRequest {
-			t.Fatalf("a registered address's echoed token verified something: %d %s",
-				bad.Status, bad.Raw)
-		}
+		s8AssertEchoedTokenVerifiesNothing(t, h, taken)
 	})
 
 	t.Run("the same address is one owner per farm", func(t *testing.T) {
@@ -632,28 +651,7 @@ func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 	})
 
 	t.Run("each farm opens with its own password", func(t *testing.T) {
-		// The second farm was registered with its own password, and only that
-		// password opens it. The account's global password belongs to whoever
-		// registered the address first, which signup does not prove was its
-		// owner (TestSignupFirstCannotOpenTheRealOwnersFarm).
-		res := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": email, "password": password,
-		})
-		if res.Status != http.StatusOK || res.Body["slug"] != slugOne {
-			t.Fatalf("the account password should open farm one only: %d %s", res.Status, res.Raw)
-		}
-		res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": email, "password": second,
-		})
-		if res.Status != http.StatusOK || res.Body["slug"] != slugTwo {
-			t.Fatalf("the second farm's password should open farm two: %d %s", res.Status, res.Raw)
-		}
-		res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": email, "password": password, "farmSlug": slugTwo,
-		})
-		if res.Status != http.StatusUnauthorized {
-			t.Fatalf("the account password opened the farm that has its own: %d %s", res.Status, res.Raw)
-		}
+		s8AssertEachFarmOwnPassword(t, h, email, password, second, slugOne, slugTwo)
 	})
 
 	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
@@ -673,6 +671,85 @@ func TestSignupWithARegisteredAddressCreatesAnotherFarm(t *testing.T) {
 			t.Fatalf("an anonymous caller made a farm: got %d %s", res.Status, res.Raw)
 		}
 	})
+}
+
+// s8AssertRegisteredAddressGetsFarm checks a signup with a registered address
+// answers like a fresh one and makes the one account owner of both farms.
+func s8AssertRegisteredAddressGetsFarm(t *testing.T, h *harness, taken, fresh response, email, slugOne, slugTwo string) {
+	t.Helper()
+	if taken.Status != http.StatusCreated || fresh.Status != http.StatusCreated {
+		t.Fatalf("signup answered %d / %d: %s", taken.Status, fresh.Status, taken.Raw)
+	}
+	if got, want := keysOf(taken.Body), keysOf(fresh.Body); !reflect.DeepEqual(got, want) {
+		t.Fatalf("the two answers have different shapes: %v vs %v", got, want)
+	}
+	if taken.Body["verificationRequired"] != false {
+		t.Fatalf("a registered address was still turned away: %s", taken.Raw)
+	}
+	var owners int
+	if err := h.admin.QueryRow(context.Background(), `
+		SELECT count(*)::int FROM memberships m
+		  JOIN users u ON u.id = m.user_id JOIN farms f ON f.id = m.farm_id
+		 WHERE lower(u.email) = lower($1) AND m.role = 'owner'
+		   AND f.slug IN ($2, $3)`, email, slugOne, slugTwo).Scan(&owners); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if owners != 2 {
+		t.Fatalf("the account owns %d of the two farms, want 2", owners)
+	}
+	var users int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*)::int FROM users WHERE lower(email) = lower($1)`, email).Scan(&users); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if users != 1 {
+		t.Fatalf("%d users rows for one address on the shared platform, want 1", users)
+	}
+}
+
+// s8AssertEchoedTokenVerifiesNothing checks the token echoed for a registered
+// address exists and verifies nothing.
+func s8AssertEchoedTokenVerifiesNothing(t *testing.T, h *harness, taken response) {
+	t.Helper()
+	tok, _ := taken.Body["verificationToken"].(string)
+	if tok == "" {
+		t.Fatal("development stopped echoing a token for a registered address, " +
+			"which is the difference an attacker reads")
+	}
+	bad := h.do(t, http.MethodPost, "/v1/auth/verify-email", "",
+		map[string]any{"token": tok})
+	if bad.Status != http.StatusBadRequest {
+		t.Fatalf("a registered address's echoed token verified something: %d %s",
+			bad.Status, bad.Raw)
+	}
+}
+
+// s8AssertEachFarmOwnPassword checks each farm opens only with the password
+// it was registered with.
+func s8AssertEachFarmOwnPassword(t *testing.T, h *harness, email, password, second, slugOne, slugTwo string) {
+	t.Helper()
+	// The second farm was registered with its own password, and only that
+	// password opens it. The account's global password belongs to whoever
+	// registered the address first, which signup does not prove was its
+	// owner (TestSignupFirstCannotOpenTheRealOwnersFarm).
+	res := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": email, "password": password,
+	})
+	if res.Status != http.StatusOK || res.Body["slug"] != slugOne {
+		t.Fatalf("the account password should open farm one only: %d %s", res.Status, res.Raw)
+	}
+	res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": email, "password": second,
+	})
+	if res.Status != http.StatusOK || res.Body["slug"] != slugTwo {
+		t.Fatalf("the second farm's password should open farm two: %d %s", res.Status, res.Raw)
+	}
+	res = h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": email, "password": password, "farmSlug": slugTwo,
+	})
+	if res.Status != http.StatusUnauthorized {
+		t.Fatalf("the account password opened the farm that has its own: %d %s", res.Status, res.Raw)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -704,133 +781,16 @@ func TestAWeekWithNoHarvestIsInTheSeriesRatherThanMissingFromIt(t *testing.T) {
 		{worker: worker, plotCrop: crop, day: weeks[3], qty: 80},
 	})
 
-	type weekRow struct {
-		WeekStart     string `json:"weekStart"`
-		CoveredFrom   string `json:"coveredFrom"`
-		CoveredTo     string `json:"coveredTo"`
-		PartialWindow bool   `json:"partialWindow"`
-		Finished      bool   `json:"finished"`
-		PriceCents    *int64 `json:"priceCents"`
-		reportTotals
-	}
-
 	t.Run("the weekly list has a row for the week nobody worked", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from="+weeks[0]+"&to="+weeks[3], f.OwnerToken, nil, http.StatusOK)
-		var body struct {
-			Items []weekRow `json:"items"`
-		}
-		if err := json.Unmarshal([]byte(res.Raw), &body); err != nil {
-			t.Fatalf("decode: %v\n%s", err, res.Raw)
-		}
-		var empty *weekRow
-		for i := range body.Items {
-			if body.Items[i].WeekStart == weeks[2] {
-				empty = &body.Items[i]
-			}
-		}
-		if empty == nil {
-			t.Fatalf("the empty week vanished from the list: %s", res.Raw)
-		}
-		if empty.Records != 0 {
-			t.Errorf("records = %d for a week nobody worked", empty.Records)
-		}
-		// The pairing is the whole point. Zero records is a fact; null kilos is
-		// the honest consequence, because "nobody picked" and "nobody wrote it
-		// down" are not the same thing and this database cannot tell them apart.
-		if empty.Kg != nil {
-			t.Errorf("kg = %v for a week with no weighings; a 0.0 there is the "+
-				"reading choosing one of two answers in silence", *empty.Kg)
-		}
-		// And the price of that week is still the price of that week.
-		if empty.PriceCents == nil || *empty.PriceCents != f.PriceCents {
-			t.Errorf("priceCents = %v for an empty week, want the standing price %d",
-				empty.PriceCents, f.PriceCents)
-		}
+		s8AssertEmptyWeekListed(t, h, f, weeks)
 	})
 
 	t.Run("a truncated window says which days it summed", func(t *testing.T) {
-		// Three days of the first week, asked for as three days.
-		from := weeks[0]
-		to := isoDate(day(weeks[0]).AddDate(0, 0, 2))
-		res := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from="+from+"&to="+to, f.OwnerToken, nil, http.StatusOK)
-		var body struct {
-			Items []weekRow `json:"items"`
-		}
-		if err := json.Unmarshal([]byte(res.Raw), &body); err != nil {
-			t.Fatalf("decode: %v\n%s", err, res.Raw)
-		}
-		if len(body.Items) != 1 {
-			t.Fatalf("want one week in a three-day window: %s", res.Raw)
-		}
-		row := body.Items[0]
-		if !row.PartialWindow {
-			t.Errorf("three days of a week came back as a whole week: %s", res.Raw)
-		}
-		if row.CoveredFrom != from || row.CoveredTo != to {
-			t.Errorf("coveredFrom/coveredTo = %s..%s, want %s..%s",
-				row.CoveredFrom, row.CoveredTo, from, to)
-		}
-		// A full week is not marked, or the flag would mean nothing.
-		full := h.mustDo(t, http.MethodGet,
-			"/v1/reports/weeks?from="+weeks[0]+"&to="+weeks[3], f.OwnerToken, nil, http.StatusOK)
-		var all struct {
-			Items []weekRow `json:"items"`
-		}
-		if err := json.Unmarshal([]byte(full.Raw), &all); err != nil {
-			t.Fatalf("decode: %v\n%s", err, full.Raw)
-		}
-		for _, w := range all.Items {
-			if w.WeekStart == weeks[1] && w.PartialWindow {
-				t.Errorf("a whole week marked partial: %s", full.Raw)
-			}
-		}
+		s8AssertTruncatedWindow(t, h, f, weeks)
 	})
 
 	t.Run("the curve carries the hole and counts it", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=26",
-			f.OwnerToken, nil, http.StatusOK)
-		var curve struct {
-			Weeks []struct {
-				WeekStart string   `json:"weekStart"`
-				Kg        *float64 `json:"kg"`
-				Records   int      `json:"records"`
-			} `json:"weeks"`
-			WeeksWithoutKilos   int `json:"weeksWithoutKilos"`
-			WeeksWithoutRecords int `json:"weeksWithoutRecords"`
-		}
-		if err := json.Unmarshal([]byte(res.Raw), &curve); err != nil {
-			t.Fatalf("decode: %v\n%s", err, res.Raw)
-		}
-		if curve.WeeksWithoutRecords != 1 {
-			t.Errorf("weeksWithoutRecords = %d, want 1: %s", curve.WeeksWithoutRecords, res.Raw)
-		}
-		// The other counter keeps its own meaning: these weighings converted
-		// perfectly well.
-		if curve.WeeksWithoutKilos != 0 {
-			t.Errorf("weeksWithoutKilos = %d, want 0: %s", curve.WeeksWithoutKilos, res.Raw)
-		}
-		// Contiguous, newest first: every step is exactly seven days.
-		for i := 0; i+1 < len(curve.Weeks); i++ {
-			a := day(curve.Weeks[i+1].WeekStart).AddDate(0, 0, 7)
-			if !a.Equal(day(curve.Weeks[i].WeekStart)) {
-				t.Fatalf("the series is not contiguous at %s -> %s: %s",
-					curve.Weeks[i+1].WeekStart, curve.Weeks[i].WeekStart, res.Raw)
-			}
-		}
-		var hole bool
-		for _, w := range curve.Weeks {
-			if w.WeekStart == weeks[2] {
-				hole = true
-				if w.Records != 0 || w.Kg != nil {
-					t.Errorf("the empty week is not empty: %+v", w)
-				}
-			}
-		}
-		if !hole {
-			t.Fatalf("the empty week is not in the curve: %s", res.Raw)
-		}
+		s8AssertCurveCarriesHole(t, h, f, weeks)
 	})
 
 	t.Run("the crop's own weeks are drawn on a calendar too", func(t *testing.T) {
@@ -850,6 +810,147 @@ func TestAWeekWithNoHarvestIsInTheSeriesRatherThanMissingFromIt(t *testing.T) {
 				len(report.ByWeek), res.Raw)
 		}
 	})
+}
+
+// s8WeekRow is one row of /v1/reports/weeks.
+type s8WeekRow struct {
+	WeekStart     string `json:"weekStart"`
+	CoveredFrom   string `json:"coveredFrom"`
+	CoveredTo     string `json:"coveredTo"`
+	PartialWindow bool   `json:"partialWindow"`
+	Finished      bool   `json:"finished"`
+	PriceCents    *int64 `json:"priceCents"`
+	reportTotals
+}
+
+// s8CurveWeek is one week of /v1/reports/harvest-curve.
+type s8CurveWeek struct {
+	WeekStart string   `json:"weekStart"`
+	Kg        *float64 `json:"kg"`
+	Records   int      `json:"records"`
+}
+
+// s8FetchWeeks reads /v1/reports/weeks for a window and decodes its rows.
+func s8FetchWeeks(t *testing.T, h *harness, f *farmFixture, from, to string) ([]s8WeekRow, response) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodGet,
+		"/v1/reports/weeks?from="+from+"&to="+to, f.OwnerToken, nil, http.StatusOK)
+	var body struct {
+		Items []s8WeekRow `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(res.Raw), &body); err != nil {
+		t.Fatalf("decode: %v\n%s", err, res.Raw)
+	}
+	return body.Items, res
+}
+
+// s8AssertEmptyWeekListed checks the week nobody worked has a row with zero
+// records, null kilos and the standing price.
+func s8AssertEmptyWeekListed(t *testing.T, h *harness, f *farmFixture, weeks []string) {
+	t.Helper()
+	items, res := s8FetchWeeks(t, h, f, weeks[0], weeks[3])
+	var empty *s8WeekRow
+	for i := range items {
+		if items[i].WeekStart == weeks[2] {
+			empty = &items[i]
+		}
+	}
+	if empty == nil {
+		t.Fatalf("the empty week vanished from the list: %s", res.Raw)
+	}
+	if empty.Records != 0 {
+		t.Errorf("records = %d for a week nobody worked", empty.Records)
+	}
+	// The pairing is the whole point. Zero records is a fact; null kilos is
+	// the honest consequence, because "nobody picked" and "nobody wrote it
+	// down" are not the same thing and this database cannot tell them apart.
+	if empty.Kg != nil {
+		t.Errorf("kg = %v for a week with no weighings; a 0.0 there is the "+
+			"reading choosing one of two answers in silence", *empty.Kg)
+	}
+	// And the price of that week is still the price of that week.
+	if empty.PriceCents == nil || *empty.PriceCents != f.PriceCents {
+		t.Errorf("priceCents = %v for an empty week, want the standing price %d",
+			empty.PriceCents, f.PriceCents)
+	}
+}
+
+// s8AssertTruncatedWindow checks a three-day window is marked partial with
+// its covered days, and a full week is not.
+func s8AssertTruncatedWindow(t *testing.T, h *harness, f *farmFixture, weeks []string) {
+	t.Helper()
+	// Three days of the first week, asked for as three days.
+	from := weeks[0]
+	to := isoDate(day(weeks[0]).AddDate(0, 0, 2))
+	items, res := s8FetchWeeks(t, h, f, from, to)
+	if len(items) != 1 {
+		t.Fatalf("want one week in a three-day window: %s", res.Raw)
+	}
+	row := items[0]
+	if !row.PartialWindow {
+		t.Errorf("three days of a week came back as a whole week: %s", res.Raw)
+	}
+	if row.CoveredFrom != from || row.CoveredTo != to {
+		t.Errorf("coveredFrom/coveredTo = %s..%s, want %s..%s",
+			row.CoveredFrom, row.CoveredTo, from, to)
+	}
+	// A full week is not marked, or the flag would mean nothing.
+	all, full := s8FetchWeeks(t, h, f, weeks[0], weeks[3])
+	for _, w := range all {
+		if w.WeekStart == weeks[1] && w.PartialWindow {
+			t.Errorf("a whole week marked partial: %s", full.Raw)
+		}
+	}
+}
+
+// s8AssertCurveCarriesHole checks the harvest curve counts the empty week,
+// stays contiguous, and carries the hole as an empty week.
+func s8AssertCurveCarriesHole(t *testing.T, h *harness, f *farmFixture, weeks []string) {
+	t.Helper()
+	res := h.mustDo(t, http.MethodGet, "/v1/reports/harvest-curve?weeks=26",
+		f.OwnerToken, nil, http.StatusOK)
+	var curve struct {
+		Weeks               []s8CurveWeek `json:"weeks"`
+		WeeksWithoutKilos   int           `json:"weeksWithoutKilos"`
+		WeeksWithoutRecords int           `json:"weeksWithoutRecords"`
+	}
+	if err := json.Unmarshal([]byte(res.Raw), &curve); err != nil {
+		t.Fatalf("decode: %v\n%s", err, res.Raw)
+	}
+	if curve.WeeksWithoutRecords != 1 {
+		t.Errorf("weeksWithoutRecords = %d, want 1: %s", curve.WeeksWithoutRecords, res.Raw)
+	}
+	// The other counter keeps its own meaning: these weighings converted
+	// perfectly well.
+	if curve.WeeksWithoutKilos != 0 {
+		t.Errorf("weeksWithoutKilos = %d, want 0: %s", curve.WeeksWithoutKilos, res.Raw)
+	}
+	s8AssertCurveContiguous(t, curve.Weeks, res.Raw)
+	var hole bool
+	for _, w := range curve.Weeks {
+		if w.WeekStart == weeks[2] {
+			hole = true
+			if w.Records != 0 || w.Kg != nil {
+				t.Errorf("the empty week is not empty: %+v", w)
+			}
+		}
+	}
+	if !hole {
+		t.Fatalf("the empty week is not in the curve: %s", res.Raw)
+	}
+}
+
+// s8AssertCurveContiguous checks the curve, newest first, steps exactly seven
+// days between every pair of weeks.
+func s8AssertCurveContiguous(t *testing.T, weeks []s8CurveWeek, raw string) {
+	t.Helper()
+	for i := 0; i+1 < len(weeks); i++ {
+		a := day(weeks[i+1].WeekStart).AddDate(0, 0, 7)
+		if !a.Equal(day(weeks[i].WeekStart)) {
+			t.Fatalf("the series is not contiguous at %s -> %s: %s",
+				weeks[i+1].WeekStart, weeks[i].WeekStart, raw)
+		}
+	}
 }
 
 // TestTheSeasonReadingWillNotStepOverAHole is the consequence the finding is

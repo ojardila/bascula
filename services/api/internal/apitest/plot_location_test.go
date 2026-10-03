@@ -77,29 +77,35 @@ func TestPlotLocationIsAPointThatCanBeSetAndErased(t *testing.T) {
 	})
 
 	t.Run("the boundary is untouched by any of this", func(t *testing.T) {
-		// The point does not replace the polygon and is not derived from it.
-		// The two farms in this database that drew one keep it.
-		res := h.mustDo(t, http.MethodPost, "/v1/plots", f.OwnerToken,
-			map[string]any{"name": "Lote con ambos", "location": point}, http.StatusCreated)
-		id, _ := res.Body["id"].(string)
-
-		square := map[string]any{"type": "Polygon", "coordinates": [][][]float64{{
-			{-75.6, 5.07}, {-75.59, 5.07}, {-75.59, 5.08}, {-75.6, 5.08}, {-75.6, 5.07},
-		}}}
-		// This route answers with the plot nested under "plot", alongside the
-		// overlap warning -- unlike POST and PATCH, which answer with the plot
-		// itself.
-		res = h.mustDo(t, http.MethodPut, "/v1/plots/"+id+"/boundary", f.OwnerToken,
-			map[string]any{"boundary": square}, http.StatusOK)
-		plot, _ := res.Body["plot"].(map[string]any)
-		if plot == nil {
-			t.Fatalf("no plot in the boundary response: %s", res.Raw)
-		}
-		if plot["boundary"] == nil {
-			t.Fatalf("the boundary did not survive: %s", res.Raw)
-		}
-		if plot["location"] == nil {
-			t.Fatalf("drawing a boundary erased the location: %s", res.Raw)
-		}
+		plCheckBoundaryKeepsLocation(t, h, f, point)
 	})
+}
+
+// plCheckBoundaryKeepsLocation draws a boundary on a plot with a point and
+// checks both survive.
+func plCheckBoundaryKeepsLocation(t *testing.T, h *harness, f *farmFixture, point map[string]any) {
+	// The point does not replace the polygon and is not derived from it.
+	// The two farms in this database that drew one keep it.
+	res := h.mustDo(t, http.MethodPost, "/v1/plots", f.OwnerToken,
+		map[string]any{"name": "Lote con ambos", "location": point}, http.StatusCreated)
+	id, _ := res.Body["id"].(string)
+
+	square := map[string]any{"type": "Polygon", "coordinates": [][][]float64{{
+		{-75.6, 5.07}, {-75.59, 5.07}, {-75.59, 5.08}, {-75.6, 5.08}, {-75.6, 5.07},
+	}}}
+	// This route answers with the plot nested under "plot", alongside the
+	// overlap warning -- unlike POST and PATCH, which answer with the plot
+	// itself.
+	res = h.mustDo(t, http.MethodPut, "/v1/plots/"+id+"/boundary", f.OwnerToken,
+		map[string]any{"boundary": square}, http.StatusOK)
+	plot, _ := res.Body["plot"].(map[string]any)
+	if plot == nil {
+		t.Fatalf("no plot in the boundary response: %s", res.Raw)
+	}
+	if plot["boundary"] == nil {
+		t.Fatalf("the boundary did not survive: %s", res.Raw)
+	}
+	if plot["location"] == nil {
+		t.Fatalf("drawing a boundary erased the location: %s", res.Raw)
+	}
 }

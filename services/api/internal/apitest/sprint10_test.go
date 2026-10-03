@@ -72,116 +72,141 @@ func TestASeasonUploadedSlowerThanTheReadTimeoutArrivesWhole(t *testing.T) {
 	ts.Start()
 	defer ts.Close()
 
-	// dribble posts `payload` in even chunks spread over `over`, which is what a
-	// farm's uplink does to eleven megabytes and what no in-process test can
-	// imitate.
 	dribble := func(path string, payload []byte, over time.Duration) (*http.Response, []byte, error) {
-		const chunks = 24
-		pr, pw := io.Pipe()
-		go func() {
-			size := (len(payload) + chunks - 1) / chunks
-			for off := 0; off < len(payload); off += size {
-				end := off + size
-				if end > len(payload) {
-					end = len(payload)
-				}
-				if _, err := pw.Write(payload[off:end]); err != nil {
-					_ = pw.CloseWithError(err)
-					return
-				}
-				time.Sleep(over / chunks)
-			}
-			_ = pw.Close()
-		}()
-
-		req, err := http.NewRequest(http.MethodPost, ts.URL+path, pr)
-		if err != nil {
-			return nil, nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+f.OwnerToken)
-		req.ContentLength = int64(len(payload))
-		res, err := (&http.Client{Timeout: 3 * time.Minute}).Do(req)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer res.Body.Close()
-		raw, err := io.ReadAll(res.Body)
-		return res, raw, err
+		return s10Dribble(ts.URL+path, f.OwnerToken, payload, over)
 	}
 
 	t.Run("the negative control: an ordinary route is cut off, as it should be", func(t *testing.T) {
-		// A SMALL body, dribbled over the same six seconds, to a route that
-		// buys no exemption. Small on purpose: a twelve-megabyte body would be
-		// refused by the ordinary 1 MB cap in the first chunk and would prove
-		// nothing about the clock. This one is refused by the clock, which is
-		// the fact the assertion below depends on — if the deadline were not
-		// armed at all, that assertion would pass for the wrong reason.
-		small, err := json.Marshal(map[string]any{
-			"activityId": uuid.NewString(), "workerId": uuid.NewString(),
-			"quantity": 1, "dateFrom": "2026-08-20",
-		})
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		started := time.Now()
-		res, raw, err := dribble("/v1/work-records", small, uploadTakes)
-		took := time.Since(started)
-		if err == nil && res.StatusCode < 400 {
-			t.Fatalf("a body slower than the server's %s ReadTimeout succeeded on "+
-				"an ordinary route: %d %s", serverReadTimeout, res.StatusCode, raw)
-		}
-		// Cut off, and cut off BY THE CLOCK: it ended long before the upload
-		// would have. Without this the assertion below could pass because no
-		// deadline was ever armed.
-		if took >= uploadTakes {
-			t.Fatalf("the ordinary route read the whole %s upload before "+
-				"answering (%s). The deadline is not armed, so the import "+
-				"assertion below proves nothing.", uploadTakes, took.Round(time.Millisecond))
-		}
-		t.Logf("cut off after %s, as the %s ReadTimeout requires",
-			took.Round(time.Millisecond), serverReadTimeout)
+		s10CheckOrdinaryRouteCutOff(t, dribble, serverReadTimeout, uploadTakes)
 	})
 
 	t.Run("the import gets its own deadline and the season arrives entire", func(t *testing.T) {
-		started := time.Now()
-		res, raw, err := dribble("/v1/import/season", body, uploadTakes)
-		if err != nil {
-			t.Fatalf("the upload was cut off after %s: %v\n"+
-				"That is the whole finding: ReadTimeout is armed on the "+
-				"connection before the handler runs, so the phone's 25 minutes "+
-				"never get used.", time.Since(started).Round(time.Millisecond), err)
-		}
-		if res.StatusCode != http.StatusOK {
-			t.Fatalf("POST /v1/import/season: %d %s", res.StatusCode, raw)
-		}
-		if took := time.Since(started); took < serverReadTimeout {
-			t.Fatalf("the upload finished in %s, which is inside the server's own "+
-				"%s: this test did not exercise the deadline at all",
-				took.Round(time.Millisecond), serverReadTimeout)
-		}
-
-		var report struct {
-			Workers         struct{ Written, Skipped int } `json:"workers"`
-			WorkRecords     struct{ Written, Skipped int } `json:"workRecords"`
-			BalancesChecked int                            `json:"balancesChecked"`
-		}
-		if err := json.Unmarshal(raw, &report); err != nil {
-			t.Fatalf("decode report: %v: %s", err, raw)
-		}
-		// Every row of a 12 MB body, counted by the server. A body cut short
-		// would have failed to decode long before this.
-		if report.Workers.Written != workers {
-			t.Errorf("workers written = %d, want %d", report.Workers.Written, workers)
-		}
-		if report.WorkRecords.Written != records {
-			t.Errorf("work records written = %d, want %d: the body did not arrive whole",
-				report.WorkRecords.Written, records)
-		}
-		if report.BalancesChecked != workers {
-			t.Errorf("balancesChecked = %d, want %d", report.BalancesChecked, workers)
-		}
+		s10CheckSeasonArrivesWhole(t, dribble, body, workers, records, serverReadTimeout, uploadTakes)
 	})
+}
+
+// s10DribbleFunc posts a payload to a path, dribbled over a duration.
+type s10DribbleFunc func(path string, payload []byte, over time.Duration) (*http.Response, []byte, error)
+
+// s10Dribble posts `payload` to url in even chunks spread over `over`, which
+// is what a farm's uplink does to eleven megabytes and what no in-process test
+// can imitate.
+func s10Dribble(url, token string, payload []byte, over time.Duration) (*http.Response, []byte, error) {
+	const chunks = 24
+	pr, pw := io.Pipe()
+	go s10WriteInChunks(pw, payload, chunks, over)
+
+	req, err := http.NewRequest(http.MethodPost, url, pr)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.ContentLength = int64(len(payload))
+	res, err := (&http.Client{Timeout: 3 * time.Minute}).Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	return res, raw, err
+}
+
+// s10WriteInChunks writes payload into pw in `chunks` pieces, sleeping
+// over/chunks between them, and closes the pipe.
+func s10WriteInChunks(pw *io.PipeWriter, payload []byte, chunks int, over time.Duration) {
+	size := (len(payload) + chunks - 1) / chunks
+	for off := 0; off < len(payload); off += size {
+		end := off + size
+		if end > len(payload) {
+			end = len(payload)
+		}
+		if _, err := pw.Write(payload[off:end]); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		time.Sleep(over / time.Duration(chunks))
+	}
+	_ = pw.Close()
+}
+
+// s10CheckOrdinaryRouteCutOff is the negative control: an ordinary route is
+// cut off by the server's ReadTimeout, as it should be.
+func s10CheckOrdinaryRouteCutOff(t *testing.T, dribble s10DribbleFunc, serverReadTimeout, uploadTakes time.Duration) {
+	t.Helper()
+	// A SMALL body, dribbled over the same six seconds, to a route that
+	// buys no exemption. Small on purpose: a twelve-megabyte body would be
+	// refused by the ordinary 1 MB cap in the first chunk and would prove
+	// nothing about the clock. This one is refused by the clock, which is
+	// the fact the assertion below depends on — if the deadline were not
+	// armed at all, that assertion would pass for the wrong reason.
+	small, err := json.Marshal(map[string]any{
+		"activityId": uuid.NewString(), "workerId": uuid.NewString(),
+		"quantity": 1, "dateFrom": "2026-08-20",
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	started := time.Now()
+	res, raw, err := dribble("/v1/work-records", small, uploadTakes)
+	took := time.Since(started)
+	if err == nil && res.StatusCode < 400 {
+		t.Fatalf("a body slower than the server's %s ReadTimeout succeeded on "+
+			"an ordinary route: %d %s", serverReadTimeout, res.StatusCode, raw)
+	}
+	// Cut off, and cut off BY THE CLOCK: it ended long before the upload
+	// would have. Without this the assertion below could pass because no
+	// deadline was ever armed.
+	if took >= uploadTakes {
+		t.Fatalf("the ordinary route read the whole %s upload before "+
+			"answering (%s). The deadline is not armed, so the import "+
+			"assertion below proves nothing.", uploadTakes, took.Round(time.Millisecond))
+	}
+	t.Logf("cut off after %s, as the %s ReadTimeout requires",
+		took.Round(time.Millisecond), serverReadTimeout)
+}
+
+// s10CheckSeasonArrivesWhole asserts the import gets its own deadline and the
+// season arrives entire.
+func s10CheckSeasonArrivesWhole(t *testing.T, dribble s10DribbleFunc, body []byte, workers, records int, serverReadTimeout, uploadTakes time.Duration) {
+	t.Helper()
+	started := time.Now()
+	res, raw, err := dribble("/v1/import/season", body, uploadTakes)
+	if err != nil {
+		t.Fatalf("the upload was cut off after %s: %v\n"+
+			"That is the whole finding: ReadTimeout is armed on the "+
+			"connection before the handler runs, so the phone's 25 minutes "+
+			"never get used.", time.Since(started).Round(time.Millisecond), err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST /v1/import/season: %d %s", res.StatusCode, raw)
+	}
+	if took := time.Since(started); took < serverReadTimeout {
+		t.Fatalf("the upload finished in %s, which is inside the server's own "+
+			"%s: this test did not exercise the deadline at all",
+			took.Round(time.Millisecond), serverReadTimeout)
+	}
+
+	var report struct {
+		Workers         struct{ Written, Skipped int } `json:"workers"`
+		WorkRecords     struct{ Written, Skipped int } `json:"workRecords"`
+		BalancesChecked int                            `json:"balancesChecked"`
+	}
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatalf("decode report: %v: %s", err, raw)
+	}
+	// Every row of a 12 MB body, counted by the server. A body cut short
+	// would have failed to decode long before this.
+	if report.Workers.Written != workers {
+		t.Errorf("workers written = %d, want %d", report.Workers.Written, workers)
+	}
+	if report.WorkRecords.Written != records {
+		t.Errorf("work records written = %d, want %d: the body did not arrive whole",
+			report.WorkRecords.Written, records)
+	}
+	if report.BalancesChecked != workers {
+		t.Errorf("balancesChecked = %d, want %d", report.BalancesChecked, workers)
+	}
 }
 
 // seasonImportBody builds a season of at least `min` bytes and returns it with
@@ -356,54 +381,69 @@ func TestACropReportHeaderCoversTheWeeksItShows(t *testing.T) {
 	}
 
 	t.Run("the whole crop, asked for whole", func(t *testing.T) {
-		got := read(12)
-		if kg, _ := got["kg"].(float64); kg != 70 {
-			t.Errorf("kg = %v, want 70 (10+20+40): %v", got["kg"], got)
-		}
-		if partial, _ := got["partialWindow"].(bool); partial {
-			t.Errorf("partialWindow is true for a window that cut nothing off: %v", got)
-		}
-		if got["coveredFrom"] != "2026-08-03" {
-			t.Errorf("coveredFrom = %v, want the Monday of the first week", got["coveredFrom"])
-		}
+		s10CheckCropWhole(t, read(12))
 	})
 
 	t.Run("one week, and the header is that week", func(t *testing.T) {
-		got := read(1)
-		byWeek, _ := got["byWeek"].([]any)
-		if len(byWeek) != 1 {
-			t.Fatalf("byWeek has %d rows for weeks=1: %v", len(byWeek), got)
-		}
-		if kg, _ := got["kg"].(float64); kg != 40 {
-			t.Errorf("kg = %v, want 40 — the header must cover the same week the "+
-				"rows do, not the crop's whole history: %v", got["kg"], got)
-		}
-		if records, _ := got["records"].(float64); records != 1 {
-			t.Errorf("records = %v, want 1: %v", got["records"], got)
-		}
-		if partial, _ := got["partialWindow"].(bool); !partial {
-			t.Errorf("partialWindow is false while two older weeks are being "+
-				"withheld: a total that cannot say it is partial gets read as "+
-				"the whole crop: %v", got)
-		}
-		if got["coveredFrom"] != "2026-08-17" || got["coveredTo"] != "2026-08-23" {
-			t.Errorf("covered %v..%v, want 2026-08-17..2026-08-23",
-				got["coveredFrom"], got["coveredTo"])
-		}
-		if w, _ := got["weeks"].(float64); w != 1 {
-			t.Errorf("weeks = %v, want the cap echoed back", got["weeks"])
-		}
+		s10CheckCropOneWeek(t, read(1))
 	})
 
 	t.Run("two weeks", func(t *testing.T) {
-		got := read(2)
-		if kg, _ := got["kg"].(float64); kg != 60 {
-			t.Errorf("kg = %v, want 60 (20+40): %v", got["kg"], got)
-		}
-		if partial, _ := got["partialWindow"].(bool); !partial {
-			t.Errorf("partialWindow is false while one older week is withheld: %v", got)
-		}
+		s10CheckCropTwoWeeks(t, read(2))
 	})
+}
+
+// s10CheckCropWhole asserts the crop report asked for whole covers it whole.
+func s10CheckCropWhole(t *testing.T, got map[string]any) {
+	t.Helper()
+	if kg, _ := got["kg"].(float64); kg != 70 {
+		t.Errorf("kg = %v, want 70 (10+20+40): %v", got["kg"], got)
+	}
+	if partial, _ := got["partialWindow"].(bool); partial {
+		t.Errorf("partialWindow is true for a window that cut nothing off: %v", got)
+	}
+	if got["coveredFrom"] != "2026-08-03" {
+		t.Errorf("coveredFrom = %v, want the Monday of the first week", got["coveredFrom"])
+	}
+}
+
+// s10CheckCropOneWeek asserts a one-week crop report's header is that week.
+func s10CheckCropOneWeek(t *testing.T, got map[string]any) {
+	t.Helper()
+	byWeek, _ := got["byWeek"].([]any)
+	if len(byWeek) != 1 {
+		t.Fatalf("byWeek has %d rows for weeks=1: %v", len(byWeek), got)
+	}
+	if kg, _ := got["kg"].(float64); kg != 40 {
+		t.Errorf("kg = %v, want 40 — the header must cover the same week the "+
+			"rows do, not the crop's whole history: %v", got["kg"], got)
+	}
+	if records, _ := got["records"].(float64); records != 1 {
+		t.Errorf("records = %v, want 1: %v", got["records"], got)
+	}
+	if partial, _ := got["partialWindow"].(bool); !partial {
+		t.Errorf("partialWindow is false while two older weeks are being "+
+			"withheld: a total that cannot say it is partial gets read as "+
+			"the whole crop: %v", got)
+	}
+	if got["coveredFrom"] != "2026-08-17" || got["coveredTo"] != "2026-08-23" {
+		t.Errorf("covered %v..%v, want 2026-08-17..2026-08-23",
+			got["coveredFrom"], got["coveredTo"])
+	}
+	if w, _ := got["weeks"].(float64); w != 1 {
+		t.Errorf("weeks = %v, want the cap echoed back", got["weeks"])
+	}
+}
+
+// s10CheckCropTwoWeeks asserts a two-week crop report's header.
+func s10CheckCropTwoWeeks(t *testing.T, got map[string]any) {
+	t.Helper()
+	if kg, _ := got["kg"].(float64); kg != 60 {
+		t.Errorf("kg = %v, want 60 (20+40): %v", got["kg"], got)
+	}
+	if partial, _ := got["partialWindow"].(bool); !partial {
+		t.Errorf("partialWindow is false while one older week is withheld: %v", got)
+	}
 }
 
 // ---------------------------------------------------------------------------
