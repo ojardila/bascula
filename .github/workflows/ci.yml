@@ -216,6 +216,16 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l ./cmd ./internal ./migrations)"
         working-directory: services/api
+      # govulncheck reports only advisories whose vulnerable symbols are
+      # reachable from this module, so the step is quiet by default and
+      # fails only on something CI would otherwise ship. Covers the Go
+      # stdlib too, which Dependabot does not see (toolchain, not go.mod).
+      - name: govulncheck
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+        working-directory: services/api
       - name: migrate
         run: go run ./cmd/api -migrate
         working-directory: services/api
