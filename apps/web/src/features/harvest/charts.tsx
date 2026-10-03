@@ -105,7 +105,7 @@ export function Curve({
   color = GREEN,
   summary,
   onSelect,
-}: CurveProps) {
+}: Readonly<CurveProps>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -137,7 +137,7 @@ export function Curve({
 
   // The last hop into a still-running week is drawn separately, dashed.
   const lastIsPartial =
-    points.length > 1 && points[points.length - 1].partial === true;
+    points.length > 1 && points.at(-1)?.partial === true;
 
   const line = (pts: { i: number; v: number }[]) =>
     pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
@@ -210,7 +210,7 @@ export function Curve({
                 )}
                 {lastIsPartial &&
                   s.pts.length > 1 &&
-                  s.pts[s.pts.length - 1].i === points.length - 1 && (
+                  s.pts.at(-1)?.i === points.length - 1 && (
                     <path
                       d={line(s.pts.slice(-2))}
                       fill="none"
@@ -356,14 +356,14 @@ export function Sparkline({
   height = 30,
   color = GREEN,
   label,
-}: {
+}: Readonly<{
   /** `null` is a week whose kilos are unknown: it breaks the line, never zeroes it. */
   values: (number | null)[];
   width?: number;
   height?: number;
   color?: string;
   label: string;
-}) {
+}>) {
   const known = values.filter((v): v is number => v !== null);
   if (known.length < 2) {
     return (
@@ -456,7 +456,7 @@ export function WeekBars({
   summary,
   onSelect,
   color = GREEN,
-}: Omit<CurveProps, "highlight" | "highlightLabel">) {
+}: Readonly<Omit<CurveProps, "highlight" | "highlightLabel">>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const plotW = Math.max(0, width - PAD.left - PAD.right);
@@ -595,10 +595,10 @@ export function WeekBars({
 export function RowBar({
   fraction,
   color = GREEN,
-}: {
+}: Readonly<{
   fraction: number;
   color?: string;
-}) {
+}>) {
   const pct =
     Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0)) * 100;
   return (

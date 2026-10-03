@@ -66,6 +66,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { visuallyHidden } from "@mui/utils";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
@@ -415,7 +416,11 @@ export function PayWorkerPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell padding="checkbox" />
+                    <TableCell padding="checkbox">
+                      <Box component="span" sx={visuallyHidden}>
+                        Seleccionar
+                      </Box>
+                    </TableCell>
                     <TableCell>Actividad</TableCell>
                     <TableCell>Fecha</TableCell>
                     <TableCell>Lotes</TableCell>

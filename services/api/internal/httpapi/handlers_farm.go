@@ -76,7 +76,7 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !ok {
-			writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
+			writeError(w, r, domain.BadRequest(msgInvalidTimezone))
 			return
 		}
 	}
@@ -84,7 +84,7 @@ func (s *Server) handleUpdateFarm(w http.ResponseWriter, r *http.Request) {
 	updated, err := store.UpdateFarm(r.Context(), tx, body, cleared)
 	if err != nil {
 		if store.IsCheckViolation(err, "farms_tz_valid") {
-			writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
+			writeError(w, r, domain.BadRequest(msgInvalidTimezone))
 			return
 		}
 		writeError(w, r, err)
@@ -223,7 +223,7 @@ func (s *Server) handleCreateAdminFarm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		writeError(w, r, domain.BadRequest("that is not a valid IANA timezone name"))
+		writeError(w, r, domain.BadRequest(msgInvalidTimezone))
 		return
 	}
 

@@ -90,7 +90,7 @@ export function isPhone(): boolean {
   return false;
 }
 
-function CopyField({ value, label }: { value: string; label: string }) {
+function CopyField({ value, label }: Readonly<{ value: string; label: string }>) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -149,7 +149,7 @@ export function guideText(mcpUrl: string): string {
   ].join("\n");
 }
 
-function ShareGuide({ mcpUrl }: { mcpUrl: string }) {
+function ShareGuide({ mcpUrl }: Readonly<{ mcpUrl: string }>) {
   const nav = navigator as Navigator & {
     share?: (d: { title?: string; text: string }) => Promise<void>;
   };

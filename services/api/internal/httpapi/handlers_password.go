@@ -45,7 +45,7 @@ func checkNewPassword(p string) error {
 	}
 	// Refused before the hash, like login does. See auth.MaxPasswordLength.
 	if len(p) > auth.MaxPasswordLength {
-		return domain.BadRequest("password is too long")
+		return domain.BadRequest(msgPasswordTooLong)
 	}
 	return nil
 }
@@ -77,7 +77,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.CurrentPassword) > auth.MaxPasswordLength {
-		writeError(w, r, domain.BadRequest("password is too long"))
+		writeError(w, r, domain.BadRequest(msgPasswordTooLong))
 		return
 	}
 	if err := checkNewPassword(req.NewPassword); err != nil {
@@ -344,7 +344,7 @@ func newResetSecret() (string, error) {
 // which of the two passwords it was.
 func (s *Server) checkCurrentPassword(w http.ResponseWriter, r *http.Request, tx pgx.Tx, p *auth.Principal, user *store.User, password string) (farmOwn, ok bool) {
 	if len(password) > auth.MaxPasswordLength {
-		writeError(w, r, domain.BadRequest("password is too long"))
+		writeError(w, r, domain.BadRequest(msgPasswordTooLong))
 		return false, false
 	}
 	email := strings.ToLower(user.Email)

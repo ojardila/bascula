@@ -16,7 +16,7 @@ const CHECK_MS = 5 * 60 * 1000;
  * on open, on every return to the app and every few minutes, and when it
  * is not this one it says so in one tap.
  */
-export function UpdateBanner({ intervalMs = CHECK_MS }: { intervalMs?: number }) {
+export function UpdateBanner({ intervalMs = CHECK_MS }: Readonly<{ intervalMs?: number }>) {
   const [server, setServer] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

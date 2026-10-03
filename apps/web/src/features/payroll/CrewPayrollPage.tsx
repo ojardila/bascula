@@ -1281,12 +1281,12 @@ function RunReport({
   onPrint,
   onRetry,
   busy,
-}: {
+}: Readonly<{
   run: PayrollRun;
   onPrint: () => void;
   onRetry: () => void;
   busy: boolean;
-}) {
+}>) {
   const done = run.rows.filter((r) => r.status === "done");
   const total = done.reduce(
     (s, r) =>
@@ -1448,10 +1448,10 @@ function RunReport({
 function SettleDriftDialog({
   check,
   onReview,
-}: {
+}: Readonly<{
   check: CrewCheck | null;
   onReview: () => void;
-}) {
+}>) {
   const n = (check?.drifts.length ?? 0) + (check?.unreadable.length ?? 0);
   return (
     <Dialog open={check !== null} maxWidth="md" fullWidth>
@@ -1539,10 +1539,10 @@ function SettleDriftDialog({
 function PayDriftDialog({
   check,
   onReview,
-}: {
+}: Readonly<{
   check: PayCheck | null;
   onReview: () => void;
-}) {
+}>) {
   return (
     <Dialog open={check !== null} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>

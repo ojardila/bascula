@@ -12,7 +12,7 @@ import { Joyride, EVENTS, type EventData, type TooltipRenderProps } from "react-
 import { TourCard } from "./TourCard";
 import type { TourName, TourStepDef } from "./steps";
 
-function Tooltip(props: TooltipRenderProps) {
+function Tooltip(props: Readonly<TooltipRenderProps>) {
   const { tour, def } = props.step.data as { tour: TourName; def: TourStepDef };
   return (
     <div {...props.tooltipProps}>
@@ -25,11 +25,11 @@ export default function JoyrideTour({
   tour,
   def,
   onMissing,
-}: {
+}: Readonly<{
   tour: TourName;
   def: TourStepDef;
   onMissing: () => void;
-}) {
+}>) {
   return (
     <Joyride
       key={`${tour}-${def.n}`}

@@ -94,7 +94,7 @@ export function DateField({
   min,
   max,
   name,
-}: DateFieldProps) {
+}: Readonly<DateFieldProps>) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
@@ -228,7 +228,7 @@ function Calendar({
   max,
   onPick,
   onClose,
-}: {
+}: Readonly<{
   anchorEl: HTMLElement | null;
   selected: string | null;
   today: string;
@@ -236,7 +236,7 @@ function Calendar({
   max?: string;
   onPick: (iso: string) => void;
   onClose: () => void;
-}) {
+}>) {
   const start = selected ?? today;
   const [cursor, setCursor] = useState(() => ({
     year: Number(start.slice(0, 4)),

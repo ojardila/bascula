@@ -46,7 +46,7 @@ export function TableState({
   subject,
   emptyText,
   emptyAction,
-}: Props) {
+}: Readonly<Props>) {
   if (denied) {
     return (
       <TableRow>

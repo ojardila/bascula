@@ -106,7 +106,7 @@ func (s *Server) readCluster(ctx context.Context, slug string) clusterView {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	ns := "bascula-" + slug
+	ns := farmNamespacePrefix + slug
 
 	var nsObj struct {
 		Status struct {
@@ -479,10 +479,10 @@ func (s *Server) ReconcileFarmHostnamesOnce(ctx context.Context) int {
 	n := 0
 	for _, it := range list.Items {
 		name := it.Metadata.Name
-		if !strings.HasPrefix(name, "bascula-") || it.Status.Phase != "Active" {
+		if !strings.HasPrefix(name, farmNamespacePrefix) || it.Status.Phase != "Active" {
 			continue
 		}
-		slug, err := normalizeFarmSlug(strings.TrimPrefix(name, "bascula-"))
+		slug, err := normalizeFarmSlug(strings.TrimPrefix(name, farmNamespacePrefix))
 		if err != nil {
 			continue // bascula-dev and other reserved names are not farms
 		}

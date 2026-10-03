@@ -455,7 +455,7 @@ function MainDomainSignup() {
 }
 
 /** A renamed route: same screen, same query string (`?lunes=`, `?lote=`). */
-function RedirectKeepingQuery({ to }: { to: string }) {
+function RedirectKeepingQuery({ to }: Readonly<{ to: string }>) {
   const { search } = useLocation();
   return <Navigate to={`${to}${search}`} replace />;
 }

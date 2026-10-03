@@ -174,11 +174,11 @@ function WeekSummaryLoader({
   thisMonday,
   lastMonday,
   canSeeMoney,
-}: {
+}: Readonly<{
   thisMonday: string;
   lastMonday: string;
   canSeeMoney: boolean;
-}) {
+}>) {
   const { data, error, denied } = useAsync(
     async () =>
       Promise.all([reportWeek(thisMonday), reportWeeks({ limit: 2 })]),
@@ -221,13 +221,13 @@ function BigAction({
   title,
   hint,
   tour,
-}: {
+}: Readonly<{
   to: string;
   icon: ReactNode;
   title: string;
   hint: string;
   tour?: string;
-}) {
+}>) {
   return (
     <ButtonBase
       component={RouterLink}
@@ -280,11 +280,11 @@ function BigFigure({
   label,
   children,
   wide,
-}: {
+}: Readonly<{
   label: string;
   children: ReactNode;
   wide?: boolean;
-}) {
+}>) {
   return (
     <Box
       sx={{
@@ -320,11 +320,11 @@ function WeekSummary({
   week,
   lastWeek,
   canSeeMoney,
-}: {
+}: Readonly<{
   week: Awaited<ReturnType<typeof reportWeek>>;
   lastWeek: { kg: number | null } | null;
   canSeeMoney: boolean;
-}) {
+}>) {
   const pickers = week.byDay.rows.length;
   const dayCols = week.byDay.columns.filter((c) => c.key);
   const maxKg = Math.max(...dayCols.map((c) => kgForDrawing(c.total)), 1);

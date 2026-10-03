@@ -35,6 +35,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { visuallyHidden } from "@mui/utils";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PaymentsIcon from "@mui/icons-material/Payments";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
@@ -416,7 +417,11 @@ export function WorkerProfilePage() {
                 <TableCell>Lotes</TableCell>
                 <TableCell align="right">Cantidad</TableCell>
                 <TableCell align="right">Valor</TableCell>
-                <TableCell />
+                <TableCell>
+                  <Box component="span" sx={visuallyHidden}>
+                    Acciones
+                  </Box>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

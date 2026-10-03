@@ -91,12 +91,12 @@ function NavItem({
   selected,
   future,
   onNavigate,
-}: {
+}: Readonly<{
   module: ModuleDef;
   selected: boolean;
   future: boolean;
   onNavigate: () => void;
-}) {
+}>) {
   const item = (
     <ListItemButton
       component={future ? "div" : RouterLink}
@@ -142,7 +142,7 @@ function NavItem({
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const { user, principal, logout, readOnly, can } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();

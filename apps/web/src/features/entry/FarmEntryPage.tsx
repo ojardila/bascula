@@ -23,7 +23,7 @@ import {
 } from "../../lib/farmHost";
 import { useFarmDisplayName } from "../../lib/useFarmDisplayName";
 
-export function FarmEntryPage({ hostname }: { hostname?: string }) {
+export function FarmEntryPage({ hostname }: Readonly<{ hostname?: string }>) {
   const host = hostname ?? window.location.hostname;
   const slug = farmSlugFromHost(host);
   // "Finca San José", not the DNS label. The slug is only the fallback when

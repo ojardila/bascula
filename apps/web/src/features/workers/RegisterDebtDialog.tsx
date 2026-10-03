@@ -21,12 +21,12 @@ import { todayInFarm } from "../../lib/dates";
  */
 export function RegisterDebtDialog({
   open, workerId, onClose, onSaved,
-}: {
+}: Readonly<{
   open: boolean;
   workerId: string;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   // The farm's calendar day, not UTC: after 7 p.m. in Colombia UTC is tomorrow (#152).
   const { user } = useAuth();
   const farmToday = () => todayInFarm(user?.farm?.timezone ?? "America/Bogota");

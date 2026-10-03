@@ -116,7 +116,7 @@ export function StockMoveDialog({
   stockOf,
   onClose,
   onSaved,
-}: StockMoveDialogProps) {
+}: Readonly<StockMoveDialogProps>) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 

@@ -302,10 +302,10 @@ export function CropsPage() {
 function Cell({
   label,
   children,
-}: {
+}: Readonly<{
   label: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <Box sx={{ minWidth: 74 }}>
       <Typography
