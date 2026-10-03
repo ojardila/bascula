@@ -125,7 +125,7 @@ describe("WorkerProfilePage", () => {
           .filter((r) => r.workerId === w.id && r.deletedAt === null)
           .slice(0, 2)
           .map((r) => db.projectWorkRecord(t, r));
-        expect(tasks.length).toBe(2);
+        expect(tasks).toHaveLength(2);
         tasks[0] = { ...tasks[0], payScheme: "contrato" } as typeof tasks[0];
         tasks[1] = { ...tasks[1], settled: true } as typeof tasks[1];
         return HttpResponse.json({
