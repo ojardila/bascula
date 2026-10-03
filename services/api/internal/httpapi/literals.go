@@ -13,9 +13,6 @@ const (
 	// Description of the municipality argument on the MCP write tools.
 	descMunicipality = "Municipio."
 
-	// HTML attribute that pre-selects a radio or checkbox on the OAuth pages.
-	htmlChecked = " checked"
-
 	// Every farm lives in Kubernetes namespace bascula-{slug}.
 	farmNamespacePrefix = "bascula-"
 
