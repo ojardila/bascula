@@ -21,20 +21,7 @@ func TestDayDecodesWhatTheContractAllows(t *testing.T) {
 		{`"2026-08-25T23:30:00-05:00"`, "2026-08-25"},
 		{`"2026-08-25T00:30:00+05:00"`, "2026-08-25"},
 	} {
-		var d Day
-		if err := json.Unmarshal([]byte(c.in), &d); err != nil {
-			t.Fatalf("%s: %v", c.in, err)
-		}
-		if got := d.Format(time.DateOnly); got != c.want || d.Location() != time.UTC || d.Hour() != 0 {
-			t.Fatalf("%s decoded as %v, want %s at midnight UTC", c.in, d.Time, c.want)
-		}
-		out, _ := json.Marshal(d)
-		if string(out) != `"`+c.want+`"` {
-			t.Fatalf("%s re-encoded as %s", c.in, out)
-		}
-		if p := d.Ptr(); p == nil || !p.Equal(d.Time) {
-			t.Fatalf("Ptr = %v", p)
-		}
+		t.Run(c.in, func(t *testing.T) { c2otCheckDay(t, c.in, c.want) })
 	}
 	for _, in := range []string{`""`, `null`} {
 		var d Day
@@ -50,6 +37,26 @@ func TestDayDecodesWhatTheContractAllows(t *testing.T) {
 	var nilDay *Day
 	if nilDay.Ptr() != nil {
 		t.Fatal("a nil Day is no date")
+	}
+}
+
+// c2otCheckDay decodes in, and checks it lands on want at midnight UTC,
+// re-encodes as the plain date and has a matching Ptr.
+func c2otCheckDay(t *testing.T, in, want string) {
+	t.Helper()
+	var d Day
+	if err := json.Unmarshal([]byte(in), &d); err != nil {
+		t.Fatalf("%s: %v", in, err)
+	}
+	if got := d.Format(time.DateOnly); got != want || d.Location() != time.UTC || d.Hour() != 0 {
+		t.Fatalf("%s decoded as %v, want %s at midnight UTC", in, d.Time, want)
+	}
+	out, _ := json.Marshal(d)
+	if string(out) != `"`+want+`"` {
+		t.Fatalf("%s re-encoded as %s", in, out)
+	}
+	if p := d.Ptr(); p == nil || !p.Equal(d.Time) {
+		t.Fatalf("Ptr = %v", p)
 	}
 }
 

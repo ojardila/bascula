@@ -29,37 +29,47 @@ func c2otSMTP(t *testing.T, ehlo []string, answer func(cmd string) string, stall
 			return
 		}
 		defer conn.Close()
-		r := bufio.NewReader(conn)
-		w := func(s string) { _, _ = io.WriteString(conn, s+"\r\n") }
-		w("220 fake ESMTP")
-		for {
-			line, err := r.ReadString('\n')
-			if err != nil {
-				return
-			}
-			cmd := strings.ToUpper(strings.TrimSpace(line))
-			if strings.HasPrefix(cmd, "EHLO") {
-				for i, l := range ehlo {
-					sep := "-"
-					if i == len(ehlo)-1 {
-						sep = " "
-					}
-					w("250" + sep + l)
-				}
-				continue
-			}
-			reply := answer(cmd)
-			if reply == "" {
-				return
-			}
-			w(reply)
-			if cmd == "DATA" && stall != nil {
-				<-stall
-				return
-			}
-		}
+		c2otServe(conn, ehlo, answer, stall)
 	}()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// c2otServe runs the fake's side of one SMTP conversation on conn.
+func c2otServe(conn net.Conn, ehlo []string, answer func(cmd string) string, stall chan struct{}) {
+	r := bufio.NewReader(conn)
+	w := func(s string) { _, _ = io.WriteString(conn, s+"\r\n") }
+	w("220 fake ESMTP")
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		cmd := strings.ToUpper(strings.TrimSpace(line))
+		if strings.HasPrefix(cmd, "EHLO") {
+			c2otEHLO(w, ehlo)
+			continue
+		}
+		reply := answer(cmd)
+		if reply == "" {
+			return
+		}
+		w(reply)
+		if cmd == "DATA" && stall != nil {
+			<-stall
+			return
+		}
+	}
+}
+
+// c2otEHLO writes the multi-line EHLO reply, the last line marked with a space.
+func c2otEHLO(w func(string), ehlo []string) {
+	for i, l := range ehlo {
+		sep := "-"
+		if i == len(ehlo)-1 {
+			sep = " "
+		}
+		w("250" + sep + l)
+	}
 }
 
 // A server that offers STARTTLS and then refuses it stops the send before
