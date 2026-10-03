@@ -154,28 +154,24 @@ func TestCMRAttachTeamsEdges(t *testing.T) {
 	}
 }
 
-func TestCMRTeamMembershipStoreEdges(t *testing.T) {
-	ctx := context.Background()
-	from := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+// cmrLiveMembers is the query SetTeamMembers reads a team's members with.
+const cmrLiveMembers = "SELECT id::text, employee_id::text, from_day FROM team_members"
 
-	// The team id is not a row of this farm.
-	tx := &cmrTx{row: map[string]cmrRow{cmrKind: {err: pgx.ErrNoRows}}}
-	if err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, ""); !errors.Is(err, NoRows) {
-		t.Errorf("members on a missing team: %v", err)
-	}
-	// An inactive team takes no members.
-	tx = &cmrTx{row: map[string]cmrRow{cmrKind: {vals: []any{KindEquipo, false}}}}
-	err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, "")
-	cmrCode(t, "inactive team", err, domain.CodeBadRequest)
-
-	live := "SELECT id::text, employee_id::text, from_day FROM team_members"
-	active := cmrRow{vals: []any{KindEquipo, true}}
-	for _, rows := range []*cmrRows{cmrFailing(), cmrEndsBadly()} {
-		tx = &cmrTx{row: map[string]cmrRow{cmrKind: active}, query: map[string]*cmrRows{live: rows}}
-		if err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, ""); !errors.Is(err, errCMR) {
-			t.Errorf("reading the live members failed, got %v", err)
+// cmrExecs is the writes (not the reads) tx saw, in order.
+func cmrExecs(tx *cmrTx) []string {
+	var execs []string
+	for _, s := range tx.seen {
+		if s[0] == 'E' {
+			execs = append(execs, s)
 		}
 	}
+	return execs
+}
+
+func TestCMRTeamMemberLeavingWrites(t *testing.T) {
+	ctx := context.Background()
+	from := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+	active := cmrRow{vals: []any{KindEquipo, true}}
 
 	// A member leaving: one whose membership had not started is taken off,
 	// one who was already in leaves the day before. Each write failing is
@@ -193,22 +189,39 @@ func TestCMRTeamMembershipStoreEdges(t *testing.T) {
 		{"the close fails", nil, errCMR, []string{"E:DELETE", "E:UPDATE"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			tx := &cmrTx{row: map[string]cmrRow{cmrKind: active}, query: map[string]*cmrRows{live: current()},
+			tx := &cmrTx{row: map[string]cmrRow{cmrKind: active}, query: map[string]*cmrRows{cmrLiveMembers: current()},
 				exec: map[string]error{"DELETE": c.del, "UPDATE": c.close}}
 			err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, "")
 			if (c.del != nil || c.close != nil) != (err != nil) {
 				t.Errorf("err = %v", err)
 			}
-			var execs []string
-			for _, s := range tx.seen {
-				if s[0] == 'E' {
-					execs = append(execs, s)
-				}
-			}
-			if len(execs) != len(c.want) {
+			if execs := cmrExecs(tx); len(execs) != len(c.want) {
 				t.Errorf("writes %v, want %v", execs, c.want)
 			}
 		})
+	}
+}
+
+func TestCMRTeamMembershipStoreEdges(t *testing.T) {
+	ctx := context.Background()
+	from := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+
+	// The team id is not a row of this farm.
+	tx := &cmrTx{row: map[string]cmrRow{cmrKind: {err: pgx.ErrNoRows}}}
+	if err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, ""); !errors.Is(err, NoRows) {
+		t.Errorf("members on a missing team: %v", err)
+	}
+	// An inactive team takes no members.
+	tx = &cmrTx{row: map[string]cmrRow{cmrKind: {vals: []any{KindEquipo, false}}}}
+	err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, "")
+	cmrCode(t, "inactive team", err, domain.CodeBadRequest)
+
+	active := cmrRow{vals: []any{KindEquipo, true}}
+	for _, rows := range []*cmrRows{cmrFailing(), cmrEndsBadly()} {
+		tx = &cmrTx{row: map[string]cmrRow{cmrKind: active}, query: map[string]*cmrRows{cmrLiveMembers: rows}}
+		if err := SetTeamMembers(ctx, tx, "f", "t-1", nil, from, ""); !errors.Is(err, errCMR) {
+			t.Errorf("reading the live members failed, got %v", err)
+		}
 	}
 
 	// The trigger, not the pre-check, saw the person in another team (two
