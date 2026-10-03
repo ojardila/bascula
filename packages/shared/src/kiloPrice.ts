@@ -98,7 +98,7 @@ export function resolveKiloPrice(book: KiloPriceBook, q: KiloPriceQuery): KiloPr
         book.plotPrices.filter((p) => p.plotId === plotId),
         q.weekStart,
       );
-      if (!row || row.priceCents === null) {
+      if (row?.priceCents == null) {
         allPriced = false;
         break;
       }
