@@ -743,6 +743,47 @@ func pushWorkRecord(ctx context.Context, tx pgx.Tx, farmID, batchDevice string,
 	return applied(op.OpID, out.ID, true)
 }
 
+// pushLedgerKindRefusal admits the kinds a handset may push.
+func pushLedgerKindRefusal(kind domain.LedgerKind) error {
+	switch kind {
+	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction, domain.KindAdjust:
+		return nil
+	case domain.KindEarning:
+		// §2: a `devengo` is produced by POST /v1/settlements and comes DOWN.
+		// A handset that could write one could pay a week the server never
+		// agreed to.
+		return domain.BadRequest(
+			"a `devengo` is written by POST /v1/settlements and only travels down")
+	default:
+		return domain.BadRequest(
+			"kind must be pago, anticipo, deduccion or ajuste")
+	}
+}
+
+// pushLedgerAmount gives a pushed movement its sign: every kind but an
+// adjustment takes money off the balance, whatever sign the handset sent.
+func pushLedgerAmount(kind domain.LedgerKind, amount int64) int64 {
+	if kind == domain.KindAdjust {
+		return amount
+	}
+	if amount < 0 {
+		amount = -amount
+	}
+	return -amount
+}
+
+// parseOptionalDay reads a YYYY-MM-DD date; "" is no date.
+func parseOptionalDay(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	d, err := time.Parse(time.DateOnly, s)
+	if err != nil {
+		return nil, domain.BadRequest("date must be YYYY-MM-DD")
+	}
+	return &d, nil
+}
+
 // pushLedgerEntry takes money that already left somebody's pocket.
 //
 // §2.3: a `pago`, an `anticipo` or a `deduccion` is a FACT. Somebody handed
@@ -788,26 +829,11 @@ func pushLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string,
 	}
 
 	kind := domain.LedgerKind(payload.Kind)
-	switch kind {
-	case domain.KindPayment, domain.KindAdvance, domain.KindDeduction, domain.KindAdjust:
-	case domain.KindEarning:
-		// §2: a `devengo` is produced by POST /v1/settlements and comes DOWN.
-		// A handset that could write one could pay a week the server never
-		// agreed to.
-		return rejected(op.OpID, domain.BadRequest(
-			"a `devengo` is written by POST /v1/settlements and only travels down"))
-	default:
-		return rejected(op.OpID, domain.BadRequest(
-			"kind must be pago, anticipo, deduccion or ajuste"))
+	if err := pushLedgerKindRefusal(kind); err != nil {
+		return rejected(op.OpID, err)
 	}
 
-	amount := payload.AmountCents
-	if kind != domain.KindAdjust {
-		if amount < 0 {
-			amount = -amount
-		}
-		amount = -amount
-	}
+	amount := pushLedgerAmount(kind, payload.AmountCents)
 	if payload.Method != nil && !domain.PayMethod(*payload.Method).Valid() {
 		return rejected(op.OpID, domain.BadRequest("method must be efectivo, transferencia or otro"))
 	}
@@ -815,13 +841,9 @@ func pushLedgerEntry(ctx context.Context, tx pgx.Tx, farmID string,
 		return rejected(op.OpID, domain.BadRequest("a deduction has no payment method"))
 	}
 
-	var day *time.Time
-	if payload.Date != "" {
-		d, err := time.Parse(time.DateOnly, payload.Date)
-		if err != nil {
-			return rejected(op.OpID, domain.BadRequest("date must be YYYY-MM-DD"))
-		}
-		day = &d
+	day, err := parseOptionalDay(payload.Date)
+	if err != nil {
+		return rejected(op.OpID, err)
 	}
 	if _, err := store.GetEmployee(ctx, tx, payload.WorkerID); err != nil {
 		return rejected(op.OpID, domain.NotFound(

@@ -106,27 +106,33 @@ type createWorkerRequest struct {
 	MembersFrom string   `json:"membersFrom"`
 }
 
-func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
-	var req createWorkerRequest
-	if err := decode(r, &req); err != nil {
-		writeError(w, r, err)
-		return
+// createEmployeeError names the unique index a new worker collided with.
+func createEmployeeError(err error) error {
+	if store.IsUniqueViolation(err, "ux_employees_doc") {
+		return domain.Conflict(domain.CodeDuplicateDocument,
+			"another worker on this farm already has that document")
 	}
+	if store.IsUniqueViolation(err, "ux_employees_tag") {
+		return errTagTaken()
+	}
+	return err
+}
+
+// prepareNewWorker checks a create request and returns the employee to
+// write, with its kind defaulted, its basket number normalised and an id.
+func prepareNewWorker(req *createWorkerRequest) (store.Employee, error) {
 	body := req.Employee
 	if body.Name == "" {
-		writeError(w, r, domain.BadRequest("name is required"))
-		return
+		return store.Employee{}, domain.BadRequest("name is required")
 	}
 	if body.Kind == "" {
 		body.Kind = store.KindPersona
 	}
 	if body.Kind != store.KindPersona && body.Kind != store.KindEquipo {
-		writeError(w, r, domain.BadRequest("kind must be persona or equipo"))
-		return
+		return store.Employee{}, domain.BadRequest("kind must be persona or equipo")
 	}
 	if len(req.MemberIDs) > 0 && body.Kind != store.KindEquipo {
-		writeError(w, r, domain.BadRequest("memberIds is only for a team (kind equipo)"))
-		return
+		return store.Employee{}, domain.BadRequest("memberIds is only for a team (kind equipo)")
 	}
 	// The basket number («número de canasto») is how the scale finds a
 	// person or a team, so a new one is not created without it. Rows from
@@ -134,11 +140,24 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 	// else, only offered a number («Sin canasto»).
 	body.Tag = store.NormalizeTag(body.Tag)
 	if body.Tag == nil {
-		writeError(w, r, errTagRequired())
-		return
+		return store.Employee{}, errTagRequired()
 	}
 	if body.ID == "" {
 		body.ID = newID()
+	}
+	return body, nil
+}
+
+func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
+	var req createWorkerRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	body, err := prepareNewWorker(&req)
+	if err != nil {
+		writeError(w, r, err)
+		return
 	}
 	tx, err := tenant.Tx(r.Context())
 	if err != nil {
@@ -189,16 +208,7 @@ func (s *Server) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 
 	created, err := store.CreateEmployee(r.Context(), tx, farmID, body)
 	if err != nil {
-		if store.IsUniqueViolation(err, "ux_employees_doc") {
-			writeError(w, r, domain.Conflict(domain.CodeDuplicateDocument,
-				"another worker on this farm already has that document"))
-			return
-		}
-		if store.IsUniqueViolation(err, "ux_employees_tag") {
-			writeError(w, r, errTagTaken())
-			return
-		}
-		writeError(w, r, err)
+		writeError(w, r, createEmployeeError(err))
 		return
 	}
 	if created.Kind == store.KindEquipo && len(req.MemberIDs) > 0 {
