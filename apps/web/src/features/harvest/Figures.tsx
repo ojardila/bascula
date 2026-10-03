@@ -44,6 +44,7 @@ export function Unknown({ reason }: Readonly<{ reason: string }>) {
     <Tooltip title={reason}>
       <Box
         component="span"
+        role="img"
         aria-label={reason}
         sx={{ color: "text.disabled", fontWeight: 600, cursor: "help" }}
       >
@@ -65,7 +66,7 @@ function Note({ children, title }: { children: ReactNode; title?: string }) {
   );
   return title ? (
     <Tooltip title={title}>
-      <Box component="span" sx={{ cursor: "help" }}>
+      <Box component="span" role="img" sx={{ cursor: "help" }}>
         {text}
       </Box>
     </Tooltip>
