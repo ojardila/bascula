@@ -351,6 +351,11 @@ export const refreshTokens: MockRefreshToken[] = [];
  */
 export const farmPasswords = new Map<string, string>();
 
+/** What an invite does: this password opens this farm for this person. */
+export function setFarmPassword(farmId: string, userId: string, password: string): void {
+  farmPasswords.set(`${farmId}:${userId}`, password);
+}
+
 /** A passkey, as the mock keeps it: the credential id is all a sign-in names. */
 export interface MockPasskey {
   id: string;
