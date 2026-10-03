@@ -154,7 +154,8 @@ export function WorkerFormPage() {
       },
     ).catch(async (e: unknown) => {
       if (e instanceof ApiError && e.code === "EMPLOYEE_EXISTS_DELETED") {
-        const existingId = String(e.details.employeeId ?? "");
+        const rawId = e.details.employeeId;
+        const existingId = typeof rawId === "string" ? rawId : "";
         // Fetch the name so the offer says WHO, not "the existing worker". A
         // person deciding whether to reactivate needs to recognise them.
         const who = existingId

@@ -112,6 +112,32 @@ export type CellWrite =
   | { kind: "update"; recordId: string; quantity: number }
   | { kind: "remove"; recordId: string };
 
+/**
+ * What one cell asks to be written: nothing, a write, or an error message.
+ * Settled cells, cells holding several weighings, future days and untouched
+ * cells write nothing.
+ */
+function plannedWrite(
+  w: Worker,
+  day: string,
+  cell: SheetCell,
+  today: string,
+): CellWrite | string | null {
+  if (day > today) return null;
+  if (cell.settled || (cell.records ?? 0) > 1) return null;
+  const raw = cell.text.trim();
+  if (raw === cell.original) return null;
+  if (raw === "") {
+    return cell.recordId ? { kind: "remove", recordId: cell.recordId } : null;
+  }
+  const qty = parseQuantity(raw);
+  if (qty === null || qty <= 0) {
+    return `${workerLabel(w)} el ${day}: la cantidad no es un número`;
+  }
+  if (cell.recordId) return { kind: "update", recordId: cell.recordId, quantity: qty };
+  return { kind: "create", workerId: w.id, day, quantity: qty };
+}
+
 export function plannedWrites(
   workers: Worker[],
   days: string[],
@@ -122,22 +148,10 @@ export function plannedWrites(
   const errors: string[] = [];
   for (const w of workers) {
     for (const day of days) {
-      if (day > today) continue;
       const cell = cells[cellKey(w.id, day)] ?? emptyCell();
-      if (cell.settled || (cell.records ?? 0) > 1) continue;
-      const raw = cell.text.trim();
-      if (raw === cell.original) continue;
-      if (raw === "") {
-        if (cell.recordId) writes.push({ kind: "remove", recordId: cell.recordId });
-        continue;
-      }
-      const qty = parseQuantity(raw);
-      if (qty === null || qty <= 0) {
-        errors.push(`${workerLabel(w)} el ${day}: la cantidad no es un número`);
-        continue;
-      }
-      if (cell.recordId) writes.push({ kind: "update", recordId: cell.recordId, quantity: qty });
-      else writes.push({ kind: "create", workerId: w.id, day, quantity: qty });
+      const planned = plannedWrite(w, day, cell, today);
+      if (typeof planned === "string") errors.push(planned);
+      else if (planned) writes.push(planned);
     }
   }
   return { writes, errors };

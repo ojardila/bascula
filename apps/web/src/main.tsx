@@ -104,7 +104,7 @@ async function boot() {
 // never registers, the promise never settles, and nothing ever renders. The
 // console knew and the screen did not. A blank tab is the least actionable bug
 // report there is, so say it on the page — and say what to do about it.
-boot().catch((err: unknown) => {
+function showBootFailure(err: unknown): void {
   const root = document.getElementById("root");
   if (!root) return;
   const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -141,4 +141,10 @@ boot().catch((err: unknown) => {
       }
     </div>`;
   console.error("boot failed", err);
-});
+}
+
+try {
+  await boot();
+} catch (err: unknown) {
+  showBootFailure(err);
+}

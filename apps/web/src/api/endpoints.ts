@@ -1391,7 +1391,7 @@ export const api = {
       // than at the server's 400 so the message names the cause: reaching the
       // network without an approved figure would settle whatever the server
       // happens to hold.
-      throw new Error("settle() requires expectedGrossCents: the figure the user approved");
+      throw new TypeError("settle() requires expectedGrossCents: the figure the user approved");
     }
     if (payableIds.length === 0) {
       /**

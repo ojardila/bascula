@@ -28,6 +28,55 @@ import type { Activity } from "../../api/types";
 const titleCase = (s: string) =>
   s ? s[0].toLocaleUpperCase("es") + s.slice(1) : s;
 
+/** The activity's current price, or why it has none of its own. */
+function RateCell({ activity: a }: { readonly activity: Activity }) {
+  if (a.rateSource === "weekly_price") {
+    // Not a price of the activity at all: it comes from the week, and
+    // it is frozen at settlement. Saying "$800" here would be a lie
+    // with a number in it. Now it also says where the price DOES live,
+    // which is the question somebody reading this cell is asking.
+    /* This used to read "precio de la semana", which was the THIRD
+       name for the same state: the paper calls it PROVISIONAL and the
+       dashboard called it "estimado". One name only, and the one
+       already in print wins. The week's price still exists — it is
+       what the owner sets on Mondays — but that is the name of the
+       PRICE, not of the state. */
+    return (
+      <Tooltip
+        title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}
+      >
+        <Chip
+          size="small"
+          color="warning"
+          variant="outlined"
+          label={PROVISIONAL}
+          sx={{ cursor: "help" }}
+        />
+      </Tooltip>
+    );
+  }
+  if (a.defaultRateCents === undefined) return "—";
+  return (
+    <Stack
+      sx={{
+        alignItems: "flex-end",
+      }}
+    >
+      <Money cents={a.defaultRateCents} />
+      {a.rates && a.rates.length > 1 && (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          {a.rates.length} precios con vigencia
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+
 export function ActivitiesPage() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
@@ -92,53 +141,7 @@ export function ActivitiesPage() {
         key: "rate",
         header: "Precio vigente",
         align: "right",
-        render: (a) => {
-          if (a.rateSource === "weekly_price") {
-            // Not a price of the activity at all: it comes from the week, and
-            // it is frozen at settlement. Saying "$800" here would be a lie
-            // with a number in it. Now it also says where the price DOES live,
-            // which is the question somebody reading this cell is asking.
-            /* This used to read "precio de la semana", which was the THIRD
-               name for the same state: the paper calls it PROVISIONAL and the
-               dashboard called it "estimado". One name only, and the one
-               already in print wins. The week's price still exists — it is
-               what the owner sets on Mondays — but that is the name of the
-               PRICE, not of the state. */
-            return (
-              <Tooltip
-                title={`${PROVISIONAL_WHY} Lo pone el precio del kilo de la semana, que se cambia en «Precio del kilo».`}
-              >
-                <Chip
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  label={PROVISIONAL}
-                  sx={{ cursor: "help" }}
-                />
-              </Tooltip>
-            );
-          }
-          if (a.defaultRateCents === undefined) return "—";
-          return (
-            <Stack
-              sx={{
-                alignItems: "flex-end",
-              }}
-            >
-              <Money cents={a.defaultRateCents} />
-              {a.rates && a.rates.length > 1 && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  {a.rates.length} precios con vigencia
-                </Typography>
-              )}
-            </Stack>
-          );
-        },
+        render: (a) => <RateCell activity={a} />,
       });
     }
     return cols;

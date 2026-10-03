@@ -83,11 +83,95 @@ function crossFoots(grid: WireReportGrid): boolean {
   return Math.abs(rows - total) < cent && Math.abs(cols - total) < cent;
 }
 
+type GridColumn = WireReportGrid["columns"][number];
+type GridRow = WireReportGrid["rows"][number];
+type Axis = "day" | "crop";
+
+/** A column's header: the day, the crop, or the explained unattributed column. */
+function ColumnHeader({
+  column,
+  axis,
+}: {
+  readonly column: GridColumn;
+  readonly axis: Axis;
+}) {
+  if (column.key === null) {
+    return (
+      <Tooltip title="Pesadas que no dicen en qué cultivo se recogieron, o que nombran varios. Van aparte para que los totales cuadren.">
+        <Box component="span" sx={{ cursor: "help" }}>
+          Sin asignar
+        </Box>
+      </Tooltip>
+    );
+  }
+  return <>{axis === "day" ? dayHeader(column.key) : column.label}</>;
+}
+
+/** One picker's line of the grid: a figure per column, or a placeholder. */
+function PickerRow({
+  row: r,
+  columns,
+  axis,
+}: {
+  readonly row: GridRow;
+  readonly columns: GridColumn[];
+  readonly axis: Axis;
+}) {
+  const cells = new Map<string, Totals>(
+    r.cells.map((c) => [c.column ?? "__unattributed", c]),
+  );
+  return (
+    <TableRow key={r.workerId} hover>
+      <TableCell
+        sx={{
+          position: "sticky",
+          left: 0,
+          bgcolor: "background.paper",
+          zIndex: 1,
+        }}
+      >
+        <Typography sx={{ fontWeight: 600, fontSize: 14 }}>{r.name}</Typography>
+      </TableCell>
+      {columns.map((c) => {
+        const key = c.key ?? "__unattributed";
+        const cell = cells.get(key);
+        const absent =
+          axis === "day"
+            ? `${r.name} no registró recolección ese día`
+            : `${r.name} no recogió en ${c.label} esa semana`;
+        return (
+          <TableCell key={key} align="right">
+            {cell === undefined ? (
+              <Tooltip title={`${absent}.`}>
+                <Box
+                  component="span"
+                  aria-label={absent}
+                  sx={{
+                    color: "text.disabled",
+                    cursor: "help",
+                  }}
+                >
+                  ·
+                </Box>
+              </Tooltip>
+            ) : (
+              <Kg total={cell} showUnit={false} />
+            )}
+          </TableCell>
+        );
+      })}
+      <TableCell align="right">
+        <Kg total={r.total} showUnit={false} bold />
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export function WeekPage() {
   const { monday = "" } = useParams();
   const { today, rangeKey, canSeeMoney } = useHarvest();
   const { can } = useAuth();
-  const [axis, setAxis] = useState<"day" | "crop">("day");
+  const [axis, setAxis] = useState<Axis>("day");
 
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(monday) && mondayOf(monday) === monday;
@@ -340,17 +424,7 @@ export function WeekPage() {
                           align="right"
                           sx={{ whiteSpace: "nowrap" }}
                         >
-                          {c.key === null ? (
-                            <Tooltip title="Pesadas que no dicen en qué cultivo se recogieron, o que nombran varios. Van aparte para que los totales cuadren.">
-                              <Box component="span" sx={{ cursor: "help" }}>
-                                Sin asignar
-                              </Box>
-                            </Tooltip>
-                          ) : axis === "day" ? (
-                            dayHeader(c.key)
-                          ) : (
-                            c.label
-                          )}
+                          <ColumnHeader column={c} axis={axis} />
                         </TableCell>
                       ))}
                       <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
@@ -359,64 +433,14 @@ export function WeekPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {grid.rows.map((r) => {
-                      const cells = new Map<string, Totals>(
-                        r.cells.map((c) => [c.column ?? "__unattributed", c]),
-                      );
-                      return (
-                        <TableRow key={r.workerId} hover>
-                          <TableCell
-                            sx={{
-                              position: "sticky",
-                              left: 0,
-                              bgcolor: "background.paper",
-                              zIndex: 1,
-                            }}
-                          >
-                            <Typography sx={{ fontWeight: 600, fontSize: 14 }}>
-                              {r.name}
-                            </Typography>
-                          </TableCell>
-                          {grid.columns.map((c) => {
-                            const key = c.key ?? "__unattributed";
-                            const cell = cells.get(key);
-                            return (
-                              <TableCell key={key} align="right">
-                                {cell === undefined ? (
-                                  <Tooltip
-                                    title={
-                                      axis === "day"
-                                        ? `${r.name} no registró recolección ese día.`
-                                        : `${r.name} no recogió en ${c.label} esa semana.`
-                                    }
-                                  >
-                                    <Box
-                                      component="span"
-                                      aria-label={
-                                        axis === "day"
-                                          ? `${r.name} no registró recolección ese día`
-                                          : `${r.name} no recogió en ${c.label} esa semana`
-                                      }
-                                      sx={{
-                                        color: "text.disabled",
-                                        cursor: "help",
-                                      }}
-                                    >
-                                      ·
-                                    </Box>
-                                  </Tooltip>
-                                ) : (
-                                  <Kg total={cell} showUnit={false} />
-                                )}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell align="right">
-                            <Kg total={r.total} showUnit={false} bold />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {grid.rows.map((r) => (
+                      <PickerRow
+                        key={r.workerId}
+                        row={r}
+                        columns={grid.columns}
+                        axis={axis}
+                      />
+                    ))}
                   </TableBody>
                   <TableFooter>
                     <TableRow>
