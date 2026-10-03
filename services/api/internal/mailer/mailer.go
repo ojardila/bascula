@@ -134,8 +134,27 @@ func (s *SMTP) Describe() string {
 	return fmt.Sprintf("%s:%d tls=%s %s from=%s", s.cfg.Host, s.cfg.Port, s.cfg.TLS, auth, s.cfg.From.Address)
 }
 
+// ErrHeaderLineBreak is returned for a recipient or subject that holds a
+// carriage return or line feed: in a header either one would end it and let
+// the rest of the value write headers of its own.
+var ErrHeaderLineBreak = errors.New("line break in a header value")
+
+// checkHeader refuses a header value that could break out of its line.
+func checkHeader(name, v string) error {
+	if strings.ContainsAny(v, "\r\n") {
+		return fmt.Errorf("mailer: %s: %w", name, ErrHeaderLineBreak)
+	}
+	return nil
+}
+
 // Send delivers one message.
 func (s *SMTP) Send(ctx context.Context, m Message) error {
+	if err := checkHeader("recipient", m.To); err != nil {
+		return err
+	}
+	if err := checkHeader("subject", m.Subject); err != nil {
+		return err
+	}
 	to, err := mail.ParseAddress(m.To)
 	if err != nil {
 		return fmt.Errorf("mailer: recipient %q: %w", m.To, err)
@@ -204,13 +223,17 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 
 // Compose renders the RFC 5322 message: UTF-8 plain text, quoted-printable,
 // with the subject and names encoded so accents survive every mail client.
+// Addresses are written by net/mail (which encodes display names), the
+// subject is RFC 2047 encoded, and any CR or LF left in a header value is
+// turned into a space, so no value can start a header line of its own. Send
+// refuses such a recipient or subject before it gets here.
 func Compose(from, to mail.Address, m Message, now time.Time) []byte {
 	var b bytes.Buffer
 	domain := "localhost"
 	if at := strings.LastIndex(from.Address, "@"); at >= 0 {
 		domain = from.Address[at+1:]
 	}
-	hdr := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
+	hdr := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, oneLine(v)) }
 	hdr("From", from.String())
 	hdr("To", to.String())
 	hdr("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
@@ -225,4 +248,14 @@ func Compose(from, to mail.Address, m Message, now time.Time) []byte {
 	_, _ = qp.Write([]byte(body))
 	_ = qp.Close()
 	return b.Bytes()
+}
+
+// oneLine replaces CR and LF with spaces, for a header value.
+func oneLine(v string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return ' '
+		}
+		return r
+	}, v)
 }
