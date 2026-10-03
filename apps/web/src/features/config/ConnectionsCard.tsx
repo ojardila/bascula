@@ -214,15 +214,20 @@ export function ConnectionsCard() {
   // nicety, never a gate. Connecting works the same whether or not it answered.
   const [checkFailed, setCheckFailed] = useState(false);
   const retryTimer = useRef<number | null>(null);
+  // An answer that lands after the card is gone must not schedule another
+  // try: nothing would ever clear it (and in the tests, `window` is gone too).
+  const mounted = useRef(true);
   const reload = useCallback(() => {
     if (retryTimer.current) window.clearTimeout(retryTimer.current);
     const attempt = (n: number) => {
       api.listMcpConnections().then(
         (d) => {
+          if (!mounted.current) return;
           setData(d);
           setCheckFailed(false);
         },
         () => {
+          if (!mounted.current) return;
           if (n < CHECK_RETRY_MS.length) {
             retryTimer.current = window.setTimeout(
               () => attempt(n + 1),
@@ -237,6 +242,7 @@ export function ConnectionsCard() {
     attempt(0);
   }, []);
   useEffect(() => {
+    mounted.current = true;
     reload();
     // Coming back to the app (from ChatGPT, or from the background on a
     // phone) or back online: ask again.
@@ -248,6 +254,7 @@ export function ConnectionsCard() {
     return () => {
       document.removeEventListener("visibilitychange", onBack);
       window.removeEventListener("online", onBack);
+      mounted.current = false;
       if (retryTimer.current) window.clearTimeout(retryTimer.current);
     };
   }, [reload]);
