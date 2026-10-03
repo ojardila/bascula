@@ -72,7 +72,7 @@ jobs:
       web_key: ${{ steps.keys.outputs.web }}
       tested: ${{ steps.tested.outputs.tested }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -152,7 +152,7 @@ jobs:
       go: ${{ steps.guard.outputs.go }}
       needs_review: ${{ steps.review.outputs.needs_review }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -212,7 +212,7 @@ jobs:
 
       # A current buildx: imagetools create --prefer-index=false.
       - if: steps.guard.outputs.go == 'true'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Build once, promote: the release tag is a registry-side copy of the
       # image CI built from these sources. Nothing is rebuilt or pulled.
@@ -437,11 +437,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Only for the Argo CD webhook (tailnet-only). Not for Harbor.
       - name: Join the tailnet
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
