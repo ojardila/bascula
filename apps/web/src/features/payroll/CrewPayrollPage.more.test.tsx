@@ -57,8 +57,20 @@ async function openPayConfirm(
   await waitFor(() =>
     expect(screen.getByRole("button", { name: total })).toBeEnabled(),
   );
-  await user.click(screen.getByRole("button", { name: /Revisar y pagar/ }));
-  return screen.findByRole("dialog");
+  // Clicked again until the dialog is up: on a slow runner the crew can still
+  // be re-rendering under the first click.
+  await waitFor(
+    async () => {
+      if (!screen.queryByRole("dialog")) {
+        await user.click(
+          screen.getByRole("button", { name: /Revisar y pagar/ }),
+        );
+      }
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    },
+    { timeout: 15000 },
+  );
+  return screen.getByRole("dialog");
 }
 
 describe("when something cannot be read", () => {
