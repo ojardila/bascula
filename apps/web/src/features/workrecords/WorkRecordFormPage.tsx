@@ -126,6 +126,109 @@ function useFormReferences(farmId: string) {
   return { activities, workers, plots, loadError, denied };
 }
 
+/**
+ * The read-only grey card under the activity: how it is paid, and whether its
+ * price is the week's kilo price or one frozen into the record on saving.
+ */
+function ActivitySummary({
+  activity,
+  day,
+  kiloPriceCents,
+}: Readonly<{
+  activity: Activity;
+  /** The record's first day, or today while none is chosen. */
+  day: string;
+  kiloPriceCents: number | null;
+}>) {
+  return (
+    <Box sx={{ mt: 2, p: 2, bgcolor: "#f2f5f0", borderRadius: 2 }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        useFlexGap
+        sx={{
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <Typography sx={{ fontWeight: 700 }}>
+          {activity.name}
+        </Typography>
+        <Chip
+          size="small"
+          /* This used to read "pago por unidad de trabajo", which is
+             a column name. See `lib/vocab.ts`. */
+          label={payModeChipLabel(activity)}
+        />
+      </Stack>
+      {activity.rateSource === "weekly_price" ? (
+        <>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Precio del kilo, semana del{" "}
+            {formatMonday(mondayOf(day))}:{" "}
+            {kiloPriceCents === null ? (
+              "—"
+            ) : (
+              <Money cents={kiloPriceCents} variant="small" />
+            )}{" "}
+            / {activity.workUnit}
+          </Typography>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "flex-start",
+              mt: 1,
+            }}
+          >
+            <InfoOutlinedIcon fontSize="small" color="warning" />
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+              }}
+            >
+              Esta actividad usa <strong>precio semanal</strong>: se
+              registra por día y el valor se congela al liquidar, no
+              ahora.
+            </Typography>
+          </Stack>
+        </>
+      ) : (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+            mt: 1,
+          }}
+        >
+          El precio queda congelado en la labor al guardarla.
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * The kilo price a weekly-priced record would get on its first day, or null
+ * when the activity is not weekly, the price book is not loaded or no day is
+ * chosen yet.
+ */
+function kiloPriceOf(
+  weekly: boolean,
+  priceBook: KiloPriceBook | null,
+  draft: WorkRecordDraft,
+): number | null {
+  if (!weekly || !priceBook || !draft.dateFrom) return null;
+  return (
+    kiloPriceFor(priceBook, {
+      workerId: draft.workerId,
+      plotIds: draft.plotIds,
+      day: draft.dateFrom,
+    })?.priceCents ?? null
+  );
+}
+
 export function WorkRecordFormPage() {
   const navigate = useNavigate();
   const { can, user } = useAuth();
@@ -184,14 +287,7 @@ export function WorkRecordFormPage() {
     };
   }, [weekly, priceBook, monday, farmId]);
 
-  const kiloPriceCents =
-    weekly && priceBook && draft.dateFrom
-      ? (kiloPriceFor(priceBook, {
-          workerId: draft.workerId,
-          plotIds: draft.plotIds,
-          day: draft.dateFrom,
-        })?.priceCents ?? null)
-      : null;
+  const kiloPriceCents = kiloPriceOf(weekly, priceBook, draft);
 
   // Selecting an activity resets the price field to the activity's default.
   useEffect(() => {
@@ -363,71 +459,11 @@ export function WorkRecordFormPage() {
           </Grid>
 
           {activity && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: "#f2f5f0", borderRadius: 2 }}>
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                sx={{
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <Typography sx={{ fontWeight: 700 }}>
-                  {activity.name}
-                </Typography>
-                <Chip
-                  size="small"
-                  /* This used to read "pago por unidad de trabajo", which is
-                     a column name. See `lib/vocab.ts`. */
-                  label={payModeChipLabel(activity)}
-                />
-              </Stack>
-              {activity.rateSource === "weekly_price" ? (
-                <>
-                  <Typography variant="body2" sx={{ mt: 1 }}>
-                    Precio del kilo, semana del{" "}
-                    {formatMonday(mondayOf(draft.dateFrom || today))}:{" "}
-                    {kiloPriceCents === null ? (
-                      "—"
-                    ) : (
-                      <Money cents={kiloPriceCents} variant="small" />
-                    )}{" "}
-                    / {activity.workUnit}
-                  </Typography>
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    sx={{
-                      alignItems: "flex-start",
-                      mt: 1,
-                    }}
-                  >
-                    <InfoOutlinedIcon fontSize="small" color="warning" />
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: "text.secondary",
-                      }}
-                    >
-                      Esta actividad usa <strong>precio semanal</strong>: se
-                      registra por día y el valor se congela al liquidar, no
-                      ahora.
-                    </Typography>
-                  </Stack>
-                </>
-              ) : (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: "text.secondary",
-                    mt: 1,
-                  }}
-                >
-                  El precio queda congelado en la labor al guardarla.
-                </Typography>
-              )}
-            </Box>
+            <ActivitySummary
+              activity={activity}
+              day={draft.dateFrom || today}
+              kiloPriceCents={kiloPriceCents}
+            />
           )}
         </CardContent>
       </Card>

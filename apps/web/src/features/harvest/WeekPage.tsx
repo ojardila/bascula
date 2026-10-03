@@ -64,7 +64,7 @@ import { WeekBars } from "./charts";
 import { formatQuantity } from "../../lib/money";
 import { unattributedReason } from "./text";
 import { kgForDrawing, type Totals } from "./totals";
-import type { WireReportGrid } from "../../api/wire";
+import type { WireReportGrid, WireReportWeekDetail } from "../../api/wire";
 import { PICKER } from "../../lib/vocab";
 
 const DAY_LETTER = ["D", "L", "M", "X", "J", "V", "S"];
@@ -165,6 +165,101 @@ function PickerRow({
         <Kg total={r.total} showUnit={false} bold />
       </TableCell>
     </TableRow>
+  );
+}
+
+/** What each column of the grid was worth: the money view of the week. */
+function ValueByColumnCard({
+  grid,
+  axis,
+}: {
+  readonly grid: WireReportGrid;
+  readonly axis: Axis;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h3" gutterBottom>
+          Lo que valió cada {axis === "day" ? "día" : "cultivo"}
+        </Typography>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>
+                {axis === "day" ? "Día" : "Cultivo"}
+              </TableCell>
+              <TableCell align="right">Kilos</TableCell>
+              <TableCell align="right">Valor</TableCell>
+              <TableCell align="right">Pesadas</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {grid.columns.map((c) => (
+              <TableRow key={c.key ?? "__unattributed"}>
+                <TableCell>
+                  {c.key === null ? "Sin asignar" : c.label}
+                </TableCell>
+                <TableCell align="right">
+                  <Kg total={c.total} showUnit={false} />
+                </TableCell>
+                <TableCell align="right">
+                  <Value total={c.total} scope={c.label} />
+                </TableCell>
+                <TableCell align="right">{c.total.records}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The headline figures of the week, over the grid being shown. */
+function WeekStats({
+  total,
+  grid,
+  axis,
+  canSeeMoney,
+}: {
+  readonly total: WireReportWeekDetail["total"];
+  readonly grid: WireReportGrid;
+  readonly axis: Axis;
+  readonly canSeeMoney: boolean;
+}) {
+  return (
+    <Box
+      sx={{
+        display: "grid",
+        gap: 1.5,
+        gridTemplateColumns: {
+          xs: "1fr 1fr",
+          md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)",
+        },
+      }}
+    >
+      <Stat label="Recogido">
+        <Kg
+          total={total}
+          align="flex-start"
+          bold
+          scope="la semana"
+        />
+      </Stat>
+      {canSeeMoney && (
+        <Stat label="Valor de la semana">
+          <Value
+            total={total}
+            scope="la semana"
+            align="flex-start"
+          />
+        </Stat>
+      )}
+      <Stat label={PICKER.Many}>{grid.rows.length}</Stat>
+      <Stat label={axis === "day" ? "Días trabajados" : "Cultivos"}>
+        {grid.columns.length}
+      </Stat>
+    </Box>
   );
 }
 
@@ -305,38 +400,12 @@ export function WeekPage() {
             </Alert>
           )}
 
-          <Box
-            sx={{
-              display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: {
-                xs: "1fr 1fr",
-                md: canSeeMoney ? "repeat(4,1fr)" : "repeat(3,1fr)",
-              },
-            }}
-          >
-            <Stat label="Recogido">
-              <Kg
-                total={data.total}
-                align="flex-start"
-                bold
-                scope="la semana"
-              />
-            </Stat>
-            {canSeeMoney && (
-              <Stat label="Valor de la semana">
-                <Value
-                  total={data.total}
-                  scope="la semana"
-                  align="flex-start"
-                />
-              </Stat>
-            )}
-            <Stat label={PICKER.Many}>{grid.rows.length}</Stat>
-            <Stat label={axis === "day" ? "Días trabajados" : "Cultivos"}>
-              {grid.columns.length}
-            </Stat>
-          </Box>
+          <WeekStats
+            total={data.total}
+            grid={grid}
+            axis={axis}
+            canSeeMoney={canSeeMoney}
+          />
 
           <Card>
             <CardContent>
@@ -500,43 +569,7 @@ export function WeekPage() {
             </CardContent>
           </Card>
 
-          {canSeeMoney && (
-            <Card>
-              <CardContent>
-                <Typography variant="h3" gutterBottom>
-                  Lo que valió cada {axis === "day" ? "día" : "cultivo"}
-                </Typography>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>
-                        {axis === "day" ? "Día" : "Cultivo"}
-                      </TableCell>
-                      <TableCell align="right">Kilos</TableCell>
-                      <TableCell align="right">Valor</TableCell>
-                      <TableCell align="right">Pesadas</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {grid.columns.map((c) => (
-                      <TableRow key={c.key ?? "__unattributed"}>
-                        <TableCell>
-                          {c.key === null ? "Sin asignar" : c.label}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Kg total={c.total} showUnit={false} />
-                        </TableCell>
-                        <TableCell align="right">
-                          <Value total={c.total} scope={c.label} />
-                        </TableCell>
-                        <TableCell align="right">{c.total.records}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+          {canSeeMoney && <ValueByColumnCard grid={grid} axis={axis} />}
         </>
       )}
     </Stack>
