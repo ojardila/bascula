@@ -9,6 +9,7 @@
  * canasto» badge and an offer to add one — nothing breaks.
  */
 import { Box, Chip, Typography, type SxProps, type Theme } from "@mui/material";
+import type { SyntheticEvent } from "react";
 
 /** The label used everywhere for the field. */
 export const BASKET_LABEL = "Número de canasto";
@@ -91,13 +92,28 @@ export function BasketTile({
 
 /** The small warning badge for a worker without a number. */
 export function NoBasketChip({ onClick }: Readonly<{ onClick?: () => void }>) {
+  // The chip sits inside a clickable list row that opens the profile. Without
+  // stopping the event here, the row's handler runs right after the chip's
+  // and its navigation wins, so the chip landed on the profile instead of the
+  // edit form. Keys too: Enter/Space activate the chip and must not reach a
+  // row that listens for them.
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
   return (
     <Chip
       size="small"
       color="warning"
       variant="outlined"
       label="Sin canasto"
-      onClick={onClick}
+      onClick={
+        onClick
+          ? (e) => {
+              e.stopPropagation();
+              onClick();
+            }
+          : undefined
+      }
+      onKeyDown={onClick ? stop : undefined}
+      onKeyUp={onClick ? stop : undefined}
       sx={{ fontWeight: 600 }}
     />
   );

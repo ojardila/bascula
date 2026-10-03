@@ -253,7 +253,13 @@ export function owedByWorker(
       o.pendingCents = null;
       continue;
     }
-    o.pendingCents = (o.pendingCents ?? 0) + r.estimatedAmountCents;
+    // Sticky: once an account has an unreadable row it stays unknown, whatever
+    // order the rows arrive in. `?? 0` here would quietly restart the sum from
+    // the next readable row and show a figure smaller than what is owed.
+    // (`records` was read, so the starting value is 0 and `null` can only
+    // mean an earlier unreadable row.)
+    if (o.pendingCents === null) continue;
+    o.pendingCents += r.estimatedAmountCents;
     if (r.amountIsEstimate) o.pendingIsEstimate = true;
   }
   return out;

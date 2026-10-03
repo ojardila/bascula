@@ -500,10 +500,17 @@ func (s *Server) applyPushOp(r *http.Request, tx pgx.Tx, farmID, deviceID string
 	}
 
 	res := applyPushEntity(ctx, sp, farmID, deviceID, p, op)
-	if res.Status == "rejected" {
+	if res.Status == "rejected" || res.Status == "duplicate" {
 		// Roll back to the savepoint and keep the batch alive. Whatever this
 		// envelope half-wrote is gone; the hundred and ninety-nine before it
 		// are not.
+		//
+		// A duplicate too: it writes nothing anybody needs, and one of its
+		// paths gets there through an INSERT that hit the unique index (a
+		// weighing pushed from a second handset, invisible to this weigher).
+		// That error aborted the savepoint; releasing it instead of rolling
+		// it back left the whole transaction in 25P02 and the batch answered
+		// 500, so the handset retried for ever.
 		_ = sp.Rollback(ctx)
 		return res
 	}

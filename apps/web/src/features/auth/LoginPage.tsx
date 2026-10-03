@@ -43,6 +43,7 @@ import {
   shouldOfferPasskey,
 } from "../../lib/passkeyOffer";
 import { PasskeyOffer } from "./PasskeyOffer";
+import { safeReturnPath } from "../../lib/returnTo";
 import type { Membership, Role } from "../../api/types";
 
 function loginSubtitle(
@@ -78,7 +79,16 @@ const ROLE_LABEL: Record<Role, string> = {
 export function LoginPage() {
   const { status, login, loginWithPasskey, landing } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { from?: string } };
+  const location = useLocation() as { state?: { from?: unknown } };
+  /**
+   * Where to go once signed in: the page the person was headed to (only if it
+   * is a page of this app), else the role's home. Every exit below uses this
+   * one value — including the `<Navigate>` that renders as soon as the
+   * session opens. That one used to say `landing`, and since React Router
+   * runs `navigate(from)` in a transition, it won the race and everybody
+   * landed on /cosecha.
+   */
+  const target = safeReturnPath(location.state?.from) ?? landing;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -150,13 +160,12 @@ export function LoginPage() {
     setPassword("");
     setOffering(false);
     setHolding(false);
-    const next = location.state?.from;
-    navigate(next && next !== "/" ? next : landing, { replace: true });
+    navigate(target, { replace: true });
   }
 
   if (offering) return <PasskeyOffer password={password} onDone={goIn} />;
   if (status === "authenticated" && !holding)
-    return <Navigate to={landing} replace />;
+    return <Navigate to={target} replace />;
 
   async function attempt(farmId?: string) {
     setError(null);
@@ -197,8 +206,7 @@ export function LoginPage() {
         setChoices(res.memberships);
         return;
       }
-      const next = location.state?.from;
-      navigate(next && next !== "/" ? next : landing, { replace: true });
+      navigate(target, { replace: true });
     } catch (err) {
       setError(passkeyMessage(err));
     } finally {
