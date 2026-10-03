@@ -102,17 +102,6 @@ func TestHarvestDashboard(t *testing.T) {
 		{worker: dora, plotCrop: bajo, day: at(2, 3), qty: 999},
 	})
 
-	near := func(what string, got *float64, want float64) {
-		t.Helper()
-		if got == nil {
-			t.Errorf("%s: got null, want %v", what, want)
-			return
-		}
-		if math.Abs(*got-want) > 1e-9 {
-			t.Errorf("%s: got %v, want %v", what, *got, want)
-		}
-	}
-
 	res := h.mustDo(t, http.MethodGet, "/v1/reports/harvest-dashboard", f.OwnerToken, nil, http.StatusOK)
 	r := decodeInto[harvestDashboard](t, res)
 
@@ -120,9 +109,36 @@ func TestHarvestDashboard(t *testing.T) {
 		t.Errorf("envelope: scope=%s today=%s thisWeek=%s lastWeek=%s", r.Scope, r.Today, r.ThisWeek, r.LastWeek)
 	}
 
+	a3CheckHarvestSummary(t, r, price, isMonday, isSunday)
+
+	a3CheckHarvestDays(t, r, at, weekday, isMonday)
+
+	a3CheckHarvestPlots(t, r, isSunday)
+
+	a3CheckHarvestPeople(t, r, carla, ana, beto)
+
+	a3CheckHarvestNotToday(t, r, carla, dora, at, isMonday)
+
+	t.Run("an empty farm is nulls, not zeros", func(t *testing.T) {
+		empty := h.signupFarm(t, "Finca vacía de cosecha", price)
+		r := decodeInto[harvestDashboard](t, h.mustDo(t, http.MethodGet,
+			"/v1/reports/harvest-dashboard", empty.OwnerToken, nil, http.StatusOK))
+		if r.Summary.ThisWeek.Kg != nil || r.Summary.KgPerPersonDay != nil || r.Summary.ThisWeek.ValueCents != nil ||
+			len(r.Plots) != 0 || len(r.People) != 0 || len(r.NotToday) != 0 || len(r.Days) != 7 {
+			t.Errorf("empty farm: %+v", r)
+		}
+	})
+
+	t.Run("roles", func(t *testing.T) {
+		a3HarvestDashboardRoles(t, h, f)
+	})
+}
+
+func a3CheckHarvestSummary(t *testing.T, r harvestDashboard, price int64, isMonday, isSunday bool) {
+	t.Helper()
 	// Summary.
 	s := r.Summary
-	near("kilos this week", s.ThisWeek.Kg, 80)
+	a3Near(t, "kilos this week", s.ThisWeek.Kg, 80)
 	if s.ThisWeek.Records != 4 || s.ThisWeek.RecordsNotInKg != 1 {
 		t.Errorf("this week counts: %+v", s.ThisWeek)
 	}
@@ -130,23 +146,26 @@ func TestHarvestDashboard(t *testing.T) {
 	if s.ThisWeek.ValueCents == nil || *s.ThisWeek.ValueCents != (30+3+10+40)*price || !s.ThisWeek.ValueIsEstimate {
 		t.Errorf("estimated value this week: %+v", s.ThisWeek)
 	}
-	near("last week whole", s.LastWeek.Kg, 135)
+	a3Near(t, "last week whole", s.LastWeek.Kg, 135)
 	lastToDate := 75.0
 	if isSunday {
 		lastToDate += 60
 	}
-	near("last week to date", s.LastWeekToDate.Kg, lastToDate)
+	a3Near(t, "last week to date", s.LastWeekToDate.Kg, lastToDate)
 	todayKg, todayPickers := 40.0, 2
 	if isMonday {
 		todayKg += 40
 		todayPickers++
 	}
-	near("kilos today", s.Today.Kg, todayKg)
+	a3Near(t, "kilos today", s.Today.Kg, todayKg)
 	if s.PickersToday != todayPickers || s.PickersThisWeek != 3 || s.PersonDays != 3 {
 		t.Errorf("people: today=%d week=%d personDays=%d", s.PickersToday, s.PickersThisWeek, s.PersonDays)
 	}
-	near("kilos per person per day", s.KgPerPersonDay, 80.0/3)
+	a3Near(t, "kilos per person per day", s.KgPerPersonDay, 80.0/3)
+}
 
+func a3CheckHarvestDays(t *testing.T, r harvestDashboard, at func(int, int) string, weekday int, isMonday bool) {
+	t.Helper()
 	// Days.
 	if len(r.Days) != 7 {
 		t.Fatalf("days: got %d, want 7", len(r.Days))
@@ -160,37 +179,43 @@ func TestHarvestDashboard(t *testing.T) {
 	if isMonday {
 		mondayKg += 40
 	}
-	near("Monday", r.Days[0].Kg, mondayKg)
+	a3Near(t, "Monday", r.Days[0].Kg, mondayKg)
 	if !isMonday {
-		near("today", r.Days[weekday].Kg, 40)
+		a3Near(t, "today", r.Days[weekday].Kg, 40)
 		if r.Days[weekday].Pickers != 2 {
 			t.Errorf("pickers today in days: %d", r.Days[weekday].Pickers)
 		}
 	}
+}
 
+func a3CheckHarvestPlots(t *testing.T, r harvestDashboard, isSunday bool) {
+	t.Helper()
 	// Lotes.
 	if len(r.Plots) != 2 || r.Plots[0].Name != "Lote Alto" || r.Plots[1].Name != "Lote Bajo" {
 		t.Fatalf("plots: %+v", r.Plots)
 	}
 	a, b := r.Plots[0], r.Plots[1]
-	near("alto this week", a.Kg, 70)
-	near("alto last week", a.LastWeekKg, 85)
+	a3Near(t, "alto this week", a.Kg, 70)
+	a3Near(t, "alto last week", a.LastWeekKg, 85)
 	altoToDate := 25.0
 	if isSunday {
 		altoToDate += 60
 	}
-	near("alto last week to date", a.LastWeekToDateKg, altoToDate)
-	near("alto share", a.Share, 70.0/80)
+	a3Near(t, "alto last week to date", a.LastWeekToDateKg, altoToDate)
+	a3Near(t, "alto share", a.Share, 70.0/80)
 	if a.Pickers != 2 {
 		t.Errorf("alto pickers: %d", a.Pickers)
 	}
-	near("bajo this week", b.Kg, 10)
-	near("bajo last week", b.LastWeekKg, 50)
-	near("bajo share", b.Share, 10.0/80)
+	a3Near(t, "bajo this week", b.Kg, 10)
+	a3Near(t, "bajo last week", b.LastWeekKg, 50)
+	a3Near(t, "bajo share", b.Share, 10.0/80)
 	if r.Unattributed.Records != 1 || r.Unattributed.Kg != nil || r.Unattributed.RecordsNotInKg != 1 {
 		t.Errorf("unattributed: %+v", r.Unattributed)
 	}
+}
 
+func a3CheckHarvestPeople(t *testing.T, r harvestDashboard, carla, ana, beto string) {
+	t.Helper()
 	// People: most kilos first; Beto is well under the average.
 	if len(r.People) != 3 {
 		t.Fatalf("people: %+v", r.People)
@@ -204,14 +229,17 @@ func TestHarvestDashboard(t *testing.T) {
 	if !strings.HasPrefix(r.People[0].Name, "Carla") {
 		t.Errorf("name: %q", r.People[0].Name)
 	}
-	near("ana kg/day", r.People[1].KgPerDay, 30)
+	a3Near(t, "ana kg/day", r.People[1].KgPerDay, 30)
 	if r.People[1].DaysWorked != 1 || !r.People[1].PickedToday || r.People[1].BelowAverage {
 		t.Errorf("ana: %+v", r.People[1])
 	}
 	if !r.People[2].BelowAverage || r.People[0].BelowAverage {
 		t.Errorf("below average: carla=%v beto=%v", r.People[0].BelowAverage, r.People[2].BelowAverage)
 	}
+}
 
+func a3CheckHarvestNotToday(t *testing.T, r harvestDashboard, carla, dora string, at func(int, int) string, isMonday bool) {
+	t.Helper()
 	// Who has nothing today: Dora (last week only), and Carla unless today is
 	// her Monday.
 	want := []string{dora}
@@ -229,28 +257,30 @@ func TestHarvestDashboard(t *testing.T) {
 	if r.NotToday[len(r.NotToday)-1].LastRecordOn != at(1, 0) {
 		t.Errorf("dora last record: %s", r.NotToday[len(r.NotToday)-1].LastRecordOn)
 	}
+}
 
-	t.Run("an empty farm is nulls, not zeros", func(t *testing.T) {
-		empty := h.signupFarm(t, "Finca vacía de cosecha", price)
-		r := decodeInto[harvestDashboard](t, h.mustDo(t, http.MethodGet,
-			"/v1/reports/harvest-dashboard", empty.OwnerToken, nil, http.StatusOK))
-		if r.Summary.ThisWeek.Kg != nil || r.Summary.KgPerPersonDay != nil || r.Summary.ThisWeek.ValueCents != nil ||
-			len(r.Plots) != 0 || len(r.People) != 0 || len(r.NotToday) != 0 || len(r.Days) != 7 {
-			t.Errorf("empty farm: %+v", r)
-		}
-	})
+func a3HarvestDashboardRoles(t *testing.T, h *harness, f *farmFixture) {
+	if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", f.AdminToken, nil); res.Status != http.StatusOK {
+		t.Errorf("admin: %d", res.Status)
+	}
+	if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", f.WeigherToken, nil); res.Status != http.StatusForbidden {
+		t.Errorf("weigher: got %d, want 403", res.Status)
+	}
+	if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", "", nil); res.Status != http.StatusUnauthorized {
+		t.Errorf("no token: got %d, want 401", res.Status)
+	}
+}
 
-	t.Run("roles", func(t *testing.T) {
-		if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", f.AdminToken, nil); res.Status != http.StatusOK {
-			t.Errorf("admin: %d", res.Status)
-		}
-		if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", f.WeigherToken, nil); res.Status != http.StatusForbidden {
-			t.Errorf("weigher: got %d, want 403", res.Status)
-		}
-		if res := h.do(t, http.MethodGet, "/v1/reports/harvest-dashboard", "", nil); res.Status != http.StatusUnauthorized {
-			t.Errorf("no token: got %d, want 401", res.Status)
-		}
-	})
+// a3Near compares a nullable kilo figure with what it should be.
+func a3Near(t *testing.T, what string, got *float64, want float64) {
+	t.Helper()
+	if got == nil {
+		t.Errorf("%s: got null, want %v", what, want)
+		return
+	}
+	if math.Abs(*got-want) > 1e-9 {
+		t.Errorf("%s: got %v, want %v", what, *got, want)
+	}
 }
 
 func TestHarvestMode(t *testing.T) {

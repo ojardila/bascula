@@ -25,43 +25,12 @@ func TestNotReadyUntilCloudflareCertificateIsActive(t *testing.T) {
 	h := requireDB(t)
 	slug := "gate-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 
-	var mu sync.Mutex
-	sslStatus := "pending_validation"
-	failCalls := 2 // the first Cloudflare calls fail outright
-	creates, patches := 0, 0
-	const id = "host-1"
-	cf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		if failCalls > 0 {
-			failCalls--
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []any{map[string]any{"code": 1000, "message": "cloudflare down"}}})
-			return
-		}
-		view := map[string]any{"id": id, "hostname": "x", "status": "active", "ssl": map[string]any{"status": sslStatus, "method": "http"}}
-		reply := func(result any) {
-			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "errors": []any{}, "result": result})
-		}
-		const base = "/zones/zone-test/custom_hostnames"
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == base:
-			if creates == 0 {
-				reply([]any{})
-				return
-			}
-			reply([]any{view})
-		case r.Method == http.MethodPost && r.URL.Path == base:
-			creates++
-			reply(view)
-		case r.Method == http.MethodPatch:
-			patches++
-			sslStatus = "pending_validation"
-			reply(view)
-		default:
-			reply(view)
-		}
-	}))
+	fake := &a3FakeCloudflare{
+		sslStatus: "pending_validation",
+		failCalls: 2, // the first Cloudflare calls fail outright
+	}
+	mu := &fake.mu
+	cf := httptest.NewServer(fake)
 	defer cf.Close()
 
 	var probes []string
@@ -89,17 +58,6 @@ func TestNotReadyUntilCloudflareCertificateIsActive(t *testing.T) {
 
 	signupWithSlug(t, platform, "Candado", slug)
 
-	stepDone := func(st response, key string) bool {
-		steps, _ := st.Body["steps"].([]any)
-		for _, s := range steps {
-			m, _ := s.(map[string]any)
-			if m["key"] == key {
-				return m["done"] == true
-			}
-		}
-		t.Fatalf("no %s step: %s", key, st.Raw)
-		return false
-	}
 	get := func() response {
 		time.Sleep(4100 * time.Millisecond) // past the per-slug status cache
 		return call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
@@ -110,36 +68,36 @@ func TestNotReadyUntilCloudflareCertificateIsActive(t *testing.T) {
 	waitFor(t, 5*time.Second, "custom hostname created after errors", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return creates == 1
+		return fake.creates == 1
 	})
 	st := get()
-	if st.Body["ready"] == true || stepDone(st, "certificate") || !stepDone(st, "web") {
+	if st.Body["ready"] == true || a3StepDone(t, st, "certificate") || !a3StepDone(t, st, "web") {
 		t.Fatalf("pending certificate reported as done/ready: %s", st.Raw)
 	}
 
 	// A failed certificate is asked for again rather than abandoned.
 	mu.Lock()
-	sslStatus = "validation_timed_out"
+	fake.sslStatus = "validation_timed_out"
 	mu.Unlock()
 	waitFor(t, 10*time.Second, "revalidate after failure", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return patches >= 1
+		return fake.patches >= 1
 	})
 	st = get()
-	if st.Body["ready"] == true || stepDone(st, "certificate") {
+	if st.Body["ready"] == true || a3StepDone(t, st, "certificate") {
 		t.Fatalf("failed certificate reported as done/ready: %s", st.Raw)
 	}
 
 	// Active at Cloudflare: now, and only now, ready.
 	mu.Lock()
-	sslStatus = "active"
+	fake.sslStatus = "active"
 	mu.Unlock()
 	waitFor(t, 15*time.Second, "ready once the certificate is active", func() bool {
 		st = get()
 		return st.Body["ready"] == true
 	})
-	if !stepDone(st, "certificate") {
+	if !a3StepDone(t, st, "certificate") {
 		t.Fatalf("ready without certificate step: %s", st.Raw)
 	}
 
@@ -148,5 +106,66 @@ func TestNotReadyUntilCloudflareCertificateIsActive(t *testing.T) {
 	defer mu.Unlock()
 	if len(probes) == 0 || !strings.HasPrefix(probes[len(probes)-1], "probe=") {
 		t.Fatalf("probe queries = %v, want a cache-busting probe=", probes)
+	}
+}
+
+// a3StepDone reads one step's done flag from a provision status, failing the
+// test when the step is missing.
+func a3StepDone(t *testing.T, st response, key string) bool {
+	t.Helper()
+	steps, _ := st.Body["steps"].([]any)
+	for _, s := range steps {
+		m, _ := s.(map[string]any)
+		if m["key"] == key {
+			return m["done"] == true
+		}
+	}
+	t.Fatalf("no %s step: %s", key, st.Raw)
+	return false
+}
+
+// a3FakeCloudflare stands in for Cloudflare's custom-hostname API: it fails
+// the first failCalls requests outright, then serves one hostname whose
+// certificate status the test moves by hand. A PATCH (revalidation) puts the
+// certificate back to pending, as Cloudflare does.
+type a3FakeCloudflare struct {
+	mu        sync.Mutex
+	sslStatus string
+	failCalls int
+	creates   int
+	patches   int
+}
+
+func (c *a3FakeCloudflare) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failCalls > 0 {
+		c.failCalls--
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []any{map[string]any{"code": 1000, "message": "cloudflare down"}}})
+		return
+	}
+	const id = "host-1"
+	view := map[string]any{"id": id, "hostname": "x", "status": "active", "ssl": map[string]any{"status": c.sslStatus, "method": "http"}}
+	reply := func(result any) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "errors": []any{}, "result": result})
+	}
+	const base = "/zones/zone-test/custom_hostnames"
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == base:
+		if c.creates == 0 {
+			reply([]any{})
+			return
+		}
+		reply([]any{view})
+	case r.Method == http.MethodPost && r.URL.Path == base:
+		c.creates++
+		reply(view)
+	case r.Method == http.MethodPatch:
+		c.patches++
+		c.sslStatus = "pending_validation"
+		reply(view)
+	default:
+		reply(view)
 	}
 }

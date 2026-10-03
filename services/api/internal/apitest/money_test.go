@@ -56,61 +56,11 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 	})
 
 	t.Run("and the index refuses even when the query layer is bypassed", func(t *testing.T) {
-		// Straight at the table, as the API role, with a hand-written line for
-		// a record that is already claimed. This is the concurrent-settlement
-		// race, and the only thing that can stop it is the index.
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				var settlementID string
-				err := tx.QueryRow(ctx, `
-					INSERT INTO settlements (id, farm_id, employee_id, period_start,
-					                         period_end, gross_minor)
-					VALUES (gen_random_uuid(), $1, $2, '2026-08-24', '2026-08-30', 1)
-					RETURNING id::text`, f.FarmID, worker).Scan(&settlementID)
-				if err != nil {
-					t.Fatalf("insert rival settlement: %v", err)
-				}
-				_, err = tx.Exec(ctx, `
-					INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id,
-					                              week_start, quantity, price_minor, amount_minor)
-					VALUES (gen_random_uuid(), $1, $2, $3, '2026-08-24', 100, 80000, 8000000)`,
-					f.FarmID, settlementID, recordID)
-				if err == nil {
-					t.Fatal("a second live settlement item was accepted for the same payable; " +
-						"ux_items_payable_live is not doing its job")
-				}
-				if !store.IsUniqueViolation(err, "ux_items_payable_live") {
-					t.Fatalf("expected a violation of ux_items_payable_live, got: %v", err)
-				}
-			})
+		a3IndexRefusesBypass(t, h, f, worker, recordID)
 	})
 
 	t.Run("voiding releases the payable, and it settles exactly once more", func(t *testing.T) {
-		h.mustDo(t, http.MethodPost, "/v1/settlements/"+firstID+"/void",
-			f.OwnerToken, nil, http.StatusOK)
-
-		// Voiding does not delete: the earning is cancelled by a reversal, and
-		// the balance goes back to zero rather than the rows disappearing.
-		bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
-			f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, bal.Body, "balanceCents"); got != 0 {
-			t.Fatalf("balance after voiding is %d, want 0", got)
-		}
-
-		second := h.mustSettle(t, f.OwnerToken, map[string]any{
-			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
-		}, http.StatusCreated)
-		if got := mustInt(t, second.Body, "grossCents"); got != 8_000_000 {
-			t.Fatalf("re-settled gross is %d, want 8000000", got)
-		}
-
-		// And now it is locked again.
-		again := h.doSettle(t, f.OwnerToken, map[string]any{
-			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
-		})
-		if again.code() != string(domain.CodeNothingToSettle) {
-			t.Fatalf("third settlement: got %d %s, want NOTHING_TO_SETTLE", again.Status, again.Raw)
-		}
+		a3VoidReleasesPayable(t, h, f, worker, firstID)
 	})
 
 	t.Run("voiding twice is a conflict, not a second reversal", func(t *testing.T) {
@@ -126,6 +76,64 @@ func TestPayableCannotBePaidTwice(t *testing.T) {
 			t.Fatalf("deleting a settled work record: got %d %s, want WORK_RECORD_SETTLED", res.Status, res.Raw)
 		}
 	})
+}
+
+func a3VoidReleasesPayable(t *testing.T, h *harness, f *farmFixture, worker, firstID string) {
+	h.mustDo(t, http.MethodPost, "/v1/settlements/"+firstID+"/void",
+		f.OwnerToken, nil, http.StatusOK)
+
+	// Voiding does not delete: the earning is cancelled by a reversal, and
+	// the balance goes back to zero rather than the rows disappearing.
+	bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
+		f.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, bal.Body, "balanceCents"); got != 0 {
+		t.Fatalf("balance after voiding is %d, want 0", got)
+	}
+
+	second := h.mustSettle(t, f.OwnerToken, map[string]any{
+		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
+	}, http.StatusCreated)
+	if got := mustInt(t, second.Body, "grossCents"); got != 8_000_000 {
+		t.Fatalf("re-settled gross is %d, want 8000000", got)
+	}
+
+	// And now it is locked again.
+	again := h.doSettle(t, f.OwnerToken, map[string]any{
+		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
+	})
+	if again.code() != string(domain.CodeNothingToSettle) {
+		t.Fatalf("third settlement: got %d %s, want NOTHING_TO_SETTLE", again.Status, again.Raw)
+	}
+}
+
+func a3IndexRefusesBypass(t *testing.T, h *harness, f *farmFixture, worker, recordID string) {
+	// Straight at the table, as the API role, with a hand-written line for
+	// a record that is already claimed. This is the concurrent-settlement
+	// race, and the only thing that can stop it is the index.
+	h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) {
+			var settlementID string
+			err := tx.QueryRow(ctx, `
+				INSERT INTO settlements (id, farm_id, employee_id, period_start,
+				                         period_end, gross_minor)
+				VALUES (gen_random_uuid(), $1, $2, '2026-08-24', '2026-08-30', 1)
+				RETURNING id::text`, f.FarmID, worker).Scan(&settlementID)
+			if err != nil {
+				t.Fatalf("insert rival settlement: %v", err)
+			}
+			_, err = tx.Exec(ctx, `
+				INSERT INTO settlement_items (id, farm_id, settlement_id, payable_id,
+				                              week_start, quantity, price_minor, amount_minor)
+				VALUES (gen_random_uuid(), $1, $2, $3, '2026-08-24', 100, 80000, 8000000)`,
+				f.FarmID, settlementID, recordID)
+			if err == nil {
+				t.Fatal("a second live settlement item was accepted for the same payable; " +
+					"ux_items_payable_live is not doing its job")
+			}
+			if !store.IsUniqueViolation(err, "ux_items_payable_live") {
+				t.Fatalf("expected a violation of ux_items_payable_live, got: %v", err)
+			}
+		})
 }
 
 // TestBalanceIsDerivedAndReversalsAreOnce covers the rest of the money
@@ -145,29 +153,7 @@ func TestBalanceIsDerivedAndReversalsAreOnce(t *testing.T) {
 	}, http.StatusCreated)
 
 	t.Run("paying less than the balance leaves the rest in the worker's favour", func(t *testing.T) {
-		// This is golden case 01: a positive balance is the worker's savings
-		// held by the farm. Settling it to zero on payment would make that
-		// money disappear until somebody complained.
-		pay := h.mustDo(t, http.MethodPost, "/v1/payments", f.OwnerToken, map[string]any{
-			"workerId": worker, "amountCents": 5_000_000, "method": "efectivo",
-			"date": "2026-08-30",
-		}, http.StatusCreated)
-		if got := mustInt(t, pay.Body, "amountCents"); got != -5_000_000 {
-			t.Fatalf("a payment stored as %d; it must be negative in the ledger", got)
-		}
-
-		bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
-			f.OwnerToken, nil, http.StatusOK)
-		for key, want := range map[string]int64{
-			"earnedCents":   8_000_000,
-			"paidCents":     5_000_000,
-			"deductedCents": 0,
-			"balanceCents":  3_000_000,
-		} {
-			if got := mustInt(t, bal.Body, key); got != want {
-				t.Errorf("%s = %d, want %d: %s", key, got, want, bal.Raw)
-			}
-		}
+		a3PayingLessKeepsRest(t, h, f, worker)
 	})
 
 	t.Run("a payment larger than the balance is refused", func(t *testing.T) {
@@ -191,45 +177,79 @@ func TestBalanceIsDerivedAndReversalsAreOnce(t *testing.T) {
 	})
 
 	t.Run("a deduction is not an expense and lands in its own bucket", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/deductions", f.OwnerToken, map[string]any{
-			"workerId": worker, "amountCents": 200_000, "note": "botas",
-		}, http.StatusCreated)
-		entryID := mustString(t, res.Body, "id")
-
-		bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
-			f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, bal.Body, "deductedCents"); got != 200_000 {
-			t.Fatalf("deductedCents = %d, want 200000", got)
-		}
-
-		t.Run("and it is undone by reversing it, once", func(t *testing.T) {
-			rev := h.mustDo(t, http.MethodPost, "/v1/ledger/"+entryID+"/reverse",
-				f.OwnerToken, map[string]any{"note": "mal registrado"}, http.StatusCreated)
-			if got := mustInt(t, rev.Body, "amountCents"); got != 200_000 {
-				t.Fatalf("the reversal is %d, want +200000 to cancel the deduction", got)
-			}
-
-			second := h.do(t, http.MethodPost, "/v1/ledger/"+entryID+"/reverse",
-				f.OwnerToken, map[string]any{"note": "otra vez"})
-			if second.code() != string(domain.CodeAlreadyReversed) {
-				t.Fatalf("second reversal: got %d %s, want ALREADY_REVERSED",
-					second.Status, second.Raw)
-			}
-		})
+		a3DeductionOwnBucket(t, h, f, worker)
 	})
 
 	t.Run("the ledger cannot be edited or deleted at all", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				_, err := tx.Exec(ctx, `UPDATE ledger SET amount_minor = 1 WHERE farm_id = $1`, f.FarmID)
-				if err == nil {
-					t.Error("the API role was allowed to UPDATE the ledger")
-				}
-				_, err = tx.Exec(ctx, `DELETE FROM ledger WHERE farm_id = $1`, f.FarmID)
-				if err == nil {
-					t.Error("the API role was allowed to DELETE from the ledger")
-				}
-			})
+		a3LedgerImmutable(t, h, f)
+	})
+}
+
+func a3PayingLessKeepsRest(t *testing.T, h *harness, f *farmFixture, worker string) {
+	// This is golden case 01: a positive balance is the worker's savings
+	// held by the farm. Settling it to zero on payment would make that
+	// money disappear until somebody complained.
+	pay := h.mustDo(t, http.MethodPost, "/v1/payments", f.OwnerToken, map[string]any{
+		"workerId": worker, "amountCents": 5_000_000, "method": "efectivo",
+		"date": "2026-08-30",
+	}, http.StatusCreated)
+	if got := mustInt(t, pay.Body, "amountCents"); got != -5_000_000 {
+		t.Fatalf("a payment stored as %d; it must be negative in the ledger", got)
+	}
+
+	bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
+		f.OwnerToken, nil, http.StatusOK)
+	for key, want := range map[string]int64{
+		"earnedCents":   8_000_000,
+		"paidCents":     5_000_000,
+		"deductedCents": 0,
+		"balanceCents":  3_000_000,
+	} {
+		if got := mustInt(t, bal.Body, key); got != want {
+			t.Errorf("%s = %d, want %d: %s", key, got, want, bal.Raw)
+		}
+	}
+}
+
+func a3LedgerImmutable(t *testing.T, h *harness, f *farmFixture) {
+	h.withTenant(t, f.FarmID, f.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) {
+			_, err := tx.Exec(ctx, `UPDATE ledger SET amount_minor = 1 WHERE farm_id = $1`, f.FarmID)
+			if err == nil {
+				t.Error("the API role was allowed to UPDATE the ledger")
+			}
+			_, err = tx.Exec(ctx, `DELETE FROM ledger WHERE farm_id = $1`, f.FarmID)
+			if err == nil {
+				t.Error("the API role was allowed to DELETE from the ledger")
+			}
+		})
+}
+
+func a3DeductionOwnBucket(t *testing.T, h *harness, f *farmFixture, worker string) {
+	res := h.mustDo(t, http.MethodPost, "/v1/deductions", f.OwnerToken, map[string]any{
+		"workerId": worker, "amountCents": 200_000, "note": "botas",
+	}, http.StatusCreated)
+	entryID := mustString(t, res.Body, "id")
+
+	bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/balance",
+		f.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, bal.Body, "deductedCents"); got != 200_000 {
+		t.Fatalf("deductedCents = %d, want 200000", got)
+	}
+
+	t.Run("and it is undone by reversing it, once", func(t *testing.T) {
+		rev := h.mustDo(t, http.MethodPost, "/v1/ledger/"+entryID+"/reverse",
+			f.OwnerToken, map[string]any{"note": "mal registrado"}, http.StatusCreated)
+		if got := mustInt(t, rev.Body, "amountCents"); got != 200_000 {
+			t.Fatalf("the reversal is %d, want +200000 to cancel the deduction", got)
+		}
+
+		second := h.do(t, http.MethodPost, "/v1/ledger/"+entryID+"/reverse",
+			f.OwnerToken, map[string]any{"note": "otra vez"})
+		if second.code() != string(domain.CodeAlreadyReversed) {
+			t.Fatalf("second reversal: got %d %s, want ALREADY_REVERSED",
+				second.Status, second.Raw)
+		}
 	})
 }
 
@@ -261,47 +281,7 @@ func TestPriceFreezing(t *testing.T) {
 	})
 
 	t.Run("a date-derived price forces a single day", func(t *testing.T) {
-		unit := h.mustDo(t, http.MethodPost, "/v1/catalogs/work-units", f.OwnerToken,
-			map[string]any{"code": "jornal-u", "label": "Jornal"}, http.StatusOK)
-
-		created := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
-			"name": "Guadanada", "category": "mantenimiento", "payScheme": "tiempo",
-			"rateSource": "activity_dated",
-			"rate":       map[string]any{"rateCents": 60000, "validFrom": "2026-01-01", "timeUnit": "jornal"},
-		}, http.StatusCreated)
-		activity := mustString(t, created.Body, "id")
-		_ = unit
-
-		// One day: fine, and the rate in force freezes onto the record.
-		single := h.mustDo(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
-			"activityId": activity, "workerId": worker, "quantity": 2, "dateFrom": "2026-08-25",
-		}, http.StatusCreated)
-		if got := mustInt(t, single.Body, "amountCents"); got != 120_000 {
-			t.Fatalf("amount is %d, want 120000 (2 jornales at 60000)", got)
-		}
-		if got := mustInt(t, single.Body, "rateCents"); got != 60_000 {
-			t.Fatalf("the rate did not freeze onto the record: %s", single.Raw)
-		}
-
-		// A range: refused, because a wage from Tuesday to Tuesday has no
-		// single validity period to derive a price from.
-		res := h.do(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
-			"activityId": activity, "workerId": worker, "quantity": 5,
-			"dateFrom": "2026-08-25", "dateTo": "2026-08-29",
-		})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("a multi-day date-derived record was accepted: %d %s", res.Status, res.Raw)
-		}
-
-		// The same range with the price named by the caller: accepted,
-		// because now the price is frozen and there is nothing to derive.
-		ranged := h.mustDo(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
-			"activityId": activity, "workerId": worker, "quantity": 5,
-			"dateFrom": "2026-08-25", "dateTo": "2026-08-29", "rateCents": 60000,
-		}, http.StatusCreated)
-		if got := mustInt(t, ranged.Body, "amountCents"); got != 300_000 {
-			t.Fatalf("ranged amount is %d, want 300000", got)
-		}
+		a3DateDerivedSingleDay(t, h, f, worker)
 	})
 
 	t.Run("a new rate period does not move a price that was already frozen", func(t *testing.T) {
@@ -337,6 +317,50 @@ func TestPriceFreezing(t *testing.T) {
 			t.Errorf("the already-written record says %d, want 50000", got)
 		}
 	})
+}
+
+func a3DateDerivedSingleDay(t *testing.T, h *harness, f *farmFixture, worker string) {
+	unit := h.mustDo(t, http.MethodPost, "/v1/catalogs/work-units", f.OwnerToken,
+		map[string]any{"code": "jornal-u", "label": "Jornal"}, http.StatusOK)
+
+	created := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
+		"name": "Guadanada", "category": "mantenimiento", "payScheme": "tiempo",
+		"rateSource": "activity_dated",
+		"rate":       map[string]any{"rateCents": 60000, "validFrom": "2026-01-01", "timeUnit": "jornal"},
+	}, http.StatusCreated)
+	activity := mustString(t, created.Body, "id")
+	_ = unit
+
+	// One day: fine, and the rate in force freezes onto the record.
+	single := h.mustDo(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
+		"activityId": activity, "workerId": worker, "quantity": 2, "dateFrom": "2026-08-25",
+	}, http.StatusCreated)
+	if got := mustInt(t, single.Body, "amountCents"); got != 120_000 {
+		t.Fatalf("amount is %d, want 120000 (2 jornales at 60000)", got)
+	}
+	if got := mustInt(t, single.Body, "rateCents"); got != 60_000 {
+		t.Fatalf("the rate did not freeze onto the record: %s", single.Raw)
+	}
+
+	// A range: refused, because a wage from Tuesday to Tuesday has no
+	// single validity period to derive a price from.
+	res := h.do(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
+		"activityId": activity, "workerId": worker, "quantity": 5,
+		"dateFrom": "2026-08-25", "dateTo": "2026-08-29",
+	})
+	if res.Status != http.StatusBadRequest {
+		t.Fatalf("a multi-day date-derived record was accepted: %d %s", res.Status, res.Raw)
+	}
+
+	// The same range with the price named by the caller: accepted,
+	// because now the price is frozen and there is nothing to derive.
+	ranged := h.mustDo(t, http.MethodPost, "/v1/work-records", f.OwnerToken, map[string]any{
+		"activityId": activity, "workerId": worker, "quantity": 5,
+		"dateFrom": "2026-08-25", "dateTo": "2026-08-29", "rateCents": 60000,
+	}, http.StatusCreated)
+	if got := mustInt(t, ranged.Body, "amountCents"); got != 300_000 {
+		t.Fatalf("ranged amount is %d, want 300000", got)
+	}
 }
 
 // TestSundayEveningBelongsToTheFarmsDay is golden case 04, and it is a bug

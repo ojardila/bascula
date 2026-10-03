@@ -64,13 +64,7 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 	slug := "con-correo-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
 
 	var up atomic.Bool
-	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" && up.Load() {
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-			return
-		}
-		http.Error(w, "not yet", http.StatusServiceUnavailable)
-	}))
+	public := httptest.NewServer(a3HealthWhenUp(&up))
 	defer public.Close()
 
 	uploads, _ := os.MkdirTemp("", "bascula-mail-uploads-")
@@ -102,19 +96,7 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 			stranger.Status, stranger.Raw, nobody.Status, nobody.Raw)
 	}
 
-	// The first send fails; the claim is released and the next check retries.
-	mail.fail.Store(true)
-	req := call(t, platform, http.MethodPost, readyEmailPath(slug), "", nil)
-	if req.Status != http.StatusAccepted || req.Body["requested"] != true {
-		t.Fatalf("ready-email: %d %s", req.Status, req.Raw)
-	}
-	if _, leaked := req.Body["email"]; leaked {
-		t.Fatalf("ready-email must not reveal the owner's address: %s", req.Raw)
-	}
-	st = call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
-	if st.Body["notifyRequested"] != true {
-		t.Fatalf("status after asking: %s", st.Raw)
-	}
+	a3AskForReadyEmail(t, platform, mail, slug)
 
 	time.Sleep(200 * time.Millisecond)
 	if mail.count() != 0 {
@@ -161,4 +143,34 @@ func TestReadyEmailGoesToTheOwnerOnceWhenTheFarmIsReady(t *testing.T) {
 	if missing.Status != http.StatusNotFound {
 		t.Fatalf("unknown farm: %d %s", missing.Status, missing.Raw)
 	}
+}
+
+// a3AskForReadyEmail asks for the email while the first send is set to fail.
+func a3AskForReadyEmail(t *testing.T, platform *httpapi.Server, mail *recordingMailer, slug string) {
+	t.Helper()
+	// The first send fails; the claim is released and the next check retries.
+	mail.fail.Store(true)
+	req := call(t, platform, http.MethodPost, readyEmailPath(slug), "", nil)
+	if req.Status != http.StatusAccepted || req.Body["requested"] != true {
+		t.Fatalf("ready-email: %d %s", req.Status, req.Raw)
+	}
+	if _, leaked := req.Body["email"]; leaked {
+		t.Fatalf("ready-email must not reveal the owner's address: %s", req.Raw)
+	}
+	st := call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
+	if st.Body["notifyRequested"] != true {
+		t.Fatalf("status after asking: %s", st.Raw)
+	}
+}
+
+// a3HealthWhenUp answers /health only once up is set, the way the farm's
+// public address does once it has come up.
+func a3HealthWhenUp(up *atomic.Bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" && up.Load() {
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		http.Error(w, "not yet", http.StatusServiceUnavailable)
+	})
 }

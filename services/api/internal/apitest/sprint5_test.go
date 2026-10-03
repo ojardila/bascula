@@ -70,108 +70,120 @@ func TestASettlementCannotComeOutToADifferentFigureThanTheOneThatWasRead(t *test
 	})
 
 	t.Run("a repriced week is refused, and details say the price moved", func(t *testing.T) {
-		f2 := h.signupFarm(t, "Finca del precio movido", 80000)
-		w := h.createWorker(t, f2, "Precio", "7001001002")
-		h.createPlot(t, f2, "Lote precio")
-		act := h.harvestActivityID(t, f2)
-		h.createWorkRecord(t, f2, f2.OwnerToken, w, act, "2026-08-25", 100)
-
-		// What the screen showed.
-		shown := int64(8_000_000)
-
-		// The owner reprices the week from the web while the screen is open.
-		h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f2.OwnerToken,
-			map[string]any{"priceCents": 90000}, http.StatusOK)
-
-		res := h.do(t, http.MethodPost, "/v1/settlements", f2.OwnerToken, map[string]any{
-			"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
-			"expectedGrossCents": shown,
-		})
-		if res.code() != string(domain.CodeGrossChanged) {
-			t.Fatalf("settling after a reprice: got %d %s, want GROSS_CHANGED", res.Status, res.Raw)
-		}
-		errObj, _ := res.Body["error"].(map[string]any)
-		details, _ := errObj["details"].(map[string]any)
-		if int64(details["expectedCents"].(float64)) != shown {
-			t.Fatalf("details lost the figure that was read: %s", res.Raw)
-		}
-		if int64(details["actualCents"].(float64)) != 9_000_000 {
-			t.Fatalf("details do not carry the new figure: %s", res.Raw)
-		}
-		weeks, _ := details["weeksInSettlement"].([]any)
-		if len(weeks) != 1 {
-			t.Fatalf("details name no week, so the screen cannot say which one moved: %s", res.Raw)
-		}
-		week := weeks[0].(map[string]any)
-		if week["weekStart"] != "2026-08-24" || int64(week["priceCents"].(float64)) != 90000 {
-			t.Fatalf("the week in details is not the one that was repriced: %s", res.Raw)
-		}
-
-		// And nothing was written. This is the half that matters: a refusal
-		// that had already inserted the settlement would be worse than no
-		// refusal at all.
-		bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+w+"/balance",
-			f2.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, bal.Body, "balanceCents"); got != 0 {
-			t.Fatalf("a refused settlement moved the balance to %d", got)
-		}
+		a3RepricedWeekRefused(t, h)
 	})
 
 	t.Run("a late weighing is refused, and details name what came in", func(t *testing.T) {
-		f3 := h.signupFarm(t, "Finca de la pesada tardia", 80000)
-		w := h.createWorker(t, f3, "Tardia", "7001001003")
-		h.createPlot(t, f3, "Lote tardio")
-		act := h.harvestActivityID(t, f3)
-		seen := h.createWorkRecord(t, f3, f3.OwnerToken, w, act, "2026-08-25", 100)
-
-		// The screen listed exactly one payable and showed 8 000 000.
-		// A second weighing lands before the button is pressed.
-		late := h.createWorkRecord(t, f3, f3.OwnerToken, w, act, "2026-08-26", 20)
-
-		res := h.do(t, http.MethodPost, "/v1/settlements", f3.OwnerToken, map[string]any{
-			"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
-			"payableIds":         []string{seen},
-			"expectedGrossCents": int64(9_600_000), // as if the screen had shown both
-		})
-		if res.code() != string(domain.CodeGrossChanged) {
-			t.Fatalf("settling a stale set: got %d %s, want GROSS_CHANGED", res.Status, res.Raw)
-		}
-		errObj, _ := res.Body["error"].(map[string]any)
-		details, _ := errObj["details"].(map[string]any)
-		added, _ := details["addedPayableIds"].([]any)
-		if len(added) != 1 || added[0] != late {
-			t.Fatalf("details do not name the weighing that arrived: %s", res.Raw)
-		}
+		a3LateWeighingRefused(t, h)
 	})
 
 	t.Run("a retry is never refused over a figure that has since moved", func(t *testing.T) {
-		// The one call that must not consult the expectation. The settlement
-		// exists, the cash has been counted, and answering GROSS_CHANGED to a
-		// resend would tell the foreman his payment failed when it did not.
-		f4 := h.signupFarm(t, "Finca del reintento", 80000)
-		w := h.createWorker(t, f4, "Reintento", "7001001004")
-		h.createPlot(t, f4, "Lote reintento")
-		act := h.harvestActivityID(t, f4)
-		h.createWorkRecord(t, f4, f4.OwnerToken, w, act, "2026-08-25", 100)
-
-		id := uuid.NewString()
-		settle := map[string]any{
-			"id": id, "workerId": w, "from": "2026-08-24", "to": "2026-08-30",
-			"expectedGrossCents": int64(8_000_000),
-		}
-		h.mustDo(t, http.MethodPost, "/v1/settlements", f4.OwnerToken, settle, http.StatusCreated)
-
-		h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f4.OwnerToken,
-			map[string]any{"priceCents": 95000}, http.StatusOK)
-
-		again := h.mustDo(t, http.MethodPost, "/v1/settlements", f4.OwnerToken, settle, http.StatusOK)
-		if mustString(t, again.Body, "id") != id {
-			t.Fatalf("the retry answered a different settlement: %s", again.Raw)
-		}
-		if got := mustInt(t, again.Body, "grossCents"); got != 8_000_000 {
-			t.Fatalf("the retry repriced the settlement to %d", got)
-		}
+		a3RetryIgnoresMovedFigure(t, h)
 	})
+}
+
+func a3RepricedWeekRefused(t *testing.T, h *harness) {
+	f2 := h.signupFarm(t, "Finca del precio movido", 80000)
+	w := h.createWorker(t, f2, "Precio", "7001001002")
+	h.createPlot(t, f2, "Lote precio")
+	act := h.harvestActivityID(t, f2)
+	h.createWorkRecord(t, f2, f2.OwnerToken, w, act, "2026-08-25", 100)
+
+	// What the screen showed.
+	shown := int64(8_000_000)
+
+	// The owner reprices the week from the web while the screen is open.
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f2.OwnerToken,
+		map[string]any{"priceCents": 90000}, http.StatusOK)
+
+	res := h.do(t, http.MethodPost, "/v1/settlements", f2.OwnerToken, map[string]any{
+		"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
+		"expectedGrossCents": shown,
+	})
+	if res.code() != string(domain.CodeGrossChanged) {
+		t.Fatalf("settling after a reprice: got %d %s, want GROSS_CHANGED", res.Status, res.Raw)
+	}
+	errObj, _ := res.Body["error"].(map[string]any)
+	details, _ := errObj["details"].(map[string]any)
+	if int64(details["expectedCents"].(float64)) != shown {
+		t.Fatalf("details lost the figure that was read: %s", res.Raw)
+	}
+	if int64(details["actualCents"].(float64)) != 9_000_000 {
+		t.Fatalf("details do not carry the new figure: %s", res.Raw)
+	}
+	weeks, _ := details["weeksInSettlement"].([]any)
+	if len(weeks) != 1 {
+		t.Fatalf("details name no week, so the screen cannot say which one moved: %s", res.Raw)
+	}
+	week := weeks[0].(map[string]any)
+	if week["weekStart"] != "2026-08-24" || int64(week["priceCents"].(float64)) != 90000 {
+		t.Fatalf("the week in details is not the one that was repriced: %s", res.Raw)
+	}
+
+	// And nothing was written. This is the half that matters: a refusal
+	// that had already inserted the settlement would be worse than no
+	// refusal at all.
+	bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+w+"/balance",
+		f2.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, bal.Body, "balanceCents"); got != 0 {
+		t.Fatalf("a refused settlement moved the balance to %d", got)
+	}
+}
+
+func a3LateWeighingRefused(t *testing.T, h *harness) {
+	f3 := h.signupFarm(t, "Finca de la pesada tardia", 80000)
+	w := h.createWorker(t, f3, "Tardia", "7001001003")
+	h.createPlot(t, f3, "Lote tardio")
+	act := h.harvestActivityID(t, f3)
+	seen := h.createWorkRecord(t, f3, f3.OwnerToken, w, act, "2026-08-25", 100)
+
+	// The screen listed exactly one payable and showed 8 000 000.
+	// A second weighing lands before the button is pressed.
+	late := h.createWorkRecord(t, f3, f3.OwnerToken, w, act, "2026-08-26", 20)
+
+	res := h.do(t, http.MethodPost, "/v1/settlements", f3.OwnerToken, map[string]any{
+		"workerId": w, "from": "2026-08-24", "to": "2026-08-30",
+		"payableIds":         []string{seen},
+		"expectedGrossCents": int64(9_600_000), // as if the screen had shown both
+	})
+	if res.code() != string(domain.CodeGrossChanged) {
+		t.Fatalf("settling a stale set: got %d %s, want GROSS_CHANGED", res.Status, res.Raw)
+	}
+	errObj, _ := res.Body["error"].(map[string]any)
+	details, _ := errObj["details"].(map[string]any)
+	added, _ := details["addedPayableIds"].([]any)
+	if len(added) != 1 || added[0] != late {
+		t.Fatalf("details do not name the weighing that arrived: %s", res.Raw)
+	}
+}
+
+func a3RetryIgnoresMovedFigure(t *testing.T, h *harness) {
+	// The one call that must not consult the expectation. The settlement
+	// exists, the cash has been counted, and answering GROSS_CHANGED to a
+	// resend would tell the foreman his payment failed when it did not.
+	f4 := h.signupFarm(t, "Finca del reintento", 80000)
+	w := h.createWorker(t, f4, "Reintento", "7001001004")
+	h.createPlot(t, f4, "Lote reintento")
+	act := h.harvestActivityID(t, f4)
+	h.createWorkRecord(t, f4, f4.OwnerToken, w, act, "2026-08-25", 100)
+
+	id := uuid.NewString()
+	settle := map[string]any{
+		"id": id, "workerId": w, "from": "2026-08-24", "to": "2026-08-30",
+		"expectedGrossCents": int64(8_000_000),
+	}
+	h.mustDo(t, http.MethodPost, "/v1/settlements", f4.OwnerToken, settle, http.StatusCreated)
+
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-24", f4.OwnerToken,
+		map[string]any{"priceCents": 95000}, http.StatusOK)
+
+	again := h.mustDo(t, http.MethodPost, "/v1/settlements", f4.OwnerToken, settle, http.StatusOK)
+	if mustString(t, again.Body, "id") != id {
+		t.Fatalf("the retry answered a different settlement: %s", again.Raw)
+	}
+	if got := mustInt(t, again.Body, "grossCents"); got != 8_000_000 {
+		t.Fatalf("the retry repriced the settlement to %d", got)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -347,12 +359,7 @@ func TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust(t *testing.T) {
 	}
 
 	t.Run("the surviving envelopes really landed", func(t *testing.T) {
-		list := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+workerID,
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := list.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("one rejection took the batch down: %s", list.Raw)
-		}
+		a3PushSurvivorsLanded(t, h, f, workerID)
 	})
 
 	t.Run("the instant decides the day, in the farm's zone and not the server's", func(t *testing.T) {
@@ -366,35 +373,9 @@ func TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust(t *testing.T) {
 	})
 
 	t.Run("the same batch sent again applies nothing twice", func(t *testing.T) {
-		again := h.mustDo(t, http.MethodPost, "/v1/sync/push", f.OwnerToken, map[string]any{
-			"deviceId": device,
-			"ops": []map[string]any{
-				{"opId": opWorker, "entity": "worker", "op": "upsert", "payload": map[string]any{
-					"id": workerID, "name": "Ana", "lastName": "Rodríguez",
-					"documentType": "CC", "docId": "1098000001", "tag": "17",
-				}},
-				{"opId": opRecordA, "entity": "workRecord", "op": "upsert", "payload": map[string]any{
-					"id": recordA, "workerId": workerID, "quantity": 12.5,
-					"occurredAt": "2026-08-24T19:30:00-05:00",
-				}},
-			},
-		}, http.StatusOK)
-		rows, _ := again.Body["results"].([]any)
-		for i, raw := range rows {
-			row := raw.(map[string]any)
-			// The registry answers with the RECORDED result, literally. Both
-			// were `applied` the first time, so both are `applied` again — and
-			// nothing ran.
-			if row["status"] != "applied" {
-				t.Fatalf("op %d on the resend is %v, want the recorded answer: %s", i, row["status"], again.Raw)
-			}
-		}
-		list := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+workerID,
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := list.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("the resend wrote %d records; a retry cannot create a second weighing", len(items))
-		}
+		a3PushResendAppliesNothing(t, h, f, a3PushIDs{
+			device: device, workerID: workerID, opWorker: opWorker, opRecordA: opRecordA, recordA: recordA,
+		})
 	})
 
 	t.Run("a new opId for a row that is already here is a duplicate, not a second row", func(t *testing.T) {
@@ -411,32 +392,11 @@ func TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust(t *testing.T) {
 	})
 
 	t.Run("the read-only half of the protocol is refused with its reason", func(t *testing.T) {
-		for _, entity := range []string{"weekPrice", "plot", "crop", "settlement"} {
-			out := push(f.OwnerToken, []map[string]any{
-				{"opId": uuid.NewString(), "entity": entity, "op": "upsert",
-					"payload": map[string]any{"id": uuid.NewString()}},
-			})
-			rows, _ := out.Body["results"].([]any)
-			row := rows[0].(map[string]any)
-			if row["status"] != "rejected" {
-				t.Fatalf("%s is read-only on the handset and must not be silently accepted: %s",
-					entity, out.Raw)
-			}
-		}
+		a3PushReadOnlyEntities(t, f, push)
 	})
 
 	t.Run("a devengo cannot be pushed", func(t *testing.T) {
-		out := push(f.OwnerToken, []map[string]any{
-			{"opId": uuid.NewString(), "entity": "ledgerEntry", "op": "append", "payload": map[string]any{
-				"id": uuid.NewString(), "workerId": workerID, "kind": "devengo",
-				"amountCents": 100, "date": "2026-08-24",
-			}},
-		})
-		rows, _ := out.Body["results"].([]any)
-		if rows[0].(map[string]any)["status"] != "rejected" {
-			t.Fatalf("a handset that could write an earning could pay a week the server "+
-				"never agreed to: %s", out.Raw)
-		}
+		a3PushDevengoRejected(t, f, push, workerID)
 	})
 
 	t.Run("outgoing money is taken without a balance check", func(t *testing.T) {
@@ -451,18 +411,98 @@ func TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust(t *testing.T) {
 	})
 
 	t.Run("a batch over the ceiling is refused as a batch", func(t *testing.T) {
-		ops := make([]map[string]any, 0, 201)
-		for i := 0; i < 201; i++ {
-			ops = append(ops, map[string]any{
-				"opId": uuid.NewString(), "entity": "worker", "op": "upsert",
-				"payload": map[string]any{"id": uuid.NewString(), "name": "X"},
-			})
-		}
-		out := push(f.OwnerToken, ops)
-		if out.Status != http.StatusBadRequest {
-			t.Fatalf("201 envelopes: got %d, want 400: %s", out.Status, out.Raw)
-		}
+		a3PushOverCeiling(t, f, push)
 	})
+}
+
+func a3PushSurvivorsLanded(t *testing.T, h *harness, f *farmFixture, workerID string) {
+	list := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+workerID,
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := list.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("one rejection took the batch down: %s", list.Raw)
+	}
+}
+
+// a3PushIDs are the identifiers of the first push batch that the resend repeats.
+type a3PushIDs struct {
+	device, workerID, opWorker, opRecordA, recordA string
+}
+
+func a3PushResendAppliesNothing(t *testing.T, h *harness, f *farmFixture, ids a3PushIDs) {
+	device, workerID, opWorker, opRecordA, recordA := ids.device, ids.workerID, ids.opWorker, ids.opRecordA, ids.recordA
+	again := h.mustDo(t, http.MethodPost, "/v1/sync/push", f.OwnerToken, map[string]any{
+		"deviceId": device,
+		"ops": []map[string]any{
+			{"opId": opWorker, "entity": "worker", "op": "upsert", "payload": map[string]any{
+				"id": workerID, "name": "Ana", "lastName": "Rodríguez",
+				"documentType": "CC", "docId": "1098000001", "tag": "17",
+			}},
+			{"opId": opRecordA, "entity": "workRecord", "op": "upsert", "payload": map[string]any{
+				"id": recordA, "workerId": workerID, "quantity": 12.5,
+				"occurredAt": "2026-08-24T19:30:00-05:00",
+			}},
+		},
+	}, http.StatusOK)
+	rows, _ := again.Body["results"].([]any)
+	for i, raw := range rows {
+		row := raw.(map[string]any)
+		// The registry answers with the RECORDED result, literally. Both
+		// were `applied` the first time, so both are `applied` again — and
+		// nothing ran.
+		if row["status"] != "applied" {
+			t.Fatalf("op %d on the resend is %v, want the recorded answer: %s", i, row["status"], again.Raw)
+		}
+	}
+	list := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+workerID,
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := list.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("the resend wrote %d records; a retry cannot create a second weighing", len(items))
+	}
+}
+
+func a3PushReadOnlyEntities(t *testing.T, f *farmFixture, push func(string, []map[string]any) response) {
+	for _, entity := range []string{"weekPrice", "plot", "crop", "settlement"} {
+		out := push(f.OwnerToken, []map[string]any{
+			{"opId": uuid.NewString(), "entity": entity, "op": "upsert",
+				"payload": map[string]any{"id": uuid.NewString()}},
+		})
+		rows, _ := out.Body["results"].([]any)
+		row := rows[0].(map[string]any)
+		if row["status"] != "rejected" {
+			t.Fatalf("%s is read-only on the handset and must not be silently accepted: %s",
+				entity, out.Raw)
+		}
+	}
+}
+
+func a3PushDevengoRejected(t *testing.T, f *farmFixture, push func(string, []map[string]any) response, workerID string) {
+	out := push(f.OwnerToken, []map[string]any{
+		{"opId": uuid.NewString(), "entity": "ledgerEntry", "op": "append", "payload": map[string]any{
+			"id": uuid.NewString(), "workerId": workerID, "kind": "devengo",
+			"amountCents": 100, "date": "2026-08-24",
+		}},
+	})
+	rows, _ := out.Body["results"].([]any)
+	if rows[0].(map[string]any)["status"] != "rejected" {
+		t.Fatalf("a handset that could write an earning could pay a week the server "+
+			"never agreed to: %s", out.Raw)
+	}
+}
+
+func a3PushOverCeiling(t *testing.T, f *farmFixture, push func(string, []map[string]any) response) {
+	ops := make([]map[string]any, 0, 201)
+	for i := 0; i < 201; i++ {
+		ops = append(ops, map[string]any{
+			"opId": uuid.NewString(), "entity": "worker", "op": "upsert",
+			"payload": map[string]any{"id": uuid.NewString(), "name": "X"},
+		})
+	}
+	out := push(f.OwnerToken, ops)
+	if out.Status != http.StatusBadRequest {
+		t.Fatalf("201 envelopes: got %d, want 400: %s", out.Status, out.Raw)
+	}
 }
 
 func TestPullIsAFeedAndTheWeigherGetsNoMoneyOutOfIt(t *testing.T) {
@@ -503,65 +543,15 @@ func TestPullIsAFeedAndTheWeigherGetsNoMoneyOutOfIt(t *testing.T) {
 	}
 
 	t.Run("a settlement travels whole, with its lines", func(t *testing.T) {
-		// Never a header without its rows: a document for millions with
-		// nothing underneath it is what user_version = 4 existed to repair.
-		var found map[string]any
-		for _, s := range byEntity["settlement"] {
-			if s["id"] == settlementID {
-				found = s
-			}
-		}
-		if found == nil {
-			t.Fatalf("the settlement is not in the feed")
-		}
-		items, _ := found["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("the settlement travelled without its lines: %v", found)
-		}
-		if int64(found["grossCents"].(float64)) != 8_000_000 {
-			t.Fatalf("the settlement's gross came down wrong: %v", found)
-		}
+		a3PullSettlementWhole(t, byEntity, settlementID)
 	})
 
 	t.Run("balances arrive only in the last batch, and as a checksum", func(t *testing.T) {
-		if res.Body["more"] != false {
-			t.Fatalf("expected the whole feed in one batch here")
-		}
-		balances, ok := res.Body["balances"].([]any)
-		if !ok || len(balances) == 0 {
-			t.Fatalf("the last batch carries the balances checksum: %s", res.Raw)
-		}
-		// And not in a batch that is not the last.
-		partial := h.mustDo(t, http.MethodGet, "/v1/sync/pull?cursor=0&limit=1",
-			f.OwnerToken, nil, http.StatusOK)
-		if partial.Body["more"] != true {
-			t.Fatalf("limit=1 should leave more to come: %s", partial.Raw)
-		}
-		if _, present := partial.Body["balances"]; present {
-			t.Fatalf("a total compared against a half-applied feed reports a mismatch "+
-				"that is not one: %s", partial.Raw)
-		}
+		a3PullBalancesLastBatch(t, h, f, res)
 	})
 
 	t.Run("the weigher's feed carries no money, and his cursor still moves", func(t *testing.T) {
-		w := h.mustDo(t, http.MethodGet, "/v1/sync/pull?cursor=0", f.WeigherToken, nil, http.StatusOK)
-		rows, _ := w.Body["changes"].([]any)
-		for _, raw := range rows {
-			row := raw.(map[string]any)
-			switch row["entity"] {
-			case "settlement", "ledgerEntry":
-				t.Fatalf("the weigher received %v: %s", row["entity"], w.Raw)
-			}
-		}
-		if _, present := w.Body["balances"]; present {
-			t.Fatalf("the weigher received the balances: %s", w.Raw)
-		}
-		// The cursor is the whole point: stranded behind the first payroll of
-		// the season it would never move again.
-		if mustInt(t, w.Body, "cursor") < lastSeq {
-			t.Fatalf("the weigher's cursor stopped at %d, the feed is at %d: %s",
-				mustInt(t, w.Body, "cursor"), lastSeq, w.Raw)
-		}
+		a3PullWeigherNoMoney(t, h, f, lastSeq)
 	})
 
 	t.Run("the cursor advances and a second pull is empty", func(t *testing.T) {
@@ -575,60 +565,126 @@ func TestPullIsAFeedAndTheWeigherGetsNoMoneyOutOfIt(t *testing.T) {
 	})
 
 	t.Run("a cursor older than the retained feed says so instead of skipping the gap", func(t *testing.T) {
-		// Retention has not pruned anything on this farm, so the gap is
-		// simulated the only honest way: by pruning.
-		//
-		// Three things here were wrong for a long time and none of them was
-		// visible, because the assertion passed for an unrelated reason. The
-		// DELETE ran on `h.admin` rather than on `tx`, so it was a different
-		// session; it never set `app.sync_prune`, which migration 00014 makes
-		// the ONE exception the append-only trigger honours and which must be
-		// set on the same session; and `withTenantCommit`'s error was thrown
-		// away, so the refusal was silent. Nothing was ever pruned.
-		//
-		// What made it green: `seq` is one global bigserial for the whole
-		// table, so in a full-package run this farm is created late, MIN(seq)
-		// is large, and `cursor=1` is legitimately too old. Run the package
-		// with a -run filter and MIN(seq) is 2, `1 < 1` is false, and the
-		// endpoint answers 200 with every row still there. Measured, exactly
-		// that: `got 200 {... "changes":[{"seq":2 ...}], "cursor":8}`.
-		//
-		// So this test asserted nothing about retention on any PR that ever
-		// ran it.
-		// And it has to run the way the prune job runs: one transaction on the
-		// SCHEMA OWNER's pool, with `app.sync_prune` set LOCAL on that same
-		// transaction. Not the tenant pool -- `bascula_api` carries the REVOKE
-		// and answers `permission denied for table sync_log`, so the trigger's
-		// exception is not even reachable from there. Measured while fixing
-		// this, which is the other half of why the original never pruned.
-		before := h.oldestSeq(t, f.FarmID)
-		h.pruneSyncLog(t, f.FarmID)
-
-		// And it actually removed rows, rather than reporting success over a
-		// DELETE that matched nothing.
-		after := h.oldestSeq(t, f.FarmID)
-		if after <= before {
-			t.Fatalf("the oldest retained seq did not move: %d -> %d", before, after)
-		}
-
-		// Now the cursor is below the retained feed BECAUSE of retention, not
-		// because of where the global sequence happened to land. `cursor=1` is
-		// kept only when it is genuinely below `oldest-1`; otherwise the
-		// assertion would be about the boundary's arithmetic again.
-		cursor := after - 2
-		if cursor < 1 {
-			cursor = 1
-		}
-		if cursor >= after-1 {
-			t.Fatalf("not enough was pruned to put a cursor below the feed: oldest=%d", after)
-		}
-		out := h.do(t, http.MethodGet,
-			"/v1/sync/pull?cursor="+strconv.FormatInt(cursor, 10), f.OwnerToken, nil)
-		if out.code() != string(domain.CodeCursorTooOld) {
-			t.Fatalf("a cursor below the retained feed: got %d %s, want CURSOR_TOO_OLD",
-				out.Status, out.Raw)
-		}
+		a3PullCursorTooOld(t, h, f)
 	})
+}
+
+func a3PullSettlementWhole(t *testing.T, byEntity map[string][]map[string]any, settlementID string) {
+	// Never a header without its rows: a document for millions with
+	// nothing underneath it is what user_version = 4 existed to repair.
+	var found map[string]any
+	for _, s := range byEntity["settlement"] {
+		if s["id"] == settlementID {
+			found = s
+		}
+	}
+	if found == nil {
+		t.Fatalf("the settlement is not in the feed")
+	}
+	items, _ := found["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("the settlement travelled without its lines: %v", found)
+	}
+	if int64(found["grossCents"].(float64)) != 8_000_000 {
+		t.Fatalf("the settlement's gross came down wrong: %v", found)
+	}
+}
+
+func a3PullBalancesLastBatch(t *testing.T, h *harness, f *farmFixture, res response) {
+	if res.Body["more"] != false {
+		t.Fatalf("expected the whole feed in one batch here")
+	}
+	balances, ok := res.Body["balances"].([]any)
+	if !ok || len(balances) == 0 {
+		t.Fatalf("the last batch carries the balances checksum: %s", res.Raw)
+	}
+	// And not in a batch that is not the last.
+	partial := h.mustDo(t, http.MethodGet, "/v1/sync/pull?cursor=0&limit=1",
+		f.OwnerToken, nil, http.StatusOK)
+	if partial.Body["more"] != true {
+		t.Fatalf("limit=1 should leave more to come: %s", partial.Raw)
+	}
+	if _, present := partial.Body["balances"]; present {
+		t.Fatalf("a total compared against a half-applied feed reports a mismatch "+
+			"that is not one: %s", partial.Raw)
+	}
+}
+
+func a3PullWeigherNoMoney(t *testing.T, h *harness, f *farmFixture, lastSeq int64) {
+	w := h.mustDo(t, http.MethodGet, "/v1/sync/pull?cursor=0", f.WeigherToken, nil, http.StatusOK)
+	rows, _ := w.Body["changes"].([]any)
+	for _, raw := range rows {
+		row := raw.(map[string]any)
+		switch row["entity"] {
+		case "settlement", "ledgerEntry":
+			t.Fatalf("the weigher received %v: %s", row["entity"], w.Raw)
+		}
+	}
+	if _, present := w.Body["balances"]; present {
+		t.Fatalf("the weigher received the balances: %s", w.Raw)
+	}
+	// The cursor is the whole point: stranded behind the first payroll of
+	// the season it would never move again.
+	if mustInt(t, w.Body, "cursor") < lastSeq {
+		t.Fatalf("the weigher's cursor stopped at %d, the feed is at %d: %s",
+			mustInt(t, w.Body, "cursor"), lastSeq, w.Raw)
+	}
+}
+
+func a3PullCursorTooOld(t *testing.T, h *harness, f *farmFixture) {
+	// Retention has not pruned anything on this farm, so the gap is
+	// simulated the only honest way: by pruning.
+	//
+	// Three things here were wrong for a long time and none of them was
+	// visible, because the assertion passed for an unrelated reason. The
+	// DELETE ran on `h.admin` rather than on `tx`, so it was a different
+	// session; it never set `app.sync_prune`, which migration 00014 makes
+	// the ONE exception the append-only trigger honours and which must be
+	// set on the same session; and `withTenantCommit`'s error was thrown
+	// away, so the refusal was silent. Nothing was ever pruned.
+	//
+	// What made it green: `seq` is one global bigserial for the whole
+	// table, so in a full-package run this farm is created late, MIN(seq)
+	// is large, and `cursor=1` is legitimately too old. Run the package
+	// with a -run filter and MIN(seq) is 2, `1 < 1` is false, and the
+	// endpoint answers 200 with every row still there. Measured, exactly
+	// that: `got 200 {... "changes":[{"seq":2 ...}], "cursor":8}`.
+	//
+	// So this test asserted nothing about retention on any PR that ever
+	// ran it.
+	// And it has to run the way the prune job runs: one transaction on the
+	// SCHEMA OWNER's pool, with `app.sync_prune` set LOCAL on that same
+	// transaction. Not the tenant pool -- `bascula_api` carries the REVOKE
+	// and answers `permission denied for table sync_log`, so the trigger's
+	// exception is not even reachable from there. Measured while fixing
+	// this, which is the other half of why the original never pruned.
+	before := h.oldestSeq(t, f.FarmID)
+	h.pruneSyncLog(t, f.FarmID)
+
+	// And it actually removed rows, rather than reporting success over a
+	// DELETE that matched nothing.
+	after := h.oldestSeq(t, f.FarmID)
+	if after <= before {
+		t.Fatalf("the oldest retained seq did not move: %d -> %d", before, after)
+	}
+
+	// Now the cursor is below the retained feed BECAUSE of retention, not
+	// because of where the global sequence happened to land. `cursor=1` is
+	// kept only when it is genuinely below `oldest-1`; otherwise the
+	// assertion would be about the boundary's arithmetic again.
+	cursor := after - 2
+	if cursor < 1 {
+		cursor = 1
+	}
+	if cursor >= after-1 {
+		t.Fatalf("not enough was pruned to put a cursor below the feed: oldest=%d", after)
+	}
+	out := h.do(t, http.MethodGet,
+		"/v1/sync/pull?cursor="+strconv.FormatInt(cursor, 10), f.OwnerToken, nil)
+	if out.code() != string(domain.CodeCursorTooOld) {
+		t.Fatalf("a cursor below the retained feed: got %d %s, want CURSOR_TOO_OLD",
+			out.Status, out.Raw)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -729,33 +785,11 @@ func TestTheSeasonOnTheHandsetMovesWithoutChangingAnIdentifier(t *testing.T) {
 	})
 
 	t.Run("the imported lock holds: the settled weighing is not pending", func(t *testing.T) {
-		pending := h.mustDo(t, http.MethodGet,
-			"/v1/pending?workerId="+ana+"&from=2026-08-24&to=2026-08-30",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := pending.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("want exactly the unsettled weighing pending, got %d: %s", len(items), pending.Raw)
-		}
-		if items[0].(map[string]any)["payableId"] != pickB {
-			t.Fatalf("the wrong weighing is pending: %s", pending.Raw)
-		}
+		a3SeasonImportedLockHolds(t, h, f, ana, pickB)
 	})
 
 	t.Run("running it again writes nothing and refuses nothing", func(t *testing.T) {
-		// Phase 3 is meant to be run over and over against a copy until it
-		// comes out clean, and phase 4 has to survive a dropped connection.
-		again := h.mustDo(t, http.MethodPost, "/v1/import/season", f.OwnerToken, season, http.StatusOK)
-		for _, table := range []string{"workers", "workRecords", "settlements", "ledger", "crops"} {
-			counts := again.Body[table].(map[string]any)
-			if mustInt(t, counts, "written") != 0 {
-				t.Fatalf("the re-run wrote %v rows into %s: %s", counts["written"], table, again.Raw)
-			}
-		}
-		bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+ana+"/balance",
-			f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, bal.Body, "balanceCents"); got != 5_000_000 {
-			t.Fatalf("the re-run moved the balance to %d", got)
-		}
+		a3SeasonRerunWritesNothing(t, h, f, season, ana)
 	})
 
 	t.Run("and the imported season is now settleable on the server", func(t *testing.T) {
@@ -767,6 +801,36 @@ func TestTheSeasonOnTheHandsetMovesWithoutChangingAnIdentifier(t *testing.T) {
 			t.Fatalf("settling the rest grosses %d, want 3200000: %s", got, res.Raw)
 		}
 	})
+}
+
+func a3SeasonImportedLockHolds(t *testing.T, h *harness, f *farmFixture, ana, pickB string) {
+	pending := h.mustDo(t, http.MethodGet,
+		"/v1/pending?workerId="+ana+"&from=2026-08-24&to=2026-08-30",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := pending.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("want exactly the unsettled weighing pending, got %d: %s", len(items), pending.Raw)
+	}
+	if items[0].(map[string]any)["payableId"] != pickB {
+		t.Fatalf("the wrong weighing is pending: %s", pending.Raw)
+	}
+}
+
+func a3SeasonRerunWritesNothing(t *testing.T, h *harness, f *farmFixture, season map[string]any, ana string) {
+	// Phase 3 is meant to be run over and over against a copy until it
+	// comes out clean, and phase 4 has to survive a dropped connection.
+	again := h.mustDo(t, http.MethodPost, "/v1/import/season", f.OwnerToken, season, http.StatusOK)
+	for _, table := range []string{"workers", "workRecords", "settlements", "ledger", "crops"} {
+		counts := again.Body[table].(map[string]any)
+		if mustInt(t, counts, "written") != 0 {
+			t.Fatalf("the re-run wrote %v rows into %s: %s", counts["written"], table, again.Raw)
+		}
+	}
+	bal := h.mustDo(t, http.MethodGet, "/v1/workers/"+ana+"/balance",
+		f.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, bal.Body, "balanceCents"); got != 5_000_000 {
+		t.Fatalf("the re-run moved the balance to %d", got)
+	}
 }
 
 // TestAnImportThatDoesNotReconcileWritesNothingAtAll is the property that makes

@@ -28,21 +28,7 @@ func TestBasketNumberRules(t *testing.T) {
 		return h.do(t, http.MethodPost, "/v1/workers", f.OwnerToken, body)
 	}
 
-	// Required, for a person and a team; blank is missing.
-	for _, body := range []map[string]any{
-		{"name": "Sin número"},
-		{"name": "En blanco", "tag": "   "},
-		{"name": "Equipo sin número", "kind": "equipo"},
-	} {
-		res := post(body)
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("create %v without a basket number: %d %s", body["name"], res.Status, res.Raw)
-		}
-		fields, _ := errDetails(res)["fields"].(map[string]any)
-		if fields["tag"] != "Escriba el número de canasto." {
-			t.Errorf("field error for the missing number: %s", res.Raw)
-		}
-	}
+	a3BasketRequired(t, post)
 
 	// Trimmed on the way in.
 	yorman := post(map[string]any{"name": "Yorman", "lastName": "Pérez", "tag": " 46 "})
@@ -81,6 +67,32 @@ func TestBasketNumberRules(t *testing.T) {
 		t.Errorf("a member keeps their own number: %v", y.Body["tag"])
 	}
 
+	a3BasketPatchRules(t, h, f, sergioID)
+	a3BasketLegacyAndInactive(t, h, f, post)
+	a3BasketDashboardAndSearch(t, h, f, team)
+}
+
+func a3BasketRequired(t *testing.T, post func(map[string]any) response) {
+	t.Helper()
+	// Required, for a person and a team; blank is missing.
+	for _, body := range []map[string]any{
+		{"name": "Sin número"},
+		{"name": "En blanco", "tag": "   "},
+		{"name": "Equipo sin número", "kind": "equipo"},
+	} {
+		res := post(body)
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("create %v without a basket number: %d %s", body["name"], res.Status, res.Raw)
+		}
+		fields, _ := errDetails(res)["fields"].(map[string]any)
+		if fields["tag"] != "Escriba el número de canasto." {
+			t.Errorf("field error for the missing number: %s", res.Raw)
+		}
+	}
+}
+
+func a3BasketPatchRules(t *testing.T, h *harness, f *farmFixture, sergioID string) {
+	t.Helper()
 	// PATCH: change yes, steal no, remove no.
 	if res := h.do(t, http.MethodPatch, "/v1/workers/"+sergioID, f.OwnerToken,
 		map[string]any{"tag": "46"}); errCode(res) != "DUPLICATE_TAG" {
@@ -97,7 +109,10 @@ func TestBasketNumberRules(t *testing.T) {
 	h.mustDo(t, http.MethodPatch, "/v1/workers/"+sergioID, f.OwnerToken, map[string]any{"tag": "64"}, http.StatusOK)
 	// Saving a worker with their own number is not a clash with themselves.
 	h.mustDo(t, http.MethodPatch, "/v1/workers/"+sergioID, f.OwnerToken, map[string]any{"tag": "64", "phone": "3001112233"}, http.StatusOK)
+}
 
+func a3BasketLegacyAndInactive(t *testing.T, h *harness, f *farmFixture, post func(map[string]any) response) {
+	t.Helper()
 	// A worker from before the rule, without a number, is not broken: other
 	// fields still save, and an explicit null on them is a no-op.
 	legacy := h.createWorker(t, f, "Mauricio", "61000001")
@@ -125,7 +140,10 @@ func TestBasketNumberRules(t *testing.T) {
 	if back.Status != http.StatusOK || back.Body["tag"] != "13" || back.Body["deletedAt"] != nil {
 		t.Errorf("reactivating with a new number: %d %s", back.Status, back.Raw)
 	}
+}
 
+func a3BasketDashboardAndSearch(t *testing.T, h *harness, f *farmFixture, team response) {
+	t.Helper()
 	// The harvest dashboard (Modo cosecha, MCP report_harvest_dashboard)
 	// carries the number on each row.
 	teamID := team.Body["id"].(string)
@@ -158,31 +176,7 @@ func TestBasketNumberMCP(t *testing.T) {
 
 	// The schema requires it on create_worker and create_team.
 	for _, name := range []string{"create_worker", "create_team"} {
-		var tool *mcp.Tool
-		tools, err := sess.ListTools(context.Background(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, tl := range tools.Tools {
-			if tl.Name == name {
-				tool = tl
-			}
-		}
-		if tool == nil {
-			t.Fatalf("%s not listed", name)
-		}
-		raw := toJSON(t, tool.InputSchema)
-		if !strings.Contains(raw, `"tag"`) || !strings.Contains(raw, `"required"`) {
-			t.Fatalf("%s schema: %s", name, raw)
-		}
-		if !strings.Contains(tool.Description, "canasto") {
-			t.Errorf("%s description should talk about the basket number", name)
-		}
-		var sch struct{ Required []string }
-		fromJSON(t, raw, &sch)
-		if !contains(sch.Required, "tag") {
-			t.Errorf("%s: tag should be required, got %v", name, sch.Required)
-		}
+		a3CheckBasketToolSchema(t, sess, name)
 	}
 	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_worker",
 		Arguments: map[string]any{"name": "Sin canasto"}})
@@ -211,6 +205,35 @@ func TestBasketNumberMCP(t *testing.T) {
 	list := toolText(callTool(t, sess, "list_workers", map[string]any{"q": "46"}))
 	if !strings.Contains(list, `"tag":"46"`) || !strings.Contains(list, `"tag":"46-63"`) {
 		t.Errorf("list_workers q=46 should show tags 46 and 46-63: %s", list)
+	}
+}
+
+func a3CheckBasketToolSchema(t *testing.T, sess *mcp.ClientSession, name string) {
+	t.Helper()
+	var tool *mcp.Tool
+	tools, err := sess.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name == name {
+			tool = tl
+		}
+	}
+	if tool == nil {
+		t.Fatalf("%s not listed", name)
+	}
+	raw := toJSON(t, tool.InputSchema)
+	if !strings.Contains(raw, `"tag"`) || !strings.Contains(raw, `"required"`) {
+		t.Fatalf("%s schema: %s", name, raw)
+	}
+	if !strings.Contains(tool.Description, "canasto") {
+		t.Errorf("%s description should talk about the basket number", name)
+	}
+	var sch struct{ Required []string }
+	fromJSON(t, raw, &sch)
+	if !contains(sch.Required, "tag") {
+		t.Errorf("%s: tag should be required, got %v", name, sch.Required)
 	}
 }
 
