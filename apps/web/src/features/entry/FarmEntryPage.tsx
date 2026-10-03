@@ -30,13 +30,9 @@ export function FarmEntryPage({ hostname }: Readonly<{ hostname?: string }>) {
   // the name cannot be had, and nothing shows until the answer is in, so the
   // label does not flash from one to the other.
   const { name, settled } = useFarmDisplayName(slug);
-  const label = slug
-    ? name
-      ? farmGreeting(name)
-      : settled
-        ? farmGreeting(slug)
-        : null
-    : null;
+  let label: string | null = null;
+  if (slug && name) label = farmGreeting(name);
+  else if (slug && settled) label = farmGreeting(slug);
   return (
     <Box
       sx={{

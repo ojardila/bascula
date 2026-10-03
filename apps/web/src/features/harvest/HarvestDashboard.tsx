@@ -58,6 +58,11 @@ import { affix } from "../../lib/affix";
 const TOP_PEOPLE = 10;
 const TRACK = "rgba(46,125,50,.12)";
 
+function changeColor(direction: string): string {
+  if (direction === "down") return "warning.dark";
+  return direction === "up" ? "primary.main" : "text.secondary";
+}
+
 export function HarvestDashboard({ canSeeMoney }: Readonly<{ canSeeMoney: boolean }>) {
   const { data, error, denied } = useAsync(() => reportHarvestDashboard(), []);
 
@@ -121,12 +126,7 @@ function Body({
               fontSize: "1.05rem",
               fontWeight: 600,
               mt: 0.5,
-              color:
-                change.direction === "down"
-                  ? "warning.dark"
-                  : change.direction === "up"
-                    ? "primary.main"
-                    : "text.secondary",
+              color: changeColor(change.direction),
             }}
           >
             {change.arrow} {change.sentence}

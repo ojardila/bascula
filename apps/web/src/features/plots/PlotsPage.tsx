@@ -13,9 +13,16 @@ import { useAuth } from "../../auth/AuthContext";
 import { formatArea } from "../../lib/money";
 import { PLOT } from "../../lib/vocab";
 import type { Plot } from "../../api/types";
+import { count } from "../../lib/plural";
 
 function declaredAreaText(areaHa: number | null): string {
   return areaHa === null ? "sin declarar" : `${formatArea(areaHa)} ha`;
+}
+
+function plotsFooter(plots: number, totalHa: number, undeclared: number): string {
+  const missing =
+    undeclared > 0 ? ` · ${undeclared} sin superficie declarada, que no está en ese total` : "";
+  return `${count(plots, PLOT.one, PLOT.many)} · ${formatArea(totalHa)} ha declaradas${missing}`;
 }
 
 export function PlotsPage() {
@@ -212,13 +219,7 @@ export function PlotsPage() {
         emptyTitle={`Todavía no hay ${PLOT.many}`}
         emptyBody="Un lote es un pedazo de tierra con su ubicación, su área y sus cultivos. Es lo primero que hay que crear: las labores se registran sobre él."
         footer={
-          data
-            ? `${data.length} ${data.length === 1 ? PLOT.one : PLOT.many} · ` +
-              `${formatArea(totalHa)} ha declaradas` +
-              (undeclared > 0
-                ? ` · ${undeclared} sin superficie declarada, que no está en ese total`
-                : "")
-            : null
+          data ? plotsFooter(data.length, totalHa, undeclared) : null
         }
       />
     </Box>

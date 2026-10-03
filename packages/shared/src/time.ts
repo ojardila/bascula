@@ -145,10 +145,9 @@ export function dayInZone(
   instant: Date | string | number,
   timeZone: string = DEFAULT_TIMEZONE,
 ): string {
-  const d =
-    instant instanceof Date
-      ? instant
-      : new Date(typeof instant === "string" ? Date.parse(instant) : instant);
+  let d: Date;
+  if (instant instanceof Date) d = instant;
+  else d = new Date(typeof instant === "string" ? Date.parse(instant) : instant);
   if (!Number.isFinite(d.getTime())) return localDayOf();
   try {
     return formatterFor(timeZone).format(d);

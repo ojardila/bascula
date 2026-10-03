@@ -65,6 +65,11 @@ const EMPTY_SUMMARY: TourSummary = { owners: 0, people: 0, plot: null, priceCent
  */
 export const TOUR_LOAD_RETRY_MS: readonly number[] = [1000, 2000, 4000, 8000, 15000, 30000];
 
+/** Where a tour starts when nothing was saved: the weigher's skips the welcome. */
+function firstStepOf(tour: TourName): number {
+  return tour === "owner" ? 0 : 1;
+}
+
 function storageKey(userId: string, farm: string) {
   return `bascula.tours.${userId}.${farm}`;
 }
@@ -92,8 +97,7 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
   const written = useRef<Partial<Record<TourName, SavedTour>>>({});
 
   const role = principal.role;
-  const available: TourName | null =
-    role === "owner" ? "owner" : role === "weigher" ? "weigher" : null;
+  const available: TourName | null = role === "owner" || role === "weigher" ? role : null;
   const key = user ? storageKey(user.id, user.farm.name) : null;
 
   const persist = useCallback(
@@ -204,7 +208,7 @@ export function TourProvider({ children }: Readonly<{ children: ReactNode }>) {
   const resume = useCallback(
     (tour: TourName) => {
       const s = saved[tour];
-      start(tour, resumeIndex(tour, s ? s.step : tour === "owner" ? 0 : 1));
+      start(tour, resumeIndex(tour, s ? s.step : firstStepOf(tour)));
     },
     [saved, start],
   );

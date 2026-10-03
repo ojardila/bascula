@@ -76,6 +76,10 @@ type Props = {
   onChange: (p: PlotPoint | null) => void;
 };
 
+function markLabel(marked: boolean): string {
+  return marked ? "Volver a marcar aquí" : "Estoy parado en el lote";
+}
+
 export function PlotLocationField({ value, onChange }: Readonly<Props>) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -150,11 +154,7 @@ export function PlotLocationField({ value, onChange }: Readonly<Props>) {
         sx={{ py: 1.5 }}
         fullWidth
       >
-        {busy
-          ? "Buscando la señal…"
-          : value
-            ? "Volver a marcar aquí"
-            : "Estoy parado en el lote"}
+        {busy ? "Buscando la señal…" : markLabel(Boolean(value))}
       </Button>
 
       {busy && (

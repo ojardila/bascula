@@ -49,6 +49,11 @@ const TIME_UNITS: Array<{ value: TimeUnit; label: string }> = (
   ["jornal", "semanal", "quincenal", "mensual"] as const
 ).map((value) => ({ value, label: TIME_UNIT_LABEL[value] }));
 
+function rateFieldLabel(payMode: PayMode, timeUnit: TimeUnit, workUnit: string): string {
+  if (payMode === "contract") return "Valor del contrato";
+  return `Precio por ${payMode === "time_unit" ? timeUnit : workUnit}`;
+}
+
 export function ActivityFormDialog({
   open,
   activity,
@@ -404,13 +409,7 @@ export function ActivityFormDialog({
             </Alert>
           ) : (
             <TextField
-              label={
-                payMode === "contract"
-                  ? "Valor del contrato"
-                  : payMode === "time_unit"
-                    ? `Precio por ${timeUnit}`
-                    : `Precio por ${workUnit}`
-              }
+              label={rateFieldLabel(payMode, timeUnit, workUnit)}
               value={rate}
               onChange={(e) => setRate(e.target.value)}
               error={!!fields.rate}

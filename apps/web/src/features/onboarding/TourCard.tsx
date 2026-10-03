@@ -40,11 +40,9 @@ export function TourCard({
     if (busy) return;
     setBusy(true);
     try {
-      const ok = onPrimary
-        ? await onPrimary()
-        : def.action
-          ? await t.runAction(def.action)
-          : true;
+      let ok = true;
+      if (onPrimary) ok = await onPrimary();
+      else if (def.action) ok = await t.runAction(def.action);
       if (!ok) return;
       if (def.next === "stay") return;
       if (def.next === "finish") t.finish();

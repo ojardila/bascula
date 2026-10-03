@@ -185,6 +185,7 @@ import type {
   WireWorkRecord,
   WireWorkUnit,
 } from "./wire";
+import { compareAsc } from "../lib/compare";
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -322,7 +323,7 @@ export function grossChangeOf(e: unknown): GrossChange | null {
 /* ------------------------------------------------------------------ */
 
 const byNewestFirst = (a: SettlementSummary, b: SettlementSummary) =>
-  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+  compareAsc(b.createdAt, a.createdAt);
 
 /**
  * A row of the settlements list.
