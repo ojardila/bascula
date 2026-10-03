@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { paymentReceiptHtml, payrollHtml, settlementHtml } from "./documents";
+import { esc } from "./documentCss";
 import { line } from "../../api/grossChange";
 import type { Payment, Settlement, Worker } from "../../api/types";
 
@@ -143,6 +144,10 @@ describe("the pay receipt (RSP-008)", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("Ana &amp; &lt;b&gt;");
     hasNoExternalReference(html);
+  });
+
+  it("escapes both quote characters, for attributes quoted either way", () => {
+    expect(esc(`O'Neil "Toño" <&>`)).toBe("O&#39;Neil &quot;Toño&quot; &lt;&amp;&gt;");
   });
 });
 
