@@ -150,6 +150,12 @@ func (h *harness) replayWithFaults(req *http.Request, raw string) {
 // for the routes without side effects; serveReplayed for one chosen request
 // on the others.
 func (h *harness) replayAll(req *http.Request, raw string) {
+	replayAllOn(h.server, req, raw)
+}
+
+// replayAllOn is replayAll against a server of the test's own, such as one
+// built with a mailer.
+func replayAllOn(srv http.Handler, req *http.Request, raw string) {
 	for n := 1; n <= 60; n++ {
 		plan := &faultPlan{failAt: n}
 		twin := req.Clone(context.WithValue(req.Context(), faultKey{}, plan))
@@ -159,7 +165,7 @@ func (h *harness) replayAll(req *http.Request, raw string) {
 		twin.RemoteAddr = "10.250.0.1:12345"
 		func() {
 			defer func() { _ = recover() }()
-			h.server.ServeHTTP(httptest.NewRecorder(), twin)
+			srv.ServeHTTP(httptest.NewRecorder(), twin)
 		}()
 		if !plan.hit {
 			return
