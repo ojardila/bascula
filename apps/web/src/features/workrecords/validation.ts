@@ -151,9 +151,7 @@ export function validateWorkRecord(
 
   let rate = draft.rateCents;
   if (needsRateField(activity)) {
-    if (rate === null || rate === undefined) {
-      rate = activity.defaultRateCents ?? null;
-    }
+    rate ??= activity.defaultRateCents ?? null;
     if (rate === null) {
       errors.rateCents =
         activity.payMode === "contract"

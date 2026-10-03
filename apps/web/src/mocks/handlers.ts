@@ -717,7 +717,7 @@ export const handlers = [
     await delay(400);
     const body = (await request.json()) as SignupRequestBody;
     const email = body.owner?.email?.trim().toLowerCase() ?? "";
-    if (!email || !email.includes("@")) return badRequest("owner.email is required");
+    if (!email?.includes("@")) return badRequest("owner.email is required");
     if ((body.owner?.password ?? "").length < 10) {
       return badRequest("owner.password must be at least 10 characters");
     }
@@ -1358,7 +1358,7 @@ export const handlers = [
       if (db.farmOfSlug(requestedSlug)) return conflict("CONFLICT", "that slug is already in use");
     }
     const email = body.owner?.email?.trim().toLowerCase() ?? "";
-    if (!email || !email.includes("@")) return badRequest("owner.email is required");
+    if (!email?.includes("@")) return badRequest("owner.email is required");
     if (body.owner?.password && body.owner.password.length < 10) {
       return badRequest("password must be at least 10 characters");
     }
@@ -1483,7 +1483,7 @@ export const handlers = [
     if (!u) return notFound();
     const body = (await request.json()) as WorkUnitRequestBody;
     if (body.code) {
-      const clash = g.p.tenant.workUnits.find(
+      const clash = g.p.tenant.workUnits.some(
         (x) => x.id !== u.id && sameName(x.code, body.code!),
       );
       if (clash) return badRequest("this farm already has a unit with that code");
@@ -2375,7 +2375,7 @@ export const handlers = [
       );
     }
     if (body.status === "inactive") {
-      if (record.deletedAt === null) record.deletedAt = nowInstant();
+      record.deletedAt ??= nowInstant();
       return HttpResponse.json(projectWorkRecordFor(g.p, t, record));
     }
     if (body.status === "active") record.deletedAt = null;
@@ -2963,7 +2963,7 @@ export const handlers = [
       return conflict("SETTLEMENT_ALREADY_VOID", "the settlement is already void");
     }
     const at = nowInstant();
-    for (const item of settlement.items) if (item.voidedAt === null) item.voidedAt = at;
+    for (const item of settlement.items) item.voidedAt ??= at;
     settlement.status = "void";
     settlement.voidedAt = at;
 
@@ -3138,7 +3138,7 @@ export const handlers = [
     if (g.deny) return g.deny;
     const body = (await request.json()) as ProductRequestBody;
     const t = g.p.tenant;
-    if (!body.name || !body.name.trim()) return badRequest("name is required");
+    if (!body.name?.trim()) return badRequest("name is required");
 
     const id = body.id ?? crypto.randomUUID();
     const already = t.products.find((p) => p.id === id);
@@ -3235,7 +3235,7 @@ export const handlers = [
     const g = guard(request, "sales.write");
     if (g.deny) return g.deny;
     const body = (await request.json()) as CustomerRequestBody;
-    if (!body.name || !body.name.trim()) return badRequest("name is required");
+    if (!body.name?.trim()) return badRequest("name is required");
     const t = g.p.tenant;
 
     const existing = t.customers.find((c) => c.deletedAt === null && sameName(c.name, body.name!));
@@ -3720,7 +3720,7 @@ export const handlers = [
     const body = (await request.json()) as ExpenseRequestBody;
     const t = g.p.tenant;
 
-    if (!body.concept || !body.concept.trim()) return badRequest("concept is required");
+    if (!body.concept?.trim()) return badRequest("concept is required");
     const badAmount = validAmount(body.amountCents);
     if (badAmount) return badAmount;
     const target = validateExpenseTarget(t, body);
@@ -4650,7 +4650,7 @@ function resolveCatalog(
   name: string | undefined,
 ): string | null {
   if (id) return id;
-  if (!name || !name.trim()) return null;
+  if (!name?.trim()) return null;
   return ensureCatalogItem(list, name).id;
 }
 

@@ -18,7 +18,7 @@ import { affix } from "../../lib/affix";
 
 /** «Yorman y Sergio», «Ana & Luis»: a name that is probably two people. */
 export function looksLikeTwoPeople(name: string): boolean {
-  return /\S\s+(y|&|e)\s+\S/i.test(name.trim());
+  return /\S\s+[y&e]\s+\S/i.test(name.trim());
 }
 
 export function TeamMembersCard({
@@ -112,7 +112,7 @@ export function MemberBanner({ team }: Readonly<{ team: TeamRef }>) {
 
 /** On a payroll row: «Equipo de 2 · Yorman, Sergio». Nothing for a person. */
 export function TeamChip({ worker }: Readonly<{ worker: Worker | undefined | null }>) {
-  if (!worker || worker.kind !== "equipo") return null;
+  if (worker?.kind !== "equipo") return null;
   const n = worker.members?.length ?? 0;
   const names = (worker.members ?? []).map((m) => m.name).join(", ");
   return (

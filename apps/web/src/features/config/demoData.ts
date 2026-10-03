@@ -35,7 +35,7 @@ const LOTES: Array<{ name: string; areaHa: number }> = [
 ];
 
 /** $1.000 por kilo, in cents. The price the landing's example uses. */
-const PRICE_CENTS = 1_000_00;
+const PRICE_CENTS = 100_000;
 const WEEKS = 4;
 
 export class FarmNotEmptyError extends Error {
@@ -73,16 +73,14 @@ export async function loadDemoData(
 
   // The harvest activity every farm is born with; created only if it is gone.
   let activity: Activity | null = pickHarvestActivity(await api.listActivities({ status: "active" }));
-  if (!activity) {
-    activity = await api.createActivity({
-      id: uuidv7(),
-      name: "Recolección",
-      category: "cosecha",
-      payMode: "work_unit",
-      workUnit: "kg",
-      rateSource: "weekly_price",
-    });
-  }
+  activity ??= await api.createActivity({
+    id: uuidv7(),
+    name: "Recolección",
+    category: "cosecha",
+    payMode: "work_unit",
+    workUnit: "kg",
+    rateSource: "weekly_price",
+  });
 
   const cafe =
     (await api.cropTypes()).find((c) => /caf[eé]/i.test(c.name)) ?? (await api.createCropType("Café"));

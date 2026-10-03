@@ -189,7 +189,7 @@ export function WorkUnitsPage() {
             </CardContent>
           </Card>
         ))}
-        {units && units.length === 0 && (
+        {units?.length === 0 && (
           <Typography
             sx={{
               color: "text.secondary",

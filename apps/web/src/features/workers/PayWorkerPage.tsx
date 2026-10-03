@@ -74,14 +74,13 @@ import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
 import { Money } from "../../components/Money";
 import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
-import { api } from "../../api/endpoints";
+import { api, grossChangeOf } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { formatDate, formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { CORRECTION_GLOSS } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
-import { grossChangeOf } from "../../api/endpoints";
 import { sentenceFor, type GrossChange } from "../../api/grossChange";
 
 /**
