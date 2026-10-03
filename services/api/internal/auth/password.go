@@ -79,12 +79,10 @@ func VerifyCallsForTests() int64 { return verifyCalls.Load() }
 // scanner's ignore list is a worse thing to own than four lines of rand.Read.
 // Random also makes the property true rather than merely intended: no caller
 // can hold this input, because nothing outside this process has ever seen it.
-func decoyInput() (string, error) {
+func decoyInput() string {
 	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawStdEncoding.EncodeToString(buf), nil
+	_, _ = rand.Read(buf) // never fails (Go 1.24+): fills buf or crashes
+	return base64.RawStdEncoding.EncodeToString(buf)
 }
 
 var (
@@ -114,38 +112,28 @@ func DecoyHash() string {
 	if decoyCached != "" && decoyParams == activeArgon {
 		return decoyCached
 	}
-	in, err := decoyInput()
-	if err != nil {
-		// Same failure and the same answer as below: no entropy, no decoy.
-		return ""
-	}
-	h, err := HashPassword(in)
-	if err != nil {
-		// HashPassword fails only when the system entropy source does, which
-		// is a machine that cannot serve a login at all. Returning the empty
-		// string makes VerifyPassword answer errBadHash, which the caller
-		// already treats as "not a match" — the reply is still correct, only
-		// its timing is not, and there is nothing here worth failing a login
-		// over that a working /dev/urandom does not fix.
-		return ""
-	}
-	decoyCached, decoyParams = h, activeArgon
+	decoyCached, decoyParams = hashPassword(decoyInput()), activeArgon
 	return decoyCached
 }
 
 // HashPassword returns a PHC-formatted argon2id hash, parameters included, so
 // the cost can be raised later without invalidating existing passwords.
+//
+// The error is always nil: crypto/rand.Read cannot fail (Go 1.24+). It stays
+// in the signature for the callers.
 func HashPassword(plain string) (string, error) {
+	return hashPassword(plain), nil
+}
+
+func hashPassword(plain string) string {
 	p := activeArgon
 	salt := make([]byte, p.saltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("read salt: %w", err)
-	}
+	_, _ = rand.Read(salt) // never fails (Go 1.24+): fills salt or crashes
 	key := argon2.IDKey([]byte(plain), salt, p.time, p.memoryKiB, p.threads, p.keyLen)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, p.memoryKiB, p.time, p.threads,
 		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(key)), nil
+		base64.RawStdEncoding.EncodeToString(key))
 }
 
 var errBadHash = errors.New("malformed password hash")

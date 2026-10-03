@@ -138,6 +138,10 @@ func (s *Signer) issue(audience []string, clientID, scope string, sub TokenSubje
 func (s *Signer) Parse(raw string) (*Claims, error) {
 	var c Claims
 	_, err := jwt.ParseWithClaims(raw, &c, func(t *jwt.Token) (any, error) {
+		// WithValidMethods below already refuses any alg but HS256 before the
+		// key is looked up, so no test can reach this. It stays as the second
+		// lock against alg confusion: if the option is ever dropped, the HMAC
+		// key must still never be handed to another signing method.
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
 		}
@@ -157,9 +161,9 @@ func (s *Signer) Parse(raw string) (*Claims, error) {
 // database never holds anything that can be replayed.
 func NewOpaqueToken() (secret string, hash []byte, err error) {
 	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", nil, fmt.Errorf("read random: %w", err)
-	}
+	// crypto/rand.Read never returns an error (Go 1.24+): it fills buf or
+	// crashes the process. The error result stays for the callers.
+	_, _ = rand.Read(buf)
 	secret = base64.RawURLEncoding.EncodeToString(buf)
 	sum := sha256.Sum256([]byte(secret))
 	return secret, sum[:], nil

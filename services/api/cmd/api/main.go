@@ -35,6 +35,9 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
+// exit ends the process. Tests swap it to observe main's exit code.
+var exit = os.Exit
+
 func main() {
 	migrateOnly := flag.Bool("migrate", false, "apply pending migrations and exit")
 	pruneOnly := flag.Bool("prune", false,
@@ -47,7 +50,7 @@ func main() {
 
 	if err := run(*migrateOnly, *pruneOnly); err != nil {
 		slog.Error("fatal", "err", err)
-		os.Exit(1)
+		exit(1)
 	}
 }
 
@@ -434,9 +437,9 @@ func resolveSecret(getenv func(string) string, development bool) (string, []stri
 		// rows in Postgres hashed with sha256, not signatures, so a session
 		// survives the restart even though the access token does not.
 		buf := make([]byte, minSecretBytes)
-		if _, err := rand.Read(buf); err != nil {
-			return "", nil, fmt.Errorf("generate a development signing key: %w", err)
-		}
+		// crypto/rand.Read never returns an error (Go 1.24+): it fills buf
+		// or crashes the process.
+		_, _ = rand.Read(buf)
 		secret = string(buf)
 		warnings = append(warnings,
 			"development mode: signing key generated at random for this process only; "+

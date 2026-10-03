@@ -149,6 +149,10 @@ func checkHeader(name, v string) error {
 	return nil
 }
 
+// hostname names this machine in EHLO. A variable only so tests can make it
+// come back empty.
+var hostname = os.Hostname
+
 // Send delivers one message.
 func (s *SMTP) Send(ctx context.Context, m Message) error {
 	if err := checkHeader("recipient", m.To); err != nil {
@@ -184,7 +188,7 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 		return fmt.Errorf("mailer: greeting: %w", err)
 	}
 	defer c.Close()
-	helo, _ := os.Hostname()
+	helo, _ := hostname()
 	if helo == "" {
 		helo = "localhost"
 	}
