@@ -1,0 +1,45 @@
+# Báscula's web rules; see bascula-go.yml for how these are run and tested.
+rules:
+  - id: bascula-cents-without-round
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      A value in cents is computed with * or / and not rounded. Cents are
+      integers: use amountCents()/toCents() from lib/money (Math.round, the twin
+      of domain.AmountMinor and the Postgres CHECK), or Math.round yourself.
+    metadata:
+      category: correctness
+      confidence: MEDIUM
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+    patterns:
+      - pattern-either:
+          - pattern: const $C = $A * $B
+          - pattern: let $C = $A * $B
+          - pattern: const $C = $A / $B
+          - pattern: let $C = $A / $B
+          - pattern: "$O = {..., $C: $A * $B, ...}"
+      - metavariable-regex:
+          metavariable: $C
+          regex: (?i).*(cents|minor)$
+
+  - id: bascula-parsefloat-money
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      parseFloat on a money input accepts "1e3", "12abc" and thousands
+      separators read as decimals. Use parseMoneyInput() from lib/money.
+    metadata:
+      category: correctness
+      confidence: LOW
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+    patterns:
+      - pattern: parseFloat($X)
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i).*(price|amount|pesos|cents|salary|payment|advance|deduction).*

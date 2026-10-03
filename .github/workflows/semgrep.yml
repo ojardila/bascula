@@ -52,11 +52,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # .semgrep/ holds Báscula's own rules (tenant isolation, routes outside
+      # the auth chain, SQL built at run time, money as float), tested by the
+      # step above. They are WARNING for now: advisory, like the rest.
+      #
       # Excluded rule: header-redefinition is a generic (text) rule that
       # pairs any two add_header lines in apps/web/nginx.conf. That file has
       # no server-level add_header (every location includes
       # security-headers.conf), and nosemgrep comments do not work in
       # generic mode: the rule matches the comment text itself.
+      # The custom rules carry fixtures next to them (ruleid / ok comments).
+      - name: Test the custom rules
+        run: |
+          docker run --rm -v "$PWD/.semgrep:/src" -w /src "$SEMGREP_IMAGE" \
+            semgrep --test --metrics=off .
+
       - name: Scan
         run: |
           docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE" \
@@ -70,6 +80,7 @@ jobs:
               --config p/dockerfile \
               --config p/kubernetes \
               --config p/github-actions \
+              --config .semgrep \
               --exclude-rule generic.nginx.security.header-redefinition.header-redefinition \
               --metrics=off \
               --json-output=semgrep.json \

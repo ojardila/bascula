@@ -40,6 +40,8 @@ type BasePriceState struct {
 // with.
 func GetBasePrice(ctx context.Context, tx pgx.Tx) (*BasePriceState, error) {
 	var st BasePriceState
+	// basePriceSQL takes column expressions fixed in code, never input.
+	// nosemgrep: bascula-sql-built-with-sprintf
 	if err := tx.QueryRow(ctx, `
 		WITH `+boundsCTE+`
 		SELECT b.this_week,
@@ -130,6 +132,8 @@ func SetBasePrice(ctx context.Context, tx pgx.Tx, farmID, userID string, validFr
 
 // syncCurrentBasePrice copies the price in force this week into farm_config.
 func syncCurrentBasePrice(ctx context.Context, tx pgx.Tx, confirm bool) error {
+	// basePriceSQL takes column expressions fixed in code, never input.
+	// nosemgrep: bascula-sql-built-with-sprintf
 	_, err := tx.Exec(ctx, `
 		WITH `+boundsCTE+`
 		UPDATE farm_config fc SET

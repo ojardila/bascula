@@ -92,6 +92,8 @@ func (s *Server) readyEmailState(ctx context.Context, slug string) (requested, s
 	if !s.readyEmailAvailable() {
 		return false, false
 	}
+	// farm_ready_email_* are SECURITY DEFINER functions keyed by slug.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	err := s.pool.QueryRow(ctx, `SELECT requested, sent FROM farm_ready_email_state($1)`, slug).
 		Scan(&requested, &sent)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -146,6 +148,8 @@ func (s *Server) ResumeReadyEmails(ctx context.Context) {
 	if !s.readyEmailAvailable() {
 		return
 	}
+	// farm_ready_email_* are SECURITY DEFINER functions keyed by slug.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	rows, err := s.pool.Query(ctx, `SELECT farm_ready_email_pending($1)`,
 		time.Now().Add(-s.provisionWatchFor()))
 	if err != nil {
@@ -177,6 +181,8 @@ func (s *Server) sendReadyEmail(ctx context.Context, slug, url string) {
 		return
 	}
 	var email, ownerName, farmName string
+	// farm_ready_email_* are SECURITY DEFINER functions keyed by slug.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	err := s.pool.QueryRow(ctx, `SELECT email, owner_name, farm_name FROM farm_ready_email_claim($1)`, slug).
 		Scan(&email, &ownerName, &farmName)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -191,6 +197,8 @@ func (s *Server) sendReadyEmail(ctx context.Context, slug, url string) {
 	defer cancel()
 	if err := s.cfg.Mailer.Send(sendCtx, msg); err != nil {
 		slog.Error("ready email send", "slug", slug, "err", err)
+		// farm_ready_email_* are SECURITY DEFINER functions keyed by slug.
+		// nosemgrep: bascula-pool-query-outside-tenant-tx
 		if _, rerr := s.pool.Exec(context.Background(), `SELECT farm_ready_email_release($1)`, slug); rerr != nil {
 			slog.Error("ready email release", "slug", slug, "err", rerr)
 		}

@@ -310,6 +310,8 @@ func farmBySlug(ctx context.Context, q interface {
 }
 
 func (s *Server) buildTenantSeed(ctx context.Context, slug string) (*tenantSeed, error) {
+	// This tx pins itself to the farm with set_config below.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -694,6 +696,8 @@ func (s *Server) handleFarmName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var name *string
+	// farm_display_name is a SECURITY DEFINER lookup by slug, public by design.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&name); err != nil {
 		writeError(w, r, err)
 		return

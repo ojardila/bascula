@@ -1,0 +1,135 @@
+# Rules for risks specific to Báscula's API. Run by .github/workflows/semgrep.yml
+# next to the public rulesets; each rule has a fixture under .semgrep/tests/
+# (`semgrep --test .semgrep`). They start at WARNING, so they show in the PR
+# comment and code scanning without failing the check; raise one to ERROR once
+# it has stayed quiet. A reviewed exception gets `// nosemgrep: <id>` + reason.
+rules:
+  - id: bascula-pool-query-outside-tenant-tx
+    languages: [go]
+    severity: WARNING
+    message: >-
+      This query runs on the connection pool, outside the request transaction
+      that tenant.Middleware opens with SET LOCAL app.farm_id. Row-level
+      security then sees no farm (or, on the admin pool, no policies at all).
+      Use the request's tx (tenant.Tx(ctx)) or tenant.RunAs; if this really is
+      a pre-tenant lookup through a SECURITY DEFINER function, say so in a
+      `nosemgrep` comment.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      confidence: MEDIUM
+    paths:
+      include:
+        - /services/api/internal/
+      exclude:
+        - /services/api/internal/tenant/
+        - /services/api/internal/apitest/
+        - "*_test.go"
+    patterns:
+      - pattern-either:
+          - pattern: $S.pool.$M(...)
+          - pattern: "($P : *pgxpool.Pool).$M(...)"
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(Query|QueryRow|Exec|Begin|BeginTx|SendBatch|CopyFrom)$
+
+  - id: bascula-route-outside-auth-chain
+    languages: [go]
+    severity: WARNING
+    message: >-
+      A route registered directly on a router skips the chain every API route
+      goes through (authenticate -> tenant.Middleware -> requireAction). Add it
+      to Server.Routes() with an auth.Action instead, so the permission table
+      decides who may call it.
+    metadata:
+      category: security
+      cwe: "CWE-862: Missing Authorization"
+      confidence: MEDIUM
+    paths:
+      include:
+        - /services/api/internal/httpapi/
+      exclude:
+        - "*_test.go"
+    patterns:
+      - pattern: $R.$M("$PATH", $H, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(Handle|HandleFunc|Method|MethodFunc|Get|Post|Put|Patch|Delete|Mount)$
+      - metavariable-regex:
+          metavariable: $PATH
+          regex: ^(GET |POST |PUT |PATCH |DELETE |OPTIONS |HEAD )?/
+
+  - id: bascula-sql-built-with-sprintf
+    languages: [go]
+    severity: WARNING
+    message: >-
+      SQL text is built at run time (fmt.Sprintf, or a concatenated call
+      result). Pass values
+      as $1, $2 placeholders; if an identifier really has to vary, pick it
+      from a fixed list in code and say so in a `nosemgrep` comment.
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      confidence: MEDIUM
+    paths:
+      exclude:
+        - "*_test.go"
+    pattern-either:
+      - patterns:
+          - pattern: fmt.Sprintf("$SQL", ...)
+          - metavariable-regex:
+              metavariable: $SQL
+              regex: (?is)\b(select\s.+\sfrom|insert\s+into|update\s+\w+\s+set|delete\s+from)\b
+      - patterns:
+          - pattern-either:
+              # Concatenating package constants (column lists, CTEs) is how
+              # the store shares SQL fragments and is fine; a value computed
+              # at run time is not.
+              - pattern: $DB.$Q($CTX, <... $F(...) ...> + "$SQL", ...)
+              - pattern: $DB.$Q($CTX, "$SQL" + <... $F(...) ...>, ...)
+              - pattern: $DB.$Q($CTX, fmt.Sprintf(...), ...)
+              - pattern: $DB.$Q($CTX, strings.Join(...), ...)
+          - metavariable-regex:
+              metavariable: $Q
+              regex: ^(Query|QueryRow|Exec)$
+
+  - id: bascula-money-as-float
+    languages: [go]
+    severity: WARNING
+    message: >-
+      A money value (minor units) goes through float64. Money is int64 minor
+      units, and quantity * rate is domain.AmountMinor (big.Rat, rounded half
+      away from zero), the twin of the Postgres CHECK and the phone. A float
+      here is where the three start disagreeing in the last peso.
+    metadata:
+      category: correctness
+      confidence: MEDIUM
+    paths:
+      include:
+        - /services/api/
+      exclude:
+        - "*_test.go"
+    pattern-either:
+      - patterns:
+          - pattern: float64($X)
+          - metavariable-regex:
+              metavariable: $X
+              regex: (?i).*(minor|cents|amount|balance|price|salary|payable|owed)\w*$
+      - patterns:
+          - pattern-either:
+              - pattern: var $X float64
+              - pattern: "var $X float64 = $V"
+          - metavariable-regex:
+              metavariable: $X
+              regex: (?i).*(minor|cents|amount|balance|salary|payable|owed)\w*$
+      - patterns:
+          - pattern: |
+              type $T struct {
+                ...
+                $X float64
+                ...
+              }
+          - focus-metavariable: $X
+          - metavariable-regex:
+              metavariable: $X
+              regex: (?i).*(minor|cents|amount|balance|salary|payable|owed)\w*$

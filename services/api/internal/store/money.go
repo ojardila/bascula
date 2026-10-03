@@ -236,6 +236,8 @@ func Debts(ctx context.Context, tx pgx.Tx, employeeID string) ([]LedgerEntry, er
 // one, otherwise the farm's standing price.
 func WeekPrice(ctx context.Context, tx pgx.Tx, weekStart time.Time) (int64, error) {
 	var price int64
+	// basePriceSQL takes column expressions fixed in code, never input.
+	// nosemgrep: bascula-sql-built-with-sprintf
 	err := tx.QueryRow(ctx, `
 		SELECT COALESCE(
 			(SELECT wp.price_minor FROM week_prices wp
