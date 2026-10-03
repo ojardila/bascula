@@ -182,43 +182,32 @@ type stockMoveRequest struct {
 	AllowNegative bool `json:"allowNegative"`
 }
 
-// handleCreateStockMove is RSP-025, and the one write that puts anything into
-// or out of a warehouse other than a sale.
-func (s *Server) handleCreateStockMove(w http.ResponseWriter, r *http.Request) {
-	var body stockMoveRequest
-	if err := decode(r, &body); err != nil {
-		writeError(w, r, err)
-		return
-	}
+// prepare checks a stock move request, gives the quantity the sign its
+// reason implies, and assigns an id if the client left it out.
+func (body *stockMoveRequest) prepare() error {
 	if body.ProductID == "" || body.WarehouseID == "" {
-		writeError(w, r, domain.BadRequest("productId and warehouseId are required"))
-		return
+		return domain.BadRequest("productId and warehouseId are required")
 	}
 	if body.Qty == 0 {
-		writeError(w, r, domain.BadRequest("qty cannot be zero"))
-		return
+		return domain.BadRequest("qty cannot be zero")
 	}
 	if err := checkFixedScale("qty", &body.Qty,
 		domain.StockQtyPrecision, domain.StockQtyScale); err != nil {
-		writeError(w, r, err)
-		return
+		return err
 	}
 	if !store.IsStockReason(body.Reason) {
-		writeError(w, r, domain.BadRequest(
-			"reason must be one of "+strings.Join(store.StockReasons, ", ")))
-		return
+		return domain.BadRequest(
+			"reason must be one of " + strings.Join(store.StockReasons, ", "))
 	}
 	// A 'venta' movement is the shadow of a sale and is written by the sales
 	// handler, in the same transaction as the sale itself. Letting one in
 	// here would be the one way to get stock and sales to disagree.
 	if body.Reason == "venta" {
-		writeError(w, r, domain.BadRequest(
-			"record the sale at POST /v1/sales; it writes its own stock movement"))
-		return
+		return domain.BadRequest(
+			"record the sale at POST /v1/sales; it writes its own stock movement")
 	}
 	if body.Labels < 0 || body.Labels > 500 {
-		writeError(w, r, domain.BadRequest("labels must be between 0 and 500"))
-		return
+		return domain.BadRequest("labels must be between 0 and 500")
 	}
 	// The sign follows from the reason rather than from the caller, so a
 	// client that sends 40 for a merma gets a merma of 40 out and not a
@@ -232,6 +221,21 @@ func (s *Server) handleCreateStockMove(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.ID == "" {
 		body.ID = newID()
+	}
+	return nil
+}
+
+// handleCreateStockMove is RSP-025, and the one write that puts anything into
+// or out of a warehouse other than a sale.
+func (s *Server) handleCreateStockMove(w http.ResponseWriter, r *http.Request) {
+	var body stockMoveRequest
+	if err := decode(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := body.prepare(); err != nil {
+		writeError(w, r, err)
+		return
 	}
 
 	if err := confirmOurs(r, map[string]string{
