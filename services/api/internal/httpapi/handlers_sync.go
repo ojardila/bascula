@@ -414,59 +414,16 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]store.SyncOpResult, 0, len(body.Ops))
 	for _, op := range body.Ops {
-		if op.OpID == "" {
-			results = append(results, rejected("", domain.BadRequest(
-				"every op needs an opId: it is the key a resend is recognised by")))
+		if err := opIDRefusal(op.OpID); err != nil {
+			results = append(results, rejected(op.OpID, err))
 			continue
 		}
-		// The shape is checked BEFORE the registry is consulted, because
-		// sync_ops.op_id is a uuid column: a lookup with `no-soy-un-uuid` in
-		// it is a cast error, and a cast error aborts the REQUEST transaction
-		// — not the savepoint, which has not been opened yet. One malformed
-		// envelope then took the whole batch down with a 404, against the
-		// "always 200, one result per envelope" this handler documents four
-		// lines above.
-		if _, err := uuid.Parse(op.OpID); err != nil {
-			results = append(results, rejected(op.OpID, domain.BadRequest(
-				"an opId is a uuid: it is the key a resend is recognised by")))
-			continue
-		}
-
-		// §4.2, and it comes first. If this envelope has been seen, its stored
-		// answer is returned LITERALLY and nothing is executed. The alternative
-		// — re-running it — is how a resent void hands the money back twice.
-		//
-		// "Seen" means the same act, not merely the same key. The fingerprint
-		// carries the question so that a key reused for a DIFFERENT act is
-		// refused instead of being handed the first act's row id — which is
-		// how a phone was told `applied` about a weighing that was never
-		// written and then dropped it from its outbox.
-		fp := store.SyncOpFingerprint(op.Entity, op.Op, op.Payload)
-		prior, err := store.FindSyncOp(r.Context(), tx, op.OpID, fp)
+		res, err := s.pushOne(r, tx, farmID, body.DeviceID, p, op)
 		if err != nil {
-			if errors.Is(err, store.ErrOpIDReused) {
-				results = append(results, rejected(op.OpID, err))
-				continue
-			}
 			writeError(w, r, err)
 			return
 		}
-		if prior != nil {
-			results = append(results, *prior)
-			continue
-		}
-
-		res := s.applyPushOp(r, tx, farmID, body.DeviceID, p, op)
 		results = append(results, res)
-
-		// A refusal is not remembered — it wrote nothing, so a resend has
-		// nothing to duplicate, and a handset that corrects the body must get
-		// a verdict on the body it corrected rather than yesterday's. The rule
-		// lives in RecordSyncOp so no caller can forget it.
-		if err := store.RecordSyncOp(r.Context(), tx, farmID, op.OpID, body.DeviceID, fp, res); err != nil {
-			writeError(w, r, err)
-			return
-		}
 	}
 
 	cursor, err := store.SyncCursor(r.Context(), tx)
@@ -475,6 +432,62 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"cursor": cursor, "results": results})
+}
+
+// opIDRefusal checks an envelope's opId before anything else looks at it.
+func opIDRefusal(opID string) error {
+	if opID == "" {
+		return domain.BadRequest(
+			"every op needs an opId: it is the key a resend is recognised by")
+	}
+	// The shape is checked BEFORE the registry is consulted, because
+	// sync_ops.op_id is a uuid column: a lookup with `no-soy-un-uuid` in
+	// it is a cast error, and a cast error aborts the REQUEST transaction
+	// — not the savepoint, which has not been opened yet. One malformed
+	// envelope then took the whole batch down with a 404, against the
+	// "always 200, one result per envelope" handleSyncPush documents.
+	if _, err := uuid.Parse(opID); err != nil {
+		return domain.BadRequest(
+			"an opId is a uuid: it is the key a resend is recognised by")
+	}
+	return nil
+}
+
+// pushOne answers one envelope whose opId is well formed. A non-nil error
+// fails the whole request; a refusal of the envelope itself is a result.
+func (s *Server) pushOne(r *http.Request, tx pgx.Tx, farmID, deviceID string,
+	p *auth.Principal, op pushOp) (store.SyncOpResult, error) {
+	// §4.2, and it comes first. If this envelope has been seen, its stored
+	// answer is returned LITERALLY and nothing is executed. The alternative
+	// — re-running it — is how a resent void hands the money back twice.
+	//
+	// "Seen" means the same act, not merely the same key. The fingerprint
+	// carries the question so that a key reused for a DIFFERENT act is
+	// refused instead of being handed the first act's row id — which is
+	// how a phone was told `applied` about a weighing that was never
+	// written and then dropped it from its outbox.
+	fp := store.SyncOpFingerprint(op.Entity, op.Op, op.Payload)
+	prior, err := store.FindSyncOp(r.Context(), tx, op.OpID, fp)
+	if err != nil {
+		if errors.Is(err, store.ErrOpIDReused) {
+			return rejected(op.OpID, err), nil
+		}
+		return store.SyncOpResult{}, err
+	}
+	if prior != nil {
+		return *prior, nil
+	}
+
+	res := s.applyPushOp(r, tx, farmID, deviceID, p, op)
+
+	// A refusal is not remembered — it wrote nothing, so a resend has
+	// nothing to duplicate, and a handset that corrects the body must get
+	// a verdict on the body it corrected rather than yesterday's. The rule
+	// lives in RecordSyncOp so no caller can forget it.
+	if err := store.RecordSyncOp(r.Context(), tx, farmID, op.OpID, deviceID, fp, res); err != nil {
+		return store.SyncOpResult{}, err
+	}
+	return res, nil
 }
 
 // applyPushOp runs one envelope inside its own savepoint.
