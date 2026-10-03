@@ -38,7 +38,7 @@ export function pdfText(s: string): string {
     .replace(/[\u201C\u201D]/g, '"')
     .replaceAll("\u2026", "...")
     .split("")
-    .filter((ch) => (ch.codePointAt(0) ?? 0) <= 0xff)
+    .filter((ch) => ch <= "\u00ff")
     .join("");
 }
 

@@ -293,7 +293,9 @@ export const checkPassed = (c: CrewCheck): boolean =>
 export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
   const freshById = new Map(fresh.workRecords.map((l) => [l.id, l] as const));
   const approved = new Set(a.payableIds);
-  const survivors = a.payableIds.filter((id) => freshById.has(id));
+  const survivors = a.payableIds
+    .map((id) => freshById.get(id))
+    .filter((l) => l !== undefined);
   const sameSet =
     survivors.length === a.payableIds.length &&
     fresh.workRecords.length === a.payableIds.length;
@@ -302,7 +304,7 @@ export function driftOf(a: SettleApproval, fresh: Payables): CrewDrift | null {
   // of our own. Only once it is not do we have to rebuild it line by line.
   const actualCents = sameSet
     ? fresh.grossCents
-    : survivors.reduce((s, id) => s + (freshById.get(id)?.amountCents ?? 0), 0);
+    : survivors.reduce((s, l) => s + l.amountCents, 0);
 
   if (actualCents === a.grossCents && survivors.length === a.payableIds.length) return null;
 
@@ -359,7 +361,7 @@ export async function checkSettleRun(approvals: SettleApproval[]): Promise<CrewC
 
   for (const { a, payables, reason } of fresh) {
     if (!payables) {
-      out.unreadable.push({ workerId: a.workerId, name: a.name, reason: reason ?? "" });
+      out.unreadable.push({ workerId: a.workerId, name: a.name, reason });
       continue;
     }
     const drift = driftOf(a, payables);

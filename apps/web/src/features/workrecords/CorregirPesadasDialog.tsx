@@ -60,10 +60,6 @@ export function CorregirPesadasDialog({
       setError(errors[0]);
       return;
     }
-    if (!corrections.length) {
-      onClose();
-      return;
-    }
     setBusy(true);
     setError(null);
     try {

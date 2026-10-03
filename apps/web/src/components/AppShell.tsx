@@ -50,6 +50,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutlineOutlined";
 import LinkIcon from "@mui/icons-material/Link";
 import { useTour } from "../features/onboarding/TourContext";
+import type { TourName } from "../features/onboarding/steps";
 import { useAuth } from "../auth/AuthContext";
 import { visibleModules, type ModuleDef } from "../auth/permissions";
 import { ApiModeBanner } from "./ApiModeBanner";
@@ -151,11 +152,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const [userMenu, setUserMenu] = useState<HTMLElement | null>(null);
   const tour = useTour();
   /** «Ayuda y recorrido»: the owner's full tour or the weigher's short one. */
-  const startTour = () => {
-    if (!tour.available) return;
+  const tourName = tour.available;
+  const startTour = (name: TourName) => {
     setMobileOpen(false);
     setUserMenu(null);
-    tour.start(tour.available);
+    tour.start(name);
   };
 
   const visible = visibleModules(principal);
@@ -199,14 +200,14 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           <List disablePadding>{renderGroup(more)}</List>
         </>
       )}
-      {tour.available && (
+      {tourName && (
         <List
           disablePadding
           sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: "divider" }}
         >
           <ListItemButton
             data-tour="help-menu"
-            onClick={startTour}
+            onClick={() => startTour(tourName)}
             sx={{ mx: 1, borderRadius: 2, minHeight: 52, py: 1.25 }}
           >
             <ListItemIcon sx={{ minWidth: 44 }}>
@@ -354,10 +355,10 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             >
               Cambiar clave
             </MenuItem>
-            {tour.available && (
+            {tourName && (
               <MenuItem
                 sx={{ fontSize: 17, minHeight: 48 }}
-                onClick={startTour}
+                onClick={() => startTour(tourName)}
               >
                 Ayuda y recorrido
               </MenuItem>

@@ -342,8 +342,7 @@ const PILL_LABEL = {
 } as const;
 
 /** The one primary action of the page. Always scrolls to the form. */
-function DemoButton(props: Readonly<{ light?: boolean; fullWidthOnMobile?: boolean }>) {
-  const light = Boolean(props.light);
+function DemoButton() {
   return (
     <Button
       component="a"
@@ -360,10 +359,10 @@ function DemoButton(props: Readonly<{ light?: boolean; fullWidthOnMobile?: boole
         minHeight: { xs: 56, sm: 60 },
         px: { xs: 2, sm: 4 },
         borderRadius: 999,
-        width: props.fullWidthOnMobile ? { xs: "100%", sm: "auto" } : undefined,
-        bgcolor: light ? CREAM : GREEN,
-        color: light ? GREEN_DARK : "#fff",
-        "&:hover": { bgcolor: light ? "#fff" : GREEN_DARK },
+        width: { xs: "100%", sm: "auto" },
+        bgcolor: GREEN,
+        color: "#fff",
+        "&:hover": { bgcolor: GREEN_DARK },
       }}
     >
       {DEMO_CTA}
@@ -664,7 +663,7 @@ function Hero() {
                 alignItems: { xs: "stretch", sm: "center" },
               }}
             >
-              <DemoButton fullWidthOnMobile />
+              <DemoButton />
               <Button
                 component="a"
                 href="#como-funciona"
@@ -830,7 +829,7 @@ function HowItWorks() {
         ))}
       </Box>
       <Box sx={{ mt: 5 }}>
-        <DemoButton fullWidthOnMobile />
+        <DemoButton />
       </Box>
     </Section>
   );
@@ -1361,7 +1360,7 @@ function DemoPreview() {
       >
         La demostración es gratuita y no lo compromete a contratar.
       </Typography>
-      <DemoButton fullWidthOnMobile />
+      <DemoButton />
     </Section>
   );
 }

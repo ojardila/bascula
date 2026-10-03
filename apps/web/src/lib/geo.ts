@@ -518,5 +518,5 @@ const NICE_METRES = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 50
 export function niceDistance(mPerPx: number, targetPx: number): number {
   const wanted = mPerPx * targetPx;
   for (const candidate of NICE_METRES) if (candidate >= wanted) return candidate;
-  return NICE_METRES.at(-1) ?? NICE_METRES[0];
+  return NICE_METRES[NICE_METRES.length - 1];
 }

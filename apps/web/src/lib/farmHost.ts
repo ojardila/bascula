@@ -51,7 +51,7 @@ function slugShapeOk(value: string): boolean {
 }
 
 function normalizeHostname(hostname: string): string {
-  return hostname.trim().toLowerCase().replace(/\.$/, "").split(":")[0] ?? "";
+  return hostname.trim().toLowerCase().replace(/\.$/, "").split(":")[0];
 }
 
 /**

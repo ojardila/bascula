@@ -44,9 +44,7 @@ export function ChangePasswordCard() {
   // the page above it settles, until the person scrolls or types themselves.
   useEffect(() => {
     if (hash !== "#clave") return;
-    const card = ref.current;
-    if (!card) return;
-    const bring = () => card.scrollIntoView?.({ block: "start" });
+    const bring = () => ref.current?.scrollIntoView?.({ block: "start" });
     bring();
     currentRef.current?.focus({ preventScroll: true });
 

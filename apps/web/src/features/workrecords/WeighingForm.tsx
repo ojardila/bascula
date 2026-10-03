@@ -329,8 +329,8 @@ export function WeighingForm() {
   const last = saved[0];
   const lastStillLocal =
     !!last && offline.pending.some((p) => p.id === last.id);
-  const fewLotes =
-    (plots?.length ?? 0) > 0 && (plots?.length ?? 0) <= LOTE_BUTTONS;
+  const lotes = plots ?? [];
+  const fewLotes = lotes.length > 0 && lotes.length <= LOTE_BUTTONS;
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: { xs: "100%", sm: 560 } }}>
@@ -481,7 +481,7 @@ export function WeighingForm() {
                     },
                   }}
                 >
-                  {(plots ?? []).map((p) => (
+                  {lotes.map((p) => (
                     <ToggleButton
                       key={p.id}
                       value={p.id}
@@ -509,7 +509,7 @@ export function WeighingForm() {
                 <MenuItem value="" disabled>
                   Elija un lote
                 </MenuItem>
-                {(plots ?? []).map((p) => (
+                {lotes.map((p) => (
                   <MenuItem key={p.id} value={p.id}>
                     {p.name}
                   </MenuItem>

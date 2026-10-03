@@ -286,7 +286,7 @@ export function RegistroMasivoPage() {
   );
   const dayKilos = (dayRecords ?? []).reduce((s, r) => s + r.quantity, 0);
   const correctingWorker = correcting
-    ? (workers.find((w) => w.id === correcting) ?? null)
+    ? workers.find((w) => w.id === correcting)
     : null;
 
   function askToSave() {
@@ -295,7 +295,6 @@ export function RegistroMasivoPage() {
       setSaveError(errors[0]);
       return;
     }
-    if (!entries.length) return;
     setSaveError(null);
     setConfirming(true);
   }

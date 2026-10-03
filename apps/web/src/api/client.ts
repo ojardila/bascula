@@ -120,7 +120,6 @@ async function rawRequest(
  * this same promise; see the note at the top of the file.
  */
 async function refreshTokens(): Promise<Tokens | null> {
-  if (!tokens) return null;
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {

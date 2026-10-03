@@ -38,7 +38,6 @@ export function TourCard({
   const total = TOTALS[tour];
 
   async function primary() {
-    if (busy) return;
     setBusy(true);
     try {
       let ok = true;

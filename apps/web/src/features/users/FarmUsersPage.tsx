@@ -299,8 +299,6 @@ export function FarmUsersPage() {
         </Alert>
       )}
 
-      {!unsupported && error && <Alert severity="error">{error}</Alert>}
-
       {!unsupported && !error && (
         <>
           {/* ── Dueños de la finca ── */}
@@ -794,11 +792,9 @@ function InviteDialog({
   async function submit(): Promise<boolean> {
     setFields({});
     if (!ready) {
-      setError(
-        owner && email.trim() && name.trim()
-          ? "Marque la casilla para confirmar que es dueño o socio."
-          : "Escriba el correo y el nombre de la persona.",
-      );
+      // Only the tour's callout gets here (the button is disabled until
+      // `ready`), and it is not offered on the owner form.
+      setError("Escriba el correo y el nombre de la persona.");
       return false;
     }
     // One membership per filled-in form. The id used to be minted inside the
