@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * One signal, between tabs of the same browser: "something changed, re-read".
  *

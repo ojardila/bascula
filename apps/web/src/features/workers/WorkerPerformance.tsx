@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Rendimiento» — one person's harvest, on their profile.
  *

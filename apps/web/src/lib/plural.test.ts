@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "1 venta(s)". "16 Bulto". Two ways for a product to tell whoever is reading
  * that writing them a sentence was not worth the trouble.

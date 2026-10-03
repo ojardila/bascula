@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 package httpapi
 
 // Strings repeated across the package, named once (Sonar go:S1192, #158).

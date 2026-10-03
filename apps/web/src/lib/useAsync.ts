@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, messageFor } from "../api/errors";
 import { subscribeMutations } from "./crossTab";

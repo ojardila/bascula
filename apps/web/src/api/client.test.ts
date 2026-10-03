@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one network edge: every write runs through `request()`, and every write
  * announces itself on the cross-tab channel. Reads never do — a GET that fires

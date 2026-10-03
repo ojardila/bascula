@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Public farm registration — decision 2 in `docs/decisions.md`, and the
  * landing's main button ("Cree su finca gratis").

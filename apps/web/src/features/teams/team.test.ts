@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, expect, it } from "vitest";
 import type { Worker } from "../../api/types";
 import { matchesName } from "../workrecords/bulk";

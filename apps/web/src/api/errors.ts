@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `{"error":{"code","message","details"}}` -> something a farmer can act on.
  *

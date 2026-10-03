@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The geometry the map screen needs, and nothing else.
  *

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package tenant owns the one line that makes row level security do its job:
 // SET LOCAL app.farm_id, inside the transaction that serves the request.
 //

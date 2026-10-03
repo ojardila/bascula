@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The matrix is a table; this checks the app actually obeys it.
  *

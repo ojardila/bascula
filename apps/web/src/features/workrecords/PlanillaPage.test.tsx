@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The harvest sheet is a table a farm fills. These check that the matrix
  * actually loads people and days, and that saving posts a weighing.

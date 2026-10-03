@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `useAsync` is load-on-mount with one deliberate re-fetch door — `reload()`
  * — that until this change was only reachable from the hook's own return. Two

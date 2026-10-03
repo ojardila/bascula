@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The crew payroll's reads and writes against a stubbed api: what happens
  * when one person (or the balances) cannot be read, and how the run, the

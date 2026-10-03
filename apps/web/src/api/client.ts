@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one place this app talks to the network.
  *

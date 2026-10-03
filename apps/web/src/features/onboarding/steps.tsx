@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE GUIDED TOURS, AS DATA.
  *

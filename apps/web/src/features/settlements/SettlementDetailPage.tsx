@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ONE SETTLEMENT, LINE BY LINE.
  *

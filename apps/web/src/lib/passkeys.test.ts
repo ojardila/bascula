@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The JSON fallback for browsers without `parse*OptionsFromJSON`/`toJSON`:
  * binary members go out as ArrayBuffers and come back as base64url.

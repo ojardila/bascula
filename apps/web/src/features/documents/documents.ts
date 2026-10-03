@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE PAPER. RSP-008: "El sistema genera el recibo de pago."
  *

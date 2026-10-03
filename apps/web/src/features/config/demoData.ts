@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Cargar datos de demostración»: six pickers, two lotes and four weeks of
  * weighings, so somebody trying Báscula sees full screens instead of empty

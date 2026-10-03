@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import type { ReactNode } from "react";
 /**
  * Who is picking more and who less — presented so the answer is usable and the

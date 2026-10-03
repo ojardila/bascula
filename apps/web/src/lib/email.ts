@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The same shape check the forms used to do with
  * `/^[^@\s]+@[^@\s]+\.[^@\s]+$/`: no whitespace, exactly one `@` with

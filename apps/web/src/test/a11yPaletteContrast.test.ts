@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The design system owes the farms a palette whose text reads. Two
  * places were below WCAG 2.1 AA (4.5:1):

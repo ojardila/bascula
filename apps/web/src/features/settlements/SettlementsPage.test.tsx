@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The settlements module.
  *

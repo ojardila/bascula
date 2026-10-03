@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "Historial financiero" on the worker's page: every payment, settlement,
  * advance and discount, newest first. A tap opens the receipt as it stood

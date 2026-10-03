@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package logsafe makes values that came from outside (a request, a header,
 // a slug, a provider's error) safe to put in a log line.
 package logsafe

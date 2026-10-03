@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `services/api`, emulated. Not "an API-shaped thing the screens are happy
  * with" — the actual routes, the actual bodies, the actual codes.

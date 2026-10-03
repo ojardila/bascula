@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * An optional piece of a label: `before + value + after` when there is a
  * value, nothing otherwise. «Cantidad (Kilo)», «lote · Café», «+ 3 Bulto».

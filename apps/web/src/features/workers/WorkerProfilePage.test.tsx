@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE EMPLOYEE PROFILE, WHEN IT DOES NOT KNOW — and when what it knows is
  * provisional.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The translation between the server's vocabulary and the interface's.
  *

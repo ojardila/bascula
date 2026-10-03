@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * UUIDv7 — the identity a row keeps once it leaves the phone.
  *

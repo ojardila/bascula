@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Lo que hicieron los asistentes»: the owner and the administrator see what
  * assistants wrote on the farm; the weigher does not (and the server would

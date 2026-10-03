@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The worker's history opens a receipt, and the receipt is the one that was
  * written that day, with its PDF button.

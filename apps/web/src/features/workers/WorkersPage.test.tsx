@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Empleados»: the list, what the farm owes in the footer (and what it could
  * not read), every row action, and the refusals of a deactivation or a

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Render a component the way the app does — theme, router and a signed-in
  * owner of the seeded farm — for the tests that drive a single dialog or card

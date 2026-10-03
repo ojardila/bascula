@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-008. Everything owed on one screen, and two ways to pay it.
  *

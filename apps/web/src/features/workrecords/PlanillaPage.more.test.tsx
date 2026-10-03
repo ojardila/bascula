@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The harvest sheet's edges: switching between day and week, choosing the
  * lote, a farm without a harvest activity, and the errors on load and save.

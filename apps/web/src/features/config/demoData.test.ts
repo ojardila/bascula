@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { beforeEach, describe, expect, it } from "vitest";
 import { api } from "../../api/endpoints";
 import { setTokens } from "../../api/client";

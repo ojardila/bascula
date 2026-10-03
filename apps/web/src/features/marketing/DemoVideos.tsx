@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Véalo funcionando»: the demo videos on the landing (main domain only; the
  * landing itself is never rendered on a farm's own address, see HomeRoute).

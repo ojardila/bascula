@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-027: product, quantity, amount, customer, photo of the receipt.
  *
