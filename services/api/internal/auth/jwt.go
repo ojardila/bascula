@@ -39,6 +39,10 @@ type Claims struct {
 	// Empty means full access for the role: every token from before scopes,
 	// and every ordinary session token.
 	Scope string `json:"scope,omitempty"`
+	// SessionID is the refresh-token family the token was minted for (the
+	// "sid" claim), so «Sesiones abiertas» can tell the caller which session
+	// is theirs. Empty on tokens from before it, and on assistants' tokens.
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -66,6 +70,9 @@ type TokenSubject struct {
 	Role       domain.Role
 	DeviceID   string
 	Superadmin bool
+	// SessionID is the refresh-token family the token is minted for, the
+	// "sid" claim. Empty for tokens that do not come from a session.
+	SessionID string
 }
 
 // Issue mints an access token carrying sub, farm_id and role.
@@ -80,6 +87,12 @@ func (s *Signer) IssueFor(audience, userID, farmID string, role domain.Role, dev
 		return s.issue(nil, "", "", sub)
 	}
 	return s.issue([]string{audience}, "", "", sub)
+}
+
+// IssueSession is Issue for a token minted from a session: sub.SessionID
+// is the refresh-token family, carried as the "sid" claim.
+func (s *Signer) IssueSession(sub TokenSubject) (string, error) {
+	return s.issue(nil, "", "", sub)
 }
 
 // IssueMCP mints an assistant's access token. Its audience is AudienceMCP
@@ -103,6 +116,7 @@ func (s *Signer) issue(audience []string, clientID, scope string, sub TokenSubje
 		Superadmin: sub.Superadmin,
 		ClientID:   clientID,
 		Scope:      scope,
+		SessionID:  sub.SessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   sub.UserID,
 			Issuer:    s.issuer,

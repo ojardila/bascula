@@ -153,7 +153,7 @@ const ACCESS_TTL_SECONDS = 900;
 const REFRESH_TTL_MS = 30 * 24 * 3600 * 1000;
 
 /**
- * `mock-access.<userId>.<farmId>.<issuedAt>.<expiresAt>`.
+ * `mock-access.<userId>.<farmId>.<issuedAt>.<expiresAt>[.<sessionId>]`.
  *
  * The trailing halves are optional so that a test may still hand-write
  * `mock-access.<userId>.test` and be signed in, which is how the navigation
@@ -161,9 +161,10 @@ const REFRESH_TTL_MS = 30 * 24 * 3600 * 1000;
  * never expires by the clock — but `db.expireAccessTokens()` still reaches it,
  * because that seam exists precisely so a test can drive the 401.
  */
-function mintAccessToken(userId: string, farmId: string): string {
+function mintAccessToken(userId: string, farmId: string, sessionId?: string): string {
   const now = Date.now();
-  return `${ACCESS_PREFIX}${userId}.${farmId}.${now}.${now + ACCESS_TTL_SECONDS * 1000}`;
+  const sid = sessionId ? `.${sessionId}` : "";
+  return `${ACCESS_PREFIX}${userId}.${farmId}.${now}.${now + ACCESS_TTL_SECONDS * 1000}${sid}`;
 }
 
 interface Principal {
@@ -171,6 +172,8 @@ interface Principal {
   farmId: string;
   role: WireRole;
   tenant: db.Tenant;
+  /** The refresh-token family behind the token (the "sid" claim), if any. */
+  sessionId?: string;
 }
 
 type Guarded = { p: Principal; deny: null } | { p: null; deny: Response };
@@ -189,7 +192,7 @@ function authenticate(request: Request): Guarded {
   if (!token.startsWith(ACCESS_PREFIX)) {
     return { p: null, deny: fail(401, "UNAUTHORIZED", "that access token is not valid") };
   }
-  const [userId, farmPart, issuedPart, expiryPart] = token.slice(ACCESS_PREFIX.length).split(".");
+  const [userId, farmPart, issuedPart, expiryPart, sessionPart] = token.slice(ACCESS_PREFIX.length).split(".");
 
   const issuedAt = Number.isNaN(Number(issuedPart)) ? 0 : Number(issuedPart);
   const expiresAt = Number.isNaN(Number(expiryPart)) ? null : Number(expiryPart);
@@ -216,7 +219,10 @@ function authenticate(request: Request): Guarded {
       deny: fail(500, "TENANT_NOT_SET", "tenant context was not established for this request"),
     };
   }
-  return { p: { user, farmId: membership.farmId, role: membership.role, tenant }, deny: null };
+  return {
+    p: { user, farmId: membership.farmId, role: membership.role, tenant, sessionId: sessionPart || undefined },
+    deny: null,
+  };
 }
 
 /* -- the permission table -------------------------------------------- */
@@ -234,6 +240,8 @@ type Action =
   | "mcp.connections.read"
   | "me.passkeys.read"
   | "me.passkeys.write"
+  | "me.sessions.read"
+  | "me.sessions.write"
   | "mcp.connections.revoke"
   | "mcp.activity.read"
   | "auth.logout"
@@ -308,6 +316,8 @@ const MATRIX: Record<Action, Rule> = {
   "mcp.connections.read": { roles: everyone },
   "me.passkeys.read": { roles: everyone },
   "me.passkeys.write": { roles: everyone },
+  "me.sessions.read": { roles: everyone },
+  "me.sessions.write": { roles: everyone },
   "mcp.connections.revoke": { roles: everyone },
   "mcp.activity.read": { roles: admins },
   "auth.logout": { roles: everyone },
@@ -647,7 +657,13 @@ function projectSettlement(t: db.Tenant, s: db.MockSettlement) {
 /* -- sessions -------------------------------------------------------- */
 
 /** `issueSession`: a short access token and an opaque, single-use refresh one. */
-function issueSession(user: db.MockUser, membership: db.MockMembership, familyId: string): WireSession {
+function issueSession(
+  user: db.MockUser,
+  membership: db.MockMembership,
+  familyId: string,
+  method: db.MockRefreshToken["method"],
+  request?: Request,
+): WireSession {
   const refreshToken = `${REFRESH_PREFIX}${crypto.randomUUID()}`;
   db.refreshTokens.push({
     token: refreshToken,
@@ -657,10 +673,13 @@ function issueSession(user: db.MockUser, membership: db.MockMembership, familyId
     expiresAt: Date.now() + REFRESH_TTL_MS,
     rotatedAt: null,
     revokedAt: null,
+    issuedAt: Date.now(),
+    method,
+    userAgent: request?.headers.get("user-agent") ?? (typeof navigator === "undefined" ? "" : navigator.userAgent),
   });
   const farm = db.farmOf(membership.farmId);
   return {
-    accessToken: mintAccessToken(user.id, membership.farmId),
+    accessToken: mintAccessToken(user.id, membership.farmId, familyId),
     refreshToken,
     expiresIn: ACCESS_TTL_SECONDS,
     farmId: membership.farmId,
@@ -668,6 +687,32 @@ function issueSession(user: db.MockUser, membership: db.MockMembership, familyId
     slug: farm?.slug ?? "",
     role: membership.role,
   };
+}
+
+/** `store.ListUserSessions`: the caller's live families here, most recently used first. */
+function openSessionsOf(p: Principal) {
+  const families = new Map<string, db.MockRefreshToken[]>();
+  for (const t of db.refreshTokens) {
+    if (t.userId !== p.user.id || t.farmId !== p.farmId) continue;
+    const list = families.get(t.familyId) ?? [];
+    list.push(t);
+    families.set(t.familyId, list);
+  }
+  const out = [];
+  for (const [id, rows] of families) {
+    const sorted = [...rows].sort((a, b) => (a.issuedAt ?? 0) - (b.issuedAt ?? 0));
+    const latest = sorted[sorted.length - 1]!;
+    if (latest.revokedAt !== null || latest.expiresAt <= Date.now()) continue;
+    out.push({
+      id,
+      method: latest.method ?? "unknown",
+      userAgent: latest.userAgent ?? "",
+      createdAt: new Date(sorted[0]!.issuedAt ?? 0).toISOString(),
+      lastUsedAt: new Date(latest.issuedAt ?? 0).toISOString(),
+      current: id === p.sessionId,
+    });
+  }
+  return out.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
 }
 
 function hostnameOf(request: Request): string {
@@ -922,7 +967,7 @@ export const handlers = [
     if (db.farmOf(chosen.farmId)?.suspendedAt) {
       return fail(403, "FARM_SUSPENDED", "that farm is suspended");
     }
-    return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID()));
+    return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID(), "password", request));
   }),
 
   /**
@@ -962,7 +1007,7 @@ export const handlers = [
     }
     if (!chosen) return fail(403, "FORBIDDEN", "that passkey does not open that farm");
     key.lastUsedAt = nowInstant();
-    return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID()));
+    return HttpResponse.json(issueSession(user, chosen, crypto.randomUUID(), "passkey", request));
   }),
 
   /**
@@ -996,7 +1041,7 @@ export const handlers = [
       return fail(403, "FARM_SUSPENDED", "that farm is suspended");
     }
     row.rotatedAt = Date.now();
-    return HttpResponse.json(issueSession(user, membership, row.familyId));
+    return HttpResponse.json(issueSession(user, membership, row.familyId, row.method, request));
   }),
 
   http.post("*/v1/auth/logout", async ({ request }) => {
@@ -1033,7 +1078,7 @@ export const handlers = [
     }
     const membership = db.membershipFor(g.p.farmId, g.p.user.id);
     if (!membership) return fail(401, "TOKEN_EXPIRED", "that session is not valid");
-    return HttpResponse.json(issueSession(g.p.user, membership, crypto.randomUUID()));
+    return HttpResponse.json(issueSession(g.p.user, membership, crypto.randomUUID(), "password", request));
   }),
 
   http.get("*/v1/auth/password-reset", () => HttpResponse.json({ available: true })),
@@ -2679,6 +2724,45 @@ export const handlers = [
     const i = db.passkeys.findIndex((k) => k.id === String(params.id) && k.userId === g.p.user.id);
     if (i < 0) return fail(404, "NOT_FOUND", "no passkey with that id");
     db.passkeys.splice(i, 1);
+    return noContent();
+  }),
+
+  /* ---- open sessions («Sesiones abiertas») ---- */
+
+  http.get("*/v1/me/sessions", ({ request }) => {
+    const g = guard(request, "me.sessions.read");
+    if (g.deny) return g.deny;
+    return HttpResponse.json({ items: openSessionsOf(g.p) });
+  }),
+
+  http.post("*/v1/me/sessions/close-others", ({ request }) => {
+    const g = guard(request, "me.sessions.write");
+    if (g.deny) return g.deny;
+    const keep = g.p.sessionId;
+    if (!keep) {
+      return fail(401, "TOKEN_EXPIRED", "this access token does not name its session; refresh it and try again");
+    }
+    const closed = new Set<string>();
+    for (const t of db.refreshTokens) {
+      if (t.userId === g.p.user.id && t.farmId === g.p.farmId && t.familyId !== keep && t.revokedAt === null && t.expiresAt > Date.now()) {
+        t.revokedAt = Date.now();
+        closed.add(t.familyId);
+      }
+    }
+    return HttpResponse.json({ closed: closed.size });
+  }),
+
+  http.delete("*/v1/me/sessions/:id", ({ request, params }) => {
+    const g = guard(request, "me.sessions.write");
+    if (g.deny) return g.deny;
+    let found = false;
+    for (const t of db.refreshTokens) {
+      if (t.familyId === String(params.id) && t.userId === g.p.user.id && t.farmId === g.p.farmId && t.revokedAt === null) {
+        t.revokedAt = Date.now();
+        found = true;
+      }
+    }
+    if (!found) return fail(404, "NOT_FOUND", "no open session with that id");
     return noContent();
   }),
 

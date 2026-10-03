@@ -1036,7 +1036,8 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 	if scope == "" {
 		scope = auth.ScopeMCP
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), oauthGrant{ClientID: &row.ClientID, Scope: &scope})
+	method := store.SignInOAuth
+	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), familyGrant{Method: &method, ClientID: &row.ClientID, Scope: &scope})
 	if err != nil {
 		writeError(w, r, err)
 		return

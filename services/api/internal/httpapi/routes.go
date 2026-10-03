@@ -55,6 +55,9 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/me/passkeys/options", auth.ActionPasskeysWrite, s.handlePasskeyRegisterOptions},
 		{http.MethodPost, "/v1/me/passkeys", auth.ActionPasskeysWrite, s.handlePasskeyRegister},
 		{http.MethodDelete, "/v1/me/passkeys/{id}", auth.ActionPasskeysWrite, s.handleDeletePasskey},
+		{http.MethodGet, "/v1/me/sessions", auth.ActionSessionsRead, s.handleListSessions},
+		{http.MethodPost, "/v1/me/sessions/close-others", auth.ActionSessionsWrite, s.handleCloseOtherSessions},
+		{http.MethodDelete, "/v1/me/sessions/{id}", auth.ActionSessionsWrite, s.handleCloseSession},
 		{http.MethodGet, "/v1/me/tours", auth.ActionMeRead, s.handleListTours},
 		{http.MethodPut, "/v1/me/tours/{tour}", auth.ActionToursWrite, s.handleSaveTour},
 

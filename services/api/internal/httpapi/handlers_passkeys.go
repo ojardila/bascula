@@ -684,7 +684,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID())
+	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID(), store.SignInPasskey)
 	if err != nil {
 		writeError(w, r, err)
 		return

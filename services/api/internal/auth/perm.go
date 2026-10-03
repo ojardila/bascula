@@ -41,6 +41,10 @@ const (
 	ActionPasswordWrite Action = "me.password.write"
 	// ActionPasswordReset is "olvidé mi clave": ask for a link, spend it.
 	ActionPasswordReset Action = "auth.password_reset"
+	// «Sesiones abiertas»: a person's own sign-ins on this farm, listed and
+	// closed. Every role, and never anybody else's.
+	ActionSessionsRead  Action = "me.sessions.read"
+	ActionSessionsWrite Action = "me.sessions.write"
 
 	ActionWorkersRead     Action = "workers.read"
 	ActionWorkersWrite    Action = "workers.write"
@@ -225,6 +229,8 @@ var Matrix = map[Action]Rule{
 	ActionPasskeysWrite:    {Roles: everyone},
 	ActionPasswordWrite:    {Roles: everyone},
 	ActionPasswordReset:    {Public: true, TenantOptional: true},
+	ActionSessionsRead:     {Roles: everyone},
+	ActionSessionsWrite:    {Roles: everyone},
 
 	// The weigher reads workers, but the handler hands him a reduced
 	// projection: id, name, lastName, tag. No document, no phone, no photo.

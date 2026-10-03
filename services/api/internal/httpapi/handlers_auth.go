@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -666,7 +667,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID())
+	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID(), store.SignInPassword)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -676,14 +677,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // issueSession mints the pair: a short access token carrying sub, farm_id and
 // role, and an opaque refresh token whose sha256 is all Postgres keeps.
+//
+// method is how the person got in (store.SignInPassword, …); it is recorded
+// on the family so «Sesiones abiertas» can show it.
 func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string) (*sessionResponse, error) {
-	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, oauthGrant{})
+	m *store.Membership, deviceID, familyID, method string) (*sessionResponse, error) {
+	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, familyGrant{Method: &method})
 }
 
-// oauthGrant is the OAuth client (an MCP connector) that holds a refresh
-// family, and the scope it was granted. Both nil for an ordinary session.
-type oauthGrant struct {
+// familyGrant is how a refresh family was granted: the sign-in method, and
+// for a family an OAuth client (an MCP connector) holds, that client and the
+// scope it was granted (both nil for an ordinary session). Method is nil only
+// when rotating a family from before methods were recorded (migration 00043);
+// rotation carries the family's own forward.
+type familyGrant struct {
+	Method   *string
 	ClientID *string
 	Scope    *string
 }
@@ -692,7 +700,7 @@ type oauthGrant struct {
 // connector) holds: grant.ClientID tags every token in it, which is what the
 // «Conexiones» block in Configuración lists and revokes.
 func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string, grant oauthGrant) (*sessionResponse, error) {
+	m *store.Membership, deviceID, familyID string, grant familyGrant) (*sessionResponse, error) {
 	oauthClientID, scope := grant.ClientID, grant.Scope
 
 	// A family an assistant holds gets tokens for /mcp only; see
@@ -708,7 +716,10 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 			UserID: user.ID, FarmID: m.FarmID, Role: m.Role, DeviceID: deviceID, Superadmin: user.IsSuperadmin,
 		})
 	} else {
-		access, err = s.signer.Issue(user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+		access, err = s.signer.IssueSession(auth.TokenSubject{
+			UserID: user.ID, FarmID: m.FarmID, Role: m.Role, DeviceID: deviceID,
+			Superadmin: user.IsSuperadmin, SessionID: familyID,
+		})
 	}
 	if err != nil {
 		return nil, domain.Internal("could not issue the access token").WithCause(err)
@@ -725,6 +736,7 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ID: newID(), FamilyID: familyID, UserID: user.ID, FarmID: m.FarmID,
 		DeviceID: device, ExpiresAt: time.Now().Add(auth.RefreshTTL),
 		OAuthClientID: oauthClientID, Scope: scope,
+		SignInMethod: grant.Method, UserAgent: requestUserAgent(r),
 	}, hash); err != nil {
 		return nil, err
 	}
@@ -733,6 +745,26 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ExpiresIn: int(auth.AccessTTL.Seconds()),
 		FarmID:    m.FarmID, FarmName: m.FarmName, Slug: m.FarmSlug, Role: m.Role,
 	}, nil
+}
+
+// maxUserAgent is what is kept of a User-Agent header (migration 00043).
+const maxUserAgent = 300
+
+// requestUserAgent is the request's User-Agent, cut to maxUserAgent bytes on
+// a rune boundary, or nil when there is none.
+func requestUserAgent(r *http.Request) *string {
+	ua := strings.TrimSpace(r.UserAgent())
+	if ua == "" {
+		return nil
+	}
+	if len(ua) > maxUserAgent {
+		cut := maxUserAgent
+		for cut > 0 && !utf8.RuneStart(ua[cut]) {
+			cut--
+		}
+		ua = ua[:cut]
+	}
+	return &ua
 }
 
 // loginFarmPin resolves a farm from the request Host (or farmSlug) if that
@@ -894,7 +926,7 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, oauthGrant{ClientID: tok.OAuthClientID, Scope: tok.Scope})
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, familyGrant{Method: tok.SignInMethod, ClientID: tok.OAuthClientID, Scope: tok.Scope})
 	if err != nil {
 		return nil, err
 	}
