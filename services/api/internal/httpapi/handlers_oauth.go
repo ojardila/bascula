@@ -22,6 +22,7 @@ import (
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
@@ -334,16 +335,16 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(keys)
 	slog.Info("connector request register body",
-		"ua", r.UserAgent(),
-		"keys", keys,
-		"client_name", str("client_name"),
-		"redirect_uris", redirects,
-		"grant_types", list("grant_types"),
-		"response_types", list("response_types"),
-		"token_endpoint_auth_method", requestedMethod,
-		"granted_auth_method", method,
-		"scope", str("scope"),
-		"application_type", str("application_type"),
+		"ua", logsafe.Str(r.UserAgent()),
+		"keys", logsafe.Strs(keys),
+		"client_name", logsafe.Str(str("client_name")),
+		"redirect_uris", logsafe.Strs(redirects),
+		"grant_types", logsafe.Strs(list("grant_types")),
+		"response_types", logsafe.Strs(list("response_types")),
+		"token_endpoint_auth_method", logsafe.Str(requestedMethod),
+		"granted_auth_method", logsafe.Str(method),
+		"scope", logsafe.Str(str("scope")),
+		"application_type", logsafe.Str(str("application_type")),
 	)
 
 	if len(redirects) == 0 {

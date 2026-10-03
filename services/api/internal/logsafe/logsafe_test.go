@@ -24,3 +24,23 @@ func TestStr(t *testing.T) {
 		})
 	}
 }
+
+func TestStrs(t *testing.T) {
+	if got := Strs(nil); got != nil {
+		t.Fatalf("Strs(nil) = %q, want nil", got)
+	}
+	in := []string{"https://a.example/cb", "x\r\nlevel=ERROR", ""}
+	got := Strs(in)
+	want := []string{"https://a.example/cb", `x\r\nlevel=ERROR`, ""}
+	if len(got) != len(want) {
+		t.Fatalf("Strs = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Strs = %q, want %q", got, want)
+		}
+	}
+	if in[1] != "x\r\nlevel=ERROR" {
+		t.Fatalf("Strs modified its input: %q", in)
+	}
+}
