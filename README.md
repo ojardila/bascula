@@ -177,6 +177,9 @@ installed can upload their season. Documents from that era are in
   and [troubleshooting](docs/mcp/troubleshooting.md).
 - [Data protection](docs/data-protection.md): Ley 1581 mapping, roles,
   retention and worker rights.
+- [Legal templates](docs/legal/README.md): DPA, worker privacy notice
+  and terms of service, in Spanish (drafts; review by counsel before
+  signing).
 - [Owner decisions](docs/decisions.md): the calls the team couldn't make on
   its own, with what each one costs.
 - Diagrams: [system](docs/diagrams/system.md) · [web app](docs/diagrams/web.md)
