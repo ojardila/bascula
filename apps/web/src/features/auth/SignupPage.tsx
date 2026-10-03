@@ -136,6 +136,8 @@ export function SignupPage() {
             }}
             error={!!fields["farm.name"]}
             helperText={fields["farm.name"] ?? "Ejemplo: La Palma"}
+            // The server refuses longer (services/api signup_fields.go).
+            slotProps={{ htmlInput: { maxLength: 80 } }}
             fullWidth
             autoFocus
             required
@@ -156,6 +158,7 @@ export function SignupPage() {
             onChange={(e) => setOwnerName(e.target.value)}
             error={!!fields["owner.name"]}
             helperText={fields["owner.name"]}
+            slotProps={{ htmlInput: { maxLength: 80 } }}
             autoComplete="name"
             fullWidth
             required
@@ -171,6 +174,7 @@ export function SignupPage() {
               fields["owner.email"] ?? "Con este correo va a entrar a su finca."
             }
             autoComplete="email"
+            slotProps={{ htmlInput: { maxLength: 254 } }}
             fullWidth
             required
             sx={BIG}

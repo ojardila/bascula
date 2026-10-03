@@ -65,6 +65,13 @@ func (s *Server) kickTenantProvision(p tenantProvision) {
 	if api == "" {
 		api = "https://api.github.com"
 	}
+	// Signup and the console validated these already (signup_fields.go);
+	// sanitize again here so no future caller can send a line break or an
+	// unbounded string to the workflow.
+	p.FarmName = sanitizeDispatchText(p.FarmName, maxFarmNameRunes)
+	p.OwnerName = sanitizeDispatchText(p.OwnerName, maxOwnerNameRunes)
+	p.Email = sanitizeDispatchEmail(p.Email)
+	p.Phone = sanitizeDispatchPhone(p.Phone)
 	go func() {
 		body, err := json.Marshal(map[string]any{
 			"event_type": "provision-tenant",

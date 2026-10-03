@@ -437,6 +437,7 @@ function CreateFarmDialog({
               url.followName(e.target.value);
               setSlugError(null);
             }}
+            slotProps={{ htmlInput: { maxLength: 80 } }}
             autoFocus
             required
           />
@@ -462,12 +463,14 @@ function CreateFarmDialog({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             type="email"
+            slotProps={{ htmlInput: { maxLength: 254 } }}
             required
           />
           <TextField
             label="Nombre del dueño"
             value={ownerName}
             onChange={(e) => setOwnerName(e.target.value)}
+            slotProps={{ htmlInput: { maxLength: 80 } }}
           />
           <TextField
             label="Clave del dueño"
