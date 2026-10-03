@@ -36,4 +36,12 @@ patches:
       version: v1
       kind: ScheduledBackup
       name: bascula-db-weekly
+  # Dev has no bascula-backup-s3 (the Kyverno clone skips bascula-dev) and
+  # nothing in it is worth keeping.
+  - path: delete-uploads-backup.yaml
+    target:
+      group: batch
+      version: v1
+      kind: CronJob
+      name: bascula-uploads-backup
   - path: public-base-url.yaml

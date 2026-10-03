@@ -1,0 +1,164 @@
+# The off-site copy of the weighing photos (#311, docs/decisions.md).
+#
+# Postgres has barman-cloud; this is the same idea for bascula-uploads. Every
+# hour, `rclone copy` pushes new files to the backup bucket under this
+# namespace's own prefix:
+#
+#   s3://k8-longhorn-backups/<namespace>/uploads/
+#
+# next to the CNPG backups at s3://k8-longhorn-backups/<namespace>/bascula-db/.
+# The prefix comes from the pod's own namespace (downward API), so production,
+# and every bascula-{slug} farm, write to their own place with no per-farm
+# patch.
+#
+# `copy`, never `sync`: nothing in the bucket is ever deleted by this job. A
+# photo removed from the volume — by a bug, a bad restore, or on purpose —
+# stays in the bucket, so any database restore inside its 30-day window still
+# finds the photos its rows point at.
+#
+# The volume is ReadWriteOnce, so this pod must run on the node where the API
+# has it attached: required pod affinity to bascula-api, and a read-only
+# mount. If the API is not running the pod cannot schedule, and
+# activeDeadlineSeconds reaps it instead of leaving it Pending.
+#
+# Credentials: Secret bascula-backup-s3, the same one the ObjectStore in
+# postgres.yaml uses. Tenants get it from Kyverno
+# (manifests/cluster/backup-s3-clone.yaml); see manifests/README.md, "Backups".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bascula-uploads-backup
+  namespace: bascula
+spec:
+  # Every hour at :17, off the top of the hour where Longhorn's snapshot and
+  # the CNPG base backup start.
+  schedule: "17 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Caps both a stuck Pending pod and a long upload. While this pod runs
+      # it shares the volume's node with the API; a Recreate rollout that
+      # lands the API elsewhere waits at most this long for the attachment.
+      activeDeadlineSeconds: 1200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: bascula-uploads-backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: bascula-api
+                  topologyKey: kubernetes.io/hostname
+          # The API writes as 10001 with fsGroup 10001; reading needs nothing
+          # more. No fsGroup here: it would make the kubelet walk the volume.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            supplementalGroups: [10001]
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: rclone
+              image: docker.io/rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+              args:
+                - copy
+                - /srv/uploads
+                - spaces:k8-longhorn-backups/$(NAMESPACE)/uploads
+                - --checkers=4
+                - --transfers=2
+                - --stats-one-line
+                - --stats=0
+                - -v
+              env:
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef: {fieldPath: metadata.namespace}
+                # The remote is defined entirely here; there is no config file.
+                - name: RCLONE_CONFIG
+                  value: /tmp/rclone.conf
+                - name: RCLONE_CACHE_DIR
+                  value: /tmp/cache
+                - name: HOME
+                  value: /tmp
+                - name: RCLONE_CONFIG_SPACES_TYPE
+                  value: s3
+                - name: RCLONE_CONFIG_SPACES_PROVIDER
+                  value: DigitalOcean
+                - name: RCLONE_CONFIG_SPACES_ENDPOINT
+                  value: nyc3.digitaloceanspaces.com
+                - name: RCLONE_CONFIG_SPACES_ACL
+                  value: private
+                # The bucket exists (Longhorn and CNPG already write to it);
+                # the key need not be allowed to create buckets.
+                - name: RCLONE_CONFIG_SPACES_NO_CHECK_BUCKET
+                  value: "true"
+                - name: RCLONE_CONFIG_SPACES_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef: {name: bascula-backup-s3, key: ACCESS_KEY_ID}
+                - name: RCLONE_CONFIG_SPACES_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef: {name: bascula-backup-s3, key: ACCESS_SECRET_KEY}
+              volumeMounts:
+                - name: uploads
+                  mountPath: /srv/uploads
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests: {cpu: 20m, memory: 64Mi}
+                limits: {memory: 256Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+          volumes:
+            - name: uploads
+              persistentVolumeClaim:
+                claimName: bascula-uploads
+                readOnly: true
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
+---
+# Nothing reaches the backup pod; it reaches DNS and HTTPS (Spaces) only.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-uploads-backup
+spec:
+  description: Default-deny; DNS and HTTPS egress for the uploads backup job
+  endpointSelector:
+    matchLabels:
+      app: bascula-uploads-backup
+  # An empty rule: ingress default-deny, nothing admitted.
+  ingress:
+    - {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

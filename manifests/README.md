@@ -158,14 +158,149 @@ kubectl create secret generic bascula-api -n bascula \
 
 ---
 
-## What is deliberately not here
+## Backups
 
-**Backups.** The Postgres volume is covered only by Longhorn's snapshots,
-which protect the disk and not the database: restoring one gives you the data
-files mid-write and Postgres recovers from its WAL on start. CNPG can write
-base backups and WAL to S3-compatible storage — DigitalOcean Spaces already
-serves that role for Longhorn and etcd. **This is the first thing to add
-before the farm's season lives here.**
+Everything goes to the DigitalOcean Spaces bucket Longhorn and etcd already
+use, one prefix per namespace:
+
+```
+s3://k8-longhorn-backups/
+  bascula/                 production
+    bascula-db/            CNPG: weekly base backup + continuous WAL, 30 days
+    uploads/               weighing photos, copied every hour, never pruned
+  bascula-<slug>/          one per dedicated farm, same layout
+```
+
+| What | How | RPO | Retention |
+|:--|:--|:--|:--|
+| Postgres | barman-cloud plugin (`ObjectStore` `bascula-backups`), `ScheduledBackup` `bascula-db-weekly` (Sun 03:00 UTC) | minutes (WAL, `archive_timeout`) | 30 days, point-in-time |
+| Photos (`bascula-uploads`) | CronJob `bascula-uploads-backup`: `rclone copy` at :17 every hour (`base/uploads-backup.yaml`) | ~1 hour | forever: `copy`, not `sync`, so nothing is deleted from the bucket |
+| Both volumes, block level | Longhorn `snapshot-hourly` + `backup-daily` (the `k8` repo, `default` group) | 1 h on-disk / 24 h off-site | 12 snapshots / 14 days |
+
+The prefix is the namespace. Production's ObjectStore names it in
+`base/postgres.yaml`; the tenant overlay rewrites it with a kustomize
+`replacement` from the farm's namespace (`bascula-{slug}`, set by the
+ApplicationSet), and the uploads CronJob reads its namespace from the downward
+API. A farm is single-instance: barman-cloud is its only copy of the database
+off the cluster. Dev (`bascula-dev`) has no backups at all, on purpose.
+
+### Credentials: one Secret, made once
+
+Both read Secret **`bascula-backup-s3`** (keys `ACCESS_KEY_ID`,
+`ACCESS_SECRET_KEY`). In namespace `bascula` it already exists (production's
+ObjectStore has used it for months). Farms get a copy from Kyverno:
+
+```bash
+# MANUAL, once per cluster. harbor-pull-clone.yaml carries the RBAC both
+# policies need, so apply it first if it is not there yet.
+kubectl apply -f manifests/cluster/harbor-pull-clone.yaml
+kubectl apply -f manifests/cluster/backup-s3-clone.yaml
+
+# Check: every bascula-<slug> namespace has the Secret.
+kubectl get secret -A --field-selector metadata.name=bascula-backup-s3
+```
+
+If `bascula-backup-s3` were ever missing from `bascula`, create it from the
+Longhorn key (it is the same key; the bucket is the same bucket):
+
+```bash
+kubectl -n bascula create secret generic bascula-backup-s3 \
+  --from-literal=ACCESS_KEY_ID="$(kubectl -n longhorn-system get secret longhorn-backup-secret -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)" \
+  --from-literal=ACCESS_SECRET_KEY="$(kubectl -n longhorn-system get secret longhorn-backup-secret -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)"
+```
+
+> [!WARNING]
+> It is a bucket key, not a per-farm key: Spaces keys cannot be limited to a
+> prefix. A farm's own workloads cannot read it (the API runs without a
+> service account token, and the platform's reader role has no `secrets`),
+> so only a cluster admin can. **Rotation** is one place: replace the Secret
+> in `bascula`, Kyverno re-syncs every farm within seconds, and the next WAL
+> upload uses the new key. There is no per-farm key to revoke; cutting one
+> farm off means deleting its copy and adding its namespace to the policy's
+> `exclude`.
+
+### When a farm is created
+
+Nothing by hand once the policy is applied. The namespace appears, Kyverno
+copies the Secret, CNPG starts archiving WAL to `bascula-<slug>/bascula-db/`
+as soon as the cluster is up, and the first base backup lands on the next
+Sunday. To take one right away (and to check the farm end to end):
+
+```bash
+kubectl -n bascula-<slug> get objectstore,scheduledbackup,cronjob
+kubectl cnpg -n bascula-<slug> backup bascula-db --method plugin \
+  --plugin-name barman-cloud.cloudnative-pg.io
+kubectl -n bascula-<slug> get backup
+kubectl -n bascula-<slug> create job --from=cronjob/bascula-uploads-backup uploads-now
+```
+
+### When a farm is deleted, or a slug is reused
+
+> [!IMPORTANT]
+> **MANUAL.** Deleting the farm's Application does not touch the bucket.
+> barman-cloud refuses to archive into a prefix that already holds another
+> cluster's WAL ("Expected empty archive"), so a slug can only be reused once
+> its old prefix is gone. Purge it when the farm is really gone (with an
+> rclone `spaces` remote set up as in `base/uploads-backup.yaml`):
+>
+> ```bash
+> rclone purge spaces:k8-longhorn-backups/bascula-<slug>
+> ```
+
+The slug is stable for a farm's whole life: it is the namespace, the hostname
+and the backup prefix at once, and nothing renames it.
+
+### Storage
+
+Per farm, roughly: five weekly base backups (gzip) plus 30 days of WAL — an
+idle cluster still closes a 16 MB segment every five minutes, which gzip
+shrinks to almost nothing — so well under 1 GiB for the database at today's
+sizes; plus the photos, at most the 20 Gi the uploads volume holds, kept
+forever. Re-measure after the first month
+(`rclone size spaces:k8-longhorn-backups/bascula-<slug>`).
+
+### Restore drill
+
+**MANUAL, once per staging farm, and after any change to this setup.** Restore
+into a scratch cluster next to the farm and compare:
+
+```bash
+cat <<YAML | kubectl -n bascula-<slug> apply -f -
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: restore-drill
+spec:
+  instances: 1
+  imageName: <same imageName as base/postgres.yaml>
+  storage: {size: 10Gi, storageClass: longhorn}
+  bootstrap:
+    recovery:
+      source: origin
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: bascula-backups
+          serverName: bascula-db
+YAML
+# when it is Ready, the counts must match the live database:
+for c in bascula-db restore-drill; do
+  kubectl -n bascula-<slug> exec "$c-1" -c postgres -- psql -d bascula -Atc \
+    'select (select count(*) from weighings), (select count(*) from settlements)'
+done
+kubectl -n bascula-<slug> delete cluster restore-drill
+```
+
+The drill cluster does not archive (no `plugins` with `isWALArchiver`), so it
+never writes into the farm's prefix. Photos come back with
+`rclone copy spaces:k8-longhorn-backups/bascula-<slug>/uploads /srv/uploads`
+from a pod that mounts the volume.
+
+---
+
+## What is deliberately not here
 
 **Seasons from the retired phone app.** A farm that kept its season only on
 the Expo app uploads it through `/v1/import/season` from that app

@@ -262,3 +262,47 @@ hidden: the screen shows that it is missing.
 5. **Pruning `sync_log` and `sync_ops`** is not scheduled. The side that detects
    it (`CURSOR_TOO_OLD`) does exist, so the day pruning starts, a badly
    out-of-date phone finds out instead of receiving an incomplete history.
+
+---
+
+## 2026-10-02 — Every farm backs itself up, photos included (#309, #311)
+
+**Postgres on dedicated farms.** The tenant overlay used to delete the
+`ObjectStore` and `ScheduledBackup` and strip the barman-cloud plugin, copied
+from dev when the overlay was created: a farm namespace had no S3 credentials,
+so archiving could only fail. A farm is single-instance, which left it with no
+copy of its database off the cluster. Now every farm keeps production's setup
+unchanged — WAL archived continuously, a base backup every Sunday,
+`retentionPolicy: 30d` — and differs only in where it writes:
+
+- **Prefix convention: `s3://k8-longhorn-backups/<namespace>/`.** Production is
+  `bascula/`, a farm is `bascula-{slug}/`. The tenant overlay derives it from
+  the namespace with a kustomize replacement, so nothing per farm is committed.
+  The slug is the namespace and the hostname, and it never changes for a farm.
+- **Credentials: the bucket key, cloned by Kyverno** from ns `bascula`
+  (`manifests/cluster/backup-s3-clone.yaml`), not a key per farm. Spaces cannot
+  scope a key to a prefix, and minting keys in-cluster would put a DigitalOcean
+  API token in every farm. Rotation is one Secret; revocation is per cluster,
+  not per farm.
+- **A deleted farm's prefix is purged by hand**, and must be before its slug is
+  reused: barman-cloud will not archive into a non-empty prefix.
+
+**Photos: mirror (option A), not move (option B).**
+
+| | A — hourly `rclone copy` CronJob | B — S3 driver behind `internal/blob` |
+|:--|:--|:--|
+| RPO for photos | ~1 hour | 0 |
+| API replicas | still 1 (RWO volume) | any |
+| Change in `services/api` | none | new driver, signed URLs or a proxy for PWA reads |
+| Operational cost | one small pod an hour per farm | bucket requests on every photo read |
+| Migration of existing files | none | copy every PVC, switch, verify, drop the PVC |
+
+A, because the gap was "no copy at all" and A closes it today with no code and
+no migration, while what B adds — more than one API replica — nobody needs yet
+at one farm per stack. Hourly rather than nightly, because a listing of a
+farm's photos costs nothing and a day of weighing evidence is not something to
+lose. The job uses `copy`, never `sync`: the bucket keeps every photo ever
+written, so any database restore inside its 30 days finds the files its rows
+point at, and a photo deleted from the volume by mistake is still there.
+Longhorn's daily block-level backup of the volume continues alongside it.
+B stays the answer the day the API needs a second replica.

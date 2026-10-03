@@ -1,5 +1,5 @@
+# One instance per farm. The barman-cloud plugin (WAL archiving to
+# bascula-backups) stays: it is the farm's only off-cluster copy.
 - op: replace
   path: /spec/instances
   value: 1
-- op: remove
-  path: /spec/plugins

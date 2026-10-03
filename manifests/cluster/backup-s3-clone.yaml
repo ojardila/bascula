@@ -1,0 +1,48 @@
+# Cluster-scoped, applied once by an operator (kubectl apply -f), NOT by the
+# bascula Argo Applications. Same pattern as harbor-pull-clone.yaml, and it
+# relies on the ClusterRole kyverno:bascula-harbor-pull defined there (secrets
+# get/list/watch/create/update/patch/delete for the background controller):
+# apply that file first, or together.
+#
+# Every dedicated farm (namespace bascula-{slug}) runs a single-instance CNPG
+# cluster whose only off-cluster copy is barman-cloud to DigitalOcean Spaces,
+# plus the hourly uploads copy (base/uploads-backup.yaml). Both read Secret
+# bascula-backup-s3. Kyverno clones it from ns bascula — where production's
+# ObjectStore already uses it — the moment the namespace exists, and keeps it
+# in sync, so rotating the key in ns bascula rotates it on every farm.
+#
+# The key is the bucket's key, not a per-farm one: Spaces keys cannot be
+# scoped to a prefix. See manifests/README.md, "Backups", for what that means.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: bascula-tenant-backup-s3
+  annotations:
+    policies.kyverno.io/title: Clone bascula-backup-s3 into bascula tenant namespaces
+    policies.kyverno.io/description: >-
+      Copies Secret bascula-backup-s3 from namespace bascula into every
+      bascula-* namespace (dedicated farm stacks) so their barman-cloud
+      ObjectStore and uploads backup can write to the backup bucket.
+spec:
+  rules:
+    - name: clone-backup-s3
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: ["bascula-*"]
+      exclude:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: ["bascula-dev"]
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: v1
+        kind: Secret
+        name: bascula-backup-s3
+        namespace: "{{request.object.metadata.name}}"
+        clone:
+          namespace: bascula
+          name: bascula-backup-s3
