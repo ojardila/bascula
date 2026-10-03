@@ -97,6 +97,52 @@ func TestOAuthSignInPageNamesTheClientAndCannotBeFramed(t *testing.T) {
 	}
 }
 
+// TestOAuthSignInPageEscapesRequestData: the client name, state and email all
+// come from strangers and are written back into the page; none of them may
+// break out of the element or attribute it lands in.
+func TestOAuthSignInPageEscapesRequestData(t *testing.T) {
+	h := requireDB(t)
+	const payload = `"><script>alert(1)</script>`
+	redirect := "https://claude.ai/api/mcp/auth_callback"
+	id := h.registerOAuthClient(t, "Evil "+payload, redirect)
+	sum := sha256.Sum256([]byte(pkceVerifier(t)))
+	form := url.Values{
+		"client_id": {id}, "redirect_uri": {redirect}, "response_type": {"code"},
+		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"},
+		"state": {payload}, "scope": {payload},
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		f := url.Values{}
+		for k, v := range form {
+			f[k] = v
+		}
+		if method == http.MethodPost {
+			f.Set("email", payload)
+			f.Set("password", "wrong-password")
+		}
+		rec := oauthFrom(t, h.server, "10.9.0.20", method, "/oauth/authorize", f)
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s sign-in page: %d %s", method, rec.Code, body)
+		}
+		if strings.Contains(body, "<script>alert(1)") || strings.Contains(body, `"><script>`) {
+			t.Fatalf("%s: request data is not escaped: %s", method, body)
+		}
+		if !strings.Contains(body, "Evil &#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;") {
+			t.Fatalf("%s: the client name is not shown escaped: %s", method, body)
+		}
+		if !strings.Contains(body, `name="state" value="&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"`) {
+			t.Fatalf("%s: state is not carried escaped: %s", method, body)
+		}
+		if method == http.MethodPost && !strings.Contains(body, `required value="&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"`) {
+			t.Fatalf("email is not carried escaped: %s", body)
+		}
+		if strings.Count(body, "<script") != 1 {
+			t.Fatalf("%s: the page has a script besides the passkey one: %s", method, body)
+		}
+	}
+}
+
 // TestOAuthSignInIsRateLimited: the sign-in page checks the same password as
 // /v1/auth/login, and it used to do so without the login limiter.
 func TestOAuthSignInIsRateLimited(t *testing.T) {

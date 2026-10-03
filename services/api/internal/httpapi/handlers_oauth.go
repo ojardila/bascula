@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
+	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
@@ -505,29 +505,6 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		method = oauthChallenge
 	}
 
-	failToClient := func(code, desc string) {
-		if redirectURI == "" {
-			s.oauthForm(w, r, q, desc, nil, nil)
-			return
-		}
-		u, err := url.Parse(redirectURI)
-		if err != nil {
-			s.oauthForm(w, r, q, desc, nil, nil)
-			return
-		}
-		qq := u.Query()
-		qq.Set("error", code)
-		qq.Set("error_description", desc)
-		if state != "" {
-			qq.Set("state", state)
-		}
-		qq.Set("iss", issuer)
-		u.RawQuery = qq.Encode()
-		// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
-		// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
-		http.Redirect(w, r, u.String(), http.StatusFound)
-	}
-
 	if clientID == "" || redirectURI == "" {
 		s.oauthForm(w, r, q, "Faltan client_id o redirect_uri.", nil, nil)
 		return
@@ -550,9 +527,28 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	if !containsString(client.RedirectURIs, redirectURI) {
+	// From here on the only redirect target is the client's own registered
+	// URI, taken from its list, never the string the request carried.
+	registered, ok := registeredRedirectURI(client, redirectURI)
+	if !ok {
 		s.oauthForm(w, r, q, "redirect_uri no coincide con el cliente registrado.", nil, nil)
 		return
+	}
+	failToClient := func(code, desc string) {
+		u, err := url.Parse(registered)
+		if err != nil {
+			s.oauthForm(w, r, q, desc, nil, nil)
+			return
+		}
+		qq := u.Query()
+		qq.Set("error", code)
+		qq.Set("error_description", desc)
+		if state != "" {
+			qq.Set("state", state)
+		}
+		qq.Set("iss", issuer)
+		u.RawQuery = qq.Encode()
+		http.Redirect(w, r, u.String(), http.StatusFound)
 	}
 	if challenge == "" || method != oauthChallenge {
 		failToClient("invalid_request", "PKCE S256 is required")
@@ -631,7 +627,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		// Only the code's hash is stored, like every other secret here.
 		Code:                oauthCodeKey(code),
 		ClientID:            clientID,
-		RedirectURI:         redirectURI,
+		RedirectURI:         registered,
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: method,
 		Resource:            resource,
@@ -643,7 +639,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := url.Parse(redirectURI)
+	u, err := url.Parse(registered)
 	if err != nil {
 		writeError(w, r, domain.BadRequest("redirect_uri is not a URI"))
 		return
@@ -655,8 +651,6 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	qq.Set("iss", issuer)
 	u.RawQuery = qq.Encode()
-	// redirect_uri is exact-matched against the OAuth client's registered URIs before this redirect (RFC 6749).
-	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
@@ -1232,6 +1226,19 @@ func randomToken(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// registeredRedirectURI returns the element of the client's registered
+// redirect URIs that exactly matches the requested one (RFC 6749 §3.1.2.3).
+// Callers redirect to the returned value, which comes from the client's
+// registration, not from the request.
+func registeredRedirectURI(client *store.OAuthClient, requested string) (string, bool) {
+	for _, registered := range client.RedirectURIs {
+		if registered == requested {
+			return registered, true
+		}
+	}
+	return "", false
+}
+
 func containsString(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {
@@ -1292,6 +1299,72 @@ f.submit();
 });
 })();`
 
+// oauthPageHTML is the sign-in page. It is an html/template, so every value
+// that came from the request (client name, redirect host, email, state and
+// the other OAuth parameters, the notice) is escaped for the context it
+// lands in; nothing here concatenates request data into markup.
+const oauthPageHTML = `<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Conectar Báscula</title>
+` + oauthFormStyle + `
+<h1>Conectar Báscula a un asistente</h1>
+{{if .Pick}}<p>Su cuenta tiene varias fincas. Elija cuál va a usar el asistente.</p>
+{{template "msg" .}}
+<form method="post" action="/oauth/authorize">
+  {{template "hidden" .Hidden}}<input type="hidden" name="ticket" value="{{.Ticket}}">
+  <fieldset>
+    <legend>Finca</legend>
+    {{range $i, $f := .Farms}}<label class="opt"><input type="radio" name="farm_id" value="{{$f.ID}}"{{if eq $i 0}} checked{{end}}><span>{{$f.Name}}{{if $f.Slug}}<span class="slug">{{$f.Slug}}.bascula.engp.io</span>{{end}}</span></label>
+{{end}}
+  </fieldset>
+  <button type="submit">Continuar</button>
+</form>
+{{else}}<p>Entre con la misma cuenta de la finca. El asistente trabaja con los permisos de su rol.</p>
+{{if .FarmName}}<p class="farm">Finca: <strong>{{.FarmName}}</strong></p>{{end}}{{template "msg" .}}
+<form method="post" action="/oauth/authorize">
+  {{template "hidden" .Hidden}}
+  <fieldset>
+    <legend>¿Qué podrá hacer el asistente?</legend>
+    <label class="opt"><input type="radio" name="access" value="write"{{if not .ReadOnly}} checked{{end}}><span>Consultar y registrar<span class="slug">Trabajadores, lotes y pesadas. Pagos, anticipos, liquidaciones y precios siempre le piden su confirmación antes de hacerse.</span></span></label>
+    <label class="opt"><input type="radio" name="access" value="read"{{if .ReadOnly}} checked{{end}}><span>Solo consultar<span class="slug">No cambia ni borra nada de la finca.</span></span></label>
+  </fieldset>
+  <label class="f" for="email">Correo</label>
+  <input id="email" name="email" type="email" autocomplete="username" required value="{{.Email}}">
+  <label class="f" for="password">Contraseña</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+  <button type="submit">Autorizar</button>
+  <input type="hidden" name="passkey_challenge" value="">
+  <input type="hidden" name="passkey_credential" value="">
+  <button type="button" id="passkey" class="alt" hidden>Entrar con llave de acceso</button>
+</form>
+<script nonce="{{.Nonce}}">{{.Script}}</script>
+{{end}}{{define "msg"}}{{if .HasClient}}<p class="who">Aplicación: <strong>{{.ClientName}}</strong><br>Le devolverá el acceso a: <strong>{{.Dest}}</strong></p><p class="warn">Si no reconoce ese sitio, no escriba su contraseña.</p>{{end}}{{if .Notice}}<p class="err">{{.Notice}}</p>{{end}}{{end}}{{define "hidden"}}{{range .}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}{{end}}`
+
+var oauthPageTmpl = template.Must(template.New("oauth").Parse(oauthPageHTML))
+
+type oauthHiddenField struct{ Name, Value string }
+
+type oauthFarmOption struct{ ID, Name, Slug string }
+
+type oauthPageData struct {
+	Pick       bool
+	HasClient  bool
+	ClientName string
+	Dest       string
+	Notice     string
+	Hidden     []oauthHiddenField
+	Ticket     string
+	Farms      []oauthFarmOption
+	FarmName   string
+	ReadOnly   bool
+	Email      string
+	Nonce      string
+	Script     template.JS
+}
+
 // oauthForm renders the sign-in page. client is nil until the request names a
 // registered client; from then on the page says which application is asking
 // and which site the code goes to, because registration is open and a
@@ -1311,119 +1384,60 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; connect-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	esc := html.EscapeString
-	hidden := func(name string) string {
-		v := q.Get(name)
-		if v == "" {
-			return ""
+
+	// oauthPasskeyScript is a compile-time constant, never request data.
+	data := oauthPageData{Notice: notice, Nonce: nonce, Script: template.JS(oauthPasskeyScript)}
+	// The OAuth parameters ride along as hidden fields. On the sign-in step
+	// the access choice is its own field, so the hidden copy of an earlier
+	// choice is left out of that form.
+	for _, name := range []string{"client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "resource", "scope", "response_type", "access"} {
+		if name == "access" && pick == nil {
+			continue
 		}
-		return `<input type="hidden" name="` + esc(name) + `" value="` + esc(v) + `">`
+		if v := q.Get(name); v != "" {
+			data.Hidden = append(data.Hidden, oauthHiddenField{Name: name, Value: v})
+		}
 	}
-	oauthParams := hidden("client_id") + hidden("redirect_uri") + hidden("state") +
-		hidden("code_challenge") + hidden("code_challenge_method") + hidden("resource") +
-		hidden("scope") + hidden("response_type") + hidden("access")
-	msg := ""
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
 		// (wrong password, unknown client, ...). Never the password itself.
 		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
-		msg = `<p class="err">` + esc(notice) + `</p>`
 	}
 	if client != nil {
 		dest := q.Get("redirect_uri")
 		if u, err := url.Parse(dest); err == nil && u.Host != "" {
 			dest = u.Host
 		}
-		msg = `<p class="who">Aplicación: <strong>` + esc(client.Name) + `</strong><br>` +
-			`Le devolverá el acceso a: <strong>` + esc(dest) + `</strong></p>` +
-			`<p class="warn">Si no reconoce ese sitio, no escriba su contraseña.</p>` + msg
+		data.HasClient, data.ClientName, data.Dest = true, client.Name, dest
 	}
-	head := `<!doctype html>
-<html lang="es">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Conectar Báscula</title>
-` + oauthFormStyle + `
-<h1>Conectar Báscula a un asistente</h1>
-`
 	if pick != nil {
-		var opts strings.Builder
-		for i, m := range pick.Farms {
-			checked := ""
-			if i == 0 {
-				checked = htmlChecked
-			}
+		data.Pick, data.Ticket = true, pick.Ticket
+		for _, m := range pick.Farms {
 			name := strings.TrimSpace(m.FarmName)
 			if name == "" {
 				name = m.FarmSlug
 			}
-			slug := ""
-			if m.FarmSlug != "" {
-				slug = `<span class="slug">` + esc(m.FarmSlug) + `.bascula.engp.io</span>`
-			}
-			fmt.Fprintf(&opts, `<label class="opt"><input type="radio" name="farm_id" value="%s"%s><span>%s%s</span></label>
-`, esc(m.FarmID), checked, esc(name), slug)
+			data.Farms = append(data.Farms, oauthFarmOption{ID: m.FarmID, Name: name, Slug: m.FarmSlug})
 		}
-		// Hand-built HTML where every interpolated value goes through html.EscapeString.
-		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter
-		_, _ = fmt.Fprintf(w, `%s<p>Su cuenta tiene varias fincas. Elija cuál va a usar el asistente.</p>
-%s
-<form method="post" action="/oauth/authorize">
-  %s<input type="hidden" name="ticket" value="%s">
-  <fieldset>
-    <legend>Finca</legend>
-    %s
-  </fieldset>
-  <button type="submit">Continuar</button>
-</form>
-`, head, msg, oauthParams, esc(pick.Ticket), opts.String())
-		return
-	}
-
-	farmLine := ""
-	if slug := farmSlugFromHost(r); slug != "" {
-		name := slug
-		if s.pool != nil {
-			var dn *string
-			// farm_display_name is a SECURITY DEFINER lookup by slug, before any tenant exists.
-			// nosemgrep: bascula-pool-query-outside-tenant-tx
-			if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
-				name = *dn
+	} else {
+		if slug := farmSlugFromHost(r); slug != "" {
+			data.FarmName = slug
+			if s.pool != nil {
+				var dn *string
+				// farm_display_name is a SECURITY DEFINER lookup by slug, before any tenant exists.
+				// nosemgrep: bascula-pool-query-outside-tenant-tx
+				if err := s.pool.QueryRow(r.Context(), `SELECT farm_display_name($1)`, slug).Scan(&dn); err == nil && dn != nil && *dn != "" {
+					data.FarmName = *dn
+				}
 			}
 		}
-		farmLine = `<p class="farm">Finca: <strong>` + esc(name) + `</strong></p>`
+		data.ReadOnly = oauthAccessChoice(q) == "read"
+		data.Email = q.Get("email")
 	}
-	writeChecked, readChecked := htmlChecked, ""
-	if oauthAccessChoice(q) == "read" {
-		writeChecked, readChecked = "", htmlChecked
+	w.WriteHeader(http.StatusOK)
+	if err := oauthPageTmpl.Execute(w, data); err != nil {
+		slog.Error("oauth sign-in page render failed", "err", err)
 	}
-	// The access choice is its own field, so the hidden copy of an earlier
-	// choice is left out of this form.
-	params := strings.Replace(oauthParams, hidden("access"), "", 1)
-	// Hand-built HTML where every interpolated value goes through html.EscapeString.
-	// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter
-	_, _ = fmt.Fprintf(w, `%s<p>Entre con la misma cuenta de la finca. El asistente trabaja con los permisos de su rol.</p>
-%s%s
-<form method="post" action="/oauth/authorize">
-  %s
-  <fieldset>
-    <legend>¿Qué podrá hacer el asistente?</legend>
-    <label class="opt"><input type="radio" name="access" value="write"%s><span>Consultar y registrar<span class="slug">Trabajadores, lotes y pesadas. Pagos, anticipos, liquidaciones y precios siempre le piden su confirmación antes de hacerse.</span></span></label>
-    <label class="opt"><input type="radio" name="access" value="read"%s><span>Solo consultar<span class="slug">No cambia ni borra nada de la finca.</span></span></label>
-  </fieldset>
-  <label class="f" for="email">Correo</label>
-  <input id="email" name="email" type="email" autocomplete="username" required value="%s">
-  <label class="f" for="password">Contraseña</label>
-  <input id="password" name="password" type="password" autocomplete="current-password" required>
-  <button type="submit">Autorizar</button>
-  <input type="hidden" name="passkey_challenge" value="">
-  <input type="hidden" name="passkey_credential" value="">
-  <button type="button" id="passkey" class="alt" hidden>Entrar con llave de acceso</button>
-</form>
-<script nonce="%s">%s</script>
-`, head, farmLine, msg, params, writeChecked, readChecked, esc(q.Get("email")), nonce, oauthPasskeyScript)
 }
 
 func farmIDs(ms []store.Membership) []string {
