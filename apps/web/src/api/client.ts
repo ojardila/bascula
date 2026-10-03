@@ -120,6 +120,10 @@ async function rawRequest(
  * this same promise; see the note at the top of the file.
  */
 async function refreshTokens(): Promise<Tokens | null> {
+  // Callers only refresh while signed in, so no test reaches this. It stays:
+  // a logout can clear `tokens` between their check and this call, and a
+  // refresh without a token would fire a spurious logout.
+  if (!tokens) return null;
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {

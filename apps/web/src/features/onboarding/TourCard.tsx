@@ -38,6 +38,9 @@ export function TourCard({
   const total = TOTALS[tour];
 
   async function primary() {
+    // The button is disabled while busy, but two taps in the same tick land
+    // before that render: this is the re-entrancy guard, unreachable in jsdom.
+    if (busy) return;
     setBusy(true);
     try {
       let ok = true;
