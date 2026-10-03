@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one place the server's vocabulary becomes the screens' vocabulary.
  *

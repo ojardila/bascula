@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The sentences of the «Modo cosecha» dashboard, as pure functions so a test
  * can pin them. Plain Spanish, whole kilos, the arrow AND the words.

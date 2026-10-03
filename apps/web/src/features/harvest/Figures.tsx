@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The figures the harvest module is allowed to print.
  *

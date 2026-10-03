@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «PRECIO DE LA FINCA»: the base price of a kilo, from a Monday on.
  *

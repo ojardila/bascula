@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package cfsaas talks to Cloudflare for SaaS: one custom hostname, with its
 // own edge certificate, per farm address ({slug}.bascula.engp.io).
 //

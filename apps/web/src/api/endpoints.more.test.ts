@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * endpoints.ts against answers the mock server never gives: envelopes with
  * fields missing, the settlements list falling back to the per-worker fan-out

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The shell around every page: the account menu (change password, the tour,
  * signing out) and the mobile drawer.

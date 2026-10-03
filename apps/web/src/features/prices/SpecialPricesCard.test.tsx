@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Special kilo prices per lote and per person (phase 2).
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Reading a `ReportTotals` without ever printing a zero that means "I do not
  * know".

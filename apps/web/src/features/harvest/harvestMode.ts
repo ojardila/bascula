@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Modo cosecha»: whether the farm's home screen shows the harvest-week
  * dashboard. Stored per farm on the server (farm_config.harvest_mode, read

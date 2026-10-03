@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Draws whatever the current tour step needs: the welcome and closing
  * dialogs, or — lazily — React Joyride for a spotlight step. Callout steps

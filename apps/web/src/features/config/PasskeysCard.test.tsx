@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Llaves de acceso»: add a passkey with the phone, see it listed, remove it.
  * The browser's WebAuthn is stubbed; the mock API stores what it is sent.

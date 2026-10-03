@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The demo, driven from the login box.
  *

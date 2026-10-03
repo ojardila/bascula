@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «Descargar datos» card itself: each button builds its file and hands
  * it to the browser, says which file it was, and says so when the browser

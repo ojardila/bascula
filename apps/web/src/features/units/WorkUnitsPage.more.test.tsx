@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The units screen, the paths `WorkUnitsPage.test.tsx` leaves out: creating
  * a unit (with and without an abbreviation), deleting one nobody used, the

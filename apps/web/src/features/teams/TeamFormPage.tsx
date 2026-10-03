@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Nuevo equipo» / «Cambiar integrantes» (docs/use-cases/teams.md, TEAM-01..03).
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── aria-label ON A PLAIN DIV OR SPAN IS IGNORED BY SOME SCREEN READERS ────
  *

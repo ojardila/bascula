@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * What the mock handlers read off the wire.
  *

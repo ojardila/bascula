@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The support console beyond creating a farm: filters, suspending and
  * reactivating, the checks on the new-farm form, and the three ways the

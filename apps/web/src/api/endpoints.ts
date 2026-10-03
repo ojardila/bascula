@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Every call this app makes, against the routes `services/api` actually
  * serves.

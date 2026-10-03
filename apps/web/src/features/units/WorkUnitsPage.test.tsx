@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm's units, and the one thing this screen must never do.
  *

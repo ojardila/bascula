@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── HEADINGS JUMP FROM h1 TO h3, AND SCREEN READERS LOSE THE SHAPE ────────
  *

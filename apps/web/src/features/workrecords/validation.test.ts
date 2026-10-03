@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The work-record form changes shape with the activity, and the combinations
  * are where a wrong peso figure is born. These walk every one of them.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package mailer sends plain-text email over SMTP.
 //
 // It is configured entirely from the environment (SMTP_HOST, SMTP_PORT,

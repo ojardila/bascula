@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * EIGHT CODES WERE REACHING THE SCREEN IN ENGLISH.
  *

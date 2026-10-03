@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Conexiones» in Configuración: one big button to connect the farm to
  * ChatGPT, «Conectado ✓» once an MCP client holds a grant, and a revocation

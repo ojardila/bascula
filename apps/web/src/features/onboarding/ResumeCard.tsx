@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Termine de preparar su finca» on Cosecha, for an owner who left the tour
  * half way («Saltar» or «Ahora no, más tarde»). It shows how far they got in

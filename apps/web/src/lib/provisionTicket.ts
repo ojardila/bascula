@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The provision ticket: what signup (or the super-admin console) hands back
  * with a new farm, and the only thing that opens that farm's

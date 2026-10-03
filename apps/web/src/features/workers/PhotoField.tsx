@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The employee photo (RSP-004, up to 5 MB).
  *
