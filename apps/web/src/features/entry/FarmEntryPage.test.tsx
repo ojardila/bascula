@@ -18,6 +18,8 @@ function renderAt(hostname: string) {
 }
 
 describe("the farm's front door", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("offers only enter and forgotten password on a farm address", async () => {
     renderAt("lapalma.bascula.engp.io");
     // No farm by that name in the mock: the slug is the fallback.
@@ -43,8 +45,6 @@ describe("the farm's front door", () => {
     renderAt("bascula.int.dev.engp.io");
     expect(screen.getByRole("link", { name: "Registrar" })).toHaveAttribute("href", "/empezar");
   });
-
-  afterEach(() => vi.restoreAllMocks());
 
   it("says who resets a forgotten password where no email can be sent", async () => {
     vi.spyOn(api, "passwordResetAvailable").mockResolvedValue(false);

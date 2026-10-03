@@ -442,7 +442,7 @@ export function formatLatLon(p: Position): string {
 /** Reads "5,664" or "5.664" or "-75,88". Null when it is not a number. */
 export function parseDegrees(raw: string): number | null {
   const cleaned = raw.trim().replace(",", ".");
-  if (!cleaned || !/^[+-]?\d*\.?\d*$/.test(cleaned)) return null;
+  if (!cleaned || !/^[+-]?\d*(?:\.\d*)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
