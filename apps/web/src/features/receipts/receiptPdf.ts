@@ -35,9 +35,9 @@ export function pdfText(s: string): string {
     .replace(/[\u2012\u2013\u2014\u2212]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
-    .replace(/\u2026/g, "...")
+    .replaceAll("\u2026", "...")
     .split("")
-    .filter((ch) => ch.charCodeAt(0) <= 0xff)
+    .filter((ch) => (ch.codePointAt(0) ?? 0) <= 0xff)
     .join("");
 }
 

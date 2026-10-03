@@ -78,7 +78,7 @@ export function quantityLabel(activity: Activity): string {
 }
 
 export function parseQuantity(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\./g, "").replace(",", ".");
+  const cleaned = raw.trim().replaceAll(".", "").replace(",", ".");
   if (cleaned === "") return null;
   if (!/^\d*(\.\d+)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
