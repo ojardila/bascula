@@ -287,7 +287,7 @@ export function PasskeysCard() {
       <ConfirmDialog
         open={removing !== null}
         title="¿Quitar la llave de acceso?"
-        body={`«${removing?.name ?? ""}» ya no servirá para entrar. Su contraseña sigue igual.`}
+        body={`«${removing?.name ?? ""}» ya no servirá para entrar, y se cerrarán las sesiones que se abrieron con ella en otros equipos. Su contraseña sigue igual.`}
         confirmLabel="Quitar"
         destructive
         busy={busy}

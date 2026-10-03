@@ -72,6 +72,25 @@ func (s *Server) revokeSessionsElsewhere(r *http.Request, userID, farmID string)
 	})
 }
 
+// revokePasskeySessions closes, after this request, every session the passkey
+// opened on any farm except keepFamilyID (the caller's own). It runs on a
+// connection with no farm pinned, like revokeSessionsElsewhere, because a
+// passkey that is not pinned to a farm opens several. It does nothing while
+// the passkey still exists, so a removal that was rolled back closes nothing.
+func (s *Server) revokePasskeySessions(r *http.Request, userID, passkeyID, keepFamilyID string) {
+	pool := s.pool
+	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
+		if _, err := pool.Exec(context.WithoutCancel(ctx), `
+			UPDATE refresh_tokens SET revoked_at = now()
+			 WHERE user_id = $1 AND passkey_id = $2 AND revoked_at IS NULL
+			   AND ($3 = '' OR family_id::text <> $3)
+			   AND NOT EXISTS (SELECT 1 FROM passkeys WHERE id = $2)`,
+			userID, passkeyID, keepFamilyID); err != nil {
+			slog.Error("revoke passkey sessions", "user", userID, "err", err)
+		}
+	})
+}
+
 func greeting(name string) string {
 	if n := strings.TrimSpace(name); n != "" {
 		return "Hola, " + n + ":"

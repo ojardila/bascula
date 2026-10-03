@@ -670,6 +670,10 @@ paths:
       tags: [auth]
       operationId: deletePasskey
       summary: Remove one of the caller's passkeys
+      description: |
+        Also closes every session the passkey opened, on every farm, except
+        the caller's own. Sessions opened with the password or another
+        passkey, and assistants' connections, are left alone.
       x-action: me.passkeys.write
       x-roles: [owner, admin, weigher]
       responses:

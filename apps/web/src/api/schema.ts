@@ -376,7 +376,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove one of the caller's passkeys */
+        /**
+         * Remove one of the caller's passkeys
+         * @description Also closes every session the passkey opened, on every farm, except
+         *     the caller's own. Sessions opened with the password or another
+         *     passkey, and assistants' connections, are left alone.
+         */
         delete: operations["deletePasskey"];
         options?: never;
         head?: never;
