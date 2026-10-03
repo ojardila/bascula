@@ -304,9 +304,9 @@ function Calendar({
             gap: 0.25,
           }}
         >
-          {WEEKDAY_INITIALS.map((d, i) => (
+          {WEEKDAY_INITIALS.map((d) => (
             <Typography
-              key={i}
+              key={d}
               variant="caption"
               sx={{
                 textAlign: "center",

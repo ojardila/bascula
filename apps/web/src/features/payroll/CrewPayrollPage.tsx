@@ -34,9 +34,7 @@
  *     the paper says so top and bottom. It is the bite `SettlementsPage` took
  *     out of us, which here has two more ways to happen.
  */
-import { TeamChip } from "../teams/TeamProfile";
-import { BasketTile } from "../workers/Basket";
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -45,17 +43,14 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   Chip,
   CircularProgress,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
   Divider,
-  IconButton,
   LinearProgress,
   MenuItem,
   Stack,
@@ -67,8 +62,6 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import PrintIcon from "@mui/icons-material/Print";
 import UndoIcon from "@mui/icons-material/Undo";
 import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
@@ -80,8 +73,6 @@ import { useWriteOnce } from "../../lib/writeOnce";
 import { messageFor } from "../../api/errors";
 import { sentenceFor } from "../../api/grossChange";
 import {
-  formatDate,
-  formatDateRange,
   formatDayLong,
   todayInFarm,
 } from "../../lib/dates";
@@ -110,7 +101,6 @@ import {
   undoHandleOf,
   undoIsEmpty,
   undoRun,
-  balanceCentsOf,
   type CrewCheck,
   type CrewMember,
   type PayApproval,
@@ -122,6 +112,7 @@ import {
   type UndoResult,
 } from "./crew";
 import { count } from "../../lib/plural";
+import { PayRow, SettleRow, UndoneAlert } from "./CrewPayrollRows";
 
 /** How the difference explanation writes its figures and dates. */
 const FMT = { money: formatMoney, week: formatDayLong };
@@ -136,6 +127,55 @@ type Step = "settle" | "pay";
 
 function confirmButtonLabel(settle: boolean, payTotal: number): string {
   return settle ? "Liquidar" : `Pagar ${formatMoney(payTotal)}`;
+}
+
+/** By name or by basket number: «46» finds the account with canasto 46. */
+function matchesSearch(search: string, name: string, tag: string | null): boolean {
+  const q = fold(search.trim());
+  return fold(name).includes(q) || fold(tag ?? "") === q;
+}
+
+/** The scope of a run: the filter it was approved under and the crew it was part of. */
+function scopeFor(search: string, cents: number[]): RunScope {
+  const filters: string[] = [];
+  if (search.trim() !== "") filters.push(`empleado contiene «${search.trim()}»`);
+  return {
+    filters,
+    crewSize: cents.length,
+    crewTotalCents: cents.reduce((s, c) => s + c, 0),
+  };
+}
+
+/** What the confirmation dialog lists, whichever step it came from. */
+function confirmRowsOf(
+  confirm: Step | null,
+  pickedSettle: SettleApproval[],
+  pickedPay: PayApproval[],
+) {
+  if (confirm === "settle") {
+    return pickedSettle.map((a) => ({
+      workerId: a.workerId,
+      name: a.name,
+      quantity: a.quantity,
+      unitLabel: a.unitLabel,
+      cents: a.grossCents,
+    }));
+  }
+  return pickedPay.map((a) => ({
+    workerId: a.workerId,
+    name: a.name,
+    quantity: null as number | null,
+    unitLabel: null as string | null,
+    cents: a.amountCents,
+  }));
+}
+
+/** The same set with `id` flipped in or out. */
+function toggled(set: Set<Uuid>, id: Uuid): Set<Uuid> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
 }
 
 export function CrewPayrollPage() {
@@ -183,14 +223,13 @@ export function CrewPayrollPage() {
     [crew],
   );
 
+  const memberOf = (workerId: string) =>
+    crew.find((m) => m.worker.id === workerId);
   /** The basket number of each account, to show and to search by. */
-  const tagOf = (workerId: string) =>
-    crew.find((m) => m.worker.id === workerId)?.worker.tag ?? null;
+  const tagOf = (workerId: string) => memberOf(workerId)?.worker.tag ?? null;
   // By name or by basket number: «46» finds the account with canasto 46.
-  const matches = (a: { name: string; workerId: string }) => {
-    const q = fold(search.trim());
-    return fold(a.name).includes(q) || fold(tagOf(a.workerId) ?? "") === q;
-  };
+  const matches = (a: { name: string; workerId: string }) =>
+    matchesSearch(search, a.name, tagOf(a.workerId));
   const visibleSettle = allSettle.filter(matches);
   const visiblePay = allPay.filter(matches);
   const pickedSettle = visibleSettle.filter(
@@ -217,20 +256,13 @@ export function CrewPayrollPage() {
   if (error) return <Alert severity="error">{error}</Alert>;
 
   /** The scope frozen with the approval: what the paper will own up to. */
-  function scopeOf(step: Step): RunScope {
-    const filters: string[] = [];
-    if (search.trim() !== "")
-      filters.push(`empleado contiene «${search.trim()}»`);
-    const cents: number[] =
+  const scopeOf = (step: Step): RunScope =>
+    scopeFor(
+      search,
       step === "settle"
         ? allSettle.map((a) => a.grossCents)
-        : allPay.map((a) => a.amountCents);
-    return {
-      filters,
-      crewSize: cents.length,
-      crewTotalCents: cents.reduce((s, c) => s + c, 0),
-    };
-  }
+        : allPay.map((a) => a.amountCents),
+    );
 
   /* ---------------------------------------------------------------- */
   /* Step 1 — settle                                                   */
@@ -456,29 +488,10 @@ export function CrewPayrollPage() {
   }
 
   /** What the confirmation dialog lists, whichever step it came from. */
-  const confirmRows =
-    confirm === "settle"
-      ? pickedSettle.map((a) => ({
-          workerId: a.workerId,
-          name: a.name,
-          quantity: a.quantity,
-          unitLabel: a.unitLabel,
-          cents: a.grossCents,
-        }))
-      : pickedPay.map((a) => ({
-          workerId: a.workerId,
-          name: a.name,
-          quantity: null as number | null,
-          unitLabel: null as string | null,
-          cents: a.amountCents,
-        }));
+  const confirmRows = confirmRowsOf(confirm, pickedSettle, pickedPay);
 
-  const toggle = (set: Set<Uuid>, id: Uuid, apply: (s: Set<Uuid>) => void) => {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    apply(next);
-  };
+  const toggle = (set: Set<Uuid>, id: Uuid, apply: (s: Set<Uuid>) => void) =>
+    apply(toggled(set, id));
 
   const loading = data === null;
 
@@ -517,30 +530,7 @@ export function CrewPayrollPage() {
       )}
 
       {undone && (
-        <Alert
-          severity={undone.failures.length ? "warning" : "success"}
-          sx={{ mb: 2 }}
-          onClose={() => setUndone(null)}
-        >
-          <AlertTitle>Nómina deshecha</AlertTitle>
-          Se corrigieron <strong>{undone.paymentsReversed}</strong>{" "}
-          {undone.paymentsReversed === 1 ? "pago" : "pagos"} y se anularon{" "}
-          <strong>{undone.settlementsVoided}</strong>{" "}
-          {undone.settlementsVoided === 1 ? "liquidación" : "liquidaciones"}.
-          {undone.alreadyUndone > 0 && (
-            <> {undone.alreadyUndone} ya estaban deshechas.</>
-          )}
-          {undone.failures.length > 0 && (
-            <>
-              {" "}
-              <strong>
-                {undone.failures.length} no se pudieron deshacer:
-              </strong>{" "}
-              {undone.failures.join("; ")}. Quedan en el libro y hay que
-              corregirlas a mano desde la ficha del empleado.
-            </>
-          )}
-        </Alert>
+        <UndoneAlert undone={undone} onClose={() => setUndone(null)} />
       )}
 
       {unreadable.length > 0 && (
@@ -681,167 +671,20 @@ export function CrewPayrollPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {visibleSettle.map((a) => {
-                const member = crew.find((m) => m.worker.id === a.workerId);
-                const balance = member ? balanceCentsOf(member) : null;
-                const isOpen = open.has(a.workerId);
-                return (
-                  <Fragment key={a.workerId}>
-                    <TableRow hover>
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={!outOfSettle.has(a.workerId)}
-                          onChange={() =>
-                            toggle(outOfSettle, a.workerId, setOutOfSettle)
-                          }
-                          slotProps={{
-                            input: { "aria-label": `Incluir a ${a.name}` },
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell padding="checkbox">
-                        <IconButton
-                          size="small"
-                          aria-label={`Ver el detalle de ${a.name}`}
-                          onClick={() => toggle(open, a.workerId, setOpen)}
-                        >
-                          {isOpen ? (
-                            <KeyboardArrowDownIcon />
-                          ) : (
-                            <KeyboardArrowRightIcon />
-                          )}
-                        </IconButton>
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1.25,
-                          }}
-                        >
-                          <BasketTile
-                            tag={member?.worker.tag}
-                            team={member?.worker.kind === "equipo"}
-                            size={38}
-                          />
-                          <Box>
-                            {a.name}
-                            {hasProvisional(a) && (
-                              <Chip
-                                size="small"
-                                color="warning"
-                                variant="outlined"
-                                label="provisional"
-                                sx={{ ml: 1, height: 20, fontSize: "0.68rem" }}
-                              />
-                            )}
-                            <TeamChip worker={member?.worker} />
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">{a.lines.length}</TableCell>
-                      <TableCell align="right">
-                        {a.quantity === null
-                          ? "—"
-                          : `${formatQuantity(a.quantity)} ${a.unitLabel ?? ""}`}
-                      </TableCell>
-                      <TableCell align="right">
-                        {/* Null is null. A "$0" here would say "owed nothing". */}
-                        {balance === null ? (
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: "text.secondary",
-                            }}
-                          >
-                            no se pudo leer
-                          </Typography>
-                        ) : (
-                          <Money
-                            cents={balance}
-                            variant="small"
-                            signed
-                            colored
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        <Money cents={a.grossCents} variant="small" />
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell sx={{ py: 0, border: 0 }} colSpan={7}>
-                        <Collapse in={isOpen} unmountOnExit>
-                          <Box sx={{ py: 1.5, pl: 6 }}>
-                            <Table size="small">
-                              <TableHead>
-                                <TableRow>
-                                  <TableCell>Actividad</TableCell>
-                                  <TableCell>Fecha</TableCell>
-                                  <TableCell align="right">Cantidad</TableCell>
-                                  <TableCell align="right">Precio</TableCell>
-                                  <TableCell align="right">Valor</TableCell>
-                                </TableRow>
-                              </TableHead>
-                              <TableBody>
-                                {a.lines.map((l) => (
-                                  <TableRow key={l.id}>
-                                    <TableCell>
-                                      {l.activityName}
-                                      {l.rateSource === "weekly_price" && (
-                                        <Chip
-                                          size="small"
-                                          color="warning"
-                                          variant="outlined"
-                                          label="provisional"
-                                          sx={{
-                                            ml: 1,
-                                            height: 18,
-                                            fontSize: "0.62rem",
-                                          }}
-                                        />
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      {formatDateRange(l.dateFrom, l.dateTo)}
-                                    </TableCell>
-                                    <TableCell align="right">
-                                      {l.unitLabel
-                                        ? `${formatQuantity(l.quantity)} ${l.unitLabel}`
-                                        : "contrato"}
-                                    </TableCell>
-                                    <TableCell align="right">
-                                      {`${formatMoney(l.rateCents)}${
-                                        l.unitLabel ? ` / ${l.unitLabel}` : ""
-                                      }`}
-                                    </TableCell>
-                                    <TableCell align="right">
-                                      <Money
-                                        cents={l.amountCents}
-                                        variant="small"
-                                      />
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                            <Button
-                              size="small"
-                              sx={{ mt: 1 }}
-                              onClick={() =>
-                                navigate(`/empleados/${a.workerId}/pagar`)
-                              }
-                            >
-                              Pagarle aparte
-                            </Button>
-                          </Box>
-                        </Collapse>
-                      </TableCell>
-                    </TableRow>
-                  </Fragment>
-                );
-              })}
+              {visibleSettle.map((a) => (
+                <SettleRow
+                  key={a.workerId}
+                  a={a}
+                  member={memberOf(a.workerId)}
+                  included={!outOfSettle.has(a.workerId)}
+                  isOpen={open.has(a.workerId)}
+                  onToggleIncluded={() =>
+                    toggle(outOfSettle, a.workerId, setOutOfSettle)
+                  }
+                  onToggleOpen={() => toggle(open, a.workerId, setOpen)}
+                  onPayApart={() => navigate(`/empleados/${a.workerId}/pagar`)}
+                />
+              ))}
               {!loading && visibleSettle.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} sx={{ color: "text.secondary" }}>
@@ -944,52 +787,15 @@ export function CrewPayrollPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {visiblePay.map((a) => {
-                const member = crew.find((m) => m.worker.id === a.workerId);
-                return (
-                  <TableRow key={a.workerId} hover>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        checked={!outOfPay.has(a.workerId)}
-                        onChange={() =>
-                          toggle(outOfPay, a.workerId, setOutOfPay)
-                        }
-                        slotProps={{
-                          input: { "aria-label": `Pagar a ${a.name}` },
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1.25,
-                        }}
-                      >
-                        <BasketTile
-                          tag={member?.worker.tag}
-                          team={member?.worker.kind === "equipo"}
-                          size={38}
-                        />
-                        <Box>
-                          {a.name}
-                          <TeamChip worker={member?.worker} />
-                        </Box>
-                      </Box>
-                    </TableCell>
-                    <TableCell>{a.documentNumber ?? "—"}</TableCell>
-                    <TableCell>
-                      {member?.balance?.lastMovementOn
-                        ? formatDate(member.balance.lastMovementOn)
-                        : "—"}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Money cents={a.amountCents} variant="small" />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {visiblePay.map((a) => (
+                <PayRow
+                  key={a.workerId}
+                  a={a}
+                  member={memberOf(a.workerId)}
+                  included={!outOfPay.has(a.workerId)}
+                  onToggleIncluded={() => toggle(outOfPay, a.workerId, setOutOfPay)}
+                />
+              ))}
               {!loading && visiblePay.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} sx={{ color: "text.secondary" }}>
@@ -1085,124 +891,24 @@ export function CrewPayrollPage() {
       )}
 
       {/* ── CONFIRM: SEE IT BEFORE YOU SIGN IT ─────────────────────── */}
-      <Dialog
-        open={confirm !== null}
+      <ConfirmRunDialog
+        confirm={confirm}
         onClose={() => setConfirm(null)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          {confirm === "settle"
-            ? `Liquidar a ${count(pickedSettle.length, "persona", "personas")}`
-            : `Entregar ${formatMoney(payTotal)} a ${count(pickedPay.length, "persona", "personas")}`}
-        </DialogTitle>
-        <DialogContent dividers>
-          <DialogContentText component="div" sx={{ mb: 2 }}>
-            {confirm === "settle" ? (
-              <>
-                Esto escribe una liquidación por persona y deja anotado en el
-                libro lo que ganó. <strong>No entrega plata todavía</strong>:
-                eso es el paso 2.
-              </>
-            ) : (
-              <>
-                Esto escribe un pago por persona en el libro. Los pagos{" "}
-                <strong>no se editan</strong>: si queda mal, se corrige con{" "}
-                {CORRECTION_GLOSS}
-              </>
-            )}
-          </DialogContentText>
-
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Empleado</TableCell>
-                {confirm === "settle" && (
-                  <TableCell align="right">Cantidad</TableCell>
-                )}
-                <TableCell align="right">
-                  {confirm === "settle" ? "Bruto" : "A entregar"}
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {confirmRows.map((a) => (
-                <TableRow key={a.workerId}>
-                  <TableCell>{a.name}</TableCell>
-                  {confirm === "settle" && (
-                    <TableCell align="right">
-                      {a.quantity === null
-                        ? "—"
-                        : `${formatQuantity(a.quantity)} ${a.unitLabel ?? ""}`}
-                    </TableCell>
-                  )}
-                  <TableCell align="right">
-                    <Money cents={a.cents} variant="small" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          <Divider sx={{ my: 2 }} />
-          <Stack
-            direction="row"
-            sx={{
-              justifyContent: "space-between",
-              alignItems: "baseline",
-            }}
-          >
-            <Typography variant="h3">Total</Typography>
-            <Money
-              cents={confirm === "settle" ? settleTotal : payTotal}
-              variant="big"
-            />
-          </Stack>
-
-          {confirm === "settle" && anyProvisional && (
-            <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
-              Parte de este bruto está al precio de la semana. Liquidar es lo
-              que lo fija: a partir de aquí deja de ser provisional.
-            </Alert>
-          )}
-          {search.trim() !== "" && (
-            <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-              Hay un filtro puesto («{search.trim()}»). Esto no es la cuadrilla
-              entera, y la planilla saldrá marcada como parcial.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button color="inherit" onClick={() => setConfirm(null)}>
-            Ahora no
-          </Button>
-          <Button
-            variant="contained"
-            disabled={busy}
-            startIcon={
-              phase === "checking" ? <CircularProgress size={16} /> : undefined
-            }
-            onClick={confirm === "settle" ? doSettle : doPay}
-          >
-            {phase === "checking"
-              ? "Comprobando que nada se movió…"
-              : confirmButtonLabel(confirm === "settle", payTotal)}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSettle={doSettle}
+        onPay={doPay}
+        settleCount={pickedSettle.length}
+        payCount={pickedPay.length}
+        settleTotal={settleTotal}
+        payTotal={payTotal}
+        rows={confirmRows}
+        anyProvisional={anyProvisional}
+        search={search}
+        busy={busy}
+        checking={phase === "checking"}
+      />
 
       {(phase === "settle" || phase === "pay") && (
-        <Dialog open maxWidth="xs" fullWidth>
-          <DialogTitle>
-            {phase === "settle" ? "Liquidando…" : "Registrando los pagos…"}
-          </DialogTitle>
-          <DialogContent>
-            <LinearProgress sx={{ my: 2 }} />
-            <DialogContentText>
-              Una escritura por persona, en orden. No cierre esta pestaña.
-            </DialogContentText>
-          </DialogContent>
-        </Dialog>
+        <RunningDialog step={phase} />
       )}
 
       <SettleDriftDialog
@@ -1266,6 +972,162 @@ export function CrewPayrollPage() {
         </DialogActions>
       </Dialog>
     </Box>
+  );
+}
+
+/** CONFIRM: see it before you sign it. */
+function ConfirmRunDialog({
+  confirm,
+  onClose,
+  onSettle,
+  onPay,
+  settleCount,
+  payCount,
+  settleTotal,
+  payTotal,
+  rows,
+  anyProvisional,
+  search,
+  busy,
+  checking,
+}: Readonly<{
+  confirm: Step | null;
+  onClose: () => void;
+  onSettle: () => void;
+  onPay: () => void;
+  settleCount: number;
+  payCount: number;
+  settleTotal: number;
+  payTotal: number;
+  rows: ReturnType<typeof confirmRowsOf>;
+  anyProvisional: boolean;
+  search: string;
+  busy: boolean;
+  checking: boolean;
+}>) {
+  return (
+    <Dialog
+      open={confirm !== null}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+    >
+      <DialogTitle>
+        {confirm === "settle"
+          ? `Liquidar a ${count(settleCount, "persona", "personas")}`
+          : `Entregar ${formatMoney(payTotal)} a ${count(payCount, "persona", "personas")}`}
+      </DialogTitle>
+      <DialogContent dividers>
+        <DialogContentText component="div" sx={{ mb: 2 }}>
+          {confirm === "settle" ? (
+            <>
+              Esto escribe una liquidación por persona y deja anotado en el
+              libro lo que ganó. <strong>No entrega plata todavía</strong>:
+              eso es el paso 2.
+            </>
+          ) : (
+            <>
+              Esto escribe un pago por persona en el libro. Los pagos{" "}
+              <strong>no se editan</strong>: si queda mal, se corrige con{" "}
+              {CORRECTION_GLOSS}
+            </>
+          )}
+        </DialogContentText>
+
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Empleado</TableCell>
+              {confirm === "settle" && (
+                <TableCell align="right">Cantidad</TableCell>
+              )}
+              <TableCell align="right">
+                {confirm === "settle" ? "Bruto" : "A entregar"}
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((a) => (
+              <TableRow key={a.workerId}>
+                <TableCell>{a.name}</TableCell>
+                {confirm === "settle" && (
+                  <TableCell align="right">
+                    {a.quantity === null
+                      ? "—"
+                      : `${formatQuantity(a.quantity)} ${a.unitLabel ?? ""}`}
+                  </TableCell>
+                )}
+                <TableCell align="right">
+                  <Money cents={a.cents} variant="small" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <Divider sx={{ my: 2 }} />
+        <Stack
+          direction="row"
+          sx={{
+            justifyContent: "space-between",
+            alignItems: "baseline",
+          }}
+        >
+          <Typography variant="h3">Total</Typography>
+          <Money
+            cents={confirm === "settle" ? settleTotal : payTotal}
+            variant="big"
+          />
+        </Stack>
+
+        {confirm === "settle" && anyProvisional && (
+          <Alert severity="warning" variant="outlined" sx={{ mt: 2 }}>
+            Parte de este bruto está al precio de la semana. Liquidar es lo
+            que lo fija: a partir de aquí deja de ser provisional.
+          </Alert>
+        )}
+        {search.trim() !== "" && (
+          <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
+            Hay un filtro puesto («{search.trim()}»). Esto no es la cuadrilla
+            entera, y la planilla saldrá marcada como parcial.
+          </Alert>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button color="inherit" onClick={onClose}>
+          Ahora no
+        </Button>
+        <Button
+          variant="contained"
+          disabled={busy}
+          startIcon={
+            checking ? <CircularProgress size={16} /> : undefined
+          }
+          onClick={confirm === "settle" ? onSettle : onPay}
+        >
+          {checking
+            ? "Comprobando que nada se movió…"
+            : confirmButtonLabel(confirm === "settle", payTotal)}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/** While the writes go out, one per person. */
+function RunningDialog({ step }: Readonly<{ step: Step }>) {
+  return (
+    <Dialog open maxWidth="xs" fullWidth>
+      <DialogTitle>
+        {step === "settle" ? "Liquidando…" : "Registrando los pagos…"}
+      </DialogTitle>
+      <DialogContent>
+        <LinearProgress sx={{ my: 2 }} />
+        <DialogContentText>
+          Una escritura por persona, en orden. No cierre esta pestaña.
+        </DialogContentText>
+      </DialogContent>
+    </Dialog>
   );
 }
 

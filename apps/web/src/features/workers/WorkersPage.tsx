@@ -16,33 +16,27 @@
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import GroupsIcon from "@mui/icons-material/Groups";
+import { Alert, Box, Typography } from "@mui/material";
 import {
   ModuleList,
   type Column,
   type StatusFilter,
 } from "../../components/ModuleList";
 import { PermissionDenied } from "../../components/Guards";
-import { Money } from "../../components/Money";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
-import { messageFor } from "../../api/errors";
 import { OwedFigure } from "./OwedFigure";
 import { owedByWorker, owedOf, sumOwedToFarmWorkers } from "./owed";
 import type { Worker } from "../../api/types";
-import { EMPLOYEE, PROVISIONAL_INCLUDES } from "../../lib/vocab";
-import { isTeam, memberNames, memberCount, teamSize } from "../teams/team";
-import { BasketTile, NoBasketChip, basketOf } from "./Basket";
+import { EMPLOYEE } from "../../lib/vocab";
+import {
+  WorkerNameCell,
+  WorkersFooter,
+  editPathOf,
+  workerListActions,
+} from "./WorkersPageParts";
+
 
 export function WorkersPage() {
   const navigate = useNavigate();
@@ -94,89 +88,13 @@ export function WorkersPage() {
         key: "name",
         header: EMPLOYEE.One,
         render: (w) => (
-          <Stack
-            direction="row"
-            spacing={1.5}
-            sx={{
-              alignItems: "center",
-            }}
-          >
-            <BasketTile tag={w.tag} team={isTeam(w)} />
-            <Box>
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                sx={{
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <Typography sx={{ fontWeight: 600, fontSize: "1.05rem" }}>
-                  {w.name} {w.lastName}
-                </Typography>
-                {!basketOf(w.tag) && (
-                  <NoBasketChip
-                    onClick={
-                      can("workers.write")
-                        ? () =>
-                            navigate(
-                              `${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`,
-                            )
-                        : undefined
-                    }
-                  />
-                )}
-              </Stack>
-              {isTeam(w) ? (
-                <Stack
-                  direction="row"
-                  spacing={0.75}
-                  useFlexGap
-                  sx={{
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Chip
-                    size="small"
-                    color="success"
-                    variant="outlined"
-                    label={teamSize(memberCount(w))}
-                  />
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "text.secondary",
-                    }}
-                  >
-                    {memberNames(w) || "Sin integrantes"}
-                  </Typography>
-                </Stack>
-              ) : w.team ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "success.dark",
-                    display: "block",
-                    fontWeight: 600,
-                  }}
-                >
-                  En el equipo {w.team.name}
-                </Typography>
-              ) : null}
-              {full && !isTeam(w) && (w.documentNumber || !w.team) && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  {w.documentType} {w.documentNumber}
-                </Typography>
-              )}
-            </Box>
-          </Stack>
+          <WorkerNameCell
+            w={w}
+            full={full}
+            onFixBasket={
+              can("workers.write") ? () => navigate(editPathOf(w)) : undefined
+            }
+          />
         ),
       },
     ];
@@ -216,6 +134,7 @@ export function WorkersPage() {
    * Saturday does not go down because somebody is in debt.
    */
   const farmOwes = sumOwedToFarmWorkers((data ?? []).map(accountOf));
+  const actions = workerListActions(can, navigate, reload, setActionError);
 
   return (
     <Box>
@@ -243,130 +162,17 @@ export function WorkersPage() {
         searchPlaceholder="Buscar por nombre, canasto o cédula"
         statusFilter={status}
         onStatusFilterChange={setStatus}
-        onCreate={
-          can("workers.write")
-            ? () => navigate(`${EMPLOYEE.path}/nuevo`)
-            : undefined
-        }
+        {...actions}
         createLabel={`Nuevo ${EMPLOYEE.one}`}
-        onRowClick={
-          can("workers.profile")
-            ? (w) => navigate(`${EMPLOYEE.path}/${w.id}`)
-            : undefined
-        }
-        onEdit={
-          can("workers.write")
-            ? (w) =>
-                navigate(
-                  `${EMPLOYEE.path}/${w.id}/${isTeam(w) ? "equipo" : "editar"}`,
-                )
-            : undefined
-        }
-        toolbarExtra={
-          can("workers.write") ? (
-            <Button
-              variant="outlined"
-              startIcon={<GroupsIcon />}
-              onClick={() => navigate(`${EMPLOYEE.path}/equipo/nuevo`)}
-            >
-              Nuevo equipo
-            </Button>
-          ) : undefined
-        }
-        extraActions={
-          can("money.pay")
-            ? (w) =>
-                w.team
-                  ? [
-                      {
-                        label: "Ver su equipo",
-                        onClick: () =>
-                          navigate(`${EMPLOYEE.path}/${w.team!.id}`),
-                      },
-                    ]
-                  : [
-                      {
-                        label: "Pagar",
-                        onClick: () =>
-                          navigate(`${EMPLOYEE.path}/${w.id}/pagar`),
-                      },
-                    ]
-            : undefined
-        }
-        onDeactivate={
-          can("workers.delete")
-            ? async (w) => {
-                try {
-                  await api.deactivateWorker(w.id);
-                  reload();
-                } catch (e) {
-                  setActionError(messageFor(e));
-                }
-              }
-            : undefined
-        }
-        onReactivate={
-          can("workers.delete")
-            ? async (w) => {
-                // Their old basket number may have been given to somebody
-                // else meanwhile: the message says who has it.
-                try {
-                  await api.reactivateWorker(w.id);
-                  reload();
-                } catch (e) {
-                  setActionError(messageFor(e));
-                }
-              }
-            : undefined
-        }
         emptyTitle="Todavía no hay empleados"
         emptyBody="Registre a las personas que trabajan en la finca. Cada una lleva su propio saldo y su historial."
         footer={
           data && money ? (
-            <Stack
-              direction="row"
-              spacing={2}
-              useFlexGap
-              sx={{
-                flexWrap: "wrap",
-              }}
-            >
-              <span>
-                {data.length} {data.length === 1 ? "empleado" : "empleados"}
-              </span>
-              <span>
-                La finca les debe:{" "}
-                {ledger === null ? (
-                  "…"
-                ) : farmOwes.cents === null ? (
-                  <Tooltip title="No se pudo consultar ninguna cuenta. No es cero.">
-                    <Box
-                      component="span"
-                      sx={{
-                        color: "text.disabled",
-                        fontWeight: 700,
-                        cursor: "help",
-                      }}
-                    >
-                      —
-                    </Box>
-                  </Tooltip>
-                ) : (
-                  <Money cents={farmOwes.cents} variant="small" />
-                )}
-                {farmOwes.isEstimate && ` (${PROVISIONAL_INCLUDES})`}
-              </span>
-              {/* The sum says how many people it covers. A total with people
-                  left out of it, unannounced, is the same lie we fixed
-                  above. */}
-              {ledger !== null && farmOwes.unreadable > 0 && (
-                <Box component="span" sx={{ color: "warning.dark" }}>
-                  {farmOwes.unreadable === 1
-                    ? "1 cuenta no se pudo leer y queda fuera de esa suma."
-                    : `${farmOwes.unreadable} cuentas no se pudieron leer y quedan fuera de esa suma.`}
-                </Box>
-              )}
-            </Stack>
+            <WorkersFooter
+              count={data.length}
+              loading={ledger === null}
+              farmOwes={farmOwes}
+            />
           ) : null
         }
       />
