@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
 )
@@ -160,6 +161,6 @@ func (s *Server) handleInternalSeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	slog.Info("tenant seeded from platform", "slug", seed.Farm.Slug, "members", len(seed.Members))
+	slog.Info("tenant seeded from platform", "slug", logsafe.Str(seed.Farm.Slug), "members", len(seed.Members))
 	writeJSON(w, http.StatusCreated, map[string]any{"seeded": true, "created": true})
 }

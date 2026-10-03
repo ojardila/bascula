@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
@@ -55,13 +56,13 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 			de = domain.NotFound("resource not found")
 		default:
 			slog.ErrorContext(r.Context(), "unhandled error",
-				"err", err, "path", r.URL.Path, "method", r.Method)
+				"err", logsafe.Str(fmt.Sprint(err)), "path", logsafe.Str(r.URL.Path), "method", logsafe.Str(r.Method))
 			de = domain.Internal("unexpected error")
 		}
 	}
 	if de.Status >= 500 {
 		slog.ErrorContext(r.Context(), "server error",
-			"err", de.Error(), "code", de.Code, "path", r.URL.Path)
+			"err", logsafe.Str(de.Error()), "code", de.Code, "path", logsafe.Str(r.URL.Path))
 	}
 
 	var body errorBody
