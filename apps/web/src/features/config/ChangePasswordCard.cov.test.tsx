@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Cambiar clave»: what the form says before it asks the server, what it says
  * when the server refuses, and the #clave landing in a browser with no

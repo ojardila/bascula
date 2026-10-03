@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The dashboard's remaining edges: the owed tile when the ledger is down, the
  * plots tile when the farm's lots are forbidden or undeclared, the week's

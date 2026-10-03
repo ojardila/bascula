@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The payment screen's remaining edges: dialogs closed with Escape, buttons
  * pressed while a dialog is on its way out, a receipt printed before the

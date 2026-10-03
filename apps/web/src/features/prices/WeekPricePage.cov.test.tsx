@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The week price page's last edges: a week with no price at all, the
  * farm and the week's labores failing on their own, how one labor and one

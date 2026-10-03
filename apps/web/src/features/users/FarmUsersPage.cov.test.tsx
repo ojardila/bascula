@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Farm user management, the remaining edges: the guided tour driving the two
  * invitation dialogs (steps 3 to 7), a 403 on the list, people the server

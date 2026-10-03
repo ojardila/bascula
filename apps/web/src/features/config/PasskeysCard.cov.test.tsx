@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Llaves de acceso» away from the happy path: the list will not load, a
  * passkey made on another address, failures adding or removing one, the

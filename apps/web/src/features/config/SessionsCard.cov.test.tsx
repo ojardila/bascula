@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Sesiones abiertas» when things go wrong: the list will not load, closing
  * fails, the person backs out of a confirmation, and a farm whose time zone

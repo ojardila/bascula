@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The season screen's remaining paths: a member who cannot see money, a week
  * with no price, one week left out of the reading, a harvest winding down after

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm price card's last edges: the impact with nothing on its own week,
  * an empty field on a price nobody confirmed, a farm whose week the server

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Passkey edges the main suite does not reach: browsers that answer the
  * capability questions badly, browsers that parse the JSON themselves, a

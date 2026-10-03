@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «restablecer clave» link: checks before the server, a `token=`
  * fragment, a spent link, other refusals, and a link with no secret at all.

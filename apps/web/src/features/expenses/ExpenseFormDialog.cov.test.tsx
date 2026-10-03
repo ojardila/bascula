@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The expense form on its own: every validation message, both kinds of
  * target travelling to the server, the crop inside a lot, and a refusal from

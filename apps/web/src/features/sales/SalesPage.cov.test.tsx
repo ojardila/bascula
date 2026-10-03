@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The sales screen's edges: a session the server refuses, a void the server
  * turns down, a confirmation clicked twice, a voided row that offers nothing,

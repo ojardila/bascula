@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «confirmar correo» link: a `token=` fragment, an empty password, a
  * confirmation with no farm address to wait for, a spent link, and a server

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The edges of `request()` the happy-path suites never reach: a refresh that
  * succeeds and replays, a refresh shared by two parallel 401s, the network

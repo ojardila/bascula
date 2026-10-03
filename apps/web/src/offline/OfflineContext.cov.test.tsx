@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The offline provider on its own: signal coming and going, the tab coming
  * back to the front, the 30-second retry, uploads that fail or finish after

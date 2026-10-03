@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Inventory, the remaining edges: a long movement list that is cut off and
  * says so, a warehouse below zero, the sticker sheet of an entry, the forms
