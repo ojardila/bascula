@@ -523,6 +523,22 @@ export const api = {
    * so the second half re-sends it with `farmId` instead of asking the phone
    * a second time.
    */
+  /**
+   * Waits for the person to pick a passkey from the email field's autofill
+   * (conditional mediation) and returns the signed answer, for
+   * `loginWithPasskey`. Rejects with AbortError when `signal` aborts.
+   */
+  passkeyAutofill: async (signal: AbortSignal): Promise<PasskeyAnswer> => {
+    const opts = await http.post<PasskeyOptions>("/v1/auth/passkeys/login/options", undefined, {
+      anonymous: true,
+      signal,
+    });
+    return {
+      challenge: opts.challenge,
+      credential: await getPasskey(opts.publicKey, { mediation: "conditional", signal }),
+    };
+  },
+
   loginWithPasskey: async (
     pending?: PasskeyAnswer,
     farmId?: string,

@@ -1,4 +1,4 @@
-import { useState, type SubmitEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import {
   Link as RouterLink,
   Navigate,
@@ -24,7 +24,13 @@ import { AuthLayout } from "./AuthLayout";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError, messageFor } from "../../api/errors";
 import type { PasskeyAnswer } from "../../api/endpoints";
-import { passkeyCancelled, passkeysSupported } from "../../lib/passkeys";
+import {
+  conditionalMediationAvailable,
+  passkeyCancelled,
+  passkeysSupported,
+} from "../../lib/passkeys";
+import { startPasskeyAutofill } from "../../lib/passkeyAutofill";
+import { api } from "../../api/endpoints";
 import {
   farmGreeting,
   farmSlugFromHost,
@@ -38,7 +44,10 @@ import {
 import { PasskeyOffer } from "./PasskeyOffer";
 import type { Membership, Role } from "../../api/types";
 
-function loginSubtitle(pinned: boolean, farmName: string | null | undefined): string {
+function loginSubtitle(
+  pinned: boolean,
+  farmName: string | null | undefined,
+): string {
   if (!pinned) return "Escriba el correo y la contraseña de su finca.";
   return `Escriba el correo y la contraseña de ${farmName ? farmGreeting(farmName) : "esta finca"}.`;
 }
@@ -108,6 +117,30 @@ export function LoginPage() {
    * started pinning yet and still answers 400, the chooser below is the same
    * as today. A 403 is the wrong farm and stays on this screen.
    */
+  /**
+   * Passkey autofill: the phone suggests the passkey in the email field.
+   * `stopAutofill` ends it, which the «Entrar con llave de acceso» button
+   * needs first: a browser runs one passkey request at a time.
+   */
+  const attemptPasskeyRef = useRef(attemptPasskey);
+  attemptPasskeyRef.current = attemptPasskey;
+  const stopAutofill = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!canUsePasskey) return;
+    let live = true;
+    void conditionalMediationAvailable().then((ok) => {
+      if (!ok || !live) return;
+      stopAutofill.current = startPasskeyAutofill({
+        request: api.passkeyAutofill,
+        onAnswer: (answer) => attemptPasskeyRef.current(answer),
+      });
+    });
+    return () => {
+      live = false;
+      stopAutofill.current?.();
+      stopAutofill.current = null;
+    };
+  }, [canUsePasskey]);
   const pinnedSlug = farmSlugFromHost(window.location.hostname);
   const { name: farmName } = useFarmDisplayName(pinnedSlug);
 
@@ -150,6 +183,10 @@ export function LoginPage() {
   }
 
   async function attemptPasskey(pending?: PasskeyAnswer, farmId?: string) {
+    if (!pending) {
+      stopAutofill.current?.();
+      stopAutofill.current = null;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -223,9 +260,7 @@ export function LoginPage() {
   return (
     <AuthLayout
       title="Entrar"
-      subtitle={
-        loginSubtitle(Boolean(pinnedSlug), farmName)
-      }
+      subtitle={loginSubtitle(Boolean(pinnedSlug), farmName)}
     >
       <Box component="form" onSubmit={onSubmit} noValidate>
         <Stack spacing={2}>
@@ -235,7 +270,7 @@ export function LoginPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
+            autoComplete="username webauthn"
             autoFocus
             fullWidth
             size="medium"

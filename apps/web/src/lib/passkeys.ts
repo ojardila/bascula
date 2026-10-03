@@ -41,6 +41,23 @@ export async function platformPasskeyAvailable(): Promise<boolean> {
   }
 }
 
+/**
+ * Whether the browser can suggest a passkey in the email field's autofill
+ * (WebAuthn conditional mediation).
+ */
+export async function conditionalMediationAvailable(): Promise<boolean> {
+  if (!passkeysSupported()) return false;
+  const pkc = window.PublicKeyCredential as typeof PublicKeyCredential & {
+    isConditionalMediationAvailable?: () => Promise<boolean>;
+  };
+  if (typeof pkc.isConditionalMediationAvailable !== "function") return false;
+  try {
+    return await pkc.isConditionalMediationAvailable();
+  } catch {
+    return false;
+  }
+}
+
 /** The person closed the prompt or it timed out: not an error worth showing. */
 export function passkeyCancelled(e: unknown): boolean {
   return (
@@ -152,10 +169,21 @@ export async function createPasskey(publicKey: Json): Promise<Json> {
   return credentialJSON(cred);
 }
 
-/** navigator.credentials.get, JSON in and JSON out. */
-export async function getPasskey(publicKey: Json): Promise<Json> {
+/**
+ * navigator.credentials.get, JSON in and JSON out. `mediation:
+ * "conditional"` waits for a pick from the autofill instead of opening a
+ * prompt; `signal` abandons it.
+ */
+export async function getPasskey(
+  publicKey: Json,
+  opts: {
+    mediation?: CredentialMediationRequirement;
+    signal?: AbortSignal;
+  } = {},
+): Promise<Json> {
   const cred = (await navigator.credentials.get({
     publicKey: requestOptions(publicKey),
+    ...opts,
   })) as PublicKeyCredential | null;
   if (!cred) throw new DOMException("no credential", "NotAllowedError");
   return credentialJSON(cred);

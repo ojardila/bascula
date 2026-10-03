@@ -300,3 +300,73 @@ describe("offering a passkey after a password sign-in", () => {
     expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
   }, 20000);
 });
+
+describe("passkey autofill on the email field", () => {
+  function stubConditional(get: (opts: CredentialRequestOptions) => Promise<unknown>) {
+    const PKC = Object.assign(function PublicKeyCredential() {}, {
+      isConditionalMediationAvailable: async () => true,
+    });
+    vi.stubGlobal("PublicKeyCredential", PKC);
+    const spy = vi.fn(get);
+    vi.stubGlobal("navigator", { ...navigator, credentials: { get: spy, create: vi.fn() } });
+    return spy;
+  }
+
+  function givePasskey(credentialId: string) {
+    const u = users.find((x) => x.email === "oscar@laesperanza.co")!;
+    passkeys.push({
+      id: crypto.randomUUID(),
+      userId: u.id,
+      credentialId,
+      name: "Mi celular",
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    });
+  }
+
+  it("asks the browser to suggest passkeys in the email field", async () => {
+    renderApp();
+    expect(await screen.findByLabelText(/^Correo/)).toHaveAttribute("autocomplete", "username webauthn");
+  });
+
+  it("signs in when the person picks the suggested passkey", async () => {
+    givePasskey("cred-oscar");
+    const get = stubConditional(async () => ({
+      toJSON: () => ({ id: "cred-oscar", type: "public-key", response: {} }),
+    }));
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(get.mock.calls[0][0]).toMatchObject({ mediation: "conditional" });
+  }, 20000);
+
+  it("steps aside when the person taps the passkey button", async () => {
+    givePasskey("cred-oscar");
+    const get = stubConditional(
+      (opts) =>
+        new Promise((resolve, reject) => {
+          if (opts.mediation === "conditional") {
+            opts.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+            return;
+          }
+          resolve({ toJSON: () => ({ id: "cred-oscar", type: "public-key", response: {} }) });
+        }),
+    );
+    const user = userEvent.setup();
+    renderApp();
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: /Entrar con llave de acceso/ }));
+    expect(await screen.findByRole("heading", { name: "Cosecha" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(get.mock.calls[0][0].signal?.aborted).toBe(true);
+    expect(get.mock.calls[1][0].mediation).toBeUndefined();
+  }, 20000);
+
+  it("does nothing where the browser cannot suggest passkeys", async () => {
+    const get = vi.fn();
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+    vi.stubGlobal("navigator", { ...navigator, credentials: { get, create: vi.fn() } });
+    renderApp();
+    expect(await screen.findByRole("button", { name: "Entrar" })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(get).not.toHaveBeenCalled();
+  });
+});
