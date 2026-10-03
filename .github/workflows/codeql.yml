@@ -16,8 +16,15 @@ on:
       - 'apps/web/**'
       - 'packages/**'
       - '.github/workflows/codeql.yml'
+  # Same paths on master: a docs or workflow-only push changes nothing CodeQL
+  # reads, and the weekly run below re-analyses everything anyway.
   push:
     branches: [master]
+    paths:
+      - 'services/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - '.github/workflows/codeql.yml'
   schedule:
     # Mondays 05:00 UTC = 00:00 America/Bogota, so new rule packs are
     # evaluated before the first PR of the week.

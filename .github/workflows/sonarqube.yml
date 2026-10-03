@@ -19,36 +19,73 @@
 # ran, so there is no complete coverage to hand over. A failing test does not
 # stop the scan (ci.yml reports it); the coverage of that run is still sent.
 #
-# Order matters: the PR's code (tests) runs BEFORE the runner joins the
-# tailnet, and the token is only in the scan and report steps.
+# SPEED. This was the slowest check on every PR (~13 min, 2026-10-03): the web
+# coverage (~340 s) and the API coverage (~255 s) ran one after the other on
+# one runner before the scan. They now run on their own runners at the same
+# time, the web split in three (vitest --shard) and the API's apitest suite in
+# four processes (scripts/ci/go-test.sh), and hand their reports to the scan
+# job as artifacts. Shards' reports are merged by summing hits, which gives the
+# figures one run would (checked: 9031 vs 9032 of 9701 web lines, and the same
+# 91.5% for Go). A change that touches none of the analysed sources (docs,
+# other workflows) does not run this at all.
+#
+# Order matters: the PR's code (tests, linters) runs in jobs that have no
+# secrets and never join the tailnet. The scan job joins the tailnet only
+# after its own last PR-code step, and the token is only in the scan and
+# report steps.
 
 name: SonarQube
 
 on:
   pull_request:
+    paths:
+      - 'services/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'manifests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'sonar-project.properties'
+      - 'scripts/sonar-report.py'
+      - 'scripts/ci/go-test.sh'
+      - 'scripts/ci/apitest-weights.txt'
+      - 'scripts/ci/merge-lcov.py'
+      - '.github/workflows/sonarqube.yml'
   push:
     branches: [master]
+    paths:
+      - 'services/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'manifests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'sonar-project.properties'
+      - 'scripts/sonar-report.py'
+      - 'scripts/ci/go-test.sh'
+      - 'scripts/ci/apitest-weights.txt'
+      - 'scripts/ci/merge-lcov.py'
+      - '.github/workflows/sonarqube.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  sonarqube:
-    name: sonarqube
+  coverage-api:
+    name: coverage (api)
     # Same rule as the image builds in ci.yml: forks and Dependabot get no
-    # Actions secrets, so they could neither join the tailnet nor scan.
+    # Actions secrets, so the scan could not run; do not test for it either.
     if: >-
       github.event_name != 'pull_request' || (
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     services:
       postgres:
         image: postgis/postgis:17-3.6-alpine
@@ -66,6 +103,152 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      - name: api tests with coverage
+        continue-on-error: true
+        working-directory: services/api
+        env:
+          APP_ENV: development
+          ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
+          TEST_ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
+          REPORT_BUDGET: 6s
+          # -coverpkg=./...: most of store/, auth/ and tenant/ is exercised
+          # through the httpapi and apitest suites, not by tests in those
+          # packages. The script merges the shards' profiles.
+          COVERPROFILE: coverage.raw
+        run: |
+          set -euo pipefail
+          go run ./cmd/api -migrate
+          rc=0
+          ../../scripts/ci/go-test.sh || rc=$?
+          # The profile names files by import path; SonarQube wants paths
+          # relative to the repo root.
+          sed 's#^github.com/ojardila/bascula/##' coverage.raw > coverage.out
+          exit "$rc"
+
+      # External issues for SonarQube. Does not fail the job: the findings
+      # are reported through the quality gate.
+      - name: golangci-lint report
+        continue-on-error: true
+        working-directory: services/api
+        env:
+          GOLANGCI_IMAGE: golangci/golangci-lint:v2.13.2@sha256:ba07dffad130794ae79ebaa0056809d18c0168f3f846480ffd3eb6c04578b83d
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app -v "$(go env GOMODCACHE):/go/pkg/mod" "$GOLANGCI_IMAGE" \
+            golangci-lint run --issues-exit-code=0 --path-prefix=services/api \
+              --max-issues-per-linter=0 --max-same-issues=0 \
+              --output.checkstyle.path=golangci-lint.xml --output.text.path=stdout ./...
+
+      - name: Stage the reports
+        if: always()
+        run: |
+          mkdir -p sonar-out
+          cp services/api/coverage.out services/api/golangci-lint.xml sonar-out/ 2>/dev/null || true
+          ls -l sonar-out
+
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-api
+          path: sonar-out/
+          if-no-files-found: ignore
+          retention-days: 1
+
+  coverage-web:
+    name: coverage (web ${{ matrix.shard }}/3)
+    if: >-
+      github.event_name != 'pull_request' || (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: web tests with coverage
+        continue-on-error: true
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          npm ci
+          # Same version as vitest, not saved: no lockfile churn for a report.
+          V=$(node -p "require('vitest/package.json').version")
+          # reportOnFailure: one failing test must not drop the whole web
+          # coverage (master once reported 0% new coverage that way).
+          npm install --no-save --workspace apps/web "@vitest/coverage-v8@${V}"
+          npx --workspace apps/web vitest run --shard="${SHARD}/3" --coverage.enabled \
+            --coverage.provider=v8 --coverage.reportOnFailure --coverage.reporter=lcov \
+            --coverage.reportsDirectory="coverage-${SHARD}"
+
+      # Once, on the first shard: the linter reads every file anyway.
+      - name: eslint report (security rules)
+        if: matrix.shard == 1
+        continue-on-error: true
+        run: |
+          npx --workspace apps/web eslint . -f json -o eslint-raw.json || true
+          # Only eslint-plugin-security's findings: the react-hooks warnings
+          # are already tracked by the lint itself.
+          python3 - <<'PY'
+          import json
+          d = json.load(open("apps/web/eslint-raw.json"))
+          for f in d:
+              f["messages"] = [m for m in f["messages"] if (m.get("ruleId") or "").startswith("security/")]
+              f["errorCount"] = sum(1 for m in f["messages"] if m["severity"] == 2)
+              f["warningCount"] = sum(1 for m in f["messages"] if m["severity"] == 1)
+          json.dump(d, open("apps/web/eslint-report.json", "w"))
+          print(sum(len(f["messages"]) for f in d), "eslint-plugin-security findings")
+          PY
+
+      - name: Stage the reports
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mkdir -p sonar-out
+          cp "apps/web/coverage-${SHARD}/lcov.info" "sonar-out/lcov-${SHARD}.info" 2>/dev/null || true
+          cp apps/web/eslint-report.json sonar-out/ 2>/dev/null || true
+          ls -l sonar-out
+
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-web-${{ matrix.shard }}
+          path: sonar-out/
+          if-no-files-found: ignore
+          retention-days: 1
+
+  sonarqube:
+    name: sonarqube
+    needs: [coverage-api, coverage-web]
+    # !cancelled(): a coverage job that failed still hands over what it has;
+    # the scan runs with whatever coverage arrived.
+    if: >-
+      !cancelled() && (
+        github.event_name != 'pull_request' || (
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
     env:
       PR_SCAN: ${{ github.event_name == 'pull_request' }}
     steps:
@@ -90,49 +273,38 @@ jobs:
           fetch-depth: 0
 
       - if: steps.secrets.outputs.ok == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: services/api/go.mod
-          cache-dependency-path: services/api/go.sum
-
-      - if: steps.secrets.outputs.ok == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
-          cache: npm
 
-      - name: api tests with coverage
-        if: steps.secrets.outputs.ok == 'true'
+      # A coverage job that died before uploading leaves a gap, not a failure.
+      - if: steps.secrets.outputs.ok == 'true'
         continue-on-error: true
-        working-directory: services/api
-        env:
-          APP_ENV: development
-          ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
-          TEST_ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/bascula?sslmode=disable
-          REPORT_BUDGET: 6s
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sonar-*
+          path: sonar-in
+          merge-multiple: true
+
+      # Back where sonar-project.properties looks for them. The web shards'
+      # LCOV files become one (hits summed per line, function and branch).
+      - name: Place the reports
+        if: steps.secrets.outputs.ok == 'true'
         run: |
           set -euo pipefail
-          go run ./cmd/api -migrate
-          # -coverpkg: most of store/, auth/ and tenant/ is exercised through
-          # the httpapi and apitest suites, not by tests in those packages.
-          go test -covermode=atomic -coverpkg=./... -coverprofile=coverage.raw ./...
-          # The profile names files by import path; SonarQube wants paths
-          # relative to the repo root.
-          sed 's#^github.com/ojardila/bascula/##' coverage.raw > coverage.out
-
-      - name: web tests with coverage
-        if: steps.secrets.outputs.ok == 'true'
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          npm ci
-          # Same version as vitest, not saved: no lockfile churn for a report.
-          V=$(node -p "require('vitest/package.json').version")
-          # reportOnFailure: one failing test must not drop the whole web
-          # coverage (master once reported 0% new coverage that way).
-          npm install --no-save --workspace apps/web "@vitest/coverage-v8@${V}"
-          npx --workspace apps/web vitest run --coverage.enabled \
-            --coverage.provider=v8 --coverage.reportOnFailure --coverage.reporter=lcov --coverage.reportsDirectory=coverage
+          mkdir -p sonar-in apps/web/coverage
+          ls -l sonar-in
+          for f in coverage.out golangci-lint.xml; do
+            if [ -f "sonar-in/$f" ]; then cp "sonar-in/$f" services/api/; fi
+          done
+          if [ -f sonar-in/eslint-report.json ]; then cp sonar-in/eslint-report.json apps/web/; fi
+          shopt -s nullglob
+          shards=(sonar-in/lcov-*.info)
+          if [ "${#shards[@]}" -gt 0 ]; then
+            python3 scripts/ci/merge-lcov.py apps/web/coverage/lcov.info "${shards[@]}"
+          else
+            echo "::warning::no web coverage arrived from the coverage jobs"
+          fi
 
       - name: shared tests with coverage
         if: steps.secrets.outputs.ok == 'true'
@@ -143,38 +315,6 @@ jobs:
         run: |
           node --test --experimental-test-coverage --test-reporter=lcov \
             --test-reporter-destination=lcov.info src/*.test.ts
-
-      # External issues for SonarQube. Neither step fails the job: the
-      # findings are reported through the quality gate.
-      - name: golangci-lint report
-        if: steps.secrets.outputs.ok == 'true'
-        continue-on-error: true
-        working-directory: services/api
-        env:
-          GOLANGCI_IMAGE: golangci/golangci-lint:v2.13.2@sha256:ba07dffad130794ae79ebaa0056809d18c0168f3f846480ffd3eb6c04578b83d
-        run: |
-          docker run --rm -v "$PWD:/app" -w /app -v "$(go env GOMODCACHE):/go/pkg/mod" "$GOLANGCI_IMAGE" \
-            golangci-lint run --issues-exit-code=0 --path-prefix=services/api \
-              --max-issues-per-linter=0 --max-same-issues=0 \
-              --output.checkstyle.path=golangci-lint.xml --output.text.path=stdout ./...
-
-      - name: eslint report (security rules)
-        if: steps.secrets.outputs.ok == 'true'
-        continue-on-error: true
-        run: |
-          npx --workspace apps/web eslint . -f json -o eslint-raw.json || true
-          # Only eslint-plugin-security's findings: the react-hooks warnings
-          # are already tracked by the lint itself.
-          python3 - <<'PY'
-          import json
-          d = json.load(open("apps/web/eslint-raw.json"))
-          for f in d:
-              f["messages"] = [m for m in f["messages"] if (m.get("ruleId") or "").startswith("security/")]
-              f["errorCount"] = sum(1 for m in f["messages"] if m["severity"] == 2)
-              f["warningCount"] = sum(1 for m in f["messages"] if m["severity"] == 1)
-          json.dump(d, open("apps/web/eslint-report.json", "w"))
-          print(sum(len(f["messages"]) for f in d), "eslint-plugin-security findings")
-          PY
 
       # Only now, with the PR's code done running, join the tailnet.
       - name: Join the tailnet
