@@ -11,9 +11,26 @@ export type Cell = string | number | null | undefined;
 
 const SEP = ";";
 
+/**
+ * Text a spreadsheet would evaluate as a formula. Excel and Sheets run a cell
+ * that starts with `=`, `+`, `-` or `@` (or a tab / carriage return before
+ * one), so a worker name like `=HYPERLINK(...)` would execute on the office
+ * computer. Full-width variants are included because some setups normalise
+ * them to the ASCII ones.
+ */
+const FORMULA_START = /^[=+\-@\t\r＝＋－＠]/;
+/** A plain number typed as text (`-5000`, `-12,5`) is data, not a formula. */
+const PLAIN_NUMBER = /^-?\d+([.,]\d+)?$/;
+
+/** Prefixes formula-looking text with `'` so the spreadsheet shows it as text. */
+export function neutralizeFormula(s: string): string {
+  return FORMULA_START.test(s) && !PLAIN_NUMBER.test(s) ? `'${s}` : s;
+}
+
 function cell(v: Cell): string {
   if (v === null || v === undefined) return "";
-  const s = typeof v === "number" ? formatNumber(v) : v;
+  // Only text is guarded: numbers (negative amounts included) stay numeric.
+  const s = typeof v === "number" ? formatNumber(v) : neutralizeFormula(v);
   return /[";\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
