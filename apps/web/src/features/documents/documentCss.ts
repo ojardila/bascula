@@ -25,13 +25,20 @@
  *   anywhere a value is interpolated.
  */
 
-/** Escapes text going into the document, since names come from user input. */
+/**
+ * Escapes text going into the document, since names come from user input.
+ * All five HTML metacharacters, so a value is safe in text and in an
+ * attribute quoted either way.
+ */
 export function esc(s: string): string {
+  // Complete escape of the five HTML metacharacters, & first; there is no DOM here to sanitize with.
+  // nosemgrep: javascript.audit.detect-replaceall-sanitization.detect-replaceall-sanitization
   return s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 /**
