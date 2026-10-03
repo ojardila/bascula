@@ -97,7 +97,7 @@ describe("the seeded farm renders what the wireframes promise", () => {
   it("adds up the payment screen the same way", async () => {
     renderApp("/empleados/0192f3a0-0006-7000-8000-000000000001/pagar");
     expect(await screen.findByRole("heading", { name: /Pagar a María/ })).toBeInTheDocument();
-    expect(screen.getAllByText("Recolección de café").length).toBe(2);
+    expect(screen.getAllByText("Recolección de café")).toHaveLength(2);
     expect(screen.getByText("$30.800")).toBeInTheDocument();
     expect(screen.getByText("$32.800")).toBeInTheDocument();
     expect(screen.getByText("$90.000")).toBeInTheDocument();

@@ -207,7 +207,7 @@ describe("ActivityFormDialog — an existing activity", () => {
     await user.type(price, "50000");
     await user.click(within(dialog).getByRole("button", { name: "Guardar" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
-    expect(rates.length).toBe(1);
+    expect(rates).toHaveLength(1);
   });
 
   it("only renames when the price is unchanged", async () => {
