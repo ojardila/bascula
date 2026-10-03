@@ -7,7 +7,7 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/auth"
 )
 
-const farmOwnPassword = "clave-propia-de-la-finca-9"
+const claveDeLaFinca = "clave-propia-de-la-finca-9"
 
 // TestPasskeyMadeInAFarmPasswordSessionOpensOnlyThatFarm: a session opened
 // with a farm's own owner password proved that password and nothing else, so
@@ -19,7 +19,7 @@ func TestPasskeyMadeInAFarmPasswordSessionOpensOnlyThatFarm(t *testing.T) {
 	locked := h.signupFarm(t, "Finca de clave propia", 80000)
 	adminExec(t, h, `INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'admin')`,
 		locked.FarmID, home.OwnerUserID)
-	hash, err := auth.HashPassword(farmOwnPassword)
+	hash, err := auth.HashPassword(claveDeLaFinca)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,14 +30,14 @@ func TestPasskeyMadeInAFarmPasswordSessionOpensOnlyThatFarm(t *testing.T) {
 	accountKey := mustString(t, h.registerPasskey(t, home.OwnerToken, newSoftPasskey(t)), "id")
 
 	login := h.do(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": home.OwnerEmail, "password": farmOwnPassword, "farmId": locked.FarmID,
+		"email": home.OwnerEmail, "password": claveDeLaFinca, "farmId": locked.FarmID,
 	})
 	expectStatus(t, "sign-in with the farm's own password", login, http.StatusOK)
 	scoped := mustString(t, login.Body, "accessToken")
 
 	pinned := newSoftPasskey(t)
 	opts := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys/options", scoped,
-		map[string]any{"currentPassword": farmOwnPassword})
+		map[string]any{"currentPassword": claveDeLaFinca})
 	expectStatus(t, "passkey options in the farm session", opts, http.StatusOK)
 	made := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodPost, "/v1/me/passkeys", scoped, map[string]any{
 		"challenge": opts.Body["challenge"], "credential": pinned.create(t, opts.Body, passkeyOrigin), "name": "Tableta de la finca",
