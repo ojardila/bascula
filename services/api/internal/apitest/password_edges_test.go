@@ -19,9 +19,7 @@ func TestPasswordEdges(t *testing.T) {
 			{"currentPassword": long, "newPassword": newSecret},
 			{"currentPassword": f.loginSecret(), "newPassword": long},
 		} {
-			if res := h.do(t, http.MethodPost, "/v1/me/password", f.OwnerToken, body); res.Status != http.StatusBadRequest {
-				t.Fatalf("expected 400, got %d %s", res.Status, res.Raw)
-			}
+			expectStatus(t, "password over the limit", h.do(t, http.MethodPost, "/v1/me/password", f.OwnerToken, body), http.StatusBadRequest)
 		}
 	})
 
@@ -29,19 +27,14 @@ func TestPasswordEdges(t *testing.T) {
 
 	t.Run("a reset request needs something that looks like an address", func(t *testing.T) {
 		for _, email := range []string{"", "   ", "sin-arroba", strings.Repeat("a", 320) + "@x.co"} {
-			res := call(t, srv, http.MethodPost, "/v1/auth/password-reset/request", "", map[string]any{"email": email})
-			if res.Status != http.StatusBadRequest {
-				t.Fatalf("%q: expected 400, got %d %s", email, res.Status, res.Raw)
-			}
+			expectStatus(t, email, call(t, srv, http.MethodPost, "/v1/auth/password-reset/request", "",
+				map[string]any{"email": email}), http.StatusBadRequest)
 		}
 	})
 
 	t.Run("a reset with a short password is refused before the link is spent", func(t *testing.T) {
-		res := call(t, srv, http.MethodPost, "/v1/auth/password-reset", "",
-			map[string]any{"token": "lo-que-sea", "password": "corta"})
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("expected 400, got %d %s", res.Status, res.Raw)
-		}
+		expectStatus(t, "short reset password", call(t, srv, http.MethodPost, "/v1/auth/password-reset", "",
+			map[string]any{"token": "lo-que-sea", "password": "corta"}), http.StatusBadRequest)
 	})
 
 	t.Run("one address gets a few reset mails an hour, then a 429", func(t *testing.T) {
