@@ -62,6 +62,68 @@ const DefaultDropThreshold = 0.25
 // single finished week to compare.
 const ReasonSeasonTooShort = "no_finished_weeks"
 
+// finishedWeeks is every week before currentMonday, holes included, and how
+// many of them have known kilos.
+func finishedWeeks(weeks []WeekTotal, currentMonday string) ([]WeekTotal, int) {
+	series := make([]WeekTotal, 0, len(weeks))
+	known := 0
+	for _, w := range weeks {
+		if w.WeekStart >= currentMonday {
+			continue
+		}
+		series = append(series, w)
+		if w.Kg != nil {
+			known++
+		}
+	}
+	return series, known
+}
+
+// latestKnownRun is the stretch from the most recent week with known kilos
+// back for as long as the weeks are consecutive and known (see ReadHarvest).
+// series must hold at least one known week.
+func latestKnownRun(series []WeekTotal) []WeekTotal {
+	first := 0
+	for first < len(series) && series[first].Kg == nil {
+		first++
+	}
+	last := first
+	for j := first + 1; j < len(series); j++ {
+		if series[j].Kg == nil || !isWeekBefore(series[j].WeekStart, series[j-1].WeekStart) {
+			break
+		}
+		last = j
+	}
+	return series[first : last+1]
+}
+
+// fallingWeeks counts, newest first, the consecutive weeks whose kilos fell by
+// more than dropThreshold against the calendar week before them. It stops at
+// the first break: a gap, unknown kilos, a non-positive base, or no drop.
+func fallingWeeks(series []WeekTotal, dropThreshold float64) int {
+	falling := 0
+	for i := 0; i < len(series)-1; i++ {
+		cur, older := series[i], series[i+1]
+		if cur.Kg == nil || older.Kg == nil {
+			break
+		}
+		if !isWeekBefore(older.WeekStart, cur.WeekStart) {
+			break
+		}
+		prev := *older.Kg
+		if prev <= 0 {
+			break
+		}
+		drop := (prev - *cur.Kg) / prev
+		if drop > dropThreshold {
+			falling++
+		} else {
+			break
+		}
+	}
+	return falling
+}
+
 // ReadHarvest takes the weekly totals NEWEST FIRST, as the queries return
 // them, and the Monday of the week the farm is currently in.
 //
@@ -93,17 +155,7 @@ const ReasonSeasonTooShort = "no_finished_weeks"
 func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64) HarvestShape {
 	// Every finished week, holes included: the calendar, not the surviving
 	// rows. Both the peak and the run are read over a stretch of it.
-	series := make([]WeekTotal, 0, len(weeks))
-	known := 0
-	for _, w := range weeks {
-		if w.WeekStart >= currentMonday {
-			continue
-		}
-		series = append(series, w)
-		if w.Kg != nil {
-			known++
-		}
-	}
+	series, known := finishedWeeks(weeks, currentMonday)
 	if known == 0 {
 		return HarvestShape{Reason: ReasonSeasonTooShort}
 	}
@@ -124,18 +176,7 @@ func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64)
 	// wide the stretch is, so nobody has to guess whether the peak is the
 	// season's or this fortnight's. Everything older than the break is still in
 	// `weeks` for the chart to draw; it is only the READING that stops.
-	first := 0
-	for first < len(series) && series[first].Kg == nil {
-		first++
-	}
-	last := first
-	for j := first + 1; j < len(series); j++ {
-		if series[j].Kg == nil || !isWeekBefore(series[j].WeekStart, series[j-1].WeekStart) {
-			break
-		}
-		last = j
-	}
-	run := series[first : last+1]
+	run := latestKnownRun(series)
 
 	peak := run[0]
 	for _, w := range run {
@@ -148,26 +189,7 @@ func ReadHarvest(weeks []WeekTotal, currentMonday string, dropThreshold float64)
 
 	// Newest first, so each week is compared against the one before it — and
 	// only when it IS the one before it.
-	falling := 0
-	for i := 0; i < len(series)-1; i++ {
-		cur, older := series[i], series[i+1]
-		if cur.Kg == nil || older.Kg == nil {
-			break
-		}
-		if !isWeekBefore(older.WeekStart, cur.WeekStart) {
-			break
-		}
-		prev := *older.Kg
-		if prev <= 0 {
-			break
-		}
-		drop := (prev - *cur.Kg) / prev
-		if drop > dropThreshold {
-			falling++
-		} else {
-			break
-		}
-	}
+	falling := fallingWeeks(series, dropThreshold)
 
 	// Two falling weeks alone could be rain. Past the peak as well, it is the
 	// season ending — which is when moving people to another plot pays off.
