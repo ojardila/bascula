@@ -19,8 +19,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -82,45 +84,63 @@ type foreignKey struct {
 	oneToOne      bool
 }
 
+// fatal ends the process on an error from run. Tests swap it to observe the
+// failure instead of exiting.
+var fatal = log.Fatal
+
 func main() {
 	out := flag.String("out", "", "file to write (default: stdout)")
 	doMigrate := flag.Bool("migrate", false, "apply every migration to ADMIN_DATABASE_URL first (use a scratch database)")
 	flag.Parse()
 
-	dsn := os.Getenv("ADMIN_DATABASE_URL")
+	if err := run(os.Getenv("ADMIN_DATABASE_URL"), *out, *doMigrate, os.Stdout); err != nil {
+		fatal(err)
+	}
+}
+
+// run is main without the process: it renders the diagram of dsn and writes
+// it to out, or to stdout when out is empty.
+func run(dsn, out string, doMigrate bool, stdout io.Writer) error {
 	if dsn == "" {
-		log.Fatal("ADMIN_DATABASE_URL is not set")
+		return errors.New("ADMIN_DATABASE_URL is not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if *doMigrate {
+	if doMigrate {
 		if err := store.MigrateDev(ctx, dsn); err != nil {
-			log.Fatalf("migrate: %v", err)
+			return fmt.Errorf("migrate: %w", err)
 		}
 	}
 
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close(ctx)
 
 	doc, err := render(ctx, conn)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	if *out == "" {
-		os.Stdout.Write(doc)
-		return
+	if out == "" {
+		_, _ = stdout.Write(doc)
+		return nil
 	}
-	if err := os.WriteFile(*out, doc, 0o644); err != nil {
-		log.Fatal(err)
+	if err := os.WriteFile(out, doc, 0o644); err != nil {
+		return err
 	}
-	log.Printf("wrote %s", *out)
+	log.Printf("wrote %s", out)
+	return nil
 }
 
-func render(ctx context.Context, conn *pgx.Conn) ([]byte, error) {
+// querier is the part of *pgx.Conn the schema readers use.
+type querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func render(ctx context.Context, conn querier) ([]byte, error) {
 	latest, err := latestMigration(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -325,7 +345,7 @@ func mermaidType(t string) (short string, exact bool) {
 	return s, s != replacer.Replace(t) && s != t
 }
 
-func loadTables(ctx context.Context, conn *pgx.Conn) ([]*table, error) {
+func loadTables(ctx context.Context, conn querier) ([]*table, error) {
 	rows, err := conn.Query(ctx, `
 		SELECT n.nspname, c.relname, c.relkind::text,
 		       coalesce(obj_description(c.oid, 'pg_class'), ''),
@@ -366,7 +386,7 @@ func loadTables(ctx context.Context, conn *pgx.Conn) ([]*table, error) {
 	return out, rows.Err()
 }
 
-func loadForeignKeys(ctx context.Context, conn *pgx.Conn, tables []*table) ([]foreignKey, error) {
+func loadForeignKeys(ctx context.Context, conn querier, tables []*table) ([]foreignKey, error) {
 	rows, err := conn.Query(ctx, `
 		SELECT k.conname,
 		       cn.nspname || '.' || cc.relname, pn.nspname || '.' || pc.relname,
@@ -421,7 +441,7 @@ func loadForeignKeys(ctx context.Context, conn *pgx.Conn, tables []*table) ([]fo
 
 // latestMigration names the highest migration applied, as its file name
 // without .sql, e.g. 00030_onboarding_and_base_price_history.
-func latestMigration(ctx context.Context, conn *pgx.Conn) (string, error) {
+func latestMigration(ctx context.Context, conn querier) (string, error) {
 	var v int64
 	if err := conn.QueryRow(ctx,
 		`SELECT coalesce(max(version_id), 0) FROM goose_db_version WHERE is_applied AND version_id > 0`).Scan(&v); err != nil {

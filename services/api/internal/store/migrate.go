@@ -52,9 +52,8 @@ func migrate(ctx context.Context, adminDSN string, devRole bool) error {
 
 	goose.SetBaseFS(migrations.FS)
 	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("set dialect: %w", err)
-	}
+	// "postgres" is one of goose's own dialect names: SetDialect cannot fail.
+	_ = goose.SetDialect("postgres")
 	if err := goose.UpContext(ctx, db, "."); err != nil {
 		return fmt.Errorf("goose up: %w", err)
 	}
@@ -64,16 +63,15 @@ func migrate(ctx context.Context, adminDSN string, devRole bool) error {
 // MigrateDown rolls back one migration. It exists for local work; production
 // moves forward.
 func MigrateDown(ctx context.Context, adminDSN string) error {
-	db, err := sql.Open("pgx", adminDSN)
-	if err != nil {
-		return fmt.Errorf("open admin connection: %w", err)
-	}
+	// sql.Open cannot fail here: the pgx driver is registered by the stdlib
+	// import and its OpenConnector returns no error. A bad DSN surfaces on the
+	// first connection, inside goose.
+	db, _ := sql.Open("pgx", adminDSN)
 	defer db.Close()
 
 	goose.SetBaseFS(migrations.FS)
 	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("set dialect: %w", err)
-	}
+	// "postgres" is one of goose's own dialect names: SetDialect cannot fail.
+	_ = goose.SetDialect("postgres")
 	return goose.DownContext(ctx, db, ".")
 }

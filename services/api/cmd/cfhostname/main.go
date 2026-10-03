@@ -24,10 +24,16 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/cfsaas"
 )
 
+// exit ends the process and pollEvery spaces wait's polls. Tests swap both.
+var (
+	exit      = os.Exit
+	pollEvery = 10 * time.Second
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "cfhostname:", err)
-		os.Exit(1)
+		exit(1)
 	}
 }
 
@@ -86,7 +92,7 @@ func wait(ctx context.Context, c *cfsaas.Client, host string) error {
 	deadline := time.Now().Add(15 * time.Minute)
 	for !h.Active() && !h.Failed() && time.Now().Before(deadline) {
 		show(h)
-		time.Sleep(10 * time.Second)
+		time.Sleep(pollEvery)
 		if h, err = c.Get(ctx, h.ID); err != nil {
 			return err
 		}

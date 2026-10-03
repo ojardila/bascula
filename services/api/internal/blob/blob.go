@@ -106,6 +106,13 @@ func (d *Disk) safePath(key string) (string, error) {
 	return filepath.Join(d.Root, parts[0], parts[1]), nil
 }
 
+// closeFile and statFile are the *os.File calls whose failures Put and Open
+// report but a healthy disk never produces. Variables only so tests can.
+var (
+	closeFile = (*os.File).Close
+	statFile  = (*os.File).Stat
+)
+
 func (d *Disk) Put(ctx context.Context, key string, r io.Reader, limit int64) (Result, error) {
 	path, err := d.safePath(key)
 	if err != nil {
@@ -143,7 +150,7 @@ func (d *Disk) Put(ctx context.Context, key string, r io.Reader, limit int64) (R
 		cleanup()
 		return Result{}, err
 	}
-	if err := f.Close(); err != nil {
+	if err := closeFile(f); err != nil {
 		_ = os.Remove(path)
 		return Result{}, err
 	}
@@ -162,7 +169,7 @@ func (d *Disk) Open(ctx context.Context, key string) (io.ReadCloser, int64, erro
 		}
 		return nil, 0, err
 	}
-	info, err := f.Stat()
+	info, err := statFile(f)
 	if err != nil {
 		_ = f.Close()
 		return nil, 0, err

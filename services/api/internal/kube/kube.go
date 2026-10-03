@@ -24,8 +24,10 @@ import (
 	"time"
 )
 
-const (
-	saDir     = "/var/run/secrets/kubernetes.io/serviceaccount"
+const saDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+// The ServiceAccount's files. Variables only so tests can stand in for a pod.
+var (
 	tokenFile = saDir + "/token"
 	caFile    = saDir + "/ca.crt"
 )
