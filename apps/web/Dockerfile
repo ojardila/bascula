@@ -13,7 +13,13 @@
 # API on those two prefixes of the same hostname. That is the "same origin"
 # half of the choice docs/decisions.md left open, and it is what lets the API
 # keep having no CORS middleware at all.
-FROM node:26-alpine AS build
+#
+# Stages: deps (npm ci) -> build (our code) -> the runtime image. CI keeps a
+# layer cache of `deps` alone (images.yml), because it is the only stage a
+# later build can reuse: the sources (apps/web carries ~60 MB of marketing
+# video) and the bundle are new on every source key, and an image is built
+# once per key.
+FROM node:26-alpine AS deps
 WORKDIR /src
 
 # The lockfile and the manifests first, so editing a component does not
@@ -25,6 +31,7 @@ COPY packages/shared/package.json packages/shared/
 # (buildkit-cache-dance), so a changed lockfile downloads only what changed.
 RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline --no-audit --no-fund
 
+FROM deps AS build
 COPY packages/shared packages/shared
 COPY apps/web apps/web
 COPY services/api/openapi.yaml services/api/openapi.yaml

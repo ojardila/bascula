@@ -1,0 +1,44 @@
+# Fills the image build caches from master, where every PR can read them.
+#
+# GitHub scopes an Actions cache entry to the branch that wrote it: a PR reads
+# its own entries and master's, never another PR's. Images are built on PRs
+# (images.yml) and almost never on master, so without this every PR started
+# from whatever master happened to have and wrote its own copy of the same
+# Go build cache. Here master builds both images (no push, no Harbor) when
+# the dependencies or the Dockerfiles change, and once a week, which is when
+# the cache-mount key rolls over (images.yml).
+
+name: cache warm
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'services/api/go.mod'
+      - 'services/api/go.sum'
+      - 'services/api/Dockerfile'
+      - 'package-lock.json'
+      - 'apps/web/Dockerfile'
+      - '.github/workflows/images.yml'
+      - '.github/workflows/cache-warm.yml'
+  schedule:
+    # Monday 05:17 UTC, just after the ISO week (and the mount key) changes.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-warm
+  cancel-in-progress: true
+
+jobs:
+  images:
+    strategy:
+      matrix:
+        component: [api, web]
+    uses: ./.github/workflows/images.yml
+    with:
+      component: ${{ matrix.component }}
+      push: false
