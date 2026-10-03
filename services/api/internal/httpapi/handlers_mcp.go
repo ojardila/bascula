@@ -487,12 +487,8 @@ func (t mcpTool) resolve(args map[string]any) (string, error) {
 			query.Set(name, val)
 		}
 	}
-	for _, p := range t.Params {
-		if p.Required {
-			if _, ok := args[p.Name]; !ok {
-				return "", fmt.Errorf("falta el parámetro obligatorio %q", p.Name)
-			}
-		}
+	if err := t.checkRequired(args); err != nil {
+		return "", err
 	}
 	if strings.Contains(path, "{") {
 		return "", fmt.Errorf("falta un parámetro de ruta en %s", path)
@@ -501,6 +497,19 @@ func (t mcpTool) resolve(args map[string]any) (string, error) {
 		path += "?" + query.Encode()
 	}
 	return path, nil
+}
+
+// checkRequired refuses arguments that leave out a required parameter.
+func (t mcpTool) checkRequired(args map[string]any) error {
+	for _, p := range t.Params {
+		if !p.Required {
+			continue
+		}
+		if _, ok := args[p.Name]; !ok {
+			return fmt.Errorf("falta el parámetro obligatorio %q", p.Name)
+		}
+	}
+	return nil
 }
 
 // mcpArgString renders one argument the way the query string expects it. JSON

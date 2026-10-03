@@ -424,52 +424,56 @@ func workRecordFilter(r *http.Request) (store.WorkRecordFilter, error) {
 	return f, nil
 }
 
+type updateWorkRecordRequest struct {
+	Quantity *json.Number `json:"quantity"`
+	Note     *string      `json:"note"`
+	Status   string       `json:"status"`
+	// Listed so the refusal has a sentence in it. Without these fields the
+	// decoder's DisallowUnknownFields still answers 400, but with
+	// "malformed request body", and a caller reading that goes looking for
+	// a typo instead of finding out that the rule is deliberate.
+	RateCents  *int64  `json:"rateCents"`
+	WorkerID   *string `json:"workerId"`
+	ActivityID *string `json:"activityId"`
+	DateFrom   *string `json:"dateFrom"`
+	DateTo     *string `json:"dateTo"`
+}
+
+func (body *updateWorkRecordRequest) validate() error {
+	if err := validStatus(body.Status); err != nil {
+		return err
+	}
+	if body.RateCents != nil || body.WorkerID != nil || body.ActivityID != nil ||
+		body.DateFrom != nil || body.DateTo != nil {
+		return domain.BadRequest(
+			"the worker, the activity, the dates and the frozen price cannot be changed; " +
+				"delete this record and write the one you meant, in that order")
+	}
+	if body.Quantity == nil {
+		return nil
+	}
+	qty, ok := new(big.Rat).SetString(body.Quantity.String())
+	if !ok || qty.Sign() <= 0 {
+		return domain.BadRequest("quantity must be a positive number")
+	}
+	return domain.CheckNumeric("quantity", body.Quantity.String(),
+		domain.QuantityPrecision, domain.QuantityScale)
+}
+
 // handleUpdateWorkRecord corrects a record that has not been paid. See
 // store.UpdateWorkRecord for what it refuses to touch and why: the short
 // version is that everything which decides the price is out of reach, and a
 // record already inside a live settlement answers 409 WORK_RECORD_SETTLED
 // rather than being edited under the payment.
 func (s *Server) handleUpdateWorkRecord(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Quantity *json.Number `json:"quantity"`
-		Note     *string      `json:"note"`
-		Status   string       `json:"status"`
-		// Listed so the refusal has a sentence in it. Without these fields the
-		// decoder's DisallowUnknownFields still answers 400, but with
-		// "malformed request body", and a caller reading that goes looking for
-		// a typo instead of finding out that the rule is deliberate.
-		RateCents  *int64  `json:"rateCents"`
-		WorkerID   *string `json:"workerId"`
-		ActivityID *string `json:"activityId"`
-		DateFrom   *string `json:"dateFrom"`
-		DateTo     *string `json:"dateTo"`
-	}
+	var body updateWorkRecordRequest
 	if err := decode(r, &body); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	if err := validStatus(body.Status); err != nil {
+	if err := body.validate(); err != nil {
 		writeError(w, r, err)
 		return
-	}
-	if body.RateCents != nil || body.WorkerID != nil || body.ActivityID != nil ||
-		body.DateFrom != nil || body.DateTo != nil {
-		writeError(w, r, domain.BadRequest(
-			"the worker, the activity, the dates and the frozen price cannot be changed; "+
-				"delete this record and write the one you meant, in that order"))
-		return
-	}
-	if body.Quantity != nil {
-		qty, ok := new(big.Rat).SetString(body.Quantity.String())
-		if !ok || qty.Sign() <= 0 {
-			writeError(w, r, domain.BadRequest("quantity must be a positive number"))
-			return
-		}
-		if err := domain.CheckNumeric("quantity", body.Quantity.String(),
-			domain.QuantityPrecision, domain.QuantityScale); err != nil {
-			writeError(w, r, err)
-			return
-		}
 	}
 
 	id := chi.URLParam(r, "id")
