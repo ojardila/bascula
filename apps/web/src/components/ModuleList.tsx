@@ -98,7 +98,7 @@ export interface ModuleListProps<T> {
   toolbarExtra?: ReactNode;
 }
 
-export function ModuleList<T>(props: ModuleListProps<T>) {
+export function ModuleList<T>(props: Readonly<ModuleListProps<T>>) {
   const {
     title,
     singular,

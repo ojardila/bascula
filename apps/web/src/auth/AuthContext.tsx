@@ -74,7 +74,7 @@ function forgetUser(): void {
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [state, setState] = useState<AuthState>({
     // If there is a token in storage we do not know yet whether it is any
     // good, so the app shows a splash rather than flashing the login screen at

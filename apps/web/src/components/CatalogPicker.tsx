@@ -45,7 +45,7 @@ export interface CatalogPickerProps {
 export function CatalogPicker({
   label, options, value, onChange, required, disabled, error, helperText,
   addWhat, size = "medium",
-}: CatalogPickerProps) {
+}: Readonly<CatalogPickerProps>) {
   const [input, setInput] = useState("");
 
   return (
