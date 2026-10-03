@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -328,6 +328,38 @@ export function ConnectionsCard() {
     borderRadius: 3,
   } as const;
 
+  let connectButton: ReactNode;
+  if (phone) {
+    connectButton = (
+      <Button
+        variant="contained"
+        size="large"
+        onClick={() => openGuide()}
+        aria-expanded={guide}
+        sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
+      >
+        Conectar con ChatGPT
+      </Button>
+    );
+  } else {
+    connectButton = (
+      // A real link: the tap itself opens ChatGPT, which no pop-up
+      // blocker stops, and the guide below shows at the same time.
+      <Button
+        variant="contained"
+        size="large"
+        href={CHATGPT_PLUGINS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={openGuide}
+        endIcon={<OpenInNewIcon />}
+        sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
+      >
+        Conectar con ChatGPT
+      </Button>
+    );
+  }
+
   return (
     <Card>
       <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
@@ -391,31 +423,8 @@ export function ConnectionsCard() {
               Administrar
             </Link>
           </Stack>
-        ) : phone ? (
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => openGuide()}
-            aria-expanded={guide}
-            sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
-          >
-            Conectar con ChatGPT
-          </Button>
         ) : (
-          // A real link: the tap itself opens ChatGPT, which no pop-up
-          // blocker stops, and the guide below shows at the same time.
-          <Button
-            variant="contained"
-            size="large"
-            href={CHATGPT_PLUGINS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={openGuide}
-            endIcon={<OpenInNewIcon />}
-            sx={{ ...bigButton, width: { xs: "100%", sm: "auto" } }}
-          >
-            Conectar con ChatGPT
-          </Button>
+          connectButton
         )}
 
         <Typography

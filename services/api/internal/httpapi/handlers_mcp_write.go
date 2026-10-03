@@ -1078,36 +1078,10 @@ func previewLedger(kind string) func(c *mcpCaller, a mcpArgs) (*mcpPreview, erro
 		before := numField(bal, "balanceCents")
 		after := before - amount
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "%s de %s a %s", kind, pesos(amount), workerName(w))
-		if strField(w, "kind") == "equipo" {
-			fmt.Fprintf(&sb, " (equipo: %s)", memberNames(w))
-		}
-		if m := a.str("method"); m != "" {
-			fmt.Fprintf(&sb, " (%s)", m)
-		}
-		if rb := a.str("receivedBy"); rb != "" {
-			who := rb
-			if members, ok := w["members"].([]any); ok {
-				for _, raw := range members {
-					m, _ := raw.(map[string]any)
-					if strField(m, "id") == rb {
-						who = workerName(m)
-					}
-				}
-			}
-			fmt.Fprintf(&sb, ", recibe %s", who)
-		}
-		if d := a.str("date"); d != "" {
-			fmt.Fprintf(&sb, ", fecha %s", d)
-		}
-		sb.WriteString(".\n")
+		previewLedgerHeadline(&sb, kind, amount, w, a)
 		fmt.Fprintf(&sb, "Saldo actual a favor del trabajador: %s. Después quedaría: %s.", pesos(before), pesos(after))
 		if kind == "PAGO" && after < 0 {
-			if v, _ := a["allowOverpayment"].(bool); v {
-				fmt.Fprintf(&sb, "\nAtención: paga %s más que el saldo; el exceso queda como anticipo.", pesos(-after))
-			} else {
-				fmt.Fprintf(&sb, "\nAtención: supera el saldo en %s; la finca lo rechazará salvo que se llame con allowOverpayment=true.", pesos(-after))
-			}
+			previewLedgerOverpayment(&sb, a, after)
 		}
 		if n := a.str("note"); n != "" {
 			fmt.Fprintf(&sb, "\nNota: %s", n)
@@ -1116,6 +1090,52 @@ func previewLedger(kind string) func(c *mcpCaller, a mcpArgs) (*mcpPreview, erro
 			"kind": strings.ToLower(kind), "worker": workerName(w), "workerId": a.str("workerId"),
 			"amountCents": amount, "balanceBeforeCents": before, "balanceAfterCents": after,
 		}}, nil
+	}
+}
+
+// previewLedgerHeadline writes the movement's first line: what, how much, to
+// whom, how, who receives it and when.
+func previewLedgerHeadline(sb *strings.Builder, kind string, amount int64, w map[string]any, a mcpArgs) {
+	fmt.Fprintf(sb, "%s de %s a %s", kind, pesos(amount), workerName(w))
+	if strField(w, "kind") == "equipo" {
+		fmt.Fprintf(sb, " (equipo: %s)", memberNames(w))
+	}
+	if m := a.str("method"); m != "" {
+		fmt.Fprintf(sb, " (%s)", m)
+	}
+	if rb := a.str("receivedBy"); rb != "" {
+		fmt.Fprintf(sb, ", recibe %s", previewLedgerReceiver(w, rb))
+	}
+	if d := a.str("date"); d != "" {
+		fmt.Fprintf(sb, ", fecha %s", d)
+	}
+	sb.WriteString(".\n")
+}
+
+// previewLedgerReceiver names the team member who receives the money, or
+// returns rb as given when it is not one of the worker's members.
+func previewLedgerReceiver(w map[string]any, rb string) string {
+	who := rb
+	members, ok := w["members"].([]any)
+	if !ok {
+		return who
+	}
+	for _, raw := range members {
+		m, _ := raw.(map[string]any)
+		if strField(m, "id") == rb {
+			who = workerName(m)
+		}
+	}
+	return who
+}
+
+// previewLedgerOverpayment warns that a payment exceeds the balance, and
+// whether the farm will take it.
+func previewLedgerOverpayment(sb *strings.Builder, a mcpArgs, after int64) {
+	if v, _ := a["allowOverpayment"].(bool); v {
+		fmt.Fprintf(sb, "\nAtención: paga %s más que el saldo; el exceso queda como anticipo.", pesos(-after))
+	} else {
+		fmt.Fprintf(sb, "\nAtención: supera el saldo en %s; la finca lo rechazará salvo que se llame con allowOverpayment=true.", pesos(-after))
 	}
 }
 

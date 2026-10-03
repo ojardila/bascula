@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
@@ -181,108 +183,27 @@ func (s *Server) createWorkRecord(r *http.Request, body workRecordRequest) (any,
 	if err != nil {
 		return nil, 0, err
 	}
-
-	// The weigher records weighings and nothing else. A weighing is an
-	// activity priced by the week, which means the weigher never sees a rate,
-	// never sets one, and never needs to: the price is applied at settlement.
-	// Any other activity would require reading a rate, which his RLS policies
-	// forbid anyway; refusing here makes it a clear 403 instead of an
-	// unexplained NO_RATE_IN_FORCE.
-	if principal.Role == domain.RoleWeigher {
-		if activity.RateSource != domain.RateWeeklyPrice {
-			return nil, 0, domain.Forbidden(
-				"a weigher may only record work priced by the week")
-		}
-		if body.RateCents != nil {
-			return nil, 0, domain.Forbidden("a weigher may not set a rate")
-		}
-	}
-
-	quantity := body.Quantity
-	if activity.PayScheme == domain.PaySchemeContract {
-		// A contract is one thing done once: amount = round(1 * total).
-		quantity = json.Number("1")
-	}
-	qty, ok := new(big.Rat).SetString(string(quantity))
-	if !ok || qty.Sign() <= 0 {
-		return nil, 0, domain.BadRequest("quantity must be a positive number")
-	}
-	// The column is numeric(12, 3) and Postgres would ROUND a fourth decimal
-	// place rather than refuse it — storing a weight nobody weighed and
-	// charging for it. See domain/numeric.go.
-	if err := domain.CheckNumeric("quantity", string(quantity),
-		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+	if err := weigherMayRecord(principal, activity, &body); err != nil {
 		return nil, 0, err
 	}
 
-	record := store.WorkRecord{
-		ID: body.ID, EmployeeID: body.WorkerID, ActivityID: activity.ID,
-		PayScheme: activity.PayScheme, Quantity: quantity, Note: body.Note,
-		DeviceID: body.DeviceID,
-		PlotIDs:  body.PlotIDs, PlotCropIDs: body.PlotCropIDs,
-	}
-	if principal != nil && principal.UserID != "" {
-		record.CreatedBy = &principal.UserID
+	quantity, qty, err := workRecordQuantity(activity, body.Quantity)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	switch {
-	case body.RateCents != nil:
-		// The caller named the price, so it freezes here and a date range is
-		// perfectly legal.
-		if *body.RateCents <= 0 {
-			return nil, 0, domain.BadRequest("rateCents must be positive")
-		}
-		record.RateSource = domain.RateExplicit
-		record.PriceMinor = body.RateCents
+	record := newWorkRecord(&body, activity, quantity, principal)
 
-	case activity.RateSource == domain.RateWeeklyPrice:
-		// The price is the week's, looked up when the settlement runs. This is
-		// what the phone does today and it is preserved exactly.
-		record.RateSource = domain.RateWeeklyPrice
-
-	default:
-		// Derived from the activity's rate in force on the day of the work,
-		// and frozen right now.
-		record.RateSource = domain.RateActivityDated
-		rate, err := store.RateInForce(r.Context(), tx, activity.ID, from)
-		if err != nil {
-			return nil, 0, domain.Conflict(domain.CodeNoRateInForce,
-				"that activity has no rate in force on that date").WithCause(err)
-		}
-		record.PriceMinor = &rate.RateMinor
-	}
-
-	// Decision 4, enforced before the database enforces it again: a record
-	// whose price is derived from a date must be a single day. A wage from
-	// Tuesday to Tuesday has no single validity period and no single week.
-	if record.RateSource.Derived() && !from.Equal(to) {
-		return nil, 0, domain.BadRequest(
-			"a work record priced by date must be a single day; send rateCents to freeze a price over a range").
-			WithDetails(map[string]any{"code": string(domain.CodeRangeNeedsFrozenRate)})
-	}
-
-	if record.PriceMinor != nil {
-		amount := domain.AmountMinor(qty, *record.PriceMinor)
-		if amount <= 0 {
-			return nil, 0, domain.BadRequest("the work record adds up to zero")
-		}
-		record.AmountMinor = &amount
+	if err := priceWorkRecord(r.Context(), tx, &record, activity, body.RateCents, qty, from, to); err != nil {
+		return nil, 0, err
 	}
 	// The unit rides on the activity, so a weigher who may not read a single
 	// price still records kilos rather than a bare number.
 	record.UnitID = activity.UnitID
 
-	started, err := store.InstantForLocalDay(r.Context(), tx, from)
+	started, err := setWorkRecordInstants(r.Context(), tx, &record, from, to)
 	if err != nil {
 		return nil, 0, err
-	}
-	record.StartedAt = started
-	if !to.Equal(from) {
-		ended, err := store.InstantForLocalDay(r.Context(), tx, to)
-		if err != nil {
-			return nil, 0, err
-		}
-		record.EndedAt = &ended
 	}
 
 	created, err := store.CreateWorkRecord(r.Context(), tx, farmID, record)
@@ -295,23 +216,158 @@ func (s *Server) createWorkRecord(r *http.Request, body workRecordRequest) (any,
 		return nil, 0, err
 	}
 
-	// Decision 8, on this door too. The rule and its boundary live in
-	// store.ReactivateForWork; what changes here is only where the work came
-	// from. `deviceId` is whatever the caller named, then whatever the token
-	// carries; on the web console there is neither, and `source: "web"` is
-	// what makes that null mean "a browser" rather than "unknown".
+	if err := reactivateForWorkRecord(r.Context(), tx, farmID, principal, &body, created.ID, started); err != nil {
+		return nil, 0, err
+	}
+	return projectWorkRecord(*created, callerSeesPrivateData(r)), http.StatusCreated, nil
+}
+
+// weigherMayRecord applies the weigher's restrictions to a work record.
+//
+// The weigher records weighings and nothing else. A weighing is an
+// activity priced by the week, which means the weigher never sees a rate,
+// never sets one, and never needs to: the price is applied at settlement.
+// Any other activity would require reading a rate, which his RLS policies
+// forbid anyway; refusing here makes it a clear 403 instead of an
+// unexplained NO_RATE_IN_FORCE.
+func weigherMayRecord(principal *auth.Principal, activity *store.Activity, body *workRecordRequest) error {
+	if principal.Role != domain.RoleWeigher {
+		return nil
+	}
+	if activity.RateSource != domain.RateWeeklyPrice {
+		return domain.Forbidden(
+			"a weigher may only record work priced by the week")
+	}
+	if body.RateCents != nil {
+		return domain.Forbidden("a weigher may not set a rate")
+	}
+	return nil
+}
+
+// workRecordQuantity validates the quantity of a work record and returns it
+// as stored and as a number.
+func workRecordQuantity(activity *store.Activity, quantity json.Number) (json.Number, *big.Rat, error) {
+	if activity.PayScheme == domain.PaySchemeContract {
+		// A contract is one thing done once: amount = round(1 * total).
+		quantity = json.Number("1")
+	}
+	qty, ok := new(big.Rat).SetString(string(quantity))
+	if !ok || qty.Sign() <= 0 {
+		return "", nil, domain.BadRequest("quantity must be a positive number")
+	}
+	// The column is numeric(12, 3) and Postgres would ROUND a fourth decimal
+	// place rather than refuse it — storing a weight nobody weighed and
+	// charging for it. See domain/numeric.go.
+	if err := domain.CheckNumeric("quantity", string(quantity),
+		domain.QuantityPrecision, domain.QuantityScale); err != nil {
+		return "", nil, err
+	}
+	return quantity, qty, nil
+}
+
+// priceWorkRecord sets where the record's price comes from, the price when
+// it is known now, and the amount it adds up to.
+func priceWorkRecord(ctx context.Context, tx pgx.Tx, record *store.WorkRecord, activity *store.Activity,
+	rateCents *int64, qty *big.Rat, from, to time.Time) error {
+	switch {
+	case rateCents != nil:
+		// The caller named the price, so it freezes here and a date range is
+		// perfectly legal.
+		if *rateCents <= 0 {
+			return domain.BadRequest("rateCents must be positive")
+		}
+		record.RateSource = domain.RateExplicit
+		record.PriceMinor = rateCents
+
+	case activity.RateSource == domain.RateWeeklyPrice:
+		// The price is the week's, looked up when the settlement runs. This is
+		// what the phone does today and it is preserved exactly.
+		record.RateSource = domain.RateWeeklyPrice
+
+	default:
+		// Derived from the activity's rate in force on the day of the work,
+		// and frozen right now.
+		record.RateSource = domain.RateActivityDated
+		rate, err := store.RateInForce(ctx, tx, activity.ID, from)
+		if err != nil {
+			return domain.Conflict(domain.CodeNoRateInForce,
+				"that activity has no rate in force on that date").WithCause(err)
+		}
+		record.PriceMinor = &rate.RateMinor
+	}
+
+	// Decision 4, enforced before the database enforces it again: a record
+	// whose price is derived from a date must be a single day. A wage from
+	// Tuesday to Tuesday has no single validity period and no single week.
+	if record.RateSource.Derived() && !from.Equal(to) {
+		return domain.BadRequest(
+			"a work record priced by date must be a single day; send rateCents to freeze a price over a range").
+			WithDetails(map[string]any{"code": string(domain.CodeRangeNeedsFrozenRate)})
+	}
+
+	if record.PriceMinor != nil {
+		amount := domain.AmountMinor(qty, *record.PriceMinor)
+		if amount <= 0 {
+			return domain.BadRequest("the work record adds up to zero")
+		}
+		record.AmountMinor = &amount
+	}
+	return nil
+}
+
+// setWorkRecordInstants stamps the instants the record's local days start at,
+// and returns the first one.
+func setWorkRecordInstants(ctx context.Context, tx pgx.Tx, record *store.WorkRecord, from, to time.Time) (time.Time, error) {
+	started, err := store.InstantForLocalDay(ctx, tx, from)
+	if err != nil {
+		return time.Time{}, err
+	}
+	record.StartedAt = started
+	if !to.Equal(from) {
+		ended, err := store.InstantForLocalDay(ctx, tx, to)
+		if err != nil {
+			return time.Time{}, err
+		}
+		record.EndedAt = &ended
+	}
+	return started, nil
+}
+
+// newWorkRecord is the record as the caller described it, before its price.
+func newWorkRecord(body *workRecordRequest, activity *store.Activity, quantity json.Number,
+	principal *auth.Principal) store.WorkRecord {
+	record := store.WorkRecord{
+		ID: body.ID, EmployeeID: body.WorkerID, ActivityID: activity.ID,
+		PayScheme: activity.PayScheme, Quantity: quantity, Note: body.Note,
+		DeviceID: body.DeviceID,
+		PlotIDs:  body.PlotIDs, PlotCropIDs: body.PlotCropIDs,
+	}
+	if principal != nil && principal.UserID != "" {
+		record.CreatedBy = &principal.UserID
+	}
+	return record
+}
+
+// reactivateForWorkRecord brings the worker back when the work shows they
+// are working again.
+//
+// Decision 8, on this door too. The rule and its boundary live in
+// store.ReactivateForWork; what changes here is only where the work came
+// from. `deviceId` is whatever the caller named, then whatever the token
+// carries; on the web console there is neither, and `source: "web"` is
+// what makes that null mean "a browser" rather than "unknown".
+func reactivateForWorkRecord(ctx context.Context, tx pgx.Tx, farmID string, principal *auth.Principal,
+	body *workRecordRequest, recordID string, started time.Time) error {
 	device := body.DeviceID
 	if device == nil && principal != nil && principal.DeviceID != "" {
 		device = &principal.DeviceID
 	}
-	if _, err := store.ReactivateForWork(r.Context(), tx, farmID, store.NewReactivation{
-		ID: newID(), EmployeeID: body.WorkerID, WorkRecordID: created.ID,
+	_, err := store.ReactivateForWork(ctx, tx, farmID, store.NewReactivation{
+		ID: newID(), EmployeeID: body.WorkerID, WorkRecordID: recordID,
 		WorkedAt: started, DeviceID: device, Source: reactivationSource(device),
 		By: principalUserID(principal),
-	}); err != nil {
-		return nil, 0, err
-	}
-	return projectWorkRecord(*created, callerSeesPrivateData(r)), http.StatusCreated, nil
+	})
+	return err
 }
 
 // reactivationSource names the door the work came through. The legacy

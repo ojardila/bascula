@@ -280,20 +280,59 @@ func TestAForwardedAddressFromAnUntrustedPeerIsIgnored(t *testing.T) {
 			res, _ := signupFrom(t, srv, socket, map[string]string{
 				"X-Forwarded-For": fmt.Sprintf("198.51.100.%d", 150+i),
 			})
-			if i < 5 {
-				if res.Status != http.StatusCreated {
-					t.Fatalf("signup %d: got %d %s, want 201", i+1, res.Status, res.Raw)
-				}
-				continue
-			}
-			if res.Status != http.StatusTooManyRequests ||
-				res.code() != string(domain.CodeRateLimited) {
-				t.Fatalf("the sixth signup from %s was accepted: a trust list "+
-					"configured for 10/8 let a caller outside it buy a bucket "+
-					"per request anyway: got %d %s", socket, res.Status, res.Raw)
-			}
+			cipCheckForgedChainSignup(t, i, socket, res)
 		}
 	})
+}
+
+// cipCheckForgedChainSignup asserts the i-th (zero-based) signup through a
+// forged X-Forwarded-For chain: the first five are created, the sixth is
+// rate-limited because the socket address is what gets counted.
+func cipCheckForgedChainSignup(t *testing.T, i int, socket string, res response) {
+	t.Helper()
+	if i < 5 {
+		if res.Status != http.StatusCreated {
+			t.Fatalf("signup %d: got %d %s, want 201", i+1, res.Status, res.Raw)
+		}
+		return
+	}
+	if res.Status != http.StatusTooManyRequests ||
+		res.code() != string(domain.CodeRateLimited) {
+		t.Fatalf("the sixth signup from %s was accepted: a trust list "+
+			"configured for 10/8 let a caller outside it buy a bucket "+
+			"per request anyway: got %d %s", socket, res.Status, res.Raw)
+	}
+}
+
+// cipPostSignup posts body to /v1/signup on srv from remoteAddr.
+func cipPostSignup(t *testing.T, srv *httpapi.Server, body map[string]any, remoteAddr string) response {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/signup", strings.NewReader(string(raw)))
+	req.RemoteAddr = remoteAddr
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	out := response{Status: rec.Code, Raw: rec.Body.String()}
+	if out.Raw != "" {
+		_ = json.Unmarshal([]byte(out.Raw), &out.Body)
+	}
+	return out
+}
+
+// cipSignupAttempts counts the signup_attempts rows recorded for email.
+func cipSignupAttempts(t *testing.T, h *harness, email string) int {
+	t.Helper()
+	var n int
+	if err := h.admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM signup_attempts WHERE lower(email) = lower($1)`,
+		email).Scan(&n); err != nil {
+		t.Fatalf("count attempts: %v", err)
+	}
+	return n
 }
 
 // TestSignupsAreAlsoCappedPerEmail covers the axis the IP count cannot reach.
@@ -320,20 +359,7 @@ func TestSignupsAreAlsoCappedPerEmail(t *testing.T) {
 
 	post := func(remoteAddr string) response {
 		t.Helper()
-		raw, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal body: %v", err)
-		}
-		req := httptest.NewRequest(http.MethodPost, "/v1/signup", strings.NewReader(string(raw)))
-		req.RemoteAddr = remoteAddr
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		srv.ServeHTTP(rec, req)
-		out := response{Status: rec.Code, Raw: rec.Body.String()}
-		if out.Raw != "" {
-			_ = json.Unmarshal([]byte(out.Raw), &out.Body)
-		}
-		return out
+		return cipPostSignup(t, srv, body, remoteAddr)
 	}
 
 	// Three tries, each from an address the previous one never used.
@@ -367,13 +393,7 @@ func TestSignupsAreAlsoCappedPerEmail(t *testing.T) {
 	// then drain on its own.
 	countFor := func() int {
 		t.Helper()
-		var n int
-		if err := h.admin.QueryRow(context.Background(),
-			`SELECT count(*) FROM signup_attempts WHERE lower(email) = lower($1)`,
-			email).Scan(&n); err != nil {
-			t.Fatalf("count attempts: %v", err)
-		}
-		return n
+		return cipSignupAttempts(t, h, email)
 	}
 	before := countFor()
 	if before != 3 {

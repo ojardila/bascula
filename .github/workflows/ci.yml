@@ -150,7 +150,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -159,10 +159,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint --workspace apps/web
-      - run: npx --workspace apps/web vitest run
       # `build` runs types:check first, which fails when the generated client
       # has fallen behind services/api/openapi.yaml. That gate is the point.
       - run: npm run build --workspace apps/web
+
+  # vitest was the long pole of every web PR and of CD: 160 files, ~265 s on
+  # one runner (2026-10-03). Split by file across three runners (vitest's own
+  # --shard), every file still runs exactly once and in the same isolation.
+  # Measured on 4 CPUs: 112 s whole, 33 / 31 / 46 s per shard.
+  web-tests:
+    name: console tests (${{ matrix.shard }}/3)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx --workspace apps/web vitest run --shard=${{ matrix.shard }}/3
 
   types:
     name: typecheck
@@ -178,6 +200,36 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+
+  # The static checks need no database, so they run beside the tests instead
+  # of in front of them (~25 s off the api job, the long pole).
+  api-lint:
+    name: api lint
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - run: go vet ./...
+        working-directory: services/api
+      - name: gofmt
+        run: test -z "$(gofmt -l ./cmd ./internal ./migrations)"
+        working-directory: services/api
+      # govulncheck reports only advisories whose vulnerable symbols are
+      # reachable from this module, so the step is quiet by default and
+      # fails only on something CI would otherwise ship. Covers the Go
+      # stdlib too, which Dependabot does not see (toolchain, not go.mod).
+      - name: govulncheck
+        run: |
+          set -euo pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+        working-directory: services/api
 
   api:
     name: api
@@ -211,21 +263,6 @@ jobs:
         with:
           go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
-      - run: go vet ./...
-        working-directory: services/api
-      - name: gofmt
-        run: test -z "$(gofmt -l ./cmd ./internal ./migrations)"
-        working-directory: services/api
-      # govulncheck reports only advisories whose vulnerable symbols are
-      # reachable from this module, so the step is quiet by default and
-      # fails only on something CI would otherwise ship. Covers the Go
-      # stdlib too, which Dependabot does not see (toolchain, not go.mod).
-      - name: govulncheck
-        run: |
-          set -euo pipefail
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-          "$(go env GOPATH)/bin/govulncheck" ./...
-        working-directory: services/api
       - name: migrate
         run: go run ./cmd/api -migrate
         working-directory: services/api
@@ -247,8 +284,11 @@ jobs:
         working-directory: services/api
         env:
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable
+      # `go test ./...` with internal/apitest split over four processes, each
+      # with its own scratch database (see the script). 186 s of apitest ran
+      # in one process; measured on 4 CPUs: 163 s -> 39 s for the whole suite.
       - name: test
-        run: go test ./...
+        run: ../../scripts/ci/go-test.sh
         working-directory: services/api
         env:
           TEST_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bascula?sslmode=disable

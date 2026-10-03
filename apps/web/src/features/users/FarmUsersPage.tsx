@@ -190,34 +190,39 @@ export function FarmUsersPage() {
     reload();
   }
 
-  const lastLogin = (u: FarmUser) =>
-    /* THREE CASES, and the third is the one that bit. `/v1/users` does not
-       send a last login at all, so `undefined` means "not reported" — and
-       printing that as "nunca ha entrado" told the owner he had never logged
-       in while he was reading the screen. A date is a date, `null` is
-       genuinely never, absent is "—". */
-    u.lastLoginAt === undefined ? (
-      <Typography
-        variant="body2"
-        title="El servidor no informa la última entrada."
-        sx={{
-          color: "text.secondary",
-        }}
-      >
-        —
-      </Typography>
-    ) : u.lastLoginAt === null ? (
-      <Typography
-        variant="body2"
-        sx={{
-          color: "text.secondary",
-        }}
-      >
-        Nunca ha entrado
-      </Typography>
-    ) : (
-      formatDate(u.lastLoginAt.slice(0, 10))
-    );
+  /* THREE CASES, and the third is the one that bit. `/v1/users` does not
+     send a last login at all, so `undefined` means "not reported" — and
+     printing that as "nunca ha entrado" told the owner he had never logged
+     in while he was reading the screen. A date is a date, `null` is
+     genuinely never, absent is "—". */
+  const lastLogin = (u: FarmUser) => {
+    if (u.lastLoginAt === undefined) {
+      return (
+        <Typography
+          variant="body2"
+          title="El servidor no informa la última entrada."
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          —
+        </Typography>
+      );
+    }
+    if (u.lastLoginAt === null) {
+      return (
+        <Typography
+          variant="body2"
+          sx={{
+            color: "text.secondary",
+          }}
+        >
+          Nunca ha entrado
+        </Typography>
+      );
+    }
+    return formatDate(u.lastLoginAt.slice(0, 10));
+  };
 
   return (
     <Box>
@@ -616,6 +621,122 @@ export function FarmUsersPage() {
 
 /* ------------------------------------------------------------------ */
 
+/** Phase two of the invite: the account exists and this is the only copy of
+ *  its password, so the dialog stays until somebody says it is written down. */
+function InvitedCredentialDialog({
+  open,
+  invited,
+  owner,
+  onFinish,
+}: Readonly<{
+  open: boolean;
+  invited: FarmUser;
+  owner: boolean;
+  onFinish: () => void;
+}>) {
+  const first = (invited.name || "").trim().split(/\s+/)[0];
+  return (
+    <Dialog open={open} onClose={onFinish} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontSize: 22, fontWeight: 800 }}>
+        {invited.name || invited.email} ya tiene acceso
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          {invited.temporaryPassword ? (
+            <>
+              <Alert severity="warning">
+                <AlertTitle>Apunte esta contraseña ahora</AlertTitle>
+                Es la única vez que se puede ver. El servidor solo guarda una
+                versión cifrada, así que ni nosotros podemos volver a leerla.
+                Si se pierde, hay que crear la contraseña de nuevo.
+              </Alert>
+              <Box data-tour="invite-credential">
+                <Typography
+                  variant="overline"
+                  sx={{
+                    color: "text.secondary",
+                  }}
+                >
+                  Correo
+                </Typography>
+                <Typography
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "1.05rem",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {invited.email}
+                </Typography>
+                <Typography
+                  variant="overline"
+                  component="div"
+                  sx={{
+                    color: "text.secondary",
+                    mt: 1,
+                  }}
+                >
+                  Contraseña temporal
+                </Typography>
+                <Typography
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "1.35rem",
+                    userSelect: "all",
+                    p: 1.5,
+                    borderRadius: 1,
+                    bgcolor: "action.hover",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {invited.temporaryPassword}
+                </Typography>
+              </Box>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "text.secondary",
+                }}
+              >
+                Entréguesela en persona o por donde usted ya se comunica con
+                {first ? ` ${first}` : " ella"}. Sirve solo para entrar a esta
+                finca, y no se envía por correo.
+              </Typography>
+            </>
+          ) : (
+            /* No password comes back for somebody who was already a member
+               of this farm: a repeated invite changes nothing, their
+               password included. */
+            <Alert severity="info">
+              Esa persona ya tenía acceso a esta finca, así que entra con la
+              contraseña que ya usaba. No se generó ninguna nueva.
+            </Alert>
+          )}
+          {!owner && (
+            <TourCallout
+              tour="owner"
+              n={6}
+              onPrimary={() => {
+                onFinish();
+                return true;
+              }}
+            />
+          )}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button
+          variant="contained"
+          onClick={onFinish}
+          sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}
+        >
+          Ya la apunté
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 /**
  * The invitation — of an administrator or weigher, or (with `owner`) of
  * another owner.
@@ -717,106 +838,13 @@ function InviteDialog({
 
   // ── PHASE TWO: the credential ──────────────────────────────────────
   if (invited) {
-    const first = (invited.name || "").trim().split(/\s+/)[0];
     return (
-      <Dialog open={open} onClose={finish} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontSize: 22, fontWeight: 800 }}>
-          {invited.name || invited.email} ya tiene acceso
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {invited.temporaryPassword ? (
-              <>
-                <Alert severity="warning">
-                  <AlertTitle>Apunte esta contraseña ahora</AlertTitle>
-                  Es la única vez que se puede ver. El servidor solo guarda una
-                  versión cifrada, así que ni nosotros podemos volver a leerla.
-                  Si se pierde, hay que crear la contraseña de nuevo.
-                </Alert>
-                <Box data-tour="invite-credential">
-                  <Typography
-                    variant="overline"
-                    sx={{
-                      color: "text.secondary",
-                    }}
-                  >
-                    Correo
-                  </Typography>
-                  <Typography
-                    sx={{
-                      fontFamily: "monospace",
-                      fontSize: "1.05rem",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {invited.email}
-                  </Typography>
-                  <Typography
-                    variant="overline"
-                    component="div"
-                    sx={{
-                      color: "text.secondary",
-                      mt: 1,
-                    }}
-                  >
-                    Contraseña temporal
-                  </Typography>
-                  <Typography
-                    sx={{
-                      fontFamily: "monospace",
-                      fontSize: "1.35rem",
-                      userSelect: "all",
-                      p: 1.5,
-                      borderRadius: 1,
-                      bgcolor: "action.hover",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {invited.temporaryPassword}
-                  </Typography>
-                </Box>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  Entréguesela en persona o por donde usted ya se comunica con
-                  {first ? ` ${first}` : " ella"}. Sirve solo para entrar a esta
-                  finca, y no se envía por correo.
-                </Typography>
-              </>
-            ) : (
-              /* No password comes back for somebody who was already a member
-                 of this farm: a repeated invite changes nothing, their
-                 password included. */
-              <Alert severity="info">
-                Esa persona ya tenía acceso a esta finca, así que entra con la
-                contraseña que ya usaba. No se generó ninguna nueva.
-              </Alert>
-            )}
-            {!owner && (
-              <TourCallout
-                tour="owner"
-                n={6}
-                onPrimary={() => {
-                  finish();
-                  return true;
-                }}
-              />
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            variant="contained"
-            onClick={finish}
-            sx={{ minHeight: 48, fontSize: 17, borderRadius: 999, px: 3 }}
-          >
-            Ya la apunté
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <InvitedCredentialDialog
+        open={open}
+        invited={invited}
+        owner={owner}
+        onFinish={finish}
+      />
     );
   }
 

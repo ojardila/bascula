@@ -190,4 +190,15 @@ installed can upload their season. Documents from that era are in
 
 ## 📄 License
 
-MIT
+The code in this repository is released under the [MIT License](LICENSE)
+(`SPDX-License-Identifier: MIT`), © 2026 Oscar Ardila.
+
+In practice: anyone may use, copy, modify and redistribute the source and
+the binaries built from it, including commercially, as long as the copyright
+notice and the permission notice travel with the code. The software is
+provided as-is, without warranty.
+
+The brand *Báscula* and the logo are not covered by this licence. The legal
+templates under [`docs/legal/`](docs/legal/) are drafts of agreements between
+a farm and the operator of the service; they are not software, and the terms
+under which they may be reused are stated in that directory's own README.

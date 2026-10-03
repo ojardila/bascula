@@ -12,6 +12,51 @@ import (
 	"testing"
 )
 
+// ofpWith copies base and sets each key/value pair in kv on the copy.
+func ofpWith(base url.Values, kv ...string) url.Values {
+	v := url.Values{}
+	for k, vs := range base {
+		v[k] = vs
+	}
+	for i := 0; i+1 < len(kv); i += 2 {
+		v.Set(kv[i], kv[i+1])
+	}
+	return v
+}
+
+// ofpPostAuthorize posts form to /oauth/authorize, on host when it is set.
+func ofpPostAuthorize(h *harness, host string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "10.0.0.1:12345"
+	if host != "" {
+		req.Host = host
+	}
+	rec := httptest.NewRecorder()
+	h.server.ServeHTTP(rec, req)
+	return rec
+}
+
+// ofpPickListTicket checks the farm pick step that follows the password on
+// the main host — both farms offered as radio buttons, no UUID prompt, no
+// password carried — and returns its ticket.
+func ofpPickListTicket(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "Finca Uno Selector") ||
+		!strings.Contains(body, "Finca Dos Selector") || !strings.Contains(body, `type="radio"`) {
+		t.Fatalf("no farm list after the password: %d %s", rec.Code, body)
+	}
+	if strings.Contains(body, "UUID") || strings.Contains(body, "una-clave-larga-1") {
+		t.Fatalf("pick step shows a UUID prompt or carries the password: %s", body)
+	}
+	m := regexp.MustCompile(`name="ticket" value="([^"]+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("pick step has no ticket: %s", body)
+	}
+	return m[1]
+}
+
 // TestOAuthSignInNeverAsksForAFarmUUID: the connector sign-in page used to
 // have a «Finca (UUID, si tiene más de una)» box. On a farm host the farm is
 // the host's; on the main host an account with several farms picks one by
@@ -44,25 +89,10 @@ func TestOAuthSignInNeverAsksForAFarmUUID(t *testing.T) {
 		"state": {"s1"}, "scope": {"mcp offline_access"},
 	}
 	with := func(kv ...string) url.Values {
-		v := url.Values{}
-		for k, vs := range base {
-			v[k] = vs
-		}
-		for i := 0; i+1 < len(kv); i += 2 {
-			v.Set(kv[i], kv[i+1])
-		}
-		return v
+		return ofpWith(base, kv...)
 	}
 	post := func(host string, form url.Values) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/oauth/authorize", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.RemoteAddr = "10.0.0.1:12345"
-		if host != "" {
-			req.Host = host
-		}
-		rec := httptest.NewRecorder()
-		h.server.ServeHTTP(rec, req)
-		return rec
+		return ofpPostAuthorize(h, host, form)
 	}
 
 	// The first page has no farm box, on any host.
@@ -76,19 +106,7 @@ func TestOAuthSignInNeverAsksForAFarmUUID(t *testing.T) {
 
 	// Main host, two farms: the password step answers with a pick list.
 	rec = post("", with("email", f1.OwnerEmail, "password", "una-clave-larga-1"))
-	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, "Finca Uno Selector") ||
-		!strings.Contains(body, "Finca Dos Selector") || !strings.Contains(body, `type="radio"`) {
-		t.Fatalf("no farm list after the password: %d %s", rec.Code, body)
-	}
-	if strings.Contains(body, "UUID") || strings.Contains(body, "una-clave-larga-1") {
-		t.Fatalf("pick step shows a UUID prompt or carries the password: %s", body)
-	}
-	m := regexp.MustCompile(`name="ticket" value="([^"]+)"`).FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("pick step has no ticket: %s", body)
-	}
-	ticket := m[1]
+	ticket := ofpPickListTicket(t, rec)
 
 	// A forged ticket is refused.
 	if rec := post("", with("ticket", ticket+"x", "farm_id", f2.FarmID)); rec.Code != http.StatusOK ||

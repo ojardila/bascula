@@ -98,23 +98,7 @@ func TestOpenSessions(t *testing.T) {
 	}
 
 	t.Run("a refresh keeps one session, its method, and the latest browser", func(t *testing.T) {
-		res := h.doUA(t, "Mozilla/5.0 (Linux; Android 15) Chrome/130 Mobile", http.MethodPost, "/v1/auth/refresh", "",
-			map[string]any{"refreshToken": mustString(t, phone.Body, "refreshToken")})
-		if res.Status != http.StatusOK {
-			t.Fatalf("refresh: %d %s", res.Status, res.Raw)
-		}
-		if sidOf(t, mustString(t, res.Body, "accessToken")) != phoneSID {
-			t.Fatalf("a refresh changed the session id")
-		}
-		phone = res
-		after := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
-		if len(after) != len(items) {
-			t.Fatalf("a refresh changed the number of sessions: %d -> %d", len(items), len(after))
-		}
-		p := after[phoneSID]
-		if p["method"] != "password" || !strings.Contains(p["userAgent"].(string), "Android 15") {
-			t.Fatalf("refreshed phone session: %v", p)
-		}
+		sessionsRefreshKeepsOneSession(t, h, &phone, phoneSID, deskToken, len(items))
 	})
 
 	t.Run("another member sees none of them and closes none", func(t *testing.T) {
@@ -140,57 +124,88 @@ func TestOpenSessions(t *testing.T) {
 	})
 
 	t.Run("closing every other keeps this one and the assistant", func(t *testing.T) {
-		tok := h.oauthGrant(t, f, "ChatGPT")
-		listed := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
-		for _, it := range listed {
-			if it["method"] == "oauth" {
-				t.Fatalf("an assistant's connection was listed as a session: %v", it)
-			}
-		}
-
-		res := h.mustDo(t, http.MethodPost, "/v1/me/sessions/close-others", deskToken, nil, http.StatusOK)
-		if n, _ := res.Body["closed"].(float64); n < 1 {
-			t.Fatalf("closed nothing: %s", res.Raw)
-		}
-		left := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
-		if len(left) != 1 || left[deskSID] == nil {
-			t.Fatalf("want only this session left, got %v", left)
-		}
-		if res := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
-			map[string]any{"refreshToken": mustString(t, desk.Body, "refreshToken")}); res.Status != http.StatusOK {
-			t.Fatalf("this session stopped working: %d %s", res.Status, res.Raw)
-		}
-		rec := h.oauthPost(t, "/oauth/token", url.Values{
-			"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)},
-			"client_id": {tok["client_id"].(string)},
-		})
-		if rec.Code != http.StatusOK {
-			t.Fatalf("closing the other sessions disconnected the assistant: %d %s", rec.Code, rec.Body.String())
-		}
-		var method string
-		if err := h.admin.QueryRow(t.Context(), `
-			SELECT sign_in_method FROM refresh_tokens WHERE oauth_client_id = $1 LIMIT 1`,
-			tok["client_id"]).Scan(&method); err != nil || method != "oauth" {
-			t.Fatalf("assistant family method: %q %v", method, err)
-		}
+		sessionsCloseOthersKeepsThisAndAssistant(t, h, f, desk, deskToken, deskSID)
 	})
 
 	t.Run("a token from before sid cannot close the others", func(t *testing.T) {
-		legacy, err := auth.NewSigner([]byte("test-signing-key"), "bascula").
-			Issue(f.OwnerUserID, f.FarmID, "owner", "", false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		res := h.do(t, http.MethodPost, "/v1/me/sessions/close-others", legacy, nil)
-		if res.Status != http.StatusUnauthorized || res.code() != "TOKEN_EXPIRED" {
-			t.Fatalf("legacy close-others: %d %s", res.Status, res.Raw)
-		}
-		for _, it := range sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", legacy, nil)) {
-			if it["current"] == true {
-				t.Fatalf("a token without sid was matched to a session")
-			}
-		}
+		sessionsLegacyTokenCannotCloseOthers(t, h, f)
 	})
+}
+
+// sessionsRefreshKeepsOneSession refreshes the phone's session and, as soon as
+// the refresh succeeds, stores the new response in *phone for the subtests
+// that follow.
+func sessionsRefreshKeepsOneSession(t *testing.T, h *harness, phone *response, phoneSID, deskToken string, before int) {
+	res := h.doUA(t, "Mozilla/5.0 (Linux; Android 15) Chrome/130 Mobile", http.MethodPost, "/v1/auth/refresh", "",
+		map[string]any{"refreshToken": mustString(t, phone.Body, "refreshToken")})
+	if res.Status != http.StatusOK {
+		t.Fatalf("refresh: %d %s", res.Status, res.Raw)
+	}
+	if sidOf(t, mustString(t, res.Body, "accessToken")) != phoneSID {
+		t.Fatalf("a refresh changed the session id")
+	}
+	*phone = res
+	after := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
+	if len(after) != before {
+		t.Fatalf("a refresh changed the number of sessions: %d -> %d", before, len(after))
+	}
+	p := after[phoneSID]
+	if p["method"] != "password" || !strings.Contains(p["userAgent"].(string), "Android 15") {
+		t.Fatalf("refreshed phone session: %v", p)
+	}
+}
+
+func sessionsCloseOthersKeepsThisAndAssistant(t *testing.T, h *harness, f *farmFixture, desk response, deskToken, deskSID string) {
+	tok := h.oauthGrant(t, f, "ChatGPT")
+	listed := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
+	for _, it := range listed {
+		if it["method"] == "oauth" {
+			t.Fatalf("an assistant's connection was listed as a session: %v", it)
+		}
+	}
+
+	res := h.mustDo(t, http.MethodPost, "/v1/me/sessions/close-others", deskToken, nil, http.StatusOK)
+	if n, _ := res.Body["closed"].(float64); n < 1 {
+		t.Fatalf("closed nothing: %s", res.Raw)
+	}
+	left := sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", deskToken, nil))
+	if len(left) != 1 || left[deskSID] == nil {
+		t.Fatalf("want only this session left, got %v", left)
+	}
+	if res := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
+		map[string]any{"refreshToken": mustString(t, desk.Body, "refreshToken")}); res.Status != http.StatusOK {
+		t.Fatalf("this session stopped working: %d %s", res.Status, res.Raw)
+	}
+	rec := h.oauthPost(t, "/oauth/token", url.Values{
+		"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)},
+		"client_id": {tok["client_id"].(string)},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("closing the other sessions disconnected the assistant: %d %s", rec.Code, rec.Body.String())
+	}
+	var method string
+	if err := h.admin.QueryRow(t.Context(), `
+		SELECT sign_in_method FROM refresh_tokens WHERE oauth_client_id = $1 LIMIT 1`,
+		tok["client_id"]).Scan(&method); err != nil || method != "oauth" {
+		t.Fatalf("assistant family method: %q %v", method, err)
+	}
+}
+
+func sessionsLegacyTokenCannotCloseOthers(t *testing.T, h *harness, f *farmFixture) {
+	legacy, err := auth.NewSigner([]byte("test-signing-key"), "bascula").
+		Issue(f.OwnerUserID, f.FarmID, "owner", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := h.do(t, http.MethodPost, "/v1/me/sessions/close-others", legacy, nil)
+	if res.Status != http.StatusUnauthorized || res.code() != "TOKEN_EXPIRED" {
+		t.Fatalf("legacy close-others: %d %s", res.Status, res.Raw)
+	}
+	for _, it := range sessionItems(t, h.do(t, http.MethodGet, "/v1/me/sessions", legacy, nil)) {
+		if it["current"] == true {
+			t.Fatalf("a token without sid was matched to a session")
+		}
+	}
 }
 
 // TestPasskeySessionSaysPasskey: a passkey sign-in is recorded as one.

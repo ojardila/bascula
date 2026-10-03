@@ -37,11 +37,13 @@ FROM alpine:3.24
 # ca-certificates only: the binary is static, but TLS to anything outside needs
 # the root store. tzdata because settlement periods are farm-local dates and a
 # container with no zones resolves America/Bogota to UTC, which moves a week.
+# Uploads outlive the container. The compose file mounts a volume at
+# /srv/uploads; without it a redeploy loses every photo somebody attached to a
+# weighing.
 RUN apk add --no-cache ca-certificates tzdata \
- && adduser -D -u 10001 bascula
-# Uploads outlive the container. The compose file mounts a volume here; without
-# it a redeploy loses every photo somebody attached to a weighing.
-RUN mkdir -p /srv/uploads && chown bascula:bascula /srv/uploads
+ && adduser -D -u 10001 bascula \
+ && mkdir -p /srv/uploads \
+ && chown bascula:bascula /srv/uploads
 USER bascula
 COPY --from=build /out/api /usr/local/bin/api
 EXPOSE 8080

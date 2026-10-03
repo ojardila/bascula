@@ -83,41 +83,53 @@ func declaredCodes(t *testing.T) map[string]string {
 	}
 
 	out := map[string]string{}
-	// A const block carries its type on the first spec of each run, so the
-	// declared type has to be remembered across specs that omit it — which is
-	// how every constant after the first in a group is written.
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.CONST {
 			continue
 		}
-		typeName := ""
-		for _, spec := range gen.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			if ident, ok := vs.Type.(*ast.Ident); ok {
-				typeName = ident.Name
-			} else if vs.Type != nil {
-				typeName = ""
-			}
-			if typeName != "Code" {
-				continue
-			}
-			for i, name := range vs.Names {
-				if i >= len(vs.Values) {
-					continue
-				}
-				lit, ok := vs.Values[i].(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					t.Errorf("%s is a Code constant whose value is not a string "+
-						"literal; this test cannot see what it is", name.Name)
-					continue
-				}
-				out[name.Name] = strings.Trim(lit.Value, `"`)
-			}
-		}
+		collectCodeConsts(t, gen, out)
 	}
 	return out
+}
+
+// collectCodeConsts adds the Code constants of one const declaration to out.
+//
+// A const block carries its type on the first spec of each run, so the
+// declared type has to be remembered across specs that omit it — which is
+// how every constant after the first in a group is written.
+func collectCodeConsts(t *testing.T, gen *ast.GenDecl, out map[string]string) {
+	t.Helper()
+	typeName := ""
+	for _, spec := range gen.Specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		if ident, ok := vs.Type.(*ast.Ident); ok {
+			typeName = ident.Name
+		} else if vs.Type != nil {
+			typeName = ""
+		}
+		if typeName == "Code" {
+			addCodeValues(t, vs, out)
+		}
+	}
+}
+
+// addCodeValues adds the string literal value of each name in one Code spec.
+func addCodeValues(t *testing.T, vs *ast.ValueSpec, out map[string]string) {
+	t.Helper()
+	for i, name := range vs.Names {
+		if i >= len(vs.Values) {
+			continue
+		}
+		lit, ok := vs.Values[i].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			t.Errorf("%s is a Code constant whose value is not a string "+
+				"literal; this test cannot see what it is", name.Name)
+			continue
+		}
+		out[name.Name] = strings.Trim(lit.Value, `"`)
+	}
 }

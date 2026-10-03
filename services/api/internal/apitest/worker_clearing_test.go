@@ -50,26 +50,7 @@ func TestAWorkerFieldCanBeClearedAndNotOnlyReplaced(t *testing.T) {
 	})
 
 	t.Run("the farm has the same hole, and it is closed too", func(t *testing.T) {
-		// Found by grepping the other PATCH/PUT routes the same day, which is
-		// the whole point of the section this was written for. The console
-		// sends null for an emptied box here as well (`endpoints.ts:499-502`).
-		h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
-			map[string]any{"phone": "3005556677", "address": "Kilometro 4"}, http.StatusOK)
-		res := h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
-			map[string]any{"phone": nil, "address": nil}, http.StatusOK)
-		if res.Body["phone"] != nil {
-			t.Fatalf("the farm's wrong phone survived being cleared: %s", res.Raw)
-		}
-		if res.Body["address"] != nil {
-			t.Fatalf("the farm's wrong address survived being cleared: %s", res.Raw)
-		}
-		// And the timezone is NOT clearable: a settlement week is a local date,
-		// so an empty zone moves which day a weighing belongs to.
-		res = h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
-			map[string]any{"timezone": nil}, http.StatusOK)
-		if res.Body["timezone"] == nil || res.Body["timezone"] == "" {
-			t.Fatalf("the farm lost its timezone: %s", res.Raw)
-		}
+		wcCheckFarmFieldsClearable(t, h, f)
 	})
 
 	t.Run("the name is not clearable, because a worker without one is not a worker", func(t *testing.T) {
@@ -79,4 +60,29 @@ func TestAWorkerFieldCanBeClearedAndNotOnlyReplaced(t *testing.T) {
 			t.Fatalf("the worker lost her name: %s", res.Raw)
 		}
 	})
+}
+
+// wcCheckFarmFieldsClearable checks that PUT /v1/farm clears phone and address
+// on an explicit null, and keeps the timezone.
+func wcCheckFarmFieldsClearable(t *testing.T, h *harness, f *farmFixture) {
+	// Found by grepping the other PATCH/PUT routes the same day, which is
+	// the whole point of the section this was written for. The console
+	// sends null for an emptied box here as well (`endpoints.ts:499-502`).
+	h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
+		map[string]any{"phone": "3005556677", "address": "Kilometro 4"}, http.StatusOK)
+	res := h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
+		map[string]any{"phone": nil, "address": nil}, http.StatusOK)
+	if res.Body["phone"] != nil {
+		t.Fatalf("the farm's wrong phone survived being cleared: %s", res.Raw)
+	}
+	if res.Body["address"] != nil {
+		t.Fatalf("the farm's wrong address survived being cleared: %s", res.Raw)
+	}
+	// And the timezone is NOT clearable: a settlement week is a local date,
+	// so an empty zone moves which day a weighing belongs to.
+	res = h.mustDo(t, http.MethodPut, "/v1/farm", f.OwnerToken,
+		map[string]any{"timezone": nil}, http.StatusOK)
+	if res.Body["timezone"] == nil || res.Body["timezone"] == "" {
+		t.Fatalf("the farm lost its timezone: %s", res.Raw)
+	}
 }

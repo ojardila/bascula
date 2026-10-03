@@ -55,6 +55,7 @@ import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
 import { api } from "../../api/endpoints";
 import { useAuth } from "../../auth/AuthContext";
+import type { Worker } from "../../api/types";
 import { formatDate, formatDateRange } from "../../lib/dates";
 import { formatQuantity } from "../../lib/money";
 import { RegisterDebtDialog } from "./RegisterDebtDialog";
@@ -64,6 +65,66 @@ import { totalOwedCents, type Owed } from "./owed";
 import { CORRECTION_GLOSS, NOT_YET_EARNED } from "../../lib/vocab";
 import { WorkerHistory } from "../receipts/WorkerHistory";
 import { WorkerPerformance } from "./WorkerPerformance";
+
+/** A worker with no basket number cannot be found quickly at the scale. */
+function MissingBasketAlert({
+  workerId,
+  team,
+  canEdit,
+  onEdit,
+}: Readonly<{
+  workerId: string;
+  team: boolean;
+  canEdit: boolean;
+  onEdit: (path: string) => void;
+}>) {
+  return (
+    <Alert
+      severity="warning"
+      sx={{ mb: 2, fontSize: "1rem" }}
+      action={
+        canEdit ? (
+          <Button
+            color="inherit"
+            variant="outlined"
+            onClick={() =>
+              onEdit(
+                `/empleados/${workerId}/${team ? "equipo" : "editar"}`,
+              )
+            }
+          >
+            Poner número
+          </Button>
+        ) : undefined
+      }
+    >
+      {team ? "Este equipo" : "Esta persona"} no tiene número de canasto.
+      Póngale uno para encontrarl{team ? "o" : "a"} rápido en la báscula.
+    </Alert>
+  );
+}
+
+/** "CC 1234 · 300 555 1234", or whichever half of it is known. */
+function ContactLine({
+  worker,
+}: Readonly<{
+  worker: Pick<Worker, "documentType" | "documentNumber" | "phone">;
+}>) {
+  if (!worker.documentNumber && !worker.phone) return null;
+  return (
+    <Typography
+      sx={{
+        color: "text.secondary",
+      }}
+    >
+      {worker.documentNumber
+        ? `${worker.documentType} ${worker.documentNumber}`
+        : ""}
+      {worker.documentNumber && worker.phone ? " · " : ""}
+      {worker.phone ?? ""}
+    </Typography>
+  );
+}
 
 const HISTORY_LIMIT = 500;
 
@@ -117,28 +178,12 @@ export function WorkerProfilePage() {
       </Button>
 
       {!basketOf(worker.tag) && worker.status !== "inactive" && (
-        <Alert
-          severity="warning"
-          sx={{ mb: 2, fontSize: "1rem" }}
-          action={
-            can("workers.write") ? (
-              <Button
-                color="inherit"
-                variant="outlined"
-                onClick={() =>
-                  navigate(
-                    `/empleados/${worker.id}/${team ? "equipo" : "editar"}`,
-                  )
-                }
-              >
-                Poner número
-              </Button>
-            ) : undefined
-          }
-        >
-          {team ? "Este equipo" : "Esta persona"} no tiene número de canasto.
-          Póngale uno para encontrarl{team ? "o" : "a"} rápido en la báscula.
-        </Alert>
+        <MissingBasketAlert
+          workerId={worker.id}
+          team={team}
+          canEdit={can("workers.write")}
+          onEdit={navigate}
+        />
       )}
 
       <Grid container spacing={3} sx={{ mb: 1 }}>
@@ -180,19 +225,7 @@ export function WorkerProfilePage() {
                   <Chip color="success" label={teamSize(memberCount(worker))} />
                 )}
               </Stack>
-              {!team && (worker.documentNumber || worker.phone) && (
-                <Typography
-                  sx={{
-                    color: "text.secondary",
-                  }}
-                >
-                  {worker.documentNumber
-                    ? `${worker.documentType} ${worker.documentNumber}`
-                    : ""}
-                  {worker.documentNumber && worker.phone ? " · " : ""}
-                  {worker.phone ?? ""}
-                </Typography>
-              )}
+              {!team && <ContactLine worker={worker} />}
               <Typography
                 sx={{
                   color: "text.secondary",

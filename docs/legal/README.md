@@ -26,3 +26,21 @@ parties sign it; the surrounding engineering docs stay in English.
 
 The technical annex that both the DPA and the terms of service point
 at is [`docs/data-protection.md`](../data-protection.md).
+
+## Licence
+
+The files in this directory are drafts of legal agreements, not software,
+and are released under **Creative Commons Attribution 4.0 International**
+(`SPDX-License-Identifier: CC-BY-4.0`). The licence text is at
+[`LICENSES/CC-BY-4.0.txt`](../../LICENSES/CC-BY-4.0.txt).
+
+Anyone — a farm, a competing operator, a lawyer putting a template in a
+client folder, another coffee project — may copy and adapt these drafts
+for any purpose including a commercial one, as long as attribution to
+this repository and its copyright holder is preserved and any changes
+are indicated. The templates are provided as-is with no warranty, and
+they do not constitute legal advice; a licensed Colombian lawyer must
+review them before any party signs them.
+
+The code elsewhere in the repository stays under the MIT licence
+declared in the root [`LICENSE`](../../LICENSE) file.

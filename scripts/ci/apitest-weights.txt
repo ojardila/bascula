@@ -1,0 +1,10 @@
+# Seconds each slow internal/apitest test took on a 4-CPU runner (2026-10-03).
+# scripts/ci/go-test.sh uses these only to spread the tests across shards;
+# every test not listed counts as 0.25 s. A renamed or removed test here
+# changes the balance, never what runs.
+TestReportsHoldUpOnASeason 42
+TestASeasonUploadedSlowerThanTheReadTimeoutArrivesWhole 35
+TestProvisionProgressFollowsTheCluster 29
+TestNotReadyUntilCloudflareCertificateIsActive 12
+TestNewFarmGetsACloudflareCertificate 4
+TestPushAppliesWhatItCanAndRejectsOnlyWhatItMust 3

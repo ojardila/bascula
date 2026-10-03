@@ -665,13 +665,28 @@ func (im *seasonImporter) ledger(in SeasonImport) error {
 // request that answered 4xx — so a mismatch leaves the server exactly as it
 // was and the handset, which was never modified, is still the whole truth.
 func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *ImportReport) error {
-	// 0. THE CALLER DOES NOT CHOOSE WHO IS CHECKED.
-	//
-	// A reconciliation over the workers the file happens to name is a
-	// reconciliation the file controls: name nobody, or name a uuid that does
-	// not exist, and every sum below is zero against zero and passes. The set
-	// of people to check is therefore derived from the file's own movements,
-	// not read off its `balances`, and every one of them has to be declared.
+	if err := checkImportDeclared(in); err != nil {
+		return err
+	}
+	if err := checkImportBalances(ctx, tx, in, rep); err != nil {
+		return err
+	}
+	if err := checkImportSettlements(ctx, tx, in); err != nil {
+		return err
+	}
+	return checkImportLiveLines(ctx, tx, in, rep)
+}
+
+// checkImportDeclared is step 0.
+//
+// THE CALLER DOES NOT CHOOSE WHO IS CHECKED.
+//
+// A reconciliation over the workers the file happens to name is a
+// reconciliation the file controls: name nobody, or name a uuid that does
+// not exist, and every sum below is zero against zero and passes. The set
+// of people to check is therefore derived from the file's own movements,
+// not read off its `balances`, and every one of them has to be declared.
+func checkImportDeclared(in SeasonImport) error {
 	declared := map[string]bool{}
 	for _, b := range in.Balances {
 		declared[b.WorkerID] = true
@@ -702,10 +717,14 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 			"the file moves money for workers it does not declare a balance for; nothing was written").
 			WithDetails(map[string]any{"undeclaredWorkers": undeclared})
 	}
+	return nil
+}
 
-	// 1. The balance, per worker, to the cent. Any disagreement aborts — and
-	//    so does a worker that is not there: a sum over nobody is zero, which
-	//    is exactly the silent-zero this whole endpoint exists to refuse.
+// checkImportBalances is step 1. The balance, per worker, to the cent. Any
+// disagreement aborts — and so does a worker that is not there: a sum over
+// nobody is zero, which is exactly the silent-zero this whole endpoint exists
+// to refuse.
+func checkImportBalances(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *ImportReport) error {
 	mismatches := []map[string]any{}
 	unknown := []string{}
 	for _, b := range in.Balances {
@@ -745,16 +764,19 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 			"the imported balances do not match what the server derives; nothing was written").
 			WithDetails(map[string]any{"balances": mismatches})
 	}
+	return nil
+}
 
-	// 2. Every settlement's gross IS the sum of its lines, and every line
-	//    belongs to the settlement's own worker.
-	//
-	//    Neither of these was checked before, and each on its own is enough to
-	//    invent payroll out of nothing: a gross the lines do not support is a
-	//    receipt for work nobody did, and a line pointing at somebody else's
-	//    weighing pays one person for another person's day AND — because
-	//    ux_items_payable_live is on payable_id alone — leaves the real picker
-	//    with nothing left to settle and no way to get it back.
+// checkImportSettlements is step 2. Every settlement's gross IS the sum of its
+// lines, and every line belongs to the settlement's own worker.
+//
+// Neither of these was checked before, and each on its own is enough to
+// invent payroll out of nothing: a gross the lines do not support is a
+// receipt for work nobody did, and a line pointing at somebody else's
+// weighing pays one person for another person's day AND — because
+// ux_items_payable_live is on payable_id alone — leaves the real picker
+// with nothing left to settle and no way to get it back.
+func checkImportSettlements(ctx context.Context, tx pgx.Tx, in SeasonImport) error {
 	grossBad := []map[string]any{}
 	strays := []map[string]any{}
 	for _, st := range in.Settlements {
@@ -779,28 +801,8 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 				"differenceCents": gross - lines,
 			})
 		}
-
-		rows, err := tx.Query(ctx, `
-			SELECT i.payable_id::text, w.employee_id::text
-			  FROM settlement_items i
-			  JOIN work_records w ON w.id = i.payable_id
-			 WHERE i.settlement_id = $1 AND w.employee_id <> $2`, st.ID, employeeID)
+		strays, err = appendSettlementStrays(ctx, tx, strays, st.ID, employeeID)
 		if err != nil {
-			return importFailure(subject, err)
-		}
-		for rows.Next() {
-			var payableID, owner string
-			if err := rows.Scan(&payableID, &owner); err != nil {
-				rows.Close()
-				return importFailure(subject, err)
-			}
-			strays = append(strays, map[string]any{
-				"settlementId": st.ID, "payableId": payableID,
-				"settlementWorkerId": employeeID, "payableWorkerId": owner,
-			})
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return importFailure(subject, err)
 		}
 	}
@@ -814,9 +816,40 @@ func reconcileImport(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *Impor
 			"a settlement's gross is not the sum of its lines; nothing was written").
 			WithDetails(map[string]any{"settlements": grossBad})
 	}
+	return nil
+}
 
-	// 2. The lock: as many live lines as the handset had, not one more. This
-	//    is what would catch a settlement imported twice under two ids.
+// appendSettlementStrays appends every line of settlementID whose weighing
+// belongs to someone other than employeeID. Errors come back raw; the caller
+// wraps them with the settlement as the subject.
+func appendSettlementStrays(ctx context.Context, tx pgx.Tx, strays []map[string]any, settlementID, employeeID string) ([]map[string]any, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT i.payable_id::text, w.employee_id::text
+		  FROM settlement_items i
+		  JOIN work_records w ON w.id = i.payable_id
+		 WHERE i.settlement_id = $1 AND w.employee_id <> $2`, settlementID, employeeID)
+	if err != nil {
+		return strays, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var payableID, owner string
+		if err := rows.Scan(&payableID, &owner); err != nil {
+			return strays, err
+		}
+		strays = append(strays, map[string]any{
+			"settlementId": settlementID, "payableId": payableID,
+			"settlementWorkerId": employeeID, "payableWorkerId": owner,
+		})
+	}
+	rows.Close()
+	return strays, rows.Err()
+}
+
+// checkImportLiveLines is the lock: as many live lines as the handset had,
+// not one more. This is what would catch a settlement imported twice under
+// two ids.
+func checkImportLiveLines(ctx context.Context, tx pgx.Tx, in SeasonImport, rep *ImportReport) error {
 	var live int
 	if err := tx.QueryRow(ctx,
 		`SELECT COUNT(*) FROM settlement_items WHERE voided_at IS NULL`).Scan(&live); err != nil {

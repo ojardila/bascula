@@ -273,27 +273,44 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 	from := thisWeek.AddDate(0, 0, -7*(weeks-1))
 	to := thisWeek.AddDate(0, 0, 6)
 
-	// Weeks.
+	if err := perfLoadWeeks(ctx, tx, out, employeeID, from, to, thisWeek); err != nil {
+		return nil, err
+	}
+	perfSummarizeRecent(out, thisWeek)
+	if err := perfLoadDays(ctx, tx, out, employeeID, from, to, today, thisWeek); err != nil {
+		return nil, err
+	}
+	if err := perfLoadPlots(ctx, tx, out, employeeID, from, to); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// perfLoadWeeks reads the weeks of the window into out.Weeks.
+func perfLoadWeeks(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
+	employeeID string, from, to, thisWeek time.Time) error {
+
 	rows, err := tx.Query(ctx, perfWeeksSQL, employeeID, from, to, thisWeek)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for rows.Next() {
 		var w PerformanceWeek
 		if err := rows.Scan(&w.WeekStart.Time, &w.Records, &w.Kg, &w.RecordsNotInKg,
 			&w.DaysWorked, &w.FarmAvgKg, &w.FarmPickers, &w.Finished); err != nil {
 			rows.Close()
-			return nil, err
+			return err
 		}
 		out.RecordsNotInKg += w.RecordsNotInKg
 		out.Weeks = append(out.Weeks, w)
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	return rows.Err()
+}
 
-	// The recent window: the last PerformanceRecentWeeks weeks of the list.
+// perfSummarizeRecent fills the summary from out.Weeks. The recent window is
+// the last PerformanceRecentWeeks weeks of the list.
+func perfSummarizeRecent(out *EmployeePerformance, thisWeek time.Time) {
 	recent := out.Weeks
 	if len(recent) > PerformanceRecentWeeks {
 		recent = recent[len(recent)-PerformanceRecentWeeks:]
@@ -311,25 +328,30 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 		out.Summary.ThisWeekKg = out.Weeks[n-1].Kg
 		out.Summary.LastWeekKg = out.Weeks[n-2].Kg
 	}
+}
 
-	// Days of the running week, and last week up to the same weekday.
+// perfLoadDays reads the days of the running week, and last week up to the
+// same weekday.
+func perfLoadDays(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
+	employeeID string, from, to, today, thisWeek time.Time) error {
+
 	lastMonday := thisWeek.AddDate(0, 0, -7)
 	byDay := map[string]PerformanceDay{}
 	drows, err := tx.Query(ctx, perfDaysSQL, employeeID, from, to, lastMonday)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for drows.Next() {
 		var d PerformanceDay
 		if err := drows.Scan(&d.Day.Time, &d.Records, &d.Kg); err != nil {
 			drows.Close()
-			return nil, err
+			return err
 		}
 		byDay[d.Day.Format(time.DateOnly)] = d
 	}
 	drows.Close()
 	if err := drows.Err(); err != nil {
-		return nil, err
+		return err
 	}
 	sameDayLastWeek := today.AddDate(0, 0, -7)
 	for day := lastMonday; !day.After(sameDayLastWeek); day = day.AddDate(0, 0, 1) {
@@ -346,18 +368,23 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 		d.Future = day.After(today)
 		out.Days = append(out.Days, d)
 	}
+	return nil
+}
 
-	// Lotes over the recent window.
+// perfLoadPlots reads the lotes over the recent window.
+func perfLoadPlots(ctx context.Context, tx pgx.Tx, out *EmployeePerformance,
+	employeeID string, from, to time.Time) error {
+
 	prows, err := tx.Query(ctx, perfPlotsSQL, employeeID, from, to, out.Summary.RecentFrom.Time)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for prows.Next() {
 		var id, name *string
 		var p PerformancePlot
 		if err := prows.Scan(&id, &name, &p.Kg, &p.Records); err != nil {
 			prows.Close()
-			return nil, err
+			return err
 		}
 		if id == nil || name == nil {
 			kg := p.Kg
@@ -368,10 +395,7 @@ func EmployeeHarvestPerformance(ctx context.Context, tx pgx.Tx, employeeID strin
 		out.Plots = append(out.Plots, p)
 	}
 	prows.Close()
-	if err := prows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return prows.Err()
 }
 
 // addKg sums two nullable kilo figures: nil + nil is nil, anything else adds.
