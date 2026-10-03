@@ -13,6 +13,8 @@ func serve(t *testing.T, status int, body string) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
+		// Test stub standing in for the Cloudflare API; never served to a browser.
+		// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
