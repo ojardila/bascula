@@ -165,6 +165,8 @@ export function SettlementsPage() {
   /** The farm's real totals, so the banner can say what is being left out. */
   const allLive = (data ?? []).filter((s) => s.status === "open");
   const allTotalCents = allLive.reduce((a, s) => a + s.grossCents, 0);
+  // Every settlement the farm has, before any filter.
+  const allCount = data?.length ?? 0;
 
   function printPayroll() {
     if (!rows || rows.length === 0) return;
@@ -180,7 +182,7 @@ export function SettlementsPage() {
         // result wearing the farm's letterhead, with a signature column.
         scope: {
           filters: activeFilters,
-          totalRows: data?.length ?? rows.length,
+          totalRows: allCount,
           totalGrossCents: allTotalCents,
         },
         rows: rows.map((s) => ({
@@ -270,7 +272,7 @@ export function SettlementsPage() {
           }
         >
           Está viendo <strong>{rows.length}</strong> de{" "}
-          <strong>{data?.length ?? rows.length}</strong> liquidaciones (
+          <strong>{allCount}</strong> liquidaciones (
           {activeFilters.join("; ")}). Las cifras de abajo y la planilla son de
           esas {rows.length}, no de la finca entera: sin el filtro el bruto
           vigente es <strong>{formatMoney(allTotalCents)}</strong>.

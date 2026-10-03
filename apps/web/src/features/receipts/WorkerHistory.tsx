@@ -53,7 +53,7 @@ function RowBody({ r }: Readonly<{ r: HistoryRow }>) {
         >
           <Chip
             label={r.label}
-            color={CHIP_COLOR[r.label] ?? "default"}
+            color={CHIP_COLOR[r.label]}
             sx={{ fontSize: 15, fontWeight: 700 }}
           />
           {r.voided && (

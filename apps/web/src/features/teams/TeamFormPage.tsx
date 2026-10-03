@@ -144,7 +144,7 @@ export function TeamFormPage() {
             documentType: "CC",
             documentNumber: "",
             phone: "",
-            tag: tag.trim() || null,
+            tag: tag.trim(),
             kind: "equipo",
             memberIds,
             membersFrom: from,
@@ -248,7 +248,7 @@ export function TeamFormPage() {
               {
                 color: "text.secondary",
               },
-              ...(Array.isArray(big) ? big : [big]),
+              big,
             ]}
           >
             Marque las personas del equipo. Cada una sigue siendo un trabajador.

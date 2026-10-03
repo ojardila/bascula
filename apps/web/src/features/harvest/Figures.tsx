@@ -56,7 +56,7 @@ export function Unknown({ reason }: Readonly<{ reason: string }>) {
 }
 
 /** The small note that rides beside a provisional or partial figure. */
-function Note({ children, title }: { children: ReactNode; title?: string }) {
+function Note({ children, title }: { children: ReactNode; title: string }) {
   const text = (
     <Typography
       variant="caption"
@@ -65,7 +65,7 @@ function Note({ children, title }: { children: ReactNode; title?: string }) {
       {children}
     </Typography>
   );
-  return title ? (
+  return (
     // `describeChild`: the visible note ("provisional", "al menos · faltan 3")
     // stays the accessible text and the tooltip becomes its description. The
     // default would paint the tooltip as `aria-label` on the span and hide
@@ -75,8 +75,6 @@ function Note({ children, title }: { children: ReactNode; title?: string }) {
         {text}
       </Box>
     </Tooltip>
-  ) : (
-    text
   );
 }
 

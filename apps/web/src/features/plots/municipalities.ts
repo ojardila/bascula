@@ -25,9 +25,6 @@
  * happen with all of them.
  */
 
-/** Municipality -> department. Keys are lowercased and stripped of accents. */
-const BY_MUNICIPALITY: Record<string, string> = {};
-
 const TABLE: Record<string, string[]> = {
   Caldas: [
     "Manizales", "Chinchiná", "Palestina", "Villamaría", "Neira", "Aranzazu",
@@ -99,20 +96,35 @@ export function foldName(s: string): string {
     .replace(/\p{Diacritic}/gu, "");
 }
 
-for (const [department, towns] of Object.entries(TABLE)) {
-  for (const town of towns) {
-    const key = foldName(town);
-    if (AMBIGUOUS.has(key)) continue;
-    // A name that shows up twice without being in AMBIGUOUS is a bug in this
-    // table, not the user's: it goes quiet rather than accusing anybody.
-    if (key in BY_MUNICIPALITY && BY_MUNICIPALITY[key] !== department) {
-      AMBIGUOUS.add(key);
-      delete BY_MUNICIPALITY[key];
-      continue;
+/**
+ * Municipality -> department, keys folded. Names in `ambiguous` are left out,
+ * and a name the table gives two departments joins them. Exported so the
+ * duplicate rule can be tested on a table that has one.
+ */
+export function indexMunicipalities(
+  table: Record<string, string[]>,
+  ambiguous: Set<string>,
+): Record<string, string> {
+  const index: Record<string, string> = {};
+  for (const [department, towns] of Object.entries(table)) {
+    for (const town of towns) {
+      const key = foldName(town);
+      if (ambiguous.has(key)) continue;
+      // A name that shows up twice without being in AMBIGUOUS is a bug in this
+      // table, not the user's: it goes quiet rather than accusing anybody.
+      if (key in index && index[key] !== department) {
+        ambiguous.add(key);
+        delete index[key];
+        continue;
+      }
+      index[key] = department;
     }
-    BY_MUNICIPALITY[key] = department;
   }
+  return index;
 }
+
+/** Municipality -> department. Keys are lowercased and stripped of accents. */
+const BY_MUNICIPALITY = indexMunicipalities(TABLE, AMBIGUOUS);
 
 /**
  * The department that municipality belongs to, when the table knows for

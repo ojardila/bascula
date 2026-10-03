@@ -64,15 +64,14 @@ export function ReceiptPage() {
     );
   if (!data) return <Splash />;
 
-  async function download() {
-    if (!data) return;
+  const download = async () => {
     setBusy(true);
     setPdfError(null);
     const outcome = await downloadReceiptPdf(data);
     setBusy(false);
     if (outcome === "failed")
       setPdfError("No se pudo crear el PDF. Intente otra vez.");
-  }
+  };
 
   return (
     <Box sx={{ maxWidth: 920 }}>

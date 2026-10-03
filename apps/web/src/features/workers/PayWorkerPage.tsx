@@ -179,6 +179,7 @@ export function PayWorkerPage() {
   if (!data) return <Splash />;
 
   const [worker, payables, balance] = data;
+  const members = worker.members ?? [];
   // All pending records are ticked by default: paying part of a week is the
   // exception, and an empty selection with a total at the bottom reads broken.
   const checked = selected ?? new Set(payables.workRecords.map((w) => w.id));
@@ -372,8 +373,8 @@ export function PayWorkerPage() {
           sx={{ mb: 2, fontSize: "1.1rem" }}
         >
           <strong>Cuenta del equipo</strong>
-          {(worker.members?.length ?? 0) > 0
-            ? ` · ${(worker.members ?? []).map((m) => m.name).join(" y ")}. `
+          {members.length > 0
+            ? ` · ${members.map((m) => m.name).join(" y ")}. `
             : ". "}
           Se liquida y se paga una sola vez, al equipo. Cómo se reparten la
           plata es cosa de ellos.
@@ -623,7 +624,7 @@ export function PayWorkerPage() {
               </TextField>
 
               {worker.kind === "equipo" &&
-                (worker.members?.length ?? 0) > 0 && (
+                members.length > 0 && (
                   <TextField
                     select
                     label="¿Quién recibe la plata? (opcional)"
@@ -635,7 +636,7 @@ export function PayWorkerPage() {
                     helperText="Sale en el recibo. El pago es para todo el equipo."
                   >
                     <MenuItem value="">No decir</MenuItem>
-                    {(worker.members ?? []).map((m) => (
+                    {members.map((m) => (
                       <MenuItem key={m.id} value={m.id}>
                         {`${m.name} ${m.lastName ?? ""}`.trim()}
                       </MenuItem>
@@ -824,7 +825,7 @@ export function PayWorkerPage() {
               <Typography sx={{ fontSize: "1.05rem" }}>
                 Recibe:{" "}
                 <strong>
-                  {(worker.members ?? []).find((m) => m.id === receivedBy)
+                  {members.find((m) => m.id === receivedBy)
                     ?.name ?? ""}
                 </strong>
               </Typography>
