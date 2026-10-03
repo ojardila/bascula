@@ -145,6 +145,25 @@ jobs:
           node-version: "24"
       - run: npm audit --omit=dev --audit-level=high --package-lock-only
 
+  # Go modules and the standard library against the Go vulnerability
+  # database. govulncheck reports only vulnerabilities whose code the API
+  # actually reaches, so an advisory in an unused corner of a dependency does
+  # not turn the PR red. Same reasoning as npm audit: a separate job.
+  govulncheck:
+    name: govulncheck
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        working-directory: services/api
+
   web:
     name: console
     needs: changes
