@@ -54,6 +54,7 @@ import {
   kgText,
   weekChange,
 } from "./performance";
+import { affix } from "../../lib/affix";
 
 const WEEKS = 12;
 const TOP_PLOTS = 5;
@@ -63,7 +64,7 @@ const AVG_LINE = "#43483f";
 const GRID = "#e4ebe1";
 const TRACK = "rgba(46,125,50,.12)";
 
-export function WorkerPerformance({ workerId }: { workerId: string }) {
+export function WorkerPerformance({ workerId }: Readonly<{ workerId: string }>) {
   const { data, error, denied } = useAsync(
     () => workerPerformance(workerId, WEEKS),
     [workerId],
@@ -92,7 +93,7 @@ export function WorkerPerformance({ workerId }: { workerId: string }) {
           </Alert>
         )}
         {!error && !data && <Loading />}
-        {data && data.lastRecordOn === null && <Empty />}
+        {data?.lastRecordOn === null && <Empty />}
         {data && data.lastRecordOn !== null && (
           <Body
             today={data.today}
@@ -159,7 +160,7 @@ type Summary = NonNullable<
   Awaited<ReturnType<typeof workerPerformance>>
 >["summary"];
 
-function Body(props: {
+function Body(props: Readonly<{
   today: string;
   lastRecordOn: string;
   summary: Summary;
@@ -172,7 +173,7 @@ function Body(props: {
   share?: boolean;
   /** A team's profile: how many people the kilos are between. */
   teamMembers?: number;
-}) {
+}>) {
   const {
     summary,
     weeks,
@@ -295,14 +296,14 @@ function BigNumber({
   note,
   valueColor = INK,
   ariaLabel,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sentence?: string;
   note: string;
   valueColor?: string;
   ariaLabel?: string;
-}) {
+}>) {
   return (
     <Paper
       variant="outlined"
@@ -358,11 +359,11 @@ function Section({
   title,
   hint,
   children,
-}: {
+}: Readonly<{
   title: string;
   hint?: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <Box>
       <Typography variant="h3" component="h3">
@@ -401,11 +402,11 @@ function WeeklyChart({
   weeks,
   today,
   teamMembers = 0,
-}: {
+}: Readonly<{
   weeks: WirePerformanceWeek[];
   today: string;
   teamMembers?: number;
-}) {
+}>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [selected, setSelected] = useState(weeks.length - 1);
   const height = 240;
@@ -608,7 +609,7 @@ function WeeklyChart({
           <Typography sx={{ fontSize: 17 }}>
             {sel.kg === null
               ? "No recogió en esta semana."
-              : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${teamMembers > 1 ? `, juntos: ${kgText(sel.kg / teamMembers)} c/u` : ""}.`}
+              : `Recogió ${kgText(sel.kg)} en ${daysWorkedText(sel.daysWorked)}${affix(teamMembers > 1 ? kgText(sel.kg / teamMembers) : null, ", juntos: ", " c/u")}.`}
           </Typography>
           {sel.farmAvgKg !== null && (
             <Typography sx={{ fontSize: 16, color: INK_MUTED }}>
@@ -622,7 +623,7 @@ function WeeklyChart({
   );
 }
 
-function Legend({ swatch, text }: { swatch: React.ReactNode; text: string }) {
+function Legend({ swatch, text }: Readonly<{ swatch: React.ReactNode; text: string }>) {
   return (
     <Stack
       direction="row"
@@ -644,10 +645,10 @@ function Legend({ swatch, text }: { swatch: React.ReactNode; text: string }) {
 export function DaysChart({
   days,
   caption = "Kilos recogidos cada día, de lunes a domingo.",
-}: {
+}: Readonly<{
   days: Pick<WirePerformanceDay, "day" | "kg" | "future">[];
   caption?: string;
-}) {
+}>) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const height = 200;
   const pad = { top: 26, bottom: 30 };
@@ -730,10 +731,10 @@ export function DaysChart({
 function PlotBars({
   plots,
   unattributedKg,
-}: {
+}: Readonly<{
   plots: WirePerformancePlot[];
   unattributedKg: number | null;
-}) {
+}>) {
   if (plots.length === 0 && unattributedKg === null) {
     return (
       <Typography sx={{ fontSize: 17, color: INK_MUTED }}>

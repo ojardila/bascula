@@ -14,19 +14,20 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import type { TeamRef, Worker } from "../../api/types";
 import { formatDate } from "../../lib/dates";
 import { BasketTile } from "../workers/Basket";
+import { affix } from "../../lib/affix";
 
 /** «Yorman y Sergio», «Ana & Luis»: a name that is probably two people. */
 export function looksLikeTwoPeople(name: string): boolean {
-  return /\S\s+(y|&|e)\s+\S/i.test(name.trim());
+  return /\S\s+[y&e]\s+\S/i.test(name.trim());
 }
 
 export function TeamMembersCard({
   team,
   canEdit,
-}: {
+}: Readonly<{
   team: Worker;
   canEdit: boolean;
-}) {
+}>) {
   const navigate = useNavigate();
   const members = team.members ?? [];
   return (
@@ -52,7 +53,7 @@ export function TeamMembersCard({
                 <BasketTile tag={m.tag} size={44} sx={{ mr: 1.5 }} />
                 <ListItemText
                   primary={`${m.name} ${m.lastName ?? ""}`.trim()}
-                  secondary={`Desde ${formatDate(m.from)}${m.to ? ` hasta ${formatDate(m.to)}` : ""}${m.tag ? ` · canasto ${m.tag}` : " · sin canasto"}`}
+                  secondary={`Desde ${formatDate(m.from)}${affix(m.to && formatDate(m.to), " hasta ")}${affix(m.tag, " · canasto ") || " · sin canasto"}`}
                   slotProps={{
                     primary: { sx: { fontWeight: 700, fontSize: "1.1rem" } },
                     secondary: { sx: { fontSize: "0.95rem" } },
@@ -85,7 +86,7 @@ export function TeamMembersCard({
   );
 }
 
-export function MemberBanner({ team }: { team: TeamRef }) {
+export function MemberBanner({ team }: Readonly<{ team: TeamRef }>) {
   const navigate = useNavigate();
   return (
     <Alert
@@ -110,8 +111,8 @@ export function MemberBanner({ team }: { team: TeamRef }) {
 }
 
 /** On a payroll row: «Equipo de 2 · Yorman, Sergio». Nothing for a person. */
-export function TeamChip({ worker }: { worker: Worker | undefined | null }) {
-  if (!worker || worker.kind !== "equipo") return null;
+export function TeamChip({ worker }: Readonly<{ worker: Worker | undefined | null }>) {
+  if (worker?.kind !== "equipo") return null;
   const n = worker.members?.length ?? 0;
   const names = (worker.members ?? []).map((m) => m.name).join(", ");
   return (

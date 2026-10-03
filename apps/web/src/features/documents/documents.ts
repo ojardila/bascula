@@ -247,9 +247,11 @@ export function paymentReceiptText(r: ReceiptInput): string {
   });
   const name = `${r.worker.name} ${r.worker.lastName}`.trim();
   const L: string[] = [];
-  L.push(`*Recibo de pago · ${r.farmName}*`);
-  L.push(`Recibo N.º ${payment.receiptNumber}`);
-  L.push(`${name} — ${formatDate(payment.date)}`);
+  L.push(
+    `*Recibo de pago · ${r.farmName}*`,
+    `Recibo N.º ${payment.receiptNumber}`,
+    `${name} — ${formatDate(payment.date)}`,
+  );
   if (r.lines.length) {
     L.push("");
     // One line per week + labor + lote, newest week first.
@@ -277,8 +279,7 @@ export function paymentReceiptText(r: ReceiptInput): string {
         : `Queda un anticipo a favor de la finca: ${money(-after)}.`,
   );
   if (hasProvisionalLines(r.lines)) {
-    L.push("");
-    L.push("PROVISIONAL: las líneas marcadas se pagan al precio de la semana, que todavía no está fijado.");
+    L.push("", "PROVISIONAL: las líneas marcadas se pagan al precio de la semana, que todavía no está fijado.");
   }
   return L.join("\n");
 }

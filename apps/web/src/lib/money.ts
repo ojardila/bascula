@@ -103,7 +103,7 @@ export function formatArea(ha: number): string {
  * and why instead of silently storing NaN.
  */
 export function parseMoneyInput(raw: string): Cents | null {
-  const cleaned = raw.replace(/[$\s\u00a0]/g, "").replace(/\./g, "").replace(",", ".");
+  const cleaned = raw.replaceAll(/[$\s\u00a0]/g, "").replaceAll(".", "").replace(",", ".");
   if (cleaned === "" || !/^-?\d*(\.\d*)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
   if (!Number.isFinite(n)) return null;
@@ -142,7 +142,7 @@ export function moneyInputValue(cents: Cents): string {
 
 /** Same idea for a quantity field: "38,5" -> 38.5. */
 export function parseQuantityInput(raw: string): number | null {
-  const cleaned = raw.replace(/[\s\u00a0]/g, "").replace(/\./g, "").replace(",", ".");
+  const cleaned = raw.replaceAll(/[\s\u00a0]/g, "").replaceAll(".", "").replace(",", ".");
   if (cleaned === "" || !/^-?\d*(\.\d*)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;

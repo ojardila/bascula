@@ -8,12 +8,12 @@ export function AuthLayout({
   subtitle,
   children,
   wide,
-}: {
+}: Readonly<{
   title: string;
   subtitle?: string;
   children: ReactNode;
   wide?: boolean;
-}) {
+}>) {
   return (
     <Box
       sx={{

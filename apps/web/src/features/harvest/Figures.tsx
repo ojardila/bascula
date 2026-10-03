@@ -39,7 +39,7 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
  * Given both a tooltip and an `aria-label`, so the reason survives a mouse and
  * a screen reader alike — "—" read aloud is nothing at all.
  */
-export function Unknown({ reason }: { reason: string }) {
+export function Unknown({ reason }: Readonly<{ reason: string }>) {
   return (
     <Tooltip title={reason}>
       <Box
@@ -216,13 +216,13 @@ export function Figure({
   suffix,
   reason = "Sin dato.",
   bold,
-}: {
+}: Readonly<{
   value: number | null;
   format?: (n: number) => string;
   suffix?: string;
   reason?: string;
   bold?: boolean;
-}) {
+}>) {
   if (value === null) return <Unknown reason={reason} />;
   return (
     <Box

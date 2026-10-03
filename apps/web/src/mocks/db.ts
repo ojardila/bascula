@@ -499,7 +499,7 @@ export function balanceOf(t: Tenant, workerId: string): WireBalance {
     ),
     deductedCents: -sum((l) => l.kind === "deduccion"),
     balanceCents: rows.reduce((a, l) => a + l.amountCents, 0),
-    lastMovementOn: days.length ? days[days.length - 1] : null,
+    lastMovementOn: days.at(-1) ?? null,
     // False for somebody off the payroll. They stay in `/v1/balances` while
     // they still have movements: a debt that disappears with the employee is
     // a debt nobody pays.
@@ -647,11 +647,9 @@ export interface MockBasePrice {
 
 /** The base price history, newest first; seeded with the farm's price "since always". */
 export function basePricesOf(t: Tenant): MockBasePrice[] {
-  if (!t.basePrices) {
-    t.basePrices = [
-      { validFrom: "2000-01-03", priceCents: farmOf(t.farmId)?.priceCents ?? 0, createdAt: new Date().toISOString() },
-    ];
-  }
+  t.basePrices ??= [
+    { validFrom: "2000-01-03", priceCents: farmOf(t.farmId)?.priceCents ?? 0, createdAt: new Date().toISOString() },
+  ];
   return t.basePrices.sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1));
 }
 
@@ -720,7 +718,7 @@ export function rateInForce(a: MockActivity, on: string): WireActivityRate | nul
   const eligible = a.rates
     .filter((r) => dayOf(r.validFrom) <= on)
     .sort((x, y) => x.validFrom.localeCompare(y.validFrom));
-  return eligible.length ? eligible[eligible.length - 1] : null;
+  return eligible.at(-1) ?? null;
 }
 
 /* -- existencias, derived, exactly as the view derives them ---------- */
@@ -2012,7 +2010,7 @@ export function resetDb(): void {
       customerId: customers[0].id,
       warehouseId: MAIN_STORE,
       qty: 12,
-      amountCents: 1_440_000_00,
+      amountCents: 144_000_000,
       receiptId: null,
       note: "Remisión 1188",
       localDay: dayInstant("2026-08-24"),
@@ -2029,7 +2027,7 @@ export function resetDb(): void {
       customerId: customers[0].id,
       warehouseId: MAIN_STORE,
       qty: 5,
-      amountCents: 600_000_00,
+      amountCents: 60_000_000,
       receiptId: null,
       note: "Comprador equivocado",
       localDay: dayInstant("2026-08-25"),
@@ -2053,7 +2051,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0015-7000-8000-000000000001",
       concept: "Abono para el lote El Alto",
-      amountCents: 1_250_000_00,
+      amountCents: 125_000_000,
       localDay: dayInstant("2026-08-14"),
       activityId: null,
       plotId: plots[0].id,
@@ -2067,7 +2065,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0015-7000-8000-000000000002",
       concept: "Combustible de la guadaña",
-      amountCents: 180_000_00,
+      amountCents: 18_000_000,
       localDay: dayInstant("2026-08-12"),
       activityId: activities[1].id,
       plotId: null,
@@ -2081,7 +2079,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0015-7000-8000-000000000003",
       concept: "Reparación de la despulpadora",
-      amountCents: 420_000_00,
+      amountCents: 42_000_000,
       localDay: dayInstant("2026-08-19"),
       activityId: null,
       plotId: plots[2].id,
@@ -2095,7 +2093,7 @@ export function resetDb(): void {
     {
       id: "0192f3a0-0015-7000-8000-000000000004",
       concept: "Análisis de suelos",
-      amountCents: 350_000_00,
+      amountCents: 35_000_000,
       localDay: dayInstant("2026-08-08"),
       activityId: activities[2].id,
       plotId: null,
@@ -2111,7 +2109,7 @@ export function resetDb(): void {
       // the total below has one row it must NOT count.
       id: "0192f3a0-0015-7000-8000-000000000005",
       concept: "Alquiler de motobomba",
-      amountCents: 95_000_00,
+      amountCents: 9_500_000,
       localDay: dayInstant("2026-07-30"),
       activityId: activities[3].id,
       plotId: null,

@@ -258,7 +258,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// and the size limits below are what keep a loop from filling the disk.
 	if !s.oauthRegs.allow(clientIP(r), time.Now()) || !s.oauthRegistrationBudgetLeft(r) {
 		w.Header().Set("Retry-After", "3600")
-		w.Header().Set("Content-Type", contentTypeJSON)
+		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusTooManyRequests)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error":             "invalid_client_metadata",
@@ -479,7 +479,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			writeError(w, r, domain.BadRequest("malformed form"))
+			writeError(w, r, domain.BadRequest(msgMalformedForm))
 			return
 		}
 		q = r.Form
@@ -903,7 +903,7 @@ func oauthClientError(w http.ResponseWriter, basic bool, desc string) {
 	if basic {
 		w.Header().Set("WWW-Authenticate", `Basic realm="bascula"`)
 	}
-	w.Header().Set("Content-Type", contentTypeJSON)
+	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":             "invalid_client",
@@ -914,7 +914,7 @@ func oauthClientError(w http.ResponseWriter, basic bool, desc string) {
 func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	if err := r.ParseForm(); err != nil {
-		oauthTokenError(w, "invalid_request", "malformed form")
+		oauthTokenError(w, "invalid_request", msgMalformedForm)
 		return
 	}
 	tx, err := tenant.Tx(r.Context())
@@ -1037,7 +1037,7 @@ func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pg
 		scope = auth.ScopeMCP
 	}
 	method := store.SignInOAuth
-	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), &method, &row.ClientID, &scope)
+	session, err := s.issueSessionFor(r, tx, user, m, "", newID(), familyGrant{Method: &method, ClientID: &row.ClientID, Scope: &scope})
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -1073,7 +1073,7 @@ func writeOAuthSession(w http.ResponseWriter, session *sessionResponse, scope st
 func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 	allowCORS(w)
 	if err := r.ParseForm(); err != nil {
-		oauthTokenError(w, "invalid_request", "malformed form")
+		oauthTokenError(w, "invalid_request", msgMalformedForm)
 		return
 	}
 	tx, err := tenant.Tx(r.Context())
@@ -1133,7 +1133,7 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 
 func oauthTokenError(w http.ResponseWriter, code, desc string) {
 	allowCORS(w)
-	w.Header().Set("Content-Type", contentTypeJSON)
+	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusBadRequest)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":             code,
@@ -1196,7 +1196,7 @@ const oauthFormStyle = `<style>
 // and which site the code goes to, because registration is open and a
 // stranger can register a client of their own.
 func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values, notice string, pick *oauthPick, client *store.OAuthClient) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set(headerContentType, "text/html; charset=utf-8")
 	// A password form must not be framed (clickjacking), and its URL carries
 	// state and the PKCE challenge, which no Referer should repeat.
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -1245,7 +1245,7 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		for i, m := range pick.Farms {
 			checked := ""
 			if i == 0 {
-				checked = " checked"
+				checked = htmlChecked
 			}
 			name := strings.TrimSpace(m.FarmName)
 			if name == "" {
@@ -1283,9 +1283,9 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		}
 		farmLine = `<p class="farm">Finca: <strong>` + esc(name) + `</strong></p>`
 	}
-	writeChecked, readChecked := " checked", ""
+	writeChecked, readChecked := htmlChecked, ""
 	if oauthAccessChoice(q) == "read" {
-		writeChecked, readChecked = "", " checked"
+		writeChecked, readChecked = "", htmlChecked
 	}
 	// The access choice is its own field, so the hidden copy of an earlier
 	// choice is left out of this form.

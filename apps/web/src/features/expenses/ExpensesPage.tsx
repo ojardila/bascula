@@ -32,6 +32,7 @@ import { formatMoney } from "../../lib/money";
 import { count } from "../../lib/plural";
 import { formatDate } from "../../lib/dates";
 import type { Expense } from "../../api/types";
+import { affix } from "../../lib/affix";
 
 export function ExpensesPage() {
   const { can } = useAuth();
@@ -98,7 +99,7 @@ export function ExpensesPage() {
             <Chip
               size="small"
               icon={<TerrainIcon />}
-              label={`${e.plotName ?? "lote"}${e.cropName ? ` · ${e.cropName}` : ""}`}
+              label={`${e.plotName ?? "lote"}${affix(e.cropName, " · ")}`}
               variant="outlined"
             />
           ),

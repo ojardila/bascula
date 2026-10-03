@@ -682,17 +682,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // on the family so «Sesiones abiertas» can show it.
 func (s *Server) issueSession(r *http.Request, tx pgx.Tx, user *store.User,
 	m *store.Membership, deviceID, familyID, method string) (*sessionResponse, error) {
-	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, &method, nil, nil)
+	return s.issueSessionFor(r, tx, user, m, deviceID, familyID, familyGrant{Method: &method})
+}
+
+// familyGrant is how a refresh family was granted: the sign-in method, and
+// for a family an OAuth client (an MCP connector) holds, that client and the
+// scope it was granted (both nil for an ordinary session). Method is nil only
+// when rotating a family from before methods were recorded (migration 00043);
+// rotation carries the family's own forward.
+type familyGrant struct {
+	Method   *string
+	ClientID *string
+	Scope    *string
 }
 
 // issueSessionFor is issueSession for a family an OAuth client (an MCP
-// connector) holds: oauthClientID tags every token in it, which is what the
+// connector) holds: grant.ClientID tags every token in it, which is what the
 // «Conexiones» block in Configuración lists and revokes.
-//
-// method is nil only on a rotation of a family from before methods were
-// recorded; rotation passes the family's own forward.
 func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
-	m *store.Membership, deviceID, familyID string, method, oauthClientID, scope *string) (*sessionResponse, error) {
+	m *store.Membership, deviceID, familyID string, grant familyGrant) (*sessionResponse, error) {
+	oauthClientID, scope := grant.ClientID, grant.Scope
 
 	// A family an assistant holds gets tokens for /mcp only; see
 	// auth.AudienceMCP. The refresh grant keeps the family, so it keeps this.
@@ -703,9 +712,14 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		if scope != nil {
 			granted = *scope
 		}
-		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, granted, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+		access, err = s.signer.IssueMCP(s.mcpResource(r), *oauthClientID, granted, auth.TokenSubject{
+			UserID: user.ID, FarmID: m.FarmID, Role: m.Role, DeviceID: deviceID, Superadmin: user.IsSuperadmin,
+		})
 	} else {
-		access, err = s.signer.IssueSession(familyID, user.ID, m.FarmID, m.Role, deviceID, user.IsSuperadmin)
+		access, err = s.signer.IssueSession(auth.TokenSubject{
+			UserID: user.ID, FarmID: m.FarmID, Role: m.Role, DeviceID: deviceID,
+			Superadmin: user.IsSuperadmin, SessionID: familyID,
+		})
 	}
 	if err != nil {
 		return nil, domain.Internal("could not issue the access token").WithCause(err)
@@ -722,7 +736,7 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ID: newID(), FamilyID: familyID, UserID: user.ID, FarmID: m.FarmID,
 		DeviceID: device, ExpiresAt: time.Now().Add(auth.RefreshTTL),
 		OAuthClientID: oauthClientID, Scope: scope,
-		SignInMethod: method, UserAgent: requestUserAgent(r),
+		SignInMethod: grant.Method, UserAgent: requestUserAgent(r),
 	}, hash); err != nil {
 		return nil, err
 	}
@@ -912,7 +926,7 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, tok.SignInMethod, tok.OAuthClientID, tok.Scope)
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, familyGrant{Method: tok.SignInMethod, ClientID: tok.OAuthClientID, Scope: tok.Scope})
 	if err != nil {
 		return nil, err
 	}

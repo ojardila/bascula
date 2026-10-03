@@ -25,15 +25,16 @@ type MCPAuditEntry struct {
 
 // InsertMCPAudit writes one record in the caller's farm (RLS checks the farm
 // and that the user is the one pinned on the transaction).
-func InsertMCPAudit(ctx context.Context, tx pgx.Tx, id, farmID, userID string, clientID *string,
-	tool, outcome, summary string, args []byte) error {
+// Only ID, UserID, ClientID, Tool, Outcome, Summary and Args are read from e.
+func InsertMCPAudit(ctx context.Context, tx pgx.Tx, farmID string, e MCPAuditEntry) error {
+	args := []byte(e.Args)
 	if len(args) == 0 {
 		args = []byte("{}")
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO mcp_audit (id, farm_id, user_id, client_id, tool, outcome, summary, args)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		id, farmID, userID, clientID, tool, outcome, summary, args)
+		e.ID, farmID, e.UserID, e.ClientID, e.Tool, e.Outcome, e.Summary, args)
 	return err
 }
 

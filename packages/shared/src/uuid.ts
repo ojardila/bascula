@@ -126,11 +126,11 @@ export function isUuidV7(s: unknown): s is string {
  */
 export function uuidV7Time(uuid: string): number {
   if (!isUuidV7(uuid)) throw new Error(`not a uuidv7: ${uuid}`);
-  return parseInt(uuid.slice(0, 8) + uuid.slice(9, 13), 16);
+  return Number.parseInt(uuid.slice(0, 8) + uuid.slice(9, 13), 16);
 }
 
 /** The 12-bit sequence inside the millisecond. Exposed for the tests. */
 export function uuidV7Counter(uuid: string): number {
   if (!isUuidV7(uuid)) throw new Error(`not a uuidv7: ${uuid}`);
-  return parseInt(uuid.slice(15, 18), 16);
+  return Number.parseInt(uuid.slice(15, 18), 16);
 }

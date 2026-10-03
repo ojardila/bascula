@@ -44,7 +44,7 @@ export function Splash() {
   );
 }
 
-export function RequireAuth({ children }: { children: ReactNode }) {
+export function RequireAuth({ children }: Readonly<{ children: ReactNode }>) {
   const { status } = useAuth();
   const location = useLocation();
   if (status === "loading") return <Splash />;
@@ -57,7 +57,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function RequireSuperAdmin({ children }: { children: ReactNode }) {
+export function RequireSuperAdmin({ children }: Readonly<{ children: ReactNode }>) {
   const { status, user } = useAuth();
   if (status === "loading") return <Splash />;
   if (status === "anonymous") return <Navigate to="/entrar" replace />;
@@ -71,7 +71,7 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }) {
  * Note the wording: this says the *account* lacks the privilege, not that the
  * page is missing, and it names who can grant it.
  */
-export function PermissionDenied({ moduleName }: { moduleName: string }) {
+export function PermissionDenied({ moduleName }: Readonly<{ moduleName: string }>) {
   const navigate = useNavigate();
   const { landing } = useAuth();
   const [seconds, setSeconds] = useState(6);
@@ -116,11 +116,11 @@ export function RequirePermission({
   action,
   moduleName,
   children,
-}: {
+}: Readonly<{
   action: Action;
   moduleName: string;
   children: ReactNode;
-}) {
+}>) {
   const { can } = useAuth();
   if (!can(action)) return <PermissionDenied moduleName={moduleName} />;
   return <>{children}</>;

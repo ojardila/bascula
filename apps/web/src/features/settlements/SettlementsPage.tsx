@@ -410,10 +410,10 @@ export function SettlementsPage() {
 function SettlementRow({
   s,
   onOpen,
-}: {
+}: Readonly<{
   s: SettlementSummary;
   onOpen: () => void;
-}) {
+}>) {
   const isVoid = s.status === "void";
   return (
     <TableRow

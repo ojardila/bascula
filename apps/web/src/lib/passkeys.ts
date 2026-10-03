@@ -35,12 +35,12 @@ export function passkeyAlreadyHere(e: unknown): boolean {
 
 function fromB64url(s: string): ArrayBuffer {
   const b64 = s
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
     .padEnd(Math.ceil(s.length / 4) * 4, "=");
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.codePointAt(i) ?? 0;
   return out.buffer;
 }
 
@@ -48,8 +48,8 @@ function toB64url(buf: ArrayBuffer | null | undefined): string | undefined {
   if (!buf) return undefined;
   const bytes = new Uint8Array(buf);
   let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  for (const b of bytes) bin += String.fromCodePoint(b);
+  return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 function descriptors(

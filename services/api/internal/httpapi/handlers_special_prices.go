@@ -147,7 +147,9 @@ func (s *Server) handleSetSpecialPrice(w http.ResponseWriter, r *http.Request) {
 	if p, ok := auth.PrincipalFrom(r.Context()); ok {
 		userID = p.UserID
 	}
-	if err := store.SetSpecialPrice(r.Context(), tx, farmID, userID, kind, id, monday, price); err != nil {
+	if err := store.SetSpecialPrice(r.Context(), tx, farmID, userID, store.SpecialPriceChange{
+		Kind: kind, TargetID: id, ValidFrom: monday, PriceMinor: price,
+	}); err != nil {
 		writeError(w, r, err)
 		return
 	}

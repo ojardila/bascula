@@ -189,7 +189,7 @@ export function WorkUnitsPage() {
             </CardContent>
           </Card>
         ))}
-        {units && units.length === 0 && (
+        {units?.length === 0 && (
           <Typography
             sx={{
               color: "text.secondary",
@@ -255,11 +255,11 @@ function UnitDialog({
   unit,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   unit: WorkUnit | null;
   onClose: () => void;
   onSaved: (message: string) => void;
-}) {
+}>) {
   const [label, setLabel] = useState(unit?.label ?? "");
   const [code, setCode] = useState(unit?.code ?? "");
   const [factor, setFactor] = useState(

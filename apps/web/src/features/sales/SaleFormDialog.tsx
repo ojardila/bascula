@@ -62,6 +62,7 @@ import type {
   StockLevel,
 } from "../../api/types";
 import { DateField } from "../../components/DateField";
+import { affix } from "../../lib/affix";
 
 export interface SaleFormDialogProps {
   open: boolean;
@@ -94,7 +95,7 @@ export function SaleFormDialog({
   levels,
   onClose,
   onSaved,
-}: SaleFormDialogProps) {
+}: Readonly<SaleFormDialogProps>) {
   const { user } = useAuth();
   const today = todayInFarm(user?.farm.timezone ?? "America/Bogota");
 
@@ -268,7 +269,7 @@ export function SaleFormDialog({
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
-              label={`Cantidad${product ? ` (${product.storageUnit})` : ""}`}
+              label={`Cantidad${affix(product?.storageUnit, " (", ")")}`}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               error={!!fields.qty}

@@ -406,10 +406,10 @@ export function TeamFormPage() {
 function NewPersonDialog({
   onClose,
   onCreated,
-}: {
+}: Readonly<{
   onClose: () => void;
   onCreated: (w: Worker) => void;
-}) {
+}>) {
   const [workerId] = useState(() => uuidv7());
   const [name, setName] = useState("");
   const [lastName, setLastName] = useState("");

@@ -336,7 +336,7 @@ export function RegistroMasivoPage() {
 
   const plot = plots.find((p) => p.id === plotId) ?? null;
   const loadedWeek =
-    weekRecords && weekRecords.monday === monday ? weekRecords.records : null;
+    weekRecords?.monday === monday ? weekRecords.records : null;
   const dayRecords = loadedWeek ? recordsOn(loadedWeek, day) : null;
   const { settledWorkers, weekSettled } = weekLocks(loadedWeek ?? []);
   const locked = (workerId: string) =>
@@ -1026,8 +1026,9 @@ export function RegistroMasivoPage() {
           onClose={() => setCorrecting(null)}
           onSaved={(n) => {
             setCorrecting(null);
+            const what = n === 1 ? "Se corrigió 1 pesada" : `Se corrigieron ${n} pesadas`;
             setCorrected(
-              `${n === 1 ? "Se corrigió 1 pesada" : `Se corrigieron ${n} pesadas`} de ${workerLabel(correctingWorker)} · ${dayTitle(day, today)}.`,
+              `${what} de ${workerLabel(correctingWorker)} · ${dayTitle(day, today)}.`,
             );
             void loadWeek(activity.id, monday)
               .then((r) => setWeekRecords({ monday, records: r }))

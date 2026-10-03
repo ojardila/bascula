@@ -258,13 +258,13 @@ export function LandingPage() {
   );
 }
 
-function Section(props: {
+function Section(props: Readonly<{
   id?: string;
   bg?: string;
   color?: string;
   children: ReactNode;
   maxWidth?: "sm" | "md" | "lg";
-}) {
+}>) {
   return (
     <Box
       component="section"
@@ -280,11 +280,11 @@ function Section(props: {
   );
 }
 
-function SectionTitle(props: {
+function SectionTitle(props: Readonly<{
   children: ReactNode;
   center?: boolean;
   color?: string;
-}) {
+}>) {
   return (
     <Typography
       component="h2"
@@ -306,11 +306,11 @@ function SectionTitle(props: {
   );
 }
 
-function Lead(props: {
+function Lead(props: Readonly<{
   children: ReactNode;
   center?: boolean;
   color?: string;
-}) {
+}>) {
   return (
     <Typography
       sx={{
@@ -340,7 +340,7 @@ const PILL_LABEL = {
 } as const;
 
 /** The one primary action of the page. Always scrolls to the form. */
-function DemoButton(props: { light?: boolean; fullWidthOnMobile?: boolean }) {
+function DemoButton(props: Readonly<{ light?: boolean; fullWidthOnMobile?: boolean }>) {
   const light = Boolean(props.light);
   return (
     <Button
@@ -396,12 +396,12 @@ function DemoLabel() {
  * of the image). On a phone a desktop screen is small, so it opens full size
  * with a tap.
  */
-function Screenshot(props: {
+function Screenshot(props: Readonly<{
   src: string;
   alt: string;
   eager?: boolean;
   label?: boolean;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   return (
     <Box sx={{ width: "100%" }}>
@@ -497,7 +497,7 @@ function Screenshot(props: {
 
 /* ----------------------------------------------------------- 1. nav bar -- */
 
-function NavBar(props: { signedIn: boolean; landing: string }) {
+function NavBar(props: Readonly<{ signedIn: boolean; landing: string }>) {
   const { signedIn, landing } = props;
   return (
     <Box
@@ -1416,7 +1416,7 @@ function Faq() {
 
 /* --------------------------------------------------- 11. closing + form -- */
 
-function Closing(props: { signedIn: boolean; landing: string }) {
+function Closing(props: Readonly<{ signedIn: boolean; landing: string }>) {
   const { signedIn } = props;
   return (
     <Box
@@ -1674,7 +1674,7 @@ function DemoForm() {
 
 /* ----------------------------------------------------------- 12. footer -- */
 
-function Footer(props: { signedIn: boolean; landing: string }) {
+function Footer(props: Readonly<{ signedIn: boolean; landing: string }>) {
   const { signedIn, landing } = props;
   const linkSx = {
     color: CREAM,

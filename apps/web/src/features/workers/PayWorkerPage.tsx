@@ -66,6 +66,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { visuallyHidden } from "@mui/utils";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PrintIcon from "@mui/icons-material/Print";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
@@ -73,14 +74,13 @@ import ChangeCircleIcon from "@mui/icons-material/ChangeCircle";
 import { Money } from "../../components/Money";
 import { PermissionDenied, Splash } from "../../components/Guards";
 import { useAsync } from "../../lib/useAsync";
-import { api } from "../../api/endpoints";
+import { api, grossChangeOf } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { formatDate, formatDateRange, formatDayLong } from "../../lib/dates";
 import { formatMoney, formatQuantity, parseMoneyInput } from "../../lib/money";
 import { useWriteOnce } from "../../lib/writeOnce";
 import { CORRECTION_GLOSS } from "../../lib/vocab";
 import { useAuth } from "../../auth/AuthContext";
-import { grossChangeOf } from "../../api/endpoints";
 import { sentenceFor, type GrossChange } from "../../api/grossChange";
 
 /**
@@ -409,13 +409,17 @@ export function PayWorkerPage() {
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
-              <Typography variant="h3" gutterBottom>
+              <Typography variant="h3" component="h2" gutterBottom>
                 Labores pendientes de liquidar
               </Typography>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell padding="checkbox" />
+                    <TableCell padding="checkbox">
+                      <Box component="span" sx={visuallyHidden}>
+                        Seleccionar
+                      </Box>
+                    </TableCell>
                     <TableCell>Actividad</TableCell>
                     <TableCell>Fecha</TableCell>
                     <TableCell>Lotes</TableCell>
@@ -509,7 +513,7 @@ export function PayWorkerPage() {
                      went on looking the same after everything was paid off
                      and the balance was $0 — read as a debt the payment had
                      not cleared. The heading and the footer say so now. */}
-              <Typography variant="h3">
+              <Typography variant="h3" component="h2">
                 Anticipos y deudas ya descontados
               </Typography>
               <Typography

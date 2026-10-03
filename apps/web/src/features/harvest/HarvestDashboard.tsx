@@ -52,12 +52,13 @@ import { EMPLOYEE, PLOT } from "../../lib/vocab";
 import { Kg, Value } from "./Figures";
 import { belowAverageText, lastSeenText, plotTrend } from "./dashboardText";
 import { BasketTile } from "../workers/Basket";
+import { affix } from "../../lib/affix";
 
 /** How many people are listed before «Ver todas». */
 const TOP_PEOPLE = 10;
 const TRACK = "rgba(46,125,50,.12)";
 
-export function HarvestDashboard({ canSeeMoney }: { canSeeMoney: boolean }) {
+export function HarvestDashboard({ canSeeMoney }: Readonly<{ canSeeMoney: boolean }>) {
   const { data, error, denied } = useAsync(() => reportHarvestDashboard(), []);
 
   if (denied) return <PermissionDenied moduleName="ver la cosecha" />;
@@ -87,10 +88,10 @@ export function HarvestDashboard({ canSeeMoney }: { canSeeMoney: boolean }) {
 function Body({
   d,
   canSeeMoney,
-}: {
+}: Readonly<{
   d: WireHarvestDashboard;
   canSeeMoney: boolean;
-}) {
+}>) {
   const s = d.summary;
   if (s.thisWeek.records === 0 && s.lastWeek.records === 0) {
     return (
@@ -215,7 +216,7 @@ function Body({
                 component={RouterLink}
                 to={`${EMPLOYEE.path}/${p.employeeId}`}
                 clickable
-                label={`${p.tag ? `${p.tag} · ` : ""}${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
+                label={`${affix(p.tag, "", " · ")}${p.name} · recogió ${lastSeenText(p.lastRecordOn, d.today)}`}
                 sx={{ fontSize: "1rem", height: 40, borderRadius: 20 }}
               />
             ))}
@@ -226,7 +227,7 @@ function Body({
   );
 }
 
-function People({ d }: { d: WireHarvestDashboard }) {
+function People({ d }: Readonly<{ d: WireHarvestDashboard }>) {
   const [all, setAll] = useState(false);
   const people = d.people;
   const shown = all ? people : people.slice(0, TOP_PEOPLE);
@@ -286,7 +287,7 @@ function People({ d }: { d: WireHarvestDashboard }) {
   );
 }
 
-function PlotRow({ p }: { p: WireHarvestDashboardPlot }) {
+function PlotRow({ p }: Readonly<{ p: WireHarvestDashboardPlot }>) {
   return (
     <RowLink
       to={`${PLOT.path}/${p.plotId}`}
@@ -356,15 +357,17 @@ function PlotRow({ p }: { p: WireHarvestDashboardPlot }) {
 function PersonRow({
   p,
   rank,
-}: {
+}: Readonly<{
   p: WireHarvestDashboardPerson;
   rank: number;
-}) {
+}>) {
   // A team is one row, ranked by kilos EACH: «392 kg c/u · 785 kg juntos».
   const team = p.kind === "equipo";
   const n = Math.round(p.members);
   const main = team ? p.kgEach : p.kg;
-  const label = `${rank}. ${p.name}${p.tag ? ` (canasto ${p.tag})` : ""}: ${main === null ? "sin kilos" : kgText(main)}${team && p.kg !== null ? ` cada uno, ${kgText(p.kg)} juntos` : ""}`;
+  const mainText = main === null ? "sin kilos" : kgText(main);
+  const together = team && p.kg !== null ? kgText(p.kg) : null;
+  const label = `${rank}. ${p.name}${affix(p.tag, " (canasto ", ")")}: ${mainText}${affix(together, " cada uno, ", " juntos")}`;
   return (
     <RowLink
       to={`${EMPLOYEE.path}/${p.employeeId}`}
@@ -469,12 +472,12 @@ function RowLink({
   label,
   warn,
   children,
-}: {
+}: Readonly<{
   to: string;
   label: string;
   warn?: boolean;
   children: ReactNode;
-}) {
+}>) {
   return (
     <ButtonBase
       component={RouterLink}
@@ -511,12 +514,12 @@ function BigFigure({
   hint,
   wide,
   children,
-}: {
+}: Readonly<{
   label: string;
   hint?: string;
   wide?: boolean;
   children: ReactNode;
-}) {
+}>) {
   return (
     <Box
       sx={{
@@ -560,11 +563,11 @@ function Section({
   title,
   hint,
   children,
-}: {
+}: Readonly<{
   title: string;
   hint?: string;
   children: ReactNode;
-}) {
+}>) {
   return (
     <Box
       sx={{
