@@ -45,24 +45,24 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 
 		attrs := []any{
 			"method", r.Method,
-			"path", p,
-			"host", r.Host,
+			"path", sanitizeLog(p),
+			"host", sanitizeLog(r.Host),
 			"status", ww.Status(),
 			"ms", time.Since(start).Milliseconds(),
-			"ua", r.UserAgent(),
-			"ip", middleware.GetClientIP(r.Context()),
+			"ua", sanitizeLog(r.UserAgent()),
+			"ip", sanitizeLog(middleware.GetClientIP(r.Context())),
 		}
 		if rpcMethod != "" {
-			attrs = append(attrs, "rpc", rpcMethod)
+			attrs = append(attrs, "rpc", sanitizeLog(rpcMethod))
 		}
 		if rpcTool != "" {
-			attrs = append(attrs, "tool", rpcTool)
+			attrs = append(attrs, "tool", sanitizeLog(rpcTool))
 		}
 		if p == "/mcp" {
 			attrs = append(attrs,
 				"bearer", bearerToken(r) != "",
-				"accept", r.Header.Get("Accept"),
-				"mcp_protocol", r.Header.Get("MCP-Protocol-Version"),
+				"accept", sanitizeLog(r.Header.Get("Accept")),
+				"mcp_protocol", sanitizeLog(r.Header.Get("MCP-Protocol-Version")),
 				"mcp_session", r.Header.Get("Mcp-Session-Id") != "")
 		}
 		if strings.HasPrefix(p, "/oauth/") {
@@ -71,10 +71,10 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 			// token); read back only the non-secret fields.
 			get := func(k string) string {
 				if v := q.Get(k); v != "" {
-					return v
+					return sanitizeLog(v)
 				}
 				if r.Form != nil {
-					return r.Form.Get(k)
+					return sanitizeLog(r.Form.Get(k))
 				}
 				return ""
 			}
@@ -83,7 +83,7 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 				clientAuth = "basic"
 				if clientID == "" {
 					if v, err := url.QueryUnescape(u); err == nil {
-						clientID = v
+						clientID = sanitizeLog(v)
 					}
 				}
 			} else if r.Form != nil && r.Form.Get("client_secret") != "" {
@@ -101,9 +101,9 @@ func logConnectorTraffic(next http.Handler) http.Handler {
 			if loc := ww.Header().Get("Location"); loc != "" {
 				if u, err := url.Parse(loc); err == nil {
 					attrs = append(attrs,
-						"redirect_to", u.Scheme+"://"+u.Host+u.Path,
+						"redirect_to", sanitizeLog(u.Scheme+"://"+u.Host+u.Path),
 						"redirect_has_code", u.Query().Get("code") != "",
-						"redirect_error", u.Query().Get("error"))
+						"redirect_error", sanitizeLog(u.Query().Get("error")))
 				}
 			}
 		}

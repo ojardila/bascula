@@ -335,16 +335,16 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(keys)
 	slog.Info("connector request register body",
-		"ua", r.UserAgent(),
-		"keys", keys,
-		"client_name", str("client_name"),
-		"redirect_uris", redirects,
-		"grant_types", list("grant_types"),
-		"response_types", list("response_types"),
-		"token_endpoint_auth_method", requestedMethod,
-		"granted_auth_method", method,
-		"scope", str("scope"),
-		"application_type", str("application_type"),
+		"ua", sanitizeLog(r.UserAgent()),
+		"keys", sanitizeLogList(keys),
+		"client_name", sanitizeLog(str("client_name")),
+		"redirect_uris", sanitizeLogList(redirects),
+		"grant_types", sanitizeLogList(list("grant_types")),
+		"response_types", sanitizeLogList(list("response_types")),
+		"token_endpoint_auth_method", sanitizeLog(requestedMethod),
+		"granted_auth_method", sanitizeLog(method),
+		"scope", sanitizeLog(str("scope")),
+		"application_type", sanitizeLog(str("application_type")),
 	)
 
 	if len(redirects) == 0 {
@@ -1327,7 +1327,7 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	if notice != "" {
 		// Why the sign-in page came back instead of going on to the assistant
 		// (wrong password, unknown client, ...). Never the password itself.
-		slog.Warn("oauth sign-in page notice", "notice", notice, "client_id", q.Get("client_id"))
+		slog.Warn("oauth sign-in page notice", "notice", sanitizeLog(notice), "client_id", sanitizeLog(q.Get("client_id")))
 		msg = `<p class="err">` + esc(notice) + `</p>`
 	}
 	if client != nil {

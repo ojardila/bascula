@@ -203,7 +203,7 @@ func (s *Server) pollTenant(slug string) {
 		}
 		time.Sleep(every)
 	}
-	slog.Warn("tenant watch gave up", "slug", slug)
+	slog.Warn("tenant watch gave up", "slug", sanitizeLog(slug))
 }
 
 // trySeedTenant is one poll: it reports whether the stack is seeded, seeding
@@ -220,10 +220,10 @@ func (s *Server) trySeedTenant(slug string) bool {
 		return false
 	}
 	if err := s.seedTenant(context.Background(), slug); err != nil {
-		slog.Warn("tenant seed", "slug", slug, "err", err)
+		slog.Warn("tenant seed", "slug", sanitizeLog(slug), "err", sanitizeLogErr(err))
 		return false
 	}
-	slog.Info("tenant seeded", "slug", slug)
+	slog.Info("tenant seeded", "slug", sanitizeLog(slug))
 	return true
 }
 
