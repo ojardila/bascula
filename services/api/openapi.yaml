@@ -375,6 +375,12 @@ paths:
         This is where `farmId` and `userId` come from. Presenting this token is
         the proof that the address belongs to the caller — the proof the public
         signup cannot ask for, and the reason it names nothing.
+
+        While the account is not verified yet, `password` (the one chosen at
+        signup) is required as well: a link mailed because a stranger
+        registered your address cannot be used to verify their registration,
+        and the stranger has no mailbox to open it. Confirming starts building
+        the farm's own address.
       x-action: auth.verify_email
       x-roles: [public]
       security: []
@@ -387,6 +393,9 @@ paths:
               required: [token]
               properties:
                 token: { type: string }
+                password:
+                  type: string
+                  description: The password chosen at signup. Required while the account is not verified.
       responses:
         "200":
           description: Verified.
@@ -401,6 +410,9 @@ paths:
                     type: string
                     format: uuid
                     description: The farm this registration created.
+                  slug:
+                    type: string
+                    description: That farm's slug, for the waiting screen (`/preparando/{slug}`).
                   verified: { type: boolean }
         "400":
           description: |
@@ -1097,7 +1109,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds, notifyAvailable, notifyRequested, stages, percent, current, source]
+                required: [slug, url, dedicated, steps, ready, slow, elapsedSeconds, notifyAvailable, notifyRequested, awaitingVerification, stages, percent, current, source]
                 properties:
                   slug: { $ref: "#/components/schemas/FarmSlug" }
                   url:
@@ -1128,6 +1140,12 @@ paths:
                   notifyRequested:
                     type: boolean
                     description: The owner asked for that email.
+                  awaitingVerification:
+                    type: boolean
+                    description: |
+                      The owner has not opened the mailed confirmation link yet.
+                      Nothing is being built until they do; the screen says so
+                      instead of showing progress.
                   stages:
                     type: array
                     description: |
@@ -6656,11 +6674,12 @@ components:
         verificationRequired:
           type: boolean
           description: |
-            Always false. One email may own several farms: a registration with
-            an address that already has an account creates the new farm too,
-            with that account as owner, and the password typed here becomes
-            the owner's password on the new farm's own stack. The account's
-            password on the main domain is not changed.
+            True when this deployment sends mail: a link goes to the address
+            (or, for an address already verified, a notice that a farm was
+            registered with it), and the farm's own address is built once the
+            owner confirms. False without a mailer, when the password alone is
+            the proof. It is the same for every address, so it says nothing
+            about accounts.
         verificationToken:
           type: string
           description: |

@@ -900,7 +900,7 @@ export const handlers = [
     return HttpResponse.json({
       slug, url: farmProdUrl(slug), dedicated: true, steps, ready,
       slow: !ready && elapsed > 900, elapsedSeconds: Math.floor(elapsed),
-      notifyAvailable: true, notifyRequested: readyEmailAsked.has(slug),
+      notifyAvailable: true, notifyRequested: readyEmailAsked.has(slug), awaitingVerification: false,
       stages, percent, source: "cluster",
       current: ready ? "¡Su finca está lista!" : "Estamos preparando su finca.",
     });
@@ -918,8 +918,16 @@ export const handlers = [
     const body = (await request.json()) as VerifyEmailRequestBody;
     const row = db.verifications.find((v) => v.token === body.token && v.consumedAt === null);
     if (!row) return badRequest("that verification link is not valid any more");
-    row.consumedAt = Date.now();
     const user = db.users.find((u) => u.id === row.userId);
+    // Same rule as the server: an unverified account also needs the password
+    // chosen at signup, checked before the link is spent.
+    if (user && !user.emailVerified && body.password !== user.password) {
+      return HttpResponse.json(
+        { error: { code: "INVALID_CREDENTIALS", message: "the password does not match this registration" } },
+        { status: 401 },
+      );
+    }
+    row.consumedAt = Date.now();
     if (user) user.emailVerified = true;
     return HttpResponse.json({ userId: row.userId, verified: true });
   }),

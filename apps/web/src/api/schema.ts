@@ -212,6 +212,12 @@ export interface paths {
          *     This is where `farmId` and `userId` come from. Presenting this token is
          *     the proof that the address belongs to the caller — the proof the public
          *     signup cannot ask for, and the reason it names nothing.
+         *
+         *     While the account is not verified yet, `password` (the one chosen at
+         *     signup) is required as well: a link mailed because a stranger
+         *     registered your address cannot be used to verify their registration,
+         *     and the stranger has no mailbox to open it. Confirming starts building
+         *     the farm's own address.
          */
         post: operations["verifyEmail"];
         delete?: never;
@@ -3927,11 +3933,12 @@ export interface components {
              */
             provisionTicket?: string;
             /**
-             * @description Always false. One email may own several farms: a registration with
-             *     an address that already has an account creates the new farm too,
-             *     with that account as owner, and the password typed here becomes
-             *     the owner's password on the new farm's own stack. The account's
-             *     password on the main domain is not changed.
+             * @description True when this deployment sends mail: a link goes to the address
+             *     (or, for an address already verified, a notice that a farm was
+             *     registered with it), and the farm's own address is built once the
+             *     owner confirms. False without a mailer, when the password alone is
+             *     the proof. It is the same for every address, so it says nothing
+             *     about accounts.
              */
             verificationRequired: boolean;
             /**
@@ -7446,6 +7453,8 @@ export interface operations {
             content: {
                 "application/json": {
                     token: string;
+                    /** @description The password chosen at signup. Required while the account is not verified. */
+                    password?: string;
                 };
             };
         };
@@ -7464,6 +7473,8 @@ export interface operations {
                          * @description The farm this registration created.
                          */
                         farmId: string;
+                        /** @description That farm's slug, for the waiting screen (`/preparando/{slug}`). */
+                        slug?: string;
                         verified: boolean;
                     };
                 };
@@ -8196,6 +8207,12 @@ export interface operations {
                         notifyAvailable: boolean;
                         /** @description The owner asked for that email. */
                         notifyRequested: boolean;
+                        /**
+                         * @description The owner has not opened the mailed confirmation link yet.
+                         *     Nothing is being built until they do; the screen says so
+                         *     instead of showing progress.
+                         */
+                        awaitingVerification: boolean;
                         /**
                          * @description Weighted, monotonic progress stages, read from the cluster
                          *     (read-only), GitHub Actions, Cloudflare and a strictly

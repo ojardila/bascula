@@ -12,6 +12,7 @@ import { APP_HOME, isFarmHost, showsFarmEntry } from "./lib/farmHost";
 import { FarmEntryPage } from "./features/entry/FarmEntryPage";
 import { ForgotPasswordPage } from "./features/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
+import { ConfirmEmailPage } from "./features/auth/ConfirmEmailPage";
 import { OfflineProvider } from "./offline/OfflineContext";
 import { OfflineBar } from "./offline/OfflineBar";
 import { PlotsPage } from "./features/plots/PlotsPage";
@@ -404,6 +405,7 @@ export function App() {
       <Route path="/entrar" element={<LoginPage />} />
       <Route path="/olvide-mi-clave" element={<ForgotPasswordPage />} />
       <Route path="/restablecer-clave" element={<ResetPasswordPage />} />
+      <Route path="/confirmar-correo" element={<ConfirmEmailPage />} />
       <Route path="/empezar" element={<MainDomainSignup />} />
       <Route path="/registro" element={<MainDomainSignup />} />
       <Route path="/preparando/:slug" element={<ProvisionPage />} />

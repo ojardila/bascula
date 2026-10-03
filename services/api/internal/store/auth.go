@@ -400,6 +400,35 @@ func InsertEmailVerification(ctx context.Context, tx pgx.Tx, id, userID, farmID 
 	return err
 }
 
+// PeekEmailVerification names the user and farm of a live, unused token
+// without spending it, so the caller can check the password first.
+func PeekEmailVerification(ctx context.Context, tx pgx.Tx, hash []byte) (userID, farmID string, err error) {
+	err = tx.QueryRow(ctx, `
+		SELECT user_id::text, farm_id::text FROM email_verifications
+		 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`, hash).Scan(&userID, &farmID)
+	return userID, farmID, err
+}
+
+// ReplaceUnverifiedClaim gives an account nobody has verified to the latest
+// person who registered its address: their password, name and phone, and none
+// of the earlier claimant's pending links. Until somebody opens a mailed link
+// with the matching password the account opens nothing.
+func ReplaceUnverifiedClaim(ctx context.Context, tx pgx.Tx, userID, name, phone, passwordHash string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE users SET password_hash = $2, name = $3, phone = $4
+		 WHERE id = $1 AND email_verified_at IS NULL`, userID, passwordHash, name, phone)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE email_verifications SET used_at = now()
+		 WHERE user_id = $1 AND used_at IS NULL`, userID)
+	return err
+}
+
 // ConsumeEmailVerification marks the token used and verifies the address, in
 // one statement so a replay cannot verify twice.
 //

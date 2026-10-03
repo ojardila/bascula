@@ -268,6 +268,11 @@ export interface ProvisionStatus {
   notifyAvailable?: boolean;
   /** The owner already asked for that email. */
   notifyRequested?: boolean;
+  /**
+   * The owner has not opened the mailed confirmation link yet. Nothing is
+   * being built until they do, so the screen asks for that instead.
+   */
+  awaitingVerification?: boolean;
   /** Last problem getting the farm's certificate, while it is not active. */
   certificateError?: string;
   /** Weighted, monotonic stages read from the cluster, GitHub and Cloudflare. */

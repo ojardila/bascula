@@ -96,6 +96,37 @@ Si usted no lo pidió, no haga nada: su clave sigue igual y nadie puede cambiarl
 	return mailer.Message{To: to, Subject: "Cambiar su clave de Báscula", Body: body}
 }
 
+// verifyEmailMessage carries the link that proves the address at signup. The
+// page it opens also asks for the password chosen there.
+func verifyEmailMessage(to, name, farmName, link string) mailer.Message {
+	body := fmt.Sprintf(`%s
+
+Para terminar de crear la finca «%s» en Báscula, confirme que este correo es suyo abriendo este enlace:
+
+%s
+
+La página le pedirá la clave que eligió al registrarse. Apenas confirme, empezamos a preparar la dirección de su finca.
+
+El enlace vence en 48 horas. Si usted no registró esa finca, no haga nada: sin este enlace nadie puede usar su correo en Báscula.
+%s`, greeting(name), farmName, link, noticeSignature)
+	return mailer.Message{To: to, Subject: "Confirme su correo para crear su finca", Body: body}
+}
+
+// farmRegisteredNoticeMessage goes to an address that already has a verified
+// account when somebody registers another farm with it: nothing to confirm,
+// but its owner should know.
+func farmRegisteredNoticeMessage(to, name, farmName string) mailer.Message {
+	body := fmt.Sprintf(`%s
+
+Se registró la finca «%s» en Báscula con este correo. Se entra a ella con la clave que se eligió al registrarla.
+
+Si fue usted, no tiene que hacer nada.
+
+Si no fue usted, nadie puede entrar a sus otras fincas con eso: cada una sigue con su propia clave. Puede ignorar este mensaje.
+%s`, greeting(name), farmName, noticeSignature)
+	return mailer.Message{To: to, Subject: "Se registró una finca con su correo", Body: body}
+}
+
 // passwordChangedMessage is the notice after either door. farmName is empty
 // after an email reset, which changes the password for every farm.
 func passwordChangedMessage(to, name, farmName string) mailer.Message {
