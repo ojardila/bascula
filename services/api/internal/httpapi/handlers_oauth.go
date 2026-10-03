@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -1375,13 +1374,13 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 		data.ReadOnly = oauthAccessChoice(q) == "read"
 		data.Email = q.Get("email")
 	}
-	var page bytes.Buffer
-	if err := oauthPageTmpl.Execute(&page, data); err != nil {
-		writeError(w, r, domain.Internal("could not render the sign-in page").WithCause(err))
-		return
-	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(page.Bytes())
+	// The template is parsed and checked at start-up and its data is plain
+	// strings, so it cannot fail halfway for a reason the request controls;
+	// a failed write is a client that went away.
+	if err := oauthPageTmpl.Execute(w, data); err != nil {
+		slog.Warn("oauth sign-in page not fully written", "err", err)
+	}
 }
 
 func farmIDs(ms []store.Membership) []string {
