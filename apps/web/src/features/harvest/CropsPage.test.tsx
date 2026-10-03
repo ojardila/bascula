@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The crops screen: one card per crop of every lot, heaviest first, with the
  * figures that must never read as zero shown as a dash with their reason.

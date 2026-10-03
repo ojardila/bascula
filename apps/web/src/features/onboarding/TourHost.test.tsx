@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The tour host decides what the running step shows: the welcome dialog, the
  * closing dialog with what the owner did, nothing for a paused tour, and the

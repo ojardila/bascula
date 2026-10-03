@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «REGISTRAR UNA RECOLECCIÓN»: one person, one weighing.
  *

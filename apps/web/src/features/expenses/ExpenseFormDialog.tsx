@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-031, and the one rule the schema will not bend on:
  *

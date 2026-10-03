@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert,

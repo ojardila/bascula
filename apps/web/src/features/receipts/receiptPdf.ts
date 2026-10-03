@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "DESCARGAR PDF", AS A REAL FILE.
  *

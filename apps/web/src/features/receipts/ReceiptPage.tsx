@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * One receipt from a worker's history, as it stood the day it was written,
  * with "Descargar PDF" for the paper copy. Reached from the history on the

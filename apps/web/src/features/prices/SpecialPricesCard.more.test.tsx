@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Special kilo prices, the parts the first file leaves out: a price for a
  * person, the checks before saving, changing an existing price, what the

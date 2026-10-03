@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A worker's profile, the cases the first file leaves out: a team, a person
  * inside a team, somebody without a basket number or off the payroll, the

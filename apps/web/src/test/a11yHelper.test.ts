@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── THE axe-core HELPER MUST FAIL ON KNOWN DEFECTS AND PASS ON CLEAN DOM ──
  *

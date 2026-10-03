@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { afterEach, describe, expect, it, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

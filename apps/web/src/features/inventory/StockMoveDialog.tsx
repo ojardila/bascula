@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE ONLY WAY A QUANTITY IN THIS APP EVER CHANGES.
  *

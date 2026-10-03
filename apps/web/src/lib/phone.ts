@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A contact phone number, checked the way a person reading it would.
  *

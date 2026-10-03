@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A tour step drawn inline by the page it belongs to — inside the invite
  * dialog, inside the lote form. See steps.tsx for why these steps do not use

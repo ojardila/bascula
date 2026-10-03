@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The week price page, the paths `WeekPricePage.test.tsx` leaves out: a
  * price of zero, a refused save, a week that cannot be read or may not be

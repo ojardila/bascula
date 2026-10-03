@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The weighing screen with no signal: it keeps the weighing on the device,
  * says so, and uploads it with the same id when the server answers again.

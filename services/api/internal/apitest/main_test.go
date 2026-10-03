@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package apitest holds the tests that need a real Postgres.
 //
 // # Why a compose Postgres and not testcontainers

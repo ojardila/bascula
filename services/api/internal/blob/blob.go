@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package blob is where the bytes of an uploaded file go, and the only place
 // in this service that touches a filesystem.
 //

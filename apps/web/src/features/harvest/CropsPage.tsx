@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Every crop of every lot: kilos, value, people, days, area and its own curve.
  *

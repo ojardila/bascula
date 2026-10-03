@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * What the harvest module says out loud.
  *

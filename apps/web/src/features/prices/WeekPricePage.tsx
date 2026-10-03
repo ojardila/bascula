@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── THE WEEK'S PRICE PER KILO ────────────────────────────────────────────
  *

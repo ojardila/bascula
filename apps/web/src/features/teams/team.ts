@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Equipos»: a pair or a family that picks into one sack and is paid as one
  * account (docs/use-cases/teams.md). The team is the payee; its members are

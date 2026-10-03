@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The pure half of «Registro de recolección masivo»: what a filled form means.
  *

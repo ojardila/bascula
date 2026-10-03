@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * PLURALS WRITTEN BY A PERSON, NOT BY A MACHINE.
  *

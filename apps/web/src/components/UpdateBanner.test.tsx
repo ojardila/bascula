@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «versión nueva» banner: it appears only when the server serves another
  * build than the one this page runs, and a tap moves the page onto it.

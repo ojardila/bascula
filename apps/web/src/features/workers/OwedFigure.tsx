@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The "what they are owed" figure, written the same way everywhere.
  *

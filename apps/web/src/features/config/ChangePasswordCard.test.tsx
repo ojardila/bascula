@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Cambiar clave» in the account menu must land on the card: on screen, with
  * the first field focused. It used to look like it did nothing — the cards

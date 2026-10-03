@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import type { ReactNode } from "react";
 import { Box, Container, Paper, Stack, Typography } from "@mui/material";
 import { GREEN, GREEN_DARK } from "../../theme";

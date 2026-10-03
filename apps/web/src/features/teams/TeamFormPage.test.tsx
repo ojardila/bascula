@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Nuevo equipo»: a name, the people, save. The team is created with its
  * members and each member then points back at it (docs/use-cases/teams.md).

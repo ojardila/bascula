@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * CREW PAYROLL. The screen where the most money moves in one go.
  *

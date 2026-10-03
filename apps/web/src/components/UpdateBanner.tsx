@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useCallback, useEffect, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The team form beyond creating one: the name it asks for, the search, adding
  * a new person from the dialog, turning a person into a team, changing an

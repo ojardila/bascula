@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The payment screen beyond the race: the receipt and what can be done with
  * it, a payment larger than what is owed, failures, teams, and the screens
