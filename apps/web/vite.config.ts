@@ -1,5 +1,7 @@
 /// <reference types="vitest/config" />
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
+import { rmSync } from "node:fs";
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath, URL } from "node:url";
@@ -44,6 +46,27 @@ import { navigateFallbackDenylist } from "./src/pwa/navigateFallbackDenylist";
  * The worker file itself and index.html are served no-cache by nginx.conf, so
  * a deploy reaches the phone on the next open.
  */
+/**
+ * MSW's worker lives in public/ so the dev server can serve it, and Vite
+ * copies everything in public/ into dist. A production build talks to the
+ * real API, so the mock worker is taken out of dist unless the build itself
+ * was made with VITE_USE_MOCKS=true. It was precache-ignored already, but it
+ * was still served at /mockServiceWorker.js.
+ */
+function dropMockWorker(keep: boolean): Plugin {
+  let outDir = "";
+  return {
+    name: "bascula:drop-mock-worker",
+    apply: "build",
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      if (!keep) rmSync(resolve(outDir, "mockServiceWorker.js"), { force: true });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const target = env.VITE_API_URL || "http://localhost:8099";
@@ -58,6 +81,7 @@ export default defineConfig(({ mode }) => {
     define: { __APP_BUILD__: JSON.stringify(appBuild) },
     plugins: [
       react(),
+      dropMockWorker(env.VITE_USE_MOCKS === "true"),
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: false,
