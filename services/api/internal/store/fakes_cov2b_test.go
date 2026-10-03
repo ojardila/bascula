@@ -113,18 +113,18 @@ func TestC2SBPerformanceLoadersPassErrorsThrough(t *testing.T) {
 	week := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	out := &EmployeePerformance{}
 
-	err := perfLoadWeeks(ctx, c2sbQ(perfWeeksSQL, cmrFailing()), out, "e1", week, week, week)
+	err := perfLoadWeeks(ctx, c2sbQ(perfWeeksSQL, cmrFailing()), out, "e1", perfWindow{from: week, to: week}, week)
 	c2sbWantErr(t, "perfLoadWeeks", err)
 
 	for _, rows := range []*cmrRows{cmrFailing(), cmrEndsBadly()} {
-		err = perfLoadDays(ctx, c2sbQ(perfDaysSQL, rows), out, "e1", week, week, week, week)
+		err = perfLoadDays(ctx, c2sbQ(perfDaysSQL, rows), out, "e1", perfWindow{from: week, to: week}, week, week)
 		c2sbWantErr(t, "perfLoadDays", err)
 	}
 	if out.Days != nil {
 		t.Errorf("perfLoadDays filled days before failing: %v", out.Days)
 	}
 
-	err = perfLoadPlots(ctx, c2sbQ(perfPlotsSQL, cmrFailing()), out, "e1", week, week)
+	err = perfLoadPlots(ctx, c2sbQ(perfPlotsSQL, cmrFailing()), out, "e1", perfWindow{from: week, to: week})
 	c2sbWantErr(t, "perfLoadPlots", err)
 }
 

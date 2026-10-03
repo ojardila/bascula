@@ -596,14 +596,14 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email, ip, ok := s.oauthAuthzLoginAllowed(w, r, tx, q, client)
+	attempt, ok := s.oauthAuthzLoginAllowed(w, r, tx, q, client)
 	if !ok {
 		return
 	}
 
 	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
 	if ferr != nil {
-		s.oauthAuthzSignInFailed(w, r, tx, q, client, ferr, ip, email)
+		s.oauthAuthzSignInFailed(w, r, tx, q, client, ferr, attempt)
 		return
 	}
 	if pick != nil {
@@ -719,10 +719,17 @@ func (s *Server) oauthAuthzClient(w http.ResponseWriter, r *http.Request, tx pgx
 	return client, true
 }
 
+// oauthLoginAttempt is what a sign-in on the authorization form counts
+// against in the login limiter: the address (empty for a passkey) and the IP.
+type oauthLoginAttempt struct {
+	email string
+	ip    string
+}
+
 // oauthAuthzLoginAllowed applies the login limiter to a first-step sign-in
 // and returns the address and IP the attempt counts against. When the
 // attempt is refused it has already answered and returns false.
-func (s *Server) oauthAuthzLoginAllowed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient) (email, ip string, ok bool) {
+func (s *Server) oauthAuthzLoginAllowed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient) (oauthLoginAttempt, bool) {
 	// The same limiter as /v1/auth/login, on the same table: this form checks
 	// the same password, and without it the sign-in page was an unmetered
 	// way around the login limit. The second step (farm pick) carries a
@@ -732,30 +739,32 @@ func (s *Server) oauthAuthzLoginAllowed(w http.ResponseWriter, r *http.Request, 
 	// /v1/auth/passkeys/login it is limited on the per-IP axis, and a failed
 	// one is recorded with no address.
 	usingPasskey := q.Get("ticket") == "" && q.Get("passkey_credential") != ""
-	email = strings.ToLower(strings.TrimSpace(q.Get("email")))
+	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
 	if usingPasskey {
 		email = ""
 	}
-	ip = clientIP(r)
+	ip := clientIP(r)
+	attempt := oauthLoginAttempt{email: email, ip: ip}
 	if q.Get("ticket") != "" || (email == "" && !usingPasskey) {
-		return email, ip, true
+		return attempt, true
 	}
 	failedPair, failedIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
 	if err != nil {
 		writeError(w, r, err)
-		return email, ip, false
+		return attempt, false
 	}
 	if (!usingPasskey && failedPair >= s.cfg.LoginFailuresPerEmailPerIP) || failedIP >= s.cfg.LoginFailuresPerIP {
 		s.loginRefused(ip, email, "oauth")
 		s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
-		return email, ip, false
+		return attempt, false
 	}
-	return email, ip, true
+	return attempt, true
 }
 
 // oauthAuthzSignInFailed answers a sign-in that did not go through, counting
 // a wrong password or passkey against the login limiter.
-func (s *Server) oauthAuthzSignInFailed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient, ferr error, ip, email string) {
+func (s *Server) oauthAuthzSignInFailed(w http.ResponseWriter, r *http.Request, tx pgx.Tx, q url.Values, client *store.OAuthClient, ferr error, attempt oauthLoginAttempt) {
+	ip, email := attempt.ip, attempt.email
 	if errors.Is(ferr, errOAuthBadCredentials) || errors.Is(ferr, errOAuthBadPasskey) {
 		// The page is a 200, so the request transaction commits and the
 		// failure is counted; nothing else has been written by now.

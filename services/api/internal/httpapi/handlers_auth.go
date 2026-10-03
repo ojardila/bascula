@@ -189,20 +189,24 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	signup := signupOwner{
+		req: &req, email: email, phone: phone, user: user, passwordHash: passwordHash,
+		existing: existing, claim: claim, byMail: byMail,
+	}
+
 	farmID := newID()
 	newFarm := store.NewFarm{
 		ID: farmID, Name: req.Farm.Name, Timezone: req.Farm.Timezone,
 		Currency: req.Farm.Currency, PriceMinor: req.Farm.PriceCents,
 		PriceConfirmed: priceChosen,
 	}
-	ctx, err := signupBuildFarm(r.Context(), tx, &newFarm, &req, user.ID,
-		existing && !claim, phone, passwordHash)
+	ctx, err := signupBuildFarm(r.Context(), tx, &newFarm, &signup)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	secret, err := signupVerificationToken(r.Context(), ctx, tx, user.ID, farmID, existing, claim, byMail)
+	secret, err := signupVerificationToken(r.Context(), ctx, tx, farmID, &signup)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -219,8 +223,7 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// right away for an account that already has, after the link otherwise
 	// (handleVerifyEmail). An address nobody confirms costs the cluster
 	// nothing.
-	pending := byMail && (!existing || claim)
-	s.signupDispatch(r, &req, email, user, &newFarm, secret, byMail, pending)
+	s.signupDispatch(r, &signup, &newFarm, secret)
 
 	// The provision ticket lets this browser, and only it, watch the new
 	// farm's own address come up (provision-status is closed to everybody
@@ -390,12 +393,41 @@ func signupOwnerAccount(ctx context.Context, tx pgx.Tx, user *store.User, claim 
 	return user, passwordHash, nil
 }
 
+// signupOwner is what handleSignup has settled about the owner by the time the
+// farm is built: the request, the normalized address and phone, the account
+// (found or just created) and what is known about it. The helpers below read
+// it instead of taking each piece as its own argument.
+type signupOwner struct {
+	req          *signupRequest
+	email        string
+	phone        string
+	user         *store.User
+	passwordHash string
+	// existing is true when the address already had an account, claim when
+	// that account was never verified and this registration replaces the
+	// claim, and byMail when the address is proved by a mailed link.
+	existing, claim, byMail bool
+}
+
+// ownCredentials reports whether the owner's name and password go to the
+// farm's own credentials: an account that already existed and is not being
+// re-claimed keeps its global password untouched.
+func (o *signupOwner) ownCredentials() bool {
+	return o.existing && !o.claim
+}
+
+// pending reports whether the farm waits for its owner to prove the address
+// before its own stack is built.
+func (o *signupOwner) pending() bool {
+	return o.byMail && (!o.existing || o.claim)
+}
+
 // signupBuildFarm creates the farm, its owner membership, the owner's
 // farm-scoped credentials when the account already existed (ownCredentials),
 // and the farm's seed. It returns the context that carries the new tenant.
-func signupBuildFarm(ctx context.Context, tx pgx.Tx, newFarm *store.NewFarm, req *signupRequest,
-	userID string, ownCredentials bool, phone, passwordHash string) (context.Context, error) {
+func signupBuildFarm(ctx context.Context, tx pgx.Tx, newFarm *store.NewFarm, owner *signupOwner) (context.Context, error) {
 	farmID := newFarm.ID
+	req, userID := owner.req, owner.user.ID
 	// The farm becomes the tenant of this transaction the moment its id
 	// exists, which is what lets the farms and memberships rows satisfy their
 	// own RLS policies without any bypass.
@@ -409,9 +441,9 @@ func signupBuildFarm(ctx context.Context, tx pgx.Tx, newFarm *store.NewFarm, req
 	if err := store.CreateMembership(ctx, tx, farmID, userID, domain.RoleOwner); err != nil {
 		return nil, err
 	}
-	if ownCredentials {
+	if owner.ownCredentials() {
 		if err := store.InsertFarmOwnerCredentials(ctx, tx, farmID, userID,
-			strings.TrimSpace(req.Owner.Name), phone, passwordHash); err != nil {
+			strings.TrimSpace(req.Owner.Name), owner.phone, owner.passwordHash); err != nil {
 			return nil, err
 		}
 	}
@@ -425,8 +457,9 @@ func signupBuildFarm(ctx context.Context, tx pgx.Tx, newFarm *store.NewFarm, req
 // it should verify something, and marks the address verified when there is no
 // mailer to prove it with. reqCtx is the request's own context and farmCtx the
 // one signupBuildFarm returned.
-func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, userID, farmID string,
-	existing, claim, byMail bool) (string, error) {
+func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, farmID string,
+	owner *signupOwner) (string, error) {
+	userID := owner.user.ID
 	secret, hash, err := auth.NewOpaqueToken()
 	if err != nil {
 		return "", domain.Internal("could not mint a verification token").WithCause(err)
@@ -435,7 +468,7 @@ func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, userID,
 	// token development echoes must not become a way to verify it on their
 	// behalf; so for that branch the token is minted (same work, same answer)
 	// and not stored, and verifies nothing.
-	if !existing || claim {
+	if !owner.existing || owner.claim {
 		if err := store.InsertEmailVerification(farmCtx, tx, newID(), userID, farmID, hash,
 			time.Now().Add(48*time.Hour)); err != nil {
 			return "", err
@@ -444,7 +477,7 @@ func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, userID,
 	// Without a mail sender the password they just typed is the proof that
 	// they meant this address; waiting for a mailbox that never arrives would
 	// strand every farm on the landing. With one, the mailed link does it.
-	if !existing && !byMail {
+	if !owner.existing && !owner.byMail {
 		if err := store.VerifyUserEmail(reqCtx, tx, userID); err != nil {
 			return "", err
 		}
@@ -454,15 +487,16 @@ func signupVerificationToken(reqCtx, farmCtx context.Context, tx pgx.Tx, userID,
 
 // signupDispatch starts the farm's own stack when nothing is pending, and
 // sends the one email each branch sends.
-func (s *Server) signupDispatch(r *http.Request, req *signupRequest, email string, user *store.User,
-	newFarm *store.NewFarm, secret string, byMail, pending bool) {
+func (s *Server) signupDispatch(r *http.Request, owner *signupOwner, newFarm *store.NewFarm, secret string) {
+	req, email := owner.req, owner.email
+	pending := owner.pending()
 	if !pending {
 		s.kickTenantProvision(tenantProvision{
 			Slug: newFarm.Slug, FarmName: newFarm.Name,
 			Email: email, OwnerName: req.Owner.Name, Phone: req.Owner.Phone,
 		})
 	}
-	if !byMail {
+	if !owner.byMail {
 		return
 	}
 	// Both branches send one email, so the inbox is the only place the
@@ -472,7 +506,7 @@ func (s *Server) signupDispatch(r *http.Request, req *signupRequest, email strin
 		link := s.passwordResetBase(r) + "/confirmar-correo#" + secret
 		s.mailLater(r, verifyEmailMessage(email, req.Owner.Name, newFarm.Name, link))
 	} else {
-		s.mailLater(r, farmRegisteredNoticeMessage(email, user.Name, newFarm.Name))
+		s.mailLater(r, farmRegisteredNoticeMessage(email, owner.user.Name, newFarm.Name))
 	}
 }
 

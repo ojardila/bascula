@@ -176,7 +176,7 @@ func TestC2hbWorkRecordThatAddsUpToZero(t *testing.T) {
 	qty := big.NewRat(1, 1000)
 	var rec store.WorkRecord
 	day := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
-	err := priceWorkRecord(context.Background(), brokenTx{}, &rec, &store.Activity{}, &rate, qty, day, day)
+	err := priceWorkRecord(context.Background(), brokenTx{}, &rec, &store.Activity{}, &rate, qty, workRecordDays{from: day, to: day})
 	if err == nil || !strings.Contains(err.Error(), "adds up to zero") {
 		t.Fatalf("got %v, want the zero-amount refusal", err)
 	}
