@@ -137,7 +137,7 @@ export function Curve({
 
   // The last hop into a still-running week is drawn separately, dashed.
   const lastIsPartial =
-    points.length > 1 && points[points.length - 1].partial === true;
+    points.length > 1 && points.at(-1)?.partial === true;
 
   const line = (pts: { i: number; v: number }[]) =>
     pts.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
@@ -210,7 +210,7 @@ export function Curve({
                 )}
                 {lastIsPartial &&
                   s.pts.length > 1 &&
-                  s.pts[s.pts.length - 1].i === points.length - 1 && (
+                  s.pts.at(-1)?.i === points.length - 1 && (
                     <path
                       d={line(s.pts.slice(-2))}
                       fill="none"
