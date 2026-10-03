@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useState } from "react";
 import { Autocomplete, TextField, createFilterOptions } from "@mui/material";
 import type { CatalogItem } from "../api/types";

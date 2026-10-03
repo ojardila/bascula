@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «REGISTRO DE RECOLECCIÓN MASIVO»: new pesadas for every employee, for ONE
  * day, in one save.

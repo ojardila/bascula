@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveKiloPrice, type KiloPriceBook } from "./kiloPrice.ts";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * What the whole app knows about signal and about weighings still on the phone.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * One week, in the two grids the owner actually uses.
  *

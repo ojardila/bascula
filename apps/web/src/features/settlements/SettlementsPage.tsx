@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE FARM'S SETTLEMENTS.
  *

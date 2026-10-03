@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The list of plots: what each row and the footer say about area, where the
  * row and its menu take you, taking a plot out of service (and the server

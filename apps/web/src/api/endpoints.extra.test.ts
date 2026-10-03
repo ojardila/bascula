@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * endpoints.ts, the branches neither `endpoints.test.ts` nor
  * `endpoints.more.test.ts` reach: the activity categories, a settlement whose

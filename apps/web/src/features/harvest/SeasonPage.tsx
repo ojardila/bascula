@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * "How is the harvest going?" — the screen the owner opens every morning.
  *

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command dbdiagram writes docs/database.md: a Mermaid ER diagram of the
 // schema that the migrations in services/api/migrations produce, read back
 // from a real Postgres instead of written by hand.

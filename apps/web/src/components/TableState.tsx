@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE FOUR BRANCHES OF A TABLE, IN ONE PLACE.
  *

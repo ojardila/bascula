@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * One settlement on its own page: the document, printing it, the way back,
  * and voiding it — including when the server refuses.

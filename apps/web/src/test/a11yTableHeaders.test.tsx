@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── TABLE HEADERS THAT ARE EMPTY ARE A SCREEN-READER DEAD SPOT ─────────────
  *

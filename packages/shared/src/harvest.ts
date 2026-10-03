@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Reading the shape of a harvest. Pure on purpose: it takes the weekly totals
  * and returns what the farm should do about them, which is the part worth

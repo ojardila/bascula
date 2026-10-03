@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── A `<ul>` MAY ONLY CONTAIN `<li>`, OR SCREEN READERS LOSE THE LIST ──────
  *

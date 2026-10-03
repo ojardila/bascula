@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The tour's globe, as in the approved mockups: a section in small green
  * capitals, a short title, one or two sentences, a progress bar with

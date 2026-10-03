@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The arithmetic of the warehouse, such as it is.
  *

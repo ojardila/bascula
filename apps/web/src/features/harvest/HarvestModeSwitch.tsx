@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «Modo cosecha» switch: one big, plain control. The whole row is the
  * target, so a thumb on a phone cannot miss it, and the state is written out

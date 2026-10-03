@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * What a kilo of one weighing is worth, and where that number came from.
  *

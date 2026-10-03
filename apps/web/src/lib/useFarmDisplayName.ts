@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The display name of the farm a host pins ("San José" for
  * san-jose.bascula.engp.io), for the front door and the login screen, where

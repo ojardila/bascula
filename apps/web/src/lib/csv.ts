@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * CSV files a farm office opens in Excel.
  *

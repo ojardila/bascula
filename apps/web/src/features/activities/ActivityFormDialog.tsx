@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-011. The form changes shape with the pay mode, because the three modes
  * genuinely need different data:

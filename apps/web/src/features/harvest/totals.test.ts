@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one rule the whole harvest module rests on, pinned.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Money. Every rule in this file is one that costs real pesos if the phone and
  * the server disagree, which is the whole reason the package exists.

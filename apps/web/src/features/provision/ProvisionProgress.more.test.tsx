@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The waiting screen's other states: a farm this browser cannot see, a
  * passing network error, the address waiting on an email confirmation, the

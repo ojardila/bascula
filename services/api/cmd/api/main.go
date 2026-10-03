@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command api is the Bascula multi-tenant HTTP service.
 //
 // It has three jobs and a flag to pick between them: serve, run the

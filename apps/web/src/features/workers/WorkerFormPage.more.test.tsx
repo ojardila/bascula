@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The rest of the worker form: editing somebody who is already on the farm,
  * what it says before it lets an incomplete file through, and what it does

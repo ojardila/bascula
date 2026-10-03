@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A short Spanish name for the browser and device behind a User-Agent, for
  * «Sesiones abiertas»: "Chrome en Android", "Safari en iPhone". It only has to

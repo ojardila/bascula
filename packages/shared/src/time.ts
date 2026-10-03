@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Weeks and days. Moved out of the phone's `format.ts` unchanged, because the
  * server has to derive the same week for the same weighing — the week key is

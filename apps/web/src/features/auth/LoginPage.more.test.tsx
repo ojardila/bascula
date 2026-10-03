@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The login page, the paths `LoginPage.test.tsx` leaves out: choosing a farm
  * after a password and going back, a passkey that does not open this farm,

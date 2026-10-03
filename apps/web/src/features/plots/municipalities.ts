@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── A MUNICIPALITY THAT IS NOT IN THAT DEPARTMENT ────────────────────────
  *

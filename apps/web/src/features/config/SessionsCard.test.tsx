@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Sesiones abiertas»: the person's sign-ins on this farm, the current one
  * marked, and closing one or every other through the server.

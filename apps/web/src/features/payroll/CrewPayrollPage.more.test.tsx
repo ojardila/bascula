@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Crew payroll, the paths the end-to-end file leaves out: a list that cannot
  * be read, one person who cannot, the filter by basket number, a payment run

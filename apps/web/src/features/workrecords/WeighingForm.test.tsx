@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one-person weighing screen online: what it asks for, the doubt about a
  * sack too heavy for one person, teams weighed as one, undoing, and the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-019 / RSP-020: a name, a category, a storage unit. And NO QUANTITY.
  *

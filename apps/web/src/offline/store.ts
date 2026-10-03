@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The device's own storage for the one thing that works without signal:
  * weighings waiting to go up, and the lists (people, lotes) the weighing

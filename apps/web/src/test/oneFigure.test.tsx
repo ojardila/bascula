@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── ONE FIGURE, ON ALL FOUR SCREENS ──────────────────────────────────────
  *

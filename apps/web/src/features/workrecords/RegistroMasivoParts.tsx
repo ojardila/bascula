@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Pieces of «Registro de recolección masivo» (`RegistroMasivoPage`), split
  * out so the page reads in the order of the screen: header, day, notices,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Corregir»: change or take out the pesadas one person already has on the
  * day, from the bulk registration. The main screen only ever ADDS; this is

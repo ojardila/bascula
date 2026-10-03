@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The five harvest screens, rendered.
  *

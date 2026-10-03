@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Registro de recolección masivo», the paths around the main flow: which
  * lote it opens on, what it says when the lists or the harvest activity are

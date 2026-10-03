@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The inventory module, with the one rule that shapes it under test.
  *

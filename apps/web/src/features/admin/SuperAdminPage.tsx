@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The super-admin console: list farms, create one, suspend one.
  *

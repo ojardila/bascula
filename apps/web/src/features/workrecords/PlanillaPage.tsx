@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Two harvest sheets, same writes.
  *

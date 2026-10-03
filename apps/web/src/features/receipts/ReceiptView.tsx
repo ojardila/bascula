@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The receipt on the page. Same `ReceiptDoc` as the PDF, laid out for a
  * phone first: on a narrow screen every line of work is a card with the week,

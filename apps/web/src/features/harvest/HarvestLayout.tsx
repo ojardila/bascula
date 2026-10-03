@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The frame around the harvest screens.
  *

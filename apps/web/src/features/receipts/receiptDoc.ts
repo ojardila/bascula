@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * A RECEIPT, AS DATA, BEFORE IT IS A SCREEN OR A PDF.
  *

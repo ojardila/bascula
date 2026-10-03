@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Número de canasto»: the number painted on the basket. It is how the scale
  * finds a person or a team, so it is shown big wherever somebody is picked or
