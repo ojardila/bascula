@@ -47,15 +47,7 @@ func TestAnInvitedPasswordOpensThatFarmOnly(t *testing.T) {
 	passB := mustString(t, h.invite(t, b.OwnerToken, email, nil).Body, "temporaryPassword")
 
 	t.Run("the account is not verified and its password is nobody's", func(t *testing.T) {
-		hash, verified := h.accountOf(t, email)
-		if verified {
-			t.Fatal("an administrator's invite verified an address it never proved")
-		}
-		for _, p := range []string{passA, passB} {
-			if ok, _ := auth.VerifyPassword(p, hash); ok {
-				t.Fatal("the handed-over password is the account's global password")
-			}
-		}
+		inviteAccountNotVerified(t, h, email, passA, passB)
 	})
 
 	t.Run("the invited person signs in to the farm that invited them", func(t *testing.T) {
@@ -90,6 +82,18 @@ func TestAnInvitedPasswordOpensThatFarmOnly(t *testing.T) {
 	})
 }
 
+func inviteAccountNotVerified(t *testing.T, h *harness, email, passA, passB string) {
+	hash, verified := h.accountOf(t, email)
+	if verified {
+		t.Fatal("an administrator's invite verified an address it never proved")
+	}
+	for _, p := range []string{passA, passB} {
+		if ok, _ := auth.VerifyPassword(p, hash); ok {
+			t.Fatal("the handed-over password is the account's global password")
+		}
+	}
+}
+
 func TestInviteAnswersTheSameWhoeverOwnsTheAddress(t *testing.T) {
 	h := requireDB(t)
 	elsewhere := h.signupFarm(t, "Finca del dueño de antes", 90000)
@@ -99,15 +103,7 @@ func TestInviteAnswersTheSameWhoeverOwnsTheAddress(t *testing.T) {
 	fromNew := h.invite(t, f.OwnerToken, fresh, map[string]any{"name": "Pedro"})
 	fromOld := h.invite(t, f.OwnerToken, elsewhere.OwnerEmail, map[string]any{"name": "Pedro"})
 
-	keys := func(r response) string {
-		ks := make([]string, 0, len(r.Body))
-		for k := range r.Body {
-			ks = append(ks, k)
-		}
-		sort.Strings(ks)
-		return strings.Join(ks, ",")
-	}
-	if keys(fromNew) != keys(fromOld) {
+	if inviteBodyKeys(fromNew) != inviteBodyKeys(fromOld) {
 		t.Fatalf("the two answers differ in shape:\nnew: %s\nold: %s", fromNew.Raw, fromOld.Raw)
 	}
 	for _, r := range []response{fromNew, fromOld} {
@@ -118,21 +114,7 @@ func TestInviteAnswersTheSameWhoeverOwnsTheAddress(t *testing.T) {
 	}
 
 	t.Run("nor does the member list", func(t *testing.T) {
-		list := h.mustDo(t, http.MethodGet, "/v1/users", f.OwnerToken, nil, http.StatusOK)
-		items, _ := list.Body["items"].([]any)
-		seen := 0
-		for _, it := range items {
-			m, _ := it.(map[string]any)
-			if m["email"] == fresh || m["email"] == elsewhere.OwnerEmail {
-				seen++
-				if m["emailVerifiedAt"] != nil || m["name"] != "Pedro" {
-					t.Fatalf("the list tells the accounts apart: %v", m)
-				}
-			}
-		}
-		if seen != 2 {
-			t.Fatalf("want both invitees listed: %s", list.Raw)
-		}
+		inviteMemberListDoesNotTell(t, h, f, elsewhere, fresh)
 	})
 
 	t.Run("an existing member is a retry with the same status, and no new password", func(t *testing.T) {
@@ -166,6 +148,34 @@ func TestInviteAnswersTheSameWhoeverOwnsTheAddress(t *testing.T) {
 			t.Fatalf("the global password opened the inviting farm: %d %s", res.Status, res.Raw)
 		}
 	})
+}
+
+// inviteBodyKeys is the shape of an answer: its top-level keys, sorted.
+func inviteBodyKeys(r response) string {
+	ks := make([]string, 0, len(r.Body))
+	for k := range r.Body {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	return strings.Join(ks, ",")
+}
+
+func inviteMemberListDoesNotTell(t *testing.T, h *harness, f, elsewhere *farmFixture, fresh string) {
+	list := h.mustDo(t, http.MethodGet, "/v1/users", f.OwnerToken, nil, http.StatusOK)
+	items, _ := list.Body["items"].([]any)
+	seen := 0
+	for _, it := range items {
+		m, _ := it.(map[string]any)
+		if m["email"] == fresh || m["email"] == elsewhere.OwnerEmail {
+			seen++
+			if m["emailVerifiedAt"] != nil || m["name"] != "Pedro" {
+				t.Fatalf("the list tells the accounts apart: %v", m)
+			}
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("want both invitees listed: %s", list.Raw)
+	}
 }
 
 // TestTheMailboxOwnerTakesTheInvitedAccount: a reset proves the address; it

@@ -81,28 +81,8 @@ func TestHistoricalReceipts(t *testing.T) {
 		"dateFrom": "2026-08-25", "plotIds": []string{plot},
 	}, http.StatusCreated)
 
-	payables := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/payables", f.OwnerToken, nil, http.StatusOK)
-	tasks, _ := payables.Body["tasks"].([]any)
-	if len(tasks) != 1 {
-		t.Fatalf("payables: %s", payables.Raw)
-	}
-	if names, _ := tasks[0].(map[string]any)["plotNames"].([]any); len(names) != 1 || names[0] != "La Cumbre" {
-		t.Fatalf("pending line does not name its lote: %s", payables.Raw)
-	}
-
-	settled := h.mustSettle(t, f.OwnerToken, map[string]any{
-		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
-	}, http.StatusCreated)
-	settlementID := mustString(t, settled.Body, "id")
-	st := h.mustDo(t, http.MethodGet, "/v1/settlements/"+settlementID, f.OwnerToken, nil, http.StatusOK)
-	items, _ := st.Body["items"].([]any)
-	if len(items) != 1 {
-		t.Fatalf("settlement items: %s", st.Raw)
-	}
-	if names, _ := items[0].(map[string]any)["plotNames"].([]any); len(names) != 1 || names[0] != "La Cumbre" {
-		t.Fatalf("settlement line does not name its lote: %s", st.Raw)
-	}
-	gross := mustInt(t, st.Body, "grossCents")
+	receiptPendingLineNamesLote(t, h, f, worker)
+	settlementID, gross := receiptSettleNamesLote(t, h, f, worker)
 
 	adv := h.mustDo(t, http.MethodPost, "/v1/advances", f.OwnerToken, map[string]any{
 		"workerId": worker, "amountCents": 500_000, "method": "efectivo", "note": "Mercado",
@@ -114,35 +94,8 @@ func TestHistoricalReceipts(t *testing.T) {
 	}, http.StatusCreated)
 	payID := mustString(t, pay.Body, "id")
 
-	slip := h.mustDo(t, http.MethodGet, "/v1/payments/"+payID, f.OwnerToken, nil, http.StatusOK)
-	if slip.Body["kind"] != "pago" {
-		t.Fatalf("kind: %s", slip.Raw)
-	}
-	ids, _ := slip.Body["settlementIds"].([]any)
-	if len(ids) != 1 || ids[0] != settlementID {
-		t.Fatalf("settlementIds: %s", slip.Raw)
-	}
-	if got := mustInt(t, slip.Body, "currentWeekCents"); got != gross {
-		t.Fatalf("week %d, settlement gross %d", got, gross)
-	}
-	if got := mustInt(t, slip.Body, "remainingCents"); got != 0 {
-		t.Fatalf("remaining: %s", slip.Raw)
-	}
-	before := slip.Raw
-
-	advSlip := h.mustDo(t, http.MethodGet, "/v1/payments/"+advID, f.OwnerToken, nil, http.StatusOK)
-	if advSlip.Body["kind"] != "anticipo" {
-		t.Fatalf("advance kind: %s", advSlip.Raw)
-	}
-	if got := mustInt(t, advSlip.Body, "paidCents"); got != 500_000 {
-		t.Fatalf("advance amount: %s", advSlip.Raw)
-	}
-	if prev, left := mustInt(t, advSlip.Body, "previousBalanceCents"), mustInt(t, advSlip.Body, "remainingCents"); prev-500_000 != left {
-		t.Fatalf("advance identity: %s", advSlip.Raw)
-	}
-	if got := mustInt(t, advSlip.Body, "currentWeekCents"); got != 0 {
-		t.Fatalf("an advance has no week: %s", advSlip.Raw)
-	}
+	before := receiptPaymentSlip(t, h, f, payID, settlementID, gross)
+	receiptAdvanceSlip(t, h, f, advID)
 
 	t.Run("voiding the settlement later does not rewrite the payment's receipt", func(t *testing.T) {
 		h.mustDo(t, http.MethodPost, "/v1/settlements/"+settlementID+"/void", f.OwnerToken,
@@ -162,18 +115,84 @@ func TestHistoricalReceipts(t *testing.T) {
 	})
 
 	t.Run("a devengo is not a receipt", func(t *testing.T) {
-		ledger := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/ledger", f.OwnerToken, nil, http.StatusOK)
-		rows, _ := ledger.Body["items"].([]any)
-		for _, raw := range rows {
-			row := raw.(map[string]any)
-			if row["kind"] == "devengo" {
-				res := h.do(t, http.MethodGet, "/v1/payments/"+row["id"].(string), f.OwnerToken, nil)
-				if res.Status != http.StatusNotFound {
-					t.Fatalf("devengo as receipt: got %d %s", res.Status, res.Raw)
-				}
-				return
-			}
-		}
-		t.Fatalf("no devengo in ledger: %s", ledger.Raw)
+		receiptDevengoIsNotAReceipt(t, h, f, worker)
 	})
+}
+
+func receiptPendingLineNamesLote(t *testing.T, h *harness, f *farmFixture, worker string) {
+	payables := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/payables", f.OwnerToken, nil, http.StatusOK)
+	tasks, _ := payables.Body["tasks"].([]any)
+	if len(tasks) != 1 {
+		t.Fatalf("payables: %s", payables.Raw)
+	}
+	if names, _ := tasks[0].(map[string]any)["plotNames"].([]any); len(names) != 1 || names[0] != "La Cumbre" {
+		t.Fatalf("pending line does not name its lote: %s", payables.Raw)
+	}
+}
+
+func receiptSettleNamesLote(t *testing.T, h *harness, f *farmFixture, worker string) (string, int64) {
+	settled := h.mustSettle(t, f.OwnerToken, map[string]any{
+		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
+	}, http.StatusCreated)
+	settlementID := mustString(t, settled.Body, "id")
+	st := h.mustDo(t, http.MethodGet, "/v1/settlements/"+settlementID, f.OwnerToken, nil, http.StatusOK)
+	items, _ := st.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("settlement items: %s", st.Raw)
+	}
+	if names, _ := items[0].(map[string]any)["plotNames"].([]any); len(names) != 1 || names[0] != "La Cumbre" {
+		t.Fatalf("settlement line does not name its lote: %s", st.Raw)
+	}
+	return settlementID, mustInt(t, st.Body, "grossCents")
+}
+
+// receiptPaymentSlip checks the payment's receipt and returns it as it stood.
+func receiptPaymentSlip(t *testing.T, h *harness, f *farmFixture, payID, settlementID string, gross int64) string {
+	slip := h.mustDo(t, http.MethodGet, "/v1/payments/"+payID, f.OwnerToken, nil, http.StatusOK)
+	if slip.Body["kind"] != "pago" {
+		t.Fatalf("kind: %s", slip.Raw)
+	}
+	ids, _ := slip.Body["settlementIds"].([]any)
+	if len(ids) != 1 || ids[0] != settlementID {
+		t.Fatalf("settlementIds: %s", slip.Raw)
+	}
+	if got := mustInt(t, slip.Body, "currentWeekCents"); got != gross {
+		t.Fatalf("week %d, settlement gross %d", got, gross)
+	}
+	if got := mustInt(t, slip.Body, "remainingCents"); got != 0 {
+		t.Fatalf("remaining: %s", slip.Raw)
+	}
+	return slip.Raw
+}
+
+func receiptAdvanceSlip(t *testing.T, h *harness, f *farmFixture, advID string) {
+	advSlip := h.mustDo(t, http.MethodGet, "/v1/payments/"+advID, f.OwnerToken, nil, http.StatusOK)
+	if advSlip.Body["kind"] != "anticipo" {
+		t.Fatalf("advance kind: %s", advSlip.Raw)
+	}
+	if got := mustInt(t, advSlip.Body, "paidCents"); got != 500_000 {
+		t.Fatalf("advance amount: %s", advSlip.Raw)
+	}
+	if prev, left := mustInt(t, advSlip.Body, "previousBalanceCents"), mustInt(t, advSlip.Body, "remainingCents"); prev-500_000 != left {
+		t.Fatalf("advance identity: %s", advSlip.Raw)
+	}
+	if got := mustInt(t, advSlip.Body, "currentWeekCents"); got != 0 {
+		t.Fatalf("an advance has no week: %s", advSlip.Raw)
+	}
+}
+
+func receiptDevengoIsNotAReceipt(t *testing.T, h *harness, f *farmFixture, worker string) {
+	ledger := h.mustDo(t, http.MethodGet, "/v1/workers/"+worker+"/ledger", f.OwnerToken, nil, http.StatusOK)
+	rows, _ := ledger.Body["items"].([]any)
+	for _, raw := range rows {
+		row := raw.(map[string]any)
+		if row["kind"] == "devengo" {
+			res := h.do(t, http.MethodGet, "/v1/payments/"+row["id"].(string), f.OwnerToken, nil)
+			if res.Status != http.StatusNotFound {
+				t.Fatalf("devengo as receipt: got %d %s", res.Status, res.Raw)
+			}
+			return
+		}
+	}
+	t.Fatalf("no devengo in ledger: %s", ledger.Raw)
 }

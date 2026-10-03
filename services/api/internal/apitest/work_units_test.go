@@ -30,18 +30,7 @@ func TestWorkUnitsCanBeEditedAndRetired(t *testing.T) {
 	}
 
 	t.Run("a mistyped code can be corrected", func(t *testing.T) {
-		id := create("canata", "Canata", 12.5)
-		res := h.mustDo(t, http.MethodPatch, "/v1/catalogs/work-units/"+id, f.OwnerToken,
-			map[string]any{"code": "canasta", "label": "Canasta"}, http.StatusOK)
-		if res.Body["code"] != "canasta" || res.Body["label"] != "Canasta" {
-			t.Fatalf("the correction did not take: %s", res.Raw)
-		}
-		// The factor was not sent, and a unit's weight is not something to
-		// lose by editing its name -- kg_factor is what converts a canasta
-		// into kilos, so wiping it silently changes what a picker is paid.
-		if res.Body["kgFactor"] != 12.5 {
-			t.Fatalf("renaming the unit wiped its factor: %s", res.Raw)
-		}
+		workUnitsMistypedCodeCorrected(t, h, f, create)
 	})
 
 	t.Run("the factor can still be cleared on purpose, by sending null", func(t *testing.T) {
@@ -67,43 +56,7 @@ func TestWorkUnitsCanBeEditedAndRetired(t *testing.T) {
 	})
 
 	t.Run("a unit that pay records point at is retired, never deleted", func(t *testing.T) {
-		// The kilo the farm was seeded with is the one its activities use, so
-		// it is the unit with history behind it.
-		list := h.mustDo(t, http.MethodGet, "/v1/catalogs/work-units", f.OwnerToken, nil, http.StatusOK)
-		var kiloID string
-		var inUse bool
-		for _, raw := range list.Body["items"].([]any) {
-			u := raw.(map[string]any)
-			if u["code"] == "kg" {
-				kiloID, _ = u["id"].(string)
-				inUse, _ = u["inUse"].(bool)
-			}
-		}
-		if kiloID == "" {
-			t.Fatalf("no kilo in the seeded farm: %s", list.Raw)
-		}
-		if !inUse {
-			t.Fatalf("the seeded kilo reports no use, so this test proves nothing: %s", list.Raw)
-		}
-
-		res := h.mustDo(t, http.MethodDelete, "/v1/catalogs/work-units/"+kiloID, f.OwnerToken,
-			nil, http.StatusOK)
-		if res.Body["archived"] != true {
-			t.Fatalf("a unit with history behind it was DELETED: %s", res.Raw)
-		}
-
-		// Gone from the pickers...
-		after := h.mustDo(t, http.MethodGet, "/v1/catalogs/work-units", f.OwnerToken, nil, http.StatusOK)
-		if containsCode(after.Raw, `"code":"kg"`) {
-			t.Fatalf("the retired unit is still offered: %s", after.Raw)
-		}
-		// ...and still there for whatever referenced it. If the row had gone,
-		// the activity's unit_id would dangle and a record saying "40" would be
-		// 40 of something nobody can name.
-		acts := h.mustDo(t, http.MethodGet, "/v1/activities", f.OwnerToken, nil, http.StatusOK)
-		if acts.Status != http.StatusOK {
-			t.Fatalf("the activities that used it stopped loading: %s", acts.Raw)
-		}
+		workUnitsInUseIsRetired(t, h, f)
 	})
 
 	t.Run("the freed code can be used again", func(t *testing.T) {
@@ -115,6 +68,61 @@ func TestWorkUnitsCanBeEditedAndRetired(t *testing.T) {
 		h.mustDo(t, http.MethodDelete, "/v1/catalogs/work-units/"+id, f.OwnerToken, nil, http.StatusOK)
 		create("arroba", "Arroba nueva", 11)
 	})
+}
+
+func workUnitsMistypedCodeCorrected(t *testing.T, h *harness, f *farmFixture, create func(code, label string, kg float64) string) {
+	id := create("canata", "Canata", 12.5)
+	res := h.mustDo(t, http.MethodPatch, "/v1/catalogs/work-units/"+id, f.OwnerToken,
+		map[string]any{"code": "canasta", "label": "Canasta"}, http.StatusOK)
+	if res.Body["code"] != "canasta" || res.Body["label"] != "Canasta" {
+		t.Fatalf("the correction did not take: %s", res.Raw)
+	}
+	// The factor was not sent, and a unit's weight is not something to
+	// lose by editing its name -- kg_factor is what converts a canasta
+	// into kilos, so wiping it silently changes what a picker is paid.
+	if res.Body["kgFactor"] != 12.5 {
+		t.Fatalf("renaming the unit wiped its factor: %s", res.Raw)
+	}
+}
+
+func workUnitsInUseIsRetired(t *testing.T, h *harness, f *farmFixture) {
+	// The kilo the farm was seeded with is the one its activities use, so
+	// it is the unit with history behind it.
+	list := h.mustDo(t, http.MethodGet, "/v1/catalogs/work-units", f.OwnerToken, nil, http.StatusOK)
+	var kiloID string
+	var inUse bool
+	for _, raw := range list.Body["items"].([]any) {
+		u := raw.(map[string]any)
+		if u["code"] == "kg" {
+			kiloID, _ = u["id"].(string)
+			inUse, _ = u["inUse"].(bool)
+		}
+	}
+	if kiloID == "" {
+		t.Fatalf("no kilo in the seeded farm: %s", list.Raw)
+	}
+	if !inUse {
+		t.Fatalf("the seeded kilo reports no use, so this test proves nothing: %s", list.Raw)
+	}
+
+	res := h.mustDo(t, http.MethodDelete, "/v1/catalogs/work-units/"+kiloID, f.OwnerToken,
+		nil, http.StatusOK)
+	if res.Body["archived"] != true {
+		t.Fatalf("a unit with history behind it was DELETED: %s", res.Raw)
+	}
+
+	// Gone from the pickers...
+	after := h.mustDo(t, http.MethodGet, "/v1/catalogs/work-units", f.OwnerToken, nil, http.StatusOK)
+	if containsCode(after.Raw, `"code":"kg"`) {
+		t.Fatalf("the retired unit is still offered: %s", after.Raw)
+	}
+	// ...and still there for whatever referenced it. If the row had gone,
+	// the activity's unit_id would dangle and a record saying "40" would be
+	// 40 of something nobody can name.
+	acts := h.mustDo(t, http.MethodGet, "/v1/activities", f.OwnerToken, nil, http.StatusOK)
+	if acts.Status != http.StatusOK {
+		t.Fatalf("the activities that used it stopped loading: %s", acts.Raw)
+	}
 }
 
 func containsCode(raw, code string) bool {

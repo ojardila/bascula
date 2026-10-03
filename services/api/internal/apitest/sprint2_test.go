@@ -261,35 +261,7 @@ func TestPickupFacadeIsTheSameTable(t *testing.T) {
 	})
 
 	t.Run("a day's wage is not a pickup", func(t *testing.T) {
-		// A time-paid activity, recorded by the owner, must not appear on a
-		// screen that only knows how to show kilos.
-		activity := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
-			"name": "Tala por jornal", "category": "mantenimiento",
-			"payScheme": string(domain.PaySchemeTime),
-			"rate":      map[string]any{"rateCents": 5000000, "validFrom": "2026-01-01"},
-		}, http.StatusCreated)
-		wageID := h.createWorkRecord(t, f, f.OwnerToken, worker,
-			mustString(t, activity.Body, "id"), "2026-08-26", 1)
-
-		res := h.mustDo(t, http.MethodGet, "/v1/pickups", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		for _, raw := range items {
-			if raw.(map[string]any)["id"] == wageID {
-				t.Fatalf("a day's wage came back through /v1/pickups: %s", res.Raw)
-			}
-		}
-		if len(items) != 1 {
-			t.Fatalf("/v1/pickups returned %d rows, want only the weighing: %s",
-				len(items), res.Raw)
-		}
-
-		res = h.do(t, http.MethodGet, "/v1/pickups/"+wageID, f.OwnerToken, nil)
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("GET /v1/pickups/{a wage}: got %d %s, want 404", res.Status, res.Raw)
-		}
-
-		// And through the right door it is perfectly visible.
-		h.mustDo(t, http.MethodGet, "/v1/work-records/"+wageID, f.OwnerToken, nil, http.StatusOK)
+		s2PickupWageIsNotAPickup(t, h, f, worker)
 	})
 
 	t.Run("the weigher's restrictions still apply", func(t *testing.T) {
@@ -313,6 +285,38 @@ func TestPickupFacadeIsTheSameTable(t *testing.T) {
 	})
 }
 
+func s2PickupWageIsNotAPickup(t *testing.T, h *harness, f *farmFixture, worker string) {
+	// A time-paid activity, recorded by the owner, must not appear on a
+	// screen that only knows how to show kilos.
+	activity := h.mustDo(t, http.MethodPost, "/v1/activities", f.OwnerToken, map[string]any{
+		"name": "Tala por jornal", "category": "mantenimiento",
+		"payScheme": string(domain.PaySchemeTime),
+		"rate":      map[string]any{"rateCents": 5000000, "validFrom": "2026-01-01"},
+	}, http.StatusCreated)
+	wageID := h.createWorkRecord(t, f, f.OwnerToken, worker,
+		mustString(t, activity.Body, "id"), "2026-08-26", 1)
+
+	res := h.mustDo(t, http.MethodGet, "/v1/pickups", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	for _, raw := range items {
+		if raw.(map[string]any)["id"] == wageID {
+			t.Fatalf("a day's wage came back through /v1/pickups: %s", res.Raw)
+		}
+	}
+	if len(items) != 1 {
+		t.Fatalf("/v1/pickups returned %d rows, want only the weighing: %s",
+			len(items), res.Raw)
+	}
+
+	res = h.do(t, http.MethodGet, "/v1/pickups/"+wageID, f.OwnerToken, nil)
+	if res.Status != http.StatusNotFound {
+		t.Fatalf("GET /v1/pickups/{a wage}: got %d %s, want 404", res.Status, res.Raw)
+	}
+
+	// And through the right door it is perfectly visible.
+	h.mustDo(t, http.MethodGet, "/v1/work-records/"+wageID, f.OwnerToken, nil, http.StatusOK)
+}
+
 // ---------------------------------------------------------------------------
 // Polygons
 // ---------------------------------------------------------------------------
@@ -331,26 +335,7 @@ func TestPlotBoundary(t *testing.T) {
 	}
 
 	t.Run("a valid polygon gives computed hectares alongside the declared ones", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPut, "/v1/plots/"+plot+"/boundary", f.OwnerToken,
-			map[string]any{"boundary": square}, http.StatusOK)
-		p, _ := res.Body["plot"].(map[string]any)
-		if p == nil {
-			t.Fatalf("no plot in the answer: %s", res.Raw)
-		}
-		computed, ok := p["computedAreaHa"].(float64)
-		if !ok || computed <= 0 {
-			t.Fatalf("computedAreaHa is %v; ST_Area should have produced hectares: %s",
-				p["computedAreaHa"], res.Raw)
-		}
-		declared, ok := p["areaHa"].(float64)
-		if !ok || declared != 3.5 {
-			t.Fatalf("areaHa is %v, want the declared 3.5 — both come back, always, "+
-				"because they always disagree and hiding one decides for the owner "+
-				"which one lies", p["areaHa"])
-		}
-		if p["boundary"] == nil {
-			t.Fatalf("the boundary did not come back as GeoJSON: %s", res.Raw)
-		}
+		s2BoundaryValidPolygon(t, h, f, plot, square)
 	})
 
 	t.Run("a bow-tie is refused", func(t *testing.T) {
@@ -411,6 +396,29 @@ func TestPlotBoundary(t *testing.T) {
 	})
 }
 
+func s2BoundaryValidPolygon(t *testing.T, h *harness, f *farmFixture, plot string, square map[string]any) {
+	res := h.mustDo(t, http.MethodPut, "/v1/plots/"+plot+"/boundary", f.OwnerToken,
+		map[string]any{"boundary": square}, http.StatusOK)
+	p, _ := res.Body["plot"].(map[string]any)
+	if p == nil {
+		t.Fatalf("no plot in the answer: %s", res.Raw)
+	}
+	computed, ok := p["computedAreaHa"].(float64)
+	if !ok || computed <= 0 {
+		t.Fatalf("computedAreaHa is %v; ST_Area should have produced hectares: %s",
+			p["computedAreaHa"], res.Raw)
+	}
+	declared, ok := p["areaHa"].(float64)
+	if !ok || declared != 3.5 {
+		t.Fatalf("areaHa is %v, want the declared 3.5 — both come back, always, "+
+			"because they always disagree and hiding one decides for the owner "+
+			"which one lies", p["areaHa"])
+	}
+	if p["boundary"] == nil {
+		t.Fatalf("the boundary did not come back as GeoJSON: %s", res.Raw)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // The super-admin console
 // ---------------------------------------------------------------------------
@@ -423,38 +431,13 @@ func TestSuperAdminConsole(t *testing.T) {
 	b := h.signupFarm(t, "Finca suspendible", 80000)
 
 	t.Run("an owner is not a platform administrator", func(t *testing.T) {
-		res := h.do(t, http.MethodGet, "/v1/admin/farms", a.OwnerToken, nil)
-		if res.Status != http.StatusForbidden {
-			t.Fatalf("an ordinary owner listing every farm: got %d %s, want 403",
-				res.Status, res.Raw)
-		}
-		res = h.do(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, a.OwnerToken,
-			map[string]any{"status": "suspended"})
-		if res.Status != http.StatusForbidden {
-			t.Fatalf("an ordinary owner suspending a farm: got %d %s, want 403",
-				res.Status, res.Raw)
-		}
+		s2ConsoleOwnerIsNotAdmin(t, h, a, b)
 	})
 
 	token := h.superadminToken(t, a.FarmID)
 
 	t.Run("it sees every farm", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		names := map[string]bool{}
-		for _, raw := range items {
-			row := raw.(map[string]any)
-			names[row["name"].(string)] = true
-			for _, forbidden := range []string{"priceCents", "workers", "balanceCents", "employees"} {
-				if _, leaked := row[forbidden]; leaked {
-					t.Errorf("the console leaks %q; it may see farms, not inside them: %s",
-						forbidden, res.Raw)
-				}
-			}
-		}
-		if !names["Finca administrada"] || !names["Finca suspendible"] {
-			t.Fatalf("the console does not see both farms: %s", res.Raw)
-		}
+		s2ConsoleSeesEveryFarm(t, h, token)
 	})
 
 	t.Run("it cannot read inside a farm", func(t *testing.T) {
@@ -469,24 +452,7 @@ func TestSuperAdminConsole(t *testing.T) {
 	})
 
 	t.Run("suspending a farm stops its next session", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, token,
-			map[string]any{"status": "suspended"}, http.StatusOK)
-		if res.Body["status"] != "suspended" {
-			t.Fatalf("status did not stick: %s", res.Raw)
-		}
-
-		// A refresh is the next thing any live client does, and it is refused.
-		refresh := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
-			map[string]any{"refreshToken": "whatever"})
-		if refresh.Status == http.StatusOK {
-			t.Fatal("a nonsense refresh token was accepted")
-		}
-
-		res = h.mustDo(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, token,
-			map[string]any{"status": "active"}, http.StatusOK)
-		if res.Body["status"] != "active" {
-			t.Fatalf("the farm did not come back: %s", res.Raw)
-		}
+		s2ConsoleSuspendStopsNextSession(t, h, b, token)
 	})
 
 	t.Run("a status nobody meant is a 400", func(t *testing.T) {
@@ -499,69 +465,11 @@ func TestSuperAdminConsole(t *testing.T) {
 	})
 
 	t.Run("it provisions a farm with a new owner, already verified", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
-			"name": "Finca El Roble", "priceCents": 90000,
-			"owner": map[string]any{"email": "roble@example.com", "name": "Ana Roble"},
-		}, http.StatusCreated)
-		if res.Body["name"] != "Finca El Roble" {
-			t.Fatalf("created farm: %s", res.Raw)
-		}
-		if res.Body["slug"] != "finca-el-roble" {
-			t.Fatalf("slug from name: got %v, want finca-el-roble: %s", res.Body["slug"], res.Raw)
-		}
-		if res.Body["ownerEmail"] != "roble@example.com" {
-			t.Fatalf("owner email missing: %s", res.Raw)
-		}
-		if res.Body["ownerCreated"] != true {
-			t.Fatalf("expected a new account: %s", res.Raw)
-		}
-		pwd, _ := res.Body["temporaryPassword"].(string)
-		if pwd == "" {
-			t.Fatalf("minted password was not returned: %s", res.Raw)
-		}
-		login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": "roble@example.com", "password": pwd,
-		}, http.StatusOK)
-		if login.Body["farmName"] != "Finca El Roble" {
-			t.Fatalf("new owner could not open the farm: %s", login.Raw)
-		}
-		if login.Body["slug"] != "finca-el-roble" {
-			t.Fatalf("session slug: got %v: %s", login.Body["slug"], login.Raw)
-		}
-		listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
-		var foundSlug string
-		for _, raw := range listed.Body["items"].([]any) {
-			row := raw.(map[string]any)
-			if row["name"] == "Finca El Roble" {
-				foundSlug, _ = row["slug"].(string)
-			}
-		}
-		if foundSlug != "finca-el-roble" {
-			t.Fatalf("list slug: got %q: %s", foundSlug, listed.Raw)
-		}
+		s2ConsoleProvisionsWithNewOwner(t, h, token)
 	})
 
 	t.Run("an existing account is attached and its password is left alone", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
-			"name": "Finca La Ceiba", "priceCents": 85000,
-			"owner": map[string]any{
-				"email": a.OwnerEmail, "name": "Should Not Matter",
-			},
-		}, http.StatusCreated)
-		if res.Body["ownerCreated"] != false {
-			t.Fatalf("existing account was recreated: %s", res.Raw)
-		}
-		if _, leaked := res.Body["temporaryPassword"]; leaked {
-			t.Fatalf("must not mint a password for an existing account: %s", res.Raw)
-		}
-		listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
-		names := map[string]bool{}
-		for _, raw := range listed.Body["items"].([]any) {
-			names[raw.(map[string]any)["name"].(string)] = true
-		}
-		if !names["Finca La Ceiba"] {
-			t.Fatalf("new farm missing from the console: %s", listed.Raw)
-		}
+		s2ConsoleAttachesExistingAccount(t, h, a, token)
 	})
 
 	t.Run("an owner cannot provision farms", func(t *testing.T) {
@@ -574,6 +482,126 @@ func TestSuperAdminConsole(t *testing.T) {
 				res.Status, res.Raw)
 		}
 	})
+}
+
+func s2ConsoleOwnerIsNotAdmin(t *testing.T, h *harness, a, b *farmFixture) {
+	res := h.do(t, http.MethodGet, "/v1/admin/farms", a.OwnerToken, nil)
+	if res.Status != http.StatusForbidden {
+		t.Fatalf("an ordinary owner listing every farm: got %d %s, want 403",
+			res.Status, res.Raw)
+	}
+	res = h.do(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, a.OwnerToken,
+		map[string]any{"status": "suspended"})
+	if res.Status != http.StatusForbidden {
+		t.Fatalf("an ordinary owner suspending a farm: got %d %s, want 403",
+			res.Status, res.Raw)
+	}
+}
+
+func s2ConsoleSeesEveryFarm(t *testing.T, h *harness, token string) {
+	res := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	names := map[string]bool{}
+	for _, raw := range items {
+		row := raw.(map[string]any)
+		names[row["name"].(string)] = true
+		for _, forbidden := range []string{"priceCents", "workers", "balanceCents", "employees"} {
+			if _, leaked := row[forbidden]; leaked {
+				t.Errorf("the console leaks %q; it may see farms, not inside them: %s",
+					forbidden, res.Raw)
+			}
+		}
+	}
+	if !names["Finca administrada"] || !names["Finca suspendible"] {
+		t.Fatalf("the console does not see both farms: %s", res.Raw)
+	}
+}
+
+func s2ConsoleSuspendStopsNextSession(t *testing.T, h *harness, b *farmFixture, token string) {
+	res := h.mustDo(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, token,
+		map[string]any{"status": "suspended"}, http.StatusOK)
+	if res.Body["status"] != "suspended" {
+		t.Fatalf("status did not stick: %s", res.Raw)
+	}
+
+	// A refresh is the next thing any live client does, and it is refused.
+	refresh := h.do(t, http.MethodPost, "/v1/auth/refresh", "",
+		map[string]any{"refreshToken": "whatever"})
+	if refresh.Status == http.StatusOK {
+		t.Fatal("a nonsense refresh token was accepted")
+	}
+
+	res = h.mustDo(t, http.MethodPatch, "/v1/admin/farms/"+b.FarmID, token,
+		map[string]any{"status": "active"}, http.StatusOK)
+	if res.Body["status"] != "active" {
+		t.Fatalf("the farm did not come back: %s", res.Raw)
+	}
+}
+
+func s2ConsoleProvisionsWithNewOwner(t *testing.T, h *harness, token string) {
+	res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+		"name": "Finca El Roble", "priceCents": 90000,
+		"owner": map[string]any{"email": "roble@example.com", "name": "Ana Roble"},
+	}, http.StatusCreated)
+	if res.Body["name"] != "Finca El Roble" {
+		t.Fatalf("created farm: %s", res.Raw)
+	}
+	if res.Body["slug"] != "finca-el-roble" {
+		t.Fatalf("slug from name: got %v, want finca-el-roble: %s", res.Body["slug"], res.Raw)
+	}
+	if res.Body["ownerEmail"] != "roble@example.com" {
+		t.Fatalf("owner email missing: %s", res.Raw)
+	}
+	if res.Body["ownerCreated"] != true {
+		t.Fatalf("expected a new account: %s", res.Raw)
+	}
+	pwd, _ := res.Body["temporaryPassword"].(string)
+	if pwd == "" {
+		t.Fatalf("minted password was not returned: %s", res.Raw)
+	}
+	login := h.mustDo(t, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": "roble@example.com", "password": pwd,
+	}, http.StatusOK)
+	if login.Body["farmName"] != "Finca El Roble" {
+		t.Fatalf("new owner could not open the farm: %s", login.Raw)
+	}
+	if login.Body["slug"] != "finca-el-roble" {
+		t.Fatalf("session slug: got %v: %s", login.Body["slug"], login.Raw)
+	}
+	listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+	var foundSlug string
+	for _, raw := range listed.Body["items"].([]any) {
+		row := raw.(map[string]any)
+		if row["name"] == "Finca El Roble" {
+			foundSlug, _ = row["slug"].(string)
+		}
+	}
+	if foundSlug != "finca-el-roble" {
+		t.Fatalf("list slug: got %q: %s", foundSlug, listed.Raw)
+	}
+}
+
+func s2ConsoleAttachesExistingAccount(t *testing.T, h *harness, a *farmFixture, token string) {
+	res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+		"name": "Finca La Ceiba", "priceCents": 85000,
+		"owner": map[string]any{
+			"email": a.OwnerEmail, "name": "Should Not Matter",
+		},
+	}, http.StatusCreated)
+	if res.Body["ownerCreated"] != false {
+		t.Fatalf("existing account was recreated: %s", res.Raw)
+	}
+	if _, leaked := res.Body["temporaryPassword"]; leaked {
+		t.Fatalf("must not mint a password for an existing account: %s", res.Raw)
+	}
+	listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+	names := map[string]bool{}
+	for _, raw := range listed.Body["items"].([]any) {
+		names[raw.(map[string]any)["name"].(string)] = true
+	}
+	if !names["Finca La Ceiba"] {
+		t.Fatalf("new farm missing from the console: %s", listed.Raw)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -592,84 +620,15 @@ func TestListFiltersAndLogicalDelete(t *testing.T) {
 	h.createWorkRecord(t, f, f.OwnerToken, bruno, activity, "2026-08-26", 20)
 
 	t.Run("workers by needle", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/workers?q=maria", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 1 || items[0].(map[string]any)["id"] != ana {
-			t.Fatalf("q=maria matched %d rows: %s", len(items), res.Raw)
-		}
-		// The document is searchable even though it is not returned to a
-		// weigher: finding somebody by the number on their card does not
-		// require the number coming back.
-		res = h.mustDo(t, http.MethodGet, "/v1/workers?q=6000000002", f.WeigherToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("the weigher cannot find somebody by document: %s", res.Raw)
-		}
-		if _, leaked := items[0].(map[string]any)["docId"]; leaked {
-			t.Fatalf("...but the document came back to him: %s", res.Raw)
-		}
+		s2FiltersWorkersByNeedle(t, h, f, ana)
 	})
 
 	t.Run("work records by worker, plot and needle", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+ana,
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("workerId matched %d rows: %s", len(items), res.Raw)
-		}
-
-		res = h.mustDo(t, http.MethodGet, "/v1/work-records?q=Recoleccion",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("q on the activity name matched %d rows, want 2: %s", len(items), res.Raw)
-		}
-
-		res = h.mustDo(t, http.MethodGet, "/v1/work-records?q=Bruno",
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("q on the worker's name matched %d rows, want 1: %s", len(items), res.Raw)
-		}
-
-		res = h.mustDo(t, http.MethodGet, "/v1/work-records?plotId="+plot,
-			f.OwnerToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 0 {
-			t.Fatalf("plotId matched %d rows, but no record was linked to it: %s",
-				len(items), res.Raw)
-		}
+		s2FiltersWorkRecords(t, h, f, ana, plot)
 	})
 
 	t.Run("a worker comes off the payroll and back on", func(t *testing.T) {
-		h.mustDo(t, http.MethodPatch, "/v1/workers/"+bruno, f.OwnerToken,
-			map[string]any{"status": "inactive"}, http.StatusOK)
-
-		res := h.mustDo(t, http.MethodGet, "/v1/workers", f.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		for _, raw := range items {
-			if raw.(map[string]any)["id"] == bruno {
-				t.Fatalf("an inactive worker is still on the default list: %s", res.Raw)
-			}
-		}
-
-		res = h.mustDo(t, http.MethodGet, "/v1/workers?status=inactive", f.OwnerToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("status=inactive returned %d rows, want 1: %s", len(items), res.Raw)
-		}
-
-		// Nothing was deleted: the history is still readable, which is the
-		// whole reason the delete is logical.
-		h.mustDo(t, http.MethodGet, "/v1/workers/"+bruno+"/balance", f.OwnerToken, nil, http.StatusOK)
-
-		h.mustDo(t, http.MethodPatch, "/v1/workers/"+bruno, f.OwnerToken,
-			map[string]any{"status": "active"}, http.StatusOK)
-		res = h.mustDo(t, http.MethodGet, "/v1/workers", f.OwnerToken, nil, http.StatusOK)
-		items, _ = res.Body["items"].([]any)
-		if len(items) != 2 {
-			t.Fatalf("the worker did not come back: %s", res.Raw)
-		}
+		s2FiltersWorkerOffAndOnPayroll(t, h, f, bruno)
 	})
 
 	t.Run("a status nobody meant is a 400, not a silent no-op", func(t *testing.T) {
@@ -679,6 +638,87 @@ func TestListFiltersAndLogicalDelete(t *testing.T) {
 			t.Fatalf("got %d %s, want 400", res.Status, res.Raw)
 		}
 	})
+}
+
+func s2FiltersWorkersByNeedle(t *testing.T, h *harness, f *farmFixture, ana string) {
+	res := h.mustDo(t, http.MethodGet, "/v1/workers?q=maria", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["id"] != ana {
+		t.Fatalf("q=maria matched %d rows: %s", len(items), res.Raw)
+	}
+	// The document is searchable even though it is not returned to a
+	// weigher: finding somebody by the number on their card does not
+	// require the number coming back.
+	res = h.mustDo(t, http.MethodGet, "/v1/workers?q=6000000002", f.WeigherToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("the weigher cannot find somebody by document: %s", res.Raw)
+	}
+	if _, leaked := items[0].(map[string]any)["docId"]; leaked {
+		t.Fatalf("...but the document came back to him: %s", res.Raw)
+	}
+}
+
+func s2FiltersWorkRecords(t *testing.T, h *harness, f *farmFixture, ana, plot string) {
+	res := h.mustDo(t, http.MethodGet, "/v1/work-records?workerId="+ana,
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("workerId matched %d rows: %s", len(items), res.Raw)
+	}
+
+	res = h.mustDo(t, http.MethodGet, "/v1/work-records?q=Recoleccion",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("q on the activity name matched %d rows, want 2: %s", len(items), res.Raw)
+	}
+
+	res = h.mustDo(t, http.MethodGet, "/v1/work-records?q=Bruno",
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("q on the worker's name matched %d rows, want 1: %s", len(items), res.Raw)
+	}
+
+	res = h.mustDo(t, http.MethodGet, "/v1/work-records?plotId="+plot,
+		f.OwnerToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("plotId matched %d rows, but no record was linked to it: %s",
+			len(items), res.Raw)
+	}
+}
+
+func s2FiltersWorkerOffAndOnPayroll(t *testing.T, h *harness, f *farmFixture, bruno string) {
+	h.mustDo(t, http.MethodPatch, "/v1/workers/"+bruno, f.OwnerToken,
+		map[string]any{"status": "inactive"}, http.StatusOK)
+
+	res := h.mustDo(t, http.MethodGet, "/v1/workers", f.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	for _, raw := range items {
+		if raw.(map[string]any)["id"] == bruno {
+			t.Fatalf("an inactive worker is still on the default list: %s", res.Raw)
+		}
+	}
+
+	res = h.mustDo(t, http.MethodGet, "/v1/workers?status=inactive", f.OwnerToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("status=inactive returned %d rows, want 1: %s", len(items), res.Raw)
+	}
+
+	// Nothing was deleted: the history is still readable, which is the
+	// whole reason the delete is logical.
+	h.mustDo(t, http.MethodGet, "/v1/workers/"+bruno+"/balance", f.OwnerToken, nil, http.StatusOK)
+
+	h.mustDo(t, http.MethodPatch, "/v1/workers/"+bruno, f.OwnerToken,
+		map[string]any{"status": "active"}, http.StatusOK)
+	res = h.mustDo(t, http.MethodGet, "/v1/workers", f.OwnerToken, nil, http.StatusOK)
+	items, _ = res.Body["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("the worker did not come back: %s", res.Raw)
+	}
 }
 
 // ---------------------------------------------------------------------------
