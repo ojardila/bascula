@@ -32,11 +32,11 @@ func c2sbScratchDB(t *testing.T) *pgxpool.Config {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	name := "c2sb_prune_" + hex.EncodeToString(b)
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+	if _, err := admin.Exec(ctx, c2sbDatabaseDDL("CREATE DATABASE", name, "")); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		_, _ = admin.Exec(context.Background(), c2sbDatabaseDDL("DROP DATABASE IF EXISTS", name, "WITH (FORCE)"))
 		_ = admin.Close(context.Background())
 	})
 	cfg, err := pgxpool.ParseConfig(base)
@@ -185,4 +185,11 @@ func TestC2SBConstraintClassifiers(t *testing.T) {
 	if IsCheckViolation(check, "other_check") || IsCheckViolation(uniq, "") {
 		t.Error("check violation matched the wrong constraint or code")
 	}
+}
+
+// c2sbDatabaseDDL is a CREATE or DROP DATABASE statement, which takes no bind
+// parameters: the name is quoted as an identifier, and it is random hex made
+// above, never taken from input (same shape as cmd/api's databaseDDL).
+func c2sbDatabaseDDL(verb, name, suffix string) string {
+	return strings.TrimSpace(strings.Join([]string{verb, pgx.Identifier{name}.Sanitize(), suffix}, " "))
 }
