@@ -72,6 +72,26 @@ jobs:
               --json-output=semgrep.json \
               --sarif-output=semgrep.sarif
 
+      # Semgrep writes findings silenced with `nosemgrep` into the SARIF too,
+      # marked `suppressions: [{kind: inSource}]`, and code scanning keeps
+      # those open. Drop them so a reviewed false positive closes its alert,
+      # exactly as it is already left out of semgrep.json and the PR comment.
+      - name: Drop nosemgrep-suppressed results from the SARIF
+        run: |
+          python3 - <<'PY'
+          import json
+          with open("semgrep.sarif", encoding="utf-8") as f:
+              sarif = json.load(f)
+          dropped = 0
+          for run in sarif.get("runs", []):
+              kept = [r for r in run.get("results", []) if not r.get("suppressions")]
+              dropped += len(run.get("results", [])) - len(kept)
+              run["results"] = kept
+          with open("semgrep.sarif", "w", encoding="utf-8") as f:
+              json.dump(sarif, f)
+          print(f"dropped {dropped} nosemgrep-suppressed results")
+          PY
+
       - name: Changed files
         if: github.event_name == 'pull_request'
         env:
