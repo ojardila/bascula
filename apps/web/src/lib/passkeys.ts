@@ -22,6 +22,25 @@ export function passkeysSupported(): boolean {
   );
 }
 
+/**
+ * Whether this device has its own fingerprint, face or screen-lock
+ * authenticator (not only a security key). That is what makes offering a
+ * passkey after a password sign-in worth the person's time.
+ */
+export async function platformPasskeyAvailable(): Promise<boolean> {
+  if (!passkeysSupported()) return false;
+  const pkc = window.PublicKeyCredential as typeof PublicKeyCredential & {
+    isUserVerifyingPlatformAuthenticatorAvailable?: () => Promise<boolean>;
+  };
+  if (typeof pkc.isUserVerifyingPlatformAuthenticatorAvailable !== "function")
+    return false;
+  try {
+    return await pkc.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
 /** The person closed the prompt or it timed out: not an error worth showing. */
 export function passkeyCancelled(e: unknown): boolean {
   return (
