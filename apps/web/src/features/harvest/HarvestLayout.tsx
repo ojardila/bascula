@@ -16,7 +16,7 @@
  * The period lives in the URL rather than in state, so a tab switch keeps it
  * and a link to a particular reading is a link somebody can send.
  */
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import {
   Link as RouterLink,
   Outlet,
@@ -98,13 +98,17 @@ export function HarvestLayout() {
     : (TABS.find((t) => location.pathname.startsWith(t.path))?.path ??
       "/cosecha/detalles");
 
-  const ctx: HarvestContext = {
-    today,
-    weeks: range.weeks,
-    days: range.weeks * 7,
-    rangeKey: range.key,
-    canSeeMoney: can("money.read"),
-  };
+  const canSeeMoney = can("money.read");
+  const ctx = useMemo<HarvestContext>(
+    () => ({
+      today,
+      weeks: range.weeks,
+      days: range.weeks * 7,
+      rangeKey: range.key,
+      canSeeMoney,
+    }),
+    [today, range, canSeeMoney],
+  );
 
   // The dashboard draws its own, much simpler, page.
   if (trimTrailing(location.pathname, "/") === "/cosecha") {

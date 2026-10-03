@@ -190,22 +190,22 @@ export function Curve({
           ))}
 
           {/* The area under the finished part, faint. */}
-          {segments.map((s, si) => {
+          {segments.map((s) => {
             const pts = lastIsPartial
               ? s.pts.filter((p) => p.i !== points.length - 1)
               : s.pts;
             if (pts.length < 2) return null;
             const end = pts.at(-1)!;
             const d = `${line(pts)} L${x(end.i)},${y(0)} L${x(pts[0].i)},${y(0)} Z`;
-            return <path key={`a${si}`} d={d} fill={color} opacity={0.1} />;
+            return <path key={`a${s.pts[0].i}`} d={d} fill={color} opacity={0.1} />;
           })}
 
-          {segments.map((s, si) => {
+          {segments.map((s) => {
             const solid = lastIsPartial
               ? s.pts.filter((p) => p.i !== points.length - 1)
               : s.pts;
             return (
-              <g key={`l${si}`}>
+              <g key={`l${s.pts[0].i}`}>
                 {solid.length > 1 && (
                   <path
                     d={line(solid)}
@@ -420,20 +420,20 @@ export function Sparkline({
         display: "block",
       }}
     >
-      {runs.map((pts, k) =>
+      {runs.map((pts) =>
         pts.length > 1 ? (
           <path
-            key={`a${k}`}
+            key={`a${pts[0].i}`}
             d={`${path(pts)} L${x(pts.at(-1)!.i)},${height} L${x(pts[0].i)},${height} Z`}
             fill={color}
             opacity={0.1}
           />
         ) : null,
       )}
-      {runs.map((pts, k) =>
+      {runs.map((pts) =>
         pts.length > 1 ? (
           <path
-            key={`l${k}`}
+            key={`l${pts[0].i}`}
             d={path(pts)}
             fill="none"
             stroke={color}

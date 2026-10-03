@@ -28,6 +28,7 @@ import { AuthLayout } from "./AuthLayout";
 import { api } from "../../api/endpoints";
 import { ApiError, messageFor } from "../../api/errors";
 import { farmSlugProblem } from "../../lib/farmHost";
+import { looksLikeEmail } from "../../lib/email";
 import {
   FarmUrlField,
   slugErrorFromApi,
@@ -63,7 +64,7 @@ export function SignupPage() {
       e["farm.slug"] = "Esa dirección ya la tiene otra finca. Escriba otra.";
     if (!ownerName.trim()) e["owner.name"] = "Escriba su nombre.";
     if (!email.trim()) e["owner.email"] = "Escriba su correo.";
-    else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+    else if (!looksLikeEmail(email.trim())) {
       e["owner.email"] = "Ese correo no parece válido. Revíselo.";
     }
     // Ten, because that is what the server enforces. Length, not a
