@@ -74,51 +74,20 @@ func stagesOf(t *testing.T, st response) (map[string]string, float64) {
 func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	h := requireDB(t)
 	slug := "progreso-" + strings.ReplaceAll(uuid.NewString()[:6], "-", "")
-	ns := "/api/v1/namespaces/bascula-" + slug
+	w := &progressWorld{
+		slug:    slug,
+		ns:      "/api/v1/namespaces/bascula-" + slug,
+		cluster: &fakeCluster{objects: map[string]any{}},
+		last:    -1.0,
+	}
 
-	var mu sync.Mutex
-	runStatus := "" // "", in_progress, completed
-	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case r.URL.Path == "/repos/ojardila/gitops/dispatches":
-			w.WriteHeader(http.StatusNoContent)
-		case r.URL.Path == "/repos/ojardila/gitops/actions/workflows/provision-tenant.yml/runs":
-			runs := []any{map[string]any{"display_title": "Provision tenant otra-finca", "status": "completed", "conclusion": "success"}}
-			if runStatus != "" {
-				conclusion := ""
-				if runStatus == "completed" {
-					conclusion = "success"
-				}
-				runs = append([]any{map[string]any{"display_title": "Provision tenant " + provisionRunRef(slug), "status": runStatus, "conclusion": conclusion}}, runs...)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": runs})
-		default:
-			http.Error(w, "unexpected", http.StatusBadRequest)
-		}
-	}))
+	gh := httptest.NewServer(http.HandlerFunc(w.serveGitHub))
 	defer gh.Close()
 
-	cluster := &fakeCluster{objects: map[string]any{}}
-	kapi := httptest.NewServer(cluster)
+	kapi := httptest.NewServer(w.cluster)
 	defer kapi.Close()
 
-	certActive := false
-	cf := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		ssl := "pending_validation"
-		if certActive {
-			ssl = "active"
-		}
-		view := map[string]any{"id": "h1", "hostname": "x", "status": "active", "ssl": map[string]any{"status": ssl}}
-		var result any = view
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/custom_hostnames") {
-			result = []any{view}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "result": result})
-	}))
+	cf := httptest.NewServer(http.HandlerFunc(w.serveCloudflare))
 	defer cf.Close()
 
 	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,18 +100,8 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	tcfg := httpapi.DefaultConfig()
 	tcfg.UploadDir = uploads
 	tcfg.TenantSlug = slug
-	tenantAPI := httpapi.New(scratchTenantDB(t, h), auth.NewSigner([]byte("tenant-signing-key-0123456789abcdef"), "bascula"), tcfg)
-	stackUp := false
-	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		up := stackUp
-		mu.Unlock()
-		if !up {
-			http.Error(w, "no stack yet", http.StatusBadGateway)
-			return
-		}
-		tenantAPI.InternalHandler().ServeHTTP(w, r)
-	}))
+	w.tenantAPI = httpapi.New(scratchTenantDB(t, h), auth.NewSigner([]byte("tenant-signing-key-0123456789abcdef"), "bascula"), tcfg)
+	internal := httptest.NewServer(http.HandlerFunc(w.serveInternal))
 	defer internal.Close()
 
 	pcfg := httpapi.DefaultConfig()
@@ -162,33 +121,111 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	pcfg.CloudflareAPIURL = cf.URL
 	pcfg.KubeClient = &kube.Client{BaseURL: kapi.URL, Token: "kube-test"}
 	pcfg.ReconcileEvery = time.Hour
-	platform := httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), pcfg)
+	w.platform = httpapi.New(h.pool, auth.NewSigner([]byte("test-signing-key"), "bascula"), pcfg)
 
-	signupWithSlug(t, platform, "Progreso", slug)
+	signupWithSlug(t, w.platform, "Progreso", slug)
 
-	last := -1.0
-	get := func() (map[string]string, response) {
-		time.Sleep(4100 * time.Millisecond) // past the per-slug status cache
-		st := call(t, platform, http.MethodGet, provisionStatusPath(slug), "", nil)
-		if st.Status != http.StatusOK {
-			t.Fatalf("status: %d %s", st.Status, st.Raw)
+	progressPipelineStages(t, w)
+	progressClusterStages(t, w)
+	progressStackAndCertificate(t, w)
+}
+
+// progressWorld is everything TestProvisionProgressFollowsTheCluster's fake
+// GitHub, Cloudflare and stack share with the test as it moves them forward.
+type progressWorld struct {
+	mu         sync.Mutex
+	runStatus  string // "", in_progress, completed
+	certActive bool
+	stackUp    bool
+
+	slug      string
+	ns        string
+	cluster   *fakeCluster
+	tenantAPI *httpapi.Server
+	platform  *httpapi.Server
+	last      float64
+}
+
+func (pw *progressWorld) serveGitHub(w http.ResponseWriter, r *http.Request) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+	switch {
+	case r.URL.Path == "/repos/ojardila/gitops/dispatches":
+		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/repos/ojardila/gitops/actions/workflows/provision-tenant.yml/runs":
+		runs := []any{map[string]any{"display_title": "Provision tenant otra-finca", "status": "completed", "conclusion": "success"}}
+		if pw.runStatus != "" {
+			conclusion := ""
+			if pw.runStatus == "completed" {
+				conclusion = "success"
+			}
+			runs = append([]any{map[string]any{"display_title": "Provision tenant " + provisionRunRef(pw.slug), "status": pw.runStatus, "conclusion": conclusion}}, runs...)
 		}
-		stages, p := stagesOf(t, st)
-		if p < last {
-			t.Fatalf("percent went back: %v -> %v (%s)", last, p, st.Raw)
-		}
-		if st.Body["ready"] != true && p >= 100 {
-			t.Fatalf("100%% before ready: %s", st.Raw)
-		}
-		if cur, _ := st.Body["current"].(string); cur == "" {
-			t.Fatalf("no current step: %s", st.Raw)
-		}
-		last = p
-		return stages, st
+		_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": runs})
+	default:
+		http.Error(w, "unexpected", http.StatusBadRequest)
 	}
+}
 
+func (pw *progressWorld) serveCloudflare(w http.ResponseWriter, r *http.Request) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+	ssl := "pending_validation"
+	if pw.certActive {
+		ssl = "active"
+	}
+	view := map[string]any{"id": "h1", "hostname": "x", "status": "active", "ssl": map[string]any{"status": ssl}}
+	var result any = view
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/custom_hostnames") {
+		result = []any{view}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "result": result})
+}
+
+func (pw *progressWorld) serveInternal(w http.ResponseWriter, r *http.Request) {
+	pw.mu.Lock()
+	up := pw.stackUp
+	pw.mu.Unlock()
+	if !up {
+		http.Error(w, "no stack yet", http.StatusBadGateway)
+		return
+	}
+	pw.tenantAPI.InternalHandler().ServeHTTP(w, r)
+}
+
+// locked runs fn while holding the fakes' lock.
+func (pw *progressWorld) locked(fn func()) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+	fn()
+}
+
+// get reads the status past the per-slug cache and checks the invariants
+// every answer must keep: the percent only grows, it is not 100 before ready,
+// and there is always a current step.
+func (pw *progressWorld) get(t *testing.T) (map[string]string, response) {
+	time.Sleep(4100 * time.Millisecond) // past the per-slug status cache
+	st := call(t, pw.platform, http.MethodGet, provisionStatusPath(pw.slug), "", nil)
+	if st.Status != http.StatusOK {
+		t.Fatalf("status: %d %s", st.Status, st.Raw)
+	}
+	stages, p := stagesOf(t, st)
+	if p < pw.last {
+		t.Fatalf("percent went back: %v -> %v (%s)", pw.last, p, st.Raw)
+	}
+	if st.Body["ready"] != true && p >= 100 {
+		t.Fatalf("100%% before ready: %s", st.Raw)
+	}
+	if cur, _ := st.Body["current"].(string); cur == "" {
+		t.Fatalf("no current step: %s", st.Raw)
+	}
+	pw.last = p
+	return stages, st
+}
+
+func progressPipelineStages(t *testing.T, w *progressWorld) {
 	// Nothing yet but the request.
-	stages, st := get()
+	stages, st := w.get(t)
 	if stages["received"] != "done" || stages["pipeline_started"] != "active" || st.Body["source"] != "cluster" {
 		t.Fatalf("start: %s", st.Raw)
 	}
@@ -197,28 +234,27 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	}
 
 	// The pipeline runs, then finishes; Argo creates the Application.
-	mu.Lock()
-	runStatus = "in_progress"
-	mu.Unlock()
-	stages, st = get()
+	w.locked(func() { w.runStatus = "in_progress" })
+	stages, st = w.get(t)
 	if stages["pipeline_started"] != "done" || stages["pipeline_done"] == "done" {
 		t.Fatalf("pipeline running: %s", st.Raw)
 	}
-	mu.Lock()
-	runStatus = "completed"
-	mu.Unlock()
-	cluster.set("/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/bascula-"+slug,
+	w.locked(func() { w.runStatus = "completed" })
+	w.cluster.set("/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/bascula-"+w.slug,
 		map[string]any{"status": map[string]any{"sync": map[string]any{"status": "OutOfSync"}}})
-	stages, st = get()
+	stages, st = w.get(t)
 	if stages["pipeline_done"] != "done" || stages["deployment"] != "active" {
 		t.Fatalf("pipeline done: %s", st.Raw)
 	}
+}
 
+func progressClusterStages(t *testing.T, w *progressWorld) {
+	slug, ns, cluster := w.slug, w.ns, w.cluster
 	// Namespace and a database that is not healthy yet.
 	cluster.set(ns, map[string]any{"status": map[string]any{"phase": "Active"}})
 	cluster.set("/apis/postgresql.cnpg.io/v1/namespaces/bascula-"+slug+"/clusters/bascula-db",
 		map[string]any{"spec": map[string]any{"instances": 1}, "status": map[string]any{"readyInstances": 0}})
-	stages, st = get()
+	stages, st := w.get(t)
 	if stages["namespace"] != "done" || stages["deployment"] != "done" || stages["database"] != "active" {
 		t.Fatalf("namespace: %s", st.Raw)
 	}
@@ -237,7 +273,7 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	}
 	cluster.set("/apis/gateway.networking.k8s.io/v1/namespaces/bascula-"+slug+"/httproutes/bascula",
 		map[string]any{"status": map[string]any{"parents": []any{map[string]any{"conditions": []any{map[string]any{"type": "Accepted", "status": "True"}}}}}})
-	stages, st = get()
+	stages, st = w.get(t)
 	for _, k := range []string{"database", "migrations", "pods", "route"} {
 		if stages[k] != "done" {
 			t.Fatalf("%s not done: %s", k, st.Raw)
@@ -246,13 +282,15 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	if stages["app"] == "done" || st.Body["ready"] == true {
 		t.Fatalf("app/ready before the stack answered: %s", st.Raw)
 	}
+}
 
+func progressStackAndCertificate(t *testing.T, w *progressWorld) {
+	var stages map[string]string
+	var st response
 	// The stack answers and gets its farm; the certificate is still pending.
-	mu.Lock()
-	stackUp = true
-	mu.Unlock()
+	w.locked(func() { w.stackUp = true })
 	waitFor(t, 20*time.Second, "farm copied into the stack", func() bool {
-		stages, st = get()
+		stages, st = w.get(t)
 		return stages["app"] == "done"
 	})
 	if stages["certificate"] == "done" || stages["site"] == "done" || st.Body["ready"] == true {
@@ -260,11 +298,9 @@ func TestProvisionProgressFollowsTheCluster(t *testing.T) {
 	}
 
 	// Certificate active: ready, 100 %.
-	mu.Lock()
-	certActive = true
-	mu.Unlock()
+	w.locked(func() { w.certActive = true })
 	waitFor(t, 20*time.Second, "ready", func() bool {
-		stages, st = get()
+		stages, st = w.get(t)
 		return st.Body["ready"] == true
 	})
 	if p, _ := st.Body["percent"].(float64); p != 100 {

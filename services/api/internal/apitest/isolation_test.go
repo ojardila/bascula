@@ -30,15 +30,7 @@ func TestTwoFarmsCannotSeeEachOther(t *testing.T) {
 	plotB := h.createPlot(t, b, "Lote B")
 
 	t.Run("a list shows only your own", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodGet, "/v1/workers", a.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		if len(items) != 1 {
-			t.Fatalf("farm A sees %d workers, want 1: %s", len(items), res.Raw)
-		}
-		got := items[0].(map[string]any)["id"].(string)
-		if got != workerA {
-			t.Fatalf("farm A sees worker %s, want its own %s", got, workerA)
-		}
+		isolationListShowsOnlyOwn(t, h, a, workerA)
 	})
 
 	t.Run("naming the other farm's id gets you nothing", func(t *testing.T) {
@@ -73,53 +65,11 @@ func TestTwoFarmsCannotSeeEachOther(t *testing.T) {
 	})
 
 	t.Run("money does not cross either", func(t *testing.T) {
-		h.settleSomething(t, b, workerB, plotB)
-
-		res := h.mustDo(t, http.MethodGet, "/v1/balances", a.OwnerToken, nil, http.StatusOK)
-		items, _ := res.Body["items"].([]any)
-		for _, raw := range items {
-			row := raw.(map[string]any)
-			if row["workerId"] == workerB {
-				t.Fatalf("farm A can see farm B's balances: %s", res.Raw)
-			}
-		}
-		if len(items) != 1 {
-			t.Fatalf("farm A sees %d balances, want only its own worker: %s", len(items), res.Raw)
-		}
-
-		// Not an empty list: an empty ledger reads as "this person has no
-		// movements yet", which is a believable and false answer about
-		// somebody else's employee. 404 is the only honest one.
-		res = h.do(t, http.MethodGet, "/v1/workers/"+workerB+"/ledger", a.OwnerToken, nil)
-		if res.Status != http.StatusNotFound {
-			t.Fatalf("farm A reading farm B's ledger: got %d %s, want 404",
-				res.Status, res.Raw)
-		}
+		isolationMoneyDoesNotCross(t, h, a, b, workerB, plotB)
 	})
 
 	t.Run("the database itself refuses, not just the handler", func(t *testing.T) {
-		// Straight at the store, bypassing every handler: farm A's context, a
-		// direct query for farm B's row. RLS is the only thing standing here.
-		h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner,
-			func(ctx context.Context, tx pgx.Tx) {
-				var n int
-				err := tx.QueryRow(ctx,
-					`SELECT count(*) FROM employees WHERE id = $1`, workerB).Scan(&n)
-				if err != nil {
-					t.Fatalf("query: %v", err)
-				}
-				if n != 0 {
-					t.Fatalf("RLS let farm A count %d of farm B's employees", n)
-				}
-
-				// And it cannot write across the border either.
-				_, err = tx.Exec(ctx, `
-					INSERT INTO employees (id, farm_id, name)
-					VALUES (gen_random_uuid(), $1, 'smuggled')`, b.FarmID)
-				if err == nil {
-					t.Fatal("farm A inserted a row into farm B; the WITH CHECK is not doing its job")
-				}
-			})
+		isolationDatabaseRefuses(t, h, a, b, workerB)
 	})
 
 	t.Run("without a tenant the answer is loud, not empty", func(t *testing.T) {
@@ -136,6 +86,68 @@ func TestTwoFarmsCannotSeeEachOther(t *testing.T) {
 				res.code(), res.Raw)
 		}
 	})
+}
+
+func isolationListShowsOnlyOwn(t *testing.T, h *harness, a *farmFixture, workerA string) {
+	res := h.mustDo(t, http.MethodGet, "/v1/workers", a.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("farm A sees %d workers, want 1: %s", len(items), res.Raw)
+	}
+	got := items[0].(map[string]any)["id"].(string)
+	if got != workerA {
+		t.Fatalf("farm A sees worker %s, want its own %s", got, workerA)
+	}
+}
+
+func isolationMoneyDoesNotCross(t *testing.T, h *harness, a, b *farmFixture, workerB, plotB string) {
+	h.settleSomething(t, b, workerB, plotB)
+
+	res := h.mustDo(t, http.MethodGet, "/v1/balances", a.OwnerToken, nil, http.StatusOK)
+	items, _ := res.Body["items"].([]any)
+	for _, raw := range items {
+		row := raw.(map[string]any)
+		if row["workerId"] == workerB {
+			t.Fatalf("farm A can see farm B's balances: %s", res.Raw)
+		}
+	}
+	if len(items) != 1 {
+		t.Fatalf("farm A sees %d balances, want only its own worker: %s", len(items), res.Raw)
+	}
+
+	// Not an empty list: an empty ledger reads as "this person has no
+	// movements yet", which is a believable and false answer about
+	// somebody else's employee. 404 is the only honest one.
+	res = h.do(t, http.MethodGet, "/v1/workers/"+workerB+"/ledger", a.OwnerToken, nil)
+	if res.Status != http.StatusNotFound {
+		t.Fatalf("farm A reading farm B's ledger: got %d %s, want 404",
+			res.Status, res.Raw)
+	}
+}
+
+func isolationDatabaseRefuses(t *testing.T, h *harness, a, b *farmFixture, workerB string) {
+	// Straight at the store, bypassing every handler: farm A's context, a
+	// direct query for farm B's row. RLS is the only thing standing here.
+	h.withTenant(t, a.FarmID, a.OwnerUserID, domain.RoleOwner,
+		func(ctx context.Context, tx pgx.Tx) {
+			var n int
+			err := tx.QueryRow(ctx,
+				`SELECT count(*) FROM employees WHERE id = $1`, workerB).Scan(&n)
+			if err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			if n != 0 {
+				t.Fatalf("RLS let farm A count %d of farm B's employees", n)
+			}
+
+			// And it cannot write across the border either.
+			_, err = tx.Exec(ctx, `
+				INSERT INTO employees (id, farm_id, name)
+				VALUES (gen_random_uuid(), $1, 'smuggled')`, b.FarmID)
+			if err == nil {
+				t.Fatal("farm A inserted a row into farm B; the WITH CHECK is not doing its job")
+			}
+		})
 }
 
 // TestTheWeigherCannotReadTheWeekPrice goes at the database, past every
@@ -193,36 +205,40 @@ func TestTheWeigherCannotReadTheWeekPrice(t *testing.T) {
 	// arm is asserted at both levels: the row itself, and the figure the
 	// administrator's screens are built on.
 	t.Run("the administrator still reads the week price", func(t *testing.T) {
-		h.withTenant(t, f.FarmID, f.AdminUserID, domain.RoleAdmin,
-			func(ctx context.Context, tx pgx.Tx) {
-				var price int64
-				if err := tx.QueryRow(ctx,
-					`SELECT price_minor FROM week_prices WHERE week_start = '2026-08-24'`).
-					Scan(&price); err != nil {
-					t.Fatalf("RLS hid the week price from the administrator: %v", err)
-				}
-				if price != 91500 {
-					t.Fatalf("the administrator reads %d, want the 91500 the owner set", price)
-				}
-			})
-
-		got := h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-24",
-			f.AdminToken, nil, http.StatusOK)
-		if p := mustInt(t, got.Body, "priceCents"); p != 91500 {
-			t.Fatalf("the administrator's price screen says %d, want 91500: %s", p, got.Raw)
-		}
-
-		// And the figure survives all the way onto a record he is paid from:
-		// the projection is by role, so it must not have narrowed onto him.
-		worker := h.createWorker(t, f, "Trabajador del precio", "5544332211")
-		activity := h.harvestActivityID(t, f)
-		rec := h.mustDo(t, http.MethodPost, "/v1/work-records", f.AdminToken, map[string]any{
-			"activityId": activity, "workerId": worker,
-			"quantity": 1, "dateFrom": "2026-08-27",
-		}, http.StatusCreated)
-		if got := mustInt(t, rec.Body, "estimatedAmountCents"); got != 91500 {
-			t.Fatalf("one kilo in the overridden week is worth %d to the administrator, "+
-				"want the week's 91500 and not the farm's general price: %s", got, rec.Raw)
-		}
+		isolationAdminReadsWeekPrice(t, h, f)
 	})
+}
+
+func isolationAdminReadsWeekPrice(t *testing.T, h *harness, f *farmFixture) {
+	h.withTenant(t, f.FarmID, f.AdminUserID, domain.RoleAdmin,
+		func(ctx context.Context, tx pgx.Tx) {
+			var price int64
+			if err := tx.QueryRow(ctx,
+				`SELECT price_minor FROM week_prices WHERE week_start = '2026-08-24'`).
+				Scan(&price); err != nil {
+				t.Fatalf("RLS hid the week price from the administrator: %v", err)
+			}
+			if price != 91500 {
+				t.Fatalf("the administrator reads %d, want the 91500 the owner set", price)
+			}
+		})
+
+	got := h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-24",
+		f.AdminToken, nil, http.StatusOK)
+	if p := mustInt(t, got.Body, "priceCents"); p != 91500 {
+		t.Fatalf("the administrator's price screen says %d, want 91500: %s", p, got.Raw)
+	}
+
+	// And the figure survives all the way onto a record he is paid from:
+	// the projection is by role, so it must not have narrowed onto him.
+	worker := h.createWorker(t, f, "Trabajador del precio", "5544332211")
+	activity := h.harvestActivityID(t, f)
+	rec := h.mustDo(t, http.MethodPost, "/v1/work-records", f.AdminToken, map[string]any{
+		"activityId": activity, "workerId": worker,
+		"quantity": 1, "dateFrom": "2026-08-27",
+	}, http.StatusCreated)
+	if got := mustInt(t, rec.Body, "estimatedAmountCents"); got != 91500 {
+		t.Fatalf("one kilo in the overridden week is worth %d to the administrator, "+
+			"want the week's 91500 and not the farm's general price: %s", got, rec.Raw)
+	}
 }

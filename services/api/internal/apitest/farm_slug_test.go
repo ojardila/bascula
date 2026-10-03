@@ -14,36 +14,11 @@ func TestFarmSlug(t *testing.T) {
 	token := h.superadminToken(t, a.FarmID)
 
 	t.Run("an explicit slug is stored as given, lowercased", func(t *testing.T) {
-		res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
-			"name": "Finca La Palma", "slug": "La-Palma", "priceCents": 90000,
-			"owner": map[string]any{"email": "palma@example.com"},
-		}, http.StatusCreated)
-		if res.Body["slug"] != "la-palma" {
-			t.Fatalf("got %v, want la-palma: %s", res.Body["slug"], res.Raw)
-		}
-		listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
-		var found bool
-		for _, raw := range listed.Body["items"].([]any) {
-			row := raw.(map[string]any)
-			if row["id"] == res.Body["id"] {
-				found = row["slug"] == "la-palma"
-			}
-		}
-		if !found {
-			t.Fatalf("list missing slug: %s", listed.Raw)
-		}
+		slugExplicitStoredLowercased(t, h, token)
 	})
 
 	t.Run("a reserved slug is a 400", func(t *testing.T) {
-		for _, slug := range []string{"admin", "www", "bascula", "mcp", "oauth"} {
-			res := h.do(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
-				"name": "No", "slug": slug, "priceCents": 1,
-				"owner": map[string]any{"email": "reserved-" + slug + "@example.com"},
-			})
-			if res.Status != http.StatusBadRequest {
-				t.Fatalf("slug %q: got %d %s, want 400", slug, res.Status, res.Raw)
-			}
-		}
+		slugReservedIs400(t, h, token)
 	})
 
 	t.Run("a duplicate slug is a 409", func(t *testing.T) {
@@ -83,6 +58,39 @@ func TestFarmSlug(t *testing.T) {
 	})
 }
 
+func slugExplicitStoredLowercased(t *testing.T, h *harness, token string) {
+	res := h.mustDo(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+		"name": "Finca La Palma", "slug": "La-Palma", "priceCents": 90000,
+		"owner": map[string]any{"email": "palma@example.com"},
+	}, http.StatusCreated)
+	if res.Body["slug"] != "la-palma" {
+		t.Fatalf("got %v, want la-palma: %s", res.Body["slug"], res.Raw)
+	}
+	listed := h.mustDo(t, http.MethodGet, "/v1/admin/farms", token, nil, http.StatusOK)
+	var found bool
+	for _, raw := range listed.Body["items"].([]any) {
+		row := raw.(map[string]any)
+		if row["id"] == res.Body["id"] {
+			found = row["slug"] == "la-palma"
+		}
+	}
+	if !found {
+		t.Fatalf("list missing slug: %s", listed.Raw)
+	}
+}
+
+func slugReservedIs400(t *testing.T, h *harness, token string) {
+	for _, slug := range []string{"admin", "www", "bascula", "mcp", "oauth"} {
+		res := h.do(t, http.MethodPost, "/v1/admin/farms", token, map[string]any{
+			"name": "No", "slug": slug, "priceCents": 1,
+			"owner": map[string]any{"email": "reserved-" + slug + "@example.com"},
+		})
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("slug %q: got %d %s, want 400", slug, res.Status, res.Raw)
+		}
+	}
+}
+
 func TestLoginHostPinsFarm(t *testing.T) {
 	h := requireDB(t)
 	first := h.signupFarm(t, "Finca Ancla", 80000)
@@ -99,39 +107,11 @@ func TestLoginHostPinsFarm(t *testing.T) {
 	anchorSlug := mustString(t, anchor.Body, "slug")
 
 	t.Run("several farms without a pin is a 400 that names the slugs", func(t *testing.T) {
-		res := h.loginOwner(t, first, "", nil)
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("got %d %s, want 400", res.Status, res.Raw)
-		}
-		errObj, _ := res.Body["error"].(map[string]any)
-		details, _ := errObj["details"].(map[string]any)
-		farms, _ := details["farms"].([]any)
-		if len(farms) < 2 {
-			t.Fatalf("details.farms: %s", res.Raw)
-		}
-		var sawPin bool
-		for _, raw := range farms {
-			row := raw.(map[string]any)
-			if row["slug"] == nil {
-				t.Fatalf("farm choice missing slug: %s", res.Raw)
-			}
-			if row["slug"] == "finca-pin" {
-				sawPin = true
-			}
-		}
-		if !sawPin {
-			t.Fatalf("finca-pin missing from the choice: %s", res.Raw)
-		}
+		slugSeveralFarmsWithoutPin(t, h, first)
 	})
 
 	t.Run("Host {slug}.bascula.engp.io pins that farm", func(t *testing.T) {
-		res := h.loginOwner(t, first, "finca-pin.bascula.engp.io", nil)
-		if res.Status != http.StatusOK {
-			t.Fatalf("got %d %s, want 200", res.Status, res.Raw)
-		}
-		if res.Body["farmId"] != pinID || res.Body["slug"] != "finca-pin" {
-			t.Fatalf("pinned the wrong farm: %s", res.Raw)
-		}
+		slugHostPinsThatFarm(t, h, first, pinID)
 	})
 
 	t.Run("Host {slug}.int.dev.engp.io pins too", func(t *testing.T) {
@@ -142,12 +122,7 @@ func TestLoginHostPinsFarm(t *testing.T) {
 	})
 
 	t.Run("the apex hosts pin nothing", func(t *testing.T) {
-		for _, host := range []string{"bascula.engp.io", "bascula.int.dev.engp.io", "localhost"} {
-			res := h.loginOwner(t, first, host, nil)
-			if res.Status != http.StatusBadRequest {
-				t.Fatalf("%s pinned a farm: %d %s", host, res.Status, res.Raw)
-			}
-		}
+		slugApexHostsPinNothing(t, h, first)
 	})
 
 	t.Run("a Host pin that disagrees with farmId is a 400", func(t *testing.T) {
@@ -170,23 +145,72 @@ func TestLoginHostPinsFarm(t *testing.T) {
 	})
 
 	t.Run("the tenant stays the JWT, not the Host", func(t *testing.T) {
-		pinned := h.loginOwner(t, first, "finca-pin.bascula.engp.io", nil)
-		if pinned.Status != http.StatusOK {
-			t.Fatalf("pin login: %s", pinned.Raw)
-		}
-		token := mustString(t, pinned.Body, "accessToken")
-		// Authenticated routes ignore Host: this token is farm-pin, even if
-		// the request names the other farm's host.
-		got := h.doAt(t, anchorSlug+".bascula.engp.io", http.MethodGet, "/v1/farm", token, nil)
-		if got.Status != http.StatusOK || got.Body["id"] != pinID {
-			t.Fatalf("Host overrode the JWT tenant: %d %s", got.Status, got.Raw)
-		}
-		me := h.mustDo(t, http.MethodGet, "/v1/me", token, nil, http.StatusOK)
-		farm, _ := me.Body["farm"].(map[string]any)
-		if farm["id"] != pinID || farm["slug"] != "finca-pin" {
-			t.Fatalf("/v1/me: %s", me.Raw)
-		}
+		slugTenantStaysTheJWT(t, h, first, pinID, anchorSlug)
 	})
+}
+
+func slugSeveralFarmsWithoutPin(t *testing.T, h *harness, first *farmFixture) {
+	res := h.loginOwner(t, first, "", nil)
+	if res.Status != http.StatusBadRequest {
+		t.Fatalf("got %d %s, want 400", res.Status, res.Raw)
+	}
+	errObj, _ := res.Body["error"].(map[string]any)
+	details, _ := errObj["details"].(map[string]any)
+	farms, _ := details["farms"].([]any)
+	if len(farms) < 2 {
+		t.Fatalf("details.farms: %s", res.Raw)
+	}
+	var sawPin bool
+	for _, raw := range farms {
+		row := raw.(map[string]any)
+		if row["slug"] == nil {
+			t.Fatalf("farm choice missing slug: %s", res.Raw)
+		}
+		if row["slug"] == "finca-pin" {
+			sawPin = true
+		}
+	}
+	if !sawPin {
+		t.Fatalf("finca-pin missing from the choice: %s", res.Raw)
+	}
+}
+
+func slugHostPinsThatFarm(t *testing.T, h *harness, first *farmFixture, pinID string) {
+	res := h.loginOwner(t, first, "finca-pin.bascula.engp.io", nil)
+	if res.Status != http.StatusOK {
+		t.Fatalf("got %d %s, want 200", res.Status, res.Raw)
+	}
+	if res.Body["farmId"] != pinID || res.Body["slug"] != "finca-pin" {
+		t.Fatalf("pinned the wrong farm: %s", res.Raw)
+	}
+}
+
+func slugApexHostsPinNothing(t *testing.T, h *harness, first *farmFixture) {
+	for _, host := range []string{"bascula.engp.io", "bascula.int.dev.engp.io", "localhost"} {
+		res := h.loginOwner(t, first, host, nil)
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("%s pinned a farm: %d %s", host, res.Status, res.Raw)
+		}
+	}
+}
+
+func slugTenantStaysTheJWT(t *testing.T, h *harness, first *farmFixture, pinID, anchorSlug string) {
+	pinned := h.loginOwner(t, first, "finca-pin.bascula.engp.io", nil)
+	if pinned.Status != http.StatusOK {
+		t.Fatalf("pin login: %s", pinned.Raw)
+	}
+	token := mustString(t, pinned.Body, "accessToken")
+	// Authenticated routes ignore Host: this token is farm-pin, even if
+	// the request names the other farm's host.
+	got := h.doAt(t, anchorSlug+".bascula.engp.io", http.MethodGet, "/v1/farm", token, nil)
+	if got.Status != http.StatusOK || got.Body["id"] != pinID {
+		t.Fatalf("Host overrode the JWT tenant: %d %s", got.Status, got.Raw)
+	}
+	me := h.mustDo(t, http.MethodGet, "/v1/me", token, nil, http.StatusOK)
+	farm, _ := me.Body["farm"].(map[string]any)
+	if farm["id"] != pinID || farm["slug"] != "finca-pin" {
+		t.Fatalf("/v1/me: %s", me.Raw)
+	}
 }
 
 func (h *harness) farmIDBySlug(slug string) (string, string, string, error) {
