@@ -188,7 +188,7 @@ describe("OfflineProvider — the queue", () => {
     await act(async () => {
       timers[timers.length - 1]();
     });
-    await waitFor(() => expect(m.flushPending.mock.calls.length).toBe(before + 1));
+    await waitFor(() => expect(m.flushPending).toHaveBeenCalledTimes(before + 1));
   });
 
   it("keeps one upload at a time", async () => {
