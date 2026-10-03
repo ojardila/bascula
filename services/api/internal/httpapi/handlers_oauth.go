@@ -932,46 +932,51 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 	case "authorization_code":
 		s.oauthExchangeCode(w, r, tx)
 	case "refresh_token":
-		// The same rotation a handset gets: single use, and a replay closes
-		// the whole family. Without this grant an assistant's connection died
-		// fifteen minutes after it was made, when the access token expired.
-		secret := r.Form.Get("refresh_token")
-		if secret == "" {
-			oauthTokenError(w, "invalid_request", "refresh_token is required")
-			return
-		}
-		// RFC 6749 §6: a refresh token is bound to the client it was issued
-		// to. A confidential client must authenticate even when it leaves out
-		// client_id, and another client's refresh token is refused.
-		id, clientSecret, basic := oauthClientCredentials(r)
-		tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret))
-		if err != nil || tok.OAuthClientID == nil {
-			// Unknown, or a web or handset session's token: this endpoint
-			// only rotates what it issued. A browser's refresh token is
-			// redeemed at /v1/auth/refresh and nowhere else.
-			oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
-			return
-		}
-		if id != "" && id != *tok.OAuthClientID {
-			oauthTokenError(w, "invalid_grant", "the refresh token was issued to another client")
-			return
-		}
-		id = *tok.OAuthClientID
-		if id != "" {
-			if _, err := oauthAuthenticateClient(r, tx, id, clientSecret); err != nil {
-				oauthClientError(w, basic, err.Error())
-				return
-			}
-		}
-		session, err := s.rotateRefresh(r, tx, secret, "")
-		if err != nil {
-			oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
-			return
-		}
-		writeOAuthSession(w, session, "")
+		s.oauthRefresh(w, r, tx)
 	default:
 		oauthTokenError(w, "unsupported_grant_type", "only authorization_code and refresh_token are supported")
 	}
+}
+
+// oauthRefresh is the refresh_token grant. The same rotation a handset gets:
+// single use, and a replay closes the whole family. Without this grant an
+// assistant's connection died fifteen minutes after it was made, when the
+// access token expired.
+func (s *Server) oauthRefresh(w http.ResponseWriter, r *http.Request, tx pgx.Tx) {
+	secret := r.Form.Get("refresh_token")
+	if secret == "" {
+		oauthTokenError(w, "invalid_request", "refresh_token is required")
+		return
+	}
+	// RFC 6749 §6: a refresh token is bound to the client it was issued
+	// to. A confidential client must authenticate even when it leaves out
+	// client_id, and another client's refresh token is refused.
+	id, clientSecret, basic := oauthClientCredentials(r)
+	tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret))
+	if err != nil || tok.OAuthClientID == nil {
+		// Unknown, or a web or handset session's token: this endpoint
+		// only rotates what it issued. A browser's refresh token is
+		// redeemed at /v1/auth/refresh and nowhere else.
+		oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
+		return
+	}
+	if id != "" && id != *tok.OAuthClientID {
+		oauthTokenError(w, "invalid_grant", "the refresh token was issued to another client")
+		return
+	}
+	id = *tok.OAuthClientID
+	if id != "" {
+		if _, err := oauthAuthenticateClient(r, tx, id, clientSecret); err != nil {
+			oauthClientError(w, basic, err.Error())
+			return
+		}
+	}
+	session, err := s.rotateRefresh(r, tx, secret, "")
+	if err != nil {
+		oauthTokenError(w, "invalid_grant", "the refresh token is not valid; sign in again")
+		return
+	}
+	writeOAuthSession(w, session, "")
 }
 
 func (s *Server) oauthExchangeCode(w http.ResponseWriter, r *http.Request, tx pgx.Tx) {

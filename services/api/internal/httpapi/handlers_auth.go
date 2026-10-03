@@ -805,11 +805,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, session)
 }
 
-// rotateRefresh is the rotation itself, shared by POST /v1/auth/refresh and
-// the OAuth token endpoint's refresh_token grant, so an assistant's session
-// is exactly as revocable — and a replayed token exactly as fatal — as a
-// handset's.
-func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID string) (*sessionResponse, error) {
+// liveRefreshToken finds the refresh token a secret names and refuses it
+// unless it may be rotated now: not revoked, not already rotated, not expired.
+// A token that was already rotated closes its whole family on the way out.
+func liveRefreshToken(r *http.Request, tx pgx.Tx, secret string) (*store.RefreshToken, error) {
 	tok, err := store.FindRefreshToken(r.Context(), tx, auth.HashToken(secret))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -860,6 +859,18 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if time.Now().After(tok.ExpiresAt) {
 		return nil, domain.Coded(http.StatusUnauthorized, domain.CodeTokenExpired,
 			"that refresh token expired")
+	}
+	return tok, nil
+}
+
+// rotateRefresh is the rotation itself, shared by POST /v1/auth/refresh and
+// the OAuth token endpoint's refresh_token grant, so an assistant's session
+// is exactly as revocable — and a replayed token exactly as fatal — as a
+// handset's.
+func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID string) (*sessionResponse, error) {
+	tok, err := liveRefreshToken(r, tx, secret)
+	if err != nil {
+		return nil, err
 	}
 
 	user, err := store.FindUserByID(r.Context(), tx, tok.UserID)
