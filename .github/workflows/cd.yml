@@ -129,7 +129,11 @@ jobs:
     uses: ./.github/workflows/images.yml
     with:
       component: ${{ matrix.component }}
-    secrets: inherit
+    secrets:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      HARBOR_ROBOT_NAME: ${{ secrets.HARBOR_ROBOT_NAME }}
+      HARBOR_ROBOT_SECRET: ${{ secrets.HARBOR_ROBOT_SECRET }}
 
   release:
     needs: [plan, ci, images]
@@ -511,6 +515,8 @@ jobs:
           V: ${{ needs.release.outputs.version }}
           PINNED_AT: ${{ steps.pin.outputs.pinned_at }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        # curl's output goes to `python3 -c '<fixed script>'` as JSON data on stdin, never run as code.
+        # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell
         run: |
           set -euo pipefail
           if [ -z "${CF_API_TOKEN}" ]; then
@@ -522,7 +528,8 @@ jobs:
             [ -f "$f" ] || continue
             slug=$(sed -n 's/^slug:[[:space:]]*//p' "$f" | tr -d "\"' " | head -1)
             [ -n "$slug" ] || continue
-            echo "::add-mask::${slug}"
+            # Farm slugs are not secrets; masking only keeps them out of a public log, defense in depth.
+            echo "::add-mask::${slug}" # nosemgrep: yaml.github-actions.security.audit.unsafe-add-mask-workflow-command.unsafe-add-mask-workflow-command
             farm_hosts="${farm_hosts} ${slug}.bascula.engp.io"
           done
           hosts="bascula.engp.io${farm_hosts}"

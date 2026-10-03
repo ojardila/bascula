@@ -28,6 +28,13 @@ on:
       key:
         description: the source key the image is tagged with (src-<key>)
         value: ${{ jobs.build.outputs.key }}
+    # Only what the Harbor login needs; callers pass these four explicitly
+    # rather than `secrets: inherit` (least privilege).
+    secrets:
+      TS_OAUTH_CLIENT_ID: {required: true}
+      TS_OAUTH_SECRET: {required: true}
+      HARBOR_ROBOT_NAME: {required: true}
+      HARBOR_ROBOT_SECRET: {required: true}
 
 permissions:
   contents: read
@@ -48,12 +55,14 @@ jobs:
 
       - id: key
         name: Source key
+        env:
+          COMPONENT: ${{ inputs.component }}
         run: |
           set -euo pipefail
-          key=$(scripts/ci/source-keys.sh | sed -n 's/^${{ inputs.component }}=//p')
+          key=$(scripts/ci/source-keys.sh | sed -n "s/^${COMPONENT}=//p")
           echo "key=${key}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY}/${PROJECT}/${{ inputs.component }}:src-${key}" >> "$GITHUB_OUTPUT"
-          echo "### ${{ inputs.component }}: \`src-${key}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "image=${REGISTRY}/${PROJECT}/${COMPONENT}:src-${key}" >> "$GITHUB_OUTPUT"
+          echo "### ${COMPONENT}: \`src-${key}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: ./.github/actions/harbor
         with:
@@ -65,8 +74,10 @@ jobs:
 
       - id: exists
         name: Already built?
+        env:
+          IMAGE: ${{ steps.key.outputs.image }}
         run: |
-          if scripts/ci/image-exists.sh "${{ steps.key.outputs.image }}"; then
+          if scripts/ci/image-exists.sh "${IMAGE}"; then
             echo "hit=true" >> "$GITHUB_OUTPUT"
             echo "Already in Harbor, nothing to build." >> "$GITHUB_STEP_SUMMARY"
           else
