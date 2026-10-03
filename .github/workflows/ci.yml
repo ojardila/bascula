@@ -223,7 +223,7 @@ jobs:
       - name: govulncheck
         run: |
           set -euo pipefail
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           "$(go env GOPATH)/bin/govulncheck" ./...
         working-directory: services/api
       - name: migrate
