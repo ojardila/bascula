@@ -7,6 +7,17 @@ import (
 	"github.com/ojardila/bascula/services/api/internal/store"
 )
 
+// Patterns that more than one method is mounted on.
+const (
+	routeWorker         = "/v1/workers/{id}"
+	routePlot           = "/v1/plots/{id}"
+	routeWorkRecord     = "/v1/work-records/{id}"
+	routeProduct        = "/v1/products/{id}"
+	routeSale           = "/v1/sales/{id}"
+	routeExpense        = "/v1/expenses/{id}"
+	routeOAuthAuthorize = "/oauth/authorize"
+)
+
 // Route ties a URL to an action. This slice is the router: nothing is mounted
 // on the mux by any other path, so a route physically cannot exist without an
 // entry here, and an entry cannot exist without an action in
@@ -88,9 +99,9 @@ func (s *Server) Routes() []Route {
 		// Workers.
 		{http.MethodGet, "/v1/workers", auth.ActionWorkersRead, s.handleListWorkers},
 		{http.MethodPost, "/v1/workers", auth.ActionWorkersWrite, s.handleCreateWorker},
-		{http.MethodGet, "/v1/workers/{id}", auth.ActionWorkersRead, s.handleGetWorker},
-		{http.MethodPatch, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleUpdateWorker},
-		{http.MethodDelete, "/v1/workers/{id}", auth.ActionWorkersWrite, s.handleDeleteWorker},
+		{http.MethodGet, routeWorker, auth.ActionWorkersRead, s.handleGetWorker},
+		{http.MethodPatch, routeWorker, auth.ActionWorkersWrite, s.handleUpdateWorker},
+		{http.MethodDelete, routeWorker, auth.ActionWorkersWrite, s.handleDeleteWorker},
 		{http.MethodGet, "/v1/workers/{id}/profile", auth.ActionWorkersPrivate, s.handleWorkerProfile},
 		{http.MethodGet, "/v1/workers/{id}/payables", auth.ActionWorkerPayables, s.handleWorkerPayables},
 		{http.MethodGet, "/v1/workers/{id}/performance", auth.ActionWorkerPerformance, s.handleWorkerPerformance},
@@ -108,9 +119,9 @@ func (s *Server) Routes() []Route {
 		// Plots, with their crops nested: the form is one form.
 		{http.MethodGet, "/v1/plots", auth.ActionPlotsRead, s.handleListPlots},
 		{http.MethodPost, "/v1/plots", auth.ActionPlotsWrite, s.handleCreatePlot},
-		{http.MethodGet, "/v1/plots/{id}", auth.ActionPlotsRead, s.handleGetPlot},
-		{http.MethodPatch, "/v1/plots/{id}", auth.ActionPlotsWrite, s.handleUpdatePlot},
-		{http.MethodDelete, "/v1/plots/{id}", auth.ActionPlotsWrite, s.handleDeletePlot},
+		{http.MethodGet, routePlot, auth.ActionPlotsRead, s.handleGetPlot},
+		{http.MethodPatch, routePlot, auth.ActionPlotsWrite, s.handleUpdatePlot},
+		{http.MethodDelete, routePlot, auth.ActionPlotsWrite, s.handleDeletePlot},
 		{http.MethodPut, "/v1/plots/{id}/boundary", auth.ActionPlotsBoundary, s.handleSetPlotBoundary},
 		{http.MethodPost, "/v1/plots/{id}/crops", auth.ActionPlotsWrite, s.handleCreatePlotCrop},
 		{http.MethodDelete, "/v1/plots/{id}/crops/{cropId}", auth.ActionPlotsWrite, s.handleDeletePlotCrop},
@@ -151,9 +162,9 @@ func (s *Server) Routes() []Route {
 		// A harvest week in one request, all or nothing: the same write as
 		// above once per line, inside one transaction.
 		{http.MethodPost, "/v1/work-records/batch", auth.ActionWorkRecordsWrite, s.handleCreateWorkRecordBatch},
-		{http.MethodGet, "/v1/work-records/{id}", auth.ActionWorkRecordsRead, s.handleGetWorkRecord},
-		{http.MethodPatch, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleUpdateWorkRecord},
-		{http.MethodDelete, "/v1/work-records/{id}", auth.ActionWorkRecordsAdmin, s.handleDeleteWorkRecord},
+		{http.MethodGet, routeWorkRecord, auth.ActionWorkRecordsRead, s.handleGetWorkRecord},
+		{http.MethodPatch, routeWorkRecord, auth.ActionWorkRecordsAdmin, s.handleUpdateWorkRecord},
+		{http.MethodDelete, routeWorkRecord, auth.ActionWorkRecordsAdmin, s.handleDeleteWorkRecord},
 
 		// The legacy pickup facade, so the phone in a farm's pocket keeps
 		// working through the transition. It is a translation onto the routes
@@ -235,9 +246,9 @@ func (s *Server) Routes() []Route {
 
 		{http.MethodGet, "/v1/products", auth.ActionProductsRead, s.handleListProducts},
 		{http.MethodPost, "/v1/products", auth.ActionProductsWrite, s.handleCreateProduct},
-		{http.MethodGet, "/v1/products/{id}", auth.ActionProductsRead, s.handleGetProduct},
-		{http.MethodPatch, "/v1/products/{id}", auth.ActionProductsWrite, s.handleUpdateProduct},
-		{http.MethodDelete, "/v1/products/{id}", auth.ActionProductsWrite, s.handleDeleteProduct},
+		{http.MethodGet, routeProduct, auth.ActionProductsRead, s.handleGetProduct},
+		{http.MethodPatch, routeProduct, auth.ActionProductsWrite, s.handleUpdateProduct},
+		{http.MethodDelete, routeProduct, auth.ActionProductsWrite, s.handleDeleteProduct},
 
 		// Stock on hand: every one of these is a SUM over stock_moves computed
 		// on the way out. There is no stored total anywhere behind them.
@@ -255,9 +266,9 @@ func (s *Server) Routes() []Route {
 		{http.MethodPost, "/v1/customers", auth.ActionSalesWrite, s.handleCreateCustomer},
 		{http.MethodGet, "/v1/sales", auth.ActionSalesRead, s.handleListSales},
 		{http.MethodPost, "/v1/sales", auth.ActionSalesWrite, s.handleCreateSale},
-		{http.MethodGet, "/v1/sales/{id}", auth.ActionSalesRead, s.handleGetSale},
-		{http.MethodPatch, "/v1/sales/{id}", auth.ActionSalesWrite, s.handleUpdateSale},
-		{http.MethodDelete, "/v1/sales/{id}", auth.ActionSalesVoid, s.handleVoidSale},
+		{http.MethodGet, routeSale, auth.ActionSalesRead, s.handleGetSale},
+		{http.MethodPatch, routeSale, auth.ActionSalesWrite, s.handleUpdateSale},
+		{http.MethodDelete, routeSale, auth.ActionSalesVoid, s.handleVoidSale},
 
 		// Expenses (RSP-030 … RSP-033). Nothing here reaches the ledger: an
 		// expense is the farm's accounting, a debt is one person's balance,
@@ -265,9 +276,9 @@ func (s *Server) Routes() []Route {
 		// same thing. See handlers_expenses.go.
 		{http.MethodGet, "/v1/expenses", auth.ActionExpensesRead, s.handleListExpenses},
 		{http.MethodPost, "/v1/expenses", auth.ActionExpensesWrite, s.handleCreateExpense},
-		{http.MethodGet, "/v1/expenses/{id}", auth.ActionExpensesRead, s.handleGetExpense},
-		{http.MethodPatch, "/v1/expenses/{id}", auth.ActionExpensesWrite, s.handleUpdateExpense},
-		{http.MethodDelete, "/v1/expenses/{id}", auth.ActionExpensesWrite, s.handleDeleteExpense},
+		{http.MethodGet, routeExpense, auth.ActionExpensesRead, s.handleGetExpense},
+		{http.MethodPatch, routeExpense, auth.ActionExpensesWrite, s.handleUpdateExpense},
+		{http.MethodDelete, routeExpense, auth.ActionExpensesWrite, s.handleDeleteExpense},
 
 		// Uploads. Two steps in the shape a presigned URL takes, because that
 		// is what this becomes the day there is a bucket. The 5 MB is checked
@@ -322,11 +333,11 @@ func (s *Server) Routes() []Route {
 		{http.MethodOptions, "/.well-known/openid-configuration", auth.ActionOAuth, s.handleMCPOptions},
 		{http.MethodOptions, "/.well-known/openid-configuration/mcp", auth.ActionOAuth, s.handleMCPOptions},
 		{http.MethodOptions, "/.well-known/jwks.json", auth.ActionOAuth, s.handleMCPOptions},
-		{http.MethodGet, "/oauth/authorize", auth.ActionOAuth, s.handleOAuthAuthorize},
-		{http.MethodPost, "/oauth/authorize", auth.ActionOAuth, s.handleOAuthAuthorize},
+		{http.MethodGet, routeOAuthAuthorize, auth.ActionOAuth, s.handleOAuthAuthorize},
+		{http.MethodPost, routeOAuthAuthorize, auth.ActionOAuth, s.handleOAuthAuthorize},
 		{http.MethodPost, "/oauth/token", auth.ActionOAuth, s.handleOAuthToken},
 		{http.MethodPost, "/oauth/register", auth.ActionOAuth, s.handleOAuthRegister},
-		{http.MethodOptions, "/oauth/authorize", auth.ActionOAuth, s.handleMCPOptions},
+		{http.MethodOptions, routeOAuthAuthorize, auth.ActionOAuth, s.handleMCPOptions},
 		{http.MethodOptions, "/oauth/token", auth.ActionOAuth, s.handleMCPOptions},
 		{http.MethodOptions, "/oauth/register", auth.ActionOAuth, s.handleMCPOptions},
 		{http.MethodOptions, "/.well-known/oauth-protected-resource", auth.ActionOAuth, s.handleMCPOptions},
