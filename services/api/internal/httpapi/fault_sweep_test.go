@@ -66,37 +66,9 @@ func TestHandlersFailClosed(t *testing.T) {
 	ok2xx := map[string]bool{}
 	for _, mode := range []string{"broken-db", "no-tenant"} {
 		for _, role := range []domain.Role{domain.RoleOwner, domain.RoleWeigher} {
-			r := chi.NewRouter()
-			r.Use(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					ctx := auth.WithPrincipal(req.Context(), &auth.Principal{
-						UserID: id, FarmID: farmID, Role: role, Email: "dueno@example.com",
-					})
-					if mode == "broken-db" {
-						ctx = tenant.WithTestTx(ctx, brokenTx{}, farmID)
-					}
-					next.ServeHTTP(w, req.WithContext(ctx))
-				})
-			})
+			r := faultSweepRouter(s, mode, role, farmID, id)
 			for _, rt := range s.Routes() {
-				r.MethodFunc(rt.Method, rt.Pattern, rt.Handler)
-			}
-			for _, rt := range s.Routes() {
-				path := strings.NewReplacer("{id}", id, "{slug}", "finca", "{cropId}", id,
-					"{workerId}", id, "{plotId}", id, "{token}", "x", "{noteId}", id).Replace(rt.Pattern)
-				path = strings.ReplaceAll(path, "*", "x")
-				for _, body := range []string{"", "{}", `{"id":"` + id + `","name":"x","workerId":"` + id + `"}`} {
-					func() {
-						defer func() { _ = recover() }()
-						req := httptest.NewRequest(rt.Method, path+"?from=2026-01-01&to=2026-01-31", strings.NewReader(body))
-						req.Header.Set("Content-Type", "application/json")
-						rec := httptest.NewRecorder()
-						r.ServeHTTP(rec, req)
-						if mode == "broken-db" && rec.Code < 300 && body == "{}" {
-							ok2xx[rt.Method+" "+rt.Pattern] = true
-						}
-					}()
-				}
+				faultSweepRoute(r, rt, mode, id, ok2xx)
 			}
 		}
 	}
@@ -104,12 +76,59 @@ func TestHandlersFailClosed(t *testing.T) {
 	// CORS preflights, the slug checker and the "is reset email on" probe.
 	dbFree := map[string]bool{"GET /v1/farm-slugs": true, "GET /v1/auth/password-reset": true}
 	for k := range ok2xx {
-		if strings.HasPrefix(k, "GET /v1/") || strings.HasPrefix(k, "POST /v1/") ||
-			strings.HasPrefix(k, "PATCH /v1/") || strings.HasPrefix(k, "PUT /v1/") ||
-			strings.HasPrefix(k, "DELETE /v1/") {
-			if !dbFree[k] {
-				t.Errorf("%s answered 2xx with the database down", k)
-			}
+		if faultSweepIsV1(k) && !dbFree[k] {
+			t.Errorf("%s answered 2xx with the database down", k)
 		}
 	}
+}
+
+// faultSweepRouter mounts every route behind a principal of role, and in
+// broken-db mode a transaction whose every call fails.
+func faultSweepRouter(s *Server, mode string, role domain.Role, farmID, id string) chi.Router {
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithPrincipal(req.Context(), &auth.Principal{
+				UserID: id, FarmID: farmID, Role: role, Email: "dueno@example.com",
+			})
+			if mode == "broken-db" {
+				ctx = tenant.WithTestTx(ctx, brokenTx{}, farmID)
+			}
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	for _, rt := range s.Routes() {
+		r.MethodFunc(rt.Method, rt.Pattern, rt.Handler)
+	}
+	return r
+}
+
+// faultSweepRoute sends rt a few bodies and records in ok2xx a route that
+// answered 2xx to "{}" with the database down. A panic is not a failure here.
+func faultSweepRoute(r chi.Router, rt Route, mode, id string, ok2xx map[string]bool) {
+	path := strings.NewReplacer("{id}", id, "{slug}", "finca", "{cropId}", id,
+		"{workerId}", id, "{plotId}", id, "{token}", "x", "{noteId}", id).Replace(rt.Pattern)
+	path = strings.ReplaceAll(path, "*", "x")
+	for _, body := range []string{"", "{}", `{"id":"` + id + `","name":"x","workerId":"` + id + `"}`} {
+		func() {
+			defer func() { _ = recover() }()
+			req := httptest.NewRequest(rt.Method, path+"?from=2026-01-01&to=2026-01-31", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if mode == "broken-db" && rec.Code < 300 && body == "{}" {
+				ok2xx[rt.Method+" "+rt.Pattern] = true
+			}
+		}()
+	}
+}
+
+// faultSweepIsV1 reports whether k ("METHOD /path") is a /v1/ API route.
+func faultSweepIsV1(k string) bool {
+	for _, m := range []string{"GET", "POST", "PATCH", "PUT", "DELETE"} {
+		if strings.HasPrefix(k, m+" /v1/") {
+			return true
+		}
+	}
+	return false
 }
