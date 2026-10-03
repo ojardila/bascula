@@ -5,7 +5,7 @@ bright sun, and often by workers whose first contact with a touch screen is
 this app. Accessibility here is not a legal checkbox; it is whether the
 tool works at all for the people who use it.
 
-## Target
+## Commitment
 
 - **WCAG 2.1 level AA** on every screen a worker, weigher, admin or
   accountant sees. Level A is the floor; AA is what we test for.
@@ -15,6 +15,18 @@ tool works at all for the people who use it.
   English (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 - **One hand, outdoors, with gloves on.** Big tap targets, enough contrast
   to read in sunlight, no gesture that requires two fingers.
+
+## Supported environments
+
+- **The web app** (`apps/web`) is the one product, used on phones,
+  tablets and computers. Supported browsers are current Chrome on Android
+  and Safari on iOS for phones, and current desktop browsers for the
+  office screens. Automated checks run in jsdom (vitest with axe-core);
+  there is no real-browser test matrix yet.
+- **Language:** the worker-facing screens are in Spanish only.
+- **Assistive technology:** keyboard reachability is covered per screen
+  in component tests;
+  screen readers are not measured yet (see Known limitations).
 
 ## What is in the repo today
 
@@ -73,7 +85,7 @@ covers accessibility too. In practice, for the web app:
   current wording and the one that would be clearer. Pull requests are
   welcome; a one-word fix is a valid PR.
 
-## What is pending
+## Known limitations
 
 - Playwright-level contrast is not wired to CI yet; the vitest check only
   covers theme tokens, not the rendered page.
