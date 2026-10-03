@@ -4,7 +4,12 @@
 # The migrations are embedded (see migrations/embed.go), so this image can put
 # the schema in place and then serve it -- no second image, no init container,
 # no SQL files to ship alongside and get out of step with the binary.
-FROM golang:1.27-alpine AS build
+#
+# Stages: deps (modules only) -> build (our code) -> the runtime image. CI
+# keeps a layer cache of `deps` alone (images.yml), because it is the only
+# stage a later build can reuse: everything from `COPY . .` on is new on every
+# source key, and an image is built once per key.
+FROM golang:1.27-alpine AS deps
 WORKDIR /src
 
 # Dependencies first, so a change to our own code does not re-download the
@@ -15,6 +20,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
+FROM deps AS build
 COPY . .
 # CGO off makes it static, so the final image needs no libc at all. No release
 # number is stamped in: CI builds this image once per source tree and CD

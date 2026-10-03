@@ -14,6 +14,22 @@
 # scanned yet; buildx HEADs the manifest again for every extra tag (and for
 # the provenance index) right after the first push, before Trivy has had a
 # chance. That 412 is what failed CD for PR #38 (run 36030996313).
+#
+# CACHING. Only the dependency stage of each Dockerfile (`deps`: go mod
+# download / npm ci) is kept as a layer cache, in its own scope. Everything
+# after it is new on every source key and an image is built once per key, so
+# exporting those layers (mode=max over the whole build: the web's sources
+# carry ~60 MB of video, and so does its bundle) only cost upload time and
+# pushed the repository past its Actions cache quota, evicting the entries
+# that do get reused. The runtime stages are not cached either: their
+# `apk upgrade` / `apk add` run fresh on every build, a few seconds, and pick
+# up Alpine fixes instead of reusing a months-old layer.
+#
+# The BuildKit cache mounts (Go module and build cache, npm cache) are carried
+# in one Actions cache entry per dependency set and ISO week. A hit on that
+# exact key is restored and never extracted or saved again; cache-warm.yml
+# writes it from master (where every PR can read it) when the dependencies
+# change and once a week, so the Go build cache follows toolchain updates.
 
 name: images
 
@@ -24,17 +40,24 @@ on:
         description: api or web
         type: string
         required: true
+      push:
+        description: >-
+          Push src-<key> to Harbor. false (cache-warm.yml) only builds, to
+          fill the caches; it needs no Harbor and no secrets.
+        type: boolean
+        default: true
     outputs:
       key:
         description: the source key the image is tagged with (src-<key>)
         value: ${{ jobs.build.outputs.key }}
     # Only what the Harbor login needs; callers pass these four explicitly
     # rather than `secrets: inherit` (least privilege).
+    # Required when pushing; the CI and CD callers always pass them.
     secrets:
-      TS_OAUTH_CLIENT_ID: {required: true}
-      TS_OAUTH_SECRET: {required: true}
-      HARBOR_ROBOT_NAME: {required: true}
-      HARBOR_ROBOT_SECRET: {required: true}
+      TS_OAUTH_CLIENT_ID: {required: false}
+      TS_OAUTH_SECRET: {required: false}
+      HARBOR_ROBOT_NAME: {required: false}
+      HARBOR_ROBOT_SECRET: {required: false}
 
 permissions:
   contents: read
@@ -42,6 +65,9 @@ permissions:
 env:
   REGISTRY: harbor.int.engp.io
   PROJECT: bascula
+  # The build record artifact is a debugging aid nobody downloads; the
+  # step summary stays.
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
 
 jobs:
   build:
@@ -63,8 +89,23 @@ jobs:
           echo "key=${key}" >> "$GITHUB_OUTPUT"
           echo "image=${REGISTRY}/${PROJECT}/${COMPONENT}:src-${key}" >> "$GITHUB_OUTPUT"
           echo "### ${COMPONENT}: \`src-${key}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COMPONENT" = api ]; then
+            echo "context=services/api" >> "$GITHUB_OUTPUT"
+            echo "dockerfile=services/api/Dockerfile" >> "$GITHUB_OUTPUT"
+            lock=services/api/go.sum
+          else
+            # The web imports @bascula/shared through the npm workspace, so
+            # its context is the repo root (root lockfile and packages/).
+            echo "context=." >> "$GITHUB_OUTPUT"
+            echo "dockerfile=apps/web/Dockerfile" >> "$GITHUB_OUTPUT"
+            lock=package-lock.json
+          fi
+          deps=$(sha256sum "$lock" | cut -c1-16)
+          echo "mounts-prefix=mounts-${COMPONENT}-${deps}-" >> "$GITHUB_OUTPUT"
+          echo "mounts=mounts-${COMPONENT}-${deps}-$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
 
-      - uses: ./.github/actions/harbor
+      - if: inputs.push
+        uses: ./.github/actions/harbor
         with:
           ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -72,7 +113,8 @@ jobs:
           robot-secret: ${{ secrets.HARBOR_ROBOT_SECRET }}
           hostname: bascula-img-${{ inputs.component }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - id: exists
+      - if: inputs.push
+        id: exists
         name: Already built?
         env:
           IMAGE: ${{ steps.key.outputs.image }}
@@ -86,35 +128,56 @@ jobs:
 
       - if: steps.exists.outputs.hit != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # The runner is thrown away; removing the builder took up to 20s.
+          cleanup: false
 
       # BuildKit cache mounts (Go module + build cache, npm cache) live inside
       # the builder, which is new on every runner. Carry them in the Actions
-      # cache so a code change recompiles only what it touched.
+      # cache so a code change recompiles only what it touched. One entry per
+      # dependency set and week (not per run): an exact hit is neither
+      # extracted from the builder nor saved again, which was ~35s of every
+      # API build and a new 170 MB cache entry each time.
       - if: steps.exists.outputs.hit != 'true'
         id: mounts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: buildkit-mounts
-          key: mounts-${{ inputs.component }}-${{ hashFiles('services/api/go.sum', 'package-lock.json') }}-${{ github.run_id }}
+          key: ${{ steps.key.outputs.mounts }}
           restore-keys: |
-            mounts-${{ inputs.component }}-${{ hashFiles('services/api/go.sum', 'package-lock.json') }}-
+            ${{ steps.key.outputs.mounts-prefix }}
             mounts-${{ inputs.component }}-
 
       - if: steps.exists.outputs.hit != 'true'
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
         with:
           cache-dir: buildkit-mounts
-          dockerfile: ${{ inputs.component == 'api' && 'services/api/Dockerfile' || 'apps/web/Dockerfile' }}
+          dockerfile: ${{ steps.key.outputs.dockerfile }}
+          skip-extraction: ${{ steps.mounts.outputs.cache-hit == 'true' }}
+
+      # The dependency stage alone, with its own cache scope. A no-op when the
+      # lockfile has not changed (nothing is pulled or uploaded); when it has,
+      # the next step reuses this builder's result.
+      - if: steps.exists.outputs.hit != 'true'
+        name: Dependencies (cached layer)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ steps.key.outputs.context }}
+          file: ${{ steps.key.outputs.dockerfile }}
+          target: deps
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ inputs.component }}-deps
+          cache-to: type=gha,mode=max,scope=${{ inputs.component }}-deps
 
       - if: steps.exists.outputs.hit != 'true'
         name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          # The web imports @bascula/shared through the npm workspace, so its
-          # context is the repo root (root lockfile and packages/).
-          context: ${{ inputs.component == 'api' && 'services/api' || '.' }}
-          file: ${{ inputs.component == 'api' && 'services/api/Dockerfile' || 'apps/web/Dockerfile' }}
-          push: true
+          context: ${{ steps.key.outputs.context }}
+          file: ${{ steps.key.outputs.dockerfile }}
+          push: ${{ inputs.push }}
           platforms: linux/amd64
           build-args: |
             BUILD=${{ steps.key.outputs.key }}
@@ -124,6 +187,5 @@ jobs:
           tags: ${{ steps.key.outputs.image }}
           provenance: false
           sbom: false
-          # Layer cache. PR runs can read master's scope and their own.
-          cache-from: type=gha,scope=${{ inputs.component }}
-          cache-to: type=gha,mode=max,scope=${{ inputs.component }}
+          # Reads the dependency layer only and exports nothing (see the top).
+          cache-from: type=gha,scope=${{ inputs.component }}-deps
