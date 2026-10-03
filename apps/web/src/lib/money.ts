@@ -16,9 +16,6 @@
  * a half in the other is not a cosmetic difference on a payslip.
  */
 
-/** An integer number of cents. 1 peso = 100 cents. */
-export type Cents = number;
-
 const GROUP = ".";
 const DECIMAL = ",";
 
@@ -32,10 +29,10 @@ function group(digits: string): string {
 }
 
 /** Pesos (possibly fractional) -> integer cents. */
-export const toCents = (pesos: number): Cents => Math.round(pesos * 100);
+export const toCents = (pesos: number): number => Math.round(pesos * 100);
 
 /** Integer cents -> pesos as a float. Only for display and for tests. */
-export const fromCents = (cents: Cents): number => cents / 100;
+export const fromCents = (cents: number): number => cents / 100;
 
 /**
  * The one multiplication in the product: quantity x unit rate.
@@ -45,7 +42,7 @@ export const fromCents = (cents: Cents): number => cents / 100;
  * Valid for the three pay modes: contract (quantity = 1), time_unit (quantity
  * = number of day-wages) and work_unit (quantity = kg / arrobas / baskets).
  */
-export function amountCents(quantity: number, rateCents: Cents): Cents {
+export function amountCents(quantity: number, rateCents: number): number {
   return Math.round(quantity * rateCents);
 }
 
@@ -56,14 +53,14 @@ export function amountCents(quantity: number, rateCents: Cents): Cents {
  * rounds to the peso. The sign is only shown when something survives the
  * rounding, so -40 cents prints "$0" and never "-$0".
  */
-export function formatMoney(cents: Cents): string {
+export function formatMoney(cents: number): string {
   const pesos = Math.round(Math.abs(cents) / 100);
   const sign = cents < 0 && pesos > 0 ? "-" : "";
   return `${sign}$${group(String(pesos))}`;
 }
 
 /** Same, but always carries an explicit + or - . For ledger rows. */
-export function formatMoneySigned(cents: Cents): string {
+export function formatMoneySigned(cents: number): string {
   const pesos = Math.round(Math.abs(cents) / 100);
   if (pesos === 0) return "$0";
   return `${cents < 0 ? "−" : "+"} $${group(String(pesos))}`;
@@ -102,7 +99,7 @@ export function formatArea(ha: number): string {
  * anything that is not a number, so the caller can say which field is wrong
  * and why instead of silently storing NaN.
  */
-export function parseMoneyInput(raw: string): Cents | null {
+export function parseMoneyInput(raw: string): number | null {
   const cleaned = raw.replaceAll(/[$\s\u00a0]/g, "").replaceAll(".", "").replace(",", ".");
   if (cleaned === "" || !/^-?\d*(\.\d*)?$/.test(cleaned)) return null;
   const n = Number(cleaned);
@@ -126,10 +123,10 @@ export function parseMoneyInput(raw: string): Cents | null {
  * fixed for when the phone was rounding down.
  *
  * This function is the exact inverse of `parseMoneyInput`: what comes out of
- * here, fed back in there, returns the same cents. Cents are written only when
+ * here, fed back in there, returns the same cents. number are written only when
  * there are any, so the ordinary case still reads "30800".
  */
-export function moneyInputValue(cents: Cents): string {
+export function moneyInputValue(cents: number): string {
   const neg = cents < 0;
   const abs = Math.abs(Math.round(cents));
   const pesos = Math.floor(abs / 100);

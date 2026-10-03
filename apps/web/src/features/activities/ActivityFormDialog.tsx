@@ -36,7 +36,6 @@ import { SEED_ACTIVITY_CATEGORIES } from "../../api/types";
 import { PAY_MODE_CHOICE, TIME_UNIT_LABEL } from "../../lib/vocab";
 import type {
   Activity,
-  ActivityCategory,
   PayMode,
   TimeUnit,
 } from "../../api/types";
@@ -74,7 +73,7 @@ export function ActivityFormDialog({
   const { user } = useAuth();
   const farmToday = () => todayInFarm(user?.farm?.timezone ?? "America/Bogota");
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<ActivityCategory>("cosecha");
+  const [category, setCategory] = useState<string>("cosecha");
   const [payMode, setPayMode] = useState<PayMode>("work_unit");
   const [workUnit, setWorkUnit] = useState("kg");
   const [timeUnit, setTimeUnit] = useState<TimeUnit>("jornal");

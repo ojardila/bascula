@@ -1,8 +1,9 @@
 # SonarQube analysis (https://sonarqube.int.engp.io, tailnet only; the server
 # is apps/sonarqube in the gitops repo). The job fails when the analysis does
 # (master: the quality gate; PR: a regression against master or a new issue
-# in the changed files), after the summary and PR comment are written. It is
-# not a required check.
+# in the changed files that master does not have), after the summary and PR
+# comment are written. It IS a required check: ruleset "master: require
+# semgrep" requires semgrep, gitleaks, api and sonarqube.
 #
 # Besides Sonar's own rules it imports external issues: golangci-lint (gosec,
 # staticcheck, errorlint; services/api/.golangci.yml) and the console's

@@ -1,9 +1,9 @@
 import { Box, type SxProps, type Theme } from "@mui/material";
-import { formatMoney, formatMoneySigned, type Cents } from "../lib/money";
+import { formatMoney, formatMoneySigned } from "../lib/money";
 import { moneyFont } from "../theme";
 
 interface Props {
-  cents: Cents;
+  cents: number;
   /** Show an explicit + / − . For ledger rows, where direction is the point. */
   signed?: boolean;
   /** Colour by direction: green for money in, red for money out. */
