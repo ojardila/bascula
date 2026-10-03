@@ -74,17 +74,21 @@ export function RequireSuperAdmin({ children }: Readonly<{ children: ReactNode }
  */
 export function PermissionDenied({ moduleName }: Readonly<{ moduleName: string }>) {
   const navigate = useNavigate();
-  const { landing } = useAuth();
+  const { landing, status } = useAuth();
   const [seconds, setSeconds] = useState(6);
 
   useEffect(() => {
+    // While /v1/me is still loading, AuthContext uses an anonymous principal
+    // shaped like the weigher (narrowest role), so `landing` is `/labores`.
+    // Starting the countdown then would bounce every denied user there.
+    if (status !== "authenticated") return;
     const t = setInterval(() => setSeconds((s) => s - 1), 1000);
     const out = setTimeout(() => navigate(landing, { replace: true }), 6000);
     return () => {
       clearInterval(t);
       clearTimeout(out);
     };
-  }, [navigate, landing]);
+  }, [navigate, landing, status]);
 
   return (
     <Container maxWidth="sm" sx={{ py: 8 }}>
