@@ -42,7 +42,9 @@ func TestParseRefusesEveryAlgorithmButHS256(t *testing.T) {
 	for name, raw := range map[string]string{
 		"HS384": sign(jwt.SigningMethodHS384, []byte("test-signing-key")),
 		"HS512": sign(jwt.SigningMethodHS512, []byte("test-signing-key")),
-		"none":  sign(jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType),
+		// alg=none on purpose: the test checks that Parse refuses an unsigned token.
+		// nosemgrep: go.jwt-go.security.jwt-none-alg.jwt-go-none-algorithm
+		"none": sign(jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType),
 	} {
 		t.Run(name, func(t *testing.T) {
 			c, err := s.Parse(raw)
