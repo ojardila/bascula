@@ -21,8 +21,23 @@ Include what you can of:
 - the impact you expect (which role can do what to whom);
 - any fix you suggest.
 
-Reports are handled on a best-effort basis. You will get an answer in the
-advisory thread, and credit in the published advisory if you want it.
+## Severity
+
+Reports are triaged into one of four tiers. The tier sets the order in which
+reports are worked on; it is not a contractual response time. Reports are
+handled on a best-effort basis, the answer comes in the advisory thread, and
+credit in the published advisory is offered to every reporter who wants it.
+
+| Tier  | Example                                                                              |
+|-------|--------------------------------------------------------------------------------------|
+| sev-1 | Cross-tenant access, credential or token leak, auth bypass, privilege escalation     |
+| sev-2 | Wrong money result (settlement, idempotency, double-payment lock)                    |
+| sev-3 | Availability (crash, lockout, resource exhaustion) with no data impact               |
+| sev-4 | Cosmetic, hardening suggestion, or a report that turns out not to be a vulnerability |
+
+The maintainer running the response follows
+[`docs/incident-response.md`](docs/incident-response.md): triage, the private
+channel, the sev-1 mitigation chain and the post-mortem template.
 
 ## Testing rules
 
