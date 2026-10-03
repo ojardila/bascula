@@ -335,3 +335,59 @@ func TestPasswordResetLinkCannotBeSmuggledPastTheSuffixCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestPasswordResetRemovesPasskeysAndTheListShowsEveryAddress: a passkey opens
+// the account without the password and survives a password change. One made
+// on the main domain was invisible from a farm's address, and the reset the
+// "llave agregada" email recommends left it working.
+func TestPasswordResetRemovesPasskeysAndTheListShowsEveryAddress(t *testing.T) {
+	h := requireDB(t)
+	f := h.signupFarm(t, "Finca Llaves", 90000)
+	srv, mail := mailServer(t, h)
+	var userID string
+	if err := h.admin.QueryRow(context.Background(), `SELECT id::text FROM users WHERE lower(email) = lower($1)`, f.OwnerEmail).Scan(&userID); err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	for i, rp := range []string{"bascula.example.com", "otra.bascula.example.com"} {
+		if _, err := h.admin.Exec(context.Background(), `
+			INSERT INTO passkeys (id, user_id, rp_id, credential_id, name, record)
+			VALUES (gen_random_uuid(), $1, $2, $3, $4, '{}')`,
+			userID, rp, []byte(fmt.Sprintf("cred-%s-%d", userID, i)), fmt.Sprintf("llave %d", i)); err != nil {
+			t.Fatalf("passkey: %v", err)
+		}
+	}
+
+	list := callFrom(t, srv, "la-finca.bascula.example.com", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+	items, _ := list.Body["items"].([]any)
+	if list.Status != http.StatusOK || len(items) != 2 {
+		t.Fatalf("the list hides passkeys made on other addresses: %d %s", list.Status, list.Raw)
+	}
+	for _, raw := range items {
+		it := raw.(map[string]any)
+		if it["host"] == "" || it["here"] != false {
+			t.Fatalf("a passkey from another address must say where it works: %v", it)
+		}
+	}
+
+	asked := call(t, srv, http.MethodPost, "/v1/auth/password-reset/request", "", map[string]any{"email": f.OwnerEmail})
+	token := mustString(t, asked.Body, "resetToken")
+	waitForMail(t, mail, 1)
+	if res := call(t, srv, http.MethodPost, "/v1/auth/password-reset", "",
+		map[string]any{"token": token, "password": newSecret}); res.Status != http.StatusNoContent {
+		t.Fatalf("reset: %d %s", res.Status, res.Raw)
+	}
+	var left int
+	if err := h.admin.QueryRow(context.Background(), `SELECT count(*)::int FROM passkeys WHERE user_id = $1`, userID).Scan(&left); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if left != 0 {
+		t.Fatalf("%d passkeys survived the reset", left)
+	}
+	waitForMail(t, mail, 2)
+	mail.mu.Lock()
+	body := mail.sent[len(mail.sent)-1].Body
+	mail.mu.Unlock()
+	if !strings.Contains(body, "llaves de acceso") {
+		t.Fatalf("the reset notice does not say the passkeys went: %s", body)
+	}
+}

@@ -4003,6 +4003,10 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             lastUsedAt: string | null;
+            /** @description The address the passkey works on (its WebAuthn RP ID), e.g. `bascula.engp.io` or `cafin3.bascula.engp.io`. */
+            host: string;
+            /** @description Whether `host` is the address of this request. The list shows every passkey on the account, so one made elsewhere can be seen and removed. */
+            here: boolean;
         };
         RefreshRequest: {
             refreshToken: string;

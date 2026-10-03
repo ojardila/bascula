@@ -202,17 +202,22 @@ type passkeyView struct {
 	Name       string     `json:"name"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt"`
+	// Host is the address the passkey works on; Here says whether that is
+	// the address the caller is on.
+	Host string `json:"host"`
+	Here bool   `json:"here"`
 }
 
 func passkeyViewOf(p store.Passkey) passkeyView {
-	return passkeyView{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt, LastUsedAt: p.LastUsedAt}
+	return passkeyView{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt, LastUsedAt: p.LastUsedAt, Host: p.RPID}
 }
 
 // ── managing one's own passkeys ──────────────────────────────────────────
 
-// handleListPasskeys lists the caller's passkeys for the address they are on.
-// A passkey made on another farm's address is not usable here, so it is not
-// shown here either.
+// handleListPasskeys lists every passkey on the caller's account, each with
+// the address it works on. Listing only this address's hid the rest: a
+// passkey somebody planted on the main domain could not be seen, let alone
+// removed, from the farm's address where the owner manages their account.
 func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
 	rpID, err := s.passkeyRPIDFor(r)
@@ -225,14 +230,16 @@ func (s *Server) handleListPasskeys(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	list, err := store.ListPasskeys(r.Context(), tx, p.UserID, rpID)
+	list, err := store.ListAllPasskeys(r.Context(), tx, p.UserID)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	out := make([]passkeyView, 0, len(list))
 	for _, pk := range list {
-		out = append(out, passkeyViewOf(pk))
+		v := passkeyViewOf(pk)
+		v.Here = pk.RPID == rpID
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -418,7 +425,9 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	pk.CreatedAt = time.Now()
 	s.mailLater(r, passkeyAddedMessage(user.Email, user.Name, name))
-	writeJSON(w, http.StatusCreated, passkeyViewOf(pk))
+	v := passkeyViewOf(pk)
+	v.Here = true // made just now, on this address
+	writeJSON(w, http.StatusCreated, v)
 }
 
 // handleDeletePasskey removes one of the caller's passkeys. Somebody else's
