@@ -409,7 +409,7 @@ export function PayWorkerPage() {
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
-              <Typography variant="h3" gutterBottom>
+              <Typography variant="h3" component="h2" gutterBottom>
                 Labores pendientes de liquidar
               </Typography>
               <Table size="small">
@@ -509,7 +509,7 @@ export function PayWorkerPage() {
                      went on looking the same after everything was paid off
                      and the balance was $0 — read as a debt the payment had
                      not cleared. The heading and the footer say so now. */}
-              <Typography variant="h3">
+              <Typography variant="h3" component="h2">
                 Anticipos y deudas ya descontados
               </Typography>
               <Typography

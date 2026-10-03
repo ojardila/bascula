@@ -272,7 +272,7 @@ export function DashboardPage() {
 
       <Card sx={{ mt: 3 }}>
         <CardContent>
-          <Typography variant="h3" gutterBottom>
+          <Typography variant="h3" component="h2" gutterBottom>
             Qué hacer ahora
           </Typography>
           <Stack
