@@ -112,45 +112,7 @@ func TestLoginLimitAxesAreIndependent(t *testing.T) {
 	h := requireDB(t)
 
 	t.Run("locking an address does not lock the office it was attacked from", func(t *testing.T) {
-		victim := h.signupFarm(t, "Finca de la victima", 100000)
-		neighbour := h.signupFarm(t, "Finca del vecino", 100000)
-		const ip = "10.21.0.1"
-
-		for i := 0; i < h.loginFailuresPerPair; i++ {
-			h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
-				"email": victim.OwnerEmail, "password": wrongPassword(),
-			})
-		}
-		locked := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": victim.OwnerEmail, "password": fixtureSignIn(),
-		})
-		if locked.Status != http.StatusTooManyRequests {
-			t.Fatalf("the address was not locked: %d %s", locked.Status, locked.Raw)
-		}
-
-		// Same router, different person. The per-IP count is nowhere near its
-		// own limit, and a farm office is one router: if one weigher's bad
-		// Monday locked the owner out of the payroll, the limiter would be a
-		// denial of service anybody could aim at anybody.
-		other := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": neighbour.OwnerEmail, "password": fixtureSignIn(),
-		})
-		if other.Status != http.StatusOK {
-			t.Fatalf("a colleague on the same address was locked out too: %d %s",
-				other.Status, other.Raw)
-		}
-
-		// And the owner is not locked out of their own farm by it. This is the
-		// assertion that inverts: counting the address alone made the lock
-		// follow the VICTIM, so a stranger's guesses shut a door the stranger
-		// does not own. The pair is what is counted, so the budget the attacker
-		// spent was their own.
-		fromHome := h.doFrom(t, "10.21.0.2", http.MethodPost, "/v1/auth/login", "",
-			map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
-		if fromHome.Status != http.StatusOK {
-			t.Fatalf("the owner was held out of their own payroll from a clean "+
-				"address by somebody else's guesses: %d %s", fromHome.Status, fromHome.Raw)
-		}
+		a3AddressLockSparesOffice(t, h)
 	})
 
 	// TestLoginLimitAxesAreIndependent's third case, and the one the design
@@ -159,71 +121,121 @@ func TestLoginLimitAxesAreIndependent(t *testing.T) {
 	// set a price or settle a week. If a handful of guesses an hour could hold
 	// one out, the limiter would be a better weapon than the attack it stops.
 	t.Run("a stranger cannot lock an owner out of their own farm", func(t *testing.T) {
-		victim := h.signupFarm(t, "Finca del secuestro", 100000)
-
-		// Well past the per-account budget in total, from addresses the
-		// attacker rotates through — which costs them one line of shell, and
-		// is exactly what a spoofable X-Forwarded-For hands them for free
-		// until #5 lands.
-		for i := 0; i < h.loginFailuresPerPair*3; i++ {
-			res := h.doFrom(t, fmt.Sprintf("10.22.%d.%d", i/250, i%250+1),
-				http.MethodPost, "/v1/auth/login", "", map[string]any{
-					"email": victim.OwnerEmail, "password": wrongPassword(),
-				})
-			if res.Status != http.StatusUnauthorized {
-				t.Fatalf("guess %d from a fresh address: got %d %s, want 401 — "+
-					"each source has its own budget and has spent one of it",
-					i+1, res.Status, res.Raw)
-			}
-		}
-
-		owner := h.doFrom(t, "10.22.200.1", http.MethodPost, "/v1/auth/login", "",
-			map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
-		if owner.Status != http.StatusOK {
-			t.Fatalf("%d guesses from rotating addresses locked the owner out of "+
-				"their own farm: %d %s. Counting an address alone is a "+
-				"denial-of-registration primitive: the victim sees a generic "+
-				"refusal, has no way to tell they are being held out, and no way "+
-				"to clear it", h.loginFailuresPerPair*3, owner.Status, owner.Raw)
-		}
+		a3StrangerCannotLockOwner(t, h)
 	})
 
 	t.Run("a sprayer is stopped by the IP count no single address would reach", func(t *testing.T) {
-		const ip = "10.21.1.1"
-		// Every guess against a different address, so no per-address count ever
-		// gets past one. This is what a spray actually looks like, and it is
-		// exactly the shape a per-address limiter alone cannot see.
-		for i := 0; i < h.loginFailuresPerIP; i++ {
-			res := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
-				"email":    fmt.Sprintf("spray-%d-%s@example.com", i, uuid.NewString()[:8]),
-				"password": "Password123!",
-			})
-			if res.Status != http.StatusUnauthorized {
-				t.Fatalf("spray %d: got %d %s, want 401 while under the limit",
-					i+1, res.Status, res.Raw)
-			}
-		}
-
-		// An untouched account, correct password, from that IP: refused,
-		// because the address the request comes from has spent its budget.
-		fresh := h.signupFarm(t, "Finca intacta", 100000)
-		blocked := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": fresh.OwnerEmail, "password": fixtureSignIn(),
-		})
-		if blocked.Status != http.StatusTooManyRequests {
-			t.Fatalf("the sprayer was never stopped: %d %s", blocked.Status, blocked.Raw)
-		}
-
-		// The same account from anywhere else is untouched. The IP count is a
-		// property of the source, and it must not become a way to lock an
-		// account by attacking from beside it.
-		ok := h.doFrom(t, "10.21.1.2", http.MethodPost, "/v1/auth/login", "", map[string]any{
-			"email": fresh.OwnerEmail, "password": fixtureSignIn(),
-		})
-		if ok.Status != http.StatusOK {
-			t.Fatalf("an IP lock leaked onto the account: %d %s", ok.Status, ok.Raw)
-		}
+		a3SprayerStoppedByIPCount(t, h)
 	})
+}
+
+func a3AddressLockSparesOffice(t *testing.T, h *harness) {
+	victim := h.signupFarm(t, "Finca de la victima", 100000)
+	neighbour := h.signupFarm(t, "Finca del vecino", 100000)
+	const ip = "10.21.0.1"
+
+	for i := 0; i < h.loginFailuresPerPair; i++ {
+		h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email": victim.OwnerEmail, "password": wrongPassword(),
+		})
+	}
+	locked := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": victim.OwnerEmail, "password": fixtureSignIn(),
+	})
+	if locked.Status != http.StatusTooManyRequests {
+		t.Fatalf("the address was not locked: %d %s", locked.Status, locked.Raw)
+	}
+
+	// Same router, different person. The per-IP count is nowhere near its
+	// own limit, and a farm office is one router: if one weigher's bad
+	// Monday locked the owner out of the payroll, the limiter would be a
+	// denial of service anybody could aim at anybody.
+	other := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": neighbour.OwnerEmail, "password": fixtureSignIn(),
+	})
+	if other.Status != http.StatusOK {
+		t.Fatalf("a colleague on the same address was locked out too: %d %s",
+			other.Status, other.Raw)
+	}
+
+	// And the owner is not locked out of their own farm by it. This is the
+	// assertion that inverts: counting the address alone made the lock
+	// follow the VICTIM, so a stranger's guesses shut a door the stranger
+	// does not own. The pair is what is counted, so the budget the attacker
+	// spent was their own.
+	fromHome := h.doFrom(t, "10.21.0.2", http.MethodPost, "/v1/auth/login", "",
+		map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
+	if fromHome.Status != http.StatusOK {
+		t.Fatalf("the owner was held out of their own payroll from a clean "+
+			"address by somebody else's guesses: %d %s", fromHome.Status, fromHome.Raw)
+	}
+}
+
+func a3StrangerCannotLockOwner(t *testing.T, h *harness) {
+	victim := h.signupFarm(t, "Finca del secuestro", 100000)
+
+	// Well past the per-account budget in total, from addresses the
+	// attacker rotates through — which costs them one line of shell, and
+	// is exactly what a spoofable X-Forwarded-For hands them for free
+	// until #5 lands.
+	for i := 0; i < h.loginFailuresPerPair*3; i++ {
+		res := h.doFrom(t, fmt.Sprintf("10.22.%d.%d", i/250, i%250+1),
+			http.MethodPost, "/v1/auth/login", "", map[string]any{
+				"email": victim.OwnerEmail, "password": wrongPassword(),
+			})
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("guess %d from a fresh address: got %d %s, want 401 — "+
+				"each source has its own budget and has spent one of it",
+				i+1, res.Status, res.Raw)
+		}
+	}
+
+	owner := h.doFrom(t, "10.22.200.1", http.MethodPost, "/v1/auth/login", "",
+		map[string]any{"email": victim.OwnerEmail, "password": fixtureSignIn()})
+	if owner.Status != http.StatusOK {
+		t.Fatalf("%d guesses from rotating addresses locked the owner out of "+
+			"their own farm: %d %s. Counting an address alone is a "+
+			"denial-of-registration primitive: the victim sees a generic "+
+			"refusal, has no way to tell they are being held out, and no way "+
+			"to clear it", h.loginFailuresPerPair*3, owner.Status, owner.Raw)
+	}
+}
+
+func a3SprayerStoppedByIPCount(t *testing.T, h *harness) {
+	const ip = "10.21.1.1"
+	// Every guess against a different address, so no per-address count ever
+	// gets past one. This is what a spray actually looks like, and it is
+	// exactly the shape a per-address limiter alone cannot see.
+	for i := 0; i < h.loginFailuresPerIP; i++ {
+		res := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
+			"email":    fmt.Sprintf("spray-%d-%s@example.com", i, uuid.NewString()[:8]),
+			"password": "Password123!",
+		})
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("spray %d: got %d %s, want 401 while under the limit",
+				i+1, res.Status, res.Raw)
+		}
+	}
+
+	// An untouched account, correct password, from that IP: refused,
+	// because the address the request comes from has spent its budget.
+	fresh := h.signupFarm(t, "Finca intacta", 100000)
+	blocked := h.doFrom(t, ip, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": fresh.OwnerEmail, "password": fixtureSignIn(),
+	})
+	if blocked.Status != http.StatusTooManyRequests {
+		t.Fatalf("the sprayer was never stopped: %d %s", blocked.Status, blocked.Raw)
+	}
+
+	// The same account from anywhere else is untouched. The IP count is a
+	// property of the source, and it must not become a way to lock an
+	// account by attacking from beside it.
+	ok := h.doFrom(t, "10.21.1.2", http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": fresh.OwnerEmail, "password": fixtureSignIn(),
+	})
+	if ok.Status != http.StatusOK {
+		t.Fatalf("an IP lock leaked onto the account: %d %s", ok.Status, ok.Raw)
+	}
 }
 
 // TestLoginSpendsTheSameWorkWhetherTheAddressExists is the timing oracle, and

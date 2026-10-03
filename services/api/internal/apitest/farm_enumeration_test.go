@@ -48,20 +48,7 @@ func TestProvisionStatusIsNotAFarmDirectory(t *testing.T) {
 		}
 	}
 
-	// A ticket for another slug opens nothing.
-	other := call(t, h.server, http.MethodGet,
-		"/v1/farms/"+slug+"/provision-status?ticket="+provisionTicketFor("otra-finca"), "", nil)
-	if other.Status != http.StatusNotFound || other.Raw != missing.Raw {
-		t.Fatalf("status with another farm's ticket: %d %s", other.Status, other.Raw)
-	}
-	// Nor does a forged or expired one.
-	expired := testSigner.SignTicket("provision-status", slug, -time.Minute)
-	for _, bad := range []string{"x.y.z", expired, ticket + "x"} {
-		got := call(t, h.server, http.MethodGet, "/v1/farms/"+slug+"/provision-status?ticket="+bad, "", nil)
-		if got.Status != http.StatusNotFound {
-			t.Fatalf("status with a bad ticket %q: %d %s", bad, got.Status, got.Raw)
-		}
-	}
+	a3BadTicketsOpenNothing(t, h, slug, ticket, missing)
 
 	// The ticket from signup, in the header the web sends.
 	req := httptest.NewRequest(http.MethodGet, "/v1/farms/"+slug+"/provision-status", nil)
@@ -81,6 +68,24 @@ func TestProvisionStatusIsNotAFarmDirectory(t *testing.T) {
 	admin := call(t, h.server, http.MethodGet, "/v1/farms/"+slug+"/provision-status", h.superadminToken(t, farmID), nil)
 	if admin.Status != http.StatusOK {
 		t.Fatalf("status for a super-admin: %d %s", admin.Status, admin.Raw)
+	}
+}
+
+func a3BadTicketsOpenNothing(t *testing.T, h *harness, slug, ticket string, missing response) {
+	t.Helper()
+	// A ticket for another slug opens nothing.
+	other := call(t, h.server, http.MethodGet,
+		"/v1/farms/"+slug+"/provision-status?ticket="+provisionTicketFor("otra-finca"), "", nil)
+	if other.Status != http.StatusNotFound || other.Raw != missing.Raw {
+		t.Fatalf("status with another farm's ticket: %d %s", other.Status, other.Raw)
+	}
+	// Nor does a forged or expired one.
+	expired := testSigner.SignTicket("provision-status", slug, -time.Minute)
+	for _, bad := range []string{"x.y.z", expired, ticket + "x"} {
+		got := call(t, h.server, http.MethodGet, "/v1/farms/"+slug+"/provision-status?ticket="+bad, "", nil)
+		if got.Status != http.StatusNotFound {
+			t.Fatalf("status with a bad ticket %q: %d %s", bad, got.Status, got.Raw)
+		}
 	}
 }
 

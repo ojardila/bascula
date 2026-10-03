@@ -215,26 +215,12 @@ func TestPasskeySignIn(t *testing.T) {
 	created := h.registerPasskey(t, f.OwnerToken, key)
 
 	t.Run("it is listed for its owner", func(t *testing.T) {
-		res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
-		items, _ := res.Body["items"].([]any)
-		if res.Status != http.StatusOK || len(items) != 1 {
-			t.Fatalf("list: %d %s", res.Status, res.Raw)
-		}
-		if items[0].(map[string]any)["name"] != "Teléfono de prueba" {
-			t.Fatalf("name not kept: %s", res.Raw)
-		}
+		a3PasskeyListedForOwner(t, h, f)
 	})
 
 	// A browser sends no Origin on a same-origin GET: the host stands in.
 	t.Run("it is listed without an Origin header, by the host", func(t *testing.T) {
-		res := h.doAt(t, "localhost:5173", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
-		if items, _ := res.Body["items"].([]any); res.Status != http.StatusOK || len(items) != 1 {
-			t.Fatalf("list by host: %d %s", res.Status, res.Raw)
-		}
-		res = h.doAt(t, "evil.example", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
-		if res.Status != http.StatusBadRequest {
-			t.Fatalf("list on a foreign host: %d %s", res.Status, res.Raw)
-		}
+		a3PasskeyListedByHost(t, h, f)
 	})
 
 	t.Run("and not for anybody else on the farm", func(t *testing.T) {
@@ -245,31 +231,11 @@ func TestPasskeySignIn(t *testing.T) {
 	})
 
 	t.Run("it opens a session without the password", func(t *testing.T) {
-		opts := h.passkeyOptions(t, "10.7.0.1")
-		res := h.doOrigin(t, "10.7.0.1", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
-			"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
-		})
-		if res.Status != http.StatusOK || res.Body["farmId"] != f.FarmID {
-			t.Fatalf("passkey sign-in: %d %s", res.Status, res.Raw)
-		}
-		token, _ := res.Body["accessToken"].(string)
-		me := h.do(t, http.MethodGet, "/v1/me", token, nil)
-		if me.Status != http.StatusOK || me.Body["id"] != f.OwnerUserID {
-			t.Fatalf("the session is not the owner's: %d %s", me.Status, me.Raw)
-		}
+		a3PasskeyOpensSession(t, h, f, key)
 	})
 
 	t.Run("an answer is accepted once", func(t *testing.T) {
-		opts := h.passkeyOptions(t, "10.7.0.2")
-		body := map[string]any{"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin)}
-		first := h.doOrigin(t, "10.7.0.2", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", body)
-		if first.Status != http.StatusOK {
-			t.Fatalf("first: %d %s", first.Status, first.Raw)
-		}
-		again := h.doOrigin(t, "10.7.0.2", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", body)
-		if again.Status != http.StatusUnauthorized || again.code() != "INVALID_CREDENTIALS" {
-			t.Fatalf("a replayed answer: %d %s, want 401", again.Status, again.Raw)
-		}
+		a3PasskeyAnswerAcceptedOnce(t, h, key)
 	})
 
 	t.Run("a copied key whose counter goes backwards is refused", func(t *testing.T) {
@@ -307,31 +273,11 @@ func TestPasskeySignIn(t *testing.T) {
 	})
 
 	t.Run("a site that is not this one gets no challenge", func(t *testing.T) {
-		for _, origin := range []string{"", "https://evil.example", "http://10.0.0.9:5173", "null"} {
-			res := h.doOrigin(t, "10.7.0.6", origin, http.MethodPost, "/v1/auth/passkeys/login/options", "", nil)
-			if res.Status != http.StatusBadRequest {
-				t.Fatalf("origin %q: %d %s, want 400", origin, res.Status, res.Raw)
-			}
-		}
+		a3ForeignOriginGetsNoChallenge(t, h)
 	})
 
 	t.Run("failed passkeys feed the login limiter", func(t *testing.T) {
-		ip := "10.7.0.7"
-		for i := 0; i < h.loginFailuresPerIP; i++ {
-			res := h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
-				"challenge": "not-a-seal", "credential": map[string]any{},
-			})
-			if res.Status != http.StatusUnauthorized {
-				t.Fatalf("attempt %d: %d %s", i, res.Status, res.Raw)
-			}
-		}
-		opts := h.passkeyOptions(t, ip)
-		res := h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
-			"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
-		})
-		if res.Status != http.StatusTooManyRequests {
-			t.Fatalf("after the limit: %d %s, want 429", res.Status, res.Raw)
-		}
+		a3PasskeyFailuresFeedLimiter(t, h, key)
 	})
 
 	t.Run("nobody else can remove it", func(t *testing.T) {
@@ -343,19 +289,101 @@ func TestPasskeySignIn(t *testing.T) {
 	})
 
 	t.Run("once removed it opens nothing", func(t *testing.T) {
-		res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodDelete,
-			"/v1/me/passkeys/"+created["id"].(string), f.OwnerToken, nil)
-		if res.Status != http.StatusNoContent {
-			t.Fatalf("delete: %d %s", res.Status, res.Raw)
-		}
-		opts := h.passkeyOptions(t, "10.7.0.8")
-		login := h.doOrigin(t, "10.7.0.8", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
-			"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
-		})
-		if login.Status != http.StatusUnauthorized {
-			t.Fatalf("a removed passkey: %d %s, want 401", login.Status, login.Raw)
-		}
+		a3RemovedPasskeyOpensNothing(t, h, f, key, created)
 	})
+}
+
+func a3PasskeyListedForOwner(t *testing.T, h *harness, f *farmFixture) {
+	res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+	items, _ := res.Body["items"].([]any)
+	if res.Status != http.StatusOK || len(items) != 1 {
+		t.Fatalf("list: %d %s", res.Status, res.Raw)
+	}
+	if items[0].(map[string]any)["name"] != "Teléfono de prueba" {
+		t.Fatalf("name not kept: %s", res.Raw)
+	}
+}
+
+func a3PasskeyListedByHost(t *testing.T, h *harness, f *farmFixture) {
+	res := h.doAt(t, "localhost:5173", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+	if items, _ := res.Body["items"].([]any); res.Status != http.StatusOK || len(items) != 1 {
+		t.Fatalf("list by host: %d %s", res.Status, res.Raw)
+	}
+	res = h.doAt(t, "evil.example", http.MethodGet, "/v1/me/passkeys", f.OwnerToken, nil)
+	if res.Status != http.StatusBadRequest {
+		t.Fatalf("list on a foreign host: %d %s", res.Status, res.Raw)
+	}
+}
+
+func a3PasskeyOpensSession(t *testing.T, h *harness, f *farmFixture, key *softPasskey) {
+	opts := h.passkeyOptions(t, "10.7.0.1")
+	res := h.doOrigin(t, "10.7.0.1", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
+		"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
+	})
+	if res.Status != http.StatusOK || res.Body["farmId"] != f.FarmID {
+		t.Fatalf("passkey sign-in: %d %s", res.Status, res.Raw)
+	}
+	token, _ := res.Body["accessToken"].(string)
+	me := h.do(t, http.MethodGet, "/v1/me", token, nil)
+	if me.Status != http.StatusOK || me.Body["id"] != f.OwnerUserID {
+		t.Fatalf("the session is not the owner's: %d %s", me.Status, me.Raw)
+	}
+}
+
+func a3PasskeyAnswerAcceptedOnce(t *testing.T, h *harness, key *softPasskey) {
+	opts := h.passkeyOptions(t, "10.7.0.2")
+	body := map[string]any{"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin)}
+	first := h.doOrigin(t, "10.7.0.2", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", body)
+	if first.Status != http.StatusOK {
+		t.Fatalf("first: %d %s", first.Status, first.Raw)
+	}
+	again := h.doOrigin(t, "10.7.0.2", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", body)
+	if again.Status != http.StatusUnauthorized || again.code() != "INVALID_CREDENTIALS" {
+		t.Fatalf("a replayed answer: %d %s, want 401", again.Status, again.Raw)
+	}
+}
+
+func a3ForeignOriginGetsNoChallenge(t *testing.T, h *harness) {
+	for _, origin := range []string{"", "https://evil.example", "http://10.0.0.9:5173", "null"} {
+		res := h.doOrigin(t, "10.7.0.6", origin, http.MethodPost, "/v1/auth/passkeys/login/options", "", nil)
+		if res.Status != http.StatusBadRequest {
+			t.Fatalf("origin %q: %d %s, want 400", origin, res.Status, res.Raw)
+		}
+	}
+}
+
+func a3PasskeyFailuresFeedLimiter(t *testing.T, h *harness, key *softPasskey) {
+	ip := "10.7.0.7"
+	for i := 0; i < h.loginFailuresPerIP; i++ {
+		res := h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
+			"challenge": "not-a-seal", "credential": map[string]any{},
+		})
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: %d %s", i, res.Status, res.Raw)
+		}
+	}
+	opts := h.passkeyOptions(t, ip)
+	res := h.doOrigin(t, ip, passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
+		"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
+	})
+	if res.Status != http.StatusTooManyRequests {
+		t.Fatalf("after the limit: %d %s, want 429", res.Status, res.Raw)
+	}
+}
+
+func a3RemovedPasskeyOpensNothing(t *testing.T, h *harness, f *farmFixture, key *softPasskey, created map[string]any) {
+	res := h.doOrigin(t, "10.0.0.1", passkeyOrigin, http.MethodDelete,
+		"/v1/me/passkeys/"+created["id"].(string), f.OwnerToken, nil)
+	if res.Status != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", res.Status, res.Raw)
+	}
+	opts := h.passkeyOptions(t, "10.7.0.8")
+	login := h.doOrigin(t, "10.7.0.8", passkeyOrigin, http.MethodPost, "/v1/auth/passkeys/login", "", map[string]any{
+		"challenge": opts["challenge"], "credential": key.get(t, opts, passkeyOrigin),
+	})
+	if login.Status != http.StatusUnauthorized {
+		t.Fatalf("a removed passkey: %d %s, want 401", login.Status, login.Raw)
+	}
 }
 
 func TestPasskeyChallengeIsSingleUse(t *testing.T) {

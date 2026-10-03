@@ -56,67 +56,75 @@ func TestBasePriceHistory(t *testing.T) {
 	})
 
 	t.Run("a new price moves unsettled work and never a settled week", func(t *testing.T) {
-		h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-25", 10)
-		h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-09-01", 10)
-		settled := h.mustSettle(t, f.OwnerToken, map[string]any{
-			"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
-		}, http.StatusCreated)
-		settlementID := mustString(t, settled.Body, "id")
-		if got := mustInt(t, settled.Body, "grossCents"); got != 800_000 {
-			t.Fatalf("settled gross is %d, want 800000", got)
-		}
-
-		im := h.mustDo(t, http.MethodGet, "/v1/prices/base/2026-08-24/impact", f.OwnerToken, nil, http.StatusOK)
-		if mustInt(t, im.Body, "unsettledRecords") != 1 || mustInt(t, im.Body, "settledRecords") != 1 {
-			t.Fatalf("impact should be 1 unsettled and 1 settled: %s", im.Raw)
-		}
-
-		h.mustDo(t, http.MethodPut, "/v1/prices/base/2026-08-24", f.OwnerToken,
-			map[string]any{"priceCents": 90000}, http.StatusOK)
-
-		// The week before keeps the old price, the weeks from the Monday take
-		// the new one.
-		if got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-17", f.OwnerToken,
-			nil, http.StatusOK).Body, "priceCents"); got != 80000 {
-			t.Fatalf("the week before the new price reads %d, want 80000", got)
-		}
-		if got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-31", f.OwnerToken,
-			nil, http.StatusOK).Body, "priceCents"); got != 90000 {
-			t.Fatalf("a week after the new price reads %d, want 90000", got)
-		}
-
-		pending := h.mustDo(t, http.MethodGet,
-			"/v1/pending?workerId="+worker+"&from=2026-08-31&to=2026-09-06",
-			f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, pending.Body, "totalCents"); got != 900_000 {
-			t.Fatalf("unsettled work is %d, want 900000 at the new price", got)
-		}
-		again := h.mustDo(t, http.MethodGet, "/v1/settlements/"+settlementID, f.OwnerToken, nil, http.StatusOK)
-		if got := mustInt(t, again.Body, "grossCents"); got != 800_000 {
-			t.Fatalf("the settled week changed to %d; a new price must never touch it", got)
-		}
+		a3NewBasePriceSparesSettled(t, h, f, worker, activity)
 	})
 
 	t.Run("a week with its own price keeps it, and a later row does not rewrite earlier weeks", func(t *testing.T) {
-		h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-31", f.OwnerToken,
-			map[string]any{"priceCents": 95000}, http.StatusOK)
-		h.mustDo(t, http.MethodPut, "/v1/prices/base/2026-09-07", f.OwnerToken,
-			map[string]any{"priceCents": 100000}, http.StatusOK)
-		for week, want := range map[string]int64{
-			"2026-08-24": 90000, "2026-08-31": 95000, "2026-09-07": 100000, "2026-09-14": 100000,
-		} {
-			got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/"+week, f.OwnerToken,
-				nil, http.StatusOK).Body, "priceCents")
-			if got != want {
-				t.Errorf("week %s reads %d, want %d", week, got, want)
-			}
-		}
-		res := h.mustDo(t, http.MethodGet, "/v1/prices/base", f.OwnerToken, nil, http.StatusOK)
-		hist, _ := res.Body["history"].([]any)
-		if len(hist) != 3 || hist[0].(map[string]any)["validFrom"] != "2026-09-07" {
-			t.Fatalf("history should be three rows, newest first: %s", res.Raw)
-		}
+		a3WeekPriceKeptOverBase(t, h, f)
 	})
+}
+
+func a3NewBasePriceSparesSettled(t *testing.T, h *harness, f *farmFixture, worker, activity string) {
+	h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-08-25", 10)
+	h.createWorkRecord(t, f, f.OwnerToken, worker, activity, "2026-09-01", 10)
+	settled := h.mustSettle(t, f.OwnerToken, map[string]any{
+		"workerId": worker, "from": "2026-08-24", "to": "2026-08-30",
+	}, http.StatusCreated)
+	settlementID := mustString(t, settled.Body, "id")
+	if got := mustInt(t, settled.Body, "grossCents"); got != 800_000 {
+		t.Fatalf("settled gross is %d, want 800000", got)
+	}
+
+	im := h.mustDo(t, http.MethodGet, "/v1/prices/base/2026-08-24/impact", f.OwnerToken, nil, http.StatusOK)
+	if mustInt(t, im.Body, "unsettledRecords") != 1 || mustInt(t, im.Body, "settledRecords") != 1 {
+		t.Fatalf("impact should be 1 unsettled and 1 settled: %s", im.Raw)
+	}
+
+	h.mustDo(t, http.MethodPut, "/v1/prices/base/2026-08-24", f.OwnerToken,
+		map[string]any{"priceCents": 90000}, http.StatusOK)
+
+	// The week before keeps the old price, the weeks from the Monday take
+	// the new one.
+	if got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-17", f.OwnerToken,
+		nil, http.StatusOK).Body, "priceCents"); got != 80000 {
+		t.Fatalf("the week before the new price reads %d, want 80000", got)
+	}
+	if got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/2026-08-31", f.OwnerToken,
+		nil, http.StatusOK).Body, "priceCents"); got != 90000 {
+		t.Fatalf("a week after the new price reads %d, want 90000", got)
+	}
+
+	pending := h.mustDo(t, http.MethodGet,
+		"/v1/pending?workerId="+worker+"&from=2026-08-31&to=2026-09-06",
+		f.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, pending.Body, "totalCents"); got != 900_000 {
+		t.Fatalf("unsettled work is %d, want 900000 at the new price", got)
+	}
+	again := h.mustDo(t, http.MethodGet, "/v1/settlements/"+settlementID, f.OwnerToken, nil, http.StatusOK)
+	if got := mustInt(t, again.Body, "grossCents"); got != 800_000 {
+		t.Fatalf("the settled week changed to %d; a new price must never touch it", got)
+	}
+}
+
+func a3WeekPriceKeptOverBase(t *testing.T, h *harness, f *farmFixture) {
+	h.mustDo(t, http.MethodPut, "/v1/prices/weeks/2026-08-31", f.OwnerToken,
+		map[string]any{"priceCents": 95000}, http.StatusOK)
+	h.mustDo(t, http.MethodPut, "/v1/prices/base/2026-09-07", f.OwnerToken,
+		map[string]any{"priceCents": 100000}, http.StatusOK)
+	for week, want := range map[string]int64{
+		"2026-08-24": 90000, "2026-08-31": 95000, "2026-09-07": 100000, "2026-09-14": 100000,
+	} {
+		got := mustInt(t, h.mustDo(t, http.MethodGet, "/v1/prices/weeks/"+week, f.OwnerToken,
+			nil, http.StatusOK).Body, "priceCents")
+		if got != want {
+			t.Errorf("week %s reads %d, want %d", week, got, want)
+		}
+	}
+	res := h.mustDo(t, http.MethodGet, "/v1/prices/base", f.OwnerToken, nil, http.StatusOK)
+	hist, _ := res.Body["history"].([]any)
+	if len(hist) != 3 || hist[0].(map[string]any)["validFrom"] != "2026-09-07" {
+		t.Fatalf("history should be three rows, newest first: %s", res.Raw)
+	}
 }
 
 // TestTourProgress covers the per-user guided tour state.

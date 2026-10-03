@@ -96,28 +96,11 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	// GitHub: records the repository_dispatch it receives.
 	var mu sync.Mutex
 	var dispatched []map[string]any
-	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/ojardila/gitops/dispatches" || r.Header.Get("Authorization") != "Bearer gh-test" {
-			http.Error(w, "unexpected", http.StatusBadRequest)
-			return
-		}
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		mu.Lock()
-		dispatched = append(dispatched, body)
-		mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
-	}))
+	gh := httptest.NewServer(a3DispatchRecorder(&mu, &dispatched))
 	defer gh.Close()
 
 	// The farm's public address, once DNS and TLS are in place.
-	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
+	public := httptest.NewServer(a3HealthOnly())
 	defer public.Close()
 
 	// The dedicated stack: its own empty database, its own signing key.
@@ -153,67 +136,12 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 
 	ownerEmail := signupWithSlug(t, platform, "La Palma de prueba", slug)
 
-	// The dispatch names the slug, the owner and dedicated mode.
-	waitFor(t, 5*time.Second, "provision-tenant dispatch", func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(dispatched) > 0
-	})
-	mu.Lock()
-	payload, _ := dispatched[0]["client_payload"].(map[string]any)
-	eventType := dispatched[0]["event_type"]
-	mu.Unlock()
-	if eventType != "provision-tenant" || payload["slug"] != slug || payload["mode"] != "dedicated" ||
-		payload["email"] != ownerEmail || payload["farmName"] != "La Palma de prueba" {
-		t.Fatalf("dispatch payload = %v %v", eventType, payload)
-	}
-	// The run is titled by an opaque ref, never the slug: the run list of a
-	// public repository is public.
-	if ref, _ := payload["ref"].(string); ref == "" || ref != provisionRunRef(slug) || strings.Contains(ref, slug) {
-		t.Fatalf("dispatch ref = %v, want the opaque ref for %s", payload["ref"], slug)
-	}
+	a3CheckDispatch(t, &mu, &dispatched, slug, ownerEmail)
 
 	// The watcher seeds the empty stack.
-	waitFor(t, 15*time.Second, "tenant seeded", func() bool {
-		res, err := http.Get(internal.URL + "/internal/tenant")
-		if err != nil {
-			return false
-		}
-		defer res.Body.Close()
-		var info map[string]any
-		_ = json.NewDecoder(res.Body).Decode(&info)
-		return info["seeded"] == true
-	})
+	waitFor(t, 15*time.Second, "tenant seeded", a3TenantSeeded(internal.URL))
 
-	// The owner logs in on the new stack with the password they already had,
-	// pinned to the farm by its slug.
-	login := call(t, tenantAPI, http.MethodPost, "/v1/auth/login", "", map[string]any{
-		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
-	})
-	if login.Status != http.StatusOK || login.Body["slug"] != slug {
-		t.Fatalf("login on the dedicated stack: %d %s", login.Status, login.Raw)
-	}
-	farm := call(t, tenantAPI, http.MethodGet, "/v1/farm", mustString(t, login.Body, "accessToken"), nil)
-	if farm.Status != http.StatusOK || farm.Body["name"] != "La Palma de prueba" {
-		t.Fatalf("farm on the dedicated stack: %d %s", farm.Status, farm.Raw)
-	}
-
-	// First login on the dedicated stack: no tour row yet, so the web app
-	// starts the owner tour; the price chosen on the platform arrives
-	// confirmed, and progress saves on the database of the stack itself.
-	tenantToken := mustString(t, login.Body, "accessToken")
-	tours := call(t, tenantAPI, http.MethodGet, "/v1/me/tours", tenantToken, nil)
-	if items, _ := tours.Body["items"].([]any); tours.Status != http.StatusOK || len(items) != 0 {
-		t.Fatalf("tours on a fresh dedicated stack: %d %s", tours.Status, tours.Raw)
-	}
-	base := call(t, tenantAPI, http.MethodGet, "/v1/prices/base", tenantToken, nil)
-	if base.Status != http.StatusOK || base.Body["confirmed"] != true || base.Body["currentCents"] != float64(90000) {
-		t.Fatalf("base price on the dedicated stack: %d %s", base.Status, base.Raw)
-	}
-	saved := call(t, tenantAPI, http.MethodPut, "/v1/me/tours/owner", tenantToken, map[string]any{"step": 3, "status": "active"})
-	if saved.Status != http.StatusOK {
-		t.Fatalf("save tour on the dedicated stack: %d %s", saved.Status, saved.Raw)
-	}
+	a3CheckDedicatedLogin(t, tenantAPI, ownerEmail, slug)
 
 	// The waiting screen sees every step done.
 	var status response
@@ -250,6 +178,107 @@ func TestCreatingAFarmFromTheAppLaunchesAndSeedsItsOwnStack(t *testing.T) {
 	other.Body.Close()
 	if other.StatusCode != http.StatusForbidden {
 		t.Fatalf("foreign seed: status %d, want 403", other.StatusCode)
+	}
+}
+
+// a3DispatchRecorder stands in for GitHub: it records every
+// repository_dispatch it receives on the gitops repository.
+func a3DispatchRecorder(mu *sync.Mutex, dispatched *[]map[string]any) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/ojardila/gitops/dispatches" || r.Header.Get("Authorization") != "Bearer gh-test" {
+			http.Error(w, "unexpected", http.StatusBadRequest)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		*dispatched = append(*dispatched, body)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// a3HealthOnly is a farm's public address once DNS and TLS are in place.
+func a3HealthOnly() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
+}
+
+// a3TenantSeeded reports whether the dedicated stack at internalURL has been seeded.
+func a3TenantSeeded(internalURL string) func() bool {
+	return func() bool {
+		res, err := http.Get(internalURL + "/internal/tenant")
+		if err != nil {
+			return false
+		}
+		defer res.Body.Close()
+		var info map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&info)
+		return info["seeded"] == true
+	}
+}
+
+// a3CheckDispatch waits for the provision-tenant dispatch and checks what it names.
+func a3CheckDispatch(t *testing.T, mu *sync.Mutex, dispatched *[]map[string]any, slug, ownerEmail string) {
+	t.Helper()
+	// The dispatch names the slug, the owner and dedicated mode.
+	waitFor(t, 5*time.Second, "provision-tenant dispatch", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(*dispatched) > 0
+	})
+	mu.Lock()
+	payload, _ := (*dispatched)[0]["client_payload"].(map[string]any)
+	eventType := (*dispatched)[0]["event_type"]
+	mu.Unlock()
+	if eventType != "provision-tenant" || payload["slug"] != slug || payload["mode"] != "dedicated" ||
+		payload["email"] != ownerEmail || payload["farmName"] != "La Palma de prueba" {
+		t.Fatalf("dispatch payload = %v %v", eventType, payload)
+	}
+	// The run is titled by an opaque ref, never the slug: the run list of a
+	// public repository is public.
+	if ref, _ := payload["ref"].(string); ref == "" || ref != provisionRunRef(slug) || strings.Contains(ref, slug) {
+		t.Fatalf("dispatch ref = %v, want the opaque ref for %s", payload["ref"], slug)
+	}
+}
+
+// a3CheckDedicatedLogin logs the owner in on the dedicated stack and checks
+// the farm, the tour and the price arrived there.
+func a3CheckDedicatedLogin(t *testing.T, tenantAPI *httpapi.Server, ownerEmail, slug string) {
+	t.Helper()
+	// The owner logs in on the new stack with the password they already had,
+	// pinned to the farm by its slug.
+	login := call(t, tenantAPI, http.MethodPost, "/v1/auth/login", "", map[string]any{
+		"email": ownerEmail, "password": "una-clave-larga-1", "farmSlug": slug,
+	})
+	if login.Status != http.StatusOK || login.Body["slug"] != slug {
+		t.Fatalf("login on the dedicated stack: %d %s", login.Status, login.Raw)
+	}
+	farm := call(t, tenantAPI, http.MethodGet, "/v1/farm", mustString(t, login.Body, "accessToken"), nil)
+	if farm.Status != http.StatusOK || farm.Body["name"] != "La Palma de prueba" {
+		t.Fatalf("farm on the dedicated stack: %d %s", farm.Status, farm.Raw)
+	}
+
+	// First login on the dedicated stack: no tour row yet, so the web app
+	// starts the owner tour; the price chosen on the platform arrives
+	// confirmed, and progress saves on the database of the stack itself.
+	tenantToken := mustString(t, login.Body, "accessToken")
+	tours := call(t, tenantAPI, http.MethodGet, "/v1/me/tours", tenantToken, nil)
+	if items, _ := tours.Body["items"].([]any); tours.Status != http.StatusOK || len(items) != 0 {
+		t.Fatalf("tours on a fresh dedicated stack: %d %s", tours.Status, tours.Raw)
+	}
+	base := call(t, tenantAPI, http.MethodGet, "/v1/prices/base", tenantToken, nil)
+	if base.Status != http.StatusOK || base.Body["confirmed"] != true || base.Body["currentCents"] != float64(90000) {
+		t.Fatalf("base price on the dedicated stack: %d %s", base.Status, base.Raw)
+	}
+	saved := call(t, tenantAPI, http.MethodPut, "/v1/me/tours/owner", tenantToken, map[string]any{"step": 3, "status": "active"})
+	if saved.Status != http.StatusOK {
+		t.Fatalf("save tour on the dedicated stack: %d %s", saved.Status, saved.Raw)
 	}
 }
 

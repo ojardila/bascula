@@ -239,25 +239,33 @@ func TestSpecPathParametersMatchTheRoutePatterns(t *testing.T) {
 	for path, item := range doc.Paths {
 		placeholders := pathPlaceholders(path)
 		for method, op := range item.Operations {
-			declaredNames := map[string]bool{}
-			for _, p := range append(append([]specParam{}, item.Parameters...), op.Parameters...) {
-				p = resolveParam(p)
-				if p.In == "path" {
-					declaredNames[p.Name] = true
-				}
-			}
-			for _, name := range placeholders {
-				if !declaredNames[name] {
-					t.Errorf("%s %s: the path has {%s} but no parameter declares it.",
-						method, path, name)
-				}
-			}
-			for name := range declaredNames {
-				if !contains(placeholders, name) {
-					t.Errorf("%s %s: a path parameter %q is declared but the path has no {%s}.",
-						method, path, name, name)
-				}
-			}
+			a3CheckPathParams(t, method, path, placeholders,
+				append(append([]specParam{}, item.Parameters...), op.Parameters...))
+		}
+	}
+}
+
+// a3CheckPathParams compares one operation's declared path parameters with
+// the placeholders in its path, both ways.
+func a3CheckPathParams(t *testing.T, method, path string, placeholders []string, params []specParam) {
+	t.Helper()
+	declaredNames := map[string]bool{}
+	for _, p := range params {
+		p = resolveParam(p)
+		if p.In == "path" {
+			declaredNames[p.Name] = true
+		}
+	}
+	for _, name := range placeholders {
+		if !declaredNames[name] {
+			t.Errorf("%s %s: the path has {%s} but no parameter declares it.",
+				method, path, name)
+		}
+	}
+	for name := range declaredNames {
+		if !contains(placeholders, name) {
+			t.Errorf("%s %s: a path parameter %q is declared but the path has no {%s}.",
+				method, path, name, name)
 		}
 	}
 }
@@ -291,14 +299,7 @@ func TestSpecIsUsableByAGenerator(t *testing.T) {
 
 	seenIDs := map[string]routeKey{}
 	for key, op := range documented {
-		if op.OperationID == "" {
-			t.Errorf("%s has no operationId; a generated client would name the "+
-				"method after the path, which changes when the path does", key)
-		} else if prev, dup := seenIDs[op.OperationID]; dup {
-			t.Errorf("%s and %s share operationId %q", key, prev, op.OperationID)
-		} else {
-			seenIDs[op.OperationID] = key
-		}
+		a3CheckOperationID(t, key, op, seenIDs)
 		if op.Summary == "" {
 			t.Errorf("%s has no summary", key)
 		}
@@ -311,23 +312,43 @@ func TestSpecIsUsableByAGenerator(t *testing.T) {
 		if !mounted {
 			continue
 		}
-		rule := auth.Matrix[action]
-		if !rule.Public {
-			for _, code := range []string{"401", "403"} {
-				if _, ok := op.Responses[code]; !ok {
-					t.Errorf("%s is behind a token but documents no %s response.\n"+
-						"Every authenticated route can produce both: the "+
-						"middleware answers 401 with no token and 403 when the "+
-						"permission table refuses.", key, code)
-				}
+		a3CheckFailureResponses(t, key, op, action)
+	}
+}
+
+// a3CheckOperationID requires a unique operationId on every operation.
+func a3CheckOperationID(t *testing.T, key routeKey, op *specOp, seenIDs map[string]routeKey) {
+	t.Helper()
+	if op.OperationID == "" {
+		t.Errorf("%s has no operationId; a generated client would name the "+
+			"method after the path, which changes when the path does", key)
+	} else if prev, dup := seenIDs[op.OperationID]; dup {
+		t.Errorf("%s and %s share operationId %q", key, prev, op.OperationID)
+	} else {
+		seenIDs[op.OperationID] = key
+	}
+}
+
+// a3CheckFailureResponses requires the 401/403 of an authenticated route and
+// the 404 of a route that addresses a resource by id.
+func a3CheckFailureResponses(t *testing.T, key routeKey, op *specOp, action auth.Action) {
+	t.Helper()
+	rule := auth.Matrix[action]
+	if !rule.Public {
+		for _, code := range []string{"401", "403"} {
+			if _, ok := op.Responses[code]; !ok {
+				t.Errorf("%s is behind a token but documents no %s response.\n"+
+					"Every authenticated route can produce both: the "+
+					"middleware answers 401 with no token and 403 when the "+
+					"permission table refuses.", key, code)
 			}
 		}
-		if len(pathPlaceholders(key.pattern)) > 0 {
-			if _, ok := op.Responses["404"]; !ok {
-				t.Errorf("%s addresses a resource by id but documents no 404.\n"+
-					"A resource of another farm answers 404 here, and a client "+
-					"that does not expect one will render it as a crash.", key)
-			}
+	}
+	if len(pathPlaceholders(key.pattern)) > 0 {
+		if _, ok := op.Responses["404"]; !ok {
+			t.Errorf("%s addresses a resource by id but documents no 404.\n"+
+				"A resource of another farm answers 404 here, and a client "+
+				"that does not expect one will render it as a crash.", key)
 		}
 	}
 }
