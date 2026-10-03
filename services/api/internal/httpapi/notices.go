@@ -12,6 +12,7 @@ import (
 
 	"github.com/ojardila/bascula/services/api/internal/auth"
 	"github.com/ojardila/bascula/services/api/internal/domain"
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
 	"github.com/ojardila/bascula/services/api/internal/store"
 	"github.com/ojardila/bascula/services/api/internal/tenant"
@@ -51,7 +52,7 @@ func (s *Server) mailLater(r *http.Request, m mailer.Message) {
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
 			if err := send.Send(ctx, m); err != nil {
-				slog.Error("notice email", "subject", m.Subject, "err", err)
+				slog.Error("notice email", "subject", logsafe.Str(m.Subject), "err", logsafe.Str(err.Error()))
 			}
 		}()
 	})
@@ -67,6 +68,25 @@ func (s *Server) revokeSessionsElsewhere(r *http.Request, userID, farmID string)
 			UPDATE refresh_tokens SET revoked_at = now()
 			 WHERE user_id = $1 AND farm_id <> $2 AND revoked_at IS NULL`, userID, farmID); err != nil {
 			slog.Error("revoke sessions on other farms", "user", userID, "err", err)
+		}
+	})
+}
+
+// revokePasskeySessions closes, after this request, every session the passkey
+// opened on any farm except keepFamilyID (the caller's own). It runs on a
+// connection with no farm pinned, like revokeSessionsElsewhere, because a
+// passkey that is not pinned to a farm opens several. It does nothing while
+// the passkey still exists, so a removal that was rolled back closes nothing.
+func (s *Server) revokePasskeySessions(r *http.Request, userID, passkeyID, keepFamilyID string) {
+	pool := s.pool
+	tenant.AfterRequest(r.Context(), func(ctx context.Context) {
+		if _, err := pool.Exec(context.WithoutCancel(ctx), `
+			UPDATE refresh_tokens SET revoked_at = now()
+			 WHERE user_id = $1 AND passkey_id = $2 AND revoked_at IS NULL
+			   AND ($3 = '' OR family_id::text <> $3)
+			   AND NOT EXISTS (SELECT 1 FROM passkeys WHERE id = $2)`,
+			userID, passkeyID, keepFamilyID); err != nil {
+			slog.Error("revoke passkey sessions", "user", userID, "err", err)
 		}
 	})
 }

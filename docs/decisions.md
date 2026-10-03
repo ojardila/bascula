@@ -240,6 +240,39 @@ client to send the gross it saw (`expectedGrossCents`) and the server to reject
 the settlement if it has changed. That field does not exist yet. Without it,
 somebody can settle looking at one figure and sign for another.
 
+## 2026-10-03 — Image SBOM and provenance are attached on release, not at build
+
+Every released image (api, web) carries an SPDX SBOM and SLSA v1 build
+provenance, both signed through Sigstore with this repository's GitHub OIDC
+identity and pushed to Harbor as OCI referrers of the released digest. The
+`attest` job in `.github/workflows/cd.yml` does it right after `release`
+promotes `src-<key>` to `vX.Y.Z`, beside the `production` job so it never
+holds a deploy (#307).
+
+**Why on release (Path 2) and not at build time (Path 1).** Harbor's bascula
+project has "prevent vulnerable images" on, and it answers 412 to any manifest
+Trivy has not scanned yet. buildx pushes the provenance and SBOM manifests
+right after the image, before the scan, which is what broke CD for PR #38. Making
+that work means loosening the gate, the one control that stops an unscanned
+image reaching a farm. By release time `promote.sh` has already waited for the
+scan, so the referrers land on a scanned digest and the gate stays as it is.
+The images stay built once and promoted unchanged: the attestations point at
+that digest and add nothing to it.
+
+**What the provenance says.** Its builder is the CD workflow run that
+released the digest. The image itself was built by `images.yml` from the same
+sources (the digest's `io.engp.bascula.source-key` label is the key of those
+sources), usually in the PR's CI.
+
+**Checking a release.**
+
+```sh
+gh attestation verify oci://harbor.int.engp.io/bascula/api:vX.Y.Z --owner ojardila
+gh attestation verify oci://harbor.int.engp.io/bascula/api:vX.Y.Z --owner ojardila \
+  --predicate-type https://spdx.dev/Document/v2.3
+cosign tree harbor.int.engp.io/bascula/api@sha256:...
+```
+
 ## Debt declared at the close of sprint 5
 
 Things that were worked around honestly and have to be closed. None of them is
@@ -262,3 +295,51 @@ hidden: the screen shows that it is missing.
 5. **Pruning `sync_log` and `sync_ops`** is not scheduled. The side that detects
    it (`CURSOR_TOO_OLD`) does exist, so the day pruning starts, a badly
    out-of-date phone finds out instead of receiving an incomplete history.
+
+## 2026-10-02 — Uploads are backed up by Longhorn, not moved to S3 (yet)
+
+Issue #311. The photos on `bascula-uploads` are evidence of weighings that the
+ledger cannot regenerate, and the question was whether to mirror the volume
+off-site (A) or replace it with an S3-backed `internal/blob` driver (B).
+
+| | A — mirror the volume | B — S3 driver |
+| --- | --- | --- |
+| RPO for photos | Up to 24 h off-site (daily backup at 03:00 UTC); 1 h on-cluster (hourly Longhorn snapshots, 12 kept) | ~0: a photo is in the bucket before the upload is confirmed |
+| API replica count | Stays at 1 (RWO volume, `Recreate`) | Can scale past 1 |
+| Change surface in `services/api` | None | New `blob.Store` implementation, S3 credentials per stack, a read path for the PWA (presigned URL or API proxy), tests against an S3 emulator |
+| Operational cost | None new: the cluster-wide `backup-daily` job and the Spaces bucket already exist; incremental block backups of a mostly empty 20 Gi volume | A bucket prefix and credentials per farm (same story as #309), plus egress for every photo view |
+| Migration cost for existing files | None | Copy every object to the bucket and cut over per stack; today that is zero files, later it is a migration job |
+
+**Chosen: A, implemented as Longhorn's own recurring backup rather than an
+rclone CronJob.** The cluster already runs `backup-daily` (group `default`,
+`ojardila/k8` `manifests/longhorn/backup-jobs.yaml`) to the same Spaces bucket
+the CNPG backups use, and it was already picking this volume up — but only
+implicitly, as a volume with no recurring-job labels. The PVC in
+`manifests/base/api.yaml` now carries `recurring-job.longhorn.io/source:
+enabled` and `recurring-job-group.longhorn.io/default: enabled`, so prod, dev
+and every farm stack are covered explicitly and adding a job label later
+cannot drop the volume out of the backups. An rclone CronJob would have
+needed a second copy of the S3 credentials in every namespace and a pod that
+mounts an RWO volume next to the API, which pins it to the API's node; the
+Longhorn backup needs neither. B buys multi-replica and a smaller RPO, and
+neither is a problem today: one replica serves every farm comfortably and no
+stack has a confirmed attachment yet. Revisit B when the API needs a second
+replica or when a day of photos becomes too much to lose.
+
+**Retention, reconciled with Postgres (#309).** Postgres keeps 30 days of
+point-in-time recovery; uploads keep 14 daily backups. That is not a gap,
+because confirmed attachments are append-only: `blob.Store.Delete` is called
+only for an upload that is being refused, before its row is confirmed. Every
+photo a restored database can reference — from any point in its 30-day window
+— is therefore in the *latest* uploads backup, not only the one from that day.
+The 14 days bound how far back a corrupted or wiped volume can be rolled, not
+which photos survive. Should attachments ever become deletable, raise the
+uploads retention to 30 to match.
+
+**Restore drill, 2026-10-02.** A canary file was written to the dev uploads
+volume (`/srv/uploads/backup-canary.txt`, left in place for the next drill),
+an on-demand Longhorn backup was taken to Spaces, and the backup was restored
+into a fresh Longhorn volume mounted read-only in a scratch namespace. The
+restored file's sha256 matched the original. The scratch volume, namespace
+and drill backup were deleted afterwards. Production's uploads volume had
+completed scheduled backups every night that week.

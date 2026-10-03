@@ -732,6 +732,9 @@ type familyGrant struct {
 	Method   *string
 	ClientID *string
 	Scope    *string
+	// PasskeyID is the passkey that opened the family (migration 00045), so
+	// removing it closes the session; nil for every other way in.
+	PasskeyID *string
 }
 
 // issueSessionFor is issueSession for a family an OAuth client (an MCP
@@ -774,7 +777,7 @@ func (s *Server) issueSessionFor(r *http.Request, tx pgx.Tx, user *store.User,
 		ID: newID(), FamilyID: familyID, UserID: user.ID, FarmID: m.FarmID,
 		DeviceID: device, ExpiresAt: time.Now().Add(auth.RefreshTTL),
 		OAuthClientID: oauthClientID, Scope: scope,
-		SignInMethod: grant.Method, UserAgent: requestUserAgent(r),
+		SignInMethod: grant.Method, UserAgent: requestUserAgent(r), PasskeyID: grant.PasskeyID,
 	}, hash); err != nil {
 		return nil, err
 	}
@@ -975,7 +978,9 @@ func (s *Server) rotateRefresh(r *http.Request, tx pgx.Tx, secret, deviceID stri
 	if device == "" && tok.DeviceID != nil {
 		device = *tok.DeviceID
 	}
-	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, familyGrant{Method: tok.SignInMethod, ClientID: tok.OAuthClientID, Scope: tok.Scope})
+	session, err := s.issueSessionFor(r, tx, user, m, device, tok.FamilyID, familyGrant{
+		Method: tok.SignInMethod, ClientID: tok.OAuthClientID, Scope: tok.Scope, PasskeyID: tok.PasskeyID,
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -45,7 +45,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 	"github.com/ojardila/bascula/services/api/internal/mailer"
 )
 
@@ -191,6 +193,10 @@ func (a *Alerter) Observe(sig Signal, key, detail string) {
 	if !ok || rule.Threshold <= 0 || rule.Window <= 0 {
 		return
 	}
+	// Keys and details come from requests (an IP, a client_id, an email).
+	// They go into a log line and an email subject, so they are neutralised
+	// and bounded here, once, before anything reads them.
+	key, detail = clip(logsafe.Str(key), 120), clip(logsafe.Str(detail), 300)
 	if key == "" {
 		key = "-"
 	}
@@ -316,4 +322,13 @@ func (a *Alerter) body(sig Signal, rule Rule, key, detail string, n int, first, 
 	fmt.Fprintf(&b, "\nThis key stays quiet for %s; at most %d alert emails per hour leave this stack.\n", a.cfg.Cooldown, a.cfg.MaxPerHour)
 	b.WriteString("To silence a planned drill, set SECURITY_ALERT_SILENCE_UNTIL (RFC 3339) on the API. Runbook: docs/detections.md\n")
 	return b.String()
+}
+
+// clip bounds s to n runes.
+func clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:n]) + "…"
 }

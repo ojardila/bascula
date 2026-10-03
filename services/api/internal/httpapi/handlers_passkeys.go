@@ -432,6 +432,10 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 
 // handleDeletePasskey removes one of the caller's passkeys. Somebody else's
 // id answers 404, the same as an id that does not exist.
+//
+// Removing a passkey also closes the sessions it opened, on every farm, except
+// the caller's own: the person removing the passkey of a lost phone expects
+// that phone to be signed out, not to stay in for the rest of its sixty days.
 func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
 	id := chi.URLParam(r, "id")
@@ -453,6 +457,7 @@ func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, domain.NotFound("passkey not found"))
 		return
 	}
+	s.revokePasskeySessions(r, p.UserID, id, p.SessionID)
 	if user, err := store.FindUserByID(r.Context(), tx, p.UserID); err == nil {
 		s.mailLater(r, passkeyRemovedMessage(user.Email, user.Name))
 	}
@@ -635,7 +640,9 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	session, err := s.issueSession(r, tx, user, chosen, req.DeviceID, newID(), store.SignInPasskey)
+	method := store.SignInPasskey
+	session, err := s.issueSessionFor(r, tx, user, chosen, req.DeviceID, newID(),
+		familyGrant{Method: &method, PasskeyID: &found.ID})
 	if err != nil {
 		writeError(w, r, err)
 		return

@@ -2,12 +2,25 @@
 
 # Photos attached to a weighing. They are the one thing here that a redeploy
 # must not lose, and they are not in Postgres.
+#
+# Off-site copy: Longhorn's `backup-daily` RecurringJob (group `default`,
+# 03:00 UTC, retain 14) ships this volume to the same Spaces bucket the CNPG
+# backups use (s3://k8-longhorn-backups). The labels below pin that on purpose.
+# A volume with no recurring-job labels joins `default` only implicitly, and
+# the first job label anyone adds to it would silently drop it from the
+# backups. `source: enabled` makes Longhorn copy the PVC's labels onto the
+# volume, so every stack rendered from this base (prod, dev, each farm) is
+# covered the moment its PVC exists. Decision and restore drill:
+# docs/decisions.md, "Uploads are backed up by Longhorn" (#311).
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: bascula-uploads
   namespace: bascula
+  labels:
+    recurring-job.longhorn.io/source: enabled
+    recurring-job-group.longhorn.io/default: enabled
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: longhorn
@@ -69,7 +82,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: migrate
-          image: harbor.int.engp.io/bascula/api:v0.2.104
+          image: harbor.int.engp.io/bascula/api:v0.2.105
           args: ["-migrate"]
           env:
             # The superuser, because 00001 creates extensions and a role and
@@ -137,7 +150,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: harbor.int.engp.io/bascula/api:v0.2.104
+          image: harbor.int.engp.io/bascula/api:v0.2.105
           ports:
             - containerPort: 8080
           env:

@@ -126,6 +126,33 @@ storage first. Raising `replicas` on its own will not work.
 
 ---
 
+## Backups
+
+Everything goes to the same DigitalOcean Spaces bucket, `k8-longhorn-backups`
+(NYC3), that Longhorn and etcd already use.
+
+| What | How | When | Kept |
+| --- | --- | --- | --- |
+| Postgres | CNPG barman-cloud plugin, `ObjectStore` `bascula-backups` | base backup Sundays 03:00, WAL continuously | 30 days (PITR) |
+| Uploads (`bascula-uploads`) | Longhorn RecurringJob `backup-daily` (group `default`, labels on the PVC) | daily 03:00 UTC (22:00 Bogota) | 14 daily backups |
+
+The RecurringJobs themselves live in `ojardila/k8`
+(`manifests/longhorn/backup-jobs.yaml`), not here. Check the uploads side with:
+
+```bash
+V=$(kubectl -n bascula get pvc bascula-uploads -o jsonpath='{.spec.volumeName}')
+kubectl -n longhorn-system get backups.longhorn.io -l backup-volume=$V \
+  --sort-by=.status.backupCreatedAt
+```
+
+To restore, create a Longhorn volume from the backup URL
+(`.status.url` of the Backup) in the Longhorn UI or as a `Volume` with
+`spec.fromBackup`, bind it to a PV/PVC, and either mount it next to the API to
+copy files back or swap it in as `bascula-uploads`. The drill recorded in
+`docs/decisions.md` does exactly that against a scratch namespace.
+
+---
+
 ## Secrets
 
 None are in this repo, and none are in git. Both are created against the
@@ -160,12 +187,10 @@ kubectl create secret generic bascula-api -n bascula \
 
 ## What is deliberately not here
 
-**Backups.** The Postgres volume is covered only by Longhorn's snapshots,
-which protect the disk and not the database: restoring one gives you the data
-files mid-write and Postgres recovers from its WAL on start. CNPG can write
-base backups and WAL to S3-compatible storage — DigitalOcean Spaces already
-serves that role for Longhorn and etcd. **This is the first thing to add
-before the farm's season lives here.**
+**An S3 driver for uploads.** Photos stay on the Longhorn volume and are
+backed up with it (see "Backups" below). `internal/blob` is the seam for an
+object-storage implementation if the API ever needs a second replica; the
+trade-off is in `docs/decisions.md` (#311).
 
 **Seasons from the retired phone app.** A farm that kept its season only on
 the Expo app uploads it through `/v1/import/season` from that app

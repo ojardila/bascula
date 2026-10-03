@@ -389,7 +389,14 @@
     document.getElementById("endpoint2").textContent = c.endpoint;
     document.getElementById("transport").textContent = c.transport;
     document.getElementById("instructions").textContent = c.instructions;
-    document.getElementById("prm").href = c.auth.protectedResourceMetadata;
+    // Only an http(s) URL becomes the link: a javascript: or data: value in
+    // the catalog must never be clickable.
+    try {
+      var prm = new URL(c.auth.protectedResourceMetadata, window.location.href);
+      if (prm.protocol === "https:" || prm.protocol === "http:") {
+        document.getElementById("prm").href = prm.href;
+      }
+    } catch (e) {}
     var host = document.getElementById("tools");
     var groups = [["read", "Read tools"], ["write", "Write tools"]];
     groups.forEach(function (g) {

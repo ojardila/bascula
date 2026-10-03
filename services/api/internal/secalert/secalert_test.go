@@ -198,3 +198,23 @@ func TestFromEnv(t *testing.T) {
 		t.Fatalf("silence = %v", a.cfg.SilenceUntil)
 	}
 }
+
+// A key from a request (an OAuth client_id) cannot break the email header or
+// forge a log line, and cannot make one entry arbitrarily large.
+func TestKeyIsNeutralisedAndBounded(t *testing.T) {
+	a, rec, _ := newTest(t, nil)
+	evil := "client\r\nBcc: someone@example.com" + strings.Repeat("x", 500)
+	for i := 0; i < 20; i++ {
+		a.Observe(OAuthErrors, evil, "error=bad\nforged")
+	}
+	if rec.count() != 1 {
+		t.Fatalf("want 1 email, got %d", rec.count())
+	}
+	m := rec.msgs[0]
+	if strings.ContainsAny(m.Subject, "\r\n") || strings.Contains(m.Body, "bad\nforged") {
+		t.Fatalf("raw line breaks survived: %q", m.Subject)
+	}
+	if len(m.Subject) > 300 {
+		t.Fatalf("subject not bounded: %d bytes", len(m.Subject))
+	}
+}

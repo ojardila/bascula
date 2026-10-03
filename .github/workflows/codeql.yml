@@ -64,6 +64,10 @@ jobs:
           config: |
             paths-ignore:
               - '**/*_test.go'
+              - '**/*.test.ts'
+              - '**/*.test.tsx'
+              # MSW-generated mock worker: dev/test only, not in the prod build.
+              - 'apps/web/public/mockServiceWorker.js'
               - 'apps/web/e2e/**'
               - 'docs/**'
               - 'manifests/**'

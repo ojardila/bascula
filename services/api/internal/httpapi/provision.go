@@ -16,6 +16,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ojardila/bascula/services/api/internal/logsafe"
 )
 
 // A farm can get a stack of its own: a namespace with its own Postgres, API
@@ -203,7 +205,7 @@ func (s *Server) pollTenant(slug string) {
 		}
 		time.Sleep(every)
 	}
-	slog.Warn("tenant watch gave up", "slug", slug)
+	slog.Warn("tenant watch gave up", "slug", logsafe.Str(slug))
 }
 
 // trySeedTenant is one poll: it reports whether the stack is seeded, seeding
@@ -220,10 +222,10 @@ func (s *Server) trySeedTenant(slug string) bool {
 		return false
 	}
 	if err := s.seedTenant(context.Background(), slug); err != nil {
-		slog.Warn("tenant seed", "slug", slug, "err", err)
+		slog.Warn("tenant seed", "slug", logsafe.Str(slug), "err", logsafe.Str(err.Error()))
 		return false
 	}
-	slog.Info("tenant seeded", "slug", slug)
+	slog.Info("tenant seeded", "slug", logsafe.Str(slug))
 	return true
 }
 
@@ -528,6 +530,10 @@ func (s *Server) provisionStatusFor(ctx context.Context, slug string) (provision
 	// Until its owner confirms the address there is nothing being built:
 	// say so rather than show progress that is not coming.
 	var awaiting bool
+	// Pre-tenant: the public waiting screen has no farm tx yet, and
+	// farm_awaiting_owner_email is a SECURITY DEFINER lookup by slug that
+	// returns only a boolean.
+	// nosemgrep: bascula-pool-query-outside-tenant-tx
 	if err := s.pool.QueryRow(ctx, `SELECT farm_awaiting_owner_email($1)`, slug).Scan(&awaiting); err != nil {
 		return provisionStatus{}, err
 	}
