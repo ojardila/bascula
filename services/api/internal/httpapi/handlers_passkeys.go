@@ -537,73 +537,13 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, invalid)
 	}
 
-	sd, err := s.openPasskeySession(sealPasskeyLogin, req.Challenge, rp)
-	if err != nil {
+	found, user, cred, err := s.verifyPasskeyAnswer(r, tx, rp, req.Challenge, req.Credential)
+	if errors.Is(err, errPasskeyRefused) {
 		refuse()
 		return
 	}
-	parsed, err := protocol.ParseCredentialRequestResponseBytes(req.Credential)
-	if err != nil {
-		refuse()
-		return
-	}
-
-	// The handler is how go-webauthn asks "whose credential is this": look it
-	// up by id, check it belongs to this address and to the user the phone
-	// named, and hand back the account with that one credential.
-	var found *store.Passkey
-	var user *store.User
-	lookup := func(rawID, userHandle []byte) (webauthn.User, error) {
-		pk, err := store.FindPasskeyByCredential(r.Context(), tx, rawID)
-		if err != nil {
-			return nil, err
-		}
-		if pk.RPID != rp.ID {
-			return nil, errors.New("passkey belongs to another address")
-		}
-		u, err := store.FindUserByID(r.Context(), tx, pk.UserID)
-		if err != nil {
-			return nil, err
-		}
-		cred, err := decodePasskeyRecord(*pk)
-		if err != nil {
-			return nil, err
-		}
-		pu := passkeyUser{user: u, creds: []webauthn.Credential{cred}}
-		if string(userHandle) != string(pu.WebAuthnID()) {
-			return nil, errors.New("passkey user handle does not match")
-		}
-		found, user = pk, u
-		return pu, nil
-	}
-	wa, err := rp.webauthn()
-	if err != nil {
-		writeError(w, r, domain.Internal(msgPasskeysMisconfigured).WithCause(err))
-		return
-	}
-	_, cred, err := wa.ValidatePasskeyLogin(lookup, *sd, parsed)
-	if err != nil || found == nil || user == nil {
-		refuse()
-		return
-	}
-	// A signature counter that went backwards means the key may have been
-	// copied off the authenticator. Refused, not merely logged.
-	if cred.Authenticator.CloneWarning {
-		refuse()
-		return
-	}
-
-	// Single use: a recorded answer is never accepted twice, and the row is
-	// written in this transaction, so a refusal further down undoes it and
-	// leaves the challenge usable for the farm choice that follows.
-	challengeHash := sha256.Sum256([]byte(sd.Challenge))
-	first, err := store.ConsumePasskeyChallenge(r.Context(), tx, challengeHash[:], sd.Expires)
 	if err != nil {
 		writeError(w, r, err)
-		return
-	}
-	if !first {
-		refuse()
 		return
 	}
 
@@ -717,4 +657,84 @@ func farmsUnlockedByPasskey(r *http.Request, tx pgx.Tx, userID string, pk *store
 		}
 	}
 	return out, nil
+}
+
+// errPasskeyRefused is a passkey answer that does not prove anything: a
+// stale or forged challenge, an unknown credential, a bad signature, a
+// cloned key or a replay. Every door counts it as a failed sign-in.
+var errPasskeyRefused = errors.New("the passkey was not accepted")
+
+// verifyPasskeyAnswer checks a signed passkey sign-in answer for the relying
+// party rp and spends its challenge: whose passkey it is, that it belongs to
+// this address and that user, the signature, the counter, and single use.
+// It is the part of a passkey sign-in that /v1/auth/passkeys/login and the
+// OAuth sign-in page share; what the passkey then opens is the caller's.
+//
+// The challenge row is written in tx, so a refusal further down that rolls
+// tx back leaves it usable again.
+func (s *Server) verifyPasskeyAnswer(r *http.Request, tx pgx.Tx, rp passkeyRP,
+	challenge string, credential []byte) (*store.Passkey, *store.User, *webauthn.Credential, error) {
+	sd, err := s.openPasskeySession(sealPasskeyLogin, challenge, rp)
+	if err != nil {
+		return nil, nil, nil, errPasskeyRefused
+	}
+	parsed, err := protocol.ParseCredentialRequestResponseBytes(credential)
+	if err != nil {
+		return nil, nil, nil, errPasskeyRefused
+	}
+
+	// The handler is how go-webauthn asks "whose credential is this": look it
+	// up by id, check it belongs to this address and to the user the phone
+	// named, and hand back the account with that one credential.
+	var found *store.Passkey
+	var user *store.User
+	lookup := func(rawID, userHandle []byte) (webauthn.User, error) {
+		pk, err := store.FindPasskeyByCredential(r.Context(), tx, rawID)
+		if err != nil {
+			return nil, err
+		}
+		if pk.RPID != rp.ID {
+			return nil, errors.New("passkey belongs to another address")
+		}
+		u, err := store.FindUserByID(r.Context(), tx, pk.UserID)
+		if err != nil {
+			return nil, err
+		}
+		cred, err := decodePasskeyRecord(*pk)
+		if err != nil {
+			return nil, err
+		}
+		pu := passkeyUser{user: u, creds: []webauthn.Credential{cred}}
+		if string(userHandle) != string(pu.WebAuthnID()) {
+			return nil, errors.New("passkey user handle does not match")
+		}
+		found, user = pk, u
+		return pu, nil
+	}
+	wa, err := rp.webauthn()
+	if err != nil {
+		return nil, nil, nil, domain.Internal(msgPasskeysMisconfigured).WithCause(err)
+	}
+	_, cred, err := wa.ValidatePasskeyLogin(lookup, *sd, parsed)
+	if err != nil || found == nil || user == nil {
+		return nil, nil, nil, errPasskeyRefused
+	}
+	// A signature counter that went backwards means the key may have been
+	// copied off the authenticator. Refused, not merely logged.
+	if cred.Authenticator.CloneWarning {
+		return nil, nil, nil, errPasskeyRefused
+	}
+
+	// Single use: a recorded answer is never accepted twice, and the row is
+	// written in this transaction, so a refusal further down undoes it and
+	// leaves the challenge usable for the farm choice that follows.
+	challengeHash := sha256.Sum256([]byte(sd.Challenge))
+	first, err := store.ConsumePasskeyChallenge(r.Context(), tx, challengeHash[:], sd.Expires)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !first {
+		return nil, nil, nil, errPasskeyRefused
+	}
+	return found, user, cred, nil
 }

@@ -50,6 +50,9 @@ const (
 // errOAuthBadCredentials is the one sign-in failure the login limiter counts.
 var errOAuthBadCredentials = errors.New("Correo o contraseña incorrectos.")
 
+// errOAuthBadPasskey is a passkey answer the sign-in page did not accept.
+var errOAuthBadPasskey = errors.New("No reconocimos esa llave de acceso. Entre con su correo y contraseña.")
+
 // oauthScopesSupported: "mcp" consults and registers within the member's
 // role; "mcp:read" only consults (the person picks on the sign-in page).
 // offline_access is advertised because clients (ChatGPT among them) ask for
@@ -572,15 +575,23 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	// the same password, and without it the sign-in page was an unmetered
 	// way around the login limit. The second step (farm pick) carries a
 	// ticket, not a password, and is not counted.
+	//
+	// A passkey answer has no address to count against; like
+	// /v1/auth/passkeys/login it is limited on the per-IP axis, and a failed
+	// one is recorded with no address.
+	usingPasskey := q.Get("ticket") == "" && q.Get("passkey_credential") != ""
 	email := strings.ToLower(strings.TrimSpace(q.Get("email")))
+	if usingPasskey {
+		email = ""
+	}
 	ip := clientIP(r)
-	if q.Get("ticket") == "" && email != "" {
+	if q.Get("ticket") == "" && (email != "" || usingPasskey) {
 		failedPair, failedIP, err := store.CountLoginFailures(r.Context(), tx, email, ip, s.cfg.LoginFailureWindow)
 		if err != nil {
 			writeError(w, r, err)
 			return
 		}
-		if failedPair >= s.cfg.LoginFailuresPerEmailPerIP || failedIP >= s.cfg.LoginFailuresPerIP {
+		if (!usingPasskey && failedPair >= s.cfg.LoginFailuresPerEmailPerIP) || failedIP >= s.cfg.LoginFailuresPerIP {
 			s.oauthForm(w, r, q, "Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.", nil, client)
 			return
 		}
@@ -588,7 +599,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	user, chosen, pick, ferr := s.oauthSignIn(r, tx, q)
 	if ferr != nil {
-		if errors.Is(ferr, errOAuthBadCredentials) {
+		if errors.Is(ferr, errOAuthBadCredentials) || errors.Is(ferr, errOAuthBadPasskey) {
 			// The page is a 200, so the request transaction commits and the
 			// failure is counted; nothing else has been written by now.
 			if err := store.RecordLoginFailure(r.Context(), tx, newID(), ip, email); err != nil {
@@ -728,7 +739,8 @@ type oauthPick struct {
 
 // oauthSignIn resolves who is signing in and for which farm.
 //
-// First step: email and password. Second step (only on the main host, for an
+// First step: email and password, or a passkey (see oauthPasskeySignIn).
+// Second step (only on the main host, for an
 // account with several farms): a ticket proving the password was already
 // checked, plus the farm the person picked from the list. A farm host
 // ({slug}.bascula.engp.io) names its farm, so it never asks.
@@ -740,6 +752,9 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 	// computed from the password on the first. See farmsUnlockedBy.
 	var ticketFarms []string
 	password, globalOK := "", false
+	// The passkey that signed in, when one did; it decides the farms instead
+	// of the password (farmsUnlockedByPasskey).
+	var passkey *store.Passkey
 	if ticket := q.Get("ticket"); ticket != "" {
 		sub, err := s.signer.VerifyTicket(oauthPickTicketPurpose, ticket)
 		uid, farms, found := strings.Cut(sub, "|")
@@ -752,6 +767,12 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 			return nil, nil, nil, errors.New("Pasó demasiado tiempo. Entre de nuevo con su correo y contraseña.")
 		}
 		user = u
+	} else if q.Get("passkey_credential") != "" {
+		pk, u, err := s.oauthPasskeySignIn(r, tx, q)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		user, passkey = u, pk
 	} else {
 		email := strings.ToLower(strings.TrimSpace(q.Get("email")))
 		password = q.Get("password")
@@ -779,7 +800,7 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(all) == 0 && (ticketFarms != nil || globalOK) {
+	if len(all) == 0 && (ticketFarms != nil || globalOK || passkey != nil) {
 		return nil, nil, nil, errors.New("Esa cuenta no pertenece a ninguna finca.")
 	}
 	var memberships []store.Membership
@@ -788,6 +809,13 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 			if containsString(ticketFarms, m.FarmID) {
 				memberships = append(memberships, m)
 			}
+		}
+	} else if passkey != nil {
+		if memberships, err = farmsUnlockedByPasskey(r, tx, user.ID, passkey, all); err != nil {
+			return nil, nil, nil, err
+		}
+		if len(memberships) == 0 {
+			return nil, nil, nil, errors.New("Esa llave de acceso no abre ninguna finca. Entre con su correo y contraseña.")
 		}
 	} else if memberships, err = farmsUnlockedBy(r.Context(), tx, user.ID, password, globalOK, all); err != nil {
 		return nil, nil, nil, err
@@ -861,6 +889,39 @@ func (s *Server) oauthSignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.U
 		Ticket: s.signer.SignTicket(oauthPickTicketPurpose, user.ID+"|"+strings.Join(farmIDs(active), ","), oauthPickTicketTTL),
 		Farms:  active,
 	}, nil
+}
+
+// oauthPasskeySignIn is the sign-in page's passkey door: the page's script
+// asked /v1/auth/passkeys/login/options for a challenge, the phone signed it,
+// and the form posted the answer here instead of a password.
+//
+// It is checked exactly as /v1/auth/passkeys/login checks it
+// (verifyPasskeyAnswer): the relying party is the page's own Origin, so an
+// answer made for this farm address is the only one accepted, and a form
+// posted from another site has the wrong Origin and is refused; the user
+// was verified on the device; the challenge is single use. What the person
+// consents to (the client, where the code goes, read or write) is the same
+// page and the same choice as with the password.
+func (s *Server) oauthPasskeySignIn(r *http.Request, tx pgx.Tx, q url.Values) (*store.Passkey, *store.User, error) {
+	rp, err := s.passkeyRPFor(r)
+	if err != nil {
+		return nil, nil, errOAuthBadPasskey
+	}
+	pk, user, cred, err := s.verifyPasskeyAnswer(r, tx, rp, q.Get("passkey_challenge"), []byte(q.Get("passkey_credential")))
+	if errors.Is(err, errPasskeyRefused) {
+		return nil, nil, errOAuthBadPasskey
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	record, err := json.Marshal(cred)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := store.TouchPasskey(r.Context(), tx, pk.ID, record); err != nil {
+		return nil, nil, err
+	}
+	return pk, user, nil
 }
 
 // oauthClientCredentials reads the client's identity the way RFC 6749 §2.3
@@ -1198,7 +1259,38 @@ const oauthFormStyle = `<style>
   .slug{display:block;color:#666;font-size:.9rem}
   .who{background:#f4f4f4;padding:.6rem .8rem;border-radius:8px;color:#111;word-break:break-all}
   .warn{font-size:.9rem}
+  button.alt{background:#fff;color:#1b5e20;border:2px solid #2e7d32}
 </style>`
+
+// oauthPasskeyScript is the sign-in page's «Entrar con llave de acceso»:
+// ask this origin for a challenge, let the phone sign it, put the answer in
+// the form and post it (the access choice goes with it). Shown only where
+// the browser has passkeys; anything that fails leaves the password form as
+// it was.
+const oauthPasskeyScript = `(function(){
+var b=document.getElementById("passkey");
+if(!b||!window.PublicKeyCredential||!navigator.credentials)return;
+b.hidden=false;
+var f=b.form;
+function dec(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";var r=atob(s),u=new Uint8Array(r.length);for(var i=0;i<r.length;i++)u[i]=r.charCodeAt(i);return u.buffer;}
+function enc(v){if(!v)return undefined;var a=new Uint8Array(v),s="";for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
+b.addEventListener("click",function(){
+b.disabled=true;
+fetch("/v1/auth/passkeys/login/options",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}",credentials:"omit"})
+.then(function(res){if(!res.ok)throw new Error("options");return res.json();})
+.then(function(o){
+var P=window.PublicKeyCredential,pk=o.publicKey;
+var opts=P.parseRequestOptionsFromJSON?P.parseRequestOptionsFromJSON(pk):Object.assign({},pk,{challenge:dec(pk.challenge),allowCredentials:(pk.allowCredentials||[]).map(function(c){return Object.assign({},c,{id:dec(c.id)});})});
+return navigator.credentials.get({publicKey:opts}).then(function(c){
+var j=c.toJSON?c.toJSON():{id:c.id,rawId:enc(c.rawId),type:c.type,response:{clientDataJSON:enc(c.response.clientDataJSON),authenticatorData:enc(c.response.authenticatorData),signature:enc(c.response.signature),userHandle:enc(c.response.userHandle)},clientExtensionResults:c.getClientExtensionResults?c.getClientExtensionResults():{}};
+f.elements.passkey_challenge.value=o.challenge;
+f.elements.passkey_credential.value=JSON.stringify(j);
+f.submit();
+});
+})
+.catch(function(){b.disabled=false;});
+});
+})();`
 
 // oauthForm renders the sign-in page. client is nil until the request names a
 // registered client; from then on the page says which application is asking
@@ -1209,7 +1301,14 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
 	// A password form must not be framed (clickjacking), and its URL carries
 	// state and the PKCE challenge, which no Referer should repeat.
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	// The only script is the passkey button's, inline under a per-response
+	// nonce; it may call this origin and nothing else.
+	nonce, err := randomToken(16)
+	if err != nil {
+		writeError(w, r, domain.Internal("could not render the sign-in page").WithCause(err))
+		return
+	}
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; connect-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
@@ -1317,8 +1416,12 @@ func (s *Server) oauthForm(w http.ResponseWriter, r *http.Request, q url.Values,
   <label class="f" for="password">Contraseña</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
   <button type="submit">Autorizar</button>
+  <input type="hidden" name="passkey_challenge" value="">
+  <input type="hidden" name="passkey_credential" value="">
+  <button type="button" id="passkey" class="alt" hidden>Entrar con llave de acceso</button>
 </form>
-`, head, farmLine, msg, params, writeChecked, readChecked, esc(q.Get("email")))
+<script nonce="%s">%s</script>
+`, head, farmLine, msg, params, writeChecked, readChecked, esc(q.Get("email")), nonce, oauthPasskeyScript)
 }
 
 func farmIDs(ms []store.Membership) []string {
