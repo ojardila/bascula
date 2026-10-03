@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ── A ONE-LINE axe-core ASSERTION FOR SCREEN-LEVEL TESTS ───────────────────
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useState } from "react";
 import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField,

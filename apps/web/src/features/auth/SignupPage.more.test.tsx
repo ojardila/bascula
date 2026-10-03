@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Cree su finca», the paths `SignupPage.test.tsx` leaves out: every field
  * the form checks before sending, an address already taken, the server's

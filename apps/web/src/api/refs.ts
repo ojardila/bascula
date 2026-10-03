@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The lookup tables the client needs because the server sends ids, not names.
  *

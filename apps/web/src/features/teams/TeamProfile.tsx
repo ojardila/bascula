@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /** The team parts of a worker's profile (docs/use-cases/teams.md, TEAM-05/06). */
 import { useNavigate } from "react-router-dom";
 import {

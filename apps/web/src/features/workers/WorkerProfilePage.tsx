@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * RSP-007. One call, four blocks: who they are, what they are owed, what they
  * did, and every peso that ever moved.

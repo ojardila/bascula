@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Command cfhostname creates or checks the Cloudflare for SaaS custom
 // hostname (and so the edge certificate) of one farm address, by hand.
 //

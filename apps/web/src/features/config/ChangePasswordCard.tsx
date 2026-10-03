@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Cambiar clave», for every role (issue #145: until this card a password
  * could not be changed at all).

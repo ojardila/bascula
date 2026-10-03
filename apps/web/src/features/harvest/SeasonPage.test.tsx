@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Más detalles de la cosecha», the parts `HarvestPages.test.tsx` leaves out:
  * how the running week reads against the last finished one, the charts and

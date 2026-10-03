@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * ONE WEIGHING AT A TIME, ON A PHONE, NEXT TO THE SCALE.
  *

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * THE KILO PRICE RULES, KEPT ON THE DEVICE.
  *

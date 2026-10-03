@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The thin wrappers of endpoints.ts that no screen test happens to reach:
  * each one is called against the same mock server the app uses, and has to

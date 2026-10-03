@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Curve, RowBar, Sparkline, WeekBars, type CurvePoint } from "./charts";

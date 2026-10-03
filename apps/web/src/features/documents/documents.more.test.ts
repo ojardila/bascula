@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The less common shapes of the three documents: a week the receipt can name,
  * a settlement with no weighed unit, a payment run sheet with a missing paid

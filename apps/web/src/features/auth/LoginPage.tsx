@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import {
   Link as RouterLink,

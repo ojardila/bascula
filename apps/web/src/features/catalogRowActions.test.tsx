@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The row menu on the activities and expenses lists: taking a row out of
  * service and back, the server refusing either, and the edit dialog opened

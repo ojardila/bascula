@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Rows and notices of the crew payroll (`CrewPayrollPage`), split out so the
  * page keeps the flow —filter, settle, pay, undo— and each row reads alone.

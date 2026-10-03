@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm the browser is on, read off the hostname.
  *

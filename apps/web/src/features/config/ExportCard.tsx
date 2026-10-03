@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The farm's data, out, as files Excel opens: the weighings, every money
  * movement, and each person's balance. Three files and not one, because they

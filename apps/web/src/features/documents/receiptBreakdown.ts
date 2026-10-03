@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The four figures a farm receipt has to name, and how they add up.
  *

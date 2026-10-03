@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The ONLY module that imports react-joyride. TourHost loads it with
  * React.lazy when a spotlight step has to be drawn, so a person who never

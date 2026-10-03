@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «Registrar labor» with no signal: the value shown for kilos paid by the
  * kilo price is the one the server would give — the person's own price, then

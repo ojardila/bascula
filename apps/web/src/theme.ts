@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Material 3 in Báscula's green.
  *

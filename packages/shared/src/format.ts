@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Pure formatting, kept free of React and of the database so it can be
 // exercised by tests directly. Node runs TypeScript natively, so the suite
 // needs no build step and no test dependency.

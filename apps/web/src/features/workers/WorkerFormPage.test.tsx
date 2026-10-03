@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The one conflict with no automatic repair.
  *

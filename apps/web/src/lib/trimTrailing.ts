@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `s` without any run of `ch` at its end: `trimTrailing("/cosecha//", "/")`
  * → `"/cosecha"`. A plain loop instead of `/\/+$/`, which backtracks

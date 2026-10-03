@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The line at the top of every screen that says what the signal means today.
  *

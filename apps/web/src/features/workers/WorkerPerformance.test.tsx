@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The «Rendimiento» card on a worker's profile, drawn at a real width so the
  * weekly and daily charts are actually laid out (jsdom measures everything

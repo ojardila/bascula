@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * Uploading the weighings the phone kept while there was no signal.
  *

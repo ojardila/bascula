@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { describe, expect, it } from "vitest";
 import { pdfText, receiptPdfBytes } from "./receiptPdf";
 import type { ReceiptDoc } from "./receiptDoc";

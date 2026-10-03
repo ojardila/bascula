@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * «¿Quiere entrar más rápido la próxima vez?»: after a password sign-in, a
  * device that can hold a passkey, for a person who has none on this farm

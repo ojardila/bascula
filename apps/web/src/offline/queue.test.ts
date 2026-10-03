@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * The queue keeps weighings that could not reach the server and sends them
  * later. What must never happen: a weighing lost, or one counted twice.

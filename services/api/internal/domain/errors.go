@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 // Package domain holds the vocabulary the whole service agrees on: the error
 // codes that are part of the REST contract, the money rules, and the pure
 // helpers the ported SQL leans on.

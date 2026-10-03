@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /**
  * `/olvide-mi-clave`.
  *
