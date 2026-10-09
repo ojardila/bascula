@@ -1,0 +1,24 @@
+# Synthetic uptime/content monitor for this site (one monitor per site),
+# outside the cluster so a full home/cluster outage still alerts.
+# Config: monitor.yaml at the repo root. Engine: ojardila/site-monitor.
+# Alerts: Telegram on state change; needs repo secrets TELEGRAM_BOT_TOKEN and
+# TELEGRAM_CHAT_ID (site-monitor's provisioner copies them in).
+name: synthetic-monitor
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths: [monitor.yaml, .github/workflows/synthetic-monitor.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  monitor:
+    uses: ojardila/site-monitor/.github/workflows/monitor.yml@main
+    with:
+      config: monitor.yaml
+    secrets:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

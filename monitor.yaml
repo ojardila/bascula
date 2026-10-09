@@ -1,0 +1,14 @@
+# Synthetic monitor: bascula.engp.io (one monitor for this site).
+# Engine: github.com/ojardila/site-monitor. Validated against the live site
+# 2026-10-09 ~16:00 COT. The web app is a React SPA, so the HTML check covers
+# the shell (title, #root, app bundle) plus the API health endpoint.
+name: bascula.engp.io
+url: https://bascula.engp.io/
+status: 200
+title: 'B[aá]scula'
+contains: ['/assets/index-', 'Cosecha y cuentas de recolectores de café']
+selectors:
+  - 'div#root'
+pages:
+  - url: /health
+  - url: /manifest.webmanifest
