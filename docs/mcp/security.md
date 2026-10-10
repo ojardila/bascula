@@ -167,8 +167,8 @@ error"}}`; causes are logged server-side only.
 - A confirmation token is not bound to the OAuth client: another assistant of
   the same user on the same farm could use it within its 10 minutes. It
   cannot change what is written (arguments are bound).
-- govulncheck (September 2026) reports standard-library advisories against
-  the toolchain pinned in `go.mod` (1.26.4; fixed in 1.26.6) and none in
-  third-party code the server calls. The production image builds with the
-  newer `golang:1.27-alpine` toolchain; CI and `go.mod` should move to a
-  patched 1.26.x or 1.27.x.
+- `go.mod` pins Go 1.26.9 (October 2026), which fixes the net/http
+  advisories GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617 that
+  govulncheck reported against 1.26.6. The production image builds with the
+  newer `golang:1.27-alpine` toolchain. Bump the pin whenever govulncheck
+  flags a standard-library advisory.
