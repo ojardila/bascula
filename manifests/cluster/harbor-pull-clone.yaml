@@ -17,10 +17,17 @@ metadata:
     # into the admission controller too gave the webhook write access to
     # every Secret in the cluster for nothing.
     rbac.kyverno.io/aggregate-to-background-controller: "true"
+# Writes are limited to the harbor-pull name so this role cannot be used to
+# create, overwrite or delete any other Secret. Reads stay cluster-wide:
+# generate/sync lists and watches, and resourceNames cannot restrict list/watch.
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "delete"]
+    resourceNames: ["harbor-pull"]
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
