@@ -15,6 +15,6 @@ resources:
 # never a web talking to an API it was not built against.
 images:
   - name: harbor.int.engp.io/bascula/api
-    newTag: v0.2.147
+    newTag: v0.2.148
   - name: harbor.int.engp.io/bascula/web
-    newTag: v0.2.147
+    newTag: v0.2.148
