@@ -1,0 +1,168 @@
+# Namespace-wide default deny. Every pod in a Bascula namespace drops all
+# traffic unless a policy below (or networkpolicy.yaml) allows it. Cilium
+# policies add up, so the allow rules for api and web stay where they are.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# CNPG Postgres instances (and CNPG's own initdb/join jobs, which carry the
+# same cnpg.io/cluster label).
+# In: api and the migrate job on 5432, the other instance for replication,
+#     the CNPG operator on 8000 (status) and 5432, kubelet probes from the
+#     host, Prometheus on 9187.
+# Out: DNS, the other instance, the Kubernetes API (instance manager), and
+#     HTTPS to the world for barman-cloud WAL archiving and base backups
+#     (DigitalOcean Spaces).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-db
+spec:
+  description: Postgres (CNPG) ingress from api/migrate/operator/peers, egress to DNS, peers, kube-apiserver and S3
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: bascula-db
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: bascula-api
+        - matchLabels:
+            app: bascula-migrate
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: bascula-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: cnpg-system
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+            - port: "5432"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+            - port: "5432"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9187"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: bascula-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Migration job: DNS and Postgres only.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-migrate
+spec:
+  description: Migrate job egress to DNS and Postgres
+  endpointSelector:
+    matchLabels:
+      app: bascula-migrate
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: bascula-db
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+# Tenant PreSync hook (overlays/tenant/bootstrap-secrets.yaml) mints Secrets
+# through the Kubernetes API. Harmless in namespaces where it never runs.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bascula-bootstrap-secrets
+spec:
+  description: Bootstrap hook egress to DNS and kube-apiserver
+  endpointSelector:
+    matchLabels:
+      batch.kubernetes.io/job-name: bascula-bootstrap-secrets
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
