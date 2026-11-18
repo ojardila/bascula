@@ -131,6 +131,7 @@ func (failedBatch) Exec() (pgconn.CommandTag, error) { return pgconn.CommandTag{
 func (failedBatch) Query() (pgx.Rows, error)         { return nil, errInjected }
 func (failedBatch) QueryRow() pgx.Row                { return failedRow{} }
 func (failedBatch) Close() error                     { return errInjected }
+func (failedBatch) Tx() pgx.Tx                       { return nil }
 
 func (f *flakyTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
 	if f.fail() {

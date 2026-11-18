@@ -53,6 +53,7 @@ func (brokenBatch) Exec() (pgconn.CommandTag, error) { return pgconn.CommandTag{
 func (brokenBatch) Query() (pgx.Rows, error)         { return nil, errDBDown }
 func (brokenBatch) QueryRow() pgx.Row                { return brokenRow{} }
 func (brokenBatch) Close() error                     { return errDBDown }
+func (brokenBatch) Tx() pgx.Tx                       { return nil }
 
 // TestHandlersFailClosed sends every route of the API to a handler whose
 // database is gone, and once more with no tenant at all, with a few bodies
